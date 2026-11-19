@@ -44,8 +44,17 @@ export const scenarios: Scenario[] = [
       assert.equal(definitionText(fixture, "core"), text, "nothing written before Save");
       await app.detail.sourceAction("Save");
       await app.eventually(() => definitionText(fixture, "core")?.endsWith("# reviewed\n") === true, "Save wrote the Source");
-      const saved = definitionText(fixture, "core")!;
+      let saved = definitionText(fixture, "core")!;
       await app.detail.definitionUntil("core", (each) => each.source === saved && !each.saving, "the saved Source shown, Save gone");
+      // A part declared in the Source reaches the Definition and the graph once saved.
+      await app.detail.editSource("core", `${saved}parts = ["kit"]\n`);
+      await app.detail.sourceAction("Save");
+      await app.detail.definitionUntil("core", (each) => each.parts.includes("kit") && !each.saving, "the Definition lists kit");
+      await app.graph.node("a:core/a:kit", () => true, "the graph draws kit in core's box");
+      await app.detail.removePart("core", "kit");
+      await app.detail.definitionUntil("core", (each) => each.parts.length === 0 && !each.saving, "kit left core again");
+      saved = definitionText(fixture, "core")!;
+      await app.detail.definitionUntil("core", (each) => each.source === saved, "the Source shows the file as written");
       await app.detail.editSource("core", `${saved}parts = ["nobody"]\n`);
       await app.detail.sourceAction("Save");
       await app.detail.definitionUntil("core", (each) => each.refusals.some((refusal) => /line \d/.test(refusal)), "the refusal names its line");
@@ -76,20 +85,26 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "parts-edit",
-    title: "+ Add under Parts adds a suggested Artifact to the file's parts and the graph draws it inside the whole's box; ✕ removes it and the graph draws it outside",
+    title: "+ Add under Parts adds a suggested Artifact to the file's parts and the graph draws it inside the whole's box; ✕ removes it and the graph draws it on its own again",
     journeys: ["J-PARTS-EDIT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      // docs, on its own at the top level, becomes core's part and then leaves it.
+      await app.graph.node("a:docs");
       await app.graph.open("a:core", "Artifact core");
-      await app.detail.addPart("core", "kit");
-      await app.eventually(() => /^parts = \["kit"\]/m.test(definitionText(fixture, "core") ?? ""), "core's file names kit as a part");
-      await app.graph.node("a:core/a:kit", () => true, "kit drawn inside core's box");
-      await app.detail.removePart("core", "kit");
-      await app.eventually(() => !/^parts = /m.test(definitionText(fixture, "core") ?? ""), "kit left core's parts");
-      await app.graph.gone("a:core/a:kit");
+      await app.detail.addPart("core", "docs");
+      await app.eventually(() => /^parts = \["docs"\]/m.test(definitionText(fixture, "core") ?? ""), "core's file names docs as a part");
+      await app.graph.node("a:core/a:docs", () => true, "docs drawn inside core's box");
+      await app.graph.gone("a:docs");
+      await app.detail.removePart("core", "docs");
+      await app.eventually(() => !/^parts = /m.test(definitionText(fixture, "core") ?? ""), "docs left core's parts");
+      await app.graph.gone("a:core/a:docs");
+      await app.graph.clickBackground();
+      await app.detail.closed();
+      await app.graph.node("a:docs", () => true, "docs drawn on its own again");
     },
   }),
 
@@ -182,10 +197,15 @@ export const scenarios: Scenario[] = [
         const reset = await app.graph.box("a:core");
         return !!reset && (Math.abs(reset.y - shown.y) > 12 || Math.abs(reset.x - shown.x) > 12);
       }, "core drawn at its automatic place again");
-      // docs dropped on app's box becomes app's part.
+      // docs dropped on app's title becomes app's part, drawn under the part it would cover there.
       await app.graph.dragOnto("a:docs", "a:app");
       await app.eventually(() => /^parts = \[.*"docs".*\]/m.test(definitionText(fixture, "app") ?? ""), "docs added to app's parts");
-      await app.graph.node("a:app/a:docs", () => true, "docs drawn in app's box");
+      await app.eventually(() => /^docs = \[/m.test(definitionText(fixture, "app") ?? ""), "app's file places docs in its box");
+      await app.graph.until(async () => {
+        const [whole, part, kit] = [await app.graph.box("a:app"), await app.graph.box("a:app/a:docs"), await app.graph.box("a:app/a:kit")];
+        return !!whole && !!part && !!kit && part.y >= kit.y + kit.height - 1
+          && part.x >= whole.x && part.y >= whole.y && part.x + part.width <= whole.x + whole.width && part.y + part.height <= whole.y + whole.height;
+      }, "docs drawn inside app's box, under kit");
     },
   }),
 

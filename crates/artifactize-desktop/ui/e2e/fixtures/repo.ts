@@ -306,7 +306,10 @@ export async function createCheckedOnce(own: Owned): Promise<Checking> {
   writeText(fixture.gate, "go");
   const run = await verifyWaiting(fixture);
   signOff(fixture, request(fixture, "other/signoff").id, "{}");
-  await artifactizeAsync(fixture, ["run", "show", run, "--wait", "--json"]);
+  const ended = await artifactizeAsync(fixture, ["run", "show", run, "--wait", "--json"]);
+  if (ended.status !== 0 || (JSON.parse(ended.stdout) as { status: string }).status !== "GREEN") {
+    throw new Error(`the seed Run did not end GREEN: ${ended.stdout}${ended.stderr}`);
+  }
   removeTree(fixture.gate);
   return fixture;
 }

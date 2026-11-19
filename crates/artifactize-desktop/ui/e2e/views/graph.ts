@@ -189,10 +189,11 @@ export class Graph {
   }
 
   /** Drag the node `id` onto the node `onto` and release it there. */
-  async dragOnto(id: string, onto: string, handle = ".name"): Promise<void> {
+  async dragOnto(id: string, onto: string, handle = ".name"): Promise<{ x: number; y: number }> {
     const from = await visibleCenter(this.browser, await this.browser.$(`${nodeAt(id)} ${handle}`).getElement());
     const to = await visibleCenter(this.browser, await this.browser.$(`${nodeAt(onto)} .name`).getElement());
     await this.pointerDrag(from, to);
+    return to;
   }
 
   /** Drag the comment drawn under the node `id` onto the node `onto` and release it there. */

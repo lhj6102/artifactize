@@ -67,6 +67,10 @@ async function suite(ids: string[]): Promise<void> {
     if (!declared) try { removeTree(output); } catch (error) { failures.push(error); }
   }
   if (failed.length) failures.unshift(new Error(`desktop scenarios failed: ${failed.join(", ")}`));
+  // An interrupt that came during the cleanup fails the run too.
+  if (interrupted && !failures.some((failure) => failure instanceof Error && failure.message.startsWith("interrupted"))) {
+    failures.push(new Error("interrupted: the suite was stopped while it cleaned up"));
+  }
   if (failures.length) throw new AggregateError(failures, "desktop E2E failed");
 }
 

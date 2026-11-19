@@ -146,13 +146,13 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
 export async function nativeInput(browser: WebdriverIO.Browser, input:
   | { type: "set" | "commit"; text: string }
   | { type: "cancel" | "copy" | "paste" }): Promise<void> {
-  // Through the Tauri service's public API, which reaches the command as the page's own
-  // `invoke` would.
-  try {
-    await browser.tauri.execute((tauri, operation: typeof input) => tauri.core.invoke("e2e_input", { input: operation }), input);
-  } catch (failure) {
-    throw new Error(`native engine input failed: ${String(failure)}`, { cause: failure });
-  }
+  // Through the page's own `invoke`, as the app reaches its commands; the same in a session
+  // the Tauri service started and in one of an app a scenario started again.
+  const answer = await browser.executeAsync((operation: typeof input, done: (answer: { error?: string }) => void) => {
+    type Api = { __TAURI__: { core: { invoke: (command: string, args: unknown) => Promise<unknown> } } };
+    (window as unknown as Api).__TAURI__.core.invoke("e2e_input", { input: operation }).then(() => done({}), (error: unknown) => done({ error: String(error) }));
+  }, input);
+  if (answer.error !== undefined) throw new Error(`native engine input failed: ${answer.error}`);
 }
 
 /** An already visible target's viewport centre, without WebDriver's element-origin
