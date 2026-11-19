@@ -188,11 +188,14 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${newest} · DEFERRED · unclaimed`),
         "the newest waiting review opened");
       assert.equal(await nativeTitle(browser), "Artifactize");
-      const stack = await waiting(browser);
-      assert.equal(stack.bar, "Waiting (3)");
-      assert.deepEqual(stack.rows.map((row) => row.id), [...ids].reverse(), "every repository's waiting review, newest at the top");
-      assert.deepEqual(stack.rows.map((row) => row.where), ["third  master", "other  master", "repo  master"]);
-      assert.equal(stack.rows[0].selected, true, "the opened review is the selected entry");
+      // The Waiting stack itself, rendered: its count, its order and its selection.
+      let stack = await waiting(browser);
+      await waitFor(browser, async () => {
+        stack = await waiting(browser);
+        return stack.bar === "Waiting (3)" && JSON.stringify(stack.rows.map((row) => row.id)) === JSON.stringify([...ids].reverse())
+          && JSON.stringify(stack.rows.map((row) => row.where)) === JSON.stringify(["third  master", "other  master", "repo  master"])
+          && stack.rows[0]?.selected === true;
+      }, "every repository's waiting review, newest at the top, the opened one selected");
     },
   ),
 

@@ -37,7 +37,7 @@ import {
 import { createServer } from "node:net";
 import { constants, homedir, tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve, sep, toNamespacedPath } from "node:path";
-import { type LoopbackServer, type NativePath, appendText, asNativePath, exists, listFiles, makeDirectory, nameOf, nativePath, readJson, readText, readTextIfExists, replaceText, serveLoopback, serveLoopbackHttp, sourceTree, writeText } from "./portable.ts";
+import { type LoopbackServer, type NativePath, appendText, asNativePath, exists, listFiles, makeDirectory, nameOf, nativePath, readJson, readText, readTextIfExists, replaceText, serveLoopback, serveLoopbackHttp, writeText } from "./portable.ts";
 
 // ---------------------------------------------------------------------------------
 // Operating system values
@@ -231,7 +231,9 @@ function holdersOf(root: NativePath): number[] {
         throw error;
       }
     });
-    return held(root) ? [-1] : [];
+    // A program the app started may run before it opens any fixture file: one whose command
+    // line names the fixture holds it too.
+    return held(root) || commandLinesNaming([root]) ? [-1] : [];
   }
   if (MACOS) {
     // lsof exits 1 with no output when nothing is open there; anything else, or no answer in
@@ -1367,10 +1369,3 @@ export function nativeCrashReports(app: NativePath): string[] {
   return reports;
 }
 
-/** Failure-only native/backend diagnostics from this batch's service-owned log files. */
-export function serviceFailureLogs(directory: NativePath): string[] {
-  // Keep startup and crash causes visible in CI without replaying entire backend logs.
-  const tailCharacters = 16 * 1024;
-  return sourceTree(directory).filter((item) => item.kind === "file" && item.name.endsWith(".log"))
-    .map((item) => `--- service log ${item.name} ---\n${readText(item.path).slice(-tailCharacters)}`);
-}

@@ -5,9 +5,10 @@ import { gitProgram, isolatedEnvironment, portablePath, runProgramOk, type Envir
 import { makeDirectory, nativePath, parentOf, writeTextOnce, type NativePath } from "./portable.ts";
 
 /** Inherited variables that would let a fixture reach the person's credentials,
- * configuration or network routes, by upper-case name. */
+ * configuration, network routes or tool settings that write elsewhere (Node's coverage,
+ * options and REPL history), by upper-case name. */
 function personal(name: string): boolean {
-  return name.startsWith("ARTIFACTIZE_") || name.startsWith("GIT_")
+  return name.startsWith("ARTIFACTIZE_") || name.startsWith("GIT_") || name.startsWith("NODE_") || name.startsWith("NPM_CONFIG_")
     || /(?:^|_)(?:API_KEY|ACCESS_KEY|PRIVATE_KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS)(?:_|$)/.test(name)
     || ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSH_ASKPASS", "SSH_AUTH_SOCK", "SSH_AGENT_PID",
       "CODEX_HOME", "CLAUDE_CONFIG_DIR", "CLOUDSDK_CONFIG", "KUBECONFIG", "DOCKER_CONFIG", "NPM_CONFIG_USERCONFIG",
