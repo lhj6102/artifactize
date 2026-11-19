@@ -9,7 +9,8 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { chooseVerdict, requestState, showDebug, reviewing } from "../human-review.ts";
 import { MAIN, mainTitle } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativeInput, primaryModifier } from "../platform.ts";
+import { primaryModifier } from "../platform.ts";
+import { nativeInput } from "../input.ts";
 import { graphShown, openArtifact, openTab } from "../graph-view.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 20000) {

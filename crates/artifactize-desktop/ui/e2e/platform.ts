@@ -34,7 +34,6 @@ import {
   closeSync, constants as fsConstants, existsSync, mkdtempSync, openSync, linkSync, readdirSync, readFileSync, readlinkSync,
   realpathSync, rmSync, writeFileSync,
 } from "node:fs";
-import { createServer } from "node:net";
 import { constants, homedir, tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve, sep, toNamespacedPath } from "node:path";
 import { type LoopbackServer, type NativePath, appendText, asNativePath, exists, listFiles, makeDirectory, nameOf, nativePath, readJson, readText, readTextIfExists, replaceText, serveLoopback, serveLoopbackHttp, writeText } from "./portable.ts";
@@ -163,9 +162,9 @@ function commandLinesNaming(files: readonly NativePath[]): boolean {
 
 /** Wait, bounded, until no fixture opener the app started is still running. */
 async function awaitOpenersEnded(root: NativePath, files: readonly NativePath[]): Promise<void> {
-  const deadline = Date.now() + 30000;
+  const deadline = performance.now() + 30000;
   while (commandLinesNaming(files)) {
-    if (Date.now() >= deadline) throw new Error(`a fixture browser opener still runs for ${root}`);
+    if (performance.now() >= deadline) throw new Error(`a fixture browser opener still runs for ${root}`);
     await new Promise((done) => setTimeout(done, 25));
   }
 }
@@ -860,33 +859,6 @@ export function packageCommand(args: string[]): { program: string; args: string[
 // ---------------------------------------------------------------------------------
 // Loopback network
 
-/** Select distinct OS-assigned loopback endpoints for the upstream embedded service.
- * Release the reservation before service startup; the service owns the actual listeners. */
-export async function embeddedPorts(count: number): Promise<number[]> {
-  if (!Number.isInteger(count) || count < 1) throw new Error("embedded port count must be a positive integer");
-  const sockets: ReturnType<typeof createServer>[] = [];
-  const ports: number[] = [];
-  const failures: unknown[] = [];
-  try {
-    for (let index = 0; index < count; index++) {
-      const socket = createServer();
-      sockets.push(socket);
-      await new Promise<void>((done, fail) => {
-        socket.once("error", fail);
-        socket.listen(0, "127.0.0.1", () => { socket.off("error", fail); done(); });
-      });
-      const address = socket.address();
-      if (!address || typeof address === "string") throw new Error("no embedded WebDriver port allocated");
-      ports.push(address.port);
-    }
-  } catch (error) { failures.push(error); }
-  const released = await Promise.allSettled(sockets.filter((socket) => socket.listening).map((socket) =>
-    new Promise<void>((done, fail) => socket.close((error) => error ? fail(error) : done()))));
-  for (const result of released) if (result.status === "rejected") failures.push(result.reason);
-  if (failures.length) throw new AggregateError(failures, "embedded endpoint selection or release failed");
-  return ports;
-}
-
 /** Pair an explicit driver port with a separate claim socket that stays bound
  * throughout service startup. The driver port is outside the local ephemeral range,
  * so fixture servers that bind port 0 cannot take it during the handoff. */
@@ -1127,19 +1099,6 @@ export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<voi
     { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
 }
 
-/** Ask the public Tauri window API to perform a genuine close request. The
- * pristine provider's DELETE /window force-destroys and bypasses this app event. */
-export async function requestWindowClose(browser: WebdriverIO.Browser): Promise<void> {
-  const error = await browser.executeAsync((done) => {
-    const app = window as unknown as { __TAURI__: { window: { getCurrentWindow: () => { close: () => Promise<void> } } } };
-    app.__TAURI__.window.getCurrentWindow().close().then(
-      () => done(null),
-      (failure: unknown) => done(String(failure)),
-    );
-  });
-  if (error !== null) throw new Error(`native window close failed: ${String(error)}`);
-}
-
 const browserHandoffLog = (root: NativePath) => nativePath(root, "browser-handoffs.jsonl");
 
 /** URLs received by this fixture's desktop opener, independently of visits to the site. */
@@ -1164,7 +1123,8 @@ export async function browserEnvironment(root: NativePath, env: Environment, ent
   env: Environment; release?: () => Promise<void>;
 }> {
   const file = typeof entry !== "string" && "file" in entry ? entry.file : undefined;
-  if (file && !isInside(root, file)) throw new Error("desktop handoff file must be owned by the fixture");
+  // Containment by canonical paths: a link under the fixture cannot make an outside file its own.
+  if (file && !isInside(canonicalPath(root), canonicalPath(file))) throw new Error("desktop handoff file must be owned by the fixture");
   if (WINDOWS) return ownedWindowsBrowser(root, env, entry, file);
   const bin = makeDirectory(nativePath(root, "browser-bin"));
   const program = nativePath(bin, "open-url.mjs");
@@ -1287,7 +1247,7 @@ async function ownedWindowsBrowser(root: NativePath, env: Environment, entry: Br
         if (address.protocol !== "http:" || address.hostname !== "127.0.0.1" || !agreed) throw new Error("the handoff did not name the owned browser origin");
         appendText(browserHandoffLog(root), `${JSON.stringify(target)}\n`);
       }
-      const args = [`--user-data-dir=${portablePath(profile)}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", launch];
+      const args = [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", launch];
       const owner = nativePath(owners, `${jobs.length}.pid`);
       const job = windowsFixtureRunner({ program: edge, args, env, owner, holdDescendants: true }, stop.signal).then((done) => {
         if (done.code !== 0) throw new Error(`fixture Edge exited ${done.code}: ${done.stderr}`);
@@ -1361,21 +1321,6 @@ export function folderHoldsCommand(folder: string, name: string): boolean {
 /** `env` with PATH set to `folders` and those of its PATH that `keep` accepts after them. */
 export function withPathFirst(env: Environment, folders: string[], keep: (folder: string) => boolean): Environment {
   return withVariable({ ...env }, "PATH", [...folders, ...programPath(env).filter(keep)].join(delimiter));
-}
-
-/** The evaluated test-build device reaches only the engine's text-input API. This
- * test-only IPC command is not an application action and is absent from production. */
-export async function nativeInput(browser: WebdriverIO.Browser, input:
-  | { type: "set" | "commit"; text: string }
-  | { type: "cancel" | "copy" | "paste" }): Promise<void> {
-  if (input.type === "copy" || input.type === "paste") assertClipboardDesktop();
-  // Through the Tauri service's public API, which reaches the command as the page's own
-  // `invoke` would.
-  try {
-    await browser.tauri.execute((tauri, operation: typeof input) => tauri.core.invoke("e2e_input", { input: operation }), input);
-  } catch (failure) {
-    throw new Error(`native engine input failed: ${String(failure)}`, { cause: failure });
-  }
 }
 
 /** Native crash reports for this run's exact candidate binary, never other apps or runs.

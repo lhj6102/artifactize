@@ -3,7 +3,7 @@
 // systems (how a command is found on PATH, the desktop opener) comes from platform.ts.
 import { renameSync } from "node:fs";
 import { join } from "node:path";
-import { commandFile, folderHoldsCommand, nodeProgram, processRunning, removeTree, unixOpener, withPathFirst, writeNodeCommand, type Environment } from "../platform.ts";
+import { commandFile, folderHoldsCommand, nodeProgram, processRunning, unixOpener, withPathFirst, writeNodeCommand, type Environment } from "../platform.ts";
 import { closeDirectory, exists, listFiles, makeDirectory, nameOf, nativePath, readText, readTextIfExists, writeText, type NativePath } from "../portable.ts";
 
 /** A scripted Claude Code (`claude auth status|login|logout`) first on the app's PATH, keeping
@@ -96,7 +96,8 @@ server.listen(0, "127.0.0.1", () => {
   // reaches the fixture's server.
   if (opener.pid !== undefined) {
     try { writeFileSync(join(logins, opener.pid + "-" + randomUUID() + ".pid"), "", { flag: "wx" }); }
-    catch (error) { opener.kill(); failed(error); }
+    // Unregistered, it is stopped and its exit awaited before the login fails.
+    catch (error) { opener.once("exit", () => failed(error)); opener.kill(); }
   }
   opener.on("close", (code, signal) => {
     if (code !== 0) return failed(signal ?? "exit " + code);
@@ -154,7 +155,7 @@ export async function releaseClaudeLogins(root: NativePath): Promise<void> {
     if (Date.now() >= deadline) throw new Error(`Claude login still owns fixture ${root}`);
     await new Promise((done) => setTimeout(done, 25));
   }
-  removeTree(stopped);
+  // The joined records stay with the fixture: a retained fixture keeps them for diagnosis.
 }
 
 /** Read the actual login process that announced this origin while it was live. */

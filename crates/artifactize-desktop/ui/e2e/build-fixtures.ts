@@ -33,7 +33,13 @@ export function prepareFixture<T>(setup: (root: NativePath) => T, root = newRoot
       throw error;
     }
     try { removeFixture(readCandidate().cli, root); }
-    catch (cleanup) { throw new AggregateError([error, cleanup], "fixture setup and cleanup failed; preserve inputs"); }
+    catch (cleanup) {
+      // A cleanup that could not confirm a program's end keeps the files from a later sweep.
+      if (unconfirmedEnd(cleanup)) {
+        try { writeText(nativePath(root, RETAINED), ""); } catch (mark) { throw new AggregateError([error, cleanup, mark], "fixture setup and cleanup failed; preserve inputs"); }
+      }
+      throw new AggregateError([error, cleanup], "fixture setup and cleanup failed; preserve inputs");
+    }
     throw error;
   };
   try {

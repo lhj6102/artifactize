@@ -272,3 +272,30 @@ export function serviceFailureLogs(directory: NativePath): string[] {
   return sourceTree(directory).filter((item) => item.kind === "file" && item.name.endsWith(".log"))
     .map((item) => `--- service log ${item.name} ---\n${readText(item.path).slice(-tailCharacters)}`);
 }
+
+/** Select distinct OS-assigned loopback endpoints for the upstream embedded service.
+ * Release the reservation before service startup; the service owns the actual listeners. */
+export async function embeddedPorts(count: number): Promise<number[]> {
+  if (!Number.isInteger(count) || count < 1) throw new Error("embedded port count must be a positive integer");
+  const sockets: ReturnType<typeof createServer>[] = [];
+  const ports: number[] = [];
+  const failures: unknown[] = [];
+  try {
+    for (let index = 0; index < count; index++) {
+      const socket = createServer();
+      sockets.push(socket);
+      await new Promise<void>((done, fail) => {
+        socket.once("error", fail);
+        socket.listen(0, "127.0.0.1", () => { socket.off("error", fail); done(); });
+      });
+      const address = socket.address();
+      if (!address || typeof address === "string") throw new Error("no embedded WebDriver port allocated");
+      ports.push(address.port);
+    }
+  } catch (error) { failures.push(error); }
+  const released = await Promise.allSettled(sockets.filter((socket) => socket.listening).map((socket) =>
+    new Promise<void>((done, fail) => socket.close((error) => error ? fail(error) : done()))));
+  for (const result of released) if (result.status === "rejected") failures.push(result.reason);
+  if (failures.length) throw new AggregateError(failures, "embedded endpoint selection or release failed");
+  return ports;
+}

@@ -46,6 +46,12 @@ function driverDisconnected(error: unknown): boolean {
     || driverDisconnected(error.cause);
 }
 
+/** Whether a failed request was refused before the driver received it. */
+function neverDelivered(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /\bECONNREFUSED\b/.test(error.message) || neverDelivered(error.cause);
+}
+
 /** @wdio/runner always DELETEs its session, but the embedded server dies with the
  * app. Only the quit helper reads native metadata. Retire this client session only
  * after the same native process was observed alive before the action and exited
@@ -72,7 +78,9 @@ export async function sessionEndedByApp(
     if (actionFailure !== undefined) throw new AggregateError([actionFailure, error], "the quit action and native app-exit observation failed");
     throw error;
   }
-  if (actionFailure !== undefined && !driverDisconnected(actionFailure)) throw actionFailure;
+  // A request refused at connect never reached the app: its exit, however orderly, was not
+  // this action's doing.
+  if (actionFailure !== undefined && (!driverDisconnected(actionFailure) || neverDelivered(actionFailure))) throw actionFailure;
   if (!Reflect.set(browser, "sessionId", undefined)) throw new Error("the ended client session could not be retired");
 }
 
@@ -150,4 +158,17 @@ export function retireOwnAdmissions(root: NativePath, observer: NativePath): voi
     assertAppsStopped(observer, owners);
     removeTree(directory);
   }
+}
+
+/** Ask the public Tauri window API to perform a genuine close request. The
+ * pristine provider's DELETE /window force-destroys and bypasses this app event. */
+export async function requestWindowClose(browser: WebdriverIO.Browser): Promise<void> {
+  const error = await browser.executeAsync((done) => {
+    const app = window as unknown as { __TAURI__: { window: { getCurrentWindow: () => { close: () => Promise<void> } } } };
+    app.__TAURI__.window.getCurrentWindow().close().then(
+      () => done(null),
+      (failure: unknown) => done(String(failure)),
+    );
+  });
+  if (error !== null) throw new Error(`native window close failed: ${String(error)}`);
 }
