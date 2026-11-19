@@ -17,10 +17,13 @@
   let {
     source,
     branch,
+    covered = false,
     onchoose,
     onclose,
   }: {
     source: Source;
+    /** The Detail is docked over the canvas's right side: the field stays left of it. */
+    covered?: boolean;
     /** The branch shown: with nothing typed, its project's starred Artifacts are listed. */
     branch: BranchKey | null;
     /** Open what was found. */
@@ -81,7 +84,7 @@
   const named = (item: Found) => (item.eval === null ? item.artifact : `${item.artifact} / ${item.eval}`);
 </script>
 
-<div class="find">
+<div class="find" style:--covered={covered ? "var(--dock-width)" : null}>
   <input
     class="query"
     type="search"
@@ -129,12 +132,17 @@
 </div>
 
 <style>
+  /* Within the canvas left of an open Detail and above its bottom: the list scrolls inside,
+     and the line after it stays in view. */
   .find {
     position: absolute;
     z-index: 10;
     left: 8px;
     top: 8px;
-    width: min(380px, calc(100% - 16px));
+    display: flex;
+    flex-direction: column;
+    width: min(380px, calc(100% - 16px - var(--covered, 0px)));
+    max-height: calc(100% - 16px);
     padding: 6px;
     background: var(--surface-raised);
     border: 1px solid var(--line-panel);
@@ -156,10 +164,11 @@
     outline-offset: -1px;
   }
   .found {
+    flex: 0 1 auto;
+    min-height: 0;
     margin: 4px 0 0;
     padding: 0;
     list-style: none;
-    max-height: 320px;
     overflow: auto;
   }
   .found li {

@@ -14,7 +14,7 @@
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { clampWidth, saveWidth } from "./detail-width";
+  import { KEEP, MIN, clampWidth, saveWidth } from "./detail-width";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
@@ -417,12 +417,22 @@
       changed.disconnect();
     };
   };
+
+  /** The Pane's narrowest share of the window, in percent. */
+  const PANE_MIN = 12;
+  /** The window's width, as the Pane and the Main area share it. */
+  let windowWidth = $state(window.innerWidth);
+  /** The Main area's narrowest share: room for the narrowest Detail beside the graph it keeps
+   * visible (D-INS-1), and never less than 30 percent. */
+  const mainMin = $derived(Math.min(100 - PANE_MIN, Math.max(30, ((MIN + KEEP) / windowWidth) * 100)));
 </script>
+
+<svelte:window bind:innerWidth={windowWidth} />
 
 <div class="monitor">
   <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">
     {#if m.paneShown}
-      <Split id="pane" order={1} defaultSize={24} minSize={12}>
+      <Split id="pane" order={1} defaultSize={24} minSize={PANE_MIN}>
         <Pane
           bind:query={() => query, setQuery}
           {filled}
@@ -437,7 +447,7 @@
       </Split>
       <PaneResizer class="resizer" />
     {/if}
-    <Split id="main" order={2} defaultSize={m.paneShown ? 76 : 100} minSize={30}>
+    <Split id="main" order={2} defaultSize={m.paneShown ? 76 : 100} minSize={mainMin}>
       <!-- The dragged width is the stage's, so the Detail, the Navigator beside it and a review's
            side column all take it. -->
       <div

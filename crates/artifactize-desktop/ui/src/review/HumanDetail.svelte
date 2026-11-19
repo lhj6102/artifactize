@@ -361,14 +361,16 @@
     gap: 6px;
   }
   /* The last row of the Result: Release claim at the left, Submit at the column's right edge. */
+  /* In a narrow column the row wraps rather than letting its groups run into each other. */
   .actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--gap);
+    gap: 6px var(--gap);
   }
+  /* What the work says keeps its own width: never narrower than its content. */
   .said {
-    flex: 1;
-    min-width: 0;
+    flex: 1 1 auto;
     display: flex;
     align-items: center;
   }

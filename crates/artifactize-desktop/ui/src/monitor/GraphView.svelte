@@ -773,7 +773,7 @@
       {@const text = annotations.comments.get(byKey.get(v.comment.key)?.node.name ?? "")}
       <p class="lifted" aria-hidden="true" style:left="{v.comment.x}px" style:top="{v.comment.y}px">{text}</p>
     {/if}
-    {#if m.finding}<GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
+    {#if m.finding}<GraphFind {source} {branch} covered={opened !== null} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
     {#if !allInView && v.area}
       <Navigator {laid} {lights} viewport={camera.current} width={v.area.width} height={v.area.height} onmove={navigate} />
     {/if}
