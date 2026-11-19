@@ -120,11 +120,9 @@
     }
     // `q` quits only outside a form or work, as in the terminal.
     if ((review.busy || review.editing) && plain(event, "q")) return handled();
-    if (review.busy) return;
-    if (chord(event, "g")) void review.choose("GREEN");
-    else if (chord(event, "r")) void review.choose("RED");
-    else if (chord(event, "s")) void submit();
-    else if (editable(event.target)) return;
+    // Submit is open while a tool runs: it cancels the tool first (Review.submit).
+    if (chord(event, "s") && (review.busy === null || review.busy.tool)) void submit();
+    else if (review.busy || editable(event.target)) return;
     else if (plain(event, "c")) void review.claim();
     else if (plain(event, "g")) void review.choose("GREEN");
     else if (plain(event, "r")) void review.choose("RED");
@@ -142,9 +140,9 @@
       { id: "human.claim", group: "Human review", label: "Claim to review", keys: "c", enabled: () => ready() && review.claimable, run: () => void review.claim() },
       { id: "human.green", group: "Human review", label: "Open the GREEN form", keys: "g", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("GREEN") },
       { id: "human.red", group: "Human review", label: "Open the RED form", keys: "r", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("RED") },
-      { id: "human.to-green", group: "Human review", label: "Choose GREEN", keys: "Ctrl+G", enabled: () => ready() && review.editing, run: () => void review.choose("GREEN") },
-      { id: "human.to-red", group: "Human review", label: "Choose RED", keys: "Ctrl+R", enabled: () => ready() && review.editing, run: () => void review.choose("RED") },
-      { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => ready() && review.editing, run: () => void submit() },
+      { id: "human.to-green", group: "Human review", label: "Choose GREEN", enabled: () => ready() && review.editing, run: () => void review.choose("GREEN") },
+      { id: "human.to-red", group: "Human review", label: "Choose RED", enabled: () => ready() && review.editing, run: () => void review.choose("RED") },
+      { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => review.submittable, run: () => void submit() },
       { id: "human.release", group: "Human review", label: "Release the claim", keys: "u", enabled: () => ready() && review.owned, run: () => void review.release() },
       { id: "human.cancel", group: "Human review", label: "Cancel the running work", keys: "Esc", enabled: () => review.busy !== null, run: () => review.cancel() },
       { id: "human.debug", group: "Human review", label: "Show or hide Debug", keys: "t", run: () => sections.toggle("Debug") },
@@ -219,7 +217,7 @@
               {/if}
             </span>
             {#if review.form}
-              <button class="button primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={review.busy !== null} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+              <button class="button primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
             {/if}
           </div>
         {/if}

@@ -24,7 +24,8 @@ express the actual journey requirements, neither a weaker substitute nor an inve
 covered when its scenario performs the user's action and checks the journey's key outcome once, as the user sees \
 it; do not require ever-finer assertions (exact visual details, every variant such as each endpoint API, every \
 OS-hypothetical path) beyond what the journey text states. A missing journey, or a check that cannot detect the \
-journey failing, remains a finding. Code style and E2E execution isolation have separate evals; do not duplicate those \
+journey failing, remains a finding. Keyboard shortcuts are optional: a missing, extra or different shortcut is not a finding; the visible way \
+(button, menu, palette, click) is what must be covered. Code style and E2E execution isolation have separate evals; do not duplicate those \
 reviews here. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when every journey and edge is meaningfully covered. Otherwise submit \
 RED with up to 20 coverage gaps, the most important first, each with the journey or edge id \
 (item), a test path:line (where) and one sentence on what to add or fix."""

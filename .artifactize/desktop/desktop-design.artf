@@ -39,8 +39,8 @@ a figure, numbered notes and D- rules). Check that: every screen, state and over
 its parts, the Main area's views, the Detail, the Human review, Settings and its tabs, the Find field, the \
 overlays, and on a Current the Definition and Source, the edit dialogs, a dragged Artifact or comment, the drop \
 target, Reset layout, comments and the comment field) has a place on one of the screen pages; no D- rule or figure \
-contradicts a journey (what a control does, where it sits, what a state shows, what hovering does, which keys do \
-what); the D- rules describe appearance and arrangement without inventing behaviour the journeys do not have. The \
+contradicts a journey (what a control does, where it sits, what a state shows, what hovering does); the D- rules describe appearance and arrangement without inventing behaviour the journeys do not have. Keyboard shortcuts are optional: a missing, extra or different shortcut is not a finding; the visible way \
+(button, menu, palette, click) is what must agree. The \
 pages are design, not the app: judge agreement, not whether the app already looks like them. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when nothing \
 clearly disagrees. Otherwise submit RED with up to 20 findings, the most important first, each with the rule or \
 journey id (item), the page and element (where) and one sentence on what to change in the design."""

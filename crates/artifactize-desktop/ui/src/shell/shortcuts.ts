@@ -53,7 +53,6 @@ const REVIEW: Section = {
     ["c", "Claim to review"],
     ["u", "Release the claim"],
     ["g / r", "Open the GREEN or the RED form"],
-    ["Ctrl+G / Ctrl+R", "Choose GREEN or RED while editing"],
     ["Ctrl+S", "Submit"],
     ["t", "Show or hide Debug"],
     ["Esc", "Cancel running work, then leave the form, then the review"],

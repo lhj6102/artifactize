@@ -123,10 +123,10 @@ describe("HumanDetail", () => {
     // Letters typed into a field are text, not shortcuts.
     expect(calls.filter((call) => call.cmd === "human_form").length).toBe(1);
 
-    await fireEvent.keyDown(reason, { key: "g", ctrlKey: true });
+    await user.click(screen.getByRole("radio", { name: "GREEN" }));
     const comment = await screen.findByLabelText(/comment/);
     await user.type(comment, "확인");
-    await fireEvent.keyDown(comment, { key: "r", ctrlKey: true });
+    await user.click(screen.getByRole("radio", { name: "RED" }));
     expect(((await screen.findByLabelText(/reason/)) as HTMLTextAreaElement).value).toBe("no");
 
     await fireEvent.keyDown(await screen.findByLabelText(/reason/), { key: "s", ctrlKey: true });
@@ -210,6 +210,46 @@ describe("HumanDetail", () => {
     // Use the real focus target, not a key dispatched directly to the Detail.
     await user.keyboard("{Escape}");
     await waitFor(() => expect(left).toBe(1));
+  });
+
+  it("submits while a tool runs, cancelling that tool first", async () => {
+    const calls: Call[] = [];
+    let stop!: () => void;
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args: args as Record<string, unknown> });
+      switch (cmd) {
+        case "human_open":
+          return humanView("review");
+        case "human_form":
+          return greenForm;
+        case "human_run":
+          // The tool runs until it is cancelled.
+          return new Promise((resolve) => (stop = () => resolve({ text: "■ error: cancelled", error: true })));
+        case "human_cancel":
+          stop();
+          return null;
+        case "human_submit":
+          return { notice: { text: "Submitted GREEN", error: false }, view: humanView("completed"), settled: "published" };
+        default:
+          return null;
+      }
+    }, { shouldMockEvents: true });
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await screen.findByText("REVIEW (yours)");
+    await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
+    await screen.findByLabelText(/comment/);
+    await user.click(screen.getByRole("button", { name: "notes" }));
+    await screen.findByRole("img", { name: "Running notes" });
+    // Release waits for the running work; Submit does not.
+    expect((screen.getByRole("button", { name: "Release claim (u)" }) as HTMLButtonElement).disabled).toBe(true);
+    const submit = screen.getByRole("button", { name: "Submit GREEN (Ctrl+S)" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    await user.click(submit);
+    await screen.findByText("Completed result");
+    expect(calls.map(({ cmd }) => cmd).filter((cmd) => ["human_run", "human_cancel", "human_submit"].includes(cmd))).toEqual([
+      "human_run", "human_cancel", "human_submit",
+    ]);
   });
 
   it("does not steal focus moved outside the Detail while submission is running", async () => {

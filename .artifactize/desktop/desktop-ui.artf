@@ -86,7 +86,9 @@ elsewhere). For each D- rule, find the component or stylesheet that renders what
 whether it holds: the surfaces, lines and tokens it names, the sizes within the tolerances the rule states, the order and anatomy of \
 the elements, the treatment of selection, hover and focus, and what the rule says to avoid. Mock markup need not \
 be copied: the app renders the same anatomy with its own components. Behaviour is reviewed by other evals; judge \
-appearance and arrangement only, and do not invent requirements the pages do not state. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when no \
+appearance and arrangement only, and do not invent requirements the pages do not state. Keyboard shortcuts are optional: \
+a missing, extra or different shortcut is not a finding; the visible way (button, menu, palette, click) is what \
+must follow the design. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when no \
 rule is clearly violated. Otherwise submit RED with up to 20 violations, the most important first, each with the \
 rule id (item), a path:line in {desktop-ui} (where) and one sentence on what to change in the UI."""
 
