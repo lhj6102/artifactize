@@ -56,7 +56,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "branch-star",
-    // Its app started again takes the display's focus: no other app runs beside it.
+    // Its app is started again: the phases run one after the other, alone.
     alone: true,
     title: "a branch's star lists it before the others, still when the app starts again, and taking the star away lists it in the search's order again",
     journeys: ["J-BRANCH-STAR"],
@@ -69,15 +69,16 @@ export const scenarios: Scenario[] = [
       orderRuns(fixture, [first, second]);
       return { fixture, data: null };
     },
-    run: async (app, _input, again) => {
+    run: async (app) => {
       await app.pane.listed(["other  master", "repo  master"], "the newest Run's branch first");
       await app.pane.star("repo  master");
       await app.pane.listed(["repo  master", "other  master"], "the starred branch first");
-      // A later app of this machine's user keeps the star.
-      const later = await again();
-      await later.pane.listed(["repo  master", "other  master"], "still starred and first after the app started again");
-      await later.pane.star("repo  master");
-      await later.pane.listed(["other  master", "repo  master"], "in the search's order again");
+    },
+    // A later app of this machine's user keeps the star.
+    restarted: async (app) => {
+      await app.pane.listed(["repo  master", "other  master"], "still starred and first after the app started again");
+      await app.pane.star("repo  master");
+      await app.pane.listed(["other  master", "repo  master"], "in the search's order again");
     },
   }),
 

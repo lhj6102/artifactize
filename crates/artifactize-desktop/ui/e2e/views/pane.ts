@@ -113,6 +113,20 @@ export class Pane {
     }, PANE);
   }
 
+  /** Whether the search, the branches and the waiting reviews are stacked in one column, in
+   * that order, each below the one before at the same left edge. */
+  stacked(): Promise<boolean> {
+    return this.browser.execute((pane) => {
+      const root = document.querySelector(pane);
+      const boxes = ['input[aria-label="Search branches and reviews"]', '[aria-label="Branches"]', 'section[aria-label="Waiting"]']
+        .map((selector) => root?.querySelector(selector)?.getBoundingClientRect());
+      if (boxes.some((box) => !box || box.width === 0)) return false;
+      const [search, branches, waiting] = boxes as DOMRect[];
+      return branches.top >= search.bottom - 1 && waiting.top >= branches.bottom - 1
+        && Math.abs(branches.left - waiting.left) <= 2 && search.left >= branches.left - 2 && search.right <= branches.right + 2;
+    }, PANE);
+  }
+
   /** Whether the pane shows, and how wide it is. */
   shown(): Promise<{ visible: boolean; width: number }> {
     return this.browser.execute((pane) => {

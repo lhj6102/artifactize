@@ -2,7 +2,7 @@
 // ID, a newer release, refreshing and quitting.
 import assert from "node:assert/strict";
 import { standInBrowser, browserHandoffs } from "../fixtures/browser.ts";
-import { addRepository, addWorktrees, createEmpty, createRelease, declareRelease, environment, newFixture, request, requests } from "../fixtures/repo.ts";
+import { addRepository, addWorktree, addWorktrees, createEmpty, createRelease, declareRelease, environment, newFixture, orderRuns, removeWorktree, request, requests, verifyWaiting, verifyWorktree } from "../fixtures/repo.ts";
 import { shortcutLabel } from "../platform.ts";
 import { nativePath, readText, writeText, serveLoopbackHttp } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -16,10 +16,13 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       const run = request(fixture).runId;
       const [worktree] = await addWorktrees(fixture, ["scope-one"]);
+      // A second, newer Run of scope-one.
+      const newer = await verifyWorktree(fixture, "scope-one");
+      orderRuns(fixture, [worktree, newer]);
       await addRepository(fixture, "other");
-      return { fixture, data: { run, worktree } };
+      return { fixture, data: { run, worktree, newer } };
     },
-    run: async (app, { data: { run, worktree } }) => {
+    run: async (app, { fixture, data: { run, worktree, newer } }) => {
       await app.pane.branch("other  master");
       await app.pane.branch("repo  scope-one");
       const names = (await app.pane.branches()).map((branch) => branch.name).sort();
@@ -28,6 +31,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await app.graph.title(), "Nothing chosen");
       assert.equal(await app.graph.empty(), "Choose a branch or a waiting review in the Pane.");
       assert.deepEqual(await app.pane.layout(), { parts: ["Search branches and reviews", "Branches", "Waiting"], query: "sort:recent", divider: true, scope: false });
+      assert.equal(await app.pane.stacked(), true, "search, branches and waiting reviews in one column");
       // Folded, a branch reads as project and branch over its newest Run's status.
       const folded = await app.pane.branch("repo  scope-one");
       assert.equal(folded.label, "repo / scope-one");
@@ -42,9 +46,17 @@ export const scenarios: Scenario[] = [
       assert.match(await app.graph.headline(), /^WAITING_HUMAN: release\/signoff /);
       await app.graph.node("a:release", (node) => node.label === "release: in progress, 0 of 1 evals GREEN", "release waits for its sign-off");
       await app.graph.node("a:docs", (node) => node.label === "docs: GREEN, 1 of 1 evals GREEN", "docs passed");
-      // Another branch's timeline entry shows its own Run.
+      // Another branch's timeline lists its Runs newest first; a click on the older shows it.
+      if (!(await app.pane.branch("repo  scope-one")).expanded) await app.pane.toggle("repo  scope-one");
+      const timeline = await app.pane.branch("repo  scope-one", (branch) => branch.entries.length === 2, "scope-one's two Runs listed");
+      assert.deepEqual(timeline.entries.map((entry) => entry.id), [newer, worktree], "newest first");
       await app.pane.choose("repo  scope-one", worktree);
       await app.graph.titled(worktree);
+      // A worktree added by another process is listed within seconds, and goes when removed.
+      addWorktree(fixture, "scope-live");
+      await app.pane.branch("repo  scope-live");
+      removeWorktree(fixture, "scope-live");
+      await app.until(async () => !(await app.pane.branches()).some((branch) => branch.name === "repo  scope-live"), "the removed worktree's branch gone");
       // Folded again, the branch reads its newest Run's status again.
       assert.match((await app.pane.toggle("repo  master")).latest, /^Waiting for sign-off/);
     },
@@ -92,7 +104,7 @@ export const scenarios: Scenario[] = [
   scenario({
     id: "open-review-by-id",
     title: "started with review ID it opens that waiting review in the main area, named once in its header; the palette's Open a request by ID opens another request read-only, and choosing a branch leaves the review",
-    journeys: ["J-LAUNCH", "J-MAIN-REVIEW", "J-OPEN-ID"],
+    journeys: ["J-LAUNCH", "J-MAIN-REVIEW", "J-OPEN-ID", "J-HUMAN-LAYOUT"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       const first = request(fixture).id;
@@ -105,6 +117,11 @@ export const scenarios: Scenario[] = [
       assert.match(await app.graph.header(), /release\/signoff/, "the review's eval named in the header");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${first} · DEFERRED · unclaimed`), "the named review, not the newest one");
       await app.review.until((shown) => shown.stage === "CLAIM" && shown.tools.length > 0, "the review is actionable: it can be claimed");
+      // In the wide main area, the Tool log is the view on the left, the rest a column at the right.
+      await app.until(async () => {
+        const panels = await app.review.panels();
+        return !!panels && panels.log.right <= panels.column.left + 1 && panels.log.bottom > panels.column.top;
+      }, "the Tool log on the left of the column, side by side");
       // Another request by its ID opens read-only.
       await app.openPalette();
       await app.runCommand("Open a request by ID");
@@ -196,21 +213,24 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "refresh",
-    title: "the palette's Refresh scans a shown Current again: a definition changed on disk shows after it, on the same view",
+    title: "the palette's Refresh reloads the state and scans the shown Current again: a Run started meanwhile is listed and a definition changed on disk shows after it, on the same view",
     journeys: ["J-REFRESH"],
     prepare: async (own) => {
       const fixture = newFixture(own);
       declareRelease(fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: { definition: nativePath(fixture.repo, ".artifactize", "docs.artf") } };
     },
-    run: async (app, { data: { definition } }) => {
+    run: async (app, { fixture, data: { definition } }) => {
       await app.graph.node("a:docs");
       await app.graph.open("a:docs", "Artifact docs");
       await app.detail.openEval("docs/lint");
       assert.equal((await app.detail.summary()).instruction, "Check docs.");
       writeText(definition, readText(definition).replace('payload.instruction = "Check docs."', 'payload.instruction = "Check the docs again."'));
       const title = await app.graph.title();
+      // Another process starts a Run of the branch.
+      const run = await verifyWaiting(fixture);
       await app.command("Refresh");
+      await app.pane.branch("repo  master", (branch) => branch.entries.some((entry) => entry.id === run) || branch.latest.startsWith("Waiting for sign-off"), "the Run started meanwhile listed");
       await app.detail.summaryUntil((summary) => summary.instruction === "Check the docs again.", "the Refresh read the changed definition");
       assert.equal(await app.graph.title(), title, "on the same view");
     },

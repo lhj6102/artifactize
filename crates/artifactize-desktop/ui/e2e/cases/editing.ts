@@ -159,7 +159,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "layout-by-hand",
-    // Its app started again takes the display's focus: no other app runs beside it.
+    // Its app is started again: the phases run one after the other, alone.
     alone: true,
     title: "a node dragged on a Current is placed where it is released, every place of its level written into the files and kept when the app starts again, Reset layout lays it out automatically again, and a node dropped on a whole becomes its part",
     journeys: ["J-NODE-MOVE", "J-LAYOUT-RESET", "J-PARTS-DRAG"],
@@ -167,8 +167,7 @@ export const scenarios: Scenario[] = [
       const fixture = createEditing(own);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
-    run: async (first, { fixture }, again) => {
-      let app = first;
+    run: async (app, { fixture }) => {
       await app.graph.node("a:core");
       assert.equal(await app.graph.hasTool("Reset layout"), false, "laid out automatically");
       const before = (await app.graph.box("a:core"))!;
@@ -179,14 +178,22 @@ export const scenarios: Scenario[] = [
         const after = await app.graph.box("a:core");
         return !!after && Math.abs(after.y - before.y - 60) <= 12 && Math.abs(after.x - before.x) <= 12;
       }, "core drawn where it was released");
-      // Started again, the graph draws core where it was placed, beside the others.
+      // Where core is beside docs, at the zoom shown: for the app started again.
       const offset = async () => {
         const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
         return { x: (core.x - docs.x) / (zoom / 100), y: (core.y - docs.y) / (zoom / 100) };
       };
-      const placedAt = await offset();
-      app = await again();
+      return await offset();
+    },
+    // A later app draws core where it was placed, beside the others; Reset layout then lays the
+    // level out automatically again, and a node dropped on a whole becomes its part.
+    restarted: async (app, { fixture }, carried) => {
+      const placedAt = carried as { x: number; y: number };
       await app.graph.node("a:core");
+      const offset = async () => {
+        const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
+        return { x: (core.x - docs.x) / (zoom / 100), y: (core.y - docs.y) / (zoom / 100) };
+      };
       const restarted = await offset();
       assert.ok(Math.abs(restarted.x - placedAt.x) <= 8 && Math.abs(restarted.y - placedAt.y) <= 8, `core placed as it was dropped: ${JSON.stringify({ placedAt, restarted })}`);
       const shown = (await app.graph.box("a:core"))!;
@@ -206,6 +213,7 @@ export const scenarios: Scenario[] = [
         return !!whole && !!part && !!kit && part.y >= kit.y + kit.height - 1
           && part.x >= whole.x && part.y >= whole.y && part.x + part.width <= whole.x + whole.width && part.y + part.height <= whole.y + whole.height;
       }, "docs drawn inside app's box, under kit");
+      await app.graph.gone("a:docs");
     },
   }),
 

@@ -35,6 +35,19 @@ export class Review {
     this.root = `${scope === "main" ? 'section.panel[aria-label="Main area"]' : 'aside[aria-label="Detail"]'} section[aria-label="Human review"]`;
   }
 
+  /** The boxes of the Tool log and of the column holding the instruction, Tools and Result. */
+  panels(): Promise<{ log: { left: number; right: number; top: number; bottom: number }; column: { left: number; right: number; top: number; bottom: number } } | null> {
+    return this.browser.execute((root) => {
+      const review = document.querySelector(root);
+      const log = review?.querySelector('[role="log"][aria-label="Tool log"]')?.getBoundingClientRect();
+      const instruction = review?.querySelector(".instruction");
+      const column = (instruction?.closest(".side, .one") ?? null)?.getBoundingClientRect();
+      if (!log || !column) return null;
+      const box = (rect: DOMRect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
+      return { log: box(log), column: box(column) };
+    }, this.root);
+  }
+
   read(): Promise<Shown | null> {
     return this.browser.execute((root) => {
       const review = document.querySelector<HTMLElement>(root);

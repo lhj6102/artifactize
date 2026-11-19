@@ -109,7 +109,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "graph-find-star",
-    // Its app started again takes the display's focus: no other app runs beside it.
+    // Its app is started again: the phases run one after the other, alone.
     alone: true,
     title: "Find lists the Artifacts matching what is typed and opens the chosen one's Detail in the middle of the graph; the star beside a Detail's title stars an Artifact, which Find lists with nothing typed, still when the app starts again",
     journeys: ["J-GRAPH-FIND", "J-DETAIL-STAR"],
@@ -117,8 +117,7 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], data: null };
     },
-    run: async (first, _input, again) => {
-      let app = first;
+    run: async (app) => {
       await app.graph.node("a:docs");
       const opened = await app.graph.openFind();
       assert.equal(opened.value, "");
@@ -133,7 +132,9 @@ export const scenarios: Scenario[] = [
       await app.detail.star();
       await app.graph.clickBackground();
       await app.detail.closed();
-      app = await again();
+    },
+    // A later app keeps the star: Find with nothing typed lists docs.
+    restarted: async (app) => {
       await app.graph.node("a:docs");
       const favorites = await app.graph.openFind((shown) => shown.entries.length > 0, "the find field opened listing the favorites");
       assert.deepEqual(favorites.entries.map((entry) => entry.name), ["docs"], "the starred Artifact listed with nothing typed");
@@ -169,6 +170,9 @@ export const scenarios: Scenario[] = [
       await app.graph.minimize("a:suite", "suite", true);
       const minimized = await app.graph.node("a:suite");
       assert.match(minimized.label, /, minimized, [2-9] parts$/, `a node that says how many parts it has: ${minimized.label}`);
+      // Of a node's size: as an ordinary node, not the box it was.
+      const [small, lib] = [(await app.graph.box("a:suite"))!, (await app.graph.box("a:lib"))!];
+      assert.ok(small.height <= lib.height * 1.5 && small.width <= lib.width * 1.5 && small.height < suite.height / 2, `suite drawn at a node's size: ${JSON.stringify({ small, lib, suite })}`);
       await app.graph.gone("a:suite/a:app");
       await app.graph.minimize("a:suite", "suite", false);
       await app.graph.node("a:suite/a:app");
@@ -213,6 +217,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await app.graph.zoom(), zoom, "the Navigator keeps the zoom");
       await app.graph.cameraTool("Fit");
       assert.equal(await app.graph.zoom(), whole, "Fit shows the whole graph again");
+      await app.graph.until(async () => !(await app.graph.navigatorShown()), "the whole graph in view: the Navigator gone");
     },
   }),
 

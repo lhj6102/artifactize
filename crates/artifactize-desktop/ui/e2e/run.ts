@@ -4,6 +4,7 @@
 // built. `prepare` and `cleanup <manifest>` build and remove a candidate for later runs, and
 // `unit` runs the suite's own unit tests.
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { basename } from "node:path";
 import { inspect } from "node:util";
 import { checkSuite } from "../lint/e2e-integrity.ts";
@@ -47,7 +48,8 @@ async function suite(ids: string[]): Promise<void> {
   const { selectedScenarios } = await import("./catalog.ts");
   const groups = batches(selectedScenarios(ids), appsAtOnce);
   const declared = variable("ARTIFACTIZE_OUTPUT_DIR");
-  const output = declared ? asNativePath(declared) : newDirectory(scratchDirectory(), "desktop-e2e-");
+  // Logs of this run's batches, in a folder of their own also in a declared output.
+  const output = newDirectory(declared ? asNativePath(declared) : scratchDirectory(), "desktop-e2e-");
   // A failed run's evidence: one folder per run, in DESKTOP_TEST_EVIDENCE (CI uploads it), else
   // in the run's declared output or the scratch folder. It stays only when the run failed.
   const evidence = newDirectory(makeDirectory(asNativePath(variable("DESKTOP_TEST_EVIDENCE") ?? (declared ?? scratchDirectory()))), "desktop-e2e-evidence-");
@@ -119,19 +121,30 @@ async function batch(): Promise<void> {
   await holding(launch);
 }
 
+
+
 /** The batch's configuration once loaded, for an interrupt's teardown. */
 let loaded: typeof import("./wdio.conf.ts") | undefined;
-
-/** An interrupt of a batch closes what its scenarios started, an app one started again
- * included, and fails it. */
-function stopBatch(): void {
-  void (loaded?.teardown() ?? Promise.resolve()).catch((error: unknown) => console.error(inspect(error))).finally(() => process.exit(1));
-}
 
 async function launch(): Promise<void> {
   const output = asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? "");
   const { Launcher } = await import("@wdio/cli");
   const launcher = new Launcher(suitePath("wdio.conf.ts"));
+  // An interrupt goes through WDIO's own exit routine, which ends its workers; this hook, in the
+  // same routine, then stops the apps as the service does at the end and closes the fixtures,
+  // before the process exits.
+  const exitHook = createRequire(import.meta.resolve("@wdio/cli"))("async-exit-hook") as (hook: (done: () => void) => void) => void;
+  exitHook((done) => {
+    const internals = launcher as unknown as { runner?: { shutdown(): Promise<unknown> }; _launcher?: { onComplete?(code: number, config: unknown, caps: unknown): Promise<void> }[] };
+    void (async () => {
+      try {
+        await internals.runner?.shutdown();
+        for (const service of internals._launcher ?? []) await service.onComplete?.(1, {}, []);
+        await loaded?.teardown();
+      } catch (error) { console.error(inspect(error)); }
+      done();
+    })();
+  });
   // The loader is set up before the configuration is imported, so the runner and WDIO share
   // one instance of it.
   await launcher.initialize();
@@ -166,13 +179,15 @@ if (import.meta.main) {
   if (mode === "suite") {
     process.on("SIGINT", interrupt);
     process.on("SIGTERM", interrupt);
-  } else if (mode === "batch") {
-    process.on("SIGINT", stopBatch);
-    process.on("SIGTERM", stopBatch);
   }
   try {
     if (mode === "suite") await suite(process.argv.slice(3));
-    else if (mode === "batch") await batch();
+    else if (mode === "batch") {
+      // Until it has passed, a batch that ends, by an interrupt too, has failed.
+      process.exitCode = 1;
+      await batch();
+      process.exitCode = 0;
+    }
     else if (mode === "prepare") console.log((await prepare()).manifest);
     else if (mode === "cleanup") cleanup(readCandidate(process.argv[3]).root);
     else if (mode === "unit") await unit();

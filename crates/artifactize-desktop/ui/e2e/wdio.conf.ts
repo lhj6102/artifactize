@@ -6,9 +6,9 @@ import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { displayEnvironment, setVariable, stopTreeAt, variable, type Environment } from "./platform.ts";
-import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readTextIfExists, suitePath, writeJson } from "./portable.ts";
-import { AGAIN, COMPLETED, type Context } from "./scenario.ts";
+import { displayEnvironment, setVariable, systemName, variable, type Environment } from "./platform.ts";
+import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readJson, suitePath, writeJson, writeText } from "./portable.ts";
+import { COMPLETED, type Context } from "./scenario.ts";
 
 const candidate = readCandidate();
 const selected = selectedScenarios(JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[]);
@@ -16,6 +16,10 @@ if (!selected.length) throw new Error("a WDIO batch needs its scenarios in DESKT
 const output = makeDirectory(asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? ""));
 const evidence = asNativePath(variable("DESKTOP_TEST_EVIDENCE_RUN") ?? nativePath(output, "evidence"));
 const owned: Owned[] = [];
+// A scenario whose app is started again runs alone, as a second spec after its first: the
+// service starts the app again for it, as it does for any spec whose app has gone.
+const restarts = selected.some((item) => item.restarted);
+if (restarts && selected.length > 1) throw new Error("a scenario that starts its app again runs alone");
 
 /** Why preparing the batch failed, for the runner: WDIO wraps it. */
 export let preparationFailure: unknown;
@@ -49,7 +53,7 @@ const set = (env: Environment) => Object.fromEntries(Object.entries(env).filter(
 
 export const config = {
   runner: "local",
-  specs: [suitePath("journey.spec.ts")],
+  specs: restarts ? [suitePath("journey.spec.ts"), suitePath("restarted.spec.ts")] : [suitePath("journey.spec.ts")],
   framework: "mocha",
   reporters: ["spec"],
   logLevel: "warn",
@@ -72,11 +76,6 @@ export const config = {
       for (const item of selected) {
         const scope = own(nativePath(candidate.root, "fixtures"));
         owned.push(scope);
-        // An app the scenario started again, should its worker have ended before ending it.
-        scope.defer(() => {
-          const pid = Number(readTextIfExists(nativePath(scope.root, AGAIN)) ?? "");
-          if (pid > 0) stopTreeAt(pid);
-        });
         const input = await item.prepare(scope);
         const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
         for (const [name, value] of Object.entries(env)) if (value === undefined) unset.add(name);
@@ -86,11 +85,12 @@ export const config = {
       const ports = await embeddedPorts(selected.length);
       for (const [index, { scope, input, env }] of prepared.entries()) {
         const context = nativePath(scope.root, "context.json");
-        const launch = { app: input.app ?? candidate.app, args: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])], env: set(env) };
-        writeJson(context, { ...input, root: scope.root, port: ports[index], launch, evidence: nativePath(evidence, selected[index].id) } satisfies Context);
+        writeJson(context, { ...input, root: scope.root, port: ports[index], evidence: nativePath(evidence, selected[index].id) } satisfies Context);
         capabilities[index]["artifactize:context"] = context;
         if (input.app) capabilities[index]["tauri:options"] = { application: input.app };
-        capabilities[index]["wdio:tauriServiceOptions"] = { appArgs: launch.args, env: launch.env, embeddedPort: ports[index] };
+        capabilities[index]["wdio:tauriServiceOptions"] = {
+          appArgs: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])], env: set(env), embeddedPort: ports[index],
+        };
       }
       // The service starts each app with this process's variables under the scenario's own:
       // none of the runner's reaches an app unless its scenario sets it, and none a scenario
@@ -110,6 +110,21 @@ export const config = {
   beforeSession(_config: unknown, capability: Capability) {
     setVariable("DESKTOP_TEST_SCENARIO", capability["artifactize:scenario"]);
     setVariable("DESKTOP_TEST_CONTEXT", capability["artifactize:context"]);
+  },
+  /** A failed test's evidence (E2E-FAILURE-EVIDENCE), a timeout's too: the OS, the scenario and
+   * the failed wait, and a screenshot of the window at that point, while the app still runs. */
+  async afterTest(_test: unknown, _context: unknown, result: { passed: boolean; error?: Error }) {
+    if (result.passed) return;
+    const id = variable("DESKTOP_TEST_SCENARIO") ?? "";
+    const restarted = variable("DESKTOP_TEST_PHASE") === "restarted";
+    const scenarioEvidence = (readJson(asNativePath(variable("DESKTOP_TEST_CONTEXT") ?? "")) as Context).evidence;
+    const kept = makeDirectory(restarted ? asNativePath(`${scenarioEvidence}-started-again`) : scenarioEvidence);
+    const failure = result.error ? result.error.stack ?? result.error.message : "the test failed without an error";
+    writeText(nativePath(kept, "failure.txt"), `OS: ${systemName}\nscenario: ${id}${restarted ? " (started again)" : ""}\n\n${failure}\n`);
+    const session = (globalThis as { browser?: WebdriverIO.Browser }).browser;
+    await (session ? session.saveScreenshot(nativePath(kept, "window.png")) : Promise.reject(new Error("no session")))
+      .catch((cause: unknown) => writeText(nativePath(kept, "window.txt"), `no screenshot: ${String(cause)}`));
+    console.error(`evidence of ${id}: ${kept}`);
   },
   mochaOpts: { timeout: Math.max(...selected.map((item) => item.timeout ?? 180000)) },
 };

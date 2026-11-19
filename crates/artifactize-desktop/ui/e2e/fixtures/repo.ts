@@ -234,6 +234,24 @@ export async function addWorktrees(fixture: Fixture, names: string[]): Promise<s
   return runs;
 }
 
+/** A worktree of the fixture's repository on a new branch `name`, without a Run, as another
+ * process adds it. */
+export function addWorktree(fixture: Fixture, name: string): void {
+  git(fixture, fixture.repo, "worktree", "add", "-q", "-b", name, nativePath(fixture.root, name));
+}
+
+/** Remove the worktree `name`, as another process does. */
+export function removeWorktree(fixture: Fixture, name: string): void {
+  git(fixture, fixture.repo, "worktree", "remove", "--force", nativePath(fixture.root, name));
+}
+
+/** Another Run of the worktree `name`, its notes changed so it is a Run of its own. */
+export async function verifyWorktree(fixture: Fixture, name: string): Promise<string> {
+  const repo = nativePath(fixture.root, name);
+  writeText(nativePath(repo, "release", "notes.md"), `# Notes of ${name}, again\n`);
+  return verifyWaiting(fixture, repo);
+}
+
 // ---------------------------------------------------------------------------------
 // Graph shapes
 

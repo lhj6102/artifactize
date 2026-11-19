@@ -10,17 +10,13 @@ import type { App } from "./views/app.ts";
  * from. */
 export type Prepared<T = unknown> = { fixture: Fixture; data: T; args?: string[]; env?: Environment; app?: NativePath };
 
-/** What a scenario's run gets: what it prepared, its folder, the port of the app's embedded
- * WebDriver server, which lives as long as the app, and how the app was started. */
+/** What a scenario's run gets: what it prepared, its folder, and the port of the app's
+ * embedded WebDriver server, which lives as long as the app. */
 export type Context<T = unknown> = Prepared<T> & {
-  root: NativePath; port: number; launch: { app: NativePath; args: string[]; env: Record<string, string> };
-  /** Where its failure, a screenshot of the window then and its logs are kept, should it fail. */
+  root: NativePath; port: number;
+  /** Where its failure and a screenshot of the window then are kept, should it fail. */
   evidence: NativePath;
 };
-
-/** Quit the app by closing its window and start it again as it was started, on the same state:
- * a later app of this machine's user. Once per scenario. */
-export type Again = () => Promise<App>;
 
 export type Scenario = {
   id: string;
@@ -33,12 +29,17 @@ export type Scenario = {
   /** How long its run may take, in milliseconds. */
   timeout?: number;
   prepare: (own: Owned) => Promise<Prepared>;
-  run: (app: App, input: Context, again: Again) => Promise<void>;
+  /** Its flow; what it returns (JSON) reaches `restarted`. */
+  run: (app: App, input: Context) => Promise<unknown>;
+  /** What it checks once the service has started the app again on the same state, after `run`
+   * passed and its app was stopped: a later app of this machine's user. */
+  restarted?: (app: App, input: Context, carried: unknown) => Promise<void>;
 };
 
 export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
   prepare: (own: Owned) => Promise<Prepared<T>>;
-  run: (app: App, input: Context<T>, again: Again) => Promise<void>;
+  run: (app: App, input: Context<T>) => Promise<unknown>;
+  restarted?: (app: App, input: Context<T>, carried: unknown) => Promise<void>;
 }): Scenario {
   return definition as Scenario;
 }
@@ -46,5 +47,6 @@ export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
 /** The file a scenario's spec writes into its folder once its run has passed to its end. */
 export const COMPLETED = "completed";
 
-/** The file holding the process ID of an app a scenario started again, while it runs. */
-export const AGAIN = "again.pid";
+/** The file a scenario's first phase writes, with what its run returned, once it has passed:
+ * its restarted phase starts from it. */
+export const FIRST = "first.json";
