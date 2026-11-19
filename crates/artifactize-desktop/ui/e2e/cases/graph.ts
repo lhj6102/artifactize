@@ -3,7 +3,7 @@
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
 import { REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
-import { writeText } from "../portable.ts";
+import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
@@ -194,23 +194,33 @@ export const scenarios: Scenario[] = [
       await app.graph.camera();
       // Zoomed out so far, every Artifact is a painted block: the canvas paints them (#475).
       await app.graph.until(() => app.graph.paints(), "the large graph paints its blocks");
-      // A painted block opens its Artifact's Detail.
-      await app.graph.clickBlock();
-      await app.detail.until((shown) => /^Artifact /.test(shown.title), "a block opened its Artifact's Detail");
-      await app.graph.clickBackground();
-      await app.detail.closed();
       assert.equal(await app.graph.navigatorShown(), false, "the whole graph in view: no Navigator");
       const whole = await app.graph.zoom();
-      // Zooming in brings named nodes into view.
-      for (let step = 0; step < 12 && (await app.graph.nodes()).length === 0; step += 1) await app.graph.cameraTool("Zoom in");
+      // Zooming in, about the middle of the view, brings named nodes into view.
+      let steps = 0;
+      for (; steps < 12 && (await app.graph.nodes()).length === 0; steps += 1) await app.graph.cameraTool("Zoom in");
       const drawn = await app.graph.nodes();
       assert.ok(drawn.length > 0 && drawn.length < 1200, `the nodes in view are drawn: ${drawn.length}`);
-      assert.ok(await app.graph.zoom() > whole, "zoomed in");
-      await app.graph.until(() => app.graph.navigatorShown(), "part of the graph lies outside the view: the Navigator shows");
       const zoom = await app.graph.zoom();
-      // The Artifact in the middle of the view, and the place the Navigator frames then: that
-      // Artifact's place in the map.
+      assert.ok(zoom > whole, "zoomed in");
+      // The Artifact drawn nearest the middle of the view. Zoomed out again as far, the
+      // Artifacts are blocks, and a click on the block where it was drawn opens its Detail.
       const middle = await app.graph.central();
+      for (let step = 0; step < steps; step += 1) await app.graph.cameraTool("Zoom out");
+      assert.equal(await app.graph.zoom(), whole, "zoomed out as far as it was zoomed in");
+      await app.graph.until(async () => (await app.graph.nodes()).length === 0 && await app.graph.paints(), "the Artifacts are painted as blocks again");
+      await app.graph.clickFromMiddle((middle.x * whole) / zoom, (middle.y * whole) / zoom);
+      await app.detail.until((shown) => shown.title === `Artifact ${middle.id.replace(/^a:/, "")} [basis]`, `the block where ${middle.id} is drawn opened that Artifact's Detail`);
+      await app.graph.clickBackground();
+      await app.detail.closed();
+      for (let step = 0; step < steps; step += 1) await app.graph.cameraTool("Zoom in");
+      await app.graph.until(() => app.graph.navigatorShown(), "part of the graph lies outside the view: the Navigator shows");
+      assert.equal(await app.graph.zoom(), zoom);
+      // The Navigator's map shows the whole graph in small: blocks all over its drawing.
+      const blocks = await app.graph.navigatorBlocks();
+      assert.ok(blocks.every((painted) => painted > 20), `the Navigator's map paints the graph's Artifacts as blocks in each quarter of it: ${blocks.join(", ")}`);
+      // The place the Navigator frames now is the place in the map of the Artifact in the
+      // middle of the view.
       const place = await app.graph.navigatorFrame();
       const near = (at: { x: number; y: number } | null) => !!at && Math.hypot(at.x - middle.x, at.y - middle.y) <= place.step;
       // A click elsewhere in the map moves the camera there, that Artifact out of the middle.
@@ -280,9 +290,11 @@ export const scenarios: Scenario[] = [
     },
     run: async (app, { fixture }) => {
       await app.graph.open("a:release", "Artifact release");
+      // The worktree changed since the shown Run: the tool reads it as it is now.
+      writeText(nativePath(fixture.repo, "release", "notes.md"), "# Release notes\n- Changed since the Run.\n");
       await app.detail.runTool("notes");
       await app.detail.toolLogUntil((rows) => rows.at(-1) === "■ exit 0", "notes ran to its end");
-      assert.deepEqual(await app.detail.toolLog(), ["▶ HH:MM:SS · notes · release", "# Release notes", "- Ready to ship.", "■ exit 0"]);
+      assert.deepEqual(await app.detail.toolLog(), ["▶ HH:MM:SS · notes · release", "# Release notes", "- Changed since the Run.", "■ exit 0"]);
       assert.equal(request(fixture).claim, null, "no claim");
       assert.equal(request(fixture).status, "DEFERRED", "and no review's evidence");
     },

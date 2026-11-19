@@ -33,10 +33,17 @@ export function assertCompleted(): void {
 }
 
 /** Close what each scenario started and delete its files; called once the service has
- * stopped every app of the batch. */
+ * stopped every app of the batch. A scenario whose teardown fails is the one that failed: the
+ * failure names it and is kept as its evidence. */
 export async function teardown(): Promise<void> {
   const results = await Promise.allSettled(owned.splice(0).map((scope) => scope.close()));
-  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+  const failures: unknown[] = [];
+  for (const [index, result] of results.entries()) {
+    if (result.status !== "rejected") continue;
+    const failure = new Error(`the teardown of ${selected[index].id} failed`, { cause: result.reason });
+    failures.push(failure);
+    await keepEvidence(selected[index].id, nativePath(evidence, selected[index].id), inspect(failure, { depth: null }), undefined).catch((cause: unknown) => failures.push(cause));
+  }
   if (failures.length) throw new AggregateError(failures, "scenario teardown failed");
 }
 
@@ -119,8 +126,8 @@ export const config = {
     setVariable("DESKTOP_TEST_SCENARIO", capability["artifactize:scenario"]);
     setVariable("DESKTOP_TEST_CONTEXT", capability["artifactize:context"]);
   },
-  /** A failed test's evidence (E2E-FAILURE-EVIDENCE), a timeout's too: the OS, the scenario and
-   * the failed wait, and a screenshot of the window at that point, while the app still runs. */
+  /** A failed test's evidence (E2E-FAILURE-EVIDENCE), a timeout's too, taken while its app
+   * still runs. */
   async afterTest(_test: unknown, _context: unknown, result: { passed: boolean; error?: Error }) {
     if (result.passed) return;
     const context = readJson(asNativePath(variable("DESKTOP_TEST_CONTEXT") ?? "")) as Context;

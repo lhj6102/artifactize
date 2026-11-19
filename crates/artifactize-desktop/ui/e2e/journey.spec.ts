@@ -4,9 +4,8 @@ import { selectedScenarios } from "./catalog.ts";
 import { recordKeys } from "./keys.ts";
 import { takeSystemFocus, variable } from "./platform.ts";
 import { asNativePath, exists, nativePath, readJson, writeJson, writeText } from "./portable.ts";
-import { COMPLETED, FIRST, keepEvidence, type Context } from "./scenario.ts";
+import { COMPLETED, FIRST, keepEvidence, noteWaits, type Context } from "./scenario.ts";
 import { App } from "./views/app.ts";
-import { waitingFor } from "./views/wait.ts";
 
 // Globals of the configured WDIO Mocha adapter.
 declare const describe: (title: string, body: () => void) => void;
@@ -27,7 +26,7 @@ let running = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     if (!running) return;
-    keepEvidence(item.id, input.evidence, `interrupted by ${signal} while it waited for: ${waitingFor() || "nothing, between two waits"}`, browser)
+    keepEvidence(item.id, input.evidence, `interrupted by ${signal}`, browser)
       .catch((cause: unknown) => console.error(`no evidence of the interrupted ${item.id} was kept: ${String(cause)}`));
   });
 }
@@ -36,6 +35,7 @@ describe(item.title, () => {
   it(restarted ? `${item.id} (started again)` : item.id, async () => {
     const app = new App(browser);
     running = true;
+    noteWaits(browser);
     try {
       await app.loaded();
       await takeSystemFocus(browser);

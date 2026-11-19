@@ -316,42 +316,65 @@ export class Graph {
   /** Whether the large graph's canvas paints anything in the middle of the graph: some pixels
    * there differ from its background. This is a canvas, which only its pixels show. */
   async paints(): Promise<boolean> {
-    return (await this.painted()).length > 20;
-  }
-
-  /** The points in the middle of the large graph's canvas whose pixels differ from its
-   * background: where it paints blocks. */
-  async painted(): Promise<{ x: number; y: number }[]> {
     const area = await this.browser.execute((graph) => {
       const box = document.querySelector(`${graph} canvas.paint`)?.getBoundingClientRect();
-      return box ? { x: box.left, y: box.top, width: box.width, height: box.height, scale: devicePixelRatio } : null;
+      return box ? { x: box.left, y: box.top, width: box.width, height: box.height } : null;
     }, GRAPH);
-    if (!area) return [];
-    const image = PNG.sync.read(Buffer.from(await this.browser.takeScreenshot(), "base64"));
-    const at = (x: number, y: number) => {
-      const offset = (Math.round(y * area.scale) * image.width + Math.round(x * area.scale)) * 4;
-      return [image.data[offset], image.data[offset + 1], image.data[offset + 2]];
-    };
-    const background = at(area.x + 2, area.y + area.height - 2);
-    const points: { x: number; y: number }[] = [];
+    if (!area) return false;
+    const differs = await this.pixels({ x: area.x + 2, y: area.y + area.height - 2 });
+    let painted = 0;
     for (let y = area.y + area.height * 0.25; y < area.y + area.height * 0.75; y += 4) {
-      for (let x = area.x + area.width * 0.25; x < area.x + area.width * 0.75; x += 4) {
-        const pixel = at(x, y);
-        if (pixel.some((value, channel) => Math.abs(value - background[channel]) > 40)) points.push({ x: Math.round(x), y: Math.round(y) });
-      }
+      for (let x = area.x + area.width * 0.25; x < area.x + area.width * 0.75; x += 4) if (differs(x, y)) painted += 1;
     }
-    return points;
+    return painted > 20;
   }
 
-  /** Click a block the large graph paints, inside it: one whose neighbours on every side are
-   * painted too. */
-  async clickBlock(): Promise<void> {
-    const points = await this.painted();
-    const key = (x: number, y: number) => `${x},${y}`;
-    const all = new Set(points.map((point) => key(point.x, point.y)));
-    const inside = points.find((point) => [[-4, 0], [4, 0], [0, -4], [0, 4]].every(([dx, dy]) => all.has(key(point.x + dx, point.y + dy))));
-    if (!inside) throw new Error("the large graph paints no block wide enough to click");
-    await clickAt(this.browser, inside);
+  /** The window's pixels as a screenshot shows them, for what a canvas paints: whether the
+   * pixel at a point differs from the one at `background`. */
+  private async pixels(background: { x: number; y: number }): Promise<(x: number, y: number) => boolean> {
+    const scale = await this.browser.execute(() => devicePixelRatio);
+    const image = PNG.sync.read(Buffer.from(await this.browser.takeScreenshot(), "base64"));
+    const at = (x: number, y: number) => {
+      const offset = (Math.round(y * scale) * image.width + Math.round(x * scale)) * 4;
+      return [image.data[offset], image.data[offset + 1], image.data[offset + 2]];
+    };
+    const ground = at(background.x, background.y);
+    return (x, y) => at(x, y).some((value, channel) => Math.abs(value - ground[channel]) > 40);
+  }
+
+  /** Click the graph `dx`, `dy` pixels from the middle of its view (as `offCentre` measures). */
+  async clickFromMiddle(dx: number, dy: number): Promise<void> {
+    const middle = await this.browser.execute((graph) => {
+      const canvas = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
+      const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const right = detail && detail.left > canvas.left && detail.left < canvas.right ? detail.left : canvas.right;
+      return { x: (canvas.left + right) / 2, y: canvas.top + canvas.height / 2 };
+    }, GRAPH);
+    await clickAt(this.browser, { x: Math.round(middle.x + dx), y: Math.round(middle.y + dy) });
+  }
+
+  /** How many points the Navigator's map paints as blocks in each quarter of its drawing (top
+   * left, top right, bottom left, bottom right), outside the frame of the part in view. The
+   * map is a canvas, which only its pixels show. */
+  async navigatorBlocks(): Promise<number[]> {
+    const area = await this.browser.execute((graph) => {
+      const box = (selector: string) => {
+        const rect = document.querySelector(`${graph} [data-navigator]${selector}`)!.getBoundingClientRect();
+        return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+      };
+      return { edge: box(""), drawing: box(" canvas"), frame: box(" .frame") };
+    }, GRAPH);
+    // The Navigator's own ground shows in its padding, inside its border.
+    const differs = await this.pixels({ x: area.edge.x + 2.5, y: area.edge.y + 2.5 });
+    const { drawing, frame } = area;
+    const quarters = [0, 0, 0, 0];
+    for (let y = drawing.y + 0.5; y < drawing.y + drawing.height; y += 1) {
+      for (let x = drawing.x + 0.5; x < drawing.x + drawing.width; x += 1) {
+        const framed = x >= frame.x - 1 && x <= frame.x + frame.width + 1 && y >= frame.y - 1 && y <= frame.y + frame.height + 1;
+        if (!framed && differs(x, y)) quarters[(y < drawing.y + drawing.height / 2 ? 0 : 2) + (x < drawing.x + drawing.width / 2 ? 0 : 1)] += 1;
+      }
+    }
+    return quarters;
   }
 
   // -------------------------------------------------------------------------------

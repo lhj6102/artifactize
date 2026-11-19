@@ -231,12 +231,12 @@ export function serveLoopbackHttp(handle: (request: IncomingMessage, response: S
   });
 }
 
-/** Listen on the loopback port `port` (0: one the OS assigns): the server, or `undefined` when
- * the port is taken. */
+/** Listen on the loopback port `port`: the server, or `undefined` when the port is taken or
+ * not this user's to listen on. */
 function listenLoopback(port: number): Promise<Server | undefined> {
   const server = createServer();
   return new Promise((done, fail) => {
-    server.once("error", (error: NodeJS.ErrnoException) => (error.code === "EADDRINUSE" ? done(undefined) : fail(error)));
+    server.once("error", (error: NodeJS.ErrnoException) => (error.code === "EADDRINUSE" || error.code === "EACCES" ? done(undefined) : fail(error)));
     server.listen({ port, host: "127.0.0.1", exclusive: true }, () => done(server));
   });
 }
@@ -244,19 +244,17 @@ function listenLoopback(port: number): Promise<Server | undefined> {
 const closed = (server: Server) => new Promise<void>((done) => server.close(() => done()));
 
 /** `count` free loopback ports for the embedded WebDriver servers the service starts, this
- * process's alone until it ends. Each is an even port whose claim, the odd port above it, this
- * process listens on from before it chose the port until it ends; a runner takes a port only
- * with its claim, so no other runner of this machine gets the port before this one's app
- * listens on it, nor between two starts of that app. */
+ * process's alone until it ends. They lie between 20000 and 32767, below the ports a system
+ * assigns by itself, so no listener that asks the system for a port, a fixture's or another
+ * program's, gets one. Each is an even port whose claim, the odd port above it, this process
+ * listens on from before it chose the port until it ends; a runner takes a port only with its
+ * claim, so no other runner of this machine gets the port before this one's app listens on it,
+ * nor between two starts of that app. */
 export async function embeddedPorts(count: number): Promise<number[]> {
   const ports: number[] = [];
   for (let attempt = 0; ports.length < count; attempt += 1) {
-    if (attempt >= 100 * count) throw new Error("no free pair of loopback ports was found");
-    const assigned = await listenLoopback(0);
-    const address = assigned?.address();
-    if (!assigned || !address || typeof address === "string") throw new Error("no loopback port was assigned");
-    await closed(assigned);
-    const port = address.port - (address.port % 2);
+    if (attempt >= 200 * count) throw new Error("no free pair of loopback ports was found between 20000 and 32767");
+    const port = 20000 + 2 * Math.floor(Math.random() * 6384);
     const claim = await listenLoopback(port + 1);
     if (!claim) continue;
     const free = await listenLoopback(port);

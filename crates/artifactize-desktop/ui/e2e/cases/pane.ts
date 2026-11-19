@@ -39,7 +39,9 @@ export const scenarios: Scenario[] = [
       assert.equal((await app.pane.search()).query, "sort:name", "its search as it was");
       assert.deepEqual(await held(), before, "its selection and expanded branches as they were");
       // The split stays as dragged whatever the main area shows.
-      await app.pane.selectBranch("other  master");
+      const other = await app.pane.selectBranch("other  master");
+      assert.notEqual(other.entries[0].id, run, "another branch's Run");
+      await app.graph.titled(other.entries[0].id);
       assert.ok(Math.abs((await app.pane.shown()).width - width) <= 2, "the split stays as dragged");
       // The Detail's left edge sets its width, kept when it opens again.
       await app.graph.node("a:docs");

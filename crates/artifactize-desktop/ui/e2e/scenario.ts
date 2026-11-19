@@ -44,18 +44,43 @@ export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
   return definition as Scenario;
 }
 
+const WAITS = Symbol.for("artifactize-desktop-e2e.waits");
+/** The waits this process's scenario is in, a wait inside another after it, and the wait it
+ * started last. They hang on the process's global object: the configuration's hooks and the
+ * spec may each load this module for themselves, and read the same. */
+const waits = ((globalThis as { [WAITS]?: { running: string[]; last: string } })[WAITS] ??= { running: [], last: "" });
+
+/** Note every wait of `browser` and of its elements while it lasts, by what its timeout would
+ * say: a scenario stopped in a wait, or between two, names it in its evidence. */
+export function noteWaits(browser: WebdriverIO.Browser): void {
+  type Wait = (condition: unknown, options?: { timeoutMsg?: string }) => Promise<unknown>;
+  const noted = async (wait: Wait, condition: unknown, options?: { timeoutMsg?: string }) => {
+    const what = (options?.timeoutMsg ?? "a wait that names nothing").replace(/^timed out: /, "");
+    waits.running.push(what);
+    waits.last = what;
+    try { return await wait(condition, options); }
+    finally { waits.running.splice(waits.running.lastIndexOf(what), 1); }
+  };
+  browser.overwriteCommand("waitUntil", noted as never);
+  browser.overwriteCommand("waitUntil", noted as never, true);
+}
+
 /** Keep the evidence of the scenario `id`, which failed (E2E-FAILURE-EVIDENCE), in its folder
- * `evidence`: the OS, the scenario and its failure, which names the wait that failed, and a
- * screenshot of the window as `browser` shows it then, or why there is none. What failed first
- * is kept: a later failure of the same run of it changes nothing. */
+ * `evidence`: the OS, the scenario and its failure, which names the wait that failed; for a
+ * scenario stopped otherwise (a timeout of the whole scenario, an interrupt) the wait it was
+ * in then, or the last it had ended; and a screenshot of the window as `browser` shows it
+ * then, or why there is none. What failed first is kept: a later failure of the same run of
+ * it changes nothing. */
 export async function keepEvidence(id: string, evidence: NativePath, failure: string, browser: WebdriverIO.Browser | undefined): Promise<void> {
   const restarted = variable("DESKTOP_TEST_PHASE") === "restarted";
   const kept = restarted ? asNativePath(`${evidence}-started-again`) : evidence;
   const report = nativePath(kept, "failure.txt");
   if (exists(report)) return;
-  writeText(nativePath(makeDirectory(kept), "failure.txt"), `OS: ${systemName}\nscenario: ${id}${restarted ? " (started again)" : ""}\n\n${failure}\n`);
-  console.error(`evidence of ${id}: ${kept}`);
-  await (browser ? browser.saveScreenshot(nativePath(kept, "window.png")) : Promise.reject(new Error("its app was not started")))
+  const waiting = waits.running.length ? `the wait it was in then: ${waits.running.join(", within it: ")}\n` : waits.last ? `no wait ran then; its last wait, which had ended: ${waits.last}\n` : "";
+  const said = `OS: ${systemName}\nscenario: ${id}${restarted ? " (started again)" : ""}\n${waiting}\n${failure}\n`;
+  writeText(nativePath(makeDirectory(kept), "failure.txt"), said);
+  console.error(`evidence of ${id} in ${kept}:\n${said}`);
+  await (browser ? browser.saveScreenshot(nativePath(kept, "window.png")) : Promise.reject(new Error("its app is not running")))
     .catch((cause: unknown) => writeText(nativePath(kept, "window.txt"), `no screenshot: ${String(cause)}`));
 }
 

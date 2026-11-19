@@ -170,6 +170,12 @@ export const scenarios: Scenario[] = [
     run: async (app, { fixture }) => {
       await app.graph.node("a:core");
       assert.equal(await app.graph.hasTool("Reset layout"), false, "laid out automatically");
+      // Where core is beside docs, at the zoom shown: whatever the camera does.
+      const offset = async () => {
+        const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
+        return { x: (core.x - docs.x) / (zoom / 100), y: (core.y - docs.y) / (zoom / 100) };
+      };
+      const automatic = await offset();
       const before = (await app.graph.box("a:core"))!;
       await app.graph.drag("a:core", 0, 60);
       await app.eventually(() => ["app", "bundle", "core", "docs"].every((name) => placed(definitionText(fixture, name))), "every top-level place written");
@@ -178,17 +184,13 @@ export const scenarios: Scenario[] = [
         const after = await app.graph.box("a:core");
         return !!after && Math.abs(after.y - before.y - 60) <= 12 && Math.abs(after.x - before.x) <= 12;
       }, "core drawn where it was released");
-      // Where core is beside docs, at the zoom shown: for the app started again.
-      const offset = async () => {
-        const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
-        return { x: (core.x - docs.x) / (zoom / 100), y: (core.y - docs.y) / (zoom / 100) };
-      };
-      return await offset();
+      // For the app started again: where core was laid out automatically, and where it is now.
+      return { automatic, placed: await offset() };
     },
     // A later app draws core where it was placed, beside the others; Reset layout then lays the
     // level out automatically again, and a node dropped on a whole becomes its part.
     restarted: async (app, { fixture }, carried) => {
-      const placedAt = carried as { x: number; y: number };
+      const { automatic, placed: placedAt } = carried as Record<"automatic" | "placed", { x: number; y: number }>;
       await app.graph.node("a:core");
       const offset = async () => {
         const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
@@ -196,14 +198,13 @@ export const scenarios: Scenario[] = [
       };
       const restarted = await offset();
       assert.ok(Math.abs(restarted.x - placedAt.x) <= 8 && Math.abs(restarted.y - placedAt.y) <= 8, `core placed as it was dropped: ${JSON.stringify({ placedAt, restarted })}`);
-      const shown = (await app.graph.box("a:core"))!;
       await app.graph.until(() => app.graph.hasTool("Reset layout"), "Reset layout offered for the top level");
       await app.graph.tool("Reset layout");
       await app.eventually(() => ["app", "bundle", "core", "docs"].every((name) => !placed(definitionText(fixture, name))), "every place left the files");
       await app.graph.until(async () => {
-        const reset = await app.graph.box("a:core");
-        return !!reset && (Math.abs(reset.y - shown.y) > 12 || Math.abs(reset.x - shown.x) > 12);
-      }, "core drawn at its automatic place again");
+        const reset = await offset();
+        return Math.abs(reset.x - automatic.x) <= 8 && Math.abs(reset.y - automatic.y) <= 8;
+      }, "core drawn beside docs as the automatic layout had it");
       // docs dropped on app's title becomes app's part, drawn under the part it would cover there.
       await app.graph.dragOnto("a:docs", "a:app");
       await app.eventually(() => /^parts = \[.*"docs".*\]/m.test(definitionText(fixture, "app") ?? ""), "docs added to app's parts");
@@ -232,11 +233,14 @@ export const scenarios: Scenario[] = [
       // The Definition's Comment opens the field under docs; Enter writes it.
       await app.graph.open("a:docs", "Artifact docs");
       await app.detail.definitionAction("Comment");
-      await app.detail.writeComment("docs", "Read the core first\nthen the docs");
-      await app.eventually(() => /\[annotations\.comment\]/.test(definitionText(fixture, "docs") ?? ""), "docs's file holds the comment");
+      const note = "Read the core first\nthen the docs";
+      // The comment as a file holds it: a multi-line string of its TOML.
+      const saved = `\n[annotations.comment]\ntext = """\n${note}"""\n`;
+      await app.detail.writeComment("docs", note);
+      await app.eventually(() => definitionText(fixture, "docs")?.endsWith(saved) === true, "docs's file holds the comment as it was entered");
       await app.graph.clickBackground();
       await app.detail.closed();
-      await app.graph.node("a:docs", (node) => node.comment === "Read the core first\nthen the docs", "the comment drawn under docs");
+      await app.graph.node("a:docs", (node) => node.comment === note, "the comment drawn under docs");
       // A click on core's comment opens it; an empty field removes it.
       await app.detail.openComment("a:core", "core");
       await app.detail.writeComment("core", "");
@@ -244,9 +248,9 @@ export const scenarios: Scenario[] = [
       await app.graph.node("a:core", (node) => node.comment === "", "nothing drawn under core");
       // docs's comment dragged onto core, which has none now, moves there.
       await app.graph.dragComment("a:docs", "a:core");
-      await app.eventually(() => /\[annotations\.comment\]/.test(definitionText(fixture, "core") ?? "") && !/annotations/.test(definitionText(fixture, "docs") ?? ""),
-        "the comment moved from docs's file to core's");
-      await app.graph.node("a:core", (node) => node.comment === "Read the core first\nthen the docs", "drawn under core");
+      await app.eventually(() => definitionText(fixture, "core")?.endsWith(saved) === true && !/annotations/.test(definitionText(fixture, "docs") ?? ""),
+        "the comment moved, as it was, from docs's file to core's");
+      await app.graph.node("a:core", (node) => node.comment === note, "drawn under core");
       await app.graph.node("a:docs", (node) => node.comment === "", "and no longer under docs");
     },
   }),
