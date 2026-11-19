@@ -282,8 +282,10 @@ export async function embeddedReady(port: number): Promise<boolean> {
 // ---------------------------------------------------------------------------------
 // Files read whole
 
-/** A file's original bytes, for checksums. */
+/** A file's original bytes, for checksums and images. */
 export function readBytes(path: NativePath): Uint8Array { return readFileSync(path); }
+
+export function writeBytes(path: NativePath, bytes: Uint8Array): void { writeFileSync(path, bytes); }
 
 /** Every non-directory entry of a source tree, including links and special files. */
 export function sourceTree(root: NativePath): { path: NativePath; name: string; kind: "file" | "other" }[] {

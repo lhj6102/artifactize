@@ -161,13 +161,16 @@ export async function nativeInput(browser: WebdriverIO.Browser, input:
  * Waits until the centre takes the pointer: a closed modal's body lock lifts on a timer
  * after the dialog has left the page, and until then nothing under it is hit. */
 export async function visibleCenter(browser: WebdriverIO.Browser, element: WebdriverIO.Element, ms = 15000): Promise<{ x: number; y: number }> {
-  const deadline = Date.now() + ms;
-  for (;;) {
-    const found = await centre(browser, element);
-    if (found.point) return found.point;
-    if (Date.now() > deadline) throw new Error(`the pointer target's centre is not visible: ${found.failure}`);
-    await browser.pause(50);
+  let found: Awaited<ReturnType<typeof centre>> = {};
+  try {
+    await browser.waitUntil(async () => {
+      found = await centre(browser, element);
+      return found.point !== undefined;
+    }, { timeout: ms, interval: 50, timeoutMsg: "timed out: the pointer target's centre takes the pointer" });
+  } catch (error) {
+    throw new Error(`the pointer target's centre is not visible: ${found.failure}`, { cause: error });
   }
+  return found.point!;
 }
 
 function centre(browser: WebdriverIO.Browser, element: WebdriverIO.Element): Promise<{ point?: { x: number; y: number }; failure?: string }> {

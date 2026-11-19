@@ -150,13 +150,14 @@ export function folderHoldsCommand(folder: string, name: string): boolean {
 }
 
 /** pnpm as this run can start it: the entry point pnpm passed to this script, else (a Human
- * tool started by node) pnpm on PATH, through its JS entry on Windows, whose .cmd shim Node
- * cannot spawn without a shell. */
+ * tool started by node, or a script another package manager started, whose entry point is not
+ * pnpm's) pnpm on PATH, through its JS entry on Windows, whose .cmd shim Node cannot spawn
+ * without a shell. */
 export function packageCommand(args: string[]): { program: string; args: string[] } {
   const entry = variable("npm_execpath");
   if (entry && isAbsolute(entry)) {
     if (/^pnpm\.(?:c|m)?js$/i.test(basename(entry))) return { program: process.execPath, args: [entry, ...args] };
-    return { program: entry, args };
+    if (/^pnpm(?:\.exe)?$/i.test(basename(entry))) return { program: entry, args };
   }
   if (WINDOWS) {
     for (const folder of programPath(process.env)) {

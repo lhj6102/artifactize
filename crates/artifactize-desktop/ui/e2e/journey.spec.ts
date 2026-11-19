@@ -4,7 +4,7 @@ import { selectedScenarios } from "./catalog.ts";
 import { recordKeys } from "./keys.ts";
 import { takeSystemFocus, variable } from "./platform.ts";
 import { asNativePath, exists, nativePath, readJson, writeJson, writeText } from "./portable.ts";
-import { COMPLETED, FIRST, keepEvidence, noteWaits, type Context } from "./scenario.ts";
+import { COMPLETED, FIRST, LAST_WINDOW, keepEvidence, noteWaits, type Context } from "./scenario.ts";
 import { App } from "./views/app.ts";
 
 // Globals of the configured WDIO Mocha adapter.
@@ -40,12 +40,17 @@ describe(item.title, () => {
       await app.loaded();
       await takeSystemFocus(browser);
       await recordKeys(browser);
+      // The window as a passed flow leaves it, kept for a failure that comes once the app has
+      // stopped; a flow that ended its app leaves none.
+      const leave = () => browser.saveScreenshot(nativePath(input.root, LAST_WINDOW)).then(() => undefined, () => undefined);
       if (restarted) {
         const first = nativePath(input.root, FIRST);
         if (!exists(first)) throw new Error(`${item.id} did not pass before its app was started again`);
         await item.restarted!(app, input, (readJson(first) as { carried: unknown }).carried);
+        await leave();
       } else {
         const carried = await item.run(app, input);
+        await leave();
         if (item.restarted) {
           // Quit as a person does, by closing the window, before the app is started again.
           await app.exitsBy(() => app.closeWindow(), input.port);

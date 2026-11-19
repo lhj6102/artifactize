@@ -1,6 +1,6 @@
 // A scenario: one journey flow on one app, with the fixtures it prepares before the app starts.
 import { systemName, variable, type Environment } from "./platform.ts";
-import { asNativePath, exists, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
+import { asNativePath, exists, makeDirectory, nativePath, writeBytes, writeText, type NativePath } from "./portable.ts";
 import type { Owned } from "./fixtures/owned.ts";
 import type { Fixture } from "./fixtures/repo.ts";
 import type { App } from "./views/app.ts";
@@ -68,10 +68,11 @@ export function noteWaits(browser: WebdriverIO.Browser): void {
 /** Keep the evidence of the scenario `id`, which failed (E2E-FAILURE-EVIDENCE), in its folder
  * `evidence`: the OS, the scenario and its failure, which names the wait that failed; for a
  * scenario stopped otherwise (a timeout of the whole scenario, an interrupt) the wait it was
- * in then, or the last it had ended; and a screenshot of the window as `browser` shows it
- * then, or why there is none. What failed first is kept: a later failure of the same run of
- * it changes nothing. */
-export async function keepEvidence(id: string, evidence: NativePath, failure: string, browser: WebdriverIO.Browser | undefined): Promise<void> {
+ * in then, or the last it had ended; and a screenshot of the window, as `shown`, its browser,
+ * shows it then, or, once its app has stopped, the image `shown` its flow left of it
+ * (LAST_WINDOW); or why there is none. What failed first is kept: a later failure of the same
+ * run of it changes nothing. */
+export async function keepEvidence(id: string, evidence: NativePath, failure: string, shown: WebdriverIO.Browser | Uint8Array | undefined): Promise<void> {
   const restarted = variable("DESKTOP_TEST_PHASE") === "restarted";
   const kept = restarted ? asNativePath(`${evidence}-started-again`) : evidence;
   const report = nativePath(kept, "failure.txt");
@@ -80,9 +81,15 @@ export async function keepEvidence(id: string, evidence: NativePath, failure: st
   const said = `OS: ${systemName}\nscenario: ${id}${restarted ? " (started again)" : ""}\n${waiting}\n${failure}\n`;
   writeText(nativePath(makeDirectory(kept), "failure.txt"), said);
   console.error(`evidence of ${id} in ${kept}:\n${said}`);
-  await (browser ? browser.saveScreenshot(nativePath(kept, "window.png")) : Promise.reject(new Error("its app is not running")))
+  const window = nativePath(kept, "window.png");
+  if (shown instanceof Uint8Array) return writeBytes(window, shown);
+  await (shown ? shown.saveScreenshot(window) : Promise.reject(new Error("its app is not running, and its flow left no image of its window")))
     .catch((cause: unknown) => writeText(nativePath(kept, "window.txt"), `no screenshot: ${String(cause)}`));
 }
+
+/** The image a scenario's spec keeps in its folder once its flow has passed: the window as the
+ * flow left it, for a failure that comes after its app has stopped (its teardown's). */
+export const LAST_WINDOW = "last-window.png";
 
 /** The file a scenario's spec writes into its folder once its run has passed to its end. */
 export const COMPLETED = "completed";

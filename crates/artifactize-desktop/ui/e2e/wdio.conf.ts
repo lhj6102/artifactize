@@ -8,8 +8,8 @@ import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
 import { displayEnvironment, setVariable, variable, type Environment } from "./platform.ts";
-import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readJson, suitePath, writeJson } from "./portable.ts";
-import { COMPLETED, keepEvidence, type Context } from "./scenario.ts";
+import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson } from "./portable.ts";
+import { COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
 
 const candidate = readCandidate();
 const selected = selectedScenarios(JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[]);
@@ -34,15 +34,18 @@ export function assertCompleted(): void {
 
 /** Close what each scenario started and delete its files; called once the service has
  * stopped every app of the batch. A scenario whose teardown fails is the one that failed: the
- * failure names it and is kept as its evidence. */
+ * failure names it and is kept as its evidence, with the window as its flow left it. */
 export async function teardown(): Promise<void> {
-  const results = await Promise.allSettled(owned.splice(0).map((scope) => scope.close()));
+  const scopes = owned.splice(0);
+  // Read before the folders go.
+  const windows = scopes.map((scope) => nativePath(scope.root, LAST_WINDOW)).map((image) => (exists(image) ? readBytes(image) : undefined));
+  const results = await Promise.allSettled(scopes.map((scope) => scope.close()));
   const failures: unknown[] = [];
   for (const [index, result] of results.entries()) {
     if (result.status !== "rejected") continue;
-    const failure = new Error(`the teardown of ${selected[index].id} failed`, { cause: result.reason });
+    const failure = new Error(`the teardown of ${selected[index].id} failed, once its flow had ended and its app had stopped: no wait of it was running`, { cause: result.reason });
     failures.push(failure);
-    await keepEvidence(selected[index].id, nativePath(evidence, selected[index].id), inspect(failure, { depth: null }), undefined).catch((cause: unknown) => failures.push(cause));
+    await keepEvidence(selected[index].id, nativePath(evidence, selected[index].id), inspect(failure, { depth: null }), windows[index]).catch((cause: unknown) => failures.push(cause));
   }
   if (failures.length) throw new AggregateError(failures, "scenario teardown failed");
 }
