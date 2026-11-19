@@ -36,7 +36,7 @@ By default, an eval waits until its upstream dependency gates are satisfied (`GR
 
 - Ready non-speculative work has priority: when it needs `--jobs` or backend capacity held by a speculative review, the speculative review is interrupted and requeued for later (each start counts toward `--max-executions`).
 - If an upstream dependency turns `GREEN`, the speculative result is kept and saves wall time.
-- If an upstream dependency turns `RED` or `ERROR`, Artifactize immediately cancels any running speculative work that depends on it outside its own Artifact and cycle, withdraws any already completed speculative result that depends on it (removing that withdrawn result from reuse), and marks downstream requests (including affected sign-offs) `BLOCKED`.
+- If an upstream dependency turns `RED` or `ERROR`, Artifactize immediately cancels any running speculative work that depends on it outside its own Artifact and cycle, withdraws any already completed speculative result that depends on it (removing that result from the local cache and reuse even if it had entered the cache before the upstream gate resolved), and marks downstream requests (including affected sign-offs) `BLOCKED`.
 - During iterative debugging ([Focus then sweep](../agent-plugin/plugin.md#focus-then-sweep-iterate-on-red-evals)), `verify --eval ID --speculate --wait` lets a builder rerun one eval even while its upstream inputs are stale.
 
 ## Sign-offs and the end of a Run {#sign-offs-and-the-end-of-a-run}
