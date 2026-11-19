@@ -21,8 +21,6 @@ pub(crate) async fn run(
     let capture_limit = limit.checked_add(OUTPUT_PROBE_BYTES).ok_or_else(|| {
         LaunchError::Failed("Output limit leaves no room for the truncation probe.".into())
     })? as u64;
-    super::check_launch_program(&launch.program)
-        .map_err(|error| LaunchError::Failed(error.to_string()))?;
     let mut command = tokio::process::Command::new(&launch.program);
     command
         .args(&launch.args)

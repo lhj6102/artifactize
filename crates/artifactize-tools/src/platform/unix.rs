@@ -17,11 +17,6 @@ pub(crate) fn is_executable(path: &Path) -> bool {
     })
 }
 
-/// Unix launches the program directly with its argument vector, independent of its suffix.
-pub(crate) fn check_launch_program(_program: &Path) -> io::Result<()> {
-    Ok(())
-}
-
 /// A started program in a process group of its own, so that its children can be killed
 /// with it.
 pub(crate) struct Tree {

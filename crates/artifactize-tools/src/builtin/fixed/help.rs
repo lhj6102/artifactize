@@ -21,7 +21,6 @@ pub(super) async fn help(
     cancellation: &CancellationToken,
 ) -> Result<String, String> {
     let program = program::resolve(program, cwd).map_err(|error| error.to_string())?;
-    crate::platform::check_launch_program(&program).map_err(|error| error.to_string())?;
     args.push(OsString::from("--help"));
     let launch = Launch {
         program,
