@@ -6,12 +6,17 @@ use std::{
     path::PathBuf,
 };
 
-use super::{Cli, Command, CommandArgs, interactive::Scope};
+use super::{Cli, Command, CommandArgs, ToolsCommand, interactive::Scope};
 use artifactize_core::types::{RequestId, ReviewerId};
 
 /// What the CLI can dispatch, after resolving flags that choose mutually exclusive scopes.
 pub(super) enum Invocation {
     General(Option<Command>, Option<PathBuf>),
+    ToolCheck {
+        options: artifactize_core::diagnostics::ToolCheckOptions,
+        repo: Option<PathBuf>,
+    },
+    Tool(artifactize_tools::cli::Tool),
     Monitor(Scope),
     Review {
         scope: Scope,
@@ -29,7 +34,7 @@ pub(super) struct Parsed {
 #[derive(Debug)]
 pub(super) enum ParseError {
     RepeatedGlobal { name: &'static str, json: bool },
-    ConflictingScope { message: String, json: bool },
+    InvalidOptions { message: String, json: bool },
     Clap { error: clap::Error, json: bool },
 }
 
@@ -145,19 +150,26 @@ pub(super) fn parse_args(args: &[OsString]) -> Result<Parsed, ParseError> {
     let state_dir = globals
         .state_dir
         .and_then(|state| state.resolve(cli.state_dir));
-    let scope_error = |message| ParseError::ConflictingScope { message, json };
+    let invalid = |message| ParseError::InvalidOptions { message, json };
     let invocation = match cli.command {
         Some(CommandArgs::Monitor { all, path }) => {
-            Invocation::Monitor(Scope::from_args(all, path, repo).map_err(scope_error)?)
+            Invocation::Monitor(Scope::from_args(all, path, repo).map_err(invalid)?)
         }
         Some(CommandArgs::Review {
             request,
             all,
             reviewer,
         }) => Invocation::Review {
-            scope: Scope::for_review(all, repo).map_err(scope_error)?,
+            scope: Scope::for_review(all, repo).map_err(invalid)?,
             request,
             reviewer,
+        },
+        Some(CommandArgs::Tools { command }) => match command {
+            ToolsCommand::Check(args) => Invocation::ToolCheck {
+                options: args.try_into().map_err(invalid)?,
+                repo,
+            },
+            ToolsCommand::Builtin(tool) => Invocation::Tool(tool),
         },
         Some(CommandArgs::General(command)) => Invocation::General(Some(command), repo),
         None => Invocation::General(None, repo),

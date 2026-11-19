@@ -47,12 +47,12 @@ mod test_os;
 #[cfg(test)]
 mod test_declaration;
 
-/// A saved request, shared with the unit tests of `artifactize-tui`.
+/// A saved request shared by test fixtures.
 #[cfg(test)]
 #[path = "../tests/support/request.rs"]
 mod test_request;
 
-/// Saved Agent conversation files, shared with the unit tests of `artifactize-tui`.
+/// Saved Agent conversation files shared by test fixtures.
 #[cfg(test)]
 #[path = "../tests/support/session_files.rs"]
 mod test_session_files;

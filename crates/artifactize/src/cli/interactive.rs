@@ -1,7 +1,7 @@
-//! Terminal UI setup and cancellation workflows.
+//! Desktop launch arguments and validation for the CLI shortcuts.
 
-use super::{Screens, cancellation_listener};
-use std::path::PathBuf;
+use artifactize_core::types::{RequestId, ReviewerId};
+use std::{ffi::OsString, path::PathBuf};
 
 pub(super) enum Scope {
     All,
@@ -40,49 +40,52 @@ impl Scope {
     }
 }
 
-pub(super) async fn monitor(
-    state_dir: Option<PathBuf>,
-    scope: Scope,
-    json: bool,
-    screens: Screens,
-) -> Result<u8, String> {
-    if json {
-        return Err("monitor is an interactive terminal UI; --json is not supported.".into());
-    }
-    let state = artifactize_core::store::state_dir(state_dir.as_deref())?;
-    let repo = scope.repository();
-    let (cancellation, listener) = cancellation_listener()?;
-    let result = (screens.monitor)(state, repo, cancellation).await;
-    listener.abort();
-    result?;
-    Ok(0)
+pub(super) fn monitor(state_dir: Option<PathBuf>, scope: Scope, json: bool) -> Result<u8, String> {
+    launch(args("monitor", state_dir, scope, None, None), json)
 }
 
 pub(super) async fn review(
     state_dir: Option<PathBuf>,
     scope: Scope,
-    request: Option<artifactize_core::types::RequestId>,
-    reviewer: Option<artifactize_core::types::ReviewerId>,
+    request: Option<RequestId>,
+    reviewer: Option<ReviewerId>,
     json: bool,
-    screens: Screens,
 ) -> Result<u8, String> {
-    if json {
-        return Err("review is an interactive terminal UI; --json is not supported.".into());
-    }
-    let reviewer = match reviewer {
-        Some(reviewer) => Ok(reviewer),
-        None => artifactize_core::human::default_reviewer(),
-    }?;
-    let state = artifactize_core::store::state_dir(state_dir.as_deref())?;
-    if let Some(id) = &request {
+    if !json && let Some(id) = &request {
+        let state = artifactize_core::store::state_dir(state_dir.as_deref())?;
         artifactize_core::store::read_request(&state, id).await?;
     }
-    // The list searches every repository; --repo starts it on that repository's term, and
-    // --all (the default) stays accepted.
-    let repo = scope.repository();
-    let (cancellation, listener) = cancellation_listener()?;
-    let result = (screens.review)(state, repo, reviewer, request, cancellation).await;
-    listener.abort();
-    result?;
+    launch(args("review", state_dir, scope, request, reviewer), json)
+}
+
+fn launch(args: Vec<OsString>, json: bool) -> Result<u8, String> {
+    if json {
+        return Err("Desktop launch shortcuts do not support --json.".into());
+    }
+    artifactize_core::platform::launch_desktop(&args)?;
     Ok(0)
+}
+
+pub(super) fn args(
+    command: &str,
+    state_dir: Option<PathBuf>,
+    scope: Scope,
+    request: Option<RequestId>,
+    reviewer: Option<ReviewerId>,
+) -> Vec<OsString> {
+    let mut args = vec![OsString::from(command)];
+    args.extend(request.map(|id| OsString::from(id.as_str())));
+    for (flag, value) in [
+        ("--repo", scope.repository().map(PathBuf::into_os_string)),
+        ("--state-dir", state_dir.map(PathBuf::into_os_string)),
+        ("--reviewer", reviewer.map(|id| OsString::from(id.as_str()))),
+    ] {
+        if let Some(value) = value {
+            let mut option = OsString::from(flag);
+            option.push("=");
+            option.push(value);
+            args.push(option);
+        }
+    }
+    args
 }

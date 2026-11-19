@@ -17,6 +17,7 @@
 //! platform module, where those implementations live.
 
 pub(crate) mod desktop_app;
+pub use desktop_app::launch as launch_desktop;
 pub mod desktop_commands;
 mod detached;
 pub mod environment;

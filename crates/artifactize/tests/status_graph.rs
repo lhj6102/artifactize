@@ -64,7 +64,7 @@ impl Fixture {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let expected = match value["id"].as_str() {
             Some(id) if args[0] == "verify" => {
-                format!("Started {id} (follow: artifactize monitor)\n")
+                format!("Started {id} (follow: artifactize run watch {id})\n")
             }
             _ => String::new(),
         };

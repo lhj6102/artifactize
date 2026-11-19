@@ -565,7 +565,8 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     let bob = Machine::new(&root, "bob", &server.url, &server.token("bob-ci", "read"));
     let repo = human_repo(root.path(), "repo");
 
-    // Bob waits for a sign-off that does not exist anywhere yet.
+    // Keep Bob waiting across the ordered local and remote publication steps.
+    owned_run::hold_signoffs(&bob.state);
     let waiting = support::os::start(&mut bob.command(&repo, &["verify", "--wait", "--all"]));
     let waiting = RunChild::new(waiting, &bob.state, &repo);
     let saved = waiting.human_waiting();

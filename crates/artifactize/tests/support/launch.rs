@@ -65,14 +65,7 @@ impl Launched {
     /// Adopt the launcher and its target before the application-level PID handoff.
     fn adopt_launch(&mut self) -> bool {
         if let Some(identity) = self.native_identity() {
-            let birth = (identity.pid.get(), identity.start_time);
-            if !self.launch.contains(&birth) {
-                self.processes
-                    .as_mut()
-                    .unwrap()
-                    .own_identity(birth.0, birth.1);
-                self.launch.push(birth);
-            }
+            self.own_identity(identity.pid.get(), identity.start_time);
         }
         let Ok(bytes) = fs::read(self.path().join("launch-identities")) else {
             return !self.launch.is_empty();
@@ -81,14 +74,18 @@ impl Launched {
             return !self.launch.is_empty();
         };
         for pid in pids {
-            if let Some(start) = os::observed_start_time(pid)
-                && !self.launch.contains(&(pid, start))
-            {
-                self.processes.as_mut().unwrap().own(pid);
-                self.launch.push((pid, start));
+            if let Some(start) = os::observed_start_time(pid) {
+                self.own_identity(pid, start);
             }
         }
         !self.launch.is_empty()
+    }
+
+    fn own_identity(&mut self, pid: u32, start: u64) {
+        if !self.launch.contains(&(pid, start)) {
+            self.processes.as_mut().unwrap().own_identity(pid, start);
+            self.launch.push((pid, start));
+        }
     }
 
     pub fn own(&mut self) -> Option<u32> {
@@ -100,6 +97,9 @@ impl Launched {
             .ok()?
             .parse()
             .ok()?;
+        // The PID and the earlier identities can both appear after our first read.
+        self.own_identity(pid, os::observed_start_time(pid)?);
+        self.adopt_launch();
         self.handoff = Some(Handoff { pid });
         Some(pid)
     }

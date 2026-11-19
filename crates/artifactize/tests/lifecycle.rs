@@ -102,15 +102,48 @@ async fn owned_root_releases_every_repository_before_removal_on_return_and_unwin
     }
 }
 
+/// Reclaim the deliberately retained inputs, even when the test assertion unwinds.
+struct RetainedRoot {
+    directory: std::path::PathBuf,
+    state: std::path::PathBuf,
+    repo: std::path::PathBuf,
+}
+
+impl Drop for RetainedRoot {
+    fn drop(&mut self) {
+        let cleanup = owned_run::release_repo_result(&self.state, &self.repo).and_then(|()| {
+            match fs::remove_dir_all(&self.directory) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.to_string()),
+            }
+        });
+        if let Err(error) = cleanup {
+            let path = support::os::path_text(&self.directory);
+            if std::thread::panicking() {
+                eprintln!("Could not reclaim fixture inputs at {path}: {error}");
+            } else {
+                panic!("Could not reclaim fixture inputs at {path}: {error}");
+            }
+        }
+    }
+}
+
 #[tokio::test]
 async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_scopes() {
     for unwind in [false, true] {
         // No auto-deleting ancestor may remove inputs retained by failed Run cleanup.
-        let root = owned_run::Root::from(support::os::tempdir());
-        let directory = root.path().to_owned();
-        let broken = root.path().join("a-broken-state");
-        let state = root.path().join("z-active-state");
-        let repo = root.path().join("repo");
+        let temp = support::os::tempdir();
+        let directory = temp.path().to_owned();
+        let broken = directory.join("a-broken-state");
+        let state = directory.join("z-active-state");
+        let repo = directory.join("repo");
+        let _retained = RetainedRoot {
+            directory: directory.clone(),
+            state: state.clone(),
+            repo: repo.clone(),
+        };
+        let root = owned_run::Root::from(temp);
         fs::create_dir(&broken).unwrap();
         fs::create_dir(&repo).unwrap();
         fs::write(
@@ -169,8 +202,6 @@ async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_
             b"owned input"
         );
         assert!(directory.exists(), "failed cleanup retains inputs");
-        // Explicit removal is safe only after every saved worker/supervisor has exited.
-        fs::remove_dir_all(&directory).unwrap();
     }
 }
 

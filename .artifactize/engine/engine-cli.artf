@@ -98,18 +98,18 @@ title = "Clippy passes for every Rust target"
 profile = { kind = "runtime", command = "cargo", args = ["clippy", "--locked", "-p", "artifactize", "--all-targets", "--", "-D", "warnings"], timeout_ms = 1800000 }
 
 [evals.clippy.payload]
-instruction = "Check every Rust target of {engine-cli} with {engine-core} with {engine-tools} with {engine-tui} with {engine-mcp} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}, treating every clippy warning as an error."
+instruction = "Check every Rust target of {engine-cli} with {engine-core} with {engine-tools} with {engine-mcp} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}, treating every clippy warning as an error."
 
 [evals.tests]
 title = "The Rust crate tests pass"
 profile = { kind = "runtime", command = "cargo", args = ["test", "--locked", "-p", "artifactize"], timeout_ms = 1800000 }
 
 [evals.tests.payload]
-instruction = "Run the tests of {engine-cli} with {engine-core} with {engine-tools} with {engine-tui} with {engine-mcp} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}. Fixtures build or declare every executable they use and own their resources."
+instruction = "Run the tests of {engine-cli} with {engine-core} with {engine-tools} with {engine-mcp} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}. Fixtures build or declare every executable they use and own their resources."
 
 [evals.publish]
 title = "The CLI packages and builds as its release publishes it"
 profile = { kind = "runtime", command = "node", args = ["publish.mjs"], timeout_ms = 1800000 }
 
 [evals.publish.payload]
-instruction = "Package and verify {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} exactly as its release would publish it, without uploading. The CLI's release publishes the library crates it depends on, {engine-core}, {engine-tools}, {engine-tui} and {engine-mcp}, in the same publication, so they are packaged with it. Allow the builder's uncommitted candidate; the package verification still builds every crate."
+instruction = "Package and verify {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} exactly as its release would publish it, without uploading. The CLI's release publishes the library crates it depends on, {engine-core}, {engine-tools} and {engine-mcp}, in the same publication, so they are packaged with it. Allow the builder's uncommitted candidate; the package verification still builds every crate."

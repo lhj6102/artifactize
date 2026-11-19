@@ -24,7 +24,7 @@ mod run;
 use run::RunCommand;
 mod runtime;
 use runtime::cancellation_listener;
-pub use runtime::{Screens, run};
+pub use runtime::run;
 mod secret;
 mod selection;
 use selection::SelectionArgs;
@@ -85,7 +85,7 @@ pub struct Cli {
 /// Raw interactive arguments are lowered to an exclusive scope at the parse boundary.
 #[derive(Debug, Subcommand)]
 enum CommandArgs {
-    /// Browse Runs; starts on ALL regardless of cwd. Paths select only the initial repository.
+    /// Open the Desktop app to browse Runs; paths select only the initial repository.
     Monitor {
         /// Initial repository/worktree; all scopes remain accessible in the UI.
         #[arg(value_name = "PATH", conflicts_with = "repo")]
@@ -94,19 +94,23 @@ enum CommandArgs {
         #[arg(long, conflicts_with_all = ["path", "repo"])]
         all: bool,
     },
-    /// Search saved requests and claim, run tools for and submit Human reviews in a terminal
-    /// UI; the search starts on the waiting Human reviews of every repository.
+    /// Open a Human review in the Desktop app (defaults to the newest waiting review).
     Review {
-        /// Open this request instead of the list.
+        /// Open this request instead of the newest waiting review.
         #[arg(value_name = "REQUEST_ID")]
         request: Option<RequestId>,
-        /// Search every repository (the default); with --repo the search starts on that
-        /// repository's term instead.
+        /// Select no initial repository (the default).
         #[arg(long)]
         all: bool,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<artifactize_core::types::ReviewerId>,
+    },
+    /// Run scoped tools or check declared review tools.
+    #[command(disable_help_subcommand = true, version)]
+    Tools {
+        #[command(subcommand)]
+        command: ToolsCommand,
     },
     #[command(flatten)]
     General(Command),
@@ -120,12 +124,6 @@ pub enum Command {
     VerifyWorker { run_id: RunId },
     #[command(name = "__execute", hide = true)]
     VerifyExecution { run_id: RunId },
-    /// Run scoped tools or check declared review tools.
-    #[command(disable_help_subcommand = true, version)]
-    Tools {
-        #[command(subcommand)]
-        command: ToolsCommand,
-    },
     /// Sign in with Codex (ChatGPT) in the system browser, or save an API key read from stdin.
     /// Claude Agent runs Claude Code's own `claude auth login`, which keeps its own login.
     Login {

@@ -1,5 +1,4 @@
-//! Human review: the facts and lifecycle jobs every interface shares. The terminal screens
-//! live in `artifactize-tui`.
+//! Human review: the facts and lifecycle jobs every interface shares.
 
 mod detail;
 mod form;

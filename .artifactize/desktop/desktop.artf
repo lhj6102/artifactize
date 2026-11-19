@@ -107,7 +107,7 @@ profile = { kind = "runtime", command = "pnpm", args = ["-C", "ui", "e2e"], time
 
 [evals.suite-passes.payload]
 instruction = """
-Build the E2E test app of {desktop} from {desktop-backend} and {desktop-ui} (the test-only Cargo feature and its frontend build) and the CLI from {engine-cli}, {engine-tui}, {engine-core} and {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} into build output this run owns, then run the WebdriverIO suite {desktop-e2e} against it on a headless display."""
+Build the E2E test app of {desktop} from {desktop-backend} and {desktop-ui} (the test-only Cargo feature and its frontend build) and the CLI from {engine-cli}, {engine-core} and {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} into build output this run owns, then run the WebdriverIO suite {desktop-e2e} against it on a headless display."""
 
 [evals.fmt]
 title = "The Rust formatting check passes"
@@ -128,4 +128,4 @@ title = "The Rust crate tests pass"
 profile = { kind = "runtime", command = "node", args = ["harness/harness.mts", "test"], timeout_ms = 1800000 }
 
 [evals.tests.payload]
-instruction = "Build the frontend input from {desktop-ui} and run the Rust tests of the whole crate {desktop} with {engine-core} with {engine-tools} with {engine-cli} with {engine-tui} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}."
+instruction = "Build the frontend input from {desktop-ui} and run the Rust tests of the whole crate {desktop} with {engine-core} with {engine-tools} with {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}."

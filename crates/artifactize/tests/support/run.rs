@@ -327,6 +327,10 @@ impl RunChild {
         })
     }
     pub fn wait_with_output(mut self) -> io::Result<Output> {
+        self.collect_output()
+    }
+    /// Join the watcher without releasing the Run before its saved audit is read.
+    pub fn collect_output(&mut self) -> io::Result<Output> {
         let child = std::mem::replace(&mut self.child, Watcher(None));
         let mut output = child.wait_with_output()?;
         let mut stderr = self.announcement.as_bytes().to_vec();

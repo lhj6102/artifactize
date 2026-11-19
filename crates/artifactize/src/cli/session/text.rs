@@ -146,7 +146,7 @@ pub(super) fn show(located: &Located, conversation: &Conversation) -> io::Result
             .map_or(String::new(), |send| format!(", follow-up {send}"));
         match &event.kind {
             session::Kind::Message(event) => {
-                let message = &event.message;
+                let message = event.message();
                 let turn = event.turn;
                 if let Some(question) = &event.question {
                     writeln!(out, "\n── Person (turn {turn}{send})\n{question}")?;

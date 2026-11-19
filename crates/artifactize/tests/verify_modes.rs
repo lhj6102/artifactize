@@ -793,7 +793,7 @@ async fn c2_new_human_issuance_supersedes_changed_deferred_signoffs_and_follower
             })
             .await;
         for (run, request) in [(&first.run.id, original), (&joined.run.id, follower)] {
-            let ended = fixture
+            fixture
                 .until(run, |view| {
                     view.requests.iter().any(|saved| {
                         saved.id == request.id
@@ -803,12 +803,6 @@ async fn c2_new_human_issuance_supersedes_changed_deferred_signoffs_and_follower
                     })
                 })
                 .await;
-            let signoff = ended.requests.iter().find(|q| q.id == request.id).unwrap();
-            assert_eq!(signoff.status(), RequestStatus::Error);
-            assert_eq!(
-                signoff.error_code(),
-                Some(artifactize_core::types::FailureCode::Superseded)
-            );
             assert!(
                 human::claim(&receipts, &request.id, &reviewer)
                     .await

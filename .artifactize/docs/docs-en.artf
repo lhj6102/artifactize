@@ -53,21 +53,21 @@ required = ["doc", "code", "fix"]
 additionalProperties = false
 
 [evals.matches-interfaces]
-title = "The documentation accurately covers the desktop app and terminal UI"
+title = "The documentation accurately covers the desktop app"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-interfaces.payload]
 instruction = """
-Review {docs-en} against {desktop}, its parts {desktop-backend} and {desktop-ui}, and {engine-tui}, starting from src/SUMMARY.md.
+Review {docs-en} against {desktop}, its parts {desktop-backend} and {desktop-ui}, starting from src/SUMMARY.md.
 Check two things:
 1. No contradiction: every launch mode, flag, pane, view (Run, Current, Detail, Human review, Settings), search syntax, and keyboard/mouse control stated in {docs-en} agrees with the implementation.
-2. Core user tasks are covered: opening and navigating the desktop app (branches, Runs, Current, editing definitions and positions, Detail, waiting Human reviews, Settings) and using the terminal UI (`artifactize monitor` and `artifactize review`).
+2. Core user tasks are covered: opening and navigating the desktop app (branches, Runs, Current, editing definitions and positions, Detail, waiting Human reviews, Settings).
 
 IMPORTANT — What must NOT be required:
 - Do NOT require internal rendering or layout constants, pixel sizes, exact error strings, or every edge-case refusal condition. Omitting minor edge cases or internal bounds is NEVER a mismatch.
 - How artifactize implements behavior internally and the Rust/Svelte internals are not user-facing; documenting them is a mismatch whose fix is to remove it.
 
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools exposed by {desktop}, {desktop-backend}, {desktop-ui} and {engine-tui} to inspect them. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools exposed by {desktop}, {desktop-backend} and {desktop-ui} to inspect them. Tool paths are Artifact-relative.
 Submit GREEN when nothing stated in {docs-en} contradicts the implementation and the core user tasks above are covered.
 Otherwise submit RED with up to 20 concrete mismatches, most misleading first, each with the doc path:line, the implementation path:line, and one sentence on how to fix the documentation. Fix the docs, not the code.
 """

@@ -15,10 +15,9 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-const CRATES: [&str; 5] = [
+const CRATES: [&str; 4] = [
     "artifactize-tools",
     "artifactize-core",
-    "artifactize-tui",
     "artifactize-mcp",
     "artifactize",
 ];
@@ -114,7 +113,7 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
     let cargo_home = root.path().join("cargo-home");
     fs::create_dir(&cargo_home).unwrap();
     // Publication still talks to a registry, but this private index has no published crates.
-    // Cargo's own dry-run stages and resolves the five local crates against it.
+    // Cargo's own dry-run stages and resolves the four local crates against it.
     let registry = support::FakeProvider::start(|request| {
         if request.path == "/config.json" {
             support::Reply::Json(

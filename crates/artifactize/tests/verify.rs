@@ -481,7 +481,7 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
             .command()
             .args(["verify", "--wait", "--all", "--json"]),
     );
-    let child = RunChild::new(child, &fixture.state, &fixture.repo);
+    let mut child = RunChild::new(child, &fixture.state, &fixture.repo);
     // A created marker may still be empty, and child registration is saved separately.
     // Observe both exact states before asserting writer availability or cancelling.
     let database = Connection::open_with_flags(
@@ -518,7 +518,7 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
     });
     drop(writer);
     support::runs::cancel_active(&fixture.state, &fixture.repo);
-    let output = wait_for(child);
+    let output = child.collect_output().unwrap();
     assert_eq!(output.status.code(), Some(2));
     let run = json_output(&output);
     assert_eq!(run["status"], "ERROR");

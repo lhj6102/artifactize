@@ -1,8 +1,7 @@
-//! Runtime startup, screen entry points, and cancellation signals.
+//! Runtime startup, argument errors, and cancellation signals.
 
 use std::{
     io::{self, Write},
-    path::PathBuf,
     process::ExitCode,
 };
 
@@ -28,27 +27,7 @@ pub(super) fn cancellation_listener() -> Result<
     Ok((cancellation, listener))
 }
 
-/// What a screen runs until the reviewer quits; screens need no `Send`, the command runs on a
-/// single thread.
-pub type Screen = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>;
-
-/// The terminal screens `artifactize monitor` and `artifactize review` open. They live in
-/// `artifactize-tui`; the binary wires these entry points without a dependency from core to CLI.
-#[derive(Clone, Copy)]
-pub struct Screens {
-    /// The Monitor over the state directory, on one repository or on every one.
-    pub monitor: fn(PathBuf, Option<PathBuf>, tokio_util::sync::CancellationToken) -> Screen,
-    /// The Human review list, or one request when given.
-    pub review: fn(
-        PathBuf,
-        Option<PathBuf>,
-        artifactize_core::types::ReviewerId,
-        Option<artifactize_core::types::RequestId>,
-        tokio_util::sync::CancellationToken,
-    ) -> Screen,
-}
-
-pub fn run(screens: Screens) -> ExitCode {
+pub fn run() -> ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
     let has_args = args.len() > 1;
     let cli = match parse_args(&args) {
@@ -68,7 +47,7 @@ pub fn run(screens: Screens) -> ExitCode {
                 .build()
                 .map_err(|error| error.to_string())?;
             runtime.block_on(Box::pin(async {
-                let result = dispatch::execute(cli, screens).await;
+                let result = dispatch::execute(cli).await;
                 artifactize_core::changes::drain().await;
                 result
             }))
@@ -94,7 +73,7 @@ const STACK_BYTES: usize = 8 * 1024 * 1024;
 
 fn print_parse_error(error: ParseError) -> ExitCode {
     match error {
-        ParseError::ConflictingScope { message, json } => failure(&message, json),
+        ParseError::InvalidOptions { message, json } => failure(&message, json),
         ParseError::RepeatedGlobal { name, json } => {
             failure(&format!("{name} cannot be used multiple times."), json)
         }

@@ -1,4 +1,4 @@
-//! Where the desktop app is installed, read from file metadata only: nothing is started.
+//! Find or launch the installed desktop app, without a shell.
 //! Every install channel leaves `artifactize-desktop` beside the commands it bundles (the
 //! deb, the Windows zip and MSIX, the Mac app the cask links), on `PATH` (install.sh's
 //! launcher), or at one of this system's app locations.
@@ -6,6 +6,7 @@
 use std::{
     ffi::{OsStr, OsString},
     path::{Path, PathBuf},
+    process::Stdio,
 };
 
 /// The desktop app's program name, without this system's executable suffix.
@@ -19,6 +20,23 @@ const APPIMAGE_RECORD: &str = "appimage-path";
 /// installed.
 #[cfg(windows)]
 const STORE_PACKAGE_FAMILY: &str = "lhj6102.Artifactize_ayfzfzbsv48sg";
+
+/// Start the installed Desktop app and let it outlive the CLI. `doctor` uses the same
+/// discovery without starting a process.
+pub fn launch(args: &[OsString]) -> Result<(), String> {
+    let app = installed()
+        .filter(|path| path.is_file())
+        .ok_or("Artifactize Desktop is not available. Install it from https://artifactize.dev/.")?;
+    let mut command = tokio::process::Command::new(&app);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    super::spawn_detached(command)
+        .map(|child| child.reap())
+        .map_err(|error| format!("Cannot launch {}: {error}", super::path_text(&app)))
+}
 
 /// The installed desktop app this command finds, if any.
 pub(crate) fn installed() -> Option<PathBuf> {

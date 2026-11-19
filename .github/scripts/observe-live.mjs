@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 
 const execute = promisify(execFile);
-const CRATES = ["artifactize", "artifactize-core", "artifactize-tools", "artifactize-tui", "artifactize-mcp"];
+const CRATES = ["artifactize", "artifactize-core", "artifactize-tools", "artifactize-mcp"];
 const PAGES = ["", "ko/", "docs/", "docs/ko/", "install.sh", "install.ps1"];
 // Leave time for the enclosing 30-second eval to save an address-specific diagnostic.
 const OBSERVATION_MS = 25000;
@@ -173,7 +173,7 @@ async function selftest() {
     await git("tag", "v9.0.0-preview");
     const sha = (await git("rev-parse", "HEAD")).trim();
     let fault;
-    const names = ["artifactize", "artifactize-core", "artifactize-tools", "artifactize-tui", "artifactize-mcp"];
+    const names = ["artifactize", "artifactize-core", "artifactize-tools", "artifactize-mcp"];
     server = createServer((request, response) => {
       const path = new URL(request.url, "http://fixture").pathname;
       if (fault?.type === "404" || fault?.type === "mismatch" && fault.action.endsWith("-behavior")) {

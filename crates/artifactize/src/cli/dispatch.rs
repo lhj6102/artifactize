@@ -1,9 +1,8 @@
 //! Route parsed commands to focused workflows; no business logic or rendering here.
 
 use super::{
-    Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, Screens, ToolsCommand, account,
-    cache, config, interactive, maintenance, provider, remote, request, run, server, session,
-    status, workflow,
+    Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, account, cache, config,
+    interactive, maintenance, provider, remote, request, run, server, session, status, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -14,19 +13,31 @@ pub(super) struct Context {
     pub json: bool,
 }
 
-pub(super) async fn execute(cli: Parsed, screens: Screens) -> Result<u8, String> {
+pub(super) async fn execute(cli: Parsed) -> Result<u8, String> {
     let Parsed {
         state_dir,
         json,
         invocation,
     } = cli;
     match invocation {
-        Invocation::Monitor(scope) => interactive::monitor(state_dir, scope, json, screens).await,
+        Invocation::Monitor(scope) => interactive::monitor(state_dir, scope, json),
         Invocation::Review {
             scope,
             request,
             reviewer,
-        } => interactive::review(state_dir, scope, request, reviewer, json, screens).await,
+        } => interactive::review(state_dir, scope, request, reviewer, json).await,
+        Invocation::ToolCheck { options, repo } => {
+            maintenance::tools(
+                Context {
+                    repo,
+                    state_dir,
+                    json,
+                },
+                options,
+            )
+            .await
+        }
+        Invocation::Tool(tool) => Ok(artifactize_tools::cli::run(tool).await),
         Invocation::General(command, repo) => {
             execute_general(
                 command,
@@ -94,12 +105,6 @@ async fn execute_general(command: Option<Command>, context: Context) -> Result<u
         Some(Command::Run {
             command: RunCommand::Cancel { run_id },
         }) => run::cancel(context, run_id).await,
-        Some(Command::Tools {
-            command: ToolsCommand::Check(options),
-        }) => maintenance::tools(context, options.try_into()?).await,
-        Some(Command::Tools {
-            command: ToolsCommand::Builtin(tool),
-        }) => Ok(artifactize_tools::cli::run(tool).await),
         Some(Command::Login { provider }) => account::login(context, provider).await,
         Some(Command::Logout { provider }) => account::logout(context, provider).await,
         Some(Command::Provider { command }) => {

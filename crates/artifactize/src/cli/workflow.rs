@@ -73,8 +73,8 @@ pub(super) async fn verify(
     let (cancellation, listener) = cancellation_listener()?;
     writeln!(
         io::stderr().lock(),
-        "Started {} (follow: artifactize monitor)",
-        observation.run
+        "Started {id} (follow: artifactize run watch {id})",
+        id = observation.run
     )
     .map_err(|e| e.to_string())?;
     let result =

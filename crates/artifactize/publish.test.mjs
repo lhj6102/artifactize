@@ -9,7 +9,7 @@ import { promisify, stripVTControlCharacters } from "node:util";
 
 const exec = promisify(execFile);
 const helper = fileURLToPath(new URL("./publish.mjs", import.meta.url));
-const crates = ["artifactize-tools", "artifactize-core", "artifactize-tui", "artifactize"];
+const crates = ["artifactize-tools", "artifactize-core", "artifactize-mcp", "artifactize"];
 
 // Each test acts as the CI caller, owning its scratch directory. Do not mistake
 // the test runner's enclosing Artifactize invocation for this fixture's caller.

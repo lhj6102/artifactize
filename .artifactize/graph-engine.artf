@@ -13,7 +13,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning 
 payload.instruction = """
 Read every definition in {graph-engine}; use the graph tool for relations that leave the
 folder. The folder defines the workspace crates (engine-core, engine-tools, engine-cli,
-engine-tui, engine-mcp) and the workspace manifest and lockfile. Check that:
+engine-mcp) and the workspace manifest and lockfile. Check that:
 - Same checks: every crate carries the same checks (code checklist, platform checklist,
   formatting, clippy, tests) with the same criteria apart from the crate's name; a
   further check is one the crate's role explains, such as the CLI's packaging.

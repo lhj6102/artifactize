@@ -12,7 +12,7 @@ categories = ["command-line-utilities", "development-tools", "development-tools:
 exclude = ["index.artf"]
 
 [features]
-# Hooks that the unit tests of artifactize-tui count queries and derivations with.
+# Hooks for counting queries and derivations in tests.
 test-support = ["rusqlite/trace"]
 
 [dependencies]
@@ -83,7 +83,7 @@ tokio = { version = "1", features = ["test-util"] }
 # ask whether a probe's console window is visible.
 windows-sys = { version = "0.61", features = ["Win32_System_Ioctl", "Win32_UI_WindowsAndMessaging"] }
 
-# Library fixtures launch the shared worker without depending on the CLI or TUI.
+# Library fixtures launch the shared worker without depending on the CLI.
 [[example]]
 name = "artifactize-test-worker"
 path = "tests/support/run-worker.rs"
