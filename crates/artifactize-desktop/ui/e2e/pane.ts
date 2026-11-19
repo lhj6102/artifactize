@@ -184,8 +184,10 @@ export async function chooseChip(browser: WebdriverIO.Browser, name: string, chi
   await browser.waitUntil(async () => (await branch(browser, name))?.chips.some((entry) => entry.id === chip) === true,
     { timeout: 15000, timeoutMsg: `${name} has the entry ${chip}: ${JSON.stringify(await branch(browser, name))}` });
   await browser.$(`${await row(browser, name)} button[data-chip=${JSON.stringify(chip)}]`).click();
-  await browser.waitUntil(async () => (await branch(browser, name))?.chips.find((entry) => entry.id === chip)?.filled === true,
-    { timeout: 15000, timeoutMsg: `${name}'s chip ${chip} shown` });
+  // The entry is marked and the Main area shows it.
+  await browser.waitUntil(async () => (await branch(browser, name))?.chips.find((entry) => entry.id === chip)?.filled === true
+    && (await mainTitle(browser)) === (chip === "current" ? `Current · ${name}` : chip),
+  { timeout: 15000, timeoutMsg: `${name}'s chip ${chip} shown in the Main area` });
 }
 
 /** Show the Run `run` of the branch `name` in the Main area. */

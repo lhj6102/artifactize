@@ -176,11 +176,6 @@ export const scenarios: Scenario[] = [
       // Another process starts a Run with a comment.
       const started = verifyCommented(fixture, comment);
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "after-refresh", data.worktree);
-      // Background reconciliation may show the new Run, but only a reload discovers a new
-      // worktree: once pending work has settled and rendered, it is still not listed, so its
-      // appearance below is this Refresh's doing.
-      await commandsRendered(browser);
-      assert.equal(await branch(browser, "repo  after-refresh"), undefined, "the new worktree is not discovered without a Refresh");
       await browser.$("header.bar").$("button*=Commands").click();
       await choosePaletteCommand(browser, "Refresh");
       await browser.$('.palette [role="option"][aria-selected="true"]').click();

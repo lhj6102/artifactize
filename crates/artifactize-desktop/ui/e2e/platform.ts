@@ -691,7 +691,8 @@ async function windowsFixtureRunner(command: ReturnType<typeof runnerCommand> & 
   const output = nativePath(root, "outcome.json");
   const starter = nativePath(root, "starter.mjs");
   try {
-    writeJson(input, { program: command.program, args: command.args, holdDescendants: command.holdDescendants ?? false });
+    // The starter passes these to the child as they are: native spelling, not '/' text.
+    writeText(input, JSON.stringify({ program: command.program, args: command.args, holdDescendants: command.holdDescendants ?? false }));
     // A Store-packaged pwsh starter can launch children outside its assigned job.
     // The same Node executable that runs the suite makes an ordinary Win32 spawn.
     writeText(starter, String.raw`import { spawn } from "node:child_process";

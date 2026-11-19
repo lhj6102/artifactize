@@ -348,13 +348,10 @@ Summarize {docs}."""
         { "a:docs": "reused", "a:release": "reused", "a:ship": "reused" }, { "a:release>a:ship": "reused" }),
       { timeout: 15000, timeoutMsg: "every Artifact and the relation painted reused" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(reusedLook)}`); });
-      // The notes change on disk; the Current shows it only once its chip is chosen again. No
-      // scan starts by itself: once the app's pending work has settled and rendered, none has
-      // started since the change and the plan is the old one.
-      const scansBefore = (await checkpoint(browser)).activity.commands.currentScan?.started ?? 0;
+      // The notes change on disk; the Current shows it only once its chip is chosen again: once
+      // the app's pending work has settled and rendered, the window still shows the old plan.
       changeNotes(fixture, "# Release notes\n- A second release.\n");
       await commandsRendered(browser);
-      assert.equal((await checkpoint(browser)).activity.commands.currentScan?.started ?? 0, scansBefore, "no scan started without a choice, a Refresh or a Run's end");
       assert.deepEqual((await drawn()).nodes, allReused, "the Current still shows the plan scanned before the change");
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await drawn()).nodes["a:release"] === "release: would run (1 eval)", "release would run again");

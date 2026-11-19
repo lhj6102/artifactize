@@ -1073,7 +1073,8 @@ export const scenarios: Scenario[] = [
       const log = () => browser.execute(() => { const pre = document.querySelector('aside[aria-label="Detail"] .evidence pre'); return pre ? `${pre.getAttribute("aria-label") ?? ""} ${pre.textContent ?? ""}` : ""; });
       const view = async (at: number) => (await aside(browser).$$('[aria-label="Views"] [role="tab"]'))[at];
       await (await view(1)).click();
-      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()) && (await summary(browser)).instruction === "",
+      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log())
+        && (await log()).replace(/^Saved runtime stdout \/ stderr/, "").trim() !== "" && (await summary(browser)).instruction === "",
         { timeout: 15000, timeoutMsg: "app/beta's Runtime log shown instead of its Summary" });
       assert.deepEqual(await views(), [["Summary", "false"], ["Runtime log", "true"]]);
       await (await view(0)).click();
