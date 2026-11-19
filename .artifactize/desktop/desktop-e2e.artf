@@ -18,17 +18,14 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.covers-journeys.payload]
 instruction = """
-Read the journeys {desktop-ux-features}. Review the tests of {desktop-e2e}. Evaluate UX coverage only: every journey \
-(J- id) has a test that performs its prescribed actions and checks its final outcome. Check that the assertions \
-express the actual journey requirements, neither a weaker substitute nor an invented requirement. A journey is \
-covered when its scenario performs the user's action and checks the journey's key outcome once, as the user sees \
-it; do not require ever-finer assertions (exact visual details, every variant such as each endpoint API, every \
-OS-hypothetical path) beyond what the journey text states. A missing journey, or a check that cannot detect the \
-journey failing, remains a finding. Keyboard shortcuts are optional: a missing, extra or different shortcut is not a finding; the visible way \
-(button, menu, palette, click) is what must be covered. Code style and E2E execution isolation have separate evals; do not duplicate those \
-reviews here. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when every journey and edge is meaningfully covered. Otherwise submit \
-RED with up to 20 coverage gaps, the most important first, each with the journey or edge id \
-(item), a test path:line (where) and one sentence on what to add or fix."""
+Read the journeys {desktop-ux-features} and the end-to-end rules {desktop-e2e-rules}. Review the tests of {desktop-e2e} \
+for UX coverage only, as E2E-COVERAGE defines it: every journey (J- id) has a scenario that performs its action by a \
+visible path and checks its key visible outcome once. A missing journey, or a check that cannot detect the journey \
+failing, is a finding; what E2E-COVERAGE makes optional is not. Code style and the other E2E rules have their own \
+evals; do not repeat those reviews here. Each finding names the journey and points to the test place where its \
+coverage falls short. Submit GREEN when every journey is covered. Otherwise submit RED with up to 20 coverage gaps, \
+the most important first, each with the journey id (item), a test path:line (where) and one sentence on what to add \
+or fix."""
 
 [evals.covers-journeys.pass_schema]
 type = "object"

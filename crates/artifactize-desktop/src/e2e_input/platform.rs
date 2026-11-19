@@ -1,4 +1,19 @@
-//! Native WebView differences for the test-only text-input and editing device.
+//! Native WebView differences for the test-only text-input and editing device (E2E-INPUT).
+//!
+//! Each engine is driven only through its own text and editing APIs:
+//! - text: WebKit's input-method context on Linux (WebKitGTK), the WKWebView's
+//!   `NSTextInputClient` on macOS, and WebView2's DevTools Protocol `Input` domain on Windows;
+//! - copy and paste: each engine's editing commands, WebKit's Copy/Paste on Linux and the
+//!   WKWebView responder's `copy:`/`paste:` on macOS. WebView2 offers no other editing action,
+//!   so on Windows the device sends `Input.dispatchKeyEvent` with a fixed payload of type
+//!   `keyDown` carrying only the command `Copy` or `Paste`: the engine runs that command and the
+//!   page sees a keyDown with no key, code, modifier or virtual-key code. Any other call of that
+//!   method (with a key, code, modifier or virtual-key code, without such a command, or with a
+//!   payload built at run time) would be a raw key event and is never made.
+//!
+//! Nothing here synthesizes or injects OS-level events (`NSApp sendEvent`, GdkEvents through
+//! `gtk_widget_event`, `SendInput`, `keybd_event`): they behave differently per OS and cannot be
+//! verified on Linux. The integrity checker's `device` mode enforces that ban.
 use super::Input;
 use tauri::{Runtime, WebviewWindow};
 use tokio::sync::oneshot;
