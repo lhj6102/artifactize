@@ -56,6 +56,8 @@ export const scenarios: Scenario[] = [
       assert.equal(summary.instruction, "Review the receipt.");
       const result = await app.detail.section("Result");
       assert.ok(/owner\s*Orchard reviewer/.test(result) && result.includes("The receipt reads right."), `its result by owner field: ${result}`);
+      // Its Agent log shows the saved transcript.
+      await app.detail.view("Agent log", (text) => text.includes("The receipt reads right."), "the Agent log shows the transcript");
     },
   }),
 
@@ -85,6 +87,13 @@ export const scenarios: Scenario[] = [
       await app.until(async () => !(await app.detail.neighboursDrawn()), "the Neighbours drawing gone");
       assert.ok(detail.sections.some((section) => section.name === "Neighbours"), "its header stays");
       detail = await app.detail.toggleSection("Neighbours");
+      // Unfolded as the person left it in the next Detail too.
+      await app.graph.open("a:release", "Artifact release");
+      detail = await app.detail.until((shown) => shown.sections.some((section) => section.name === "Neighbours"), "release's Detail");
+      assert.equal(detail.sections.find((section) => section.name === "Neighbours")?.open, true, "Neighbours unfolded in release's Detail as left");
+      await app.graph.clickBackground();
+      await app.detail.closed();
+      await app.graph.open("a:ship", "Artifact ship");
       await app.detail.openNeighbour("a:release", "Artifact release");
       // A click on another Artifact shows its Detail instead; an eval's row shows its tab.
       await app.graph.open("a:docs", "Artifact docs");
@@ -116,8 +125,10 @@ export const scenarios: Scenario[] = [
       const found = await app.graph.findText("do", (shown) => shown.entries.some((entry) => entry.name === "docs"), "docs found");
       assert.ok(found.entries.every((entry) => entry.name.includes("do")), "only what matches");
       await app.graph.chooseFound("docs", "Artifact docs");
-      const offCentre = await app.graph.offCentre("a:docs");
-      assert.ok(offCentre && Math.abs(offCentre.x) <= 24 && Math.abs(offCentre.y) <= 24, `docs in the middle of the graph left of the Detail: ${JSON.stringify(offCentre)}`);
+      await app.graph.until(async () => {
+        const offCentre = await app.graph.offCentre("a:docs");
+        return !!offCentre && Math.abs(offCentre.x) <= 24 && Math.abs(offCentre.y) <= 24;
+      }, "docs in the middle of the graph left of the Detail");
       // A star on the Detail stars docs; Find with nothing typed lists it.
       await app.detail.star();
       await app.graph.clickBackground();
@@ -195,9 +206,10 @@ export const scenarios: Scenario[] = [
       const zoom = await app.graph.zoom();
       // The clicked place comes to the middle of the view: the graph's camera moves, and the
       // frame of the part in view is drawn around that place.
-      const named = (await app.graph.nodes()).sort();
+      const ids = async () => (await app.graph.nodes()).map((node) => node.id).sort();
+      const named = await ids();
       await app.graph.navigate(0.3, 0.6);
-      assert.notDeepEqual((await app.graph.nodes()).sort(), named, "other Artifacts in view");
+      assert.notDeepEqual(await ids(), named, "other Artifacts in view");
       assert.equal(await app.graph.zoom(), zoom, "the Navigator keeps the zoom");
       await app.graph.cameraTool("Fit");
       assert.equal(await app.graph.zoom(), whole, "Fit shows the whole graph again");

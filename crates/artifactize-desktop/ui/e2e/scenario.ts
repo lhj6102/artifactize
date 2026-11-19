@@ -12,7 +12,11 @@ export type Prepared<T = unknown> = { fixture: Fixture; data: T; args?: string[]
 
 /** What a scenario's run gets: what it prepared, its folder, the port of the app's embedded
  * WebDriver server, which lives as long as the app, and how the app was started. */
-export type Context<T = unknown> = Prepared<T> & { root: NativePath; port: number; launch: { app: NativePath; args: string[]; env: Record<string, string> } };
+export type Context<T = unknown> = Prepared<T> & {
+  root: NativePath; port: number; launch: { app: NativePath; args: string[]; env: Record<string, string> };
+  /** Where its failure, a screenshot of the window then and its logs are kept, should it fail. */
+  evidence: NativePath;
+};
 
 /** Quit the app by closing its window and start it again as it was started, on the same state:
  * a later app of this machine's user. Once per scenario. */

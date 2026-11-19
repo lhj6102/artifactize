@@ -14,6 +14,7 @@
 import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { release } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, sep, toNamespacedPath } from "node:path";
 import { callWindow, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
 
@@ -244,6 +245,9 @@ export function testWindowOptions(windows: readonly Record<string, unknown>[]): 
 /** How many test apps run at once. WebView2 gives focus events only to the page of the
  * desktop's one foreground window, so Windows runs one app at a time. */
 export const appsAtOnce = WINDOWS ? 1 : 2;
+
+/** This machine's OS as a failure names it. */
+export const systemName = `${process.platform} ${release()} (${process.arch})`;
 
 /** The machine-wide resources a batch holds while its apps run: on Windows the desktop's
  * foreground window, which another suite run's app would take away. */

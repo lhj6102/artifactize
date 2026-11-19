@@ -14,6 +14,7 @@ const candidate = readCandidate();
 const selected = selectedScenarios(JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[]);
 if (!selected.length) throw new Error("a WDIO batch needs its scenarios in DESKTOP_TEST_BATCH");
 const output = makeDirectory(asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? ""));
+const evidence = asNativePath(variable("DESKTOP_TEST_EVIDENCE_RUN") ?? nativePath(output, "evidence"));
 const owned: Owned[] = [];
 
 /** Why preparing the batch failed, for the runner: WDIO wraps it. */
@@ -66,9 +67,9 @@ export const config = {
   services: [["tauri", { appBinaryPath: candidate.app, driverProvider: "embedded", startTimeout: 60000, logDir: output, captureBackendLogs: true }]],
   async onPrepare(_config: unknown, capabilities: Capability[]) {
     try {
-      const ports = await embeddedPorts(selected.length);
       const unset = new Set<string>();
-      for (const [index, item] of selected.entries()) {
+      const prepared: { scope: Owned; input: Awaited<ReturnType<typeof selected[number]["prepare"]>>; env: Environment }[] = [];
+      for (const item of selected) {
         const scope = own(nativePath(candidate.root, "fixtures"));
         owned.push(scope);
         // An app the scenario started again, should its worker have ended before ending it.
@@ -79,9 +80,14 @@ export const config = {
         const input = await item.prepare(scope);
         const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
         for (const [name, value] of Object.entries(env)) if (value === undefined) unset.add(name);
+        prepared.push({ scope, input, env });
+      }
+      // Free ports taken once every fixture is ready, just before the service starts the apps.
+      const ports = await embeddedPorts(selected.length);
+      for (const [index, { scope, input, env }] of prepared.entries()) {
         const context = nativePath(scope.root, "context.json");
         const launch = { app: input.app ?? candidate.app, args: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])], env: set(env) };
-        writeJson(context, { ...input, root: scope.root, port: ports[index], launch } satisfies Context);
+        writeJson(context, { ...input, root: scope.root, port: ports[index], launch, evidence: nativePath(evidence, selected[index].id) } satisfies Context);
         capabilities[index]["artifactize:context"] = context;
         if (input.app) capabilities[index]["tauri:options"] = { application: input.app };
         capabilities[index]["wdio:tauriServiceOptions"] = { appArgs: launch.args, env: launch.env, embeddedPort: ports[index] };

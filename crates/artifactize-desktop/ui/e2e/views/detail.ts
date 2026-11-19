@@ -90,6 +90,13 @@ export class Detail {
     return this.until((shown) => shown.sections.some((section) => section.name === name && section.open !== before.open), `${name} ${before.open ? "folded" : "unfolded"}`);
   }
 
+  /** Switch the open eval's tab to its view `name` (Summary, Agent log, Runtime log), then
+   * wait until what it shows below the switch satisfies `ok`. */
+  async view(name: string, ok: (text: string) => boolean, what: string): Promise<string> {
+    await this.browser.$(`${DETAIL} [role="tablist"][aria-label="Views"]`).$(`button=${name}`).click();
+    return until(this.browser, () => this.browser.execute((detail) => document.querySelector<HTMLElement>(`${detail} [role="document"] .shown`)?.innerText ?? "", DETAIL), ok, what);
+  }
+
   /** Whether the Detail draws its Neighbours. */
   neighboursDrawn(): Promise<boolean> {
     return this.browser.$(`${DETAIL} [aria-label="Neighbours"] .svelte-flow__node`).isDisplayed();

@@ -15,7 +15,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Read E2E-INPUT, E2E-PLATFORM, E2E-ISOLATED and E2E-EXPLICIT-FAILURE of the end-to-end rules {desktop-e2e-rules} and \
+Read E2E-INPUT, E2E-PLATFORM, E2E-ISOLATED, E2E-EXPLICIT-FAILURE and E2E-FAILURE-EVIDENCE of the end-to-end rules {desktop-e2e-rules} and \
 the platform checklist {rules-platform}. Review the infrastructure of the suite {desktop-e2e-infra} (the platform \
 layer, the runner and build, the fixtures and the input helpers) against them. Report only a defect you can show: \
 name the OS, the order of scenarios or the timing under which it happens and the concrete failure or false pass it \

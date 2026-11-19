@@ -3,8 +3,8 @@ import type { ChildProcess } from "node:child_process";
 import { remote } from "webdriverio";
 import { selectedScenarios } from "./catalog.ts";
 import { recordKeys } from "./keys.ts";
-import { startTree, stopTree, takeSystemFocus, variable } from "./platform.ts";
-import { asNativePath, embeddedPorts, embeddedReady, nativePath, readJson, removeTree, writeText } from "./portable.ts";
+import { startTree, stopTree, systemName, takeSystemFocus, variable } from "./platform.ts";
+import { asNativePath, embeddedPorts, embeddedReady, makeDirectory, nativePath, readJson, removeTree, writeText } from "./portable.ts";
 import { AGAIN, COMPLETED, type Context } from "./scenario.ts";
 import { App } from "./views/app.ts";
 
@@ -32,6 +32,7 @@ async function ready(session: WebdriverIO.Browser): Promise<App> {
 describe(item.title, () => {
   it(item.id, async () => {
     let app = new App(browser);
+    let session = browser;
     // The app a scenario starts again is this spec's own to end.
     let later: { child: ChildProcess; session?: WebdriverIO.Browser } | undefined;
     const again = async (): Promise<App> => {
@@ -49,6 +50,7 @@ describe(item.title, () => {
         await new Promise((done) => setTimeout(done, 100));
       }
       later.session = await remote({ hostname: "127.0.0.1", port, logLevel: "warn", capabilities: { browserName: "tauri", "wdio:enforceWebDriverClassic": true } });
+      session = later.session;
       app = await ready(later.session);
       return app;
     };
@@ -61,6 +63,11 @@ describe(item.title, () => {
       const shown = await app.text().catch((cause: unknown) => `(the window could not be read: ${String(cause)})`);
       if (error instanceof Error) error.message += `\n--- the window showed ---\n${shown.slice(0, 4000)}`;
       failure = error;
+      // Its evidence: the OS, the scenario and the failed wait, and the window at that point.
+      const kept = makeDirectory(input.evidence);
+      writeText(nativePath(kept, "failure.txt"), `OS: ${systemName}\nscenario: ${item.id} (${item.title})\n\n${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+      await session.saveScreenshot(nativePath(kept, "window.png")).catch((cause: unknown) => writeText(nativePath(kept, "window.txt"), `no screenshot: ${String(cause)}`));
+      console.error(`evidence of ${item.id}: ${kept}`);
     }
     if (later) {
       try { await later.session?.deleteSession(); }
