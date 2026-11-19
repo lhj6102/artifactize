@@ -35,7 +35,7 @@ pub use declaration::{ArtifactDeclaration, Fingerprint, Views, parse_declaration
 pub use discovery::read_workspace_config;
 pub(crate) use discovery::read_workspace_declarations;
 use discovery::{logical_join, read_regular_text};
-pub use eval::{EvalDeclaration, EvalPayload, LocalEvalId};
+pub use eval::{EvalDeclaration, EvalPayload, LocalEvalId, Priority};
 pub use identities::{
     ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId, ProfileVariantName,
     ReferenceName, ToolName, ToolOperationName,

@@ -2,7 +2,7 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
-import { REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
+import { REVIEW_FINDING, REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
 import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -40,7 +40,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "eval-summary",
-    title: "an eval's tab shows its Summary: its status with what running it took and spent, its instruction and its result, each owner field by name",
+    title: "an eval's tab shows its Summary: its status with what running it took and spent, its instruction and its result, its findings as numbered items each led by its priority",
     journeys: ["J-DETAIL-SUMMARY"],
     prepare: async (own) => {
       const fixture = await createReviewed(own);
@@ -55,9 +55,9 @@ export const scenarios: Scenario[] = [
       assert.ok(summary.status.includes(REVIEW_MODEL) && /48(\.\d)?k/.test(summary.status), `what it took and spent, its model and tokens: ${summary.status}`);
       assert.equal(summary.instruction, "Review the receipt.");
       const result = await app.detail.section("Result");
-      assert.ok(/owner\s*Orchard reviewer/.test(result) && result.includes("The receipt reads right."), `its result by owner field: ${result}`);
+      assert.ok(/findings\s*P2\s*The receipt reads right; its date could be clearer\./.test(result), `its result's findings, each by its priority: ${result}`);
       // Its Agent log shows the saved transcript.
-      await app.detail.view("Agent log", (text) => text.includes("The receipt reads right."), "the Agent log shows the transcript");
+      await app.detail.view("Agent log", (text) => text.includes(REVIEW_FINDING), "the Agent log shows the transcript");
     },
   }),
 

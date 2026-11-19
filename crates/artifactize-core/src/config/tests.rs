@@ -417,19 +417,47 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
 }
 
 #[test]
-fn response_schemas_are_validated_without_rewriting_owner_fields() {
-    let schema = json!({
-        "type":"object",
-        "properties":{"ownerField":{"anyOf":[{"type":"string"},{"type":"integer"}]}},
-        "ownerKeyword":true,
-    });
-    let mut declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
-    declared["pass_schema"] = schema.clone();
-    let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
-    assert_eq!(
-        declaration.evals[0].pass_schema().unwrap(),
-        schema.as_object().unwrap()
-    );
+fn an_agent_eval_declares_only_the_priority_at_which_it_turns_red() {
+    let agent = || eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
+    let parsed = |declared: Value| parse(json!({"name": "a", "evals": [declared]}));
+    assert_eq!(parsed(agent()).unwrap().evals[0].red_at(), None);
+    for (text, priority) in [
+        ("P0", Priority::P0),
+        ("P1", Priority::P1),
+        ("P2", Priority::P2),
+        ("P3", Priority::P3),
+    ] {
+        let mut declared = agent();
+        declared["red_at"] = json!(text);
+        assert_eq!(parsed(declared).unwrap().evals[0].red_at(), Some(priority));
+    }
+    for invalid in [json!("P4"), json!("p1"), json!(1)] {
+        let mut declared = agent();
+        declared["red_at"] = invalid.clone();
+        assert!(parsed(declared).is_err(), "{invalid}");
+    }
+    // Every Agent eval reports the one findings result; no eval declares its own.
+    for key in ["pass_schema", "fail_schema"] {
+        let mut declared = agent();
+        declared[key] = json!({"type": "object"});
+        let error = parsed(declared).unwrap_err();
+        assert!(
+            error.contains("remove pass_schema and fail_schema"),
+            "{error}"
+        );
+    }
+    for profile in [
+        json!({"kind": "human"}),
+        json!({"kind": "runtime", "command": "check", "args": []}),
+    ] {
+        let mut declared = eval(profile);
+        declared["red_at"] = json!("P1");
+        let error = parsed(declared).unwrap_err();
+        assert!(
+            error.contains("red_at is supported only on agent"),
+            "{error}"
+        );
+    }
 }
 
 #[test]

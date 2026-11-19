@@ -4,13 +4,17 @@ use std::collections::BTreeMap;
 
 /// Provider envelopes, null placeholders and JSON-encoded fields are presentation details.
 /// Only a matching validated End replaces the raw answer; examples and failed answers stay.
+/// An Agent answer is its findings alone; artifactize derived the verdict the End records.
 pub(super) fn candidate(text: &str) -> Option<Candidate> {
     if text.len() > crate::agent::verdict::MAX_RESPONSE_BYTES {
         return None;
     }
     let mut value: serde_json::Value = serde_json::from_str(text).ok()?;
     // Conversations saved before the envelope moved to the root wrap it in `result`.
-    if value.get("verdict").is_none() && value.as_object()?.len() == 1 {
+    if value.get("verdict").is_none() && value.get("findings").is_none() {
+        if value.as_object()?.len() != 1 {
+            return None;
+        }
         value = value.get("result")?.clone();
         if let Some(text) = value.as_str() {
             value = serde_json::from_str(text).ok()?;
@@ -29,11 +33,17 @@ pub(super) fn candidate(text: &str) -> Option<Candidate> {
         object.insert("verdict".into(), verdict);
         value = fields;
     }
-    let result: crate::agent::verdict::ValidatedResult = serde_json::from_value(value).ok()?;
+    let mut fields = match value {
+        serde_json::Value::Object(fields) => fields,
+        _ => return None,
+    };
+    let verdict = match fields.remove("verdict") {
+        Some(verdict) => Some(serde_json::from_value(verdict).ok()?),
+        None => None,
+    };
     Some(Candidate {
-        verdict: result.verdict,
-        fields: result
-            .fields
+        verdict,
+        fields: fields
             .into_iter()
             .map(|(key, value)| (key, OwnerValue::from_json(value)))
             .collect(),
@@ -42,13 +52,15 @@ pub(super) fn candidate(text: &str) -> Option<Candidate> {
 
 #[derive(Debug)]
 pub(super) struct Candidate {
-    verdict: crate::runtime::Verdict,
+    /// `None` for findings, whose verdict the answer does not carry.
+    verdict: Option<crate::runtime::Verdict>,
     fields: BTreeMap<String, OwnerValue>,
 }
 
 impl Candidate {
     pub(super) fn matches(&self, result: &crate::agent::verdict::ValidatedResult) -> bool {
-        self.verdict == result.verdict && owner_fields_match(&self.fields, &result.fields)
+        self.verdict.is_none_or(|verdict| verdict == result.verdict)
+            && owner_fields_match(&self.fields, &result.fields)
     }
 }
 

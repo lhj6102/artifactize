@@ -16,9 +16,9 @@ use crate::{
 };
 
 mod budgets;
+mod findings;
 mod follow_up;
 mod repair;
-mod structured;
 mod tool_sessions;
 
 const SESSION: &str = "0f4c2a9e-review-session";
@@ -58,10 +58,7 @@ impl Fixture {
                             "reasoning":"high",
                         },
                         "payload":{"instruction":"Check {a}","owner":"unchanged"},
-                        "pass_schema":{
-                            "type":"object",
-                            "properties":{"reason":{"type":"string","description":"Why it passes"}},
-                        },
+                        "red_at":"P1",
                     },
                 ],
                 "views":{
@@ -272,7 +269,7 @@ fn final_openai() -> MockHttpResponse {
         "exact-model",
         "completed",
         vec![message(
-            "{\"verdict\":\"GREEN\",\"verdictFields\":{\"reason\":null}}",
+            "{\"findings\":[{\"priority\":\"P2\",\"reason\":\"minor\"}]}",
         )],
         json!({
             "input_tokens":10,
@@ -284,6 +281,21 @@ fn final_openai() -> MockHttpResponse {
     )
 }
 
+/// An Anthropic final answer of `text`.
+fn anthropic_text(text: &str) -> MockHttpResponse {
+    sse(vec![
+        json!({"type":"message_start","message":{
+            "id":"msg_1","type":"message","role":"assistant","model":"exact-model",
+            "content":[],"usage":{"input_tokens":1,"output_tokens":0}
+        }}),
+        json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+        json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":text}}),
+        json!({"type":"content_block_stop","index":0}),
+        json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}),
+        json!({"type":"message_stop"}),
+    ])
+}
+
 fn anthropic_response(tools: bool, stop: &str) -> MockHttpResponse {
     let content = if tools {
         json!({"type":"tool_use","id":"call_1","name":"inspect_a","input":{}})
@@ -293,7 +305,7 @@ fn anthropic_response(tools: bool, stop: &str) -> MockHttpResponse {
     let delta = if tools {
         json!({"type":"input_json_delta","partial_json":"{\"path\":\"file.txt\"}"})
     } else {
-        json!({"type":"text_delta","text":"{\"verdict\":\"RED\",\"verdictFields\":{}}"})
+        json!({"type":"text_delta","text":"{\"findings\":[{\"priority\":\"P0\",\"reason\":\"broken\"}]}"})
     };
     sse(vec![
         json!({
@@ -343,7 +355,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
         .await;
     assert_eq!(
         review.result.unwrap().into_json(),
-        json!({"verdict":"GREEN"})
+        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"minor"}]})
     );
     let calls = fixture.calls();
     assert_eq!(calls.len(), 2);
@@ -392,7 +404,10 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     );
     assert!(!body.to_string().contains("unchanged"));
     assert!(!body.to_string().contains("import json"));
-    assert!(body.to_string().contains("Why it passes"));
+    assert!(
+        body.to_string()
+            .contains("P0 is the most important, P3 the least.")
+    );
     assert_eq!(
         fixture.config.evals[0]
             .declaration
@@ -462,7 +477,7 @@ async fn incomplete_wrong_model_and_duplicate_calls_fail_before_tools() {
             "exact-model",
             "incomplete",
             vec![message(
-                "{\"verdict\":\"GREEN\",\"verdictFields\":{\"reason\":null}}",
+                "{\"findings\":[{\"priority\":\"P2\",\"reason\":\"minor\"}]}",
             )],
             Value::Null,
         ),
@@ -612,7 +627,7 @@ async fn output_that_breaks_off_sends_the_same_turn_again_at_any_turn() {
     // A failed turn after tool calls replays the whole conversation, so it retries too.
     assert_eq!(
         review.result.unwrap().into_json(),
-        json!({"verdict":"GREEN"})
+        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"minor"}]})
     );
     assert_eq!(fixture.calls().len(), 1);
     assert_eq!(http.requests().len(), 3);
@@ -843,7 +858,7 @@ async fn instruction_names_artifacts_and_lists_each_once_without_paths() {
     let (review, http) = fixture.run(vec![final_openai()]).await;
     assert_eq!(
         review.result.unwrap().into_json(),
-        json!({"verdict":"GREEN"})
+        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"minor"}]})
     );
     let body: Value = serde_json::from_slice(&http.requests()[0].body).unwrap();
     assert_eq!(

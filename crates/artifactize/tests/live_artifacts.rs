@@ -87,7 +87,7 @@ fn request<'a>(run: &'a Value, id: &str) -> &'a Value {
 fn passing(request: &support::Request) -> support::Reply {
     support::openai::completed(
         request,
-        vec![support::openai::message("{\"verdict\":\"GREEN\"}")],
+        vec![support::openai::message("{\"findings\":[]}")],
         support::openai::usage(10, 2),
     )
 }

@@ -1,4 +1,5 @@
-//! An Eval declaration: local identity, instruction, profiles and verdict schemas.
+//! An Eval declaration: local identity, instruction, profiles, the priority at which an Agent
+//! eval turns RED, and a Human eval's result schemas.
 
 use super::{
     MAX_DECLARED_ITEMS, MutexTag, Profile, ProfileKind, ProfileVariantName, identifier,
@@ -66,6 +67,35 @@ impl std::fmt::Display for LocalEvalId {
     }
 }
 
+/// A finding's priority: P0 is the most important and P3 the least. artifactize defines only
+/// their order; the evaluator assigns them by its own judgement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Priority {
+    P0,
+    P1,
+    P2,
+    P3,
+}
+
+impl Priority {
+    pub const ALL: [Self; 4] = [Self::P0, Self::P1, Self::P2, Self::P3];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::P0 => "P0",
+            Self::P1 => "P1",
+            Self::P2 => "P2",
+            Self::P3 => "P3",
+        }
+    }
+}
+
+impl std::fmt::Display for Priority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvalDeclaration {
@@ -85,7 +115,11 @@ struct EvalBody {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     profile_variants: BTreeMap<ProfileVariantName, Profile>,
     payload: EvalPayload,
-    /// Each shared with every equal verdict schema in the same read.
+    /// An Agent eval's bar: a finding at this priority or a more important one makes it RED.
+    /// Without it, any finding does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    red_at: Option<Priority>,
+    /// A Human eval's result schemas, each shared with every equal schema in the same read.
     pass_schema: Option<std::sync::Arc<Map<String, Value>>>,
     fail_schema: Option<std::sync::Arc<Map<String, Value>>>,
 }
@@ -100,6 +134,9 @@ impl EvalDeclaration {
     pub fn profile_variants(&self) -> &BTreeMap<ProfileVariantName, Profile> {
         &self.body.profile_variants
     }
+    pub fn red_at(&self) -> Option<Priority> {
+        self.body.red_at
+    }
     pub fn pass_schema(&self) -> Option<&Map<String, Value>> {
         self.body.pass_schema.as_deref()
     }
@@ -109,14 +146,6 @@ impl EvalDeclaration {
     #[cfg(test)]
     pub(crate) fn profile_mut(&mut self) -> &mut Profile {
         &mut self.body.profile
-    }
-    #[cfg(test)]
-    pub(crate) fn set_pass_schema(&mut self, schema: Option<Map<String, Value>>) {
-        self.body.pass_schema = schema.map(std::sync::Arc::new);
-    }
-    #[cfg(test)]
-    pub(crate) fn set_fail_schema(&mut self, schema: Option<Map<String, Value>>) {
-        self.body.fail_schema = schema.map(std::sync::Arc::new);
     }
     pub(crate) fn select_profile(&mut self, name: &ProfileVariantName) -> Result<(), String> {
         self.body.profile = self
@@ -141,6 +170,8 @@ struct EvalFields {
     #[serde(default, deserialize_with = "present")]
     payload: Option<EvalPayload>,
     #[serde(default, deserialize_with = "present")]
+    red_at: Option<Priority>,
+    #[serde(default, deserialize_with = "present")]
     pass_schema: Option<Map<String, Value>>,
     #[serde(default, deserialize_with = "present")]
     fail_schema: Option<Map<String, Value>>,
@@ -157,12 +188,20 @@ impl EvalDeclaration {
         {
             return Err("mutex is supported only on runtime and agent Evals.".into());
         }
+        let agent = fields.profile.kind() == ProfileKind::Agent;
+        if agent && (fields.pass_schema.is_some() || fields.fail_schema.is_some()) {
+            return Err("An Agent eval reports prioritized findings; remove pass_schema and fail_schema, and set red_at for the priority that makes it RED.".into());
+        }
+        if !agent && fields.red_at.is_some() {
+            return Err("red_at is supported only on agent Evals.".into());
+        }
         let body = EvalBody {
             profile: fields.profile,
             profile_variants: fields.profile_variants.unwrap_or_default(),
             payload: fields
                 .payload
                 .ok_or("Eval payload is required for runtime, agent and human profiles.")?,
+            red_at: fields.red_at,
             pass_schema: fields.pass_schema.map(std::sync::Arc::new),
             fail_schema: fields.fail_schema.map(std::sync::Arc::new),
         };

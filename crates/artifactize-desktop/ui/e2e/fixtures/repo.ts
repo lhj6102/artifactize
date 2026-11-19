@@ -394,12 +394,12 @@ export function rewriteDefinition(fixture: Fixture, name: string, text: string):
 // An Agent eval's saved result
 
 export const REVIEW_MODEL = "fixture-review-model";
-export const REVIEW_OWNER = "Orchard reviewer";
+export const REVIEW_FINDING = "The receipt reads right; its date could be clearer.";
 
 /** A repository whose Artifact report has an Agent eval, verified GREEN once through a loopback
- * stand-in of the provider that answers with an owner field and a summary. */
+ * stand-in of the provider that answers with one P2 finding, below the eval's P1 bar. */
 export async function createReviewed(own: Owned): Promise<Fixture> {
-  const answer = JSON.stringify({ verdict: "GREEN", owner: REVIEW_OWNER, summary: "The receipt reads right." });
+  const answer = JSON.stringify({ findings: [{ priority: "P2", reason: REVIEW_FINDING }] });
   const provider = await serveLoopbackHttp((request, response) => {
     request.resume();
     if (request.method !== "POST" || !request.url?.endsWith("/responses")) {
@@ -421,8 +421,7 @@ export async function createReviewed(own: Owned): Promise<Fixture> {
 title = "Review the receipt"
 profile = { kind = "agent", backend = "openai", model = "${REVIEW_MODEL}", timeout_ms = 60000 }
 payload.instruction = "Review the receipt."
-pass_schema = { type = "object", properties = { summary = { type = "string" }, owner = { type = "string" } }, required = ["summary", "owner"], additionalProperties = false }
-fail_schema = { type = "object", properties = { summary = { type = "string" } }, required = ["summary"], additionalProperties = false }
+red_at = "P1"
 `);
     initRepo(fixture);
     const env = { OPENAI_API_KEY: "fixture-not-a-secret", ARTIFACTIZE_OPENAI_BASE_URL: provider.url };

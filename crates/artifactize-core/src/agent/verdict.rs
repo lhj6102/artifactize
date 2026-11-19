@@ -4,16 +4,12 @@ use std::sync::LazyLock;
 
 use crate::{config::EvalDeclaration, tools::schema::quoted};
 
-mod structured;
-pub(super) use structured::Structured;
+mod findings;
+pub(super) use findings::Findings;
+pub use findings::{Finding, verdict};
 
-/// Validate a parsed Agent or Human result without repair or owner-field rewriting.
+/// Check a Human result against its eval's schemas, without owner-field rewriting.
 /// Errors list at most five failing instance paths, so a reviewer can correct the fields.
-pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<ValidatedResult, String> {
-    check_result(eval, value)?;
-    Ok(ValidatedResult::from_validated(value.clone()))
-}
-
 pub(crate) fn check_result(eval: &EvalDeclaration, value: &Value) -> Result<(), String> {
     let schema = VerdictSchema::new(eval.pass_schema(), eval.fail_schema())?;
     schema
@@ -23,7 +19,7 @@ pub(crate) fn check_result(eval: &EvalDeclaration, value: &Value) -> Result<(), 
 
 /// Bound the raw model response before parsing; prose/whitespace can exceed the semantic result.
 pub(super) const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
-/// Keep the normalized owner result bounded in saved receipts, in UTF-16 units for JSON clients.
+/// Keep the normalized result bounded in saved receipts, in UTF-16 units for JSON clients.
 const MAX_RESULT_CHARS: usize = 256_000;
 static RESULT_TOO_LARGE: LazyLock<String> =
     LazyLock::new(|| format!("over_size: normalized result exceeds {MAX_RESULT_CHARS} characters"));
@@ -89,25 +85,7 @@ pub(crate) fn validate_schema(schema: &Map<String, Value>) -> Result<(), String>
 pub(crate) struct VerdictSchema {
     green: Validator,
     red: Validator,
-    pub schema: Value,
-}
-
-/// Print only the bare error in the saved failure. The rejected, decoded result is
-/// available for diagnostics if this failure leads to a provider repair turn.
-#[derive(Debug, thiserror::Error)]
-#[error("{message}")]
-pub(super) struct ModelError {
-    message: &'static str,
-    decoded: Option<Value>,
-}
-
-impl From<&'static str> for ModelError {
-    fn from(message: &'static str) -> Self {
-        Self {
-            message,
-            decoded: None,
-        }
-    }
+    schema: Value,
 }
 
 impl VerdictSchema {
@@ -128,42 +106,9 @@ impl VerdictSchema {
 
     #[cfg(test)]
     pub fn parse(&self, text: &str) -> Result<ValidatedResult, &'static str> {
-        self.parse_model(text, None).map_err(|error| error.message)
-    }
-
-    pub(super) fn parse_model(
-        &self,
-        text: &str,
-        structured: Option<&Structured>,
-    ) -> Result<ValidatedResult, ModelError> {
-        if text.len() > MAX_RESPONSE_BYTES {
-            return Err("over_size: final JSON exceeds 1 MiB".into());
-        }
-        if text.trim().is_empty() {
-            return Err("empty: return one JSON object".into());
-        }
-        let value: Value = serde_json::from_str(text).map_err(
-            |_| "not_json: return exactly one JSON object, without prose or code fences",
-        )?;
-        let value = match structured {
-            Some(structured) => structured.decode(value)?,
-            None => value,
-        };
-        if let Err(message) = self.validate(&value) {
-            return Err(ModelError {
-                message,
-                decoded: Some(value),
-            });
-        }
+        let value: Value = serde_json::from_str(text).map_err(|_| "not_json")?;
+        self.validate(&value)?;
         Ok(ValidatedResult::from_validated(value))
-    }
-
-    /// Give the repair turn bounded failing paths from the already decoded response.
-    pub(super) fn repair_detail(&self, error: ModelError) -> String {
-        match error.decoded {
-            Some(value) => self.explain(error.message, &value),
-            None => error.message.into(),
-        }
     }
 
     fn branch(&self, value: &Value) -> Option<(&Validator, &Value)> {
@@ -219,17 +164,21 @@ impl VerdictSchema {
         {
             return Err("schema_mismatch: result must match the selected verdict's owner schema");
         }
-        // Audit and usage live in separate rows; this bounds the persisted semantic result.
-        if serde_json::to_string(value)
-            .expect("result is JSON")
-            .encode_utf16()
-            .count()
-            > MAX_RESULT_CHARS
-        {
-            return Err(&RESULT_TOO_LARGE);
-        }
-        Ok(())
+        bounded_result(value)
     }
+}
+
+/// Audit and usage live in separate rows; this bounds the persisted semantic result.
+fn bounded_result(value: &Value) -> Result<(), &'static str> {
+    if serde_json::to_string(value)
+        .expect("result is JSON")
+        .encode_utf16()
+        .count()
+        > MAX_RESULT_CHARS
+    {
+        return Err(&RESULT_TOO_LARGE);
+    }
+    Ok(())
 }
 
 fn bounded(text: String) -> String {
@@ -264,8 +213,9 @@ fn branch(verdict: &str, owner: Option<&Map<String, Value>>) -> Result<Value, St
 #[cfg(test)]
 mod tests;
 
-/// A schema-checked verdict with unchanged owner fields. The stored JSON envelope stays
-/// identical; only the core gets a typed verdict instead of reparsing the JSON.
+/// A checked result: an Agent eval's findings with the verdict artifactize derived from them, or
+/// a Human eval's verdict with its unchanged owner fields. The core gets a typed verdict instead
+/// of reparsing the JSON.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ValidatedResult {
     pub verdict: crate::runtime::Verdict,
@@ -273,6 +223,7 @@ pub struct ValidatedResult {
     pub fields: Map<String, Value>,
 }
 impl ValidatedResult {
+    #[cfg(test)]
     fn from_validated(value: Value) -> Self {
         let mut fields = value
             .as_object()

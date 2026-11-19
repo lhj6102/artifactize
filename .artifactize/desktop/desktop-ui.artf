@@ -10,6 +10,7 @@ read = { builtin = "read" }
 [evals.follows-frontend-style]
 title = "The desktop UI follows the frontend checklist"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.follows-frontend-style.profile_variants]
 sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
@@ -23,30 +24,7 @@ Read the checklist {rules-frontend-style} and the TEST- rules of \
 of {desktop-ui}: its src folder (the generated bindings in src/ipc/bindings.ts are excluded; src/ipc/client.ts is not) and its build configuration, but not the end-to-end tests in e2e, against \
 every frontend item, and its tests and test helpers against every TEST- rule. What the UI's eslint \
 configuration (eslint.config.js) checks mechanically is the lint eval's and is not reviewed again here. For \
-U-LIBRARY-OWNS, read the library {engine-core} the UI's state comes from. Tool paths are relative to the Artifact, for example src/lib.rs. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when no item is clearly violated. Otherwise submit RED. List every finding, each with the item id, a path:line and one sentence on what to change."""
-
-[evals.follows-frontend-style.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.follows-frontend-style.fail_schema]
-type = "object"
-required = ["violations"]
-additionalProperties = false
-
-[evals.follows-frontend-style.fail_schema.properties.violations]
-type = "array"
-minItems = 1
-
-[evals.follows-frontend-style.fail_schema.properties.violations.items]
-type = "object"
-properties.item = { type = "string", minLength = 1 }
-properties.where = { type = "string", minLength = 1 }
-properties.change = { type = "string", minLength = 1 }
-required = ["item", "where", "change"]
-additionalProperties = false
+U-LIBRARY-OWNS, read the library {engine-core} the UI's state comes from. Tool paths are relative to the Artifact, for example src/lib.rs. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
 
 [evals.lint]
 title = "The mechanical frontend rules and the type check pass"
@@ -69,6 +47,7 @@ same values and the same one dark scheme, as tokens.css of {desktop-design}."""
 [evals.follows-design]
 title = "The desktop UI follows the design's screens and rules"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.follows-design.profile_variants]
 sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
@@ -87,29 +66,4 @@ the elements, the treatment of selection, hover and focus, and what the rule say
 be copied: the app renders the same anatomy with its own components. Behaviour is reviewed by other evals; judge \
 appearance and arrangement only, and do not invent requirements the pages do not state. Keyboard shortcuts are optional: \
 a missing, extra or different shortcut is not a finding; the visible way (button, menu, palette, click) is what \
-must follow the design. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when no \
-rule is clearly violated. Otherwise submit RED. List every finding, each with the \
-rule id (item), a path:line in {desktop-ui} (where) and one sentence on what to change in the UI."""
-
-[evals.follows-design.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.follows-design.fail_schema]
-type = "object"
-required = ["violations"]
-additionalProperties = false
-
-[evals.follows-design.fail_schema.properties.violations]
-type = "array"
-minItems = 1
-
-[evals.follows-design.fail_schema.properties.violations.items]
-type = "object"
-properties.item = { type = "string", minLength = 1 }
-properties.where = { type = "string", minLength = 1 }
-properties.change = { type = "string", minLength = 1 }
-required = ["item", "where", "change"]
-additionalProperties = false
+must follow the design. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""

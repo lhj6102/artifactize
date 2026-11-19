@@ -237,7 +237,7 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
                 support::openai::completed(
                     request,
                     vec![support::openai::message(
-                        &json!({"verdict":"GREEN"}).to_string(),
+                        &json!({"findings":[]}).to_string(),
                     )],
                     support::openai::usage(1, 1),
                 )
@@ -1162,7 +1162,7 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
             support::openai::completed(
                 request,
                 vec![support::openai::message(
-                    &json!({"verdict":"GREEN"}).to_string(),
+                    &json!({"findings":[]}).to_string(),
                 )],
                 support::openai::usage(1, 1),
             )

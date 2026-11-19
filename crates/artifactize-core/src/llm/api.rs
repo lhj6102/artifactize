@@ -63,13 +63,6 @@ impl Api {
             ))
         }
     }
-
-    /// Whether final answers use OpenAI's structured-output subset (closed objects, every
-    /// property required, numeric and array bounds, size limits) rather than the smaller
-    /// keyword set Anthropic and Gemini share.
-    pub(crate) fn openai_schema(self) -> bool {
-        matches!(self, Self::OpenaiResponses | Self::OpenaiChat | Self::Codex)
-    }
 }
 
 /// The API a custom endpoint speaks.

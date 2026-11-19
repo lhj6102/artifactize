@@ -366,6 +366,62 @@ fn migration_keeps_comments_makes_parts_explicit_and_leaves_nested_project() {
 }
 
 #[test]
+fn migration_drops_agent_result_schemas_and_keeps_human_ones() {
+    let project = Project::new();
+    fs::remove_dir(project.repo.join(".artifactize")).unwrap();
+    project.write(
+        "index.artf",
+        r#"name = "root"
+
+[evals.review]
+title = "Review"
+profile = { kind = "agent", backend = "openai", model = "fixture" }
+payload.instruction = "Review {root}."
+pass_schema = { type = "object", properties = { summary = { type = "string" } } }
+
+# The old failure shape goes with its comments.
+[evals.review.fail_schema]
+type = "object"
+required = ["violations"]
+
+[evals.review.fail_schema.properties.violations]
+type = "array"
+
+[evals.signoff]
+title = "Sign off"
+profile = { kind = "human" }
+payload.instruction = "Sign off {root}."
+
+[evals.signoff.pass_schema]
+type = "object"
+properties.approved = { const = true }
+required = ["approved"]
+"#,
+    );
+    project.json(&["config", "migrate", "--json"], 0);
+    let source = fs::read_to_string(project.repo.join(".artifactize/root.artf")).unwrap();
+    assert!(
+        !source.contains("summary") && !source.contains("violations"),
+        "{source}"
+    );
+    assert!(source.contains("[evals.signoff.pass_schema]"), "{source}");
+    let config = read_workspace_config(&project.repo).unwrap();
+    let eval = |id: &str| {
+        &config
+            .evals
+            .iter()
+            .find(|eval| eval.id.as_str() == id)
+            .unwrap()
+            .declaration
+    };
+    let review = eval("root/review");
+    assert!(review.pass_schema().is_none() && review.fail_schema().is_none());
+    // Without a declared bar, any finding makes the review RED.
+    assert_eq!(review.red_at(), None);
+    assert!(eval("root/signoff").pass_schema().is_some());
+}
+
+#[test]
 fn annotations_and_toml_spelling_never_change_definition_review_reuse() {
     let project = Project::new();
     project.node(

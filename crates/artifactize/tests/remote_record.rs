@@ -46,26 +46,30 @@ fn write_repo(repo: &Path, profile: Value) {
         &repo.join("check.py"),
         "sys.stdout.buffer.write(b'stdout-marker\\n')\nsys.stderr.buffer.write(b'stderr-marker\\n')\n",
     );
+    let mut eval = json!({
+        "id":"check",
+        "title":"Check",
+        "payload":{"instruction":"Review."},
+    });
+    // A Human sign-off declares its form; an Agent eval reports findings.
+    if profile["kind"] == "agent" {
+        eval["red_at"] = json!("P1");
+    } else {
+        eval["pass_schema"] = json!({
+            "type":"object",
+            "properties":{"approved":{"const":true}},
+            "required":["approved"],
+            "additionalProperties":false,
+        });
+    }
+    eval["profile"] = profile;
     support::declaration::write(
         repo,
         repo.join("index.artf"),
         json!({
             "name":"app",
             "fingerprint":{"script":{"command":cat_program(),"args":["fingerprint"]}},
-            "evals":[
-                {
-                    "id":"check",
-                    "title":"Check",
-                    "profile":profile,
-                    "payload":{"instruction":"Review."},
-                    "pass_schema":{
-                        "type":"object",
-                        "properties":{"approved":{"const":true}},
-                        "required":["approved"],
-                        "additionalProperties":false,
-                    },
-                },
-            ],
+            "evals":[eval],
         })
         .to_string(),
     )
@@ -405,9 +409,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             start_time: 1,
         }),
         state: artifactize_core::store::ExecutionState::Completed {
-            result: json!({"verdict":"GREEN","approved":true})
-                .try_into()
-                .unwrap(),
+            result: json!({"verdict":"GREEN","findings":[]}).try_into().unwrap(),
             at: completed,
         },
         profile: artifactize_core::config::StoredProfile::from(&variant),

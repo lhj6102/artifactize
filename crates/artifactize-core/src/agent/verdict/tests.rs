@@ -1,5 +1,11 @@
 use super::*;
 
+/// A Human result checked as a submission is.
+fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<ValidatedResult, String> {
+    check_result(eval, value)?;
+    Ok(ValidatedResult::from_validated(value.clone()))
+}
+
 #[test]
 fn exact_object_and_declared_owner_fields_only() {
     let schema = VerdictSchema::new(None, None).unwrap();
@@ -67,7 +73,7 @@ fn schema_uses_jsonschema_without_rewriting_owner_values() {
 }
 
 #[test]
-fn raw_and_normalized_size_limits_are_explicit_not_truncation() {
+fn the_normalized_size_limit_is_explicit_not_truncation() {
     let owner = json!({"properties":{"reason":{"type":"string"}}});
     let schema = VerdictSchema::new(owner.as_object(), None).unwrap();
     let prefix = r#"{"verdict":"GREEN","reason":""#;
@@ -75,21 +81,6 @@ fn raw_and_normalized_size_limits_are_explicit_not_truncation() {
     assert!(schema.parse(&text).is_ok());
     let too_big = text.replacen('x', "xx", 1);
     assert!(schema.parse(&too_big).unwrap_err().contains("normalized"));
-    assert!(
-        schema
-            .parse(&"x".repeat(1_048_577))
-            .unwrap_err()
-            .contains("1 MiB")
-    );
-    let compact = r#"{"verdict":"GREEN"}"#;
-    assert!(
-        schema
-            .parse(&format!(
-                "{compact}{}",
-                " ".repeat(1_048_576 - compact.len())
-            ))
-            .is_ok()
-    );
 }
 
 #[test]
@@ -177,7 +168,7 @@ fn human_submission_errors_list_bounded_failing_paths() {
 }
 
 #[test]
-fn repair_detail_names_bounded_failing_paths_of_json_results() {
+fn errors_name_bounded_failing_paths_of_json_results() {
     let owner = json!({
         "properties":{
             "covered":{"type":"array","items":{"type":"string","pattern":"^R[0-9]+$"},"minItems":1},
@@ -186,24 +177,16 @@ fn repair_detail_names_bounded_failing_paths_of_json_results() {
         "required":["covered"],
     });
     let schema = VerdictSchema::new(owner.as_object(), None).unwrap();
-    let repair = |text: &str| schema.repair_detail(schema.parse_model(text, None).unwrap_err());
-    // Unparseable or envelope errors have no paths to name.
-    for (text, expected) in [
-        (
-            "prose",
-            "not_json: return exactly one JSON object, without prose or code fences",
-        ),
-        (
-            "```json\n{}\n```",
-            "not_json: return exactly one JSON object, without prose or code fences",
-        ),
-        (
-            r#"{"verdict":"BLUE"}"#,
-            "schema_mismatch: verdict must be GREEN or RED",
-        ),
-    ] {
-        assert_eq!(repair(text), expected, "{text}");
-    }
+    let repair = |text: &str| {
+        let value: Value = serde_json::from_str(text).unwrap();
+        let error = schema.validate(&value).unwrap_err();
+        schema.explain(error, &value)
+    };
+    // An envelope error has no paths to name.
+    assert_eq!(
+        repair(r#"{"verdict":"BLUE"}"#),
+        "schema_mismatch: verdict must be GREEN or RED"
+    );
     let detail = repair(r#"{"verdict":"GREEN","covered":["X1"],"notes":"far too long notes"}"#);
     let lines: Vec<_> = detail.lines().collect();
     assert_eq!(

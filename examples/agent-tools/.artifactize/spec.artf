@@ -25,6 +25,7 @@ notes = { description = "Print the review notes of {artifactName}.", builtin = "
 [evals.review]
 title = "The specification covers every requirement"
 profile = { kind = "agent", backend = "openai", model = "YOUR_OPENAI_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20 }
+red_at = "P1"
 
 [evals.review.profile_variants]
 anthropic = { kind = "agent", backend = "anthropic", model = "YOUR_ANTHROPIC_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20 }
@@ -34,33 +35,8 @@ codex = { kind = "agent", backend = "codex", model = "YOUR_CODEX_MODEL_SLUG", re
 instruction = """
 Review spec.md in {spec} against every requirement in {requirements}. Start with the coverage report to see \
 which lines cite each requirement ID, then read the cited sections and search for anything the \
-coverage report misses. Inspect diagram.png to check that it matches the Diagram section. Answer \
-GREEN only if each requirement is fully specified and the diagram matches; otherwise answer RED \
-with one finding per problem."""
-
-[evals.review.pass_schema]
-type = "object"
-properties.covered = { type = "array", items = { type = "string", pattern = "^R[0-9]+$" }, minItems = 1 }
-properties.diagramMatches = { const = true }
-properties.notes = { type = "string" }
-required = ["covered", "diagramMatches"]
-additionalProperties = false
-
-[evals.review.fail_schema]
-type = "object"
-required = ["findings"]
-additionalProperties = false
-
-[evals.review.fail_schema.properties.findings]
-type = "array"
-minItems = 1
-
-[evals.review.fail_schema.properties.findings.items]
-type = "object"
-properties.requirement = { type = "string", pattern = "^(R[0-9]+|diagram)$" }
-properties.problem = { type = "string", minLength = 1 }
-required = ["requirement", "problem"]
-additionalProperties = false
+coverage report misses. Inspect diagram.png to check that it matches the Diagram section. Each \
+requirement that is not fully specified, and a diagram that does not match, is a finding."""
 
 [evals.signoff]
 title = "A reviewer signs off on the open questions"

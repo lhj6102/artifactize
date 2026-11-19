@@ -13,15 +13,12 @@ read = { builtin = "read" }
 [evals.engine-apis]
 title = "The text-input device follows E2E-INPUT"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+red_at = "P1"
 payload.instruction = """
 Read E2E-INPUT of the end-to-end rules {desktop-e2e-rules} and the engine contract in the module comment of \
 e2e_input/platform.rs of {desktop-e2e-input}, which names the WebView-engine text and editing APIs the device may \
 call on each OS. Review the test-only native text-input device (e2e_input.rs and e2e_input/) against that contract. \
-The banned injection APIs are checked by no-injection, how the suite reaches the device by desktop-e2e. Submit GREEN when nothing clearly violates these. Otherwise submit RED. List every finding, each with \
-a path:line (where) and one sentence on what to change (change).
-"""
-pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", minItems = 1, items = { type = "object", properties = { where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["where", "change"], additionalProperties = false } } }, required = ["findings"], additionalProperties = false }
+The banned injection APIs are checked by no-injection, how the suite reaches the device by desktop-e2e."""
 
 [evals.no-injection]
 title = "The text-input device calls none of the injection APIs E2E-INPUT bans"

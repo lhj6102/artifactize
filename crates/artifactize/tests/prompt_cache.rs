@@ -12,7 +12,7 @@ use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
-/// A workspace of Artifacts, each with one Agent eval whose result must list `covered`.
+/// A workspace of Artifacts, each with one Agent eval.
 struct Project {
     // Retain inputs if releasing any durable worker fails, including on assertion unwind.
     _root: owned_run::Root,
@@ -40,8 +40,7 @@ impl Project {
                 json!({"name":name,"views":{"agent_tools":{"read":{"builtin":"read"}}},
                     "evals":[{"id":"review","title":"Review","profile":profile,
                         "payload":{"instruction":format!("Review {{{name}}}.")},
-                        "pass_schema":{"type":"object","required":["covered"],
-                            "properties":{"covered":{"type":"array","items":{"type":"string"}}}}}]})
+                        "red_at":"P1"}]})
                 .to_string(),
             )
             .unwrap();
@@ -105,15 +104,22 @@ fn repairing(request: &Request) -> bool {
         .is_some_and(|text| text.starts_with("Your final response did not match"))
 }
 
-/// Read the notes, answer without `covered`, then repair; Anthropic passes at once.
+/// Read the notes, answer a finding without its reason, then repair; Anthropic passes at once.
 fn reply(request: &Request) -> Reply {
     if request.path == "/v1/messages" {
-        return anthropic::text(request, r#"{"verdict":"GREEN","covered":["R1"]}"#, 10, 2);
+        return anthropic::text(
+            request,
+            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+            10,
+            2,
+        );
     }
     let output = if repairing(request) {
-        vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)]
+        vec![openai::message(
+            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+        )]
     } else if replayed(request) {
-        vec![openai::message(r#"{"verdict":"GREEN"}"#)]
+        vec![openai::message(r#"{"findings":[{"priority":"P2"}]}"#)]
     } else {
         let tool = request.body["tools"][0]["name"].as_str().unwrap();
         vec![openai::function_call(

@@ -1,7 +1,7 @@
 //! Reviews and follow-ups on the `claude-agent` backend. Claude Code runs the conversation
 //! with the user's own login; artifactize runs every tool call through the eval's registry,
 //! enforces the budgets and the deadline, records the conversation and its live text, and
-//! validates the verdict, with the same one format repair as every backend. Claude Code
+//! validates the findings, with the same one format repair as every backend. Claude Code
 //! retries failed requests itself, so nothing here retries.
 
 mod conversation;
@@ -24,7 +24,7 @@ use super::{
     error::{Code, Failure},
     prompt_text,
     session::{self, Recorder},
-    verdict::{self, Structured, ValidatedResult},
+    verdict::{Findings, ValidatedResult},
 };
 use crate::{
     config::{Eval, ModelId, Profile, RepoConfig},
@@ -108,15 +108,11 @@ async fn run_review(
         max_tool_calls: *max_tool_calls,
     };
     let registry = Registry::new(config, &eval.id)?.with_sessions(tools);
-    let verdict = verdict::VerdictSchema::new(
-        eval.declaration.pass_schema(),
-        eval.declaration.fail_schema(),
-    )?;
-    let structured = Structured::new(&verdict.schema, Api::ClaudeAgent);
+    let findings = Findings::new(eval.declaration.red_at());
     let Prompt { system, text } = prompt_text(eval, &registry);
     let effort = reasoning.map(crate::config::Reasoning::as_str);
     let mut parameters = Client::parameters(Api::ClaudeAgent, effort, recorder.id())?;
-    Client::output_format(Api::ClaudeAgent, &mut parameters, structured.schema.clone());
+    Client::output_format(Api::ClaudeAgent, &mut parameters, findings.schema.clone());
     let definitions = definitions(&registry);
     recorder.start(session::Header {
         backend: Some(backend.clone()),
@@ -139,7 +135,7 @@ async fn run_review(
         effort,
         system: Some(&system),
         tools: definitions.iter().map(|tool| tool.name.as_str()).collect(),
-        schema: Some(&structured.schema),
+        schema: Some(&findings.schema),
     };
     let server = Server::new(registry.list());
     let session = Session {
@@ -153,25 +149,24 @@ async fn run_review(
         attempts,
     };
     let (mut conversation, running) = session.open(&launch).await?;
-    let result = judge(&mut conversation, &text, &verdict, &structured).await;
+    let result = judge(&mut conversation, &text, &findings).await;
     close(conversation, running, result).await
 }
 
-/// Ask for the verdict and validate it, with one format repair: tools are then refused.
+/// Ask for the findings and validate them, with one format repair: tools are then refused.
 async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     conversation: &mut Conversation<'_, '_, R, W>,
     prompt: &str,
-    verdict: &verdict::VerdictSchema,
-    structured: &Structured,
+    findings: &Findings,
 ) -> Result<ValidatedResult, Failure> {
     let answer = conversation.ask(prompt).await?;
-    let error = match verdict.parse_model(&answer, Some(structured)) {
+    let error = match findings.parse_model(&answer) {
         Ok(result) => return Ok(result),
         Err(error) => error,
     };
     let repair = Message::user(format!(
         "Your final response did not match the required schema: {}\nReturn only one JSON object matching the schema.",
-        verdict.repair_detail(error)
+        Findings::repair_detail(error)
     ));
     conversation
         .session
@@ -179,14 +174,12 @@ async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         .message(conversation.turn + 1, &repair, true);
     conversation.tools_open = false;
     let answer = conversation.ask(&message_text(&repair)).await?;
-    verdict
-        .parse_model(&answer, Some(structured))
-        .map_err(|error| {
-            Failure::new(
-                Code::InvalidResult,
-                format!("Invalid final Agent result after one format repair: {error}."),
-            )
-        })
+    findings.parse_model(&answer).map_err(|error| {
+        Failure::new(
+            Code::InvalidResult,
+            format!("Invalid final Agent result after one format repair: {error}."),
+        )
+    })
 }
 
 fn message_text(message: &Message) -> String {

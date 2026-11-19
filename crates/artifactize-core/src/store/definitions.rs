@@ -310,6 +310,8 @@ pub struct Declaration {
     #[serde(default, skip_serializing_if = "missing")]
     pub payload: Field<StoredPayload>,
     #[serde(default, skip_serializing_if = "missing")]
+    pub red_at: Field<config::Priority>,
+    #[serde(default, skip_serializing_if = "missing")]
     pub pass_schema: Field<Map<String, Value>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub fail_schema: Field<Map<String, Value>>,

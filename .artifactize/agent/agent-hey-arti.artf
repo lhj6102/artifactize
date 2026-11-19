@@ -10,19 +10,17 @@ open = { description = "Open SKILL.md of {artifactName} in the desktop's default
 [evals.correct]
 title = "What the skill recommends exists in today's artifactize"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
 payload.instruction = """
 Read the skill {agent-hey-arti} using read_agent__hey-arti. Check that every declaration form,
 command, tool, status and behaviour it mentions or recommends matches {engine-core}, {engine-cli},
 {engine-mcp} and {docs-en}. Judge accuracy only: the skill need not cover every feature, and
-an omission is not a finding. Submit GREEN when nothing it states is wrong or
-outdated; otherwise RED with concrete skill path:line findings.
-"""
-pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
+an omission is not a finding. Each statement that is wrong or outdated is a finding."""
 
 [evals.waiter]
 title = "The skill helps the user like a restaurant's waiter"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
 payload.instruction = """
 Read the skill {agent-hey-arti} using read_agent__hey-arti. Judge whether it helps a developer
 the way a good waiter helps a guest, using {docs-en} only to understand the concepts.
@@ -40,11 +38,7 @@ It must not read as a list of artifactize's features. Check that it:
   gets agreement before changing the project;
 - applies the agreed changes, confirms they match artifactize's schema, and tells
   the user what changed and what will now be reviewed or reused.
-Submit GREEN when it does all of these; otherwise RED with concrete skill path:line
-findings, each naming the missing or misplaced part.
-"""
-pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
+Each of these it does not do is a finding."""
 
 [evals.consultant]
 title = "The skill reads like a Forward Deployed Engineer consulting on the project"

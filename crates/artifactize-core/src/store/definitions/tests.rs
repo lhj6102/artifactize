@@ -173,7 +173,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                     "title":"Check",
                     "profile":{"kind":"agent","backend":"openai","model":"fixture"},
                     "payload":{"instruction":"Check.","owner":{"nested":[1,2]}},
-                    "pass_schema":{"type":"object"},
+                    "red_at":"P1",
                 },
             ],
         })
@@ -218,7 +218,8 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                     "reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null,
                 },
                 "payload":{"instruction":"Check.","owner":{"nested":[1,2]}},
-                "passSchema":{"type":"object"},
+                "redAt":"P1",
+                "passSchema":null,
                 "failSchema":null,
             },
         }],

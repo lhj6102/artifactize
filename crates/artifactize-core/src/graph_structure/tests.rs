@@ -4,7 +4,7 @@ use std::fs;
 use tokio_util::sync::CancellationToken;
 
 const GRAPH: &str = "name = 'graph'\n[evals.review]\ntitle = 'Review graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review the project structure.' }\n";
-const APP: &str = "name = 'app'\ntags = ['code']\n[evals.review]\ntitle = 'Review app'\nprofile = { kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000 }\npayload = { instruction = 'Review {leaf} and {app}.', context = 'criteria' }\npass_schema = { type = 'object' }\nfail_schema = { type = 'object' }\n[evals.command]\ntitle = 'Runtime criteria'\nprofile = { kind = 'runtime', command = 'runtime-program', args = ['{leaf}/input.txt'], timeout_ms = 1234 }\npayload = { instruction = 'Check.' }\n";
+const APP: &str = "name = 'app'\ntags = ['code']\n[evals.review]\ntitle = 'Review app'\nprofile = { kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000 }\npayload = { instruction = 'Review {leaf} and {app}.', context = 'criteria' }\nred_at = 'P1'\n[evals.command]\ntitle = 'Runtime criteria'\nprofile = { kind = 'runtime', command = 'runtime-program', args = ['{leaf}/input.txt'], timeout_ms = 1234 }\npayload = { instruction = 'Check.' }\n";
 
 fn fixture() -> tempfile::TempDir {
     let repo = crate::test_os::tempdir();
@@ -32,8 +32,9 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
         APP.replace("args = ['{leaf}/input.txt']", "args = ['{leaf}/input.txt', 'criterion']"),
         APP.replace("context = 'criteria'", "context = 'different criteria'"),
         APP.replace("Review {leaf} and {app}.", "Review {app}."),
-        APP.replace("pass_schema = { type = 'object' }", "pass_schema = { type = 'object', required = ['summary'] }"),
-        APP.replace("kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000", "kind = 'human'"),
+        APP.replace("red_at = 'P1'", "red_at = 'P2'"),
+        APP.replace("red_at = 'P1'\n", ""),
+        APP.replace("kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000", "kind = 'human'").replace("red_at = 'P1'\n", ""),
     ] {
         crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), changed).unwrap();
         assert_ne!(fingerprint(), baseline);

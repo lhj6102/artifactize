@@ -228,13 +228,11 @@ owner = {{ literal = "$FIXTURE_LITERAL" }}
 [evals.agent]
 title = "Review input"
 profile = {{ kind = "agent", backend = "openai", model = "not-called", reasoning = "high" }}
+red_at = "P1"
 
 [evals.agent.payload]
 instruction = """
 Inspect {{input}}."""
-
-[evals.agent.pass_schema]
-properties.notes = {{ type = "string" }}
 
 [evals.human]
 title = "Inspect input"

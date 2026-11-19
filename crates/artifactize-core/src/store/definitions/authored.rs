@@ -29,6 +29,7 @@ impl From<&config::EvalDeclaration> for Declaration {
                 )
             },
             payload: Field::Value(source.payload().into()),
+            red_at: optional(source.red_at()),
             pass_schema: source.pass_schema().cloned().into(),
             fail_schema: source.fail_schema().cloned().into(),
             extra: Map::new(),

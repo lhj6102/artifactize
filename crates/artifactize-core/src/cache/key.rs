@@ -30,6 +30,10 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionH
         "passSchema": eval.pass_schema(),
         "failSchema": eval.fail_schema(),
     });
+    // Only an Agent eval declares a bar, so other evals keep their criteria hashes.
+    if let Some(red_at) = eval.red_at() {
+        criteria["redAt"] = json!(red_at);
+    }
     if let Profile::Runtime { command, args, .. } = &eval.profile() {
         criteria["command"] = json!(command);
         criteria["args"] = json!(args);

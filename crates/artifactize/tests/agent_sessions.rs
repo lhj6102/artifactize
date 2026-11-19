@@ -29,10 +29,9 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 // An independent expectation for the provider/session wire framing, not the production
 // formatter or constant that emits it.
-const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the verdict stays as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
+const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the findings stay as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
 
-/// A workspace of one Artifact, `notes`, with one Agent eval whose result must list
-/// `covered`, and a content fingerprint.
+/// A workspace of one Artifact, `notes`, with one Agent eval and a content fingerprint.
 struct Project {
     root: owned_run::Root,
     repo: PathBuf,
@@ -70,11 +69,7 @@ impl Project {
                         "title":"Review",
                         "profile":profile,
                         "payload":{"instruction":"Review {notes}."},
-                        "pass_schema":{
-                            "type":"object",
-                            "required":["covered"],
-                            "properties":{"covered":{"type":"array","items":{"type":"string"}}},
-                        },
+                        "red_at":"P1",
                     },
                 ],
             })
@@ -211,14 +206,14 @@ fn responses(request: &Request, output: Vec<Value>) -> Reply {
     }
 }
 
-/// The review reasons and reads the notes, answers without `covered`, then repairs. The
+/// The review reasons and reads the notes, answers a finding without its reason, then repairs. The
 /// first follow-up reads the notes again before it answers; later ones answer at once.
 fn reply(request: &Request) -> Reply {
     if request.path == "/v1/messages" {
         let text = if request.body.to_string().contains(FOLLOW_UP) {
             "Anthropic: R1 holds."
         } else {
-            r#"{"verdict":"GREEN","covered":["R1"]}"#
+            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#
         };
         return anthropic::text(request, text, 10, 2);
     }
@@ -234,8 +229,10 @@ fn reply(request: &Request) -> Reply {
         (1, true) => vec![openai::message("Because R1 holds.")],
         (2, _) => vec![openai::message("Still GREEN.")],
         (count, _) if count > 2 => vec![openai::message("Noted.")],
-        _ if repairing(request) => vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)],
-        _ if replayed(request) => vec![openai::message(r#"{"verdict":"GREEN"}"#)],
+        _ if repairing(request) => vec![openai::message(
+            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+        )],
+        _ if replayed(request) => vec![openai::message(r#"{"findings":[{"priority":"P2"}]}"#)],
         _ => vec![
             openai::reasoning("rs_1", "Reading the notes", "enc-review-1"),
             read("call_1"),
@@ -315,7 +312,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             "You are an artifactize evaluator. Review only the supplied Artifacts; do not implement or repair. Execute only registered Artifact tools."
         ));
         assert!(system.ends_with(
-            "If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the verdict stays as recorded."
+            "If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the findings stay as recorded."
         ));
         let reasoning = &messages[2]["message"]["content"][0];
         assert_eq!(reasoning["type"], "reasoning");
@@ -330,7 +327,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert!(
             messages[4]
                 .to_string()
-                .contains(r#"{\"verdict\":\"GREEN\"}"#)
+                .contains(r#"{\"findings\":[{\"priority\":\"P2\"}]}"#)
         );
         assert!(
             text_of(&messages[5]["message"])
@@ -342,7 +339,10 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         );
         let end = events.last().unwrap();
         assert_eq!(end["kind"], "end");
-        assert_eq!(end["result"], json!({"verdict":"GREEN","covered":["R1"]}));
+        assert_eq!(
+            end["result"],
+            json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"R1 holds."}]})
+        );
         {
             assert!(support::os::private_dir(&project.sessions()));
             assert!(support::os::private_file(
@@ -584,7 +584,11 @@ fn anthropic_reviews_are_saved_and_continued_without_a_cache_key() {
     assert_eq!(answer["answer"], "Anthropic: R1 holds.");
     let call = provider.requests().pop().unwrap();
     assert!(call.body.get("prompt_cache_key").is_none());
-    assert!(call.body.to_string().contains(r#"{\"verdict\":\"GREEN\""#));
+    assert!(
+        call.body
+            .to_string()
+            .contains(r#"{\"findings\":[{\"priority\":\"P2\""#)
+    );
 }
 
 #[test]
@@ -612,7 +616,9 @@ fn concurrent_sends_take_turns_in_one_thread() {
             let Some(last) = asked.last() else {
                 return responses(
                     request,
-                    vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)],
+                    vec![openai::message(
+                        r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+                    )],
                 );
             };
             let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
@@ -677,7 +683,9 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
             release.wait();
             responses(
                 request,
-                vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)],
+                vec![openai::message(
+                    r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+                )],
             )
         }
     });

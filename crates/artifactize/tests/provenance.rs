@@ -80,7 +80,7 @@ impl Fixture {
         let provider = FakeProvider::start(|request| {
             openai::completed(
                 request,
-                vec![openai::message(&json!({"verdict":"GREEN"}).to_string())],
+                vec![openai::message(&json!({"findings":[]}).to_string())],
                 openai::usage(10, 5),
             )
         });

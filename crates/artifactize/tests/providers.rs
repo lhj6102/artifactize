@@ -22,7 +22,7 @@ use support::{FakeProvider, Reply, chat, gemini, openai};
 
 const GEMINI_KEY: &str = "gm-saved-gemini-key-0123";
 const ENDPOINT_KEY: &str = "sk-saved-endpoint-key-0123";
-const VERDICT: &str = r#"{"verdict":"GREEN","covered":["R1"]}"#;
+const VERDICT: &str = r#"{"findings":[{"priority":"P2","reason":"R1 is covered."}]}"#;
 
 struct Project {
     _root: owned_run::Root,
@@ -63,11 +63,7 @@ impl Project {
                     "title":"Review",
                     "profile":profile,
                     "payload":{"instruction":"Review {spec}."},
-                    "pass_schema":{
-                        "type":"object",
-                        "properties":{"covered":{"type":"array","items":{"type":"string"}}},
-                        "required":["covered"],
-                    },
+                    "red_at":"P1",
                 }],
             })
             .to_string(),

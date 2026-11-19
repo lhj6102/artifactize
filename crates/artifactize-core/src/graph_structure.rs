@@ -65,7 +65,10 @@ pub struct Eval {
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Criteria {
-    Agent,
+    Agent {
+        #[serde(rename = "redAt", skip_serializing_if = "Option::is_none")]
+        red_at: Option<crate::config::Priority>,
+    },
     Human,
     Runtime {
         command: String,
@@ -137,7 +140,9 @@ pub fn extract(config: &RepoConfig) -> Structure {
         .map(|eval| {
             let declaration = &eval.declaration;
             let criteria = match declaration.profile() {
-                Profile::Agent { .. } => Criteria::Agent,
+                Profile::Agent { .. } => Criteria::Agent {
+                    red_at: declaration.red_at(),
+                },
                 Profile::Human {} => Criteria::Human,
                 Profile::Runtime { command, args, .. } => Criteria::Runtime {
                     command: crate::platform::program_text(command),

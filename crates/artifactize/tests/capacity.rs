@@ -66,7 +66,7 @@ impl Fixture {
                 active.fetch_sub(1, Ordering::SeqCst);
                 openai::completed(
                     request,
-                    vec![openai::message(&json!({"verdict":"GREEN"}).to_string())],
+                    vec![openai::message(&json!({"findings":[]}).to_string())],
                     openai::usage(10, 5),
                 )
             }

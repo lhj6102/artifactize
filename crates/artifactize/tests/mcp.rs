@@ -604,7 +604,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
                 gate.wait();
                 support::openai::completed(
                     request,
-                    vec![support::openai::message("{\"verdict\":\"GREEN\"}")],
+                    vec![support::openai::message("{\"findings\":[]}")],
                     support::openai::usage(1, 1),
                 )
             }
@@ -728,7 +728,7 @@ async fn b1_read_tools_match_cli_json_table() {
         } else {
             support::openai::completed(
                 request,
-                vec![support::openai::message("{\"verdict\":\"GREEN\"}")],
+                vec![support::openai::message("{\"findings\":[]}")],
                 support::openai::usage(1, 1),
             )
         }

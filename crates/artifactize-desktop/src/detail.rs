@@ -114,7 +114,8 @@ pub enum ResultEntry {
     Items { key: String, items: Vec<ResultItem> },
 }
 
-/// A finding: its rule and place as the head (`item · where`), then its other fields.
+/// A finding: its priority, or its rule and place, as the head (`P1`, `item · where`), then
+/// its other fields.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ResultItem {
@@ -144,6 +145,9 @@ fn text(value: &serde_json::Value) -> String {
     }
 }
 
+/// The fields a finding leads with: an Agent finding's priority, a Human finding's rule and place.
+const HEAD: [&str; 3] = ["priority", "item", "where"];
+
 fn result_item(value: &serde_json::Value) -> ResultItem {
     let Some(object) = value.as_object() else {
         return ResultItem {
@@ -151,7 +155,7 @@ fn result_item(value: &serde_json::Value) -> ResultItem {
             fields: Vec::new(),
         };
     };
-    let head: Vec<_> = ["item", "where"]
+    let head: Vec<_> = HEAD
         .into_iter()
         .filter_map(|key| object.get(key).map(text))
         .collect();
@@ -159,7 +163,7 @@ fn result_item(value: &serde_json::Value) -> ResultItem {
         head: (!head.is_empty()).then(|| head.join(" · ")),
         fields: object
             .iter()
-            .filter(|(key, _)| !matches!(key.as_str(), "item" | "where"))
+            .filter(|(key, _)| !HEAD.contains(&key.as_str()))
             .map(|(key, value)| Field {
                 key: key.clone(),
                 value: text(value),

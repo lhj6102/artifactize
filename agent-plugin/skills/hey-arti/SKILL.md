@@ -310,9 +310,8 @@ payload.instruction = "Run the application tests."
 [evals.review]
 title = "The app fulfills the requirements"
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", reasoning = "high" }
-payload.instruction = "Review {app} against {spec}; GREEN only when every requirement is met."
-pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string" }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
+red_at = "P1"
+payload.instruction = "Review {app} against {spec}; each requirement that is not met is a finding."
 ```
 
 `.artifactize/logo.artf`:

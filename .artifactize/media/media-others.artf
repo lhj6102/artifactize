@@ -26,6 +26,7 @@ payload.instruction = "Render every HTML figure of {media-others} again with its
 [evals.explains-graph]
 title = "The example graph shows how Artifactize works, the same in every language"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.explains-graph.payload]
 instruction = """
@@ -45,25 +46,12 @@ Artifact they review. Nothing contradicts the docs.
 and all three show the same layout.
 - Layout: in every image, no text is clipped, overlaps a box, line or other text, or is too \
 small to read at half size.
-Submit GREEN when all four hold. Otherwise submit RED with one finding per problem, naming the \
-image or the HTML line and saying what to change in graph-example.html.
-"""
-
-[evals.explains-graph.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.explains-graph.fail_schema]
-type = "object"
-properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["where", "change"], additionalProperties = false } }
-required = ["findings"]
-additionalProperties = false
+Each problem with these four is a finding, to be fixed in graph-example.html."""
 
 [evals.shows-roles]
 title = "The role figure shows people and agents collaborating in three roles, cleanly"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.shows-roles.payload]
 instruction = """
@@ -96,18 +84,4 @@ graph; and can tell each state of a node from its look.
 - Layout: the roles form a balanced triangle around where the graph travels; in every frame, \
 no text or icon is clipped, overlaps another or is too small to read at half size, and there \
 are no large empty areas. The loop's last frame leads into its first without a jump.
-Submit GREEN when all three hold. Otherwise submit RED with one finding per problem, naming \
-the moment in the GIF or the HTML line and saying what to change in roles.html.
-"""
-
-[evals.shows-roles.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.shows-roles.fail_schema]
-type = "object"
-properties.findings = { type = "array", minItems = 1, items = { type = "object", properties = { where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["where", "change"], additionalProperties = false } }
-required = ["findings"]
-additionalProperties = false
+Each problem with these three is a finding, to be fixed in roles.html."""

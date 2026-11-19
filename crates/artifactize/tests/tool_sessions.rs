@@ -50,7 +50,7 @@ impl Fixture {
             let result = if index < calls {
                 openai::function_call(&format!("call_{index}"), "act_app", &json!({}))
             } else {
-                openai::message(&json!({"verdict":"GREEN"}).to_string())
+                openai::message(&json!({"findings":[]}).to_string())
             };
             openai::completed(request, vec![result], openai::usage(10, 5))
         });
@@ -372,7 +372,7 @@ fn concurrent_reviews_have_distinct_sessions_and_both_cleanup() {
         });
         openai::completed(
             request,
-            vec![openai::message(&json!({"verdict":"GREEN"}).to_string())],
+            vec![openai::message(&json!({"findings":[]}).to_string())],
             openai::usage(10, 5),
         )
     });
@@ -641,7 +641,9 @@ fn red_reviews_stop_and_cleanup_before_the_result_is_published() {
         }
         openai::completed(
             request,
-            vec![openai::message(&json!({"verdict":"RED"}).to_string())],
+            vec![openai::message(
+                &json!({"findings":[{"priority":"P0","reason":"broken"}]}).to_string(),
+            )],
             openai::usage(10, 5),
         )
     });
@@ -669,7 +671,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
         });
         openai::completed(
             request,
-            vec![openai::message(&json!({"verdict":"GREEN"}).to_string())],
+            vec![openai::message(&json!({"findings":[]}).to_string())],
             openai::usage(10, 5),
         )
     });
@@ -715,7 +717,7 @@ fn an_ended_session_stops_its_processes_while_the_verdict_is_pending() {
             support::os::wait_until(Duration::from_secs(15), || {
                 support::declaration::read_text(log.join("verdict")).unwrap_or_default() == "ready"
             });
-            openai::message(&json!({"verdict":"GREEN"}).to_string())
+            openai::message(&json!({"findings":[]}).to_string())
         };
         openai::completed(request, vec![content], openai::usage(10, 5))
     });
@@ -948,7 +950,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
             support::os::wait_until(Duration::from_secs(10), || {
                 support::declaration::read_text(log.join("verdict")).unwrap_or_default() == "ready"
             });
-            openai::message(&json!({"verdict":"GREEN"}).to_string())
+            openai::message(&json!({"findings":[]}).to_string())
         };
         openai::completed(request, vec![content], openai::usage(10, 5))
     });

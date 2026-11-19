@@ -10,6 +10,7 @@ graph = { builtin = "graph", args = [] }
 [evals.derives]
 title = "The desktop definitions judge each Artifact against what specifies it"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+red_at = "P1"
 payload.instruction = """
 Read every definition in {graph-desktop}; use the graph tool for relations that leave the
 folder. The desktop app is specified by the journeys (desktop-ux-features) and the design
@@ -25,30 +26,4 @@ folder. The desktop app is specified by the journeys (desktop-ux-features) and t
   parts included; the design's pages are parts of the design.
 - One home: no two evals here state the same criterion about the same Artifact; a check
   lives on the Artifact it judges.
-- Shared rules are named, not copied into instructions.
-
-Submit GREEN when nothing clearly violates these. Otherwise submit RED. List every finding, each with the definition file, the eval or key, and one
-sentence on what to change.
-"""
-
-[evals.derives.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.derives.fail_schema]
-type = "object"
-required = ["findings"]
-additionalProperties = false
-
-[evals.derives.fail_schema.properties.findings]
-type = "array"
-minItems = 1
-
-[evals.derives.fail_schema.properties.findings.items]
-type = "object"
-properties.where = { type = "string", minLength = 1 }
-properties.change = { type = "string", minLength = 1 }
-required = ["where", "change"]
-additionalProperties = false
+- Shared rules are named, not copied into instructions."""

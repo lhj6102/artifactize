@@ -7,6 +7,7 @@ args = ["README.md"]
 [evals.follows-rules]
 title = "The README introduces the project in the owner's flow"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.follows-rules.profile_variants]
 sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
@@ -16,36 +17,12 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 [evals.follows-rules.payload]
 instruction = """
 Read the README rules {rules-writer-readme}, the shared introduction checklist {rules-writer-introduction} and the
-root README {docs-readme}. Check every R- and W- item.
-Submit GREEN only when no item is clearly violated. Otherwise submit RED. List every finding, each with the item id, a README path:line and one sentence on what to change in the README.
-"""
-
-[evals.follows-rules.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.follows-rules.fail_schema]
-type = "object"
-required = ["violations"]
-additionalProperties = false
-
-[evals.follows-rules.fail_schema.properties.violations]
-type = "array"
-minItems = 1
-
-[evals.follows-rules.fail_schema.properties.violations.items]
-type = "object"
-properties.item = { type = "string", minLength = 1 }
-properties.where = { type = "string", minLength = 1 }
-properties.change = { type = "string", minLength = 1 }
-required = ["item", "where", "change"]
-additionalProperties = false
+root README {docs-readme}. Check every R- and W- item."""
 
 [evals.matches-landing-install]
 title = "The README's installation matches the landing page's install section"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.matches-landing-install.payload]
 instruction = """
@@ -55,31 +32,4 @@ reader to do: the default install command must be identical, an alternative meth
 must be the same, and both must agree on which channels are not available yet. Wording and
 layout may differ, and either may mention a detail the other leaves out as long as nothing
 contradicts.
-Submit GREEN when they agree. Otherwise submit RED with one finding per mismatch, naming the
-operating system, the README path:line and the landing page path:line, and one sentence on what to
-change in the README.
-"""
-
-[evals.matches-landing-install.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.matches-landing-install.fail_schema]
-type = "object"
-required = ["findings"]
-additionalProperties = false
-
-[evals.matches-landing-install.fail_schema.properties.findings]
-type = "array"
-minItems = 1
-
-[evals.matches-landing-install.fail_schema.properties.findings.items]
-type = "object"
-properties.os = { type = "string", minLength = 1 }
-properties.readme = { type = "string", minLength = 1 }
-properties.landing = { type = "string", minLength = 1 }
-properties.change = { type = "string", minLength = 1 }
-required = ["os", "readme", "landing", "change"]
-additionalProperties = false
+Each mismatch is a finding, to be fixed in the README."""

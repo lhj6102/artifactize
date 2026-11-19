@@ -39,7 +39,8 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
         relations: Vec::new(),
     };
     let mut schemas = super::schemas::Schemas::default();
-    walk(&root, &ignored, targets, |found, table| {
+    walk(&root, &ignored, targets, |found, mut table| {
+        drop_agent_schemas(table.get_mut());
         let declaration = super::definition::parse_table(
             &super::definition::Input {
                 kind: found.kind,
@@ -80,6 +81,30 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
         crate::scope::validate_selections(&config)?;
     }
     Ok(config)
+}
+
+/// Agent evals report prioritized findings now: their old per-eval result schemas go.
+fn drop_agent_schemas(table: &mut toml::de::DeTable<'_>) {
+    use toml::de::DeValue;
+    let Some(DeValue::Table(evals)) = table.get_mut("evals").map(toml::Spanned::get_mut) else {
+        return;
+    };
+    for (_, eval) in evals.iter_mut() {
+        let DeValue::Table(eval) = eval.get_mut() else {
+            continue;
+        };
+        let agent = matches!(
+            eval.get("profile").map(toml::Spanned::get_ref),
+            Some(DeValue::Table(profile)) if matches!(
+                profile.get("kind").map(toml::Spanned::get_ref),
+                Some(DeValue::String(kind)) if kind == "agent"
+            )
+        );
+        if agent {
+            eval.remove("pass_schema");
+            eval.remove("fail_schema");
+        }
+    }
 }
 
 /// A declaration a walk found.

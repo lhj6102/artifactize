@@ -30,12 +30,13 @@ mutex = ["use-computer:display"]
 profile = { kind = "agent", backend = "codex", model = "fixture", reasoning = "high", timeout_ms = 3000, max_tool_calls = 10, max_tokens = 1000 }
 profile_variants.careful = { kind = "agent", backend = "codex", model = "fixture", reasoning = "max", timeout_ms = 4000, max_tool_calls = 20, max_tokens = 2000 }
 payload = { instruction = "Inspect {source}.", ownerData = { camelCase = true, array = [1, 2] } }
-pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { reason = { type = "string", minLength = 1 } }, required = ["reason"], additionalProperties = false }
+red_at = "P1"
 
 [evals.h-human]
 title = "Human"
 profile = { kind = "human" }
+pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
+fail_schema = { type = "object", properties = { reason = { type = "string", minLength = 1 } }, required = ["reason"], additionalProperties = false }
 payload.instruction = """
 Inspect the result.
 Then sign off.
@@ -73,8 +74,12 @@ fn every_declaration_feature_is_standard_toml_with_owner_data_untouched() {
         true
     );
     assert_eq!(
-        declaration.evals[0].pass_schema().as_ref().unwrap()["properties"]["summary"]["minLength"],
+        declaration.evals[1].pass_schema().as_ref().unwrap()["properties"]["summary"]["minLength"],
         1
+    );
+    assert_eq!(
+        declaration.evals[0].red_at(),
+        Some(artifactize_core::config::Priority::P1)
     );
     assert!(
         parse_declaration(
@@ -101,6 +106,7 @@ fn declaration_names_are_snake_case_at_every_typed_boundary() {
         ("max_tool_calls", "maxToolCalls"),
         ("max_tokens", "maxTokens"),
         ("profile_variants", "profileVariants"),
+        ("red_at", "redAt"),
         ("pass_schema", "passSchema"),
         ("fail_schema", "failSchema"),
     ] {
@@ -281,10 +287,12 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
         assert_eq!(tool["timeoutMs"], 1000);
         assert!(artifact["views"].get("humanTools").is_some());
         let eval = &wire["evals"][0]["declaration"];
-        for (camel, snake) in [
-            ("profileVariants", "profile_variants"),
-            ("passSchema", "pass_schema"),
-            ("failSchema", "fail_schema"),
+        let human = &wire["evals"][1]["declaration"];
+        for (eval, camel, snake) in [
+            (eval, "profileVariants", "profile_variants"),
+            (eval, "redAt", "red_at"),
+            (human, "passSchema", "pass_schema"),
+            (human, "failSchema", "fail_schema"),
         ] {
             assert!(
                 eval.get(camel).is_some() && eval.get(snake).is_none(),

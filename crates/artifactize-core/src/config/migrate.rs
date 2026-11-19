@@ -121,6 +121,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         ));
         originals.insert(file, source);
         normalize_commands(doc.as_table_mut());
+        drop_agent_schemas(doc.as_table_mut());
         sources.insert(new, doc.to_string());
     }
     if !problems.is_empty() {
@@ -220,6 +221,31 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         }
     }
     Ok(report)
+}
+
+/// Agent evals report prioritized findings: drop their old result schemas, and with them every
+/// subtable and comment inside. Human evals keep theirs.
+fn drop_agent_schemas(doc: &mut toml_edit::Table) {
+    let Some(evals) = doc
+        .get_mut("evals")
+        .and_then(toml_edit::Item::as_table_like_mut)
+    else {
+        return;
+    };
+    for (_, eval) in evals.iter_mut() {
+        let Some(eval) = eval.as_table_like_mut() else {
+            continue;
+        };
+        let agent = eval
+            .get("profile")
+            .and_then(|profile| profile.get("kind"))
+            .and_then(toml_edit::Item::as_str)
+            == Some("agent");
+        if agent {
+            eval.remove("pass_schema");
+            eval.remove("fail_schema");
+        }
+    }
 }
 
 /// Normalize only executable fields, retaining all other text and the lines' comments.

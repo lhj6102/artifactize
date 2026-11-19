@@ -1,5 +1,5 @@
 //! The review conversation against a scripted Claude Code on the other end of the channel:
-//! what artifactize writes to Claude Code, and the verdict, failures, attempts and saved
+//! what artifactize writes to Claude Code, and the findings, verdict, failures, attempts and saved
 //! conversation it makes of what Claude Code writes back.
 
 use std::{path::PathBuf, time::Duration};
@@ -43,11 +43,7 @@ impl Fixture {
                     "title": "Review",
                     "profile": {"kind": "agent", "backend": "claude-agent", "model": MODEL, "reasoning": "high"},
                     "payload": {"instruction": "Check {a}"},
-                    "pass_schema": {
-                        "type": "object",
-                        "properties": {"reason": {"type": "string"}},
-                        "required": ["reason"],
-                    },
+                    "red_at": "P1",
                 }],
                 "views": {"agent_tools": {"read": {"builtin": "read"}}},
             })
@@ -259,12 +255,7 @@ where
     let fixture = Fixture::new();
     let eval = &fixture.config.evals[0];
     let registry = Registry::new(&fixture.config, &eval.id).unwrap();
-    let verdict = verdict::VerdictSchema::new(
-        eval.declaration.pass_schema(),
-        eval.declaration.fail_schema(),
-    )
-    .unwrap();
-    let structured = Structured::new(&verdict.schema, Api::ClaudeAgent);
+    let findings = Findings::new(eval.declaration.red_at());
     let server = Server::new(registry.list());
     let mut recorder = Recorder::test(&fixture.state, SESSION);
     recorder.start(session::Header::default());
@@ -288,7 +279,7 @@ where
     let (result, ()) = tokio::join!(
         async {
             let result = match conversation.initialize().await {
-                Ok(()) => judge(&mut conversation, "Review a.", &verdict, &structured).await,
+                Ok(()) => judge(&mut conversation, "Review a.", &findings).await,
                 Err(failure) => Err(failure),
             };
             if let Err(failure) = &result {
@@ -308,7 +299,8 @@ where
 }
 
 #[tokio::test]
-async fn a_review_runs_its_tools_in_artifactize_and_returns_the_validated_verdict() {
+async fn a_review_runs_its_tools_in_artifactize_and_returns_the_findings_with_the_derived_verdict()
+{
     let outcome = review(limits(None), |mut claude| async move {
         assert_eq!(claude.start(VERSION).await, ["read_a"]);
         assert!(claude.prompt().await.starts_with("Review a."));
@@ -333,7 +325,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_validated_verdic
         claude
             .verdict(
                 "msg-verdict",
-                json!({"verdict": "GREEN", "verdictFields": {"reason": "Read it."}}),
+                json!({"findings": [{"priority": "P2", "reason": "Read it."}]}),
             )
             .await;
     })
@@ -341,7 +333,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_validated_verdic
     let result = outcome.result.as_ref().unwrap();
     assert_eq!(
         serde_json::to_value(result).unwrap(),
-        json!({"verdict": "GREEN", "reason": "Read it."})
+        json!({"verdict": "GREEN", "findings": [{"priority": "P2", "reason": "Read it."}]})
     );
     // One attempt per response, with the highest usage Claude Code reported for it.
     let turns: Vec<_> = outcome
@@ -436,12 +428,12 @@ async fn an_old_claude_code_is_refused_before_the_review() {
 }
 
 #[tokio::test]
-async fn an_invalid_verdict_gets_one_repair_without_tools() {
+async fn an_invalid_answer_gets_one_repair_without_tools() {
     let outcome = review(limits(None), |mut claude| async move {
         claude.start(VERSION).await;
         claude.prompt().await;
         claude
-            .verdict("msg-1", json!({"verdict": "GREEN", "verdictFields": {}}))
+            .verdict("msg-1", json!({"verdict": "GREEN", "findings": []}))
             .await;
         let repair = claude.prompt().await;
         assert!(
@@ -460,25 +452,25 @@ async fn an_invalid_verdict_gets_one_repair_without_tools() {
 }
 
 #[tokio::test]
-async fn a_repaired_verdict_completes_the_review() {
+async fn a_repaired_answer_completes_the_review() {
     let outcome = review(limits(None), |mut claude| async move {
         claude.start(VERSION).await;
         claude.prompt().await;
         claude
-            .verdict("msg-1", json!({"verdict": "GREEN", "verdictFields": {}}))
+            .verdict("msg-1", json!({"verdict": "GREEN", "findings": []}))
             .await;
         claude.prompt().await;
         claude
             .verdict(
                 "msg-2",
-                json!({"verdict": "GREEN", "verdictFields": {"reason": "Fixed."}}),
+                json!({"findings": [{"priority": "P1", "reason": "Fixed."}]}),
             )
             .await;
     })
     .await;
     assert_eq!(
         serde_json::to_value(outcome.result.unwrap()).unwrap(),
-        json!({"verdict": "GREEN", "reason": "Fixed."})
+        json!({"verdict": "RED", "findings": [{"priority": "P1", "reason": "Fixed."}]})
     );
 }
 

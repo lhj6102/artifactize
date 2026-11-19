@@ -12,6 +12,7 @@ read = { builtin = "read" }
 [evals.follows-rules]
 title = "The suite's infrastructure runs every scenario isolated and portably and fails explicitly"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.follows-rules.payload]
 instruction = """
@@ -21,20 +22,7 @@ layer, the runner and build, the fixtures and the input helpers) against them. R
 name the OS, the order of scenarios or the timing under which it happens and the concrete failure or false pass it \
 causes, such as a scenario that breaks on one OS, a result that depends on order, state that reaches the user's or \
 another scenario's, or a failure that passes. Hardening, theoretical edge cases, further checks and style are not \
-findings. List every finding. If unsure, submit GREEN. Otherwise submit RED, each finding with \
-the rule id (item), a path:line (where) and one sentence on the failure and what to change (change)."""
-
-[evals.follows-rules.pass_schema]
-type = "object"
-properties = { summary = { type = "string", minLength = 1 } }
-required = ["summary"]
-additionalProperties = false
-
-[evals.follows-rules.fail_schema]
-type = "object"
-properties = { violations = { type = "array", minItems = 1, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
-required = ["violations"]
-additionalProperties = false
+findings."""
 
 [evals.unit]
 title = "The infrastructure's unit tests pass"

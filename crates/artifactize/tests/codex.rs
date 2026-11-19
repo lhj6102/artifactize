@@ -149,7 +149,7 @@ fn reviewer(request: &Request) -> Reply {
     match request.path.as_str() {
         "/backend-api/codex/responses" if replayed(request) => codex::completed(
             request,
-            vec![openai::message(r#"{"verdict":"GREEN","verdictFields":{}}"#)],
+            vec![openai::message(r#"{"findings":[]}"#)],
             openai::usage(40, 8),
         ),
         "/backend-api/codex/responses" => codex::completed(
@@ -231,7 +231,7 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
         assert_eq!(body["text"]["format"]["strict"], true);
         let schema = &body["text"]["format"]["schema"];
         assert_eq!(schema["type"], "object");
-        assert_eq!(schema["required"], json!(["verdict", "verdictFields"]));
+        assert_eq!(schema["required"], json!(["findings"]));
         assert!(schema.get("anyOf").is_none());
         assert!(instructions.contains(
             "If a person later asks a follow-up question about this review, answer that question in plain text instead"
@@ -766,7 +766,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         codex::VALID_EXPIRY,
     );
     let provider = FakeProvider::start(|request| {
-        let pass = vec![openai::message(r#"{"verdict":"GREEN"}"#)];
+        let pass = vec![openai::message(r#"{"findings":[]}"#)];
         match request.path.as_str() {
             "/backend-api/codex/responses" => codex::completed(request, pass, openai::usage(30, 5)),
             "/v1/responses" => openai::completed(request, pass, openai::usage(20, 4)),

@@ -933,7 +933,10 @@ pushes: Push[] };
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };
 
-/**  A finding: its rule and place as the head (`item · where`), then its other fields. */
+/**
+ *  A finding: its priority, or its rule and place, as the head (`P1`, `item · where`), then
+ *  its other fields.
+ */
 export type ResultItem = {
 	head: string | null,
 	fields: Field[],

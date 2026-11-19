@@ -13,6 +13,7 @@ read = { builtin = "read" }
 [evals.follows-rules]
 title = "The landing page follows the introduction rules"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.follows-rules.profile_variants]
 sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
@@ -25,37 +26,12 @@ Read {rules-writer-introduction}. Read index.html of {docs-landing}. It holds th
 translation: elements with data-locale="ko" and the values of data-ko-* attributes appear only on the
 Korean page. Review the English page: elements without data-locale or with data-locale="en", and
 attributes as written. Check its visible introduction and page content against every W- item;
-installer implementation scripts are not page content.
-Submit GREEN only when no item is clearly violated. Otherwise submit RED. List every finding, each with the item id, a page path:line and one sentence on what to change
-in the landing page.
-"""
-
-[evals.follows-rules.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.follows-rules.fail_schema]
-type = "object"
-required = ["violations"]
-additionalProperties = false
-
-[evals.follows-rules.fail_schema.properties.violations]
-type = "array"
-minItems = 1
-
-[evals.follows-rules.fail_schema.properties.violations.items]
-type = "object"
-properties.item = { type = "string", minLength = 1 }
-properties.where = { type = "string", minLength = 1 }
-properties.change = { type = "string", minLength = 1 }
-required = ["item", "where", "change"]
-additionalProperties = false
+installer implementation scripts are not page content."""
 
 [evals.translates-ko]
 title = "The Korean landing page conveys the same content and links as the English one"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.translates-ko.payload]
 instruction = """
@@ -82,38 +58,12 @@ fingerprint, artifactsum, GREEN, RED, YELLOW) also stay in English in the Korean
   and the privacy page (/privacy/) are English only, and their Korean links say so. Commands, copy
   targets and code are unchanged; only comments in code may be translated. Both pages link to
   each other in the header and declare each other with hreflang.
-Use the list, glob, grep and read tools of {docs-landing}. Tool paths are Artifact-relative.
-Submit GREEN only when no criterion is clearly violated. Otherwise submit RED. List every finding, each with the criterion id, the index.html or site.js line of the
-Korean text, the line of the English text and one sentence on how to fix the Korean page.
-"""
-
-[evals.translates-ko.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.translates-ko.fail_schema]
-type = "object"
-required = ["violations"]
-additionalProperties = false
-
-[evals.translates-ko.fail_schema.properties.violations]
-type = "array"
-minItems = 1
-
-[evals.translates-ko.fail_schema.properties.violations.items]
-type = "object"
-properties.item = { type = "string", minLength = 1 }
-properties.translation = { type = "string", minLength = 1 }
-properties.original = { type = "string", minLength = 1 }
-properties.fix = { type = "string", minLength = 1 }
-required = ["item", "translation", "original", "fix"]
-additionalProperties = false
+Use the list, glob, grep and read tools of {docs-landing}. Tool paths are Artifact-relative."""
 
 [evals.follows-write-in-korean]
 title = "The Korean landing page follows the Korean writing rules"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
 
 [evals.follows-write-in-korean.payload]
 instruction = """
@@ -122,31 +72,4 @@ The How it works section says "evaluations" in English, so its Korean says ÌèâÍ∞
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs-landing}; tool paths are Artifact-relative.
-Read every Korean sentence. Submit GREEN only when no sentence violates an item; a sentence
-that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED. List every finding, each with the item id, the path:line, the text and
-one sentence on how to rewrite it.
-"""
-
-[evals.follows-write-in-korean.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.follows-write-in-korean.fail_schema]
-type = "object"
-required = ["violations"]
-additionalProperties = false
-
-[evals.follows-write-in-korean.fail_schema.properties.violations]
-type = "array"
-minItems = 1
-
-[evals.follows-write-in-korean.fail_schema.properties.violations.items]
-type = "object"
-properties.item = { type = "string", minLength = 1 }
-properties.where = { type = "string", minLength = 1 }
-properties.text = { type = "string", minLength = 1 }
-properties.fix = { type = "string", minLength = 1 }
-required = ["item", "where", "text", "fix"]
-additionalProperties = false
+Read every Korean sentence. A sentence that is grammatical but reads as translated violates K-NATURAL."""

@@ -343,17 +343,31 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
             agent("a", json!({})),
             json!({"payload":{"instruction":"Other."}}),
         ),
-        eval(
-            agent("a", json!({})),
-            json!({"pass_schema":{"type":"object"}}),
-        ),
-        eval(
-            agent("a", json!({})),
-            json!({"fail_schema":{"type":"object"}}),
-        ),
         eval(json!({"kind":"human"}), json!({})),
     ] {
         assert_ne!(eval_definition_hash(&changed), base);
+    }
+    // The priority that makes an Agent eval RED is part of what is asked.
+    let red_at = |priority: &str| {
+        eval_definition_hash(&eval(agent("a", json!({})), json!({"red_at":priority})))
+    };
+    assert_ne!(red_at("P1"), base);
+    assert_ne!(red_at("P1"), red_at("P2"));
+    assert_eq!(red_at("P1"), red_at("P1"));
+    for changed in [
+        eval(
+            json!({"kind":"human"}),
+            json!({"pass_schema":{"type":"object"}}),
+        ),
+        eval(
+            json!({"kind":"human"}),
+            json!({"fail_schema":{"type":"object"}}),
+        ),
+    ] {
+        assert_ne!(
+            eval_definition_hash(&changed),
+            eval_definition_hash(&eval(json!({"kind":"human"}), json!({})))
+        );
     }
     let runtime = |args: Value, timeout: Value| {
         let mut profile = json!({"kind":"runtime","command":"check","args":args});
@@ -526,16 +540,7 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
             "instruction":"Check that {spec} covers every requirement.",
             "focus":["errors","limits"],
         },
-        "pass_schema":{
-            "type":"object",
-            "properties":{"summary":{"type":"string"}},
-            "required":["summary"],
-        },
-        "fail_schema":{
-            "type":"object",
-            "properties":{"missing":{"type":"array","items":{"type":"string"}}},
-            "required":["missing"],
-        },
+        "red_at":"P1",
     }))
     .unwrap();
     let runtime: EvalDeclaration = crate::test_declaration::eval(json!({
@@ -558,7 +563,7 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
     for (eval, hash, pinned) in [
         (
             &agent,
-            "65116b8f0d4f8bcb1d8a197706fa57d4a1881216edb6e8533086a6deb2b7abb4",
+            "a3d91e804a2fbea857476c0f37b68f8a900a947102fe8b6a04aa897185026f16",
             "f79bfb7fa26e3393235264152e0310e95ce48fb5de0842d8b58ebd3dd431fc13",
         ),
         (

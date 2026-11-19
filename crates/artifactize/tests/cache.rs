@@ -72,7 +72,7 @@ impl Fixture {
                     "id":"check",
                     "title":"Review",
                     "profile":{"kind":"agent","backend":"openai","model":model},
-                    "pass_schema":{"type":"object","properties":{"profile":{"type":"string"}},"required":["profile"]},
+                    "red_at":"P1",
                     "payload":{"instruction":"Review."},
                 }],
             }),
@@ -386,9 +386,9 @@ impl ClaimProvider {
                 support::openai::completed(
                     request,
                     vec![support::openai::message(
-                        &json!({
-                            "verdict":"GREEN", "profile":request.body["model"],
-                        })
+                        &json!({"findings":[{
+                            "priority":"P3", "reason":request.body["model"],
+                        }]})
                         .to_string(),
                     )],
                     support::openai::usage(10, 2),
@@ -2178,17 +2178,14 @@ fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() 
             "timeout_ms":1000,
         },
         "payload":{"instruction":"Review.","nested":{"b":2,"a":1}},
-        "pass_schema":{"type":"object","properties":{"b":{"type":"number"},"a":{"type":"string"}}},
+        "red_at":"P1",
     });
     let first = parse(first_value.clone());
     let second = parse(json!({
         "title":"Second",
         "id":"two",
         "payload":{"nested":{"a":1,"b":2},"instruction":"Review."},
-        "pass_schema":{
-            "properties":{"a":{"type":"string"},"b":{"type":"number"}},
-            "type":"object",
-        },
+        "red_at":"P1",
         "profile":{
             "max_tokens":10,
             "max_tool_calls":3,
@@ -2213,8 +2210,12 @@ fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() 
         changed["profile"][key] = value;
         assert_eq!(hash, eval_definition_hash(&parse(changed)), "{key}");
     }
+    let mut bar = first_value.clone();
+    bar["red_at"] = json!("P2");
+    assert_ne!(hash, eval_definition_hash(&parse(bar)));
     let mut human_value = first_value.clone();
     human_value["profile"] = json!({"kind":"human"});
+    human_value.as_object_mut().unwrap().remove("red_at");
     let human = parse(human_value);
     assert_ne!(hash, eval_definition_hash(&human));
     let mut nested = first_value;
