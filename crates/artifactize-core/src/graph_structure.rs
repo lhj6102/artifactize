@@ -273,9 +273,9 @@ pub(crate) fn launch(
     crate::process::launch_watched(
         program.as_os_str(),
         &[
-            "graph".into(),
-            "--repo".into(),
-            crate::platform::path_text(repo),
+            std::ffi::OsStr::new("graph"),
+            std::ffi::OsStr::new("--repo"),
+            repo.as_os_str(),
         ],
         repo,
         run,

@@ -79,6 +79,6 @@ pub async fn session_show(
     state: &Path,
     selector: &session::Selector,
     summary: bool,
-) -> Result<Value, String> {
+) -> Result<session::Shown, String> {
     session::show(state, selector, summary).await
 }

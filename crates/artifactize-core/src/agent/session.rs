@@ -50,6 +50,7 @@ use std::{
 
 use rig_core::message::{AssistantContent, Message, ToolResultContent, UserContent};
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use serde_json::Value;
 #[cfg(test)]
 use serde_json::json;
@@ -413,7 +414,7 @@ pub struct Conversation {
     header_at: Option<crate::types::Timestamp>,
     events: Vec<Event>,
     /// Original events for the lossless --json output; computations use events.
-    wire_events: Vec<Value>,
+    original: Vec<Box<serde_json::value::RawValue>>,
 }
 
 impl Conversation {
@@ -436,43 +437,41 @@ impl Conversation {
                 crate::platform::path_text(path)
             ));
         }
-        let lines: Vec<String> = BufReader::new(file)
-            .lines()
-            .collect::<Result<_, _>>()
-            .map_err(|e| format!("Cannot read {}: {e}", crate::platform::path_text(path)))?;
-        let count = lines.len();
+        let mut reader = BufReader::new(file);
         let mut events = Vec::new();
-        let mut wire_events = Vec::new();
-        for (index, line) in lines.into_iter().enumerate() {
-            match serde_json::from_str::<Value>(&line) {
-                Ok(value) => {
-                    let event: Event = serde_json::from_value(value.clone()).map_err(|error| {
-                        format!(
-                            "{} line {} is not a session event: {error}",
-                            crate::platform::path_text(path),
-                            index + 1
-                        )
-                    })?;
-                    wire_events.push(value);
+        let mut original = Vec::new();
+        for number in 1.. {
+            let mut line = String::new();
+            if reader
+                .read_line(&mut line)
+                .map_err(|error| format!("Cannot read {}: {error}", platform::path_text(path)))?
+                == 0
+            {
+                break;
+            }
+            match Event::parse(line.as_bytes()) {
+                Ok(event) => {
+                    let json = serde_json::value::RawValue::from_string(line)
+                        .expect("a decoded event is valid JSON");
+                    original.push(json);
                     events.push(event);
                 }
-                Err(error) if error.is_eof() && index + 1 == count => {}
-                Err(_) => {
+                Err(error) if error.is_eof() && !line.ends_with('\n') => break,
+                Err(error) => {
                     return Err(format!(
-                        "{} line {} is not a session event.",
-                        crate::platform::path_text(path),
-                        index + 1
+                        "{} line {number} is not a session event: {error}",
+                        platform::path_text(path)
                     ));
                 }
             }
         }
-        Self::from_events(path, events, wire_events).map(Some)
+        Self::from_events(path, events, original).map(Some)
     }
 
     fn from_events(
         path: &Path,
         events: Vec<Event>,
-        wire_events: Vec<Value>,
+        original: Vec<Box<serde_json::value::RawValue>>,
     ) -> Result<Self, String> {
         let mut events = events.into_iter();
         let Some(Event {
@@ -491,7 +490,7 @@ impl Conversation {
             header,
             header_at,
             events: events.collect(),
-            wire_events,
+            original,
         })
     }
 
@@ -506,8 +505,16 @@ impl Conversation {
     }
 
     /// Original records, including the header, in file order.
-    pub fn wire_events(&self) -> &[Value] {
-        &self.wire_events
+    pub(crate) fn into_original(self) -> Vec<Box<serde_json::value::RawValue>> {
+        self.original
+    }
+
+    #[cfg(test)]
+    pub(crate) fn wire_events(&self) -> Vec<Value> {
+        self.original
+            .iter()
+            .map(|event| serde_json::from_str(event.get()).unwrap())
+            .collect()
     }
 
     /// How many follow-ups were sent.
@@ -794,14 +801,8 @@ mod tests {
             conversation.header().budgets.as_ref().unwrap().timeout_ms,
             Some(Duration::from_millis(1000))
         );
-        assert_eq!(
-            conversation.wire_events[0],
-            serde_json::from_str::<Value>(header).unwrap()
-        );
-        assert_eq!(
-            conversation.wire_events[1],
-            serde_json::from_str::<Value>(message).unwrap()
-        );
+        assert_eq!(conversation.original[0].get(), header);
+        assert_eq!(conversation.original[1].get(), message);
         assert_eq!(conversation.history().unwrap().len(), 1);
         for invalid in [
             r#"{"kind":"message","message":17}"#,

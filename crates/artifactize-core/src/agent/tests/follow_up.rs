@@ -118,7 +118,7 @@ async fn recorded_send_success_retains_usage_and_event_order() {
     let kinds: Vec<_> = saved.wire_events()[2..]
         .iter()
         .filter(|event| event["kind"] != "delivery")
-        .map(|event| event["kind"].as_str().unwrap())
+        .map(|event| event["kind"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(kinds, ["send", "message", "attempt", "message", "answer"]);
     let deliveries = saved
@@ -195,7 +195,7 @@ async fn recorded_send_provider_error_and_cancellation_always_record_answer() {
         let kinds: Vec<_> = saved.wire_events()[2..]
             .iter()
             .filter(|event| event["kind"] != "delivery")
-            .map(|event| event["kind"].as_str().unwrap())
+            .map(|event| event["kind"].as_str().unwrap().to_owned())
             .collect();
         assert_eq!(
             kinds,

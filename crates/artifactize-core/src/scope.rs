@@ -333,52 +333,89 @@ fn reference_target<'a>(
     })
 }
 
+/// One native argument and its diagnostic spelling. Only resolved path portions are
+/// normalized for display; flags, opaque Live addresses and literal arguments are unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ResolvedArgument {
+    Literal(String),
+    Path { prefix: String, path: PathBuf },
+}
+
+impl ResolvedArgument {
+    pub(crate) fn native(&self) -> String {
+        match self {
+            Self::Literal(text) => text.clone(),
+            Self::Path { prefix, path } => {
+                format!("{prefix}{}", path.to_str().expect("validated UTF-8 path"))
+            }
+        }
+    }
+
+    pub(crate) fn shown(&self) -> String {
+        match self {
+            Self::Literal(text) => text.clone(),
+            Self::Path { prefix, path } => format!("{prefix}{}", crate::platform::path_text(path)),
+        }
+    }
+}
+
 /// Resolve `{name}[/path]` and `--flag={name}[/path]` operands to existing scoped inputs.
 /// Other arguments, including escaped braces, stay literal. Never interpolate the command.
-/// Call at execution preparation, after static config validation; it opens input metadata.
 pub fn resolve_argv(
     config: &RepoConfig,
     scope: &Scope<'_>,
     owner: &ArtifactName,
     args: &[Argument],
 ) -> Result<Vec<String>, ScopeError> {
+    resolved_argv(config, scope, owner, args)
+        .map(|args| args.iter().map(ResolvedArgument::native).collect())
+}
+
+pub(crate) fn resolved_argv(
+    config: &RepoConfig,
+    scope: &Scope<'_>,
+    owner: &ArtifactName,
+    args: &[Argument],
+) -> Result<Vec<ResolvedArgument>, ScopeError> {
     args.iter()
         .map(|argument| {
             let Argument::Reference { prefix, name, path } = argument else {
-                return Ok(argument.to_string());
+                return Ok(ResolvedArgument::Literal(argument.to_string()));
             };
             let id = reference_target(config, owner, name)?;
             reference_path(config, id, path)?;
-            let resolved = argument_value(config, scope, id, path)?;
-            Ok(format!("{prefix}{resolved}"))
+            argument_value(config, scope, id, path, prefix)
         })
         .collect()
 }
 
-/// A reference is rendered once for runtime, tool and fingerprint argv. Live addresses
-/// stay opaque strings and are never opened or normalized as filesystem paths.
+/// Resolve a scoped argument once. Live addresses are opaque and never normalized as paths.
 pub(crate) fn argument_value(
     config: &RepoConfig,
     scope: &Scope<'_>,
     id: &ArtifactName,
     path: &str,
-) -> Result<String, ScopeError> {
+    prefix: &str,
+) -> Result<ResolvedArgument, ScopeError> {
     let artifact = scope
         .artifacts
         .get(id)
         .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {id}")))?;
     if let Some(uri) = artifact.path.uri() {
-        return Ok(if path.is_empty() {
-            uri.to_string()
+        return Ok(ResolvedArgument::Literal(if path.is_empty() {
+            format!("{prefix}{uri}")
         } else {
-            format!("{uri}/{path}")
-        });
+            format!("{prefix}{uri}/{path}")
+        }));
     }
     let resolved = scope.resolve_input(&config.root, id, path)?;
-    resolved
-        .to_str()
-        .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-    Ok(crate::platform::path_text(&resolved))
+    if resolved.to_str().is_none() {
+        return Err(ScopeError("Artifact paths must be UTF-8.".into()));
+    }
+    Ok(ResolvedArgument::Path {
+        prefix: prefix.into(),
+        path: resolved,
+    })
 }
 
 /// Every path an aspect selects exists below its folder, without symlink traversal.

@@ -133,7 +133,7 @@ fn read_status(stdout: &[u8], stderr: &[u8], ended: &ProcessOutcome) -> Status {
 fn failure(doing: &str, stdout: &[u8], stderr: &[u8], ended: &ProcessOutcome) -> String {
     let said = [stderr, stdout]
         .into_iter()
-        .map(|bytes| shown(&String::from_utf8_lossy(bytes)))
+        .map(|bytes| shown(&crate::platform::output_text(bytes)))
         .find(|text| !text.is_empty());
     match said {
         Some(said) => format!("Claude Code {doing}: {said}"),
@@ -220,22 +220,30 @@ pub async fn login_with(
     let stdout = child.stdout().take().expect("stdout is piped");
     let stderr = child.stderr().take();
     let signing_in = async {
-        let mut lines = BufReader::new(stdout).lines();
+        let mut reader = BufReader::new(stdout);
+        let mut bytes = Vec::new();
         let mut said = Vec::new();
         let mut show = Some(show);
         // The URL comes first; what follows is kept for the error Claude Code may end with.
-        while let Ok(Some(line)) = lines.next_line().await {
-            if let Some(url) = url_in(&line)
+        while reader
+            .read_until(b'\n', &mut bytes)
+            .await
+            .is_ok_and(|read| read > 0)
+        {
+            let line = crate::platform::output_line(&bytes);
+            let text = crate::platform::output_text(line);
+            if let Some(url) = url_in(&text)
                 && let Some(show) = show.take()
             {
                 show(&Prompt { url });
-                continue;
+            } else {
+                said.extend_from_slice(line);
+                said.push(b'\n');
+                if said.len() > KEPT_BYTES {
+                    said.drain(..said.len() - KEPT_BYTES);
+                }
             }
-            said.extend_from_slice(line.as_bytes());
-            said.push(b'\n');
-            if said.len() > KEPT_BYTES {
-                said.drain(..said.len() - KEPT_BYTES);
-            }
+            bytes.clear();
         }
         said
     };

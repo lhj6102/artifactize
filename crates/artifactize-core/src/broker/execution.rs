@@ -301,13 +301,13 @@ pub(super) fn prepare(
     };
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let args =
-        scope::resolve_argv(config, &scope, &eval.target, args).map_err(|e| e.to_string())?;
+        scope::resolved_argv(config, &scope, &eval.target, args).map_err(|e| e.to_string())?;
     let cwd = scope::scoped_path(&config.root, config.artifacts[&eval.target].folder())
         .map_err(|e| e.to_string())?;
     let program = scope::executable(&config.root, &scope, &eval.target, command)?;
     let mut prepared = runtime::Command::prepare(
         program,
-        args.iter().map(Into::into).collect(),
+        args.iter().map(|arg| arg.native().into()).collect(),
         &config.root,
         run_dir,
         *timeout_ms,
@@ -317,6 +317,10 @@ pub(super) fn prepare(
     request.run_dir = Some(prepared.directory().to_path_buf());
     // Stored as text, so with `/` on every system.
     let program_text = crate::platform::path_text(std::path::Path::new(command));
-    request.argv = Some(std::iter::once(program_text).chain(args).collect());
+    request.argv = Some(
+        std::iter::once(program_text)
+            .chain(args.iter().map(|arg| arg.shown()))
+            .collect(),
+    );
     Ok(Prepared::Runtime(prepared))
 }

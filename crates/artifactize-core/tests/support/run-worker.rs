@@ -41,7 +41,24 @@ async fn main() -> Result<(), String> {
                 .await
                 .map_err(|_| "The fixture did not release worker admission.".to_owned())?;
             }
-            runs::supervise(&context, &run_id).await
+            let directory = args.state_dir.join("runs").join(run_id.as_str());
+            runs::supervise_observing_launch(&context, &run_id, || {
+                let lock = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(directory.join("fixture-launch.lock"))
+                    .map_err(|error| error.to_string())?;
+                lock.lock().map_err(|error| error.to_string())?;
+                Ok(move |owner| {
+                    let _held = lock;
+                    let bytes = serde_json::to_vec(&owner).map_err(|error| error.to_string())?;
+                    std::fs::write(directory.join("fixture-executor.json"), bytes)
+                        .map_err(|error| error.to_string())
+                })
+            })
+            .await
         }
         Entry::Execute { run_id } => runs::execute(&context, &run_id).await,
     }

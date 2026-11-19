@@ -76,21 +76,8 @@ struct Release;
 
 impl Drop for Release {
     fn drop(&mut self) {
-        #[cfg(test)]
-        RELEASES.with(|count| count.set(count.get() + 1));
         release_free_memory();
     }
-}
-
-#[cfg(test)]
-thread_local! {
-    static RELEASES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// How often this thread gave a large read's memory back to the system.
-#[cfg(test)]
-pub(crate) fn releases() -> usize {
-    RELEASES.with(std::cell::Cell::get)
 }
 
 /// A file's identity on its volume. Two open files with equal identities are the same file,
@@ -155,6 +142,20 @@ pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
             "not a regular file",
         ))
     }
+}
+
+/// A program's textual output, lossy only where its bytes are not UTF-8.
+pub(crate) fn output_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+    String::from_utf8_lossy(bytes)
+}
+
+/// A captured output line, accepting either common ending even when the program
+/// (rather than the host) explicitly chose which ending to emit.
+pub(crate) fn output_line(bytes: &[u8]) -> &[u8] {
+    bytes
+        .strip_suffix(b"\r\n")
+        .or_else(|| bytes.strip_suffix(b"\n"))
+        .unwrap_or(bytes)
 }
 
 /// Decode one native tool path line. Unix paths may end in a literal carriage return;

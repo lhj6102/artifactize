@@ -115,31 +115,47 @@ impl Catalog {
     }
     pub fn initial(&mut self, path: Option<&Path>) -> Scope {
         path.map_or(Scope::All, |path| {
-            self.initial_path(path, &self.paths.clone())
+            let paths = self.paths.clone();
+            self.initial_scope(path, &paths)
         })
     }
-    fn initial_path(&mut self, path: &Path, paths: &BTreeMap<Scope, BTreeSet<PathBuf>>) -> Scope {
-        if let Some((scope, _)) = paths.iter().find(|(scope, workspaces)| {
+    fn initial_scope(&mut self, path: &Path, paths: &BTreeMap<Scope, BTreeSet<PathBuf>>) -> Scope {
+        // Take the filesystem and Git observations here; the choice below takes only facts.
+        let exact = paths.iter().find(|(scope, workspaces)| {
             matches!(scope, Scope::Worktree(_, tree) if crate::platform::paths_equal(tree, path) || workspaces.iter().any(|workspace| crate::platform::paths_equal(workspace, path)))
-        }) {
-            return scope.clone();
+        }).map(|(scope, _)| scope.clone());
+        if let Some(scope) = exact {
+            return scope;
         }
         let identity = self.identity(path);
+        let ancestors = if identity.common_dir.is_some() && identity.worktree_path.is_some() {
+            Vec::new()
+        } else {
+            paths
+                .iter()
+                .filter(|(scope, _)| matches!(scope, Scope::Worktree(Repository::Workspace(_), _)))
+                .flat_map(|(scope, workspaces)| {
+                    workspaces
+                        .iter()
+                        .filter(move |workspace| crate::platform::is_within(path, workspace))
+                        .map(move |workspace| (workspace.components().count(), scope))
+                })
+                .collect()
+        };
+        Self::initial_path(path, identity, ancestors.into_iter())
+    }
+
+    fn initial_path<'a>(
+        path: &Path,
+        identity: Identity,
+        ancestors: impl Iterator<Item = (usize, &'a Scope)>,
+    ) -> Scope {
         if let (Some(common), Some(tree)) = (identity.common_dir, identity.worktree_path) {
             return Scope::Worktree(Repository::Git(common), tree);
         }
         // Initial selection only: a known non-Git workspace can contain cwd. Choose the
         // closest ancestor by components, never a string prefix or inferred Git grouping.
-        paths
-            .iter()
-            .filter_map(|(scope, workspaces)| match scope {
-                Scope::Worktree(Repository::Workspace(_), _) => workspaces
-                    .iter()
-                    .filter(|workspace| crate::platform::is_within(path, workspace))
-                    .map(|workspace| (workspace.components().count(), scope))
-                    .max_by_key(|(depth, _)| *depth),
-                _ => None,
-            })
+        ancestors
             .max_by_key(|(depth, _)| *depth)
             .map(|(_, scope)| scope.clone())
             .unwrap_or_else(|| {
@@ -185,7 +201,7 @@ impl Catalog {
             }
         }
         if let Some(path) = initial
-            && let Scope::Worktree(repository, tree) = self.initial_path(path, &paths)
+            && let Scope::Worktree(repository, tree) = self.initial_scope(path, &paths)
         {
             let (repository, tree) = match repository {
                 Repository::Git(common) => (

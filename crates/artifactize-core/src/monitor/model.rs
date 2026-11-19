@@ -68,7 +68,6 @@ pub struct Progress {
     pub timing: String,
     /// Elapsed time of a running Run, or how long a finished one took.
     pub elapsed: String,
-    pub finished: bool,
     /// The saved validation snapshot: `None` until the Run ends.
     pub satisfied: Option<bool>,
     pub counts: Vec<(Status, u64)>,
@@ -323,7 +322,6 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             },
         ),
         elapsed: wall,
-        finished: run.completed_at().is_some(),
         satisfied: validation.and_then(|v| v.satisfied.value()).copied(),
         counts: summary
             .counts
@@ -393,6 +391,12 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
     }
 }
 
+impl Progress {
+    pub fn finished(&self) -> bool {
+        !matches!(self.status, Status::Running | Status::WaitingHuman)
+    }
+}
+
 /// The Run headline from its progress: snapshot verdict, counts, time and token total.
 pub fn strip(progress: &Progress) -> Strip {
     let validation = match progress.satisfied {
@@ -403,7 +407,11 @@ pub fn strip(progress: &Progress) -> Strip {
     let counts = counts(progress.counts.iter().copied());
     let time = format!(
         "{} {}",
-        if progress.finished { "took" } else { "elapsed" },
+        if progress.finished() {
+            "took"
+        } else {
+            "elapsed"
+        },
         progress.elapsed
     );
     let tokens = progress

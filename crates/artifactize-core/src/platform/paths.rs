@@ -227,6 +227,12 @@ pub(crate) fn lock_file(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
+/// Unlink a file even while readers or a lease holder still have it open. Windows
+/// handles opened by this layer share deletion, just as Unix permits unlinking.
+pub(crate) fn remove_open_file(path: &Path) -> io::Result<()> {
+    std::fs::remove_file(path)
+}
+
 /// Publish a file snapshot while a reader may still hold the old file open.
 /// On Windows std's rename supports that case, unlike tempfile's MoveFileEx persistence.
 pub(crate) fn replace_open_file(

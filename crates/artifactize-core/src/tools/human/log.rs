@@ -331,9 +331,8 @@ impl Lines {
         self.pending.extend_from_slice(bytes);
         while let Some(newline) = self.pending.iter().position(|byte| *byte == b'\n') {
             let line: Vec<u8> = self.pending.drain(..=newline).collect();
-            let line = &line[..newline];
             self.shared
-                .line(self.stream, line.strip_suffix(b"\r").unwrap_or(line));
+                .line(self.stream, crate::platform::output_line(&line));
         }
         while self.pending.len() >= LINE_BYTES {
             let end = piece(&self.pending);

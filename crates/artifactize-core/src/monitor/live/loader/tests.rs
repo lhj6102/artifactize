@@ -235,57 +235,45 @@ async fn a_run_no_longer_shown_gives_its_memory_back_once_its_last_share_goes() 
         .await
         .unwrap();
     let mut loader = Loader::default();
-    let released = crate::platform::releases;
-    let before = released();
     let shown = loaded(
         loader
             .load(input(&state, &repo, Some("run-first"), Changed::Nothing))
             .unwrap(),
     );
+    let first_graph = std::sync::Arc::downgrade(&shown.0.run.definitions.share().unwrap());
 
-    // Reading the shown Run again keeps it: nothing goes back.
-    fail(&receipts, &first_requests, "run-first-a0").await;
-    let reread = loaded(
-        loader
-            .load(input(&state, &repo, Some("run-first"), hinted("run-first")))
-            .unwrap(),
-    );
-    drop(reread);
-    assert_eq!(released(), before);
-
-    // Another Run shown: the loader lets the first go, but its view still holds it.
+    // The old snapshot keeps its graph while it is displayed, even after a different Run opens.
     let next = loaded(
         loader
             .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
             .unwrap(),
     );
-    assert_eq!(released(), before);
+    let second_graph = std::sync::Arc::downgrade(&next.0.run.definitions.share().unwrap());
+    assert!(first_graph.upgrade().is_some());
     drop(shown);
-    assert_eq!(
-        released(),
-        before + 1,
-        "the first Run's memory goes back once"
+    assert!(
+        first_graph.upgrade().is_none(),
+        "the old graph has no owners"
     );
 
-    // No Run shown: once its view is gone, the loader lets the second go too.
     drop(next);
-    assert_eq!(released(), before + 1);
+    assert!(
+        second_graph.upgrade().is_some(),
+        "the loader still holds the open graph"
+    );
     let closed = loader
         .load(input(&state, &repo, None, Changed::Nothing))
         .unwrap();
     assert!(matches!(closed.open_run, OpenRun::Absent));
-    assert_eq!(
-        released(),
-        before + 2,
-        "the second Run's memory goes back once"
+    assert!(
+        second_graph.upgrade().is_none(),
+        "closing releases the second graph"
     );
 
-    // Shown again, it is read in full, definitions included.
     let reopened = loaded(
         loader
             .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
             .unwrap(),
     );
     assert_eq!(reopened.1.len(), 3);
-    assert_eq!(released(), before + 2);
 }

@@ -332,12 +332,16 @@ impl Form {
 
     /// The typed answer after validating the form's fields.
     pub fn submission(&self) -> Result<super::Submission, String> {
-        let mut object = Map::new();
-        for field in &self.fields {
-            if let Some(value) = field.value(&field.name)? {
-                object.insert(field.name.clone(), value);
-            }
-        }
+        let object = self
+            .fields
+            .iter()
+            .filter_map(|field| {
+                field
+                    .value(&field.name)
+                    .transpose()
+                    .map(|value| value.map(|value| (field.name.clone(), value)))
+            })
+            .collect::<Result<Map<_, _>, _>>()?;
         if object.contains_key("verdict") {
             return Err("Choose the verdict in the review, not inside the owner fields.".into());
         }

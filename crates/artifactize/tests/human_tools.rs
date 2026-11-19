@@ -285,9 +285,9 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
         text(&result),
         format!(
             "{}\n--input={}\n{}\nliteral $(touch injected)\n",
-            support::os::path_text(&owner),
-            support::os::path_text(&input),
-            support::os::path_text(&input)
+            support::os::native_text(&owner),
+            support::os::native_text(&input),
+            support::os::native_text(&input)
         )
     );
     assert!(!owner.join("injected").exists());

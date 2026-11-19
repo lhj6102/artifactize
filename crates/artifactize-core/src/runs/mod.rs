@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 pub use watch::{RunEvent, watch};
 #[doc(hidden)]
-pub use worker::{execute, supervise};
+pub use worker::{execute, supervise, supervise_observing_launch};
 
 /// Per-Run execution modes. Future modes extend this type, not transport signatures.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,6 +170,18 @@ pub async fn start(
     options: &VerifyOptions,
     request_key: Option<RequestKey>,
 ) -> Result<RunObservation, String> {
+    start_observing_launch(context, selection, options, request_key, |_, _| {}).await
+}
+
+/// Transfer the supervisor's birth identity at launch, before saving or reading any receipt.
+#[doc(hidden)]
+pub async fn start_observing_launch(
+    context: &Context,
+    selection: &Selection,
+    options: &VerifyOptions,
+    request_key: Option<RequestKey>,
+    launched: impl FnOnce(&RunId, process::ChildIdentity),
+) -> Result<RunObservation, String> {
     // Keys are attempt identity, not checkout identity. Retry before discovering declarations.
     if let Some(key) = &request_key
         && crate::platform::paths::target_is_file(&context.state.join(store::DATABASE))
@@ -195,7 +207,10 @@ pub async fn start(
             let launch =
                 process::launch_run(&context.executable, &id, &context.repo, &context.state);
             let admitted = match launch {
-                Ok(identity) => receipts.admit(&id, identity).await,
+                Ok(identity) => {
+                    launched(&id, identity);
+                    receipts.admit(&id, identity).await
+                }
                 Err(error) => Err(error.to_string()),
             };
             if let Err(error) = admitted {

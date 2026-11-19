@@ -302,7 +302,7 @@ pub fn view(
                 })
                 .collect(),
             took: progress.elapsed.clone(),
-            finished: progress.finished,
+            finished: progress.finished(),
             comment: progress.comment.clone(),
         }
     });

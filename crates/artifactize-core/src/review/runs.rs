@@ -8,7 +8,10 @@ use crate::{
     store::definitions::{Artifact, HumanTool},
     types::ArtifactName,
 };
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use crate::config::Builtin;
 
@@ -21,15 +24,15 @@ pub enum Runs {
     /// The declared command and args, shell-quoted, placeholders unresolved.
     Command(String),
     /// Open a file or folder in the desktop's default application.
-    Open(String),
+    Open(PathBuf),
     /// Open an HTTP(S) URL in the browser.
     OpenUrl(String),
     /// Print a UTF-8 file.
-    Read(String),
+    Read(PathBuf),
     /// List a folder.
-    List(String),
+    List(PathBuf),
     /// Print one section of a Markdown file.
-    Section { file: String, heading: String },
+    Section { file: PathBuf, heading: String },
     /// Print `<program> <subcommand...> --help`.
     Help(String),
 }
@@ -98,27 +101,19 @@ impl Runs {
         place: &dyn Fn(&str) -> Option<Place>,
         owner: &ArtifactName,
     ) -> Self {
-        let target = || {
-            args.first()
-                .map(|arg| logical(place, owner, arg))
-                .unwrap_or_default()
-        };
+        let target = |arg| logical(place, owner, arg);
         match (builtin, args) {
             (Some(Builtin::Open), [url]) if artifactize_tools::builtin::is_url(url) => {
                 Self::OpenUrl((*url).to_owned())
             }
-            (Some(Builtin::Open), [_]) => {
-                let target = target();
-                if artifactize_tools::builtin::is_url(&target) {
-                    Self::OpenUrl(target)
-                } else {
-                    Self::Open(target)
-                }
-            }
-            (Some(Builtin::Read), [_]) => Self::Read(target()),
-            (Some(Builtin::List), [_]) => Self::List(target()),
-            (Some(Builtin::Section), [_, heading]) => Self::Section {
-                file: target(),
+            (Some(Builtin::Open), [arg]) => match target(arg) {
+                Target::Live(url) if artifactize_tools::builtin::is_url(&url) => Self::OpenUrl(url),
+                target => Self::Open(target.into_path()),
+            },
+            (Some(Builtin::Read), [arg]) => Self::Read(target(arg).into_path()),
+            (Some(Builtin::List), [arg]) => Self::List(target(arg).into_path()),
+            (Some(Builtin::Section), [arg, heading]) => Self::Section {
+                file: target(arg).into_path(),
                 heading: (*heading).to_owned(),
             },
             (Some(Builtin::Help), [program, subcommands @ ..]) => {
@@ -155,11 +150,17 @@ impl Runs {
     pub fn line(&self) -> String {
         match self {
             Self::Command(command) => format!("$ {command}"),
-            Self::Open(path) => format!("opens {path} in its default app"),
+            Self::Open(path) => format!(
+                "opens {} in its default app",
+                crate::platform::path_text(path)
+            ),
             Self::OpenUrl(url) => format!("opens {url} in the browser"),
-            Self::Read(path) => format!("prints {path}"),
-            Self::List(path) => format!("lists {}", folder(path)),
-            Self::Section { file, heading } => format!("prints section \"{heading}\" of {file}"),
+            Self::Read(path) => format!("prints {}", crate::platform::path_text(path)),
+            Self::List(path) => format!("lists {}", folder(&crate::platform::path_text(path))),
+            Self::Section { file, heading } => format!(
+                "prints section \"{heading}\" of {}",
+                crate::platform::path_text(file)
+            ),
             Self::Help(program) => format!("prints {program} --help"),
         }
     }
@@ -181,10 +182,22 @@ fn folder(path: &str) -> String {
     }
 }
 
-/// A builtin target as a repository-relative logical path: `{artifactPath}[/path]`,
-/// `{name}[/path]` or a path in the owner. A target the definition cannot place is shown as
-/// declared.
-fn logical(place: &dyn Fn(&str) -> Option<Place>, owner: &ArtifactName, arg: &str) -> String {
+enum Target {
+    Path(PathBuf),
+    Live(String),
+}
+
+impl Target {
+    fn into_path(self) -> PathBuf {
+        match self {
+            Self::Path(path) => path,
+            Self::Live(address) => PathBuf::from(address),
+        }
+    }
+}
+
+/// A builtin target as a repository-relative path, or an opaque Live address.
+fn logical(place: &dyn Fn(&str) -> Option<Place>, owner: &ArtifactName, arg: &str) -> Target {
     let (id, rest) = match arg.strip_prefix('{').and_then(|arg| arg.split_once('}')) {
         Some(("artifactPath", rest)) => (owner.as_str(), rest),
         Some((name, rest)) => (name, rest),
@@ -192,18 +205,30 @@ fn logical(place: &dyn Fn(&str) -> Option<Place>, owner: &ArtifactName, arg: &st
     };
     let rest = rest.strip_prefix('/').unwrap_or(rest);
     let Some(artifact) = place(id) else {
-        return arg.to_owned();
+        return Target::Path(PathBuf::from(arg));
     };
-    let path = artifact.path.to_string();
-    let base = if rest.is_empty() || !artifact.file {
-        path.as_str()
-    } else {
-        path.rsplit_once('/').map_or("", |(parent, _)| parent)
-    };
-    match (base, rest) {
-        ("", "") => ROOT.to_owned(),
-        ("", rest) => rest.to_owned(),
-        (base, "") => base.to_owned(),
-        (base, rest) => format!("{base}/{rest}"),
+    if let Some(uri) = artifact.path.uri() {
+        return Target::Live(if rest.is_empty() {
+            uri.to_string()
+        } else {
+            format!("{uri}/{rest}")
+        });
     }
+    let path = artifact
+        .path
+        .local()
+        .expect("a non-Live target has a local path");
+    if rest.is_empty() {
+        return Target::Path(if path.as_os_str().is_empty() {
+            PathBuf::from(ROOT)
+        } else {
+            path.to_owned()
+        });
+    }
+    let base = if artifact.file {
+        path.parent().unwrap_or(Path::new(""))
+    } else {
+        path
+    };
+    Target::Path(base.join(rest))
 }

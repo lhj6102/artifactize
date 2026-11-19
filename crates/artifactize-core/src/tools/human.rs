@@ -136,6 +136,7 @@ pub struct CommandLine {
     pub kind: HumanToolKind,
     pub program: OsString,
     pub args: Vec<String>,
+    pub(crate) shown_args: Vec<String>,
     pub cwd: PathBuf,
 }
 
@@ -267,7 +268,8 @@ impl<'a> Registry<'a> {
             repo: self.config.root.clone(),
             kind: declaration.kind,
             program,
-            args,
+            args: args.iter().map(|arg| arg.native()).collect(),
+            shown_args: args.iter().map(|arg| arg.shown()).collect(),
             cwd,
         })
     }

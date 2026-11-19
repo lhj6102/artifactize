@@ -474,7 +474,8 @@ impl Client {
         } else if error.is_retryable()
             || matches!(self, Self::Openai(..) | Self::Codex(_))
                 && body.and_then(|body| body.codex_fields().code()) == Some("server_is_overloaded")
-            || status.is_some_and(|status| status >= 500)
+            // A server-side failure can clear without changing the request.
+            || http.is_some_and(|status| status.is_server_error())
             || (status.is_none()
                 && matches!(
                     code,

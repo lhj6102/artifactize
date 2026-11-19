@@ -362,6 +362,53 @@ async fn fixture_stops_owned_workers_and_removes_inputs_without_readable_receipt
     }
 }
 
+#[tokio::test]
+async fn a_fixture_leases_the_supervisor_before_observing_saved_admission() {
+    use artifactize_core::{
+        project::{VerifyOptions, selection::Selection},
+        runs, store,
+    };
+    let root = support::os::tempdir();
+    let directory = root.path().to_path_buf();
+    let repo = directory.join("repo");
+    let state = directory.join("state");
+    std::fs::create_dir(&repo).unwrap();
+    support::declaration::write(&repo, repo.join("index.artf"),
+        "name = 'app'\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Inspect.'\n",
+    ).unwrap();
+    let lease = support::runs::RepoLease::new(root, &state, &repo);
+    let gate = state.join("fixture-admission");
+    std::fs::create_dir_all(&gate).unwrap();
+    let worker = support::os::library_worker();
+    let context = runs::Context::new(&repo, Some(&state), worker.path()).unwrap();
+    let accepted =
+        support::runs::submit_fixture(&context, &Selection::All, &VerifyOptions::default())
+            .await
+            .unwrap();
+    wait_for(|| gate.join("held").is_file()).await;
+    // Inspect the birth identity without going through the fixture's observation barrier.
+    let saved = store::read_run_snapshot(&state, &accepted.run)
+        .await
+        .unwrap();
+    let supervisor = saved.run.control.unwrap().supervisor.unwrap();
+    let db = rusqlite::Connection::open(state.join(store::DATABASE)).unwrap();
+    db.pragma_update(None, "user_version", 0).unwrap();
+    drop(db);
+    let failure =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(lease))).unwrap_err();
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .unwrap()
+            .contains("Unsupported state schema")
+    );
+    assert!(!support::os::same_process_running(
+        supervisor.pid.get(),
+        supervisor.start_time
+    ));
+    assert!(!directory.exists());
+}
+
 async fn assert_gone(pid: u32) {
     assert!(pid > 0, "must have observed a real process");
     wait_for(|| support::os::gone(pid)).await;

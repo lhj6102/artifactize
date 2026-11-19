@@ -475,7 +475,8 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
         &["{file}".into(), "--input={file}".into()],
     )
     .unwrap();
-    let file = support::os::path_text(&support::os::canonical(
+    // A program receives its arguments in native spelling.
+    let file = support::os::native_text(&support::os::canonical(
         &config.root.join("files/input.txt"),
     ));
     assert_eq!(args, [file.clone(), format!("--input={file}")]);
@@ -534,7 +535,7 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
     assert_eq!(
         command.args,
         vec![
-            support::os::path_text(&support::os::canonical(
+            support::os::native_text(&support::os::canonical(
                 &config.root.join("files/input.txt")
             ));
             2
@@ -740,7 +741,8 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
         support::os::path_text(&config.root.join("files"))
     );
     // Assert the wire text itself: native path parsing could hide Windows separators.
-    assert_eq!(data["argv"][0], input);
+    let native = support::os::native_text(std::path::Path::new(&support::os::native(&input)));
+    assert_eq!(data["argv"][0], native);
     assert_eq!(data["artifactPath"], input);
     assert_eq!(data["scope"]["file"]["kind"], "file");
     assert_eq!(data["scope"]["file"]["path"], input);

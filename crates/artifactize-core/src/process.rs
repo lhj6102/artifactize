@@ -503,7 +503,7 @@ fn child_command(command: &Command) -> Result<tokio::process::Command, Error> {
 /// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.
 fn launch_detached(
     program: &std::ffi::OsStr,
-    args: &[String],
+    args: &[impl AsRef<std::ffi::OsStr>],
     cwd: &std::path::Path,
     run: &mut Run,
 ) -> Result<(), Error> {
@@ -546,7 +546,7 @@ pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
 /// An unwatched run gets the plain handoff. A failed spawn hands the run back to be ended.
 pub(crate) fn launch_watched(
     program: &std::ffi::OsStr,
-    args: &[String],
+    args: &[impl AsRef<std::ffi::OsStr>],
     cwd: &std::path::Path,
     mut run: Run,
 ) -> Result<(), (Error, Run)> {

@@ -168,7 +168,7 @@ pub async fn record(
     cancellation: CancellationToken,
 ) -> Result<store::RunView, String> {
     let context = runs::Context::new(repo, state, fixture_worker::executable()?)?;
-    let observation = runs::start(&context, selection, options, None).await?;
+    let observation = submit_fixture(&context, selection, options).await?;
     admitted(context.state(), &observation.run, cancellation, None).await
 }
 
@@ -179,8 +179,7 @@ pub async fn record_deferred(
     eval: &artifactize_core::types::EvalId,
 ) -> Result<store::RunView, String> {
     let context = runs::Context::new(repo, Some(state), fixture_worker::executable()?)?;
-    let observation =
-        runs::start(&context, &Selection::All, &VerifyOptions::default(), None).await?;
+    let observation = submit_fixture(&context, &Selection::All, &VerifyOptions::default()).await?;
     admitted(
         context.state(),
         &observation.run,
@@ -190,7 +189,26 @@ pub async fn record_deferred(
     .await
 }
 
-/// The last observed birth identities of a Run this fixture submitted, independent of SQLite.
+pub async fn submit_fixture(
+    context: &runs::Context,
+    selection: &Selection,
+    options: &VerifyOptions,
+) -> Result<runs::RunObservation, String> {
+    runs::start_observing_launch(context, selection, options, None, |id, supervisor| {
+        if let Some(owners) = fixture_owners(context.state(), context.repo()) {
+            owners
+                .lock()
+                .unwrap()
+                .entry(id.clone())
+                .or_default()
+                .supervisor = Some(supervisor);
+        }
+    })
+    .await
+}
+
+/// The captured birth identities of a Run this fixture submitted, independent of SQLite.
+#[derive(Default)]
 struct Owners {
     children: Vec<artifactize_core::process::ChildIdentity>,
     worker: Option<artifactize_core::process::ChildIdentity>,
@@ -201,9 +219,16 @@ type OwnedRuns = Mutex<BTreeMap<RunId, Owners>>;
 type FixturePaths = (PathBuf, PathBuf);
 static LEASES: Mutex<BTreeMap<FixturePaths, Weak<OwnedRuns>>> = Mutex::new(BTreeMap::new());
 
+fn fixture_owners(state: &Path, repo: &Path) -> Option<Arc<OwnedRuns>> {
+    LEASES
+        .lock()
+        .unwrap()
+        .get(&(state.to_owned(), repo.to_owned()))
+        .and_then(Weak::upgrade)
+}
+
 fn remember_owners(state: &Path, view: &store::RunView) {
-    let key = (state.to_owned(), view.run.repo_path.clone());
-    let owners = LEASES.lock().unwrap().get(&key).and_then(Weak::upgrade);
+    let owners = fixture_owners(state, &view.run.repo_path);
     if let (Some(owners), Some(control)) = (owners, &view.run.control) {
         let worker = match control.worker {
             runs::Worker::Admitted { owner } => Some(owner),
@@ -219,14 +244,11 @@ fn remember_owners(state: &Path, view: &store::RunView) {
                 start_time: child.start_time,
             })
             .collect();
-        owners.lock().unwrap().insert(
-            view.run.id.clone(),
-            Owners {
-                children,
-                worker,
-                supervisor: control.supervisor,
-            },
-        );
+        let mut owners = owners.lock().unwrap();
+        let owned = owners.entry(view.run.id.clone()).or_default();
+        owned.children = children;
+        owned.worker = worker.or(owned.worker);
+        owned.supervisor = control.supervisor.or(owned.supervisor);
     }
 }
 
@@ -264,14 +286,47 @@ impl RepoLease {
     fn stop_saved_owners(&self) -> Result<(), String> {
         let owners = self.owners.lock().unwrap();
         let mut errors = Vec::new();
-        for run in owners.values() {
+        for (id, run) in &*owners {
+            let directory = self.state.join("runs").join(id.as_str());
+            // Exclude a racing executor launch until both owned processes are stopped.
+            let mut executor = run.worker;
+            let _launch_guard = match std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(directory.join("fixture-launch.lock"))
+            {
+                Ok(lock) => match lock.lock() {
+                    Ok(()) => {
+                        match std::fs::read(directory.join("fixture-executor.json")) {
+                            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                                Ok(owned) => executor = Some(owned),
+                                Err(error) => errors.push(error.to_string()),
+                            },
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(error) => errors.push(error.to_string()),
+                        }
+                        Some(lock)
+                    }
+                    Err(error) => {
+                        errors.push(error.to_string());
+                        None
+                    }
+                },
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => {
+                    errors.push(error.to_string());
+                    None
+                }
+            };
             let members = run
                 .children
                 .iter()
                 .copied()
                 .map(|child| (child, true))
                 .chain(
-                    run.worker
+                    executor
                         .into_iter()
                         .chain(run.supervisor)
                         .map(|owner| (owner, false)),

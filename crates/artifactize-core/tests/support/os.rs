@@ -2753,6 +2753,18 @@ pub fn publish_file(path: &Path, contents: impl AsRef<[u8]>) {
     file.persist(path).unwrap();
 }
 
+/// Atomically publish an owner-only fixture file while a reader still has the old one open.
+pub fn replace_open_private_file(path: &Path, contents: impl AsRef<[u8]>) {
+    let temp = tempfile::NamedTempFile::new_in(path.parent().unwrap()).unwrap();
+    rewrite_private_file(temp.path(), contents);
+    std::fs::rename(temp.path(), path).unwrap();
+}
+
+/// Delete a fixture file while a reader still has it open.
+pub fn remove_open_file(path: &Path) {
+    std::fs::remove_file(path).unwrap();
+}
+
 /// Create or replace an owner-only fixture file. Replacement keeps the inode for tests
 /// of same-sized rewrites; atomic replacement is set up explicitly by those tests.
 pub fn rewrite_private_file(path: &Path, contents: impl AsRef<[u8]>) {
@@ -2810,7 +2822,31 @@ pub fn git_path_cases(root: &Path) -> Vec<std::path::PathBuf> {
 
 /// Run Git against a fixture repository; no shell or process-status decoding in tests.
 pub fn git(path: &Path, arguments: &[&str]) {
-    let output = Command::new("git")
+    static GIT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let program = GIT.get_or_init(|| {
+        let program = "git".to_owned();
+        assert!(
+            Command::new(&program)
+                .arg("--version")
+                .output()
+                .is_ok_and(|output| output.status.success()),
+            "Git is required for repository fixtures"
+        );
+        program
+    });
+    let config = tempdir();
+    let mut command = Command::new(program);
+    for (key, _) in std::env::vars_os().filter(|(key, _)| {
+        key.to_string_lossy()
+            .to_ascii_uppercase()
+            .starts_with("GIT_")
+    }) {
+        command.env_remove(key);
+    }
+    let output = command
+        .env("GIT_CONFIG_GLOBAL", config.path().join("global"))
+        .env("GIT_CONFIG_SYSTEM", config.path().join("system"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .arg("-C")
         .arg(path)
         .args(arguments)
@@ -3296,6 +3332,11 @@ pub fn launch_probe_pids() -> &'static str {
     {
         "[os.getppid(), os.getpid()]"
     }
+}
+
+/// A path as a program receives it in its argument vector: native spelling.
+pub fn native_text(path: &Path) -> String {
+    path.to_str().expect("fixture paths are Unicode").to_owned()
 }
 
 /// Human/model and persisted path spelling, independent of native separators.

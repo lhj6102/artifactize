@@ -104,16 +104,15 @@ pub(crate) fn resolve_human_argv(
     scope: &Scope<'_>,
     owner: &crate::config::ArtifactName,
     args: &[Argument],
-) -> Result<Vec<String>, ScopeError> {
+) -> Result<Vec<super::ResolvedArgument>, ScopeError> {
     args.iter()
         .map(|argument| {
             let Argument::Reference { prefix, name, path } = argument else {
-                return Ok(argument.to_string());
+                return Ok(super::ResolvedArgument::Literal(argument.to_string()));
             };
             let id = reference_target_or_owner(config, owner, name)?;
             super::reference_path(config, id, path)?;
-            let resolved = super::argument_value(config, scope, id, path)?;
-            Ok(format!("{prefix}{resolved}"))
+            super::argument_value(config, scope, id, path, prefix)
         })
         .collect()
 }
@@ -144,7 +143,7 @@ pub(crate) fn builtin_args(
         if tool.builtin == crate::config::Builtin::Open
             && config.artifacts[target].path.uri().is_some()
         {
-            args[0] = super::argument_value(config, scope, target, path)?;
+            args[0] = super::argument_value(config, scope, target, path, "")?.native();
             if !artifactize_tools::builtin::is_url(&args[0]) {
                 return Err(ScopeError(
                     "The open builtin accepts only HTTP(S) Live addresses.".into(),

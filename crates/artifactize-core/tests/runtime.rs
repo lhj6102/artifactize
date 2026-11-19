@@ -157,8 +157,13 @@ async fn timeout_is_an_operational_error_and_reaps_the_leader() {
         Ok(())
     });
     support::os::scoped(cancellation, work, async |running| {
+        wait_for(|| !child.is_empty() || running.is_finished()).await;
         let pid = child.await.unwrap();
-        wait_for(|| scratch.workspace().join("started").is_file()).await;
+        wait_for(|| scratch.workspace().join("started").is_file() || running.is_finished()).await;
+        assert!(
+            scratch.workspace().join("started").is_file(),
+            "the child must run before advancing the deadline"
+        );
         tokio::time::advance(Duration::from_millis(1000)).await;
         let outcome = running.await.unwrap();
         assert!(

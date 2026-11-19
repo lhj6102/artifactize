@@ -63,14 +63,37 @@ async fn admission(context: &Context, id: &RunId) -> Result<(), String> {
 
 /// A separate artifactize supervisor settles an executor crash even with no observers.
 pub async fn supervise(context: &Context, id: &RunId) -> Result<(), String> {
+    supervise_observing_launch(context, id, || Ok(|_| Ok(()))).await
+}
+
+/// A launch observer may take an ownership guard before spawn and register the executor
+/// while the guard is held, before the executor is admitted to run anything.
+#[doc(hidden)]
+pub async fn supervise_observing_launch<F>(
+    context: &Context,
+    id: &RunId,
+    before_launch: impl FnOnce() -> Result<F, String>,
+) -> Result<(), String>
+where
+    F: FnOnce(process::ChildIdentity) -> Result<(), String>,
+{
     admission(context, id).await?;
     let receipts = Receipts::open(&context.state, &context.repo).await?;
-    let result = supervise_open(context, id, &receipts).await;
+    let result = supervise_open(context, id, &receipts, before_launch).await;
     let closed = receipts.close().await;
     result.and(closed)
 }
 
-async fn supervise_open(context: &Context, id: &RunId, receipts: &Receipts) -> Result<(), String> {
+async fn supervise_open<F>(
+    context: &Context,
+    id: &RunId,
+    receipts: &Receipts,
+    before_launch: impl FnOnce() -> Result<F, String>,
+) -> Result<(), String>
+where
+    F: FnOnce(process::ChildIdentity) -> Result<(), String>,
+{
+    let launched = before_launch()?;
     let supervisor = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
     let (owner, mut child) = match process::spawn_run(
         &context.executable,
@@ -84,6 +107,10 @@ async fn supervise_open(context: &Context, id: &RunId, receipts: &Receipts) -> R
             return fail(receipts, id, FailureCode::SpawnFailed, error.to_string()).await;
         }
     };
+    if let Err(error) = launched(owner) {
+        child.kill().await.map_err(|error| error.to_string())?;
+        return fail(receipts, id, FailureCode::SpawnFailed, error).await;
+    }
     let handed = receipts
         .control(id, move |_, control| {
             let control = control.as_mut().ok_or("Run has no worker control.")?;

@@ -3,7 +3,7 @@
 //! free, and the next fingerprint of the same state removes what it left.
 use std::{
     collections::BTreeSet,
-    fs::{self, File},
+    fs::File,
     io,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -54,7 +54,7 @@ impl Scratch {
                 _held: held,
             }),
             Err(error) => {
-                let _ = fs::remove_file(&lock);
+                let _ = platform::paths::remove_open_file(&lock);
                 Err(error)
             }
         }
@@ -74,7 +74,7 @@ impl Drop for Scratch {
     fn drop(&mut self) {
         // The directory first: a lock without its directory is only ever a free lock.
         drop(self.directory.take());
-        let _ = fs::remove_file(&self.lock);
+        let _ = platform::paths::remove_open_file(&self.lock);
     }
 }
 
@@ -138,7 +138,7 @@ fn sweep(
                 Err(_) => continue,
             }
         }
-        let _ = fs::remove_file(&path);
+        let _ = platform::paths::remove_open_file(&path);
     }
     for name in directories {
         if locks.contains(&format!("{name}{LOCK}")) {
@@ -162,6 +162,7 @@ fn sweep(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn a_held_directory_stays_and_an_ended_one_is_removed() {

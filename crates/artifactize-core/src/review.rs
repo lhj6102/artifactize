@@ -200,7 +200,7 @@ impl Tool {
         match (&self.declared, resolved) {
             (Runs::Command(_), Some(Ok(command))) => {
                 let program = crate::platform::path_text(std::path::Path::new(&command.program));
-                let words = std::iter::once(program).chain(command.args.iter().cloned());
+                let words = std::iter::once(program).chain(command.shown_args.iter().cloned());
                 let words: Vec<_> = words.collect();
                 format!("$ {}", shell(words.iter().map(String::as_str)))
             }
@@ -220,7 +220,6 @@ impl Job {
         cancel: CancellationToken,
         log: log::Sink,
     ) -> Outcome {
-        let mut claimed = None;
         match self {
             Job::Claim { id } => {
                 let result = async {
@@ -237,6 +236,7 @@ impl Job {
                 tool,
                 claim: first,
             } => {
+                let mut claimed = None;
                 // The entry names the tool as the saved request declares it.
                 let declared = store::read_request_id(&state, &id)
                     .await
@@ -288,6 +288,7 @@ impl Job {
                 result,
                 claim: first,
             } => {
+                let mut claimed = None;
                 let result = async {
                     if first {
                         let (receipts, _) = human::open(&state, &id).await?;

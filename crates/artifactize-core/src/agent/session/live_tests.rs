@@ -221,11 +221,9 @@ fn truncate_replacement_same_size_and_gc_reset_even_when_paused() {
     write(&source, &header(&source));
     assert!(finish(&mut reader, 80, 10, Position::Row(5)).reset);
     let path = path(&source.state, &"session".parse().unwrap());
-    let replacement = path.with_extension("new");
-    crate::test_os::write_private_file(&replacement, header(&source) + &answer("replacement"));
-    fs::rename(replacement, &path).unwrap();
+    crate::test_os::replace_open_private_file(&path, header(&source) + &answer("replacement"));
     assert!(finish(&mut reader, 80, 20, Position::Bottom).reset);
-    fs::remove_file(path).unwrap();
+    crate::test_os::remove_open_file(&path);
     let removed = reader.step(80, 20, Position::Bottom);
     assert!(removed.reset);
     assert_eq!(removed.total, 0);

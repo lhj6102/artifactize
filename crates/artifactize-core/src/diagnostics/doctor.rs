@@ -310,7 +310,15 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                 ),
                 Details::ApiKey { present, test_endpoint: Some(endpoint) },
             ),
-            Err(error) => report.add(name, CheckStatus::Fail, &error, Details::ApiKey { present, test_endpoint: None }),
+            Err(error) => report.add(
+                name,
+                CheckStatus::Fail,
+                &error,
+                Details::ApiKey {
+                    present,
+                    test_endpoint: None,
+                },
+            ),
         }
     }
     match providers {

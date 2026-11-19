@@ -24,6 +24,10 @@ impl DetachedChild {
         self.0.wait().await.map(ProcessOutcome::from_native)
     }
 
+    pub(crate) async fn kill(&mut self) -> io::Result<()> {
+        self.0.kill().await
+    }
+
     /// Leave the child running and reap it in the background, with no waiter at the call site.
     pub(crate) fn reap(mut self) {
         tokio::spawn(async move {

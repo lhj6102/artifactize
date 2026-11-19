@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use super::image;
 use crate::{
     config::read_workspace_config,
-    test_os::{symlink_dir, symlink_file},
+    test_os::{file_link, link_dir},
     tools::{Content, Registry, ToolResult},
 };
 
@@ -296,20 +296,12 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
         "data\\file",
     ];
     let a = fixture.root.join("a");
-    if symlink_file(PathBuf::from("data").join("file"), a.join("link")).is_some() {
-        paths.push("link");
-    }
-    if symlink_dir("data", a.join("linkdir")).is_some() {
-        paths.push("linkdir/file");
-    }
-    if symlink_dir(fixture.directory.path(), a.join("escape")).is_some() {
-        paths.push("escape");
-    }
+    file_link(&a.join("data/file"), &a.join("link"));
+    link_dir(&a.join("data"), &a.join("linkdir"));
+    link_dir(fixture.directory.path(), &a.join("escape"));
+    paths.extend(["link", "linkdir", "linkdir/file", "escape"]);
     let special_files = crate::test_os::special_files(&a);
     paths.extend(special_files.paths().iter().copied());
-    crate::test_os::link_dir(&a.join("data"), &a.join("joined"));
-    crate::test_os::link_dir(fixture.directory.path(), &a.join("escape-junction"));
-    paths.extend(["joined", "joined/file", "escape-junction"]);
     for path in paths {
         for tool in ["read_a", "list_a", "glob_a", "grep_a", "view_image_a"] {
             let mut args = json!({"path":path});
@@ -338,12 +330,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
             CancellationToken::new(),
         )
     };
-    let symlinked = symlink_dir("old-a", fixture.root.join("a")).is_some();
-    if symlinked {
-        assert!(read().await.is_error());
-        crate::test_os::remove_link_dir(&fixture.root.join("a"));
-    }
-    crate::test_os::link_dir(&fixture.root.join("old-a"), &fixture.root.join("a"));
+    link_dir(&fixture.root.join("old-a"), &fixture.root.join("a"));
     assert!(read().await.is_error());
 }
 
@@ -385,16 +372,12 @@ async fn missing_paths_and_links_report_their_cause() {
         ("list_a", "ab/data", r#"No "ab/data" in Artifact a."#),
     ];
     let a = fixture.root.join("a");
-    if symlink_file(PathBuf::from("data").join("file"), a.join("link")).is_some() {
-        cases.push(("read_a", "link", symlink));
-    }
-    if symlink_dir("data", a.join("linkdir")).is_some() {
-        cases.push(("list_a", "linkdir", symlink));
-    }
-    crate::test_os::link_dir(&a.join("data"), &a.join("joined"));
+    file_link(&a.join("data/file"), &a.join("link"));
+    link_dir(&a.join("data"), &a.join("linkdir"));
     cases.extend([
-        ("list_a", "joined", symlink),
-        ("read_a", "joined/file", symlink),
+        ("read_a", "link", symlink),
+        ("list_a", "linkdir", symlink),
+        ("read_a", "linkdir/file", symlink),
     ]);
     for (tool, path, message) in cases {
         let mut args = json!({"path":path});
@@ -617,7 +600,10 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     fixture.write("a/search/.hidden.txt", "alpha\n");
     fixture.write("a/search/binary.txt", b"alpha\n\0");
     fixture.write("a/search/invalid.txt", b"alpha\n\xff");
-    symlink_file("a.txt", fixture.root.join("a/search/link.txt"));
+    file_link(
+        &fixture.root.join("a/search/a.txt"),
+        &fixture.root.join("a/search/link.txt"),
+    );
     crate::test_os::link_dir(
         &fixture.root.join("a/search/sub"),
         &fixture.root.join("a/search/joined.txt"),

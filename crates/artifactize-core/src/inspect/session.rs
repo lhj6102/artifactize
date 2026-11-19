@@ -5,7 +5,7 @@ use crate::{
     store::{self, Producer, RequestView},
 };
 pub use send::{Sent, send};
-use serde_json::{Value, json};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 /// What names a saved conversation: its full reference, or a bare id, which is read as a
@@ -148,20 +148,42 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
     })
 }
 
+/// The wire shapes of `session show --json`, with the original event bodies untouched.
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum Shown {
+    #[serde(rename_all = "camelCase")]
+    Summary {
+        reference: Option<String>,
+        session_id: crate::types::SessionId,
+        request_id: crate::types::RequestId,
+        #[serde(flatten)]
+        summary: Summary,
+    },
+    Events {
+        reference: Option<String>,
+        #[serde(with = "crate::platform::path_serde")]
+        file: PathBuf,
+        events: Vec<Box<serde_json::value::RawValue>>,
+    },
+}
+
 /// Project the same saved events or summary that `session show --json` prints.
-pub async fn show(state: &Path, selector: &Selector, summary: bool) -> Result<Value, String> {
+pub async fn show(state: &Path, selector: &Selector, summary: bool) -> Result<Shown, String> {
     let located = locate(state, selector).await?;
     let conversation = located.load()?;
     if summary {
-        let mut value = json!(Summary::new(&conversation));
-        value["reference"] = json!(located.reference.as_ref().map(ToString::to_string));
-        value["sessionId"] = json!(located.id);
-        value["requestId"] = json!(located.request.request.id);
-        Ok(value)
+        Ok(Shown::Summary {
+            reference: located.reference.as_ref().map(ToString::to_string),
+            session_id: located.id,
+            request_id: located.request.request.id.clone(),
+            summary: Summary::new(&conversation),
+        })
     } else {
-        Ok(
-            json!({"reference": located.reference.as_ref().map(ToString::to_string),
-            "file": crate::platform::path_text(&conversation.path), "events": conversation.wire_events()}),
-        )
+        Ok(Shown::Events {
+            reference: located.reference.as_ref().map(ToString::to_string),
+            file: conversation.path.clone(),
+            events: conversation.into_original(),
+        })
     }
 }

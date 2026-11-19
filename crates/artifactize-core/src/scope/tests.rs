@@ -481,13 +481,13 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     };
     let resolved = resolve_argv(&config, &scope, &"review".parse().unwrap(), args).unwrap();
     let file = fixture.0.join("data").join("sub").join("file");
-    let file = crate::platform::path_text(&file);
+    let file = file.to_str().unwrap();
     assert_eq!(
         &resolved[..3],
         [
-            file.clone(),
+            file.to_owned(),
             format!("--data={file}"),
-            crate::platform::path_text(&fixture.0.join("data"))
+            fixture.0.join("data").to_str().unwrap().to_owned()
         ]
     );
     assert_eq!(&resolved[3..], &args[3..]);
