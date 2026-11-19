@@ -212,7 +212,7 @@
         {#if !review.settled && (review.owned || review.busy || review.notice?.error)}
           <div class="actions">
             {#if review.owned}
-              <button class="button" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
+              <button class="button small" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
             {/if}
             <span class="said">
               {#if review.busy}
@@ -222,7 +222,7 @@
               {/if}
             </span>
             {#if review.form}
-              <button class="button primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+              <button class="button small primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
             {/if}
           </div>
         {/if}
@@ -361,23 +361,28 @@
     gap: 6px;
   }
   /* The last row of the Result: Release claim at the left, Submit at the column's right edge. */
-  /* In a narrow column the row wraps rather than letting its groups run into each other. */
+  /* One row, also in the narrowest (320px) Detail: compact buttons at both ends, what the work
+     says between them, each group keeping its own width. */
   .actions {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 6px var(--gap);
+    gap: 6px;
   }
-  /* What the work says keeps its own width: never narrower than its content. */
+  .actions > :global(.button) {
+    flex: none;
+  }
   .said {
     flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     align-items: center;
+    justify-content: center;
   }
   .actions > .primary {
     margin-left: auto;
   }
   .busy {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 6px;
