@@ -4,6 +4,7 @@
 // these portable functions, so an OS difference in CI is investigated here first.
 // Runner configuration is the only other place where platforms differ; specs contain
 // no OS branches. The app/driver lifetime still belongs to WDIO's Tauri service.
+import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomInt } from "node:crypto";
 import {
@@ -234,6 +235,47 @@ export function storePackageDirectory(root: NativePath): NativePath {
   return nativePath(root, "WindowsApps", "lhj6102.Artifactize_9.9.9.0_x64__ayfzfzbsv48sg");
 }
 
+/** Processes other than this one that hold a file open, or work, inside `root`. Unix lets a
+ * held file be deleted, so deletion succeeding there proves nothing: Linux reads /proc and
+ * macOS asks lsof. Windows refuses to delete a held file, which removeTree reports. */
+function holdersOf(root: NativePath): number[] {
+  if (WINDOWS) return [];
+  if (MACOS) {
+    const listed = spawnSync("lsof", ["-t", "+D", root], { encoding: "utf8" });
+    return listed.stdout.split("\n").map(Number).filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
+  }
+  const inside = (target: string) => target === root || target.startsWith(`${root}${sep}`);
+  const holders: number[] = [];
+  for (const entry of readdirSync("/proc")) {
+    const pid = Number(entry);
+    if (!Number.isSafeInteger(pid) || pid === process.pid) continue;
+    try {
+      const fds = `/proc/${pid}/fd`;
+      const held = inside(readlinkSync(`/proc/${pid}/cwd`)) || readdirSync(fds).some((fd) => {
+        try { return inside(readlinkSync(join(fds, fd))); } catch { return false; }
+      });
+      if (held) holders.push(pid);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "EACCES" && code !== "ESRCH") throw error;
+    }
+  }
+  return holders;
+}
+
+/** Wait, bounded, until no other process holds anything inside a fixture root: the app's web
+ * engine helpers (WebKitGTK's web and network processes, WKWebView's) outlive the app for a
+ * moment and keep or still write its data folders (E2E-OWNED-FIXTURES). */
+export async function awaitReleased(root: NativePath, timeout = 60000): Promise<void> {
+  const until = performance.now() + timeout;
+  let holders = holdersOf(root);
+  while (holders.length > 0) {
+    if (performance.now() > until) throw new Error(`processes ${holders.join(", ")} still hold fixture ${root}; preserve inputs`);
+    await new Promise((done) => setTimeout(done, 100));
+    holders = holdersOf(root);
+  }
+}
+
 /** Remove a directory tree. An app's web engine helper processes (WebView2, WebKitGTK's
  * web and network processes) exit after the app, and until then they keep or still write
  * the data folders that live in its fixture. Deletion retries with linearly growing pauses
@@ -402,11 +444,20 @@ export async function runStep(program: string, args: readonly string[], options:
  * signal there by terminating the process, so nothing is sent. */
 export async function runForwardingInterrupts(
   program: string, args: readonly string[], env: Environment, cwd: NativePath, interrupted: () => void,
+  owner: () => number | null = () => null,
 ): Promise<number> {
   const child = spawn(program, args, { env, cwd, stdio: "inherit" });
+  // On Linux the child is a session wrapper (dbus-run-session, xvfb-run) that passes no
+  // signal on, so the request goes to the runner it wraps once that runner has said who it is.
   const forward = (signal: NodeJS.Signals) => () => {
     interrupted();
-    if (!WINDOWS) child.kill(signal);
+    if (WINDOWS) return;
+    const runner = owner();
+    if (runner !== null) {
+      try { process.kill(runner, signal); return; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    }
+    child.kill(signal);
   };
   const interrupt = forward("SIGINT");
   const terminate = forward("SIGTERM");
@@ -1459,14 +1510,13 @@ export async function nativeInput(browser: WebdriverIO.Browser, input:
   | { type: "set" | "commit"; text: string }
   | { type: "cancel" | "copy" | "paste" }): Promise<void> {
   if (input.type === "copy" || input.type === "paste") assertClipboardDesktop();
-  const error = await browser.executeAsync((operation, done) => {
-    const native = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<unknown> } };
-    native.__TAURI_INTERNALS__.invoke("e2e_input", { input: operation }).then(
-      () => done(null),
-      (failure: unknown) => done(String(failure)),
-    );
-  }, input);
-  if (error !== null) throw new Error(`native engine input failed: ${String(error)}`);
+  // Through the Tauri service's public API, which reaches the command as the page's own
+  // `invoke` would.
+  try {
+    await browser.tauri.execute((tauri, operation: typeof input) => tauri.core.invoke("e2e_input", { input: operation }), input);
+  } catch (failure) {
+    throw new Error(`native engine input failed: ${String(failure)}`, { cause: failure });
+  }
 }
 
 /** Native crash reports for this run's exact candidate binary, never other apps or runs.

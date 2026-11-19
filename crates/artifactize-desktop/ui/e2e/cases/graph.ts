@@ -1131,7 +1131,15 @@ export const scenarios: Scenario[] = [
       const drawing = '[aria-label="Detail"] [role="group"][aria-label="Neighbours"]';
       let edges: (string | null)[] = [];
       await browser.waitUntil(async () => {
-        edges = await browser.execute((selector) => [...document.querySelectorAll(`${selector} .svelte-flow__edge`)].map((edge) => edge.getAttribute("data-id")), drawing);
+        // Only an edge whose line is actually painted counts as drawn.
+        edges = await browser.execute((selector) => [...document.querySelectorAll(`${selector} .svelte-flow__edge`)].filter((edge) => {
+          const path = edge.querySelector("path");
+          if (!path) return false;
+          const box = path.getBoundingClientRect();
+          const style = getComputedStyle(path);
+          return (box.width > 0 || box.height > 0) && style.visibility === "visible" && style.display !== "none"
+            && Number(style.opacity) > 0 && style.stroke !== "none" && Number.parseFloat(style.strokeWidth) > 0;
+        }).map((edge) => edge.getAttribute("data-id")), drawing);
         return JSON.stringify(edges) === JSON.stringify(["a:release>a:ship"]);
       }, { timeout: 15000, timeoutMsg: "the neighbour drawing renders its actual input-to-consumer relation" });
       assert.deepEqual(edges, ["a:release>a:ship"]);
@@ -1298,6 +1306,21 @@ payload.instruction = "Check the Live Artifact."
       assert.deepEqual([found.glyph, found.colour], [tab.glyph, tab.colour], "the found eval showed its verdict's glyph and colour");
       await browser.waitUntil(() => centred("a:release", releaseBefore), { timeout: 15000, timeoutMsg: "release in the middle of the graph left of the Detail" });
       assert.ok(await inDetail(), "the keyboard is in the Detail");
+
+      // A click on a found eval does the same: Find closes, release's Detail shows the eval's
+      // tab, and release is centred.
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      await browser.$('[aria-label="Graph tools"]').$("button=Find").click();
+      await browser.waitUntil(async () => (await field())?.focused === true, { timeout: 15000, timeoutMsg: "the Find button opened the field" });
+      await fill(browser, FIND, "SIGN");
+      await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(["release / signoff"]), { timeout: 15000, timeoutMsg: "release's signoff found again" });
+      const clickedBefore = await zoom();
+      await browser.$('.find [role="option"]').click();
+      await browser.waitUntil(async () => {
+        const shown = await detail(browser);
+        return (await field()) === null && shown?.tabs[0]?.name === "release" && shown.tabs.find((each) => each.selected)?.name === "signoff";
+      }, { timeout: 15000, timeoutMsg: "a click on the eval opened release's Detail on its signoff tab" });
+      await browser.waitUntil(() => centred("a:release", clickedBefore), { timeout: 15000, timeoutMsg: "release centred after the click" });
 
       // A text field outside the Pane is not graph focus, even with a Run graph shown.
       const human = aside(browser).$('[aria-label="Human review"]');

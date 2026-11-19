@@ -406,6 +406,11 @@ export const scenarios: Scenario[] = [
       assert.equal(signoff(fixture).result, null, "the gated submit has not saved yet");
       assert.equal(await inDock().$('button[aria-label^="Release claim"]').isEnabled(), false, "Release remains disabled while submitting");
       assert.equal(await submit().isEnabled(), false, "Submit is disabled while submitting");
+      const toolsDisabled = await browser.execute((selector) => {
+        const buttons = [...document.querySelectorAll<HTMLButtonElement>(`${selector} section[aria-label="Tools"] button`)];
+        return buttons.length > 0 && buttons.every((button) => button.disabled);
+      }, 'aside[aria-label="Detail"] [aria-label="Human review"]');
+      assert.ok(toolsDisabled, "every tool button is disabled while the submission is pending");
       writeText(gate, "go");
       const completed = () => inDock().$('section[aria-label="Result"] pre');
       await waitFor(browser, async () => !(await activeTool()) && signoff(fixture).status === "GREEN"

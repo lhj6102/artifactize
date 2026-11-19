@@ -1,7 +1,7 @@
 // Domain fixture roots are inputs, not candidate leases or native lifecycle owners.
 // The outer runner calls releaseFixtures only after the service/app has exited.
 import { readCandidate, type Candidate } from "./build.ts";
-import { childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseClaudeLogins, releaseRecordedBrowser, removeTree, type NativePath } from "./platform.ts";
+import { awaitReleased, childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseClaudeLogins, releaseRecordedBrowser, removeTree, type NativePath } from "./platform.ts";
 import { removeFixture, settleFixtureRuns } from "./runs.ts";
 import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.ts";
 import { observe } from "./domain-fixtures/observe.ts";
@@ -41,12 +41,13 @@ export function createdRoots(): NativePath[] {
   return childDirectories(scratch).filter((root) => nameOf(root).startsWith("fixture-"));
 }
 
-/** Release only fixtures whose app and any companion have been confirmed stopped. */
+/** Stop what every fixture runs, and delete only fixtures whose app and any companion have
+ * been confirmed stopped; a retained fixture keeps its files for diagnosis. */
 export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate(),
   retain: ReadonlySet<NativePath> = new Set()): Promise<void> {
   const failures: unknown[] = [];
   for (const root of roots) {
-    if (retain.has(root) || !exists(root)) continue;
+    if (!exists(root)) continue;
     if (parentOf(root) !== nativePath(candidate.root, "fixtures") || !nameOf(root).startsWith("fixture-") || isLink(root)) {
       failures.push(new Error(`refuse cleanup outside candidate-owned fixture roots: ${root}`));
       continue;
@@ -61,7 +62,10 @@ export async function releaseFixtures(roots: readonly NativePath[] = createdRoot
     try {
       const active = slowTool(fixture);
       if (active) await observe(async () => !await active(), () => `tool still owns fixture ${root}; preserve inputs`);
-      if (before === failures.length) removeTree(root);
+      if (before === failures.length && !retain.has(root)) {
+        await awaitReleased(root);
+        removeTree(root);
+      }
     } catch (error) { failures.push(error); }
   }
   if (failures.length === 1) throw failures[0];

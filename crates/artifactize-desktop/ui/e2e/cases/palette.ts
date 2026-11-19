@@ -185,8 +185,16 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(groups.map((group) => group.group), ["App", "Graph"], "the app's group, then the graph's");
       assert.deepEqual(groups[0].commands, APP(), "the app's commands in order, each with its key");
       assert.deepEqual([...groups[1].commands].sort(), [["Find", shortcutLabel("Ctrl+F")], ["Fit", ""], ["Open the Run's Detail", ""]].sort(), "the graph's commands, Find with its key");
-      await typeText(browser, "Show Set");
+      // Text from the middle of a name filters too; a group keeps its heading only while a
+      // command of it matches.
+      await typeText(browser, "ow Sett");
       await waitFor(browser, async () => JSON.stringify(await listed()) === JSON.stringify(["Show Settings"]), "only the matching command remains");
+      assert.deepEqual((await rendered(browser)).map((group) => group.group), ["App"], "only the matching command's group heading stays");
+      await escape("Esc");
+      await ctrlK("filter by a graph command");
+      await typeText(browser, "Fi");
+      await waitFor(browser, async () => JSON.stringify(await listed()) === JSON.stringify(["Find", "Fit"]), "only the graph's matching commands remain");
+      assert.deepEqual((await rendered(browser)).map((group) => group.group), ["Graph"], "the App heading goes when none of its commands match");
       await escape("Esc");
 
       // The in-progress Run stands in for Current until its shared sign-off is submitted.
@@ -353,8 +361,15 @@ export const scenarios: Scenario[] = [
       await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
       await watchErrors(browser);
       await ctrlK("Ctrl+K");
+      // A command chosen by filtering does not run when a click outside closes the palette.
+      const listed = () => browser.execute(() => [...document.querySelectorAll("[data-command-item]")]
+        .map((item) => item.querySelector("span")?.textContent?.trim() ?? ""));
+      await typeText(browser, "Show Set");
+      await waitFor(browser, async () => JSON.stringify(await listed()) === JSON.stringify(["Show Settings"]), "one command, Show Settings, chosen");
       await pointerGapClick(browser, { x: 20, y: 600 });
       await closed("outside click");
+      await afterRender(browser);
+      assert.equal(await browser.$('[role="tablist"][aria-label="Settings"]').isExisting(), false, "the chosen command did not run");
       await ctrlK("after the outside click");
       await escape("Esc");
       assert.deepEqual(await errors(browser), []);

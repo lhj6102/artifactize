@@ -493,6 +493,10 @@ payload.instruction = "Check the worker."
       const saved = async () => !(await browser.$("button=Save").isEnabled());
       await showLimits(browser);
       await browser.waitUntil(async () => (await shown()) === "120", { timeout: 15000, timeoutMsg: "the default idle grace" });
+      // One visible line says what the grace is.
+      const said = await browser.$('section[aria-labelledby="grace-title"] p').getText();
+      assert.equal(said, "How long a Run with only sign-offs left, none of them claimed, waits before it ends.", "Limits says what the grace is");
+      assert.ok(await browser.$('section[aria-labelledby="grace-title"] p').isDisplayed(), "that line is shown");
       assert.ok(await saved(), "Save is disabled for the unchanged grace");
       await fill(browser, "#grace-seconds", "300");
       await browser.$("button=Save").waitForEnabled();
@@ -723,8 +727,11 @@ Review the agent folder."""
       const receivedFile = nativePath(fixture.root, "remote-received");
       writeText(principalFile, "alice-laptop");
       writeText(receivedFile, "");
-      const store = await serveLoopbackHttp((request, response) => {
+      // While this file exists the store holds its status answer, so a request stays in flight.
+      const holdFile = nativePath(fixture.root, "remote-hold");
+      const store = await serveLoopbackHttp(async (request, response) => {
         request.resume();
+        for (let waited = 0; exists(holdFile) && waited < 30000; waited += 50) await new Promise((done) => setTimeout(done, 50));
         const signedIn = request.headers.authorization === `Bearer ${TOKEN}`;
         const answer = (status: number, body: unknown) => {
           response.writeHead(status, { "content-type": "application/json" });
@@ -746,11 +753,11 @@ Review the agent folder."""
       return {
         fixture,
         env: { ...env, ARTIFACTIZE_E2E_DATE: String(Date.UTC(2026, 0, 12, 12) / 1000) },
-        data: { url: `${store.url}/`, principalFile, receivedFile, token: TOKEN },
+        data: { url: `${store.url}/`, principalFile, receivedFile, holdFile, token: TOKEN },
         release: () => store.close(),
       };
     },
-    async (browser, { fixture, data: { url, principalFile, receivedFile, token } }) => {
+    async (browser, { fixture, data: { url, principalFile, receivedFile, holdFile, token } }) => {
       const received = () => readText(receivedFile).split("\n").filter(Boolean).length;
       const text = () => browser.execute(() => document.body.innerText);
       const html = () => browser.execute(() => document.documentElement.outerHTML);
@@ -812,8 +819,21 @@ Review the agent folder."""
         const pushed = statusLine().$('[data-testid="remote-pushed"]');
         return await pushed.isDisplayed() ? await pushed.getText() : "";
       };
+      // While a request is in flight every button of the tab is disabled.
+      const remoteButtons = () => browser.execute(() =>
+        [...document.querySelectorAll<HTMLButtonElement>('section[aria-labelledby="remote-title"] button')].map((button) => button.disabled));
+      writeText(holdFile, "");
+      await browser.$("button=Check status").click();
+      await browser.waitUntil(async () => { const states = await remoteButtons(); return states.length > 0 && states.every(Boolean); },
+        { timeout: 15000, timeoutMsg: "every Remote button disabled while Check status is in flight" });
+      removeTree(holdFile);
+      await browser.waitUntil(async () => (await remoteButtons()).every((disabled) => !disabled), { timeout: 15000, timeoutMsg: "the buttons usable again once it answered" });
+      // A dry run's summary takes the status line and stays there until Check status.
       await browser.$("button=Push (dry run)").click();
-      await browser.waitUntil(async () => /Would push 1, already in the store 0, skipped 0\./.test(await text()), { timeout: 15000, timeoutMsg: "the dry run would push the one result" });
+      await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Would push 1, already in the store 0, skipped 0\./.test(await statusLine().getText()),
+        { timeout: 15000, timeoutMsg: "the dry run's summary takes the status line" });
+      await commandsRendered(browser);
+      assert.match(await statusLine().getText(), /^Would push 1, already in the store 0, skipped 0\./, "the summary stays until Check status");
       // A dry run pushes nothing: the store received nothing, and the status, read again,
       // says nothing was pushed today.
       assert.equal(received(), 0, "the dry run sent no record");
@@ -826,7 +846,8 @@ Review the agent folder."""
       { timeout: 15000, timeoutMsg: "the fresh status after the dry run shows nothing pushed today" });
       // A real push: the store receives the record, and the same status counts it.
       await browser.$("button=Push results").click();
-      await browser.waitUntil(async () => /Pushed 1, already in the store 0, skipped 0\./.test(await text()), { timeout: 15000, timeoutMsg: "the push reports its result" });
+      await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Pushed 1, already in the store 0, skipped 0\./.test(await statusLine().getText()),
+        { timeout: 15000, timeoutMsg: "the push's summary takes the status line" });
       assert.equal(received(), 1, "the store received the one record");
       // The push reports success before its follow-up status request enables the button.
       const checkStatus = browser.$("button=Check status");

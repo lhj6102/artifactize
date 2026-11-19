@@ -113,6 +113,13 @@ export const scenarios: Scenario[] = [
       ], [/^↑ \/ ↓ · j \/ k$/, /^c$/], "the Main area");
       // On a Run's graph, Help pairs each of its marks with its word.
       assert.deepEqual(await marks(), RUN_MARKS, "the Run's marks, each with its word");
+      // The palette's Help, opened over the Run's graph, shows the same legend.
+      await helpFromPalette();
+      assert.deepEqual(await helpMarks(browser), RUN_MARKS, "Help from the palette pairs the Run's marks with their words");
+      await browser.$('[role="dialog"].help').$("button=Close").click();
+      await waitFor(browser, async () => !(await helpOpen()), "Help closed by its Close button");
+      await browser.$(".stage").click();
+      await waitFor(browser, () => mainFocused(browser), "the Main area focused again");
       await openArtifact(browser, "a:release", "Artifact release");
       const debug = aside(browser).$('section[aria-label="Debug"] > button');
       await debug.waitForDisplayed({ timeout: 15000 });
@@ -200,6 +207,16 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await instruction()) === wanted && /^Scanned at /.test(await scanned(browser)),
         "the Refresh button scanned the Current and its Detail shows the changed declaration");
       assert.equal(await mainTitle(browser), "Current · repo  after-refresh", "on the same view");
+      // The palette's Refresh rescans the shown Current too.
+      const again = "Build the docs after the palette's Refresh.";
+      writeText(declaration, readText(declaration).replace(wanted, again));
+      assert.equal(await instruction(), wanted, "the second change is not shown before the refresh");
+      await browser.$("header.bar").$("button*=Commands").click();
+      await choosePaletteCommand(browser, "Refresh");
+      await browser.$('.palette [role="option"][aria-selected="true"]').click();
+      await waitFor(browser, async () => (await instruction()) === again && /^Scanned at /.test(await scanned(browser)),
+        "the palette's Refresh scanned the Current and its Detail shows the changed declaration");
+      assert.equal(await mainTitle(browser), "Current · repo  after-refresh", "still on the same view");
     },
   ),
 
@@ -425,7 +442,7 @@ export const scenarios: Scenario[] = [
     "keeps a shown Run's graph within the Main area while its notice names the Runs that cannot be read, in full on a click",
     async () => {
       const { fixture, readable, unreadable, restore } = createUnreadableRuns();
-      return { fixture, args: ["--repo", fixture.repo], data: { readable, unreadable }, release: async () => restore() };
+      return { fixture, args: ["--repo", fixture.repo], data: { readable, unreadable }, restore: async () => restore() };
     },
     async (browser, { data: { readable, unreadable } }) => {
       await listed(browser, "repo  master");
@@ -529,6 +546,23 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
       // Observe the real window's exit before retiring the ended WebDriver client session.
       await sessionEndedByApp(browser, () => browser.keys(["q"]));
+    },
+  ),
+
+  // UX journey: J-QUIT
+  scenario<Record<string, never>>(
+    "navigation-quit-palette",
+    "quits at once through the palette's Quit",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      await graphShown(browser, "a:release");
+      await browser.$("header.bar").$("button*=Commands").click();
+      await choosePaletteCommand(browser, "Quit");
+      // Observe the real window's exit before retiring the ended WebDriver client session.
+      await sessionEndedByApp(browser, () => browser.$('.palette [role="option"][aria-selected="true"]').click());
     },
   ),
 

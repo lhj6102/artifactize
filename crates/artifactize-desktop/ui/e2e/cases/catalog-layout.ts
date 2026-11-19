@@ -46,7 +46,7 @@ export const scenarios: Scenario[] = [
     "keeps the graph's place and divider and explains a readable legacy Run with no Artifacts",
     async () => {
       const { fixture, restore } = createEmptyAudit();
-      return { fixture, data: { run: savedRuns(fixture)[0].id }, release: async () => restore() };
+      return { fixture, data: { run: savedRuns(fixture)[0].id }, restore: async () => restore() };
     },
     async (browser, { data: { run } }) => {
       await listed(browser, "repo  master");
@@ -66,7 +66,7 @@ export const scenarios: Scenario[] = [
     "keeps the graph's place and divider when no saved Run can be read, its notice saying why",
     async () => {
       const { fixture, restore } = createUnreadableRuns(true);
-      return { fixture, data: {}, release: async () => restore() };
+      return { fixture, data: {}, restore: async () => restore() };
     },
     async (browser) => {
       await browser.waitUntil(async () => {
@@ -84,7 +84,7 @@ export const scenarios: Scenario[] = [
     "keeps the graph's place and divider when the shown Run can no longer be read, saying so in that place",
     async () => {
       const { fixture, readable, restore } = createUnreadableRuns();
-      return { fixture, args: ["--repo", fixture.repo], data: { readable }, release: async () => restore() };
+      return { fixture, args: ["--repo", fixture.repo], data: { readable }, restore: async () => restore() };
     },
     async (browser, { fixture, data: { readable } }) => {
       await listed(browser, "repo  master");

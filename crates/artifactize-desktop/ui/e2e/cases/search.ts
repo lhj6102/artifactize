@@ -79,6 +79,9 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, narrowed(["repo  scope-one", "repo  scope-two"]), "both lists narrowed to the scope branches");
       // Free text also matches a waiting review's eval: every review waits for release/signoff,
       // while no project or branch is named so.
+      // Free text found only in a project's name narrows both lists to that project.
+      await set("sort:recent thi");
+      await waitFor(browser, narrowed(["third  master"]), "a project's name fragment narrowed both lists");
       await set("sort:recent signoff");
       await waitFor(browser, async () => (await names()).length === 0 && (await waiting(browser)).rows.length === ALL.length, "only the waiting reviews match their eval");
       // branch: matches part of the branch alone.
@@ -120,6 +123,20 @@ export const scenarios: Scenario[] = [
       await browser.$(SEARCH).click();
       await set("");
       await waitFor(browser, async () => await query() === "" && (await suggestions()).length === 0, "empty search closes the suggestions");
+      // The branch and sort keys offer their own values once taken.
+      await typeText(browser, "bra");
+      await waitFor(browser, async () => (await suggestions()).includes("branch:"), "the branch key suggested");
+      await take("branch:");
+      await waitFor(browser, async () => {
+        const shown = await suggestions();
+        return ["branch:master", "branch:scope-one", "branch:scope-two"].every((value) => shown.includes(value));
+      }, "the branches as its values");
+      await set("");
+      await typeText(browser, "sor");
+      await waitFor(browser, async () => (await suggestions()).includes("sort:"), "the sort key suggested");
+      await take("sort:");
+      await waitFor(browser, async () => { const shown = await suggestions(); return shown.includes("sort:recent") && shown.includes("sort:name"); }, "the two orders as its values");
+      await set("");
       await set("sort:recent repo:other ");
       // Esc closes the suggestions first, keeping the query.
       await typeText(browser, "bra");

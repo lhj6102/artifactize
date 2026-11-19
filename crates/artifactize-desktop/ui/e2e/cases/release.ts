@@ -238,9 +238,13 @@ export const scenarios: Scenario[] = [
       const view = await mainTitle(browser);
       // A release comes out. The app looks again by itself, but within the day it reuses its
       // answer and does not ask the site.
+      const checks = async () => (await checkpoint(browser)).activity.commands.releaseNotice?.completed ?? 0;
+      const checked = await checks();
       replaceText(data.answer, `v${LATEST}`);
-      // The app remains on its starting notice until the clock crosses the day; the rendered
-      // notice and the site's log observe that, and nothing here looks the release up itself.
+      // The app checks again by itself while the clock is still within the day; once such a
+      // check has completed and rendered, its notice and the site's log show the kept answer.
+      await browser.waitUntil(async () => await checks() > checked, { timeout: 15000, timeoutMsg: "the app checked again within the day" });
+      await afterRender(browser);
       assert.equal(await shownNotice(), initialNotice, "within the day the kept answer stands");
       assert.equal(lookups(), 1, "within the day the app asked the site nothing more");
       // A day later, the next look asks the site again and finds the release.
@@ -306,8 +310,9 @@ export const scenarios: Scenario[] = [
       // The fresh lookup was served and its answer applied; only then is the header read.
       await browser.waitUntil(async () => visited(data).filter((path) => path === LOOKUP).length > before && await completed() > done,
         { timeout: 15000, timeoutMsg: "the app completed the fresh prerelease lookup" });
+      await anyNotice(browser).waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the applied response cleared the prior notice" });
       await afterRender(browser);
-      assert.equal(await anyNotice(browser).isExisting(), false, "the applied response cleared the prior notice without showing a prerelease");
+      assert.equal(await anyNotice(browser).isExisting(), false, "no prerelease notice took its place");
       onlyLookups(data);
     },
   ),

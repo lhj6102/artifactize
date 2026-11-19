@@ -16,8 +16,16 @@ const ui = absolutePath(suitePath(), "..");
 const CAPABILITIES_PER_INVOCATION = appsAtOnce;
 let interrupted = false;
 
-function execute(program: string, args: string[], env: Environment): Promise<number> {
-  return runForwardingInterrupts(program, args, env, ui, () => { interrupted = true; });
+function execute(program: string, args: string[], env: Environment, owner?: () => number | null): Promise<number> {
+  return runForwardingInterrupts(program, args, env, ui, () => { interrupted = true; }, owner);
+}
+
+/** The batch runner that has claimed `root`, by the process ID it wrote there. */
+function batchOwner(root: NativePath): number | null {
+  const runner = nativePath(root, "running.json");
+  if (!exists(runner)) return null;
+  const pid = Number(readText(runner));
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 }
 
 async function batch(): Promise<void> {
@@ -122,7 +130,7 @@ async function suite(ids: string[]): Promise<void> {
       confirmed = false;
       try {
         const wrapped = runnerCommand([file, "batch"], env);
-        const code = await execute(wrapped.program, wrapped.args, wrapped.env);
+        const code = await execute(wrapped.program, wrapped.args, wrapped.env, () => batchOwner(candidate.root));
         if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
       } catch (error) { failures.push(error); }
       try {

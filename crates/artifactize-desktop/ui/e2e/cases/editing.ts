@@ -621,11 +621,20 @@ export const scenarios: Scenario[] = [
       // Created: the file is written, the dialog closes, the node is drawn in free space beside
       // the hand-placed top level, and its Detail opens with it in the middle of the graph left
       // of the Detail, at a zoom that reads.
+      // Cancel closes a typed draft and creates nothing.
+      await browser.$(TOOLS).$("button=New Artifact").click();
+      await dialog().waitForExist({ timeout: 15000 });
+      await enter("Name", "dropped");
+      await enter("Path", "dropped/");
+      await dialog().$("button=Cancel").click();
+      await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "Cancel closes the dialog" });
+      assert.equal(file(fixture, "dropped"), null, "Cancel created nothing");
+      assert.deepEqual(definitionFiles(), definitionsBefore, "Cancel leaves every definition as it was");
       await browser.$(TOOLS).$("button=New Artifact").click();
       await dialog().waitForExist({ timeout: 15000 });
       await enter("Name", "extra");
       await enter("Path", "extra/");
-      await browser.keys("Enter");
+      await dialog().$("button=Create").click();
       await waitFor(browser, () => file(fixture, "extra") !== null, "extra's file written");
       assert.ok(file(fixture, "extra")?.includes('path = "extra/"'), "with its Path");
       await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the dialog closed" });
@@ -660,6 +669,18 @@ export const scenarios: Scenario[] = [
       await dialog().waitForExist({ reverse: true, timeout: 15000 });
       await openArtifact(browser, "a:docs", "Artifact docs");
       await waitFor(browser, async () => JSON.stringify((await definition(browser))?.parts) === '["kit"]', "docs's Definition lists kit");
+
+      // Cancel closes the Rename dialog with a different name typed, renaming nothing.
+      await openArtifact(browser, "a:core", "Artifact core");
+      const beforeCancel = ["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name));
+      await browser.$(DETAIL).$("button=Rename").click();
+      await dialog().waitForExist({ timeout: 15000 });
+      await fill(browser, '[role="dialog"] input', "elsewhere");
+      await dialog().$("button=Cancel").click();
+      await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "Cancel closes the Rename dialog" });
+      assert.equal(file(fixture, "elsewhere"), null, "Cancel renamed nothing");
+      assert.deepEqual(["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name)), beforeCancel, "every file as it was");
+      await waitFor(browser, async () => (await detail(browser))?.title === "Artifact core", "core's Detail still shown");
 
       // Rename: the file and every reference follow in one edit.
       await openArtifact(browser, "a:core", "Artifact core");
@@ -1483,8 +1504,13 @@ docs = [0.0, 0.0]
       assert.equal(file(fixture, "core"), coreText, "nothing written by a click outside");
       await waitFor(browser, async () => (await comments(browser))["a:core"] === CORE_NOTE &&
         await browser.$(`${DETAIL} button[data-comment-button]`).isFocused(), "clicking outside restores the visible comment and the Definition Comment button's focus");
+      // The Detail's Close with a changed draft open puts the comment back and closes both.
+      await browser.$(DETAIL).$("button=Comment").click();
+      await waitFor(browser, async () => (await field(browser))?.of === "core", "core's field open from the Definition again");
+      await changeDraft();
       await browser.$(DETAIL).$("button=Close").click();
-      await waitFor(browser, async () => (await detail(browser)) === null, "Detail closed before reopening the field from the graph");
+      await waitFor(browser, async () => (await detail(browser)) === null && await restored(), "Close shuts the field and the Detail, the old comment back");
+      assert.equal(file(fixture, "core"), coreText, "nothing written by Close");
       await pointerGapClick(browser, await visibleCenter(browser, await comment().getElement()));
       await waitFor(browser, async () => (await field(browser))?.of === "core", "core's field open once more");
       // Emptied, the comment is removed.

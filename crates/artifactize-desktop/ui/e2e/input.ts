@@ -111,9 +111,13 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
       const target = document.activeElement ?? document.body;
       const keyCode = input.key === "PageUp" ? 33 : input.key === "PageDown" ? 34 : 13;
       const shiftKey = "shift" in input && input.shift;
-      for (const type of ["keydown", "keyup"]) target.dispatchEvent(new KeyboardEvent(type, {
-        key: input.key, code: input.key, keyCode, which: keyCode, shiftKey, bubbles: true, cancelable: true,
+      const send = (type: string, key: string, code: string, keyCode: number, shift: boolean) => target.dispatchEvent(new KeyboardEvent(type, {
+        key, code, keyCode, which: keyCode, shiftKey: shift, bubbles: true, cancelable: true,
       }));
+      // A chord as WebDriver's key actions deliver it: the modifier goes down first and up last.
+      if (shiftKey) send("keydown", "Shift", "ShiftLeft", 16, true);
+      for (const type of ["keydown", "keyup"]) send(type, input.key, input.key, keyCode, shiftKey);
+      if (shiftKey) send("keyup", "Shift", "ShiftLeft", 16, false);
     } else {
       const target = document.elementFromPoint(input.x, input.y);
       if (!target) throw new Error(`the pointer has no hit target at (${input.x}, ${input.y}) in a ${innerWidth}×${innerHeight} viewport`);

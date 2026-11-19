@@ -19,6 +19,11 @@ const candidate = readCandidate();
 const ids = JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[];
 if (!ids.length) throw new Error("a WDIO invocation requires an explicit scenario batch");
 const selected = selectedScenarios(ids);
+// The service launches every capability's app while it prepares, so a batch never holds more
+// scenarios than the platform runs apps at once (E2E-ISOLATED); the suite batches that way.
+if (selected.length > appsAtOnce) {
+  throw new Error(`a batch holds at most ${appsAtOnce} scenario(s) on this platform, got ${selected.length}`);
+}
 const outputDir = makeDirectory(asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each WDIO batch writes its own logs")));
 const prepared: Prepared[] = [];
 const companions = new Map<number, { port: number; owner?: NativePath; observation?: Promise<void> }>();
@@ -70,6 +75,7 @@ export async function releasePrepared(): Promise<void> {
     const before = failures.length;
     await release(() => releaseClaudeLogins(input.fixture.root));
     await release(async () => { await input.release?.(); });
+    if (!retained.has(input.fixture.root)) await release(async () => { await input.restore?.(); });
     if (failures.length !== before) retained.add(input.fixture.root);
   }
   for (const releaseClaim of driverClaims.splice(0)) await release(releaseClaim);
@@ -94,9 +100,7 @@ export const config = {
   reporters: ["spec"],
   logLevel: "warn",
   outputDir,
-  // A batch started directly with several scenarios still runs no more apps at once than
-  // the platform allows (E2E-ISOLATED).
-  maxInstances: Math.min(selected.length, appsAtOnce),
+  maxInstances: selected.length,
   maxInstancesPerCapability: 1,
   autoXvfb: false,
   bail: 0,

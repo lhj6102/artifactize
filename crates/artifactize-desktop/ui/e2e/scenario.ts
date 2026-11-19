@@ -11,7 +11,11 @@ export type Prepared<T = unknown> = {
   browser?: BrowserEntry;
   /** The candidate app placed elsewhere ([`placeApp`]); the case launches it instead. */
   app?: NativePath;
+  /** Stops what the fixture runs (servers, jobs); always called at teardown. */
   release?: () => Promise<void>;
+  /** Puts the fixture's files back before they are deleted; skipped when they are kept for
+   * diagnosis because the app's end could not be confirmed. */
+  restore?: () => Promise<void>;
 };
 
 /** A case is a whole independent app scenario, never an app lifecycle owner. */

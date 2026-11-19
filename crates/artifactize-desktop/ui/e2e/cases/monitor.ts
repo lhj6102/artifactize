@@ -38,15 +38,20 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
    * Result's row of actions. */
   const toolLog = () => browser.execute(() => {
     const detail = document.querySelector('[aria-label="Human review"]');
+    // Red is the painted colour, compared with the app's own red token.
+    const token = getComputedStyle(document.documentElement).getPropertyValue("--red").trim();
+    const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(token);
+    const red = hex ? `rgb(${hex.slice(1).map((part) => Number.parseInt(part, 16)).join(", ")})` : token;
+    const isRed = (element: Element | null | undefined) => !!element && getComputedStyle(element).color === red;
     const notice = detail?.querySelector('section[aria-label="Result"] .actions .said [role="status"]:not(.busy)');
     const log = detail?.querySelector('[role="log"][aria-label="Tool log"]');
     return {
       notice: notice?.textContent?.trim() ?? "",
-      noticeError: notice?.classList.contains("error") ?? false,
+      noticeError: isRed(notice),
       rows: [...(log?.querySelectorAll("p:not(.muted)") ?? [])].map((row) => ({
         text: (row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS "),
         kind: row.classList.contains("start") ? "start" : row.classList.contains("end") ? "end" : "line",
-        error: row.classList.contains("error"),
+        error: isRed(row),
       })),
     };
   }) as Promise<{ notice: string; noticeError: boolean; rows: LogRow[] }>;
@@ -526,9 +531,12 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => !(await alive()) && (await runOf("slow"))?.at(-1)?.text === "■ cancelled",
         { timeout: 15000, timeoutMsg: "the visible Cancel stops the tool and leaves its exit in the log" });
       await human().$("button=slow").waitForEnabled();
+      const slowRuns = async () => (await logIn(browser, '[aria-label="Human review"]')).rows.filter((row: LogRow) => row.kind === "start" && row.text === "▶ HH:MM:SS · slow · release").length;
+      const runsBefore = await slowRuns();
       await human().$("button=slow").click();
-      await browser.waitUntil(async () => await slowTool(fixture)?.() === true && await toolButtonsDisabled(),
-        { timeout: 15000, timeoutMsg: "another owned slow tool is running" });
+      await browser.waitUntil(async () => await slowTool(fixture)?.() === true && await toolButtonsDisabled() && await slowRuns() === runsBefore + 1
+        && (await runOf("slow"))?.at(-1)?.kind !== "end",
+      { timeout: 15000, timeoutMsg: "another owned slow tool is running, its own run open in the log" });
       const restarted = slowTool(fixture)!;
       // The keyboard goes to the eval's own chip, outside the review: a click on the shown tab
       // keeps it shown.
@@ -612,8 +620,9 @@ export const scenarios: Scenario[] = [
       // The same draft can still be submitted normally once the external check is allowed through.
       writeText(gate, "go");
       await human().$("button=Submit GREEN").click();
-      await browser.waitUntil(async () => /completed result/i.test(await human().getText()), { timeout: 15000, timeoutMsg: "the retried submission is complete" });
-      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: draft });
+      await browser.waitUntil(async () => /completed result/i.test(await human().getText())
+        && JSON.stringify(signoff(fixture).result) === JSON.stringify({ verdict: "GREEN", approved: true, comment: draft }),
+      { timeout: 15000, timeoutMsg: "the retried submission is saved as that GREEN and shown complete" });
     },
   ),
 
@@ -949,6 +958,15 @@ export const scenarios: Scenario[] = [
         try {
           await browser.action("pointer", { id: "bounds" }).move({ x, y: 200 }).up().perform();
         } finally { await browser.releaseActions(); }
+        // The drag's end is rendered once the Detail's box holds still across rendered frames.
+        let last = "";
+        await browser.waitUntil(async () => {
+          const now = JSON.stringify(await placed());
+          await afterRender(browser);
+          const settled = now === last && now === JSON.stringify(await placed());
+          last = now;
+          return settled;
+        }, { timeout: 15000, timeoutMsg: "the Detail rendered at the drag's end" });
       };
       const room = await browser.execute(() => {
         const box = document.querySelector(".stage")!.getBoundingClientRect();

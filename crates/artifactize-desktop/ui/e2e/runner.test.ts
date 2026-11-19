@@ -178,13 +178,15 @@ it("a stand-in starting after gate teardown cannot recreate or wait on its relea
 
 it("fixture teardown joins a slow tool without app cancellation", { timeout: 10000 }, async (test) => {
   const directory = root();
-  const owned = fixture(directory);
   const cancellation = new AbortController();
-  makeDirectory(nativePath(owned.root, "gated-tools"));
-  const command = { program: nodeProgram, args: [suitePath("domain-fixtures", "command.ts"), "slow", nativePath(owned.root, "slow.endpoint")],
-    env: environment(owned) };
-  const running = fixtureRunner(command, AbortSignal.any([cancellation.signal, test.signal]));
+  let running: ReturnType<typeof fixtureRunner> | undefined;
   try {
+    // Setup is inside the cleanup scope, so its failure still removes the root.
+    const owned = fixture(directory);
+    makeDirectory(nativePath(owned.root, "gated-tools"));
+    const command = { program: nodeProgram, args: [suitePath("domain-fixtures", "command.ts"), "slow", nativePath(owned.root, "slow.endpoint")],
+      env: environment(owned) };
+    running = fixtureRunner(command, AbortSignal.any([cancellation.signal, test.signal]));
     await observe(async () => await slowTool(owned)?.() === true, () => "the slow tool did not serve its owned endpoint");
     const alive = slowTool(owned)!;
     releaseToolGates(owned);
