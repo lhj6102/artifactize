@@ -12,7 +12,7 @@ tests cover every OS.
   and has no operating-system calls (`std::os::unix`, `std::os::windows`, `libc`,
   `windows-sys`) and no `cfg(unix)`, `cfg(windows)` or `cfg(target_os = …)` branches.
 - **P-NO-OS-VALUES**: code outside the platform layer names no operating-system specific
-  value: no `/tmp`, `/proc`, `/dev/null`, `/bin/…`, drive letters, `.exe`, `sh`, `cmd`,
+  value: no `/tmp`, `/proc`, `/dev/null`, `/bin/…`, `.exe`, `sh`, `cmd`,
   `xdg-open`, `open`, `explorer` or `HOME`.
 
 ## What differs
@@ -45,8 +45,9 @@ memory, configuration and cache directories, and console color modes.
 
 ## Tests
 
-- **P-TEST-EVERY-OS**: a test runs on every operating system that has the behavior it tests;
-  a `cfg` gate on a test carries a comment saying why. Operating-system setup in tests
+- **P-TEST-EVERY-OS**: a test of a portable interface runs on Linux, macOS and Windows; only a
+  test of behavior one operating system lacks is gated, and its `cfg` gate carries a comment
+  saying why. Operating-system setup in tests
   (programs, temporary paths, links, permissions, processes) goes through shared test
   helpers, never hard-coded values.
 - **P-TEST-NO-TIMING**: clock resolution and scheduling differ between systems, so tests do
