@@ -29,11 +29,17 @@ fn decode(bytes: &[u8]) -> Cow<'_, str> {
 #[cfg(windows)]
 const UTF16_ASCII_MAJORITY_DIVISOR: usize = 2;
 
+/// The UTF-16 byte-order marks; the one a program writes selects how its output decodes.
+#[cfg(windows)]
+const UTF16_LE_BOM: &[u8] = b"\xff\xfe";
+#[cfg(windows)]
+const UTF16_BE_BOM: &[u8] = b"\xfe\xff";
+
 #[cfg(windows)]
 fn utf16_output(bytes: &[u8]) -> Option<String> {
-    let (bytes, little_endian) = if let Some(bytes) = bytes.strip_prefix(b"\xff\xfe") {
+    let (bytes, little_endian) = if let Some(bytes) = bytes.strip_prefix(UTF16_LE_BOM) {
         (bytes, true)
-    } else if let Some(bytes) = bytes.strip_prefix(b"\xfe\xff") {
+    } else if let Some(bytes) = bytes.strip_prefix(UTF16_BE_BOM) {
         (bytes, false)
     } else {
         // cmd's Unicode mode can emit BOM-less UTF-16LE. Recognize the

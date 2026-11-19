@@ -18,28 +18,21 @@ pub enum Input {
 }
 impl Input {
     /// CLI values enter the same compiled domain as provider input, without JSON round trips.
-    pub(crate) fn glob(pattern: &str, path: String) -> Result<Self, String> {
+    pub(crate) fn glob(pattern: &str, path: LogicalPath) -> Result<Self, String> {
         pattern_size(pattern)?;
         Ok(Self::Glob(Glob {
             pattern: super::glob(pattern)?,
-            path: LogicalPath::parse(path)?,
+            path,
         }))
     }
 
     pub(crate) fn grep(
         pattern: &str,
-        path: String,
+        path: LogicalPath,
         glob: Option<&str>,
         insensitive: bool,
     ) -> Result<Self, String> {
-        Grep::new(
-            pattern,
-            LogicalPath::parse(path)?,
-            glob,
-            insensitive,
-            super::MAX_RESULTS,
-        )
-        .map(Self::Grep)
+        Grep::new(pattern, path, glob, insensitive, super::MAX_RESULTS).map(Self::Grep)
     }
 
     pub fn parse(builtin: Builtin, value: Value) -> Result<Self, String> {
@@ -163,6 +156,13 @@ impl Default for LogicalPath {
     }
 }
 impl LogicalPath {
+    /// A native command-line path, validated once at the edge.
+    pub(crate) fn from_native(path: &std::path::Path) -> Result<Self, String> {
+        InputPath::from_native(path)
+            .map(|path| Self(Some(path)))
+            .map_err(|error| error.to_string())
+    }
+
     pub fn parse(path: String) -> Result<Self, String> {
         if path == "." {
             return Ok(Self(None));

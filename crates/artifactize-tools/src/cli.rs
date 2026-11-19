@@ -56,8 +56,9 @@ pub enum Tool {
     Section { path: PathBuf, heading: String },
     /// Run PROGRAM SUBCOMMAND... --help (10 seconds, 64 KiB).
     Help {
-        #[arg(required = true, num_args = 1.., trailing_var_arg = true)]
-        args: Vec<String>,
+        /// Kept as the OS gave them: an argument need not be valid Unicode.
+        #[arg(required = true, num_args = 1.., trailing_var_arg = true, value_parser = clap::value_parser!(std::ffi::OsString))]
+        args: Vec<std::ffi::OsString>,
     },
     /// Open one scoped path or HTTP(S) URL in its default application.
     Open { target: String },
@@ -75,13 +76,10 @@ pub async fn run(tool: Tool) -> u8 {
     }
 }
 
-/// A command-line path as the tools' logical text, through the platform's path layer: its
-/// names validated, roots and traversal refused, `.` the project root.
-fn logical(path: &Path) -> Result<String, String> {
-    if path == Path::new(".") {
-        return Ok(String::new());
-    }
-    crate::files::scoped_relative(path).map_err(|error| error.to_string())
+/// A command-line path as a validated tool path, through the platform's path layer: its
+/// names validated once, roots and traversal refused, `.` the project root.
+fn logical(path: &Path) -> Result<builtin::LogicalPath, String> {
+    builtin::LogicalPath::from_native(path)
 }
 
 async fn execute(tool: Tool) -> Result<(), String> {
@@ -122,7 +120,7 @@ async fn execute_in(
         Tool::Section { path, heading } => {
             Invocation::Fixed(FixedInput::section(logical(&path)?, heading))
         }
-        Tool::Help { args } => Invocation::Fixed(FixedInput::help(&args)),
+        Tool::Help { args } => Invocation::Fixed(FixedInput::native_help(args)),
         Tool::Glob { pattern, path } => {
             Invocation::Dynamic(builtin::Input::glob(&pattern, logical(&path)?)?)
         }
@@ -142,7 +140,12 @@ async fn execute_in(
                 target.into()
             } else {
                 scope
-                    .resolve_input(root, &owner, &logical(Path::new(&target))?)
+                    .resolve_input(
+                        root,
+                        &owner,
+                        &crate::files::relative_text_of(Path::new(&target))
+                            .map_err(|error| error.to_string())?,
+                    )
                     .map_err(|error| error.to_string())?
                     .into_os_string()
             };

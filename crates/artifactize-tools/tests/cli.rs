@@ -59,7 +59,7 @@ fn subcommands_share_scoped_files_and_exit_codes() {
     }
     let missing = call(root.path(), &["section", "notes.md", "Absent"]);
     assert_eq!(os::exit_code(&missing), 1);
-    let error = String::from_utf8(missing.stderr).unwrap();
+    let error = artifactize_tools::text::output(&missing.stderr).into_owned();
     assert!(error.contains("First\nChild\nNext"), "{error}");
     for sub in ["read", "list", "glob", "grep", "section"] {
         let mut args = match sub {
@@ -126,7 +126,7 @@ fn help_resolves_path_and_enforces_output_bounds() {
     assert_eq!(text(run("sub")), "stub help: sub|--help\n");
     let large = run("large");
     assert_eq!(os::exit_code(&large), 1);
-    assert!(String::from_utf8(large.stderr).unwrap().contains("64 KiB"));
+    assert!(artifactize_tools::text::output(&large.stderr).contains("64 KiB"));
 }
 
 #[tokio::test]

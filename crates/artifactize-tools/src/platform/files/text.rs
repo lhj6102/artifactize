@@ -37,11 +37,11 @@ pub fn path_from_text(text: &str) -> io::Result<PathBuf> {
             .map(PathBuf::from)
             .ok_or_else(invalid);
     }
+    // Shown path text uses '/'; Windows' own spelling uses '\', which verbatim paths need and
+    // every other path accepts.
     #[cfg(windows)]
-    if text.starts_with(VERBATIM) {
-        // Verbatim Win32 paths do not normalize forward slashes at the OS boundary.
-        return Ok(PathBuf::from(text.replace('/', "\\")));
-    }
+    return Ok(PathBuf::from(text.replace('/', "\\")));
+    #[cfg(not(windows))]
     Ok(PathBuf::from(text))
 }
 

@@ -26,9 +26,19 @@ pub(crate) async fn open_desktop(target: &OsStr, deadline: Duration) -> io::Resu
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
-    let status = tokio::time::timeout(deadline, command.status())
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Desktop opener timed out."))??;
+    // The opener runs as a group of its own, so a timeout stops it with what it started.
+    let mut tree = super::spawn_tree(&mut command)?;
+    let status = match tokio::time::timeout(deadline, tree.child.wait()).await {
+        Ok(status) => status?,
+        Err(_) => {
+            tree.kill()?;
+            tree.child.wait().await?;
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Desktop opener timed out.",
+            ));
+        }
+    };
     if !opened(&status, is_wsl()) {
         return Err(io::Error::other(format!(
             "Desktop opener exited with {status}."

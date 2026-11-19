@@ -296,6 +296,20 @@ pub(crate) struct Location<'a, 'p> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct InputPath<T = String>(T);
 
+impl InputPath<String> {
+    /// A native command-line path, its names validated once by the platform layer.
+    pub(crate) fn from_native(path: &Path) -> Result<Self, ScopeError> {
+        let text =
+            crate::files::relative_text_of(path).map_err(|error| ScopeError(error.to_string()))?;
+        if text.encode_utf16().count() > MAX_PATH_UNITS {
+            return Err(ScopeError(
+                "Artifact path must be a safe relative logical path.".into(),
+            ));
+        }
+        Ok(Self(text))
+    }
+}
+
 impl<T: AsRef<str>> InputPath<T> {
     pub(crate) fn parse(path: T) -> Result<Self, ScopeError> {
         logical_path(path.as_ref())?;

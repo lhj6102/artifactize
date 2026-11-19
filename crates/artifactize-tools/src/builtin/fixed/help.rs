@@ -4,23 +4,19 @@ use crate::{
     launch::{Finished, Launch, LaunchError, Launcher},
     program,
 };
-use std::{
-    ffi::{OsStr, OsString},
-    path::Path,
-    time::Duration,
-};
+use std::{ffi::OsString, path::Path, time::Duration};
 use tokio_util::sync::CancellationToken;
 /// Help is documentation, not a long-running owner command.
 const HELP_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(super) async fn help(
-    program: &OsStr,
+    program: &Path,
     mut args: Vec<OsString>,
     cwd: &Path,
     launcher: &dyn Launcher,
     cancellation: &CancellationToken,
 ) -> Result<String, String> {
-    let program = program::resolve(program, cwd).map_err(|error| error.to_string())?;
+    let program = program::resolve(program.as_os_str(), cwd).map_err(|error| error.to_string())?;
     args.push(OsString::from("--help"));
     let launch = Launch {
         program,

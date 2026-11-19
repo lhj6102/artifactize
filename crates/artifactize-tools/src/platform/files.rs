@@ -43,7 +43,7 @@ pub fn logical_below(root: &Path, path: &Path) -> Option<String> {
     if path.is_absolute() {
         logical_from_native(relative_below(root, path)?)
     } else {
-        path.to_str().map(str::to_owned)
+        logical_from_native(path)
     }
 }
 
@@ -150,6 +150,18 @@ pub(crate) fn relative_names(path: &Path) -> io::Result<Vec<&OsStr>> {
 }
 
 pub fn scoped_relative(path: &Path) -> io::Result<String> {
+    relative_names(path).map(relative_text)
+}
+
+/// A command-line path relative to the working folder as logical text: `.` (or only `.`
+/// components) is the folder itself, empty; otherwise its validated names joined by `/`.
+pub(crate) fn relative_text_of(path: &Path) -> io::Result<String> {
+    if path
+        .components()
+        .all(|component| matches!(component, std::path::Component::CurDir))
+    {
+        return Ok(String::new());
+    }
     relative_names(path).map(relative_text)
 }
 

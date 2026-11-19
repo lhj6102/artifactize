@@ -7,7 +7,11 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use std::{ffi::OsString, io::Read, path::Path};
+use std::{
+    ffi::OsString,
+    io::Read,
+    path::{Path, PathBuf},
+};
 use tokio_util::sync::CancellationToken;
 
 mod declaration;
@@ -111,7 +115,7 @@ pub(crate) struct FixedInput(Invocation);
 enum Invocation {
     Text(TextInput),
     Help {
-        program: OsString,
+        program: PathBuf,
         args: Vec<OsString>,
     },
 }
@@ -127,23 +131,21 @@ impl FixedInput {
         Self(Invocation::Text(input))
     }
 
-    pub(crate) fn read(path: String) -> Result<Self, String> {
-        Ok(Self::text(TextInput::Read {
-            path: LogicalPath::parse(path)?,
-        }))
+    pub(crate) fn read(path: LogicalPath) -> Result<Self, String> {
+        Ok(Self::text(TextInput::Read { path }))
     }
 
-    pub(crate) fn list(path: String) -> Result<Self, String> {
+    pub(crate) fn list(path: LogicalPath) -> Result<Self, String> {
         Ok(Self::text(TextInput::List(List {
-            path: LogicalPath::parse(path)?,
+            path,
             offset: 0,
             limit: super::MAX_RESULTS,
         })))
     }
 
-    pub(crate) fn section(path: String, heading: String) -> Result<Self, String> {
+    pub(crate) fn section(path: LogicalPath, heading: String) -> Result<Self, String> {
         declaration::validate_heading(&heading)?;
-        Self::with_heading(path, heading)
+        Ok(Self::text(TextInput::Section { path, heading }))
     }
 
     fn with_heading(path: String, heading: String) -> Result<Self, String> {
@@ -153,9 +155,31 @@ impl FixedInput {
         }))
     }
 
-    pub(crate) fn help(args: &[String]) -> Result<Self, String> {
-        validate_args(Builtin::Help, Some(args), false)?;
-        Self::with_help(args)
+    /// Help for a program and its subcommands as the command line gave them, native strings
+    /// kept: the program is a native path, never shown text to decode.
+    pub(crate) fn native_help(args: Vec<OsString>) -> Result<Self, String> {
+        let mut args = args.into_iter();
+        let program = args
+            .next()
+            .filter(|program| {
+                !program.is_empty()
+                    && !program
+                        .as_encoded_bytes()
+                        .iter()
+                        .all(u8::is_ascii_whitespace)
+            })
+            .ok_or("Invalid fixed args for this builtin/kind.")?;
+        let args: Vec<OsString> = args.collect();
+        if std::iter::once(&program)
+            .chain(&args)
+            .any(|arg| arg.as_encoded_bytes().contains(&0))
+        {
+            return Err("Invalid fixed args for this builtin/kind.".into());
+        }
+        Ok(Self(Invocation::Help {
+            program: PathBuf::from(program),
+            args,
+        }))
     }
 
     fn with_help(args: &[String]) -> Result<Self, String> {
@@ -166,7 +190,7 @@ impl FixedInput {
         // path before the lookup.
         let program = crate::files::path_from_text(program).map_err(|error| error.to_string())?;
         Ok(Self(Invocation::Help {
-            program: program.into_os_string(),
+            program,
             args: args.iter().map(OsString::from).collect(),
         }))
     }
@@ -181,8 +205,8 @@ impl FixedInput {
                 .clone()
         };
         match builtin {
-            Builtin::Read => Self::read(path()),
-            Builtin::List => Self::list(path()),
+            Builtin::Read => Self::read(LogicalPath::parse(path())?),
+            Builtin::List => Self::list(LogicalPath::parse(path())?),
             Builtin::Section => {
                 let input: SectionInput = serde_json::from_value(value)
                     .map_err(|_| "Tool arguments cannot be read as the declared builtin input.")?;

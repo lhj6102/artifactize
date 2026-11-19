@@ -181,14 +181,11 @@ impl Connections {
     }
 
     fn assert_terminated(&mut self) {
-        let observed = self.wait_for_exit();
-        // The watchdog is a host-clock rescue for a broken fixture, reported apart from what
-        // the exit sockets themselves showed.
-        assert!(
-            !observed.rescued,
-            "the native fixture needed the watchdog's rescue"
-        );
-        for (role, exit) in observed.exits {
+        // The launcher's own stop is observed by the exit sockets alone, with no clock: a
+        // process that outlived it keeps its socket open and the test runner's limit applies.
+        let exits = [("parent", &mut self.parent), ("child", &mut self.child)]
+            .map(|(role, stream)| (role, read_exit(stream)));
+        for (role, exit) in exits {
             assert!(
                 exit.is_ok(),
                 "the help {role} outlived tree cleanup: {exit:?}"

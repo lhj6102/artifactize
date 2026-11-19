@@ -6,6 +6,7 @@ pub use fixed::{
     Context, call_fixed, fixed_description, fixed_schema, is_url, validate_args, validate_target,
 };
 pub use input::Input;
+pub(crate) use input::LogicalPath;
 pub use metadata::{description, input_schema};
 
 mod output;
