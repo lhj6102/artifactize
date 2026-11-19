@@ -2,7 +2,7 @@
 import type { Fixture } from "./fixture.ts";
 import { sessionEndedByApp } from "./observation.ts";
 import { MAIN } from "./pane.ts";
-import { requestWindowClose } from "./platform.ts";
+import { requestWindowClose } from "./observation.ts";
 import { nativePath, replaceText } from "./portable.ts";
 
 export const graphToolObservation = (fixture: Fixture) => nativePath(fixture.root, "graph-tool-window.json");
@@ -49,6 +49,8 @@ export async function observeGraphTool(fixture: Fixture, window: WebdriverIO.Bro
       return shown.title === `Current · ${worktree}` && shown.selection.length === 1 && shown.selection[0] === worktree && shown.artifacts.includes(marker);
     }, { timeout: 15000, timeoutMsg: "the actual companion did not select and visibly draw the sibling worktree" });
   } catch (error) { failure = error; }
+  // The suite closes the window through Tauri's window API and confirms the app ends
+  // (E2E-WDIO-SERVICE), also after a failed observation, whose failure is kept.
   try { await sessionEndedByApp(window, () => requestWindowClose(window)); }
   catch (error) {
     if (failure !== undefined) throw new AggregateError([failure, error], "observing and closing the companion failed");

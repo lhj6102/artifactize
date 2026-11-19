@@ -13,8 +13,8 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { commandFields, runtimeProfile } from "../native-fixtures.ts";
-import { portablePath, primaryModifier, removeTree } from "../platform.ts";
-import { exists, makeDirectory, nativePath, readJson, readText, writeText, type NativePath } from "../portable.ts";
+import { portablePath, primaryModifier, programRunning, removeTree } from "../platform.ts";
+import { exists, listFiles, makeDirectory, nativePath, readJson, readText, writeText, type NativePath } from "../portable.ts";
 import { camera, detail, dockedDetail, graphShown, nodeAt, openArtifact, openArtifactTab, openTab, summary } from "../graph-view.ts";
 import { branch, chooseChip, MAIN, mainTitle, scanned, scannedAt } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
@@ -109,7 +109,10 @@ payload.instruction = "Check {graph-marker}."
       await graphShown(browser, "a:docs");
       await openArtifact(browser, "a:docs", "Artifact docs");
       const evidence = graphToolObservation(fixture);
-      assert.equal(exists(evidence), false, "no companion window was opened by setup");
+      // No companion app runs before the click: its program, placed for this case, is not running.
+      const [companion] = listFiles(nativePath(fixture.root, "graph-tool-bin"));
+      assert.ok(companion, "the companion program is placed for this case");
+      assert.equal(programRunning(companion), false, "no companion app was started by setup");
       const tool = browser.$(DETAIL).$('section[aria-label="Tools of docs"]').$("button=graph");
       await tool.waitForEnabled();
       // The runner holds the companion's driver port until the click is imminent.
@@ -266,7 +269,12 @@ Summarize {docs}."""
       removeTree(nativePath(fixture.repo, ".artifactize", "digest.artf"));
       removeTree(digest);
       await refresh(browser).click();
-      await waitFor(browser, async () => (await drawn()).nodes["a:digest"] === undefined, "the removed digest Artifact dropped");
+      // The completed scan's graph: docs drawn without digest or its relation.
+      await scanEnded();
+      await waitFor(browser, async () => {
+        const { nodes, edges } = await drawn();
+        return nodes["a:digest"] === undefined && nodes["a:docs"] !== undefined && !edges.includes("a:docs>a:digest");
+      }, "the removed digest Artifact and its relation dropped from the rescanned graph");
       // Only now a real Run in this same state: the probe that found no Run would have seen one.
       const controlRun = await verifyWaiting(fixture);
       assert.deepEqual(savedRuns(fixture).map((run) => run.id), [controlRun], "the same saved-Run probe sees this fixture's real Run");
@@ -340,9 +348,11 @@ Summarize {docs}."""
         { "a:docs": "reused", "a:release": "reused", "a:ship": "reused" }, { "a:release>a:ship": "reused" }),
       { timeout: 15000, timeoutMsg: "every Artifact and the relation painted reused" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(reusedLook)}`); });
-      // The notes change on disk; the Current shows it only once its chip is chosen again.
+      // The notes change on disk; the Current shows it only once its chip is chosen again: once
+      // the app's pending work has settled and rendered, the window still shows the old plan.
       changeNotes(fixture, "# Release notes\n- A second release.\n");
-      assert.deepEqual((await drawn()).nodes, allReused, "no scan without a choice, a Refresh or a Run's end");
+      await commandsRendered(browser);
+      assert.deepEqual((await drawn()).nodes, allReused, "the Current still shows the plan scanned before the change");
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await drawn()).nodes["a:release"] === "release: would run (1 eval)", "release would run again");
       // The scan learns each Artifact in turn: ship's plan, once known, is to run.

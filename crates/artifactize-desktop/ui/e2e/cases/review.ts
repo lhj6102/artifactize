@@ -10,7 +10,8 @@ import { clickAt, visibleCenter } from "../pointer.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
-import { removeTree, requestWindowClose } from "../platform.ts";
+import { removeTree } from "../platform.ts";
+import { requestWindowClose } from "../observation.ts";
 import { nativePath, readText, writeText } from "../portable.ts";
 import { branch, entriesFocused, expand, MAIN, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
 import { detail, openArtifact, openTab } from "../graph-view.ts";
@@ -414,14 +415,17 @@ export const scenarios: Scenario[] = [
       await submit().click();
       await waitFor(browser, () => fingerprints() > beforeSubmit, "Submit reaches the gated fingerprint check");
       assert.equal(await activeTool(), false, "the tool has already exited when submission starts");
+      // With the gate still closed, the window renders the pending submission: Release, Submit
+      // and every tool button disabled in one frame.
+      await waitFor(browser, () => browser.execute((selector) => {
+        const review = document.querySelector(selector);
+        const buttons = [...(review?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+        const release = buttons.find((button) => button.getAttribute("aria-label")?.startsWith("Release claim"));
+        const send = buttons.find((button) => button.textContent?.trim() === "Submit GREEN");
+        const tools = [...(review?.querySelectorAll<HTMLButtonElement>('section[aria-label="Tools"] button') ?? [])];
+        return !!release?.disabled && !!send?.disabled && tools.length > 0 && tools.every((button) => button.disabled);
+      }, 'aside[aria-label="Detail"] [aria-label="Human review"]'), "Release, Submit and every tool disabled while the submission is pending");
       assert.equal(signoff(fixture).result, null, "the gated submit has not saved yet");
-      assert.equal(await inDock().$('button[aria-label^="Release claim"]').isEnabled(), false, "Release remains disabled while submitting");
-      assert.equal(await submit().isEnabled(), false, "Submit is disabled while submitting");
-      const toolsDisabled = await browser.execute((selector) => {
-        const buttons = [...document.querySelectorAll<HTMLButtonElement>(`${selector} section[aria-label="Tools"] button`)];
-        return buttons.length > 0 && buttons.every((button) => button.disabled);
-      }, 'aside[aria-label="Detail"] [aria-label="Human review"]');
-      assert.ok(toolsDisabled, "every tool button is disabled while the submission is pending");
       writeText(gate, "go");
       const completed = () => inDock().$('section[aria-label="Result"] pre');
       await waitFor(browser, async () => !(await activeTool()) && signoff(fixture).status === "GREEN"

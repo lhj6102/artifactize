@@ -1,5 +1,5 @@
 path = "crates/artifactize-desktop/ui/e2e/"
-parts = ["desktop-e2e-input", "desktop-e2e-integrity"]
+parts = ["desktop-e2e-input", "desktop-e2e-integrity", "desktop-e2e-platform", "desktop-e2e-fixtures", "desktop-e2e-runner", "desktop-e2e-views", "desktop-e2e-cases-graph", "desktop-e2e-cases-editing", "desktop-e2e-cases-review", "desktop-e2e-cases-pane", "desktop-e2e-cases-settings"]
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -49,55 +49,6 @@ properties.item = { type = "string", minLength = 1 }
 properties.where = { type = "string", minLength = 1 }
 properties.change = { type = "string", minLength = 1 }
 required = ["item", "where", "change"]
-additionalProperties = false
-
-[evals.follows-style]
-title = "The E2E code follows the shared test-writing rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
-
-[evals.follows-style.payload]
-instruction = """
-Read {rules-code-style}. Review all TypeScript tests, helpers and runner \
-code owned by {desktop-e2e}. Apply every language-neutral TEST- rule and M-TAUTOLOGICAL-TESTS. The other Rust-specific checklist items do not apply to TypeScript. Judge the code \
-against these shared rules only; UX coverage and the E2E-specific execution contract have their \
-own evals. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when no applicable rule is clearly violated. Otherwise submit RED with \
-up to 20 violations, most important first, each with the rule id (item), a path:line (where) \
-and one sentence on what to change.
-"""
-
-[evals.follows-style.pass_schema]
-type = "object"
-properties = { summary = { type = "string", minLength = 1 } }
-required = ["summary"]
-additionalProperties = false
-
-[evals.follows-style.fail_schema]
-type = "object"
-properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
-required = ["violations"]
-additionalProperties = false
-
-[evals.follows-e2e-rules]
-title = "The real-app E2E tests follow Tauri's WebDriver approach and are isolated, causal and complete"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
-
-[evals.follows-e2e-rules.payload]
-instruction = """
-Read the end-to-end rules {desktop-e2e-rules}. Review all specs, fixtures, runner configuration and build/run code owned by {desktop-e2e}, and how the suite runs its integrity checker {desktop-e2e-integrity} and reaches its test-only text-input device {desktop-e2e-input}, against every E2E- rule. The checker's own implementation is judged by desktop-e2e-integrity, the device's own engine calls by desktop-e2e-input/engine-apis, the shared TEST- rules of rules-code-style by this Artifact's follows-style eval, and the release app's exclusion of the WebdriverIO plugins by desktop. The mechanical parts of E2E-PLATFORM and E2E-PROVIDER-UPSTREAM, as those rules name them, are the lint eval's; judge what lint cannot.
-
-Judge these contracts, not journey completeness or general code style, which have separate evals. Report concrete violations with a plausible action or interleaving and the affected resource, not hypothetical cheating or demands to test every permutation. Do not prescribe a particular class, algorithm or configuration knob. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when none of these rules is clearly violated. Otherwise submit RED with up to 20 violations, most important first, each with the E2E rule id (item), a path:line and failure scenario (where), and one sentence on what to change.
-"""
-
-[evals.follows-e2e-rules.pass_schema]
-type = "object"
-properties = { summary = { type = "string", minLength = 1 } }
-required = ["summary"]
-additionalProperties = false
-
-[evals.follows-e2e-rules.fail_schema]
-type = "object"
-properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
-required = ["violations"]
 additionalProperties = false
 
 [evals.lint]

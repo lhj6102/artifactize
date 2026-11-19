@@ -6,7 +6,8 @@ import { companionPortFree, companionPortWanted, graphToolFailure, observeGraphT
 import { observe } from "./domain-fixtures/observe.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { createdRoots, environment, releaseFixtures } from "./fixture.ts";
-import { appsAtOnce, browserEnvironment, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment, assertClipboardDesktop, commandDirectory, placeApp, programRunning, releaseClaudeLogins, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, type Environment, writeJson } from "./platform.ts";
+import { appsAtOnce, browserEnvironment, assertHarnessPlatform, claimForegroundWindow, claimMachineResource, reserveEmbeddedPorts, harnessEnvironment, assertClipboardDesktop, commandDirectory, placeApp, programRunning, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, type Environment, writeJson } from "./platform.ts";
+import { releaseClaudeLogins } from "./domain-fixtures/claude-code.ts";
 import { asNativePath, embeddedReady, exists, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
 import type { Prepared } from "./scenario.ts";
 
@@ -37,6 +38,11 @@ export const fixedResources = {
   "monitor-tool-log-scroll": { clipboard: true },
 } as const;
 
+/** The fixture roots of this batch's apps. */
+export function preparedRoots(): NativePath[] {
+  return prepared.map((input) => input.fixture.root);
+}
+
 /** Called by the runner AFTER Launcher.run returns, never from config onComplete:
  * WDIO runs the user's onComplete before the upstream service's shutdown hook. */
 export async function releasePrepared(): Promise<void> {
@@ -50,8 +56,15 @@ export async function releasePrepared(): Promise<void> {
   };
   for (const [index, input] of prepared.splice(0).entries()) {
     const companion = companions.get(index);
+    // The primary app's end is confirmed on its own; the companion's handoff and end are
+    // confirmed whatever that check found.
     try {
       if (ownerFiles?.[index]) assertAppsStopped(candidate.observer, [ownerFiles[index]]);
+    } catch (error) {
+      failures.push(error);
+      retained.add(input.fixture.root);
+    }
+    try {
       if (companion?.handoff) await release(companion.handoff);
       // The app that would launch the companion has ended: a companion it launched has written
       // its birth record. Without one, confirm that no companion program runs, since one may
@@ -85,7 +98,10 @@ export async function releasePrepared(): Promise<void> {
     if (!retained.has(input.fixture.root)) await release(async () => { await input.restore?.(); });
     if (failures.length !== before) retained.add(input.fixture.root);
   }
-  for (const releaseClaim of driverClaims.splice(0)) await release(releaseClaim);
+  // An app whose end is unconfirmed may still use a once-per-machine resource: its claims stay
+  // held until this runner exits rather than being handed to the next batch.
+  const claims = driverClaims.splice(0);
+  if (retained.size === 0) for (const releaseClaim of claims) await release(releaseClaim);
   await release(async () => { await releaseFixtures(roots, candidate, retained); });
   if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
 }
@@ -132,9 +148,16 @@ export const config = {
       assertHarnessPlatform();
       const native = harnessEnvironment();
       const relaunch = variable("DESKTOP_TEST_RELAUNCH") === "1";
+      // A Windows desktop's one foreground window is this batch's while its apps run; a
+      // relaunch keeps the claims of its first launch.
+      if (!relaunch) driverClaims.push(await claimForegroundWindow());
       for (let index = 0; index < selected.length; index++) {
         const item = selected[index];
-        if (item.id === "monitor-tool-log-scroll" && fixedResources[item.id].clipboard) assertClipboardDesktop();
+        if (item.id === "monitor-tool-log-scroll" && fixedResources[item.id].clipboard) {
+          assertClipboardDesktop();
+          if (!relaunch) driverClaims.push(await claimMachineResource("clipboard"));
+        }
+        if (item.id === "accounts" && !relaunch) driverClaims.push(await claimMachineResource("auth-callback"));
         const input = relaunch ? prepared[index] : await item.prepare();
         if (!input) throw new Error("the relaunched case lost its owning fixture");
         if (!relaunch) prepared.push(input);
@@ -155,7 +178,10 @@ export const config = {
           // a file); the claim stays until teardown.
           const fixture = input.fixture;
           let polling: ReturnType<typeof setInterval> | undefined;
+          // Teardown settles the handoff too, also when the case never asked for the port.
+          let settle = () => {};
           const handoff = new Promise<void>((done, fail) => {
+            settle = done;
             polling = setInterval(() => {
               if (!exists(companionPortWanted(fixture))) return;
               clearInterval(polling);
@@ -163,7 +189,12 @@ export const config = {
             }, 50);
           });
           void handoff.catch(() => {});
-          companions.set(index, { port: endpoint.port, program: app, handoff: async () => { clearInterval(polling); await endpoint.close(); await handoff.catch(() => {}); } });
+          companions.set(index, { port: endpoint.port, program: app, handoff: async () => {
+            clearInterval(polling);
+            settle();
+            await endpoint.close();
+            await handoff;
+          } });
           env = { ...commandDirectory(env, bin), ARTIFACTIZE_STATE_HOME: input.fixture.state, ARTIFACTIZE_E2E_COMPANION_EXE: app,
             ARTIFACTIZE_E2E_COMPANION_PORT: String(endpoint.port) };
         }

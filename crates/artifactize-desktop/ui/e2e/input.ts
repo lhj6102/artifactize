@@ -1,3 +1,4 @@
+import { assertClipboardDesktop } from "./platform.ts";
 // One WebDriver page-input adapter for standard events omitted by the pristine provider.
 // This delivers only input to actual UI targets: no app handlers, commands or state access.
 // The provider's special keys carry no modifier: Shift+Enter arrives as a plain Enter.
@@ -31,10 +32,12 @@ export async function clickOption(browser: WebdriverIO.Browser, target: Webdrive
     if (mouse("mousedown", 1, 1)) {
       select.focus();
       if (!select.disabled && !option.disabled && !option.closest("optgroup")?.disabled) {
-        const wasSelected = option.selected;
-        select.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-        option.selected = true;
-        if (!wasSelected) select.dispatchEvent(new Event("change", { bubbles: true }));
+        // As a user's choice: the selection changes first, and an unchanged one fires nothing.
+        if (!option.selected) {
+          option.selected = true;
+          select.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       }
     }
     mouse("mouseup", 0, 1);
@@ -206,4 +209,19 @@ export async function composingKey(browser: WebdriverIO.Browser, input: {
     });
     target.dispatchEvent(event);
   }, input);
+}
+
+/** The evaluated test-build device reaches only the engine's text-input API. This
+ * test-only IPC command is not an application action and is absent from production. */
+export async function nativeInput(browser: WebdriverIO.Browser, input:
+  | { type: "set" | "commit"; text: string }
+  | { type: "cancel" | "copy" | "paste" }): Promise<void> {
+  if (input.type === "copy" || input.type === "paste") assertClipboardDesktop();
+  // Through the Tauri service's public API, which reaches the command as the page's own
+  // `invoke` would.
+  try {
+    await browser.tauri.execute((tauri, operation: typeof input) => tauri.core.invoke("e2e_input", { input: operation }), input);
+  } catch (failure) {
+    throw new Error(`native engine input failed: ${String(failure)}`, { cause: failure });
+  }
 }

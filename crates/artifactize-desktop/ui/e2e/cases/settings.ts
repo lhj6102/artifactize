@@ -18,7 +18,8 @@ import { branch, mainTitle, openWaiting, showRun } from "../pane.ts";
 import { observe } from "../domain-fixtures/observe.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, portablePath, primaryModifier, processRunning, removeTree } from "../platform.ts";
+import { portablePath, primaryModifier, processRunning, removeTree } from "../platform.ts";
+import { claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner } from "../domain-fixtures/claude-code.ts";
 import { childDirectories, exists, httpGet, listFiles, makeDirectory, nativePath, readBytes, readText, replaceText, serveLoopbackHttp, writeText } from "../portable.ts";
 
 const KEY = "sk-e2e-settings-value";
@@ -162,11 +163,18 @@ export const scenarios: Scenario[] = [
       // The stand-in's credential stays in an owned service; its only read endpoint is audited.
       // Claude Code emits auth facts, never the credential, on its status stdout.
       let signedIn = false;
+      // The account's plan, as the fixture's Claude Code reports it; the case changes it.
+      let plan = "max";
       const env = claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture));
       const vault = await serveLoopbackHttp((request, response) => {
         request.resume();
         if (request.url === "/state") {
           response.writeHead(signedIn ? 200 : 404).end();
+          return;
+        }
+        if (request.url?.startsWith("/plan")) {
+          plan = new URL(request.url, "http://fixture").searchParams.get("set") ?? plan;
+          response.end(plan);
           return;
         }
         const path = request.url ?? "";
@@ -294,12 +302,13 @@ export const scenarios: Scenario[] = [
       await commandsRendered(browser);
       assert.equal(await vaultState(), 200);
       assert.deepEqual(accesses().slice(beforeLogin), ["/login", "/credential"], "only Claude Code's login and its subsequent status use the credential service");
+      // The account's plan changes: only Check again's own answer shows the new one.
+      assert.equal(await httpGet(`${vault}/plan?set=pro`), 200);
       const beforeStatus = accesses().length;
       await browser.$("button=Check again").click();
-      await browser.waitUntil(() => accesses().length > beforeStatus, { timeout: 15000, timeoutMsg: "Check again reached Claude Code's credential lookup" });
-      await commandsRendered(browser);
-      await shows(signedIn, "Check again renders Claude Code's account facts");
+      await shows("Signed in · claude.ai · pro", "Check again renders Claude Code's new account facts");
       assert.deepEqual(accesses().slice(beforeStatus), ["/credential"], "only Claude Code's one status reads the credential");
+      assert.equal(await httpGet(`${vault}/plan?set=max`), 200);
       assert.equal((await browser.execute(() => document.documentElement.outerHTML)).includes(CLAUDE_CREDENTIAL), false, "the credential never reaches the settings page");
       noCredentialInState(fixture.state);
       await signOut();
@@ -523,9 +532,12 @@ payload.instruction = "Check the worker."
       await browser.$("button=Save").waitForEnabled();
       await browser.$("button=Save").click();
       await browser.waitUntil(async () => (await limitsSaid()).some((line) => /limits\.json/.test(line)), { timeout: 15000, timeoutMsg: "the failed save is said in Limits" });
+      // Refused, the save wrote nothing where the limits are kept, and the field still offers
+      // the unsaved value rather than claiming it saved.
+      assert.deepEqual(listFiles(limitsFile), [], "the refused save wrote no limits");
       removeTree(limitsFile);
       writeText(limitsFile, keptLimits);
-      assert.equal(signoffGrace(fixture), 300, "the failed save changed nothing");
+      assert.equal(signoffGrace(fixture), 300, "the grace in force is the one saved before");
       // Set by the CLI, it shows when Settings is shown again.
       assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "45"), 0);
       await showLimits(browser);
@@ -754,6 +766,9 @@ Review the agent folder."""
       // principal it answers with, and each record the store received.
       const principalFile = nativePath(fixture.root, "remote-principal");
       const receivedFile = nativePath(fixture.root, "remote-received");
+      // Every PUT the store answered, kept or not.
+      const putsFile = nativePath(fixture.root, "remote-puts");
+      writeText(putsFile, "");
       writeText(principalFile, "alice-laptop");
       writeText(receivedFile, "");
       // While this file exists the store holds its status answer, so a request stays in flight.
@@ -789,6 +804,7 @@ Review the agent folder."""
         if (request.method === "PUT" && request.url?.startsWith("/v1/entries/")) {
           if (exists(refuseFile)) return answer(503, { error: "Store refused the record." });
           // The store keeps each record once: one sent again is not created again.
+          writeText(putsFile, `${readText(putsFile)}${request.url}\n`);
           if (readText(receivedFile).split("\n").includes(request.url)) return answer(200, { created: false });
           writeText(receivedFile, `${readText(receivedFile)}${request.url}\n`);
           return answer(200, { created: true });
@@ -798,7 +814,7 @@ Review the agent folder."""
       return {
         fixture,
         env: { ...env, ARTIFACTIZE_E2E_DATE: String(Date.UTC(2026, 0, 12, 12) / 1000) },
-        data: { url: `${store.url}/`, principalFile, receivedFile, holdFile, refuseFile, token: TOKEN },
+        data: { url: `${store.url}/`, principalFile, receivedFile, putsFile, holdFile, refuseFile, token: TOKEN },
         release: async () => {
           closing = true;
           // Every handler settles and the listener closes even when one of them failed.
@@ -809,8 +825,9 @@ Review the agent folder."""
         },
       };
     },
-    async (browser, { fixture, data: { url, principalFile, receivedFile, holdFile, refuseFile, token } }) => {
+    async (browser, { fixture, data: { url, principalFile, receivedFile, putsFile, holdFile, refuseFile, token } }) => {
       const received = () => readText(receivedFile).split("\n").filter(Boolean).length;
+      const puts = () => readText(putsFile).split("\n").filter(Boolean);
       const text = () => browser.execute(() => document.body.innerText);
       const html = () => browser.execute(() => document.documentElement.outerHTML);
       await openSettings(browser);
@@ -903,6 +920,7 @@ Review the agent folder."""
       await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Pushed 1, already in the store 0, skipped 1\./.test(await statusLine().getText()),
         { timeout: 15000, timeoutMsg: "the push's summary takes the status line" });
       assert.equal(received(), 1, "the store received the one record");
+      assert.equal(puts().length, 1, "the push sent it once");
       // The push reports success before its follow-up status request enables the button.
       const checkStatus = browser.$("button=Check status");
       await checkStatus.waitForEnabled({ timeout: 15000, timeoutMsg: "the push's status refresh finished" });
@@ -911,12 +929,14 @@ Review the agent folder."""
       await browser.waitUntil(async () => await statusLine().isDisplayed()
         && await statusLine().getText() === "Signed in · alice-after-push (scopes: read, publish) · 1 pushed today",
       { timeout: 15000, timeoutMsg: "the fresh status after the real push counts it today" });
-      // Pushed again, the record the store holds counts as already there and the sign-off is
-      // skipped again; nothing new is sent.
+      // Pushed again, the record is offered once more and the store, which already holds it,
+      // keeps it once: the push counts it as already there and skips the sign-off again.
+      const putsBefore = puts();
       await whileHeld("Push results", "the second push");
       await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Pushed 0, already in the store 1, skipped 1\./.test(await statusLine().getText()),
         { timeout: 15000, timeoutMsg: "the second push's summary counts the record already in the store and the skipped sign-off" });
-      assert.equal(received(), 1, "the store received no record twice");
+      assert.deepEqual(puts(), [...putsBefore, putsBefore.at(-1)], "the same record was offered again, once");
+      assert.equal(received(), 1, "the store keeps that record once");
       await checkStatus.waitForEnabled({ timeout: 15000, timeoutMsg: "the second push's status refresh finished" });
       writeText(principalFile, "");
       await browser.$("button=Check status").click();

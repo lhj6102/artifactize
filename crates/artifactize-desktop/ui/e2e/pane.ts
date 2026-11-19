@@ -52,6 +52,15 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
     const words = (element: Element | null | undefined) => (element?.textContent ?? "").replace(/\s+/g, " ").trim();
     // `rgb(r, g, b)` or `color(srgb r g b)`: the first three numbers after the space name.
     const channels = (colour: string) => (colour.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+    // Filled or outlined as drawn: a shape painted with a fill is the filled star.
+    const paintedStar = (icon: Element | null) => {
+      if (!icon || icon.getBoundingClientRect().width === 0) return "";
+      const filled = [...icon.querySelectorAll("path, polygon")].some((shape) => {
+        const fill = getComputedStyle(shape).fill;
+        return fill !== "none" && !/rgba\([^)]*,\s*0\)/.test(fill) && fill !== "transparent";
+      });
+      return filled ? "★" : "☆";
+    };
     return [...document.querySelectorAll<HTMLElement>('[aria-label="Branches"] > [role="treeitem"]')].map((row) => {
       const project = words(row.querySelector(".project")).replace(/ \/$/, "");
       const branch = words(row.querySelector(".branch-name"));
@@ -64,7 +73,7 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
         expanded: row.getAttribute("aria-expanded") === "true",
         latest: words(row.querySelector(".latest")),
         latestDot: latestDot && latestDot.getBoundingClientRect().width > 0 ? channels(getComputedStyle(latestDot).backgroundColor) : [],
-        star: ({ "star-on": "★", star: "☆" } as Record<string, string>)[row.querySelector(".star svg")?.getAttribute("data-icon") ?? ""] ?? "",
+        star: paintedStar(row.querySelector(".star svg")),
         starred: row.querySelector(".star")?.getAttribute("aria-pressed") === "true",
         chips: [...row.querySelectorAll<HTMLElement>("button[data-chip]")].map((chip) => ({
           id: chip.dataset.chip ?? "",
@@ -172,8 +181,10 @@ export async function chooseChip(browser: WebdriverIO.Browser, name: string, chi
   await browser.waitUntil(async () => (await branch(browser, name))?.chips.some((entry) => entry.id === chip) === true,
     { timeout: 15000, timeoutMsg: `${name} has the entry ${chip}: ${JSON.stringify(await branch(browser, name))}` });
   await browser.$(`${await row(browser, name)} button[data-chip=${JSON.stringify(chip)}]`).click();
-  await browser.waitUntil(async () => (await branch(browser, name))?.chips.find((entry) => entry.id === chip)?.filled === true,
-    { timeout: 15000, timeoutMsg: `${name}'s chip ${chip} shown` });
+  // The entry is marked and the Main area shows it.
+  await browser.waitUntil(async () => (await branch(browser, name))?.chips.find((entry) => entry.id === chip)?.filled === true
+    && (await mainTitle(browser)) === (chip === "current" ? `Current · ${name}` : chip),
+  { timeout: 15000, timeoutMsg: `${name}'s chip ${chip} shown in the Main area` });
 }
 
 /** Show the Run `run` of the branch `name` in the Main area. */

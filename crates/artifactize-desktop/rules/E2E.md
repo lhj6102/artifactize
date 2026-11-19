@@ -2,7 +2,7 @@
 
 When the suite passes locally, it should very likely pass on the other platforms too; to that end, whatever differs between platforms is handled in one place. Rules state outcomes; mechanisms belong in code comments. The TEST- rules of project-rules/DEV-CODING.md and project-rules/DEV-PLATFORM.md apply. Reference: https://v2.tauri.app/develop/tests/webdriver/ and https://webdriver.io/docs/desktop-testing/tauri/.
 
-- E2E-WDIO-SERVICE: the suite runs on WebdriverIO with @wdio/tauri-service and the embedded WebDriver provider on every OS, and they alone start and stop the app. A window the product launches is its child: the suite only attaches an observation session and confirms it exits.
+- E2E-WDIO-SERVICE: the suite runs on WebdriverIO with @wdio/tauri-service and the embedded WebDriver provider on every OS, and they alone start and stop the app. A window the product launches is its child: the suite attaches an observation session, closes it through Tauri's window API (E2E-REAL-APP) and confirms it exits.
 - E2E-PROVIDER-UPSTREAM: the vendored provider is the unmodified upstream release (lint-checked); test-only native devices live in the desktop crate's own code.
 - E2E-TEST-BUILD-ONLY: the WebdriverIO plugins exist only in the E2E test build, the only build the suite runs.
 - E2E-REAL-APP: cases drive the built app through its real UI, never by invoking app commands, mocking IPC or scripting the page to change product state. Fixtures control only declared external inputs; a window-frame action the page cannot reach (close, focus) uses Tauri's window API.

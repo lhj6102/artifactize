@@ -31,13 +31,12 @@ import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomInt } from "node:crypto";
 import {
-  closeSync, constants as fsConstants, existsSync, mkdtempSync, openSync, linkSync, readdirSync, readFileSync, readlinkSync,
-  realpathSync, renameSync, rmSync, writeFileSync,
+  chmodSync, closeSync, constants as fsConstants, copyFileSync, existsSync, statSync, mkdtempSync, openSync, linkSync, readdirSync, readFileSync, readlinkSync,
+  realpathSync, rmSync, writeFileSync,
 } from "node:fs";
-import { createServer } from "node:net";
 import { constants, homedir, tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve, sep, toNamespacedPath } from "node:path";
-import { type LoopbackServer, type NativePath, appendText, asNativePath, closeDirectory, exists, listFiles, makeDirectory, nameOf, nativePath, readJson, readText, readTextIfExists, replaceText, serveLoopback, serveLoopbackHttp, textPath, writeText } from "./portable.ts";
+import { type LoopbackServer, type NativePath, appendText, asNativePath, exists, listFiles, makeDirectory, nameOf, nativePath, readJson, readText, readTextIfExists, replaceText, serveLoopback, serveLoopbackHttp, writeText } from "./portable.ts";
 
 // ---------------------------------------------------------------------------------
 // Operating system values
@@ -135,7 +134,13 @@ export function scratchDirectory(): NativePath {
  * while the build stays one file. Removing the fixture removes only the link. */
 export function placeApp(app: NativePath, directory: NativePath): NativePath {
   const placed = nativePath(makeDirectory(directory), nameOf(app));
-  linkSync(app, placed);
+  try { linkSync(app, placed); }
+  catch (error) {
+    // A link cannot cross volumes: the scratch folder may be on another one than the build.
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    copyFileSync(app, placed);
+    if (!WINDOWS) chmodSync(placed, 0o755);
+  }
   return placed;
 }
 
@@ -163,9 +168,9 @@ function commandLinesNaming(files: readonly NativePath[]): boolean {
 
 /** Wait, bounded, until no fixture opener the app started is still running. */
 async function awaitOpenersEnded(root: NativePath, files: readonly NativePath[]): Promise<void> {
-  const deadline = Date.now() + 30000;
+  const deadline = performance.now() + 30000;
   while (commandLinesNaming(files)) {
-    if (Date.now() >= deadline) throw new Error(`a fixture browser opener still runs for ${root}`);
+    if (performance.now() >= deadline) throw new Error(`a fixture browser opener still runs for ${root}`);
     await new Promise((done) => setTimeout(done, 25));
   }
 }
@@ -211,9 +216,19 @@ export function storePackageDirectory(root: NativePath): NativePath {
   return nativePath(root, "WindowsApps", "lhj6102.Artifactize_9.9.9.0_x64__ayfzfzbsv48sg");
 }
 
-/** Processes other than this one that hold a file open, or work, inside `root`. Unix lets a
- * held file be deleted, so deletion succeeding there proves nothing: Linux reads /proc and
- * macOS asks lsof. Windows refuses to delete a held file, which removeTree reports. */
+/** Whether a process name or command line is the web engine's helper (WebKitGTK's
+ * WebKitWebProcess and WebKitNetworkProcess, WKWebView's com.apple.WebKit.* services). Session
+ * services activated for the app, such as the desktop portals, also inherit fixture paths but
+ * live as long as the run's private session and do not write the fixture. */
+function webEngineHelper(name: string): boolean {
+  return /WebKit/.test(name);
+}
+
+/** Processes other than this one that hold a file open, or work, inside `root`, or that still
+ * run with an environment naming it (the app's web engine helpers inherit the fixture's data
+ * folders, and may outlive their last open file). Unix lets a held file be deleted, so
+ * deletion succeeding there proves nothing: Linux reads /proc and macOS asks lsof and ps.
+ * Windows refuses to delete a held file, which removeTree reports. */
 function holdersOf(root: NativePath): number[] {
   if (WINDOWS) {
     // Opening a file for reading without sharing fails while any other process has it open;
@@ -229,7 +244,9 @@ function holdersOf(root: NativePath): number[] {
         throw error;
       }
     });
-    return held(root) ? [-1] : [];
+    // A program the app started may run before it opens any fixture file: one whose command
+    // line names the fixture holds it too.
+    return held(root) || commandLinesNaming([root]) ? [-1] : [];
   }
   if (MACOS) {
     // lsof exits 1 with no output when nothing is open there; anything else, or no answer in
@@ -238,7 +255,15 @@ function holdersOf(root: NativePath): number[] {
     if (listed.error || !(listed.status === 0 || listed.status === 1 && listed.stdout.trim() === "" && listed.stderr.trim() === "")) {
       throw new Error(`lsof could not tell what holds fixture ${root}: ${listed.error?.message ?? `exit ${listed.status}: ${listed.stderr.trim()}`}`);
     }
-    return listed.stdout.split("\n").map(Number).filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
+    const open = listed.stdout.split("\n").map(Number).filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
+    // ps -E shows each process's environment after its command.
+    const running = spawnSync("ps", ["-A", "-E", "-ww", "-o", "pid=,command="], { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT });
+    if (running.error || running.status !== 0) {
+      throw new Error(`ps could not tell what runs for fixture ${root}: ${running.error?.message ?? `exit ${running.status}`}`);
+    }
+    const named = running.stdout.split("\n").filter((line) => webEngineHelper(line) && line.includes(root)).map((line) => Number(line.trim().split(/\s+/)[0]))
+      .filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
+    return [...new Set([...open, ...named])];
   }
   const inside = (target: string) => target === root || target.startsWith(`${root}${sep}`);
   const holders: number[] = [];
@@ -249,7 +274,8 @@ function holdersOf(root: NativePath): number[] {
       const fds = `/proc/${pid}/fd`;
       const held = inside(readlinkSync(`/proc/${pid}/cwd`)) || readdirSync(fds).some((fd) => {
         try { return inside(readlinkSync(join(fds, fd))); } catch { return false; }
-      });
+      }) || webEngineHelper(readFileSync(`/proc/${pid}/comm`, "utf8"))
+        && readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").some((variable) => variable.includes(`=${root}`));
       if (held) holders.push(pid);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -259,6 +285,28 @@ function holdersOf(root: NativePath): number[] {
   return holders;
 }
 
+/** Wait, bounded, until the ended app's web engine helpers no longer hold anything inside a
+ * fixture root, the fixture's own Runs and tools still running: what a relaunch of the same
+ * fixture needs. Unix only; Windows refuses a held profile to the next app, which then fails. */
+export async function awaitEngineReleased(root: NativePath, timeout = 60000): Promise<void> {
+  if (WINDOWS) return;
+  const helpers = () => holdersOf(root).filter((pid) => webEngineHelper(processName(pid)));
+  const until = performance.now() + timeout;
+  let held = helpers();
+  while (held.length > 0) {
+    if (performance.now() > until) throw new Error(`web engine helpers ${held.join(", ")} still hold fixture ${root}; preserve inputs`);
+    await new Promise((done) => setTimeout(done, 100));
+    held = helpers();
+  }
+}
+
+/** A process's name (Linux) or command line (macOS); "" once it has gone. */
+function processName(pid: number): string {
+  if (LINUX) return (readTextIfExists(`/proc/${pid}/comm` as NativePath) ?? "").trim();
+  const listed = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT });
+  return listed.status === 0 ? listed.stdout.trim() : "";
+}
+
 /** Wait, bounded, until no other process holds anything inside a fixture root: the app's web
  * engine helpers (WebKitGTK's web and network processes, WKWebView's) outlive the app for a
  * moment and keep or still write its data folders (E2E-OWNED-FIXTURES). */
@@ -266,7 +314,10 @@ export async function awaitReleased(root: NativePath, timeout = 60000): Promise<
   const until = performance.now() + timeout;
   let holders = holdersOf(root);
   while (holders.length > 0) {
-    if (performance.now() > until) throw new Error(`processes ${holders.join(", ")} still hold fixture ${root}; preserve inputs`);
+    if (performance.now() > until) {
+      const named = holders.map((pid) => `${pid} (${processName(pid) || "?"})`);
+      throw new Error(`processes ${named.join(", ")} still hold fixture ${root}; preserve inputs`);
+    }
     await new Promise((done) => setTimeout(done, 100));
     holders = holdersOf(root);
   }
@@ -646,7 +697,8 @@ async function windowsFixtureRunner(command: ReturnType<typeof runnerCommand> & 
   const output = nativePath(root, "outcome.json");
   const starter = nativePath(root, "starter.mjs");
   try {
-    writeJson(input, { program: command.program, args: command.args, holdDescendants: command.holdDescendants ?? false });
+    // The starter passes these to the child as they are: native spelling, not '/' text.
+    writeText(input, JSON.stringify({ program: command.program, args: command.args, holdDescendants: command.holdDescendants ?? false }));
     // A Store-packaged pwsh starter can launch children outside its assigned job.
     // The same Node executable that runs the suite makes an ordinary Win32 spawn.
     writeText(starter, String.raw`import { spawn } from "node:child_process";
@@ -813,33 +865,6 @@ export function packageCommand(args: string[]): { program: string; args: string[
 
 // ---------------------------------------------------------------------------------
 // Loopback network
-
-/** Select distinct OS-assigned loopback endpoints for the upstream embedded service.
- * Release the reservation before service startup; the service owns the actual listeners. */
-export async function embeddedPorts(count: number): Promise<number[]> {
-  if (!Number.isInteger(count) || count < 1) throw new Error("embedded port count must be a positive integer");
-  const sockets: ReturnType<typeof createServer>[] = [];
-  const ports: number[] = [];
-  const failures: unknown[] = [];
-  try {
-    for (let index = 0; index < count; index++) {
-      const socket = createServer();
-      sockets.push(socket);
-      await new Promise<void>((done, fail) => {
-        socket.once("error", fail);
-        socket.listen(0, "127.0.0.1", () => { socket.off("error", fail); done(); });
-      });
-      const address = socket.address();
-      if (!address || typeof address === "string") throw new Error("no embedded WebDriver port allocated");
-      ports.push(address.port);
-    }
-  } catch (error) { failures.push(error); }
-  const released = await Promise.allSettled(sockets.filter((socket) => socket.listening).map((socket) =>
-    new Promise<void>((done, fail) => socket.close((error) => error ? fail(error) : done()))));
-  for (const result of released) if (result.status === "rejected") failures.push(result.reason);
-  if (failures.length) throw new AggregateError(failures, "embedded endpoint selection or release failed");
-  return ports;
-}
 
 /** Pair an explicit driver port with a separate claim socket that stays bound
  * throughout service startup. The driver port is outside the local ephemeral range,
@@ -1037,6 +1062,28 @@ export function commandDirectory(env: Environment, bin: NativePath): Environment
   return withVariable({ ...env }, "PATH", [bin, ...programPath(env)].join(delimiter));
 }
 
+/** Loopback ports that stand for once-per-machine resources, outside every OS's ephemeral
+ * range: while a run holds one, a second run on this machine cannot claim it, and the OS frees
+ * it when the holder's process ends, even by a crash. */
+const MACHINE_RESOURCES = { "auth-callback": 3455, clipboard: 3456, "foreground-window": 3457 } as const;
+
+/** Claim a once-per-machine resource for this run (E2E-ISOLATED); the result releases it. A
+ * resource another run holds is an explicit failure, not a wait. */
+export async function claimMachineResource(name: keyof typeof MACHINE_RESOURCES): Promise<() => Promise<void>> {
+  try {
+    return (await serveLoopback(undefined, MACHINE_RESOURCES[name])).close;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+    throw new Error(`another E2E run on this machine holds the ${name}; one app instance uses it at a time`, { cause: error });
+  }
+}
+
+/** On Windows, claim the desktop's one foreground window for this run (see appsAtOnce);
+ * other systems give every window focus events, so there is nothing to claim. */
+export async function claimForegroundWindow(): Promise<() => Promise<void>> {
+  return WINDOWS ? claimMachineResource("foreground-window") : async () => {};
+}
+
 /** How many test apps run at once. A Windows desktop has one foreground window, and WebView2
  * gives no focus events to a page whose window is not it (focusing the WebView alone does not
  * do it): an app beside another one missed its own focus changes. The foreground window is the
@@ -1057,19 +1104,6 @@ export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<voi
   if (error !== null) throw new Error(`setup failed: native window focus failed: ${String(error)}`);
   await browser.waitUntil(() => browser.execute(() => document.hasFocus()),
     { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
-}
-
-/** Ask the public Tauri window API to perform a genuine close request. The
- * pristine provider's DELETE /window force-destroys and bypasses this app event. */
-export async function requestWindowClose(browser: WebdriverIO.Browser): Promise<void> {
-  const error = await browser.executeAsync((done) => {
-    const app = window as unknown as { __TAURI__: { window: { getCurrentWindow: () => { close: () => Promise<void> } } } };
-    app.__TAURI__.window.getCurrentWindow().close().then(
-      () => done(null),
-      (failure: unknown) => done(String(failure)),
-    );
-  });
-  if (error !== null) throw new Error(`native window close failed: ${String(error)}`);
 }
 
 const browserHandoffLog = (root: NativePath) => nativePath(root, "browser-handoffs.jsonl");
@@ -1096,7 +1130,8 @@ export async function browserEnvironment(root: NativePath, env: Environment, ent
   env: Environment; release?: () => Promise<void>;
 }> {
   const file = typeof entry !== "string" && "file" in entry ? entry.file : undefined;
-  if (file && !isInside(root, file)) throw new Error("desktop handoff file must be owned by the fixture");
+  // Containment by canonical paths: a link under the fixture cannot make an outside file its own.
+  if (file && !isInside(canonicalPath(root), canonicalPath(file))) throw new Error("desktop handoff file must be owned by the fixture");
   if (WINDOWS) return ownedWindowsBrowser(root, env, entry, file);
   const bin = makeDirectory(nativePath(root, "browser-bin"));
   const program = nativePath(bin, "open-url.mjs");
@@ -1219,7 +1254,7 @@ async function ownedWindowsBrowser(root: NativePath, env: Environment, entry: Br
         if (address.protocol !== "http:" || address.hostname !== "127.0.0.1" || !agreed) throw new Error("the handoff did not name the owned browser origin");
         appendText(browserHandoffLog(root), `${JSON.stringify(target)}\n`);
       }
-      const args = [`--user-data-dir=${portablePath(profile)}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", launch];
+      const args = [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", launch];
       const owner = nativePath(owners, `${jobs.length}.pid`);
       const job = windowsFixtureRunner({ program: edge, args, env, owner, holdDescendants: true }, stop.signal).then((done) => {
         if (done.code !== 0) throw new Error(`fixture Edge exited ${done.code}: ${done.stderr}`);
@@ -1259,205 +1294,47 @@ if (!reply.ok) throw new Error(await reply.text());
   };
 }
 
-/** A scripted Claude Code (`claude auth status|login|logout`) first on the app's PATH, keeping
- * its sign-in as the file `signed-in` in `root`. `login` serves a loopback origin, prints its
- * sign-in URL there and signs in when the browser returns to its `/callback` or the code
- * `good-code` is pasted; any other path of it answers while it runs, and its input closing
- * stops it. Claude Code's own configuration points into `root`, never the user's. */
-export function claudeCodeEnvironment(root: NativePath, env: Environment, watchdogMs = 120000): Environment {
-  const bin = makeDirectory(nativePath(root, "claude-bin"));
-  const program = nativePath(bin, "claude.mjs");
-  const logins = makeDirectory(nativePath(root, "claude-logins"), { private: true });
-  writeText(program, `import { appendFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-const [group, command] = process.argv.slice(2);
-const signedIn = process.env.DESKTOP_TEST_CLAUDE_SIGNED_IN;
-const vault = process.env.DESKTOP_TEST_CLAUDE_VAULT;
-const account = (path) => fetch(vault + path);
-const say = (text) => process.stdout.write(text);
-if (group !== "auth") process.exit(2);
-// An older Claude Code, which has no auth command: it reports nothing and says why.
-if (existsSync(process.env.DESKTOP_TEST_CLAUDE_BROKEN)) {
-  process.stderr.write("error: unknown command 'auth'\\n");
-  process.exit(1);
-}
-if (command === "status") {
-  const signed = vault ? !!(await (await account("/credential")).text()) : existsSync(signedIn);
-  say(JSON.stringify(signed
-    ? { loggedIn: true, authMethod: "claude.ai", subscriptionType: "max", email: "person@example.com" }
-    : { loggedIn: false, authMethod: "none" }) + "\\n");
-  process.exit(signed ? 0 : 1);
-}
-if (command === "logout") {
-  if (vault) {
-    if (!(await account("/logout")).ok) process.exit(1);
-  } else rmSync(signedIn, { force: true });
-  say("Successfully logged out.\\n");
-  process.exit(0);
-}
-if (command !== "login") process.exit(2);
-// Admit the actual login process before allocating any resources. Teardown can
-// atomically close admission; late starts then cannot serve or open anything.
-const logins = process.env.DESKTOP_TEST_CLAUDE_LOGINS;
-writeFileSync(join(logins, process.pid + "-" + randomUUID() + ".pid"), "", { flag: "wx" });
-setInterval(() => { if (!existsSync(logins)) process.exit(1); }, 100).unref();
-setTimeout(() => process.exit(1), ${watchdogMs}).unref();
-let finishing = false;
-const finish = async () => {
-  if (finishing) return;
-  finishing = true;
-  if (vault) {
-    if (!(await account("/login")).ok) process.exit(1);
-  } else writeFileSync(signedIn, "claude.ai");
-  say("Login successful.\\n");
-  process.exit(0);
-};
-const server = createServer((request, response) => {
-  // What the browser visits is recorded, for the case to see that it opened.
-  if (request.url.startsWith("/oauth/authorize")) appendFileSync(process.env.DESKTOP_TEST_CLAUDE_VISITS, request.url + "\\n");
-  response.end("signed in");
-  if (request.url.startsWith("/callback")) finish();
-});
-server.listen(0, "127.0.0.1", () => {
-  const address = \`http://127.0.0.1:\${server.address().port}\`;
-  appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OWNERS, JSON.stringify({ address, pid: process.pid }) + "\\n");
-  const url = \`\${address}/oauth/authorize?code=true\`;
-  say(\`Opening browser to sign in\\nIf the browser didn't open, visit: \${url}\\nPaste code here if prompted > \`);
-  // As Claude Code does, it opens the system browser itself: only the case's fixture browser,
-  // never the person's own.
-  if (process.env.DESKTOP_TEST_BROWSER_ENTRIES) {
-    appendFileSync(process.env.DESKTOP_TEST_BROWSER_ENTRIES, url + "\\n");
-  }
-  const failed = (reason) => {
-    const text = "Claude fixture browser opener failed: " + String(reason);
-    appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OPEN_ERRORS, text + "\\n");
-    process.stderr.write(text + "\\n");
-    process.exit(1);
-  };
-  const opener = process.env.DESKTOP_TEST_BROWSER_CLIENT
-    ? spawn(process.env.DESKTOP_TEST_BROWSER_NODE, [process.env.DESKTOP_TEST_BROWSER_CLIENT, url], { stdio: "inherit" })
-    : process.env.DESKTOP_TEST_BROWSER_PROGRAM
-      ? spawn(${JSON.stringify(MACOS ? "open" : "xdg-open")}, [url], { stdio: "inherit" })
-      : null;
-  if (!opener) return failed("no owned browser client was configured");
-  opener.on("error", failed);
-  // Admitted from its spawn, like the login itself: teardown joins it even if it never
-  // reaches the fixture's server.
-  if (opener.pid !== undefined) {
-    try { writeFileSync(join(logins, opener.pid + "-" + randomUUID() + ".pid"), "", { flag: "wx" }); }
-    catch (error) { opener.kill(); failed(error); }
-  }
-  opener.on("close", (code, signal) => {
-    if (code !== 0) return failed(signal ?? "exit " + code);
-    appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OPENED, url + "\\n");
-  });
-});
-let input = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (text) => {
-  input += text;
-  if (!input.includes("\\n")) return;
-  if (input.split("\\n")[0].trim() === "good-code") { void finish(); return; }
-  process.stderr.write("Login failed: That code was not accepted.\\n");
-  process.exit(1);
-});
-process.stdin.on("end", () => { if (!finishing) process.exit(1); });
-`);
-  // Paths are arguments, never interpreted as shell source.
+/** The program that hands a URL to the desktop's default browser on Unix. */
+export const unixOpener = MACOS ? "open" : "xdg-open";
+
+/** Write the command `name` into `bin`, as this OS finds commands on PATH (a `.cmd` shim on
+ * Windows, an executable script elsewhere), running Node with the script that the variable
+ * `scriptVariable` names and passing its arguments on; the Node program is DESKTOP_TEST_NODE.
+ * Paths stay arguments, never shell source. Returns the command's file name. */
+export function writeNodeCommand(bin: NativePath, name: string, scriptVariable: string): string {
   if (WINDOWS) {
-    writeText(nativePath(bin, "claude.cmd"), '@"%DESKTOP_TEST_NODE%" "%DESKTOP_TEST_CLAUDE_PROGRAM%" %*\r\n');
-  } else {
-    writeFileSync(join(bin, "claude"), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_CLAUDE_PROGRAM" "$@"\n', { mode: 0o755 });
+    writeText(nativePath(bin, `${name}.cmd`), `@"%DESKTOP_TEST_NODE%" "%${scriptVariable}%" %*\r\n`);
+    return `${name}.cmd`;
   }
-  // The fixture's Claude Code is the only one the app can find: a folder of PATH holding
-  // another one, such as the developer's own, is left out, so hiding the fixture's leaves none.
-  const others = programPath(env).filter((folder) => !holdsClaudeCode(folder));
-  return {
-    ...withVariable({ ...env }, "PATH", [bin, ...others].join(delimiter)),
-    DESKTOP_TEST_NODE: process.execPath,
-    DESKTOP_TEST_CLAUDE_PROGRAM: program,
-    DESKTOP_TEST_CLAUDE_SIGNED_IN: nativePath(root, "signed-in"),
-    DESKTOP_TEST_CLAUDE_BROKEN: nativePath(root, "claude-broken"),
-    DESKTOP_TEST_CLAUDE_VISITS: nativePath(root, "claude-visits"),
-    DESKTOP_TEST_CLAUDE_OWNERS: nativePath(root, "claude-owners.jsonl"),
-    DESKTOP_TEST_CLAUDE_LOGINS: logins,
-    DESKTOP_TEST_CLAUDE_OPEN_ERRORS: nativePath(root, "claude-browser-errors"),
-    DESKTOP_TEST_CLAUDE_OPENED: nativePath(root, "claude-browser-opened"),
-    CLAUDE_CONFIG_DIR: makeDirectory(nativePath(root, "claude-config"), { private: true }),
-  };
+  writeFileSync(join(bin, name), `#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$${scriptVariable}" "$@"\n`, { mode: 0o755 });
+  return name;
 }
 
-/** A result recorded by the actual login command, not just its printed sign-in URL. */
-export function claudeBrowserOpened(root: NativePath): string[] {
-  const failures = readTextIfExists(nativePath(root, "claude-browser-errors"));
-  if (failures) throw new Error(failures.trim());
-  return (readTextIfExists(nativePath(root, "claude-browser-opened")) ?? "").split("\n").filter(Boolean);
+/** The file name of the command `name` as writeNodeCommand writes it on this OS. */
+export function commandFile(name: string): string {
+  return WINDOWS ? `${name}.cmd` : name;
 }
 
-/** Stop and join admitted Claude logins after the app stops, before closing their browser. */
-export async function releaseClaudeLogins(root: NativePath): Promise<void> {
-  const stopped = nativePath(root, "closed-claude-logins");
-  closeDirectory(nativePath(root, "claude-logins"), stopped);
-  if (!exists(stopped)) return;
-  const pids = listFiles(stopped).map((file) => {
-    const pid = Number(/^(\d+)-[a-f0-9-]+\.pid$/.exec(nameOf(file))?.[1]);
-    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`invalid Claude login owner: ${file}`);
-    return pid;
-  });
-  const deadline = Date.now() + 15000;
-  while (pids.some(processRunning)) {
-    if (Date.now() >= deadline) throw new Error(`Claude login still owns fixture ${root}`);
-    await new Promise((done) => setTimeout(done, 25));
-  }
-  removeTree(stopped);
-}
-
-/** Read the actual login process that announced this origin while it was live. */
-export function claudeLoginOwner(root: NativePath, address: string): number {
-  const records = readText(nativePath(root, "claude-owners.jsonl")).split("\n").filter(Boolean)
-    .map((line) => JSON.parse(line) as { address: string; pid: number });
-  const pid = records.findLast((entry) => entry.address === address)?.pid;
-  if (pid === undefined || !Number.isSafeInteger(pid) || pid <= 0) throw new Error(`Claude fixture did not record the owner of ${address}`);
-  return pid;
-}
-
-/** The file name the fixture's Claude Code is found by on PATH. */
-const CLAUDE_CODE = WINDOWS ? "claude.cmd" : "claude";
-
-/** Whether `folder` holds a program a shell would run as `claude`. A folder that cannot be
- * read holds none the app could run either. */
-function holdsClaudeCode(folder: string): boolean {
+/** Whether `folder` holds a program a shell would run as `name`. A folder that cannot be read
+ * holds none the app could run either. */
+export function folderHoldsCommand(folder: string, name: string): boolean {
   try {
-    return readdirSync(folder).some((name) => name.toLowerCase().replace(/\.(cmd|exe|bat|ps1)$/, "") === "claude");
+    if (WINDOWS) {
+      // As Windows finds a bare name: with each extension PATHEXT names, case-insensitively.
+      const extensions = (variable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean).map((ext) => ext.toLowerCase());
+      return readdirSync(folder).some((entry) => extensions.some((ext) => entry.toLowerCase() === `${name}${ext}`));
+    }
+    // Unix runs the exact name, if it is executable.
+    const path = join(folder, name);
+    return existsSync(path) && (statSync(path).mode & 0o111) !== 0;
   } catch {
     return false;
   }
 }
 
-/** Take the fixture's Claude Code off PATH, or put it back: `claudeCodeEnvironment(root, …)`
- * left no other one there, so the app then finds none. */
-export function claudeCodeInstalled(root: NativePath, installed: boolean): void {
-  const bin = nativePath(root, "claude-bin");
-  const [from, to] = installed ? [`${CLAUDE_CODE}.off`, CLAUDE_CODE] : [CLAUDE_CODE, `${CLAUDE_CODE}.off`];
-  renameSync(join(bin, from), join(bin, to));
-}
-
-/** The evaluated test-build device reaches only the engine's text-input API. This
- * test-only IPC command is not an application action and is absent from production. */
-export async function nativeInput(browser: WebdriverIO.Browser, input:
-  | { type: "set" | "commit"; text: string }
-  | { type: "cancel" | "copy" | "paste" }): Promise<void> {
-  if (input.type === "copy" || input.type === "paste") assertClipboardDesktop();
-  // Through the Tauri service's public API, which reaches the command as the page's own
-  // `invoke` would.
-  try {
-    await browser.tauri.execute((tauri, operation: typeof input) => tauri.core.invoke("e2e_input", { input: operation }), input);
-  } catch (failure) {
-    throw new Error(`native engine input failed: ${String(failure)}`, { cause: failure });
-  }
+/** `env` with PATH set to `folders` and those of its PATH that `keep` accepts after them. */
+export function withPathFirst(env: Environment, folders: string[], keep: (folder: string) => boolean): Environment {
+  return withVariable({ ...env }, "PATH", [...folders, ...programPath(env).filter(keep)].join(delimiter));
 }
 
 /** Native crash reports for this run's exact candidate binary, never other apps or runs.
@@ -1485,21 +1362,3 @@ export function nativeCrashReports(app: NativePath): string[] {
   return reports;
 }
 
-/** Every non-directory entry of a source tree, including links and special files. */
-export function sourceTree(root: NativePath): { path: NativePath; name: string; kind: "file" | "other" }[] {
-  const visit = (directory: NativePath, prefix: string): { path: NativePath; name: string; kind: "file" | "other" }[] =>
-    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-      const path = nativePath(directory, entry.name);
-      const name = prefix ? textPath(prefix, entry.name) : entry.name;
-      return entry.isDirectory() ? visit(path, name) : [{ path, name, kind: entry.isFile() ? "file" : "other" }];
-    });
-  return visit(root, "").sort((left, right) => left.name.localeCompare(right.name));
-}
-
-/** Failure-only native/backend diagnostics from this batch's service-owned log files. */
-export function serviceFailureLogs(directory: NativePath): string[] {
-  // Keep startup and crash causes visible in CI without replaying entire backend logs.
-  const tailCharacters = 16 * 1024;
-  return sourceTree(directory).filter((item) => item.kind === "file" && item.name.endsWith(".log"))
-    .map((item) => `--- service log ${item.name} ---\n${readText(item.path).slice(-tailCharacters)}`);
-}

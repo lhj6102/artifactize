@@ -56,7 +56,7 @@ export const scenarios: Scenario[] = ["Run graph", "Review"].map((screen) =>
       await saveEvidence(browser, fixture, `${screen}-completed`);
       // No click or scripted focus between submitting from the field and pressing Escape.
       // A Run's Detail closes; the Main area's Review is left for the Pane.
-      if (screen === "Run graph") await press(browser, ["Escape"], async () => !(await human().isExisting()), "leaving the completed Detail");
+      if (screen === "Run graph") await press(browser, ["Escape"], async () => !(await browser.$('aside[aria-label="Detail"]').isExisting()), "the completed Detail closed");
       else await press(browser, ["Escape"], () => entriesFocused(browser), "leaving the completed review for the Pane");
       await saveEvidence(browser, fixture, `${screen}-closed`);
     },

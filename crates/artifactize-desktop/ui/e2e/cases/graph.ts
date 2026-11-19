@@ -14,7 +14,8 @@ import {
 } from "../graph-view.ts";
 import { git } from "../environment.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
-import { nativeInput, primaryModifier } from "../platform.ts";
+import { primaryModifier } from "../platform.ts";
+import { nativeInput } from "../input.ts";
 import { makeDirectory, nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { canvasSnapshot } from "../rendering.ts";
@@ -930,8 +931,8 @@ export const scenarios: Scenario[] = [
       }, { timeout: 15000, timeoutMsg: "the wheel zooms the main graph and its toolbar displays the same new scale" });
       const zoomed = await settled();
       signOff(fixture, request);
-      await browser.waitUntil(() => browser.$('.graph .svelte-flow__node[data-id="a:release"]').getAttribute("data-light").then((light) => light === "green"),
-        { timeout: 30000, timeoutMsg: "release relit GREEN" });
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:release": "green" }, {}),
+        { timeout: 30000, timeoutMsg: "release relit, painted GREEN" });
       assert.equal(await mainTitle(browser), title, "the same Run's graph stays shown");
       assert.equal((await settled()).transform, zoomed.transform, "a new result kept the person's camera");
       // The Run ends with nothing left needing attention, its headline in the one header row,
@@ -1072,7 +1073,8 @@ export const scenarios: Scenario[] = [
       const log = () => browser.execute(() => { const pre = document.querySelector('aside[aria-label="Detail"] .evidence pre'); return pre ? `${pre.getAttribute("aria-label") ?? ""} ${pre.textContent ?? ""}` : ""; });
       const view = async (at: number) => (await aside(browser).$$('[aria-label="Views"] [role="tab"]'))[at];
       await (await view(1)).click();
-      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()) && (await summary(browser)).instruction === "",
+      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log())
+        && (await log()).replace(/^Saved runtime stdout \/ stderr/, "").trim() !== "" && (await summary(browser)).instruction === "",
         { timeout: 15000, timeoutMsg: "app/beta's Runtime log shown instead of its Summary" });
       assert.deepEqual(await views(), [["Summary", "false"], ["Runtime log", "true"]]);
       await (await view(0)).click();
@@ -1534,9 +1536,10 @@ payload.instruction = "Check the Live Artifact."
       await fill(browser, FIND, "STAGE-");
       const expected = ["stage-zulu", "stage-alpha", "stage-mike"];
       const matches = async () => (await findField(browser))?.entries.map(({ name }) => name);
-      await browser.waitUntil(async () => (await matches())?.length === expected.length,
-        { timeout: 15000, timeoutMsg: "all three stage Artifacts were found" });
-      assert.deepEqual(await matches(), expected, "the prerequisite stage comes before both its consumers despite its name");
+      let found: string[] | undefined;
+      await browser.waitUntil(async () => JSON.stringify(found = await matches()) === JSON.stringify(expected),
+        { timeout: 15000, timeoutMsg: "the prerequisite stage comes before both its consumers despite its name" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(found)}`); });
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact stage-zulu",
         "the first match opens the upstream stage");
     },

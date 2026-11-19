@@ -12,7 +12,8 @@ import { joinGatedTools } from "../process-fixtures.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativeInput, primaryModifier, removeTree } from "../platform.ts";
+import { primaryModifier, removeTree } from "../platform.ts";
+import { nativeInput } from "../input.ts";
 import { nativePath, readText, serveLoopbackHttp, writeText, type NativePath } from "../portable.ts";
 import { visibleCenter } from "../pointer.ts";
 import { clickOption, dispatchInput, tab } from "../input.ts";
@@ -434,7 +435,12 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the overflowing Tool log follows its newest line" });
       // Scrolled up to its first line, it stays there while the next run's lines arrive below,
       // and the rest of the review stays where it was.
-      await browser.$(`${LOG} p.start`).scrollIntoView({ block: "nearest" });
+      // The person scrolls the log with the wheel over it.
+      const wheel = async (deltaY: number) => {
+        const over = await visibleCenter(browser, await browser.$(LOG).getElement());
+        await browser.action("wheel").scroll({ x: over.x, y: over.y, deltaX: 0, deltaY }).perform();
+      };
+      await wheel(-100000);
       // Its first line sits at the top of the box, below the box's own padding.
       await browser.waitUntil(async () => { const at = await box(); return at.top < 24 && at.below >= 24; },
         { timeout: 15000, timeoutMsg: "the Tool log scrolled up" });
@@ -444,7 +450,7 @@ export const scenarios: Scenario[] = [
       assert.ok(held.below > up.below, "the new lines arrived below");
       assert.equal(held.review, up.review, "the rest of the review did not scroll");
       // Back at its bottom, it follows each newest line again.
-      await browser.$(`${LOG} p.end:last-child`).scrollIntoView({ block: "nearest" });
+      await wheel(100000);
       await browser.waitUntil(async () => (await box()).below < 24, { timeout: 15000, timeoutMsg: "the Tool log at its bottom" });
       await runNotes();
       await browser.waitUntil(async () => (await box()).below < 24,
@@ -822,9 +828,22 @@ export const scenarios: Scenario[] = [
         await human().$('label[for="field-channel"]').click();
         await browser.waitUntil(() => browser.execute(() => document.activeElement?.id === "field-channel"), { timeout: 15000, timeoutMsg: "the choice field focused" });
       };
-      for (const [field, focus] of [["the true/false field", async () => {}], ["the choice field", focusChoice]] as const) {
+      // Each key is recorded as it reaches the focused field, so a dropped key is not mistaken
+      // for an ignored one.
+      await browser.execute(() => {
+        const seen: { key: string; target: string }[] = [];
+        (window as unknown as { fieldKeys: typeof seen }).fieldKeys = seen;
+        window.addEventListener("keydown", (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          seen.push({ key: event.key, target: target?.id || target?.getAttribute("name") || "" });
+        }, { capture: true });
+      });
+      const keysAt = (target: string) => browser.execute((id) =>
+        (window as unknown as { fieldKeys: { key: string; target: string }[] }).fieldKeys.filter((seen) => seen.target === id).map((seen) => seen.key).join(""), target);
+      for (const [field, focus, id] of [["the true/false field", async () => {}, "field-confirmed"], ["the choice field", focusChoice, "field-channel"]] as const) {
         await focus();
         await browser.keys(["u", "r", "t"]);
+        await browser.waitUntil(async () => (await keysAt(id)).endsWith("urt"), { timeout: 15000, timeoutMsg: `u, r and t reached ${field}` });
         await commandsRendered(browser);
         assert.deepEqual(await form(), before, `keys in ${field} released nothing and kept the GREEN form`);
         assert.equal(await confirmed.isSelected(), true, `keys in ${field} left the box checked`);

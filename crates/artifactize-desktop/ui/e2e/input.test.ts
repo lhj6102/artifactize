@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { clickOption, dispatchInput, tab } from "./input.ts";
 
-test("option clicks supply the WebDriver default once and never change disabled or already-selected choices", async () => {
+test("option clicks choose as a user does, once, and never change disabled or already-selected choices", async () => {
   for (const state of ["fresh", "selected", "disabled", "prevented", "click-prevented", "covered", "offscreen"] as const) {
     const page = new JSDOM('<select><option value="0" selected>stable</option><option value="1">preview</option></select>', { runScripts: "outside-only" });
     try {
@@ -34,8 +34,9 @@ test("option clicks supply the WebDriver default once and never change disabled 
       await clickOption(browser, target);
       const changed = state === "fresh" || state === "click-prevented";
       const initial = state === "selected" ? "1" : "0";
-      assert.deepEqual(events, changed ? ["mousedown:0", "input:0", "change:1", "mouseup:1", "click:1"]
-        : (state === "selected" ? ["mousedown", "input", "mouseup", "click"] : ["mousedown", "mouseup", "click"]).map((kind) => `${kind}:${initial}`));
+      // As a user's choice: the selection changes before input and change; an unchanged one fires neither.
+      assert.deepEqual(events, changed ? ["mousedown:0", "input:1", "change:1", "mouseup:1", "click:1"]
+        : ["mousedown", "mouseup", "click"].map((kind) => `${kind}:${initial}`));
       assert.equal(select.value, changed ? "1" : initial);
     } finally { page.window.close(); }
   }
