@@ -285,8 +285,8 @@ async function capture(output: string, work: string): Promise<void> {
     await app.$("button=Claim to review").click();
     await review.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the sign-off is claimed", WAIT);
     await app.$('[aria-label="Human review"]').$("button=notes").click();
-    await app.waitUntil(() => app.execute(() => document.body.innerText.includes("■ exit 0")),
-      { timeout: WAIT, timeoutMsg: "the notes tool finished" });
+    // The built-in read prints the notes and ends its run with `■ done`.
+    await review.runUntil("notes", (rows) => rows.includes("- Faster startup.") && rows.at(-1) === "■ done", "the notes tool printed the notes and finished");
     await review.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the notes run settled", WAIT);
     await app.$('[aria-label="Human review"]').$("button=GREEN").click();
     await app.$('[aria-label="Human review"] .form').waitForExist({ timeout: WAIT });
