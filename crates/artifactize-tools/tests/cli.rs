@@ -63,7 +63,8 @@ fn subcommands_share_scoped_files_and_exit_codes() {
     assert!(error.contains("First\nChild\nNext"), "{error}");
     for sub in ["read", "list", "glob", "grep", "section", "open"] {
         let mut args = match sub {
-            "glob" | "grep" => vec![sub, "*", "../outside"],
+            "glob" => vec![sub, "*", "../outside"],
+            "grep" => vec![sub, "alpha", "../outside"],
             "section" => vec![sub, "../outside", "First"],
             _ => vec![sub, "../outside"],
         };

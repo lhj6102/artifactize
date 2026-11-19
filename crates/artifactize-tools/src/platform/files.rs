@@ -1,7 +1,7 @@
 //! Shared safe file access: pinned no-follow opens and directory listings.
 
 use std::{
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     fs::File,
     io,
     path::{Component, Path, PathBuf},
@@ -176,22 +176,26 @@ pub fn scoped_relative(path: &Path) -> io::Result<String> {
         .join("/"))
 }
 
-/// Decode a persisted project-relative target as slash syntax, not host path syntax.
-pub(crate) fn parse_target_path(text: &str) -> io::Result<PathBuf> {
+/// Decode a persisted slash path into a native path and its validated entry names.
+pub(crate) fn parse_target_path(text: &str) -> io::Result<(PathBuf, Vec<OsString>)> {
     // Empty and dot both denote the project root in saved targets.
     if matches!(text, "" | ".") {
-        return Ok(PathBuf::new());
+        return Ok((PathBuf::new(), Vec::new()));
     }
-    text.split('/')
+    let names = text
+        .split('/')
         .map(|name| {
-            logical_entry_name(OsStr::new(name)).ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Invalid slash path for an Artifact target.",
-                )
-            })
+            logical_entry_name(OsStr::new(name))
+                .map(OsString::from)
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Invalid slash path for an Artifact target.",
+                    )
+                })
         })
-        .collect()
+        .collect::<io::Result<Vec<_>>>()?;
+    Ok((names.iter().collect(), names))
 }
 
 /// Determine aliasing by looking up the reserved spelling in the same pinned directory.

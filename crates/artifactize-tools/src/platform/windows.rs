@@ -8,7 +8,7 @@ use std::{
 };
 
 use windows_sys::Win32::{
-    Foundation::INVALID_HANDLE_VALUE,
+    Foundation::{ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE},
     System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
     },
@@ -67,6 +67,9 @@ pub(crate) fn spawn_tree(command: &mut tokio::process::Command) -> io::Result<Tr
         return Err(io::Error::last_os_error());
     }
     command.creation_flags(CREATE_SUSPENDED);
+    // Pass the argument vector, not a shell string. For batch shims, Rust std
+    // (>= 1.77.2, CVE-2024-24576) quotes it for cmd.exe and returns InvalidInput
+    // if an argument cannot be quoted safely.
     let mut suspended = SuspendedChild(command.spawn()?);
     let admitted = (|| {
         let process = suspended.0.raw_handle().ok_or(io::ErrorKind::NotFound)?;
@@ -108,10 +111,12 @@ fn resume(child: &SuspendedChild) -> io::Result<()> {
         dwSize: mem::size_of::<THREADENTRY32>() as u32,
         ..Default::default()
     };
-    let mut resumed = false;
     // SAFETY: an open snapshot and an entry whose dwSize is set.
-    let mut more = unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } != 0;
-    while more {
+    if unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut resumed = false;
+    loop {
         if entry.th32OwnerProcessID == pid {
             // SAFETY: the result is checked and then owned.
             let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
@@ -127,7 +132,13 @@ fn resume(child: &SuspendedChild) -> io::Result<()> {
             resumed = true;
         }
         // SAFETY: as for Thread32First.
-        more = unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } != 0;
+        if unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } == 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(ERROR_NO_MORE_FILES as i32) {
+                return Err(error);
+            }
+            break;
+        }
     }
     if resumed {
         Ok(())

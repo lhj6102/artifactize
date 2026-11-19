@@ -606,8 +606,8 @@ sys.stdin.read()
                 with mock.patch.object(driver.process_owner, "send", side_effect=PermissionError("controlled stop failure")):
                     with self.assertRaises(ExceptionGroup) as raised:
                         fixture.release_files()
-                self.assertEqual([type(error) for error in raised.exception.exceptions],
-                                 [driver.ProcessExitError, OSError])
+                self.assertCountEqual([type(error) for error in raised.exception.exceptions],
+                                      [driver.ProcessExitError, OSError])
                 self.assertTrue(marker.exists())
                 self.assertIsNone(child.returncode)
                 self.assertFalse(independent.exists())
@@ -760,6 +760,10 @@ print(ui['render'](api['response']()))
         listener.listen()
         port = listener.getsockname()[1]
         script = repo / "preview/probe.py"
+        probe = script.read_text()
+        ready = '    print("ready", flush=True)\n'
+        self.assertIn(ready, probe, "the preview must announce readiness after publishing its port")
+        probe = probe.replace(ready, '    await_shutdown_gate(b"r")\n' + ready, 1)
         script.write_text(f'''import json, os, socket, sys
 from pathlib import Path
 
@@ -784,7 +788,7 @@ if role == "stop":
         # Report success without sending the real stop message; only the
         # candidate's process teardown can end this preview.
         sys.exit(0)
-''' + script.read_text() + '''
+''' + probe + '''
 # Stop has notified the server, but the two sides of shutdown are still
 # independently gated. The controller observes real server exit before
 # permitting the stop command to complete.
@@ -839,9 +843,16 @@ elif operation == "stop":
                     return descriptor
                 return None
 
-            with listener.accept()[0] as gate:
-                gate.settimeout(READY_BOUND)
-                self.assertEqual(gate.recv(1), b"s")
+            with ExitStack() as startup:
+                gates = {}
+                for _ in ("listening port", "stop"):
+                    gate = startup.enter_context(listener.accept()[0])
+                    gate.settimeout(READY_BOUND)
+                    stage = gate.recv(1)
+                    gates[stage] = gate
+                    if stage == b"r":
+                        gate.sendall(b"x")  # Allow the start process to publish its ready marker.
+                self.assertEqual(set(gates), {b"r", b"s"})
                 self.assertFalse(select.select([cli], [], [], 0)[0],
                                  "CLI exited before the stop command was released")
                 previews = [fd for receipt in owners.glob("start-*.json")
@@ -852,7 +863,7 @@ elif operation == "stop":
                 self.assertEqual(len(stops), 1, "the stop gate must hold the actual stop process")
                 for descriptor in previews + stops:
                     exits.register(descriptor, select.EPOLLIN | select.EPOLLONESHOT)
-                gate.sendall(b"x")
+                gates[b"s"].sendall(b"x")
 
             if graceful:
                 with ExitStack() as shutdown:
@@ -1145,6 +1156,33 @@ class HostLifecycleTests(OwnedTestCase):
         self.assertTrue((smoke_output / "repo/.artifactize/smoke.artf").exists())
         self.assertTrue((smoke_output / "bin/artifactize").exists())
 
+    def test_shutdown_retry_releases_smoke_inputs_after_teardown_interrupt(self):
+        cleanup = driver.ChildCleanup()
+        defer = driver.defer_interrupts
+        ready = False
+
+        def inventory(host, candidate, output, model):
+            nonlocal ready
+            for name in ("repo", "config", "bin", "state"):
+                (output / name).mkdir()
+            (output / "result.json").write_text("recorded output\n")
+            ready = True
+
+        def interrupt_before_release():
+            nonlocal ready
+            if ready:
+                ready = False
+                os.kill(os.getpid(), signal.SIGTERM)
+            return defer()
+
+        with driver.term_as_interrupt(), mock.patch.object(driver, "child_cleanup", cleanup), \
+                mock.patch.object(driver, "defer_interrupts", side_effect=interrupt_before_release), \
+                mock.patch.object(host_smoke, "inventory", side_effect=inventory):
+            with self.assertRaises(driver.Terminated):
+                host_smoke.smoke("claude", self.candidate, self.output, "test-model")
+            cleanup.retry()
+        self.assertEqual({path.name for path in self.output.iterdir()}, {"result.json"})
+
     def test_shutdown_retry_joins_host_before_releasing_smoke_inputs(self):
         process, _ = self.controlled_worker()
         cleanup = driver.ChildCleanup()
@@ -1341,6 +1379,37 @@ class HostLifecycleTests(OwnedTestCase):
         for disposable in ("host", "bin", "repo/.mcp.json"):
             self.assertFalse((retained / disposable).exists(), disposable)
         self.assertFalse((self.evidence / "index.json").exists())
+
+    def test_shutdown_retry_owns_claimed_and_unclaimed_cases_at_teardown(self):
+        cleanup = driver.ChildCleanup()
+        defer = driver.defer_interrupts
+        cli = self.host_cli()
+        remaining_interrupts = 0
+
+        def respond(command, **options):
+            nonlocal remaining_interrupts
+            result = cli(command, **options)
+            if command[0] == "claude" and "-p" in command:
+                remaining_interrupts = 2  # Interrupt both case and unclaimed cleanup entry.
+            return result
+
+        def interrupt_before_release():
+            nonlocal remaining_interrupts
+            if remaining_interrupts:
+                remaining_interrupts -= 1
+                os.kill(os.getpid(), signal.SIGTERM)
+            return defer()
+
+        with driver.term_as_interrupt(), mock.patch.object(driver, "child_cleanup", cleanup), \
+                mock.patch.object(driver, "defer_interrupts", side_effect=interrupt_before_release), \
+                mock.patch.object(driver, "run_command", side_effect=respond):
+            with self.assertRaises(driver.Terminated):
+                live.run(self.candidate, self.output, "test-model", self.evidence)
+            cleanup.retry()
+        self.assertFalse(self.output.exists())
+        index = json.loads((self.evidence / "index.json").read_text())
+        self.assertEqual(set(index["cases"]), {"library-consumer"})
+        self.assert_cancel_precedes_wait(self.calls)
 
     def test_termination_during_materialization_releases_unclaimed_cases(self):
         materialize = driver.materialize

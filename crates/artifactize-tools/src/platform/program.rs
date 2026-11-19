@@ -41,31 +41,41 @@ fn resolve_from(
     path: Option<&OsStr>,
     pathext: Option<&OsStr>,
 ) -> io::Result<PathBuf> {
-    let program = Path::new(program);
+    lookup_paths(Path::new(program), cwd, path, pathext)
+        .into_iter()
+        .find(|candidate| platform::is_executable(candidate))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "Program is unavailable: {}",
+                    program.to_string_lossy().replace('\\', "/")
+                ),
+            )
+        })
+}
+
+fn lookup_paths(
+    program: &Path,
+    cwd: &Path,
+    path: Option<&OsStr>,
+    pathext: Option<&OsStr>,
+) -> Vec<PathBuf> {
     let candidates = candidates_from(program, pathext);
-    let explicit = program.is_absolute() || program.components().count() > 1;
-    let found = if explicit {
-        candidates
+    if program.is_absolute() || program.components().count() > 1 {
+        return candidates
             .into_iter()
             .map(|candidate| cwd.join(candidate))
-            .find(|candidate| platform::is_executable(candidate))
-    } else {
-        env::split_paths(path.unwrap_or_default()).find_map(|directory| {
+            .collect();
+    }
+    env::split_paths(path.unwrap_or_default())
+        .flat_map(|directory| {
+            let directory = cwd.join(directory);
             candidates
                 .iter()
-                .map(|candidate| cwd.join(&directory).join(candidate))
-                .find(|candidate| platform::is_executable(candidate))
+                .map(move |candidate| directory.join(candidate))
         })
-    };
-    found.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!(
-                "Program is unavailable: {}",
-                program.to_string_lossy().replace('\\', "/")
-            ),
-        )
-    })
+        .collect()
 }
 
 /// Candidate paths in lookup order, for the environment `variable` reads. Scoped callers

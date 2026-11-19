@@ -53,6 +53,10 @@ pub fn open_no_follow(options: &mut OpenOptions, path: &Path) -> io::Result<File
     let file = options
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)?;
+    reject_reparse(file)
+}
+
+fn reject_reparse(file: File) -> io::Result<File> {
     if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(reparse_point());
     }
@@ -98,11 +102,7 @@ impl EntryName {
 
 /// Open one entry of a pinned directory read-only, refusing any reparse point.
 pub fn open_entry(directory: &File, name: &EntryName) -> io::Result<File> {
-    let file = open_relative(directory, &name.0, FILE_GENERIC_READ)?;
-    if attribute_tag(&file)?.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(reparse_point());
-    }
-    Ok(file)
+    reject_reparse(open_relative(directory, &name.0, FILE_GENERIC_READ)?)
 }
 
 /// The type of one entry of a pinned directory, without following it.

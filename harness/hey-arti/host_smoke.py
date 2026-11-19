@@ -41,10 +41,13 @@ def capture(command, repo, env, timeout, stdout_path, stderr_path=None):
 def smoke(host, candidate, output, model):
     candidate = candidate.resolve(strict=True)
     output = output.resolve()
-    output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    unconfirmed = None
+
     def release():
-        failures = []
         with driver.defer_interrupts():
+            if unconfirmed is not None:
+                driver.child_cleanup.close(unconfirmed)
+            failures = []
             for name in ("repo", "config", "bin", "state"):
                 path = output / name
                 try:
@@ -56,20 +59,19 @@ def smoke(host, candidate, output, model):
                     failures.append(error)
             if failures:
                 raise ExceptionGroup(f"Could not remove all smoke inputs at {output.as_posix()}", failures)
+            driver.child_cleanup.fixtures.discard(release)
 
-    def retry(process):
-        with driver.defer_interrupts():
-            if output.exists():
-                driver.child_cleanup.close(process)
-                release()
-
+    with driver.defer_interrupts():
+        output.mkdir(mode=0o700, parents=True, exist_ok=False)
+        driver.child_cleanup.fixtures.add(release)
     try:
         inventory(host, candidate, output, model)
     except driver.ProcessExitError as error:
-        # Keep inputs while the host might still use them. Once its owned
-        # handle is joinable, the shutdown retry can release them safely.
-        if error.process is not None:
-            driver.child_cleanup.fixtures.add(lambda process=error.process: retry(process))
+        # Keep inputs while the host might still use them. Retry only when an
+        # owned handle can confirm its exit before deleting anything.
+        unconfirmed = error.process
+        if unconfirmed is None:
+            driver.child_cleanup.fixtures.discard(release)
         raise
     except BaseException:
         release()

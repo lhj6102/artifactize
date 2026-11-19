@@ -218,8 +218,9 @@ impl<'de> Deserialize<'de> for Target {
                 .map(Self::Live)
                 .map_err(serde::de::Error::custom)
         } else {
-            let path = crate::files::parse_target_path(&value).map_err(serde::de::Error::custom)?;
-            Self::try_from(path).map_err(serde::de::Error::custom)
+            let (path, names) =
+                crate::files::parse_target_path(&value).map_err(serde::de::Error::custom)?;
+            Ok(Self::Folder(LocalTarget { path, names }))
         }
     }
 }

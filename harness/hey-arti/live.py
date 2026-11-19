@@ -202,9 +202,18 @@ def run(candidate, output, model, evidence_root):
     records = {}
     claimed = set()
     cases = driver.cases()
+
+    def release_remaining():
+        # Claimed cases own their own finalizers. The others never entered a host.
+        with driver.defer_interrupts():
+            if working.exists():
+                release_unclaimed(working, cases.keys() - claimed)
+            driver.child_cleanup.fixtures.discard(release_remaining)
+
     try:
         with driver.defer_interrupts():
             working = driver.materialize(output)
+            driver.child_cleanup.fixtures.add(release_remaining)
         skill = (ROOT.parents[1] / "agent-plugin/skills/hey-arti/SKILL.md").read_text()
         version = driver.run_command([str(candidate), "--version"], capture_output=True, text=True,
                                      timeout=60, check=True).stdout.strip()
@@ -214,10 +223,8 @@ def run(candidate, output, model, evidence_root):
             run_case(candidate, working / case_id, case, model, skill, version, host_version,
                      evidence_root, records, claimed)
     finally:
-        # Cases the host never entered cannot own Runs. Claimed cases release
-        # their tools after settlement and their recovery data after archival.
         if working is not None:
-            release_unclaimed(working, cases.keys() - claimed)
+            release_remaining()
     return evidence_root
 
 
@@ -300,7 +307,11 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
                 area.parent.rmdir()
 
     try:
-        claimed.add(case_id)
+        with driver.defer_interrupts():
+            # The shutdown registry must own cleanup before the caller stops
+            # treating this case as unclaimed.
+            driver.child_cleanup.fixtures.add(retry)
+            claimed.add(case_id)
         repo = area / "repo"
         host = area / "host"
         host.mkdir(mode=0o700)
@@ -398,25 +409,29 @@ CANONICAL SKILL
         failures.append(error)
         (area / "evidence/failure.txt").write_text(f"{type(error).__name__}: {error}\n")
     finally:
-        with driver.defer_interrupts():
-            try:
-                if host_exit_error is not None:
-                    raise host_exit_error
-                settle()
-            except BaseException as error:
-                driver.child_cleanup.fixtures.add(retry)
-                if error is not host_exit_error:
-                    failures.append(error)
+        if case_id in claimed:
+            with driver.defer_interrupts():
                 try:
-                    save_unconfirmed_diagnostics(area, evidence_root)
-                    print(f"{case_id}: settlement unconfirmed; working files retained at {area.as_posix()}", flush=True)
-                except Exception as diagnostic_error:
-                    failures.append(diagnostic_error)
-            else:
-                try:
-                    archive_and_release()
+                    if host_exit_error is not None:
+                        raise host_exit_error
+                    settle()
                 except BaseException as error:
-                    failures.append(error)
+                    if error is not host_exit_error:
+                        failures.append(error)
+                    try:
+                        save_unconfirmed_diagnostics(area, evidence_root)
+                        print(f"{case_id}: settlement unconfirmed; working files retained at {area.as_posix()}", flush=True)
+                    except Exception as diagnostic_error:
+                        failures.append(diagnostic_error)
+                else:
+                    try:
+                        archive_and_release()
+                    except BaseException as error:
+                        failures.append(error)
+                    finally:
+                        # An archival failure leaves recovery data intentionally,
+                        # not a case awaiting settlement.
+                        driver.child_cleanup.fixtures.discard(retry)
     if failures:
         if len(failures) == 1 and isinstance(failures[0], driver.Terminated):
             raise failures[0]

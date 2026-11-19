@@ -333,10 +333,7 @@ pub fn plain(stdout: &[u8], successful: bool, truncated: bool) -> ToolResult {
     };
     if text.len() > TEXT_LIMIT || truncated {
         let suffix = "\n[output truncated]";
-        let mut end = (TEXT_LIMIT - suffix.len()).min(text.len());
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
+        let end = text.floor_char_boundary(TEXT_LIMIT - suffix.len());
         text.truncate(end);
         text.push_str(suffix);
     }

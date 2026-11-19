@@ -2,7 +2,12 @@
 
 use super::os::compile;
 use artifactize_tools::launch::{Finished, Launch, LaunchError};
-use std::{io::Read, net::TcpStream, path::Path, time::Duration};
+use std::{
+    io::{self, Read},
+    net::TcpStream,
+    path::Path,
+    time::Duration,
+};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
@@ -109,7 +114,15 @@ impl Drop for NativeTree {
         // socket shutdown, which also works when observers cloned the streams.
         if !self.running.cancel_and_wait() {
             self.connections.release();
+            // The fixture closes its sockets at process exit. Observe both even
+            // if the launcher itself failed, before the temporary root can drop.
+            let exits = self.connections.wait_for_exit();
             self.running.abort_and_join();
+            for (role, exit) in exits {
+                if let Err(error) = exit {
+                    eprintln!("native fixture {role} did not exit: {error}");
+                }
+            }
             assert!(std::thread::panicking(), "native launcher cleanup watchdog");
         }
     }
@@ -158,19 +171,33 @@ impl Connections {
     }
 
     fn assert_terminated(&mut self) {
-        for (role, stream) in [("parent", &mut self.parent), ("child", &mut self.child)] {
-            stream.set_read_timeout(Some(NATIVE_WATCHDOG)).unwrap();
-            match stream.read(&mut [0]) {
-                Ok(read) => assert_eq!(read, 0, "the help {role} outlived tree cleanup"),
-                Err(error) => assert!(
-                    matches!(
-                        error.kind(),
-                        std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
-                    ),
-                    "the help {role} outlived tree cleanup: {error}"
-                ),
-            }
+        for (role, exit) in self.wait_for_exit() {
+            assert!(
+                exit.is_ok(),
+                "the help {role} outlived tree cleanup: {exit:?}"
+            );
         }
+    }
+
+    fn wait_for_exit(&mut self) -> [(&'static str, io::Result<()>); 2] {
+        [("parent", &mut self.parent), ("child", &mut self.child)].map(|(role, stream)| {
+            let exit = stream
+                .set_read_timeout(Some(NATIVE_WATCHDOG))
+                .and_then(|()| match stream.read(&mut [0]) {
+                    Ok(0) => Ok(()),
+                    Ok(_) => Err(io::Error::other("unexpected data on the exit socket")),
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+                        ) =>
+                    {
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                });
+            (role, exit)
+        })
     }
 }
 

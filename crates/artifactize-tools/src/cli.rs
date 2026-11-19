@@ -205,7 +205,7 @@ mod tests {
         })
         .await
         .unwrap();
-        assert!(file.is_absolute());
+        assert!(crate::files::is_absolute(&file));
         assert_eq!(targets, [file]);
     }
 }
