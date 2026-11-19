@@ -107,6 +107,8 @@ jobs:
       - name: Create the GitHub release with the Linux archives
         env:
           GH_TOKEN: ${{ github.token }}
+          # No checkout here: the repository is named, not read from a clone.
+          GH_REPO: ${{ github.repository }}
         run: |
           flags=
           if [ "$PRERELEASE" = true ]; then flags=--prerelease; fi

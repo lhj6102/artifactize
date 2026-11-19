@@ -140,11 +140,6 @@ macro_rules! key {
         }
 
         impl $name {
-            /// The library's identifier it names.
-            pub fn inner(&self) -> &$inner {
-                &self.0
-            }
-
             pub fn into_inner(self) -> $inner {
                 self.0
             }
@@ -184,6 +179,13 @@ key!(
     SessionKey,
     artifactize_core::types::SessionId
 );
+
+impl NodeKey {
+    /// The library's node it names, for lookups that keep the key.
+    pub fn inner(&self) -> &artifactize_core::monitor::NodeId {
+        &self.0
+    }
+}
 
 #[cfg(test)]
 mod tests {

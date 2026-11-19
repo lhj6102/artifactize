@@ -36,6 +36,7 @@
   import { PRECEDENCE, type Found, type Light, type Shape, type Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
+  import GraphTools from "./GraphTools.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
   import Navigator from "./Navigator.svelte";
@@ -44,7 +45,7 @@
   import { BLOCKING, NODE, WORDS, tallyWords, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, legible, scene, view, within } from "./scene";
-  import { label, plain } from "../shell/keys";
+  import { plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
   import { NO_ANNOTATIONS, roomOf, type Annotations } from "./annotations";
   import { anchor, boxPlaces, dropAt, inside, placesOf, topLevel, under, type Drop } from "./placing";
@@ -102,8 +103,6 @@
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
   const MAX_ZOOM = 2;
-  /** What one press of a zoom button multiplies or divides the zoom by, as Svelte Flow's own do. */
-  const ZOOM_STEP = 1.2;
   /** The zoom from which an Artifact's name reads: bringing a found one into view zooms in to
    * it, never out. */
   const READABLE = 0.75;
@@ -150,13 +149,17 @@
   /** In a large graph, the Artifacts in view by number while at most `DRAWN` are, else `null`;
    * none before the canvas has a size. */
   const inView = $derived(large && v.area ? within(laid, view(camera.current, v.area.width, v.area.height), DRAWN) : []);
-  /** The Artifacts in view are painted as boxes, while too many are in view to keep as elements
-   * or the zoom makes their names too small to read: a smaller canvas holds fewer at a zoom. */
-  const painted = $derived(inView === null || (large && !legible(v.font, camera.current.zoom)));
-  /** The copies kept as elements: every one of a small graph (`null`); of a large one, those
-   * in view while they are not painted. A text key, so that panning over the same ones keeps
-   * the same elements. */
-  const kept = $derived(large ? (painted ? "" : (inView?.join() ?? "")) : null);
+  /** The Artifacts in view are painted as blocks, of any graph, while the zoom makes their names
+   * too small to read (D-GRAPH-2); of a large graph also while too many are in view to keep as
+   * elements: a smaller canvas holds fewer at a zoom. A zoom of 0 shows nothing yet: the canvas
+   * has no size its first fit could use. */
+  const painted = $derived(inView === null || (v.area !== null && camera.current.zoom > 0 && !legible(v.font, camera.current.zoom)));
+  /** The canvas paints: every edge of a large graph, and whatever is painted as blocks. */
+  const canvased = $derived(large || painted);
+  /** The copies kept as elements: none while painted; every one of a small graph (`null`); of a
+   * large one, those in view. A text key, so that panning over the same ones keeps the same
+   * elements. */
+  const kept = $derived(painted ? "" : large ? (inView?.join() ?? "") : null);
 
   // Lights change in place; positions only come with a new layout, or, after a drag that wrote
   // nothing, as they were.
@@ -206,16 +209,16 @@
             onfield: (written: string | null) => void closeField(written),
             onpan: editable ? (event: PointerEvent) => pan(event) : undefined,
           },
-          draggable: editable && !large,
+          draggable: editable && !canvased,
           connectable: false,
           ariaLabel: `${node.name}: ${node.note ?? `${WORDS[node.light]}${tallyWords(node.tally)}`}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
           domAttributes: { "data-light": node.light, "data-artifact": node.id },
         };
       });
   });
-  // A large graph's edges are all on the canvas.
+  // A large graph's edges, and a painted one's, are all on the canvas.
   let edges = $derived.by<Edge[]>(() =>
-    large
+    canvased
       ? []
       : lines.map((edge) => ({
           id: `${edge.source}>${edge.target}`,
@@ -707,24 +710,14 @@
 
 <div class="graph">
   <!-- What acts on the graph, in one row above the canvas, and nothing else. -->
-  <div class="tools" role="toolbar" aria-label="Graph tools">
-    <button class="button small" aria-label="Find ({label('Ctrl+F')})" aria-keyshortcuts="Control+F" onclick={() => (m.finding = true)}><Icon name="find" />Find</button>
-    <span class="zoom">
-      <button aria-label="Zoom out" onclick={() => zoomBy(1 / ZOOM_STEP)}><Icon name="minus" /></button>
-      <span class="percent" aria-label="Zoom">{Math.round(camera.current.zoom * 100)}%</span>
-      <button aria-label="Zoom in" onclick={() => zoomBy(ZOOM_STEP)}><Icon name="add" /></button>
-    </span>
-    <button class="button small" onclick={fitAll}><Icon name="fit" />Fit</button>
+  <GraphTools zoom={camera.current.zoom} act={{ find: () => (m.finding = true), zoomBy, fit: fitAll }}>
     {#if editable}
       <button class="button small" onclick={newArtifact}><Icon name="add" />New Artifact</button>
       {#if canResetTop}
         <button class="button small" onclick={resetTop}><Icon name="reset" />Reset layout</button>
       {/if}
     {/if}
-  </div>
-  {#if graph.nodes.length === 0}
-  <p class="empty">{empty}</p>
-  {:else}
+  </GraphTools>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="canvas"
@@ -743,7 +736,8 @@
     onfocusout={() => (v.focused = null)}
     tabindex="-1"
   >
-    {#if large}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
+    {#if graph.nodes.length === 0}<p class="empty">{empty}</p>{/if}
+    {#if canvased}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
     <SvelteFlow
       bind:nodes
       bind:edges
@@ -752,7 +746,7 @@
       {fitViewOptions}
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
-      nodesDraggable={editable && !large}
+      nodesDraggable={editable && !canvased}
       nodeDragThreshold={DRAG}
       onnodedragstart={({ targetNode }) => targetNode && dragStart(targetNode.id)}
       onnodedrag={({ targetNode, event }) => targetNode && dragMove(targetNode.id, event)}
@@ -785,15 +779,19 @@
       <Navigator {laid} {lights} viewport={camera.current} width={v.area.width} height={v.area.height} onmove={navigate} />
     {/if}
   </div>
-  {/if}
 </div>
 
 <style>
-  /* No Artifacts: the tool strip stays above the sentence. */
+  /* No Artifacts: the sentence stands at the top of the canvas, under the tool strip, which
+     acts on the empty canvas as on any. */
   .empty {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 1;
     margin: 0;
-    padding: var(--pad);
+    padding: 6px var(--pad);
     color: var(--ink-2);
+    pointer-events: none;
   }
   .graph {
     position: relative;
@@ -802,63 +800,6 @@
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
-  }
-  /* The tool strip: one row on the panel, opened above by a group line. */
-  .tools {
-    display: flex;
-    align-items: center;
-    gap: var(--gap);
-    height: var(--row-head);
-    padding: 0 var(--pad);
-    border-top: 1px solid var(--line-group);
-    background: var(--surface-panel);
-    font-size: var(--text-small);
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .tools :global(.button) {
-    flex: none;
-  }
-  /* One bordered group: Zoom out, the zoom in percent, Zoom in. */
-  .zoom {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    height: 22px;
-    border: 1px solid var(--line-group);
-    border-radius: var(--radius-control);
-    background: var(--surface-group);
-    overflow: hidden;
-  }
-  .zoom button {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 20px;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--ink-2);
-    cursor: pointer;
-  }
-  /* The pointer steps the icon's ink up; the face stays the group's. */
-  .zoom button:hover {
-    color: var(--ink);
-  }
-  .zoom button:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: -2px;
-  }
-  .percent {
-    width: 44px;
-    height: 20px;
-    line-height: 20px;
-    text-align: center;
-    border-left: 1px solid var(--line-group);
-    border-right: 1px solid var(--line-group);
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
   }
   /* The working surface, opened by a group line under the strip, with a faint grid that moves
      and scales with the camera, left out where its cells grow too small. */

@@ -18,6 +18,7 @@
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
+  import GraphTools from "./GraphTools.svelte";
   import RunHeadline from "./RunHeadline.svelte";
   import CurrentView from "./CurrentView.svelte";
   import ScanState from "./ScanState.svelte";
@@ -118,7 +119,7 @@
     else m.expanded.add(key);
   }
 
-  /** Open a waiting review (or a Human request opened by ID) in the Main area. */
+  /** Open a waiting review in the Main area. */
   function openReview(id: string) {
     app.review(id);
     m.finding = false;
@@ -134,11 +135,13 @@
     void focus("main");
   }
 
-  /** Open a request by ID in any repository: a Human request as Review, any other read-only. */
+  /** Open a request by ID in any repository: a waiting Human review as Review, any other
+   * request, a settled Human one included, read-only. */
   async function openId(id: string) {
     try {
       const detail = await call(app.ipc.requestDetail(id));
-      if (detail.profile === "human") return openReview(id);
+      const waiting = detail.mark?.status === "WAITING_HUMAN" || detail.mark?.status === "DEFERRED";
+      if (detail.profile === "human" && waiting) return openReview(id);
       m.folds = { log: false };
       m.shown = { kind: "request", detail };
       m.finding = false;
@@ -473,9 +476,9 @@
             {#if run}
               <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
             {:else if view?.run.kind === "missing"}
-              <p class="empty">This Run cannot be read; choose another.</p>
+              <div class="pending"><GraphTools /><p class="empty">This Run cannot be read; choose another.</p></div>
             {:else}
-              <p class="empty">Loading the Run…</p>
+              <div class="pending"><GraphTools /><p class="empty">Loading the Run…</p></div>
             {/if}
           {:else if shown.kind === "current"}
             <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
@@ -583,7 +586,7 @@
    * divider's grab zone on the graph's side, and the Detail never sits beside the Pane. */
   /* The Detail's width, as the dock takes it: a drag's, or its default, within its bounds. */
   .stage {
-    --dock-width: clamp(min(320px, 100%), var(--detail-width, min(46%, 680px)), calc(100% - 96px));
+    --dock-width: clamp(min(320px, 100%), var(--detail-width, min(46%, 680px)), calc(100% - 240px));
     position: relative;
     isolation: isolate;
     height: 100%;
@@ -623,6 +626,13 @@
     margin: 0;
     padding: 6px var(--pad);
     color: var(--ink-2);
+  }
+  /* A chosen Run with nothing to act on yet: the tool strip in its place, the line below it. */
+  .pending {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
   }
   /* A review's eval and title, said once, in the header row. */
   .title {

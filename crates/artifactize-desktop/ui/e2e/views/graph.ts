@@ -156,9 +156,10 @@ export class Graph {
       (shown) => shown === title, `${id}'s Detail opened`);
   }
 
-  /** Click the graph's background: an open Detail closes. */
+  /** Click the graph's background, once some of it shows (a dialog closing may still cover
+   * it): an open Detail closes. */
   async clickBackground(): Promise<void> {
-    const point = await this.browser.execute((graph) => {
+    const point = await until(this.browser, () => this.browser.execute((graph) => {
       const canvas = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
       const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
       const right = detail && detail.left > canvas.left ? detail.left : canvas.right;
@@ -170,7 +171,7 @@ export class Graph {
         }
       }
       return null;
-    }, GRAPH);
+    }, GRAPH), (found) => found !== null, "the graph shows background to click");
     if (!point) throw new Error("the graph shows no background to click");
     await clickAt(this.browser, point);
   }

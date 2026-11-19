@@ -14,6 +14,7 @@
   import { getAppState } from "../shell/app.svelte";
   import { SourceGraphState, setSourceGraphState } from "./source-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
+  import GraphTools from "./GraphTools.svelte";
   import { relight } from "./graph";
   import { keyOf } from "./monitor-state.svelte";
 import { NO_ANNOTATIONS } from "./annotations";
@@ -120,9 +121,9 @@ import { NO_ANNOTATIONS } from "./annotations";
 
 <div class="host" {@attach reread} {@attach replace}>
 {#if g.error}
-  <p class="note error">{g.error}</p>
+  <div class="pending"><GraphTools /><p class="note error">{g.error}</p></div>
 {:else if !g.shown}
-  <p class="note">Laying out…</p>
+  <div class="pending"><GraphTools /><p class="note">Laying out…</p></div>
 {:else}
   {#key keyOf(g.shown.source)}
     <SvelteFlowProvider>
@@ -149,9 +150,16 @@ import { NO_ANNOTATIONS } from "./annotations";
   .host {
     display: contents;
   }
+  /* Nothing to act on yet: the tool strip in its place, the line below it. */
+  .pending {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+  }
   .note {
+    margin: 0;
+    padding: 6px var(--pad);
     color: var(--ink-2);
-    padding: 0 var(--pad);
   }
   .note.error {
     color: var(--red);
