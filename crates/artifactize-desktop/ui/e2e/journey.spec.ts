@@ -4,8 +4,9 @@ import { selectedScenarios } from "./catalog.ts";
 import { recordKeys } from "./keys.ts";
 import { takeSystemFocus, variable } from "./platform.ts";
 import { asNativePath, exists, nativePath, readJson, writeJson, writeText } from "./portable.ts";
-import { COMPLETED, FIRST, type Context } from "./scenario.ts";
+import { COMPLETED, FIRST, keepEvidence, type Context } from "./scenario.ts";
 import { App } from "./views/app.ts";
+import { waitingFor } from "./views/wait.ts";
 
 // Globals of the configured WDIO Mocha adapter.
 declare const describe: (title: string, body: () => void) => void;
@@ -19,9 +20,22 @@ if (!id || !context) throw new Error("WDIO did not give the spec its scenario");
 const [item] = selectedScenarios([id]);
 const input = readJson(asNativePath(context)) as Context;
 
+// An interrupt fails the scenario it stops (a terminal's Ctrl+C reaches every process of the
+// batch): its evidence names the wait it was in and holds the window as the app shows it then;
+// an app the same interrupt ended shows none, which the evidence says.
+let running = false;
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    if (!running) return;
+    keepEvidence(item.id, input.evidence, `interrupted by ${signal} while it waited for: ${waitingFor() || "nothing, between two waits"}`, browser)
+      .catch((cause: unknown) => console.error(`no evidence of the interrupted ${item.id} was kept: ${String(cause)}`));
+  });
+}
+
 describe(item.title, () => {
   it(restarted ? `${item.id} (started again)` : item.id, async () => {
     const app = new App(browser);
+    running = true;
     try {
       await app.loaded();
       await takeSystemFocus(browser);
@@ -46,6 +60,8 @@ describe(item.title, () => {
       const shown = await app.text().catch((cause: unknown) => `(the window could not be read: ${String(cause)})`);
       if (error instanceof Error) error.message += `\n--- the window showed ---\n${shown.slice(0, 4000)}`;
       throw error;
+    } finally {
+      running = false;
     }
   });
 });

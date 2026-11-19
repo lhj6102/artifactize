@@ -225,12 +225,16 @@ export class Review {
     return this.until((shown) => !shown.running && (shown.completed !== "" || shown.refusal !== ""), "the submission completed or refused");
   }
 
-  /** Paste `text` into the form's field `id` through the engine's own editing (the test-only
-   * input device), as a person's input method composes it: it is committed into the field. */
-  async compose(id: string, text: string): Promise<void> {
+  /** Compose `text` into the form's field `id` through the engine's own input method (the
+   * test-only input device), as a person's does: the field first shows `composing`, the text
+   * still being composed, which differs from `text`, and then `text` in its place once it is
+   * committed. */
+  async compose(id: string, composing: string, text: string): Promise<void> {
     await this.browser.$(`${this.root} #field-${id}`).click();
-    await nativeInput(this.browser, { type: "set", text });
+    const before = await this.value(id);
+    await nativeInput(this.browser, { type: "set", text: composing });
+    await holds(this.browser, async () => (await this.value(id)) === before + composing, `${composing} being composed in ${id}`);
     await nativeInput(this.browser, { type: "commit", text });
-    await holds(this.browser, async () => (await this.value(id)).endsWith(text), `${text} composed into ${id}`);
+    await holds(this.browser, async () => (await this.value(id)) === before + text, `${text} committed into ${id} in place of ${composing}`);
   }
 }

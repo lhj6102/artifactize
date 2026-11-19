@@ -208,12 +208,18 @@ export const scenarios: Scenario[] = [
       assert.ok(await app.graph.zoom() > whole, "zoomed in");
       await app.graph.until(() => app.graph.navigatorShown(), "part of the graph lies outside the view: the Navigator shows");
       const zoom = await app.graph.zoom();
-      // The clicked place comes to the middle of the view: the graph's camera moves, and the
-      // frame of the part in view is drawn around that place.
-      const ids = async () => (await app.graph.nodes()).map((node) => node.id).sort();
-      const named = await ids();
+      // The Artifact in the middle of the view, and the place the Navigator frames then: that
+      // Artifact's place in the map.
+      const middle = await app.graph.central();
+      const place = await app.graph.navigatorFrame();
+      const near = (at: { x: number; y: number } | null) => !!at && Math.hypot(at.x - middle.x, at.y - middle.y) <= place.step;
+      // A click elsewhere in the map moves the camera there, that Artifact out of the middle.
       await app.graph.navigate(0.3, 0.6);
-      assert.notDeepEqual(await ids(), named, "other Artifacts in view");
+      assert.ok(!near(await app.graph.offCentre(middle.id)), `${middle.id} left the middle of the view`);
+      // A click on its place in the map brings it back to the middle of the view, as near as
+      // one pixel of the map says.
+      await app.graph.navigate(place.fx, place.fy);
+      await app.graph.until(async () => near(await app.graph.offCentre(middle.id)), `the place clicked in the Navigator, ${middle.id}'s, is in the middle of the view`);
       assert.equal(await app.graph.zoom(), zoom, "the Navigator keeps the zoom");
       await app.graph.cameraTool("Fit");
       assert.equal(await app.graph.zoom(), whole, "Fit shows the whole graph again");

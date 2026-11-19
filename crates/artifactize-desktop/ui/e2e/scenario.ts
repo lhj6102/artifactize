@@ -1,6 +1,6 @@
 // A scenario: one journey flow on one app, with the fixtures it prepares before the app starts.
-import type { Environment } from "./platform.ts";
-import type { NativePath } from "./portable.ts";
+import { systemName, variable, type Environment } from "./platform.ts";
+import { asNativePath, exists, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
 import type { Owned } from "./fixtures/owned.ts";
 import type { Fixture } from "./fixtures/repo.ts";
 import type { App } from "./views/app.ts";
@@ -42,6 +42,21 @@ export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
   restarted?: (app: App, input: Context<T>, carried: unknown) => Promise<void>;
 }): Scenario {
   return definition as Scenario;
+}
+
+/** Keep the evidence of the scenario `id`, which failed (E2E-FAILURE-EVIDENCE), in its folder
+ * `evidence`: the OS, the scenario and its failure, which names the wait that failed, and a
+ * screenshot of the window as `browser` shows it then, or why there is none. What failed first
+ * is kept: a later failure of the same run of it changes nothing. */
+export async function keepEvidence(id: string, evidence: NativePath, failure: string, browser: WebdriverIO.Browser | undefined): Promise<void> {
+  const restarted = variable("DESKTOP_TEST_PHASE") === "restarted";
+  const kept = restarted ? asNativePath(`${evidence}-started-again`) : evidence;
+  const report = nativePath(kept, "failure.txt");
+  if (exists(report)) return;
+  writeText(nativePath(makeDirectory(kept), "failure.txt"), `OS: ${systemName}\nscenario: ${id}${restarted ? " (started again)" : ""}\n\n${failure}\n`);
+  console.error(`evidence of ${id}: ${kept}`);
+  await (browser ? browser.saveScreenshot(nativePath(kept, "window.png")) : Promise.reject(new Error("its app was not started")))
+    .catch((cause: unknown) => writeText(nativePath(kept, "window.txt"), `no screenshot: ${String(cause)}`));
 }
 
 /** The file a scenario's spec writes into its folder once its run has passed to its end. */

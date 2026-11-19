@@ -38,9 +38,22 @@ function child(program: string, args: string[], env: NodeJS.ProcessEnv): Promise
 }
 
 /** An interrupt (a terminal's Ctrl+C reaches the batch too) lets the running batch close its
- * apps and fixtures, starts no other, and fails the run. */
+ * apps and fixtures, starts no other, and fails the run, whenever it comes. */
 function interrupt(): void {
   interrupted = true;
+  process.exitCode = 1;
+}
+
+/** Let the event loop turn once through its timers and its input, where a signal that came
+ * while this thread was busy reaches its handler. */
+function turned(): Promise<void> {
+  return new Promise((done) => setTimeout(() => setImmediate(done), 0));
+}
+
+/** Resolves once what this process has printed is written out: a pipe takes output in its own
+ * time, and `process.exit` drops what still waits. */
+async function printed(): Promise<void> {
+  for (const stream of [process.stdout, process.stderr]) await new Promise((done) => stream.write("", done));
 }
 
 async function suite(ids: string[]): Promise<void> {
@@ -57,6 +70,8 @@ async function suite(ids: string[]): Promise<void> {
   const whole = variable("CI") === "true";
   const failed: string[] = [];
   const failures: unknown[] = [];
+  /** Whether the failures say already that the run was interrupted. */
+  const noted = () => failures.some((failure) => failure instanceof Error && failure.message.startsWith("interrupted"));
   let candidate: Awaited<ReturnType<typeof prepare>> | undefined;
   try {
     candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratchDirectory()) : await prepare();
@@ -66,8 +81,17 @@ async function suite(ids: string[]): Promise<void> {
         DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${index + 1}`), DESKTOP_TEST_EVIDENCE_RUN: evidence };
       const command = runnerCommand([suitePath("run.ts"), "batch"], env);
       if (await child(command.program, command.args, command.env) !== 0) {
+        // A batch that ended before it kept its logs, as an interrupt may end it, has them
+        // printed and kept here.
+        const logs = nativePath(output, `batch-${index + 1}`);
+        if (!exists(nativePath(evidence, basename(logs)))) for (const log of serviceLogs(logs, evidence)) console.error(log);
         // The scenarios that kept evidence failed; a batch that failed before any did fails whole.
         const kept = ids.filter((id) => exists(nativePath(evidence, id)));
+        if (interrupted) {
+          failed.push(...kept);
+          failures.push(new Error(`interrupted while the batch ${ids.join(", ")} ran: the suite did not run to its end; each scenario the interrupt stopped keeps the wait it was in as its evidence`));
+          break;
+        }
         failed.push(...(kept.length ? kept : ids));
         if (!whole && index < groups.length - 1) {
           failures.push(new Error(`stopped at the first failing batch; ${groups.slice(index + 1).flat().length} scenarios did not run (CI runs them all)`));
@@ -75,7 +99,7 @@ async function suite(ids: string[]): Promise<void> {
         }
       }
     }
-    if (interrupted) failures.push(new Error("interrupted: the suite did not run to its end"));
+    if (interrupted && !noted()) failures.push(new Error("interrupted: the suite did not run to its end"));
   } catch (error) {
     failures.push(error);
   } finally {
@@ -83,25 +107,26 @@ async function suite(ids: string[]): Promise<void> {
     if (!declared) try { removeTree(output); } catch (error) { failures.push(error); }
   }
   if (failed.length) failures.unshift(new Error(`desktop scenarios failed on ${systemName}: ${failed.join(", ")}`));
-  // An interrupt that came during the cleanup fails the run too.
-  if (interrupted && !failures.some((failure) => failure instanceof Error && failure.message.startsWith("interrupted"))) {
+  // The evidence folder stays only when scenarios failed or the run was cut short.
+  const kept = failures.length > 0;
+  if (!kept) try { removeTree(evidence); } catch (error) { failures.push(error); }
+  // An interrupt that came during the cleanup, which held this thread, fails the run too: its
+  // handler runs once the event loop has turned.
+  await turned();
+  if (interrupted && !noted()) {
     failures.push(new Error("interrupted: the suite was stopped while it cleaned up"));
   }
-  if (!failures.length) {
-    removeTree(evidence);
-    return;
-  }
-  throw new AggregateError(failures, `desktop E2E failed on ${systemName}; evidence (each failed scenario's failure, screenshot and logs): ${evidence}`);
+  if (!failures.length) return;
+  throw new AggregateError(failures, `desktop E2E failed on ${systemName}${kept ? `; evidence (each failed scenario's failure, screenshot and logs): ${evidence}` : ""}`);
 }
 
-/** The tail of each log the service wrote for a failed batch, the app's own output among them,
- * printed and kept in the run's evidence folder. */
-function serviceLogs(directory: NativePath): string[] {
+/** The tail of each log the service wrote for a failed batch into `directory`, the app's own
+ * output among them, to print; each is kept in the run's evidence folder `evidence`. */
+function serviceLogs(directory: NativePath, evidence: NativePath | undefined): string[] {
   if (!exists(directory)) return [];
-  const evidence = variable("DESKTOP_TEST_EVIDENCE_RUN");
   return sourceTree(directory).filter((item) => item.kind === "file" && item.name.endsWith(".log")).map((item) => {
     const tail = readText(item.path).slice(-65536);
-    if (evidence) writeText(nativePath(makeDirectory(nativePath(asNativePath(evidence), basename(directory))), item.name), tail);
+    if (evidence) writeText(nativePath(makeDirectory(nativePath(evidence, basename(directory))), item.name), tail);
     return `--- service log ${item.name} ---\n${tail.slice(-16384)}`;
   });
 }
@@ -128,11 +153,14 @@ let loaded: typeof import("./wdio.conf.ts") | undefined;
 
 async function launch(): Promise<void> {
   const output = asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? "");
+  const evidence = variable("DESKTOP_TEST_EVIDENCE_RUN");
+  const logs = () => serviceLogs(output, evidence ? asNativePath(evidence) : undefined);
   const { Launcher } = await import("@wdio/cli");
   const launcher = new Launcher(suitePath("wdio.conf.ts"));
-  // An interrupt goes through WDIO's own exit routine, which ends its workers; this hook, in the
-  // same routine, then stops the apps as the service does at the end and closes the fixtures,
-  // before the process exits.
+  // An interrupt goes through WDIO's own exit routine, which ends its workers (each keeps the
+  // evidence of the scenario it was in, journey.spec.ts); this hook, in the same routine, then
+  // stops the apps as the service does at the end, closes the fixtures and prints and keeps the
+  // logs as for any failed batch, before the process exits.
   const exitHook = createRequire(import.meta.resolve("@wdio/cli"))("async-exit-hook") as (hook: (done: () => void) => void) => void;
   exitHook((done) => {
     const internals = launcher as unknown as { runner?: { shutdown(): Promise<unknown> }; _launcher?: { onComplete?(code: number, config: unknown, caps: unknown): Promise<void> }[] };
@@ -142,6 +170,8 @@ async function launch(): Promise<void> {
         for (const service of internals._launcher ?? []) await service.onComplete?.(1, {}, []);
         await loaded?.teardown();
       } catch (error) { console.error(inspect(error)); }
+      try { for (const log of logs()) console.error(log); } catch (error) { console.error(inspect(error)); }
+      await printed();
       done();
     })();
   });
@@ -160,7 +190,7 @@ async function launch(): Promise<void> {
   }
   try { await configuration.teardown(); } catch (error) { failures.push(error); }
   if (failures.length) {
-    for (const log of serviceLogs(output)) console.error(log);
+    for (const log of logs()) console.error(log);
     throw new AggregateError(failures, "desktop WDIO batch failed");
   }
 }
@@ -196,6 +226,10 @@ if (import.meta.main) {
     console.error(inspect(error, { depth: null, colors: false }));
     process.exitCode = 1;
   }
-  // WDIO's exit hooks would end the batch with status 0: exit with the batch's own.
-  if (mode === "batch") process.exit(process.exitCode ?? 0);
+  // WDIO's exit hooks would end the batch with status 0: exit with the batch's own, once its
+  // output is written out.
+  if (mode === "batch") {
+    await printed();
+    process.exit(process.exitCode ?? 0);
+  }
 }

@@ -7,7 +7,7 @@ import {
   renameSync, rmSync, writeFileSync,
 } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createServer } from "node:net";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -231,27 +231,45 @@ export function serveLoopbackHttp(handle: (request: IncomingMessage, response: S
   });
 }
 
-/** `count` loopback ports the OS assigns, free again once returned, for the embedded
- * WebDriver servers the service starts. */
+/** Listen on the loopback port `port` (0: one the OS assigns): the server, or `undefined` when
+ * the port is taken. */
+function listenLoopback(port: number): Promise<Server | undefined> {
+  const server = createServer();
+  return new Promise((done, fail) => {
+    server.once("error", (error: NodeJS.ErrnoException) => (error.code === "EADDRINUSE" ? done(undefined) : fail(error)));
+    server.listen({ port, host: "127.0.0.1", exclusive: true }, () => done(server));
+  });
+}
+
+const closed = (server: Server) => new Promise<void>((done) => server.close(() => done()));
+
+/** `count` free loopback ports for the embedded WebDriver servers the service starts, this
+ * process's alone until it ends. Each is an even port whose claim, the odd port above it, this
+ * process listens on from before it chose the port until it ends; a runner takes a port only
+ * with its claim, so no other runner of this machine gets the port before this one's app
+ * listens on it, nor between two starts of that app. */
 export async function embeddedPorts(count: number): Promise<number[]> {
   const ports: number[] = [];
-  const servers = [];
-  try {
-    for (let index = 0; index < count; index++) {
-      const server = createServer();
-      servers.push(server);
-      await new Promise<void>((done, fail) => {
-        server.once("error", fail);
-        server.listen(0, "127.0.0.1", () => done());
-      });
-      const address = server.address();
-      if (!address || typeof address === "string") throw new Error("no loopback port was assigned");
-      ports.push(address.port);
+  for (let attempt = 0; ports.length < count; attempt += 1) {
+    if (attempt >= 100 * count) throw new Error("no free pair of loopback ports was found");
+    const assigned = await listenLoopback(0);
+    const address = assigned?.address();
+    if (!assigned || !address || typeof address === "string") throw new Error("no loopback port was assigned");
+    await closed(assigned);
+    const port = address.port - (address.port % 2);
+    const claim = await listenLoopback(port + 1);
+    if (!claim) continue;
+    const free = await listenLoopback(port);
+    if (!free) {
+      await closed(claim);
+      continue;
     }
-    return ports;
-  } finally {
-    await Promise.all(servers.map((server) => new Promise<void>((done) => server.close(() => done()))));
+    await closed(free);
+    // The claim lasts as long as this process and does not keep it running.
+    claim.unref();
+    ports.push(port);
   }
+  return ports;
 }
 
 /** Whether the embedded WebDriver server at `port` answers: it lives inside the app's process. */

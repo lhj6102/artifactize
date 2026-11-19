@@ -1,14 +1,15 @@
 // One batch of scenarios: WebdriverIO's Tauri service starts and stops each scenario's app
 // (E2E-INPUT); this configuration prepares their fixtures before and the runner closes them
 // after (teardown).
+import { inspect } from "node:util";
 import { SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { displayEnvironment, setVariable, systemName, variable, type Environment } from "./platform.ts";
-import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readJson, suitePath, writeJson, writeText } from "./portable.ts";
-import { COMPLETED, type Context } from "./scenario.ts";
+import { displayEnvironment, setVariable, variable, type Environment } from "./platform.ts";
+import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readJson, suitePath, writeJson } from "./portable.ts";
+import { COMPLETED, keepEvidence, type Context } from "./scenario.ts";
 
 const candidate = readCandidate();
 const selected = selectedScenarios(JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[]);
@@ -76,12 +77,19 @@ export const config = {
       for (const item of selected) {
         const scope = own(nativePath(candidate.root, "fixtures"));
         owned.push(scope);
-        const input = await item.prepare(scope);
+        const input = await item.prepare(scope).catch(async (cause: unknown) => {
+          // The scenario whose preparation failed is the one that failed: the failure names it
+          // and is kept as its evidence. No scenario of its batch ran.
+          const failure = new Error(`preparing ${item.id} failed, before any app of its batch (${selected.map((each) => each.id).join(", ")}) started: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+          await keepEvidence(item.id, nativePath(evidence, item.id), inspect(failure, { depth: null }), undefined);
+          throw failure;
+        });
         const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
         for (const [name, value] of Object.entries(env)) if (value === undefined) unset.add(name);
         prepared.push({ scope, input, env });
       }
-      // Free ports taken once every fixture is ready, just before the service starts the apps.
+      // Ports of this batch's own (their claims last as long as this process), taken once
+      // every fixture is ready.
       const ports = await embeddedPorts(selected.length);
       for (const [index, { scope, input, env }] of prepared.entries()) {
         const context = nativePath(scope.root, "context.json");
@@ -115,16 +123,9 @@ export const config = {
    * the failed wait, and a screenshot of the window at that point, while the app still runs. */
   async afterTest(_test: unknown, _context: unknown, result: { passed: boolean; error?: Error }) {
     if (result.passed) return;
-    const id = variable("DESKTOP_TEST_SCENARIO") ?? "";
-    const restarted = variable("DESKTOP_TEST_PHASE") === "restarted";
-    const scenarioEvidence = (readJson(asNativePath(variable("DESKTOP_TEST_CONTEXT") ?? "")) as Context).evidence;
-    const kept = makeDirectory(restarted ? asNativePath(`${scenarioEvidence}-started-again`) : scenarioEvidence);
+    const context = readJson(asNativePath(variable("DESKTOP_TEST_CONTEXT") ?? "")) as Context;
     const failure = result.error ? result.error.stack ?? result.error.message : "the test failed without an error";
-    writeText(nativePath(kept, "failure.txt"), `OS: ${systemName}\nscenario: ${id}${restarted ? " (started again)" : ""}\n\n${failure}\n`);
-    const session = (globalThis as { browser?: WebdriverIO.Browser }).browser;
-    await (session ? session.saveScreenshot(nativePath(kept, "window.png")) : Promise.reject(new Error("no session")))
-      .catch((cause: unknown) => writeText(nativePath(kept, "window.txt"), `no screenshot: ${String(cause)}`));
-    console.error(`evidence of ${id}: ${kept}`);
+    await keepEvidence(variable("DESKTOP_TEST_SCENARIO") ?? "", context.evidence, failure, (globalThis as { browser?: WebdriverIO.Browser }).browser);
   },
   mochaOpts: { timeout: Math.max(...selected.map((item) => item.timeout ?? 180000)) },
 };

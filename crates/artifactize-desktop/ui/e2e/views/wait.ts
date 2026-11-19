@@ -2,10 +2,19 @@
 // what the window showed last.
 import { clickOption } from "../input.ts";
 
+const waits: string[] = [];
+
+/** What the scenario waits for now, a wait inside another after it; empty between waits. A run
+ * stopped in the middle of a wait names it. */
+export function waitingFor(): string {
+  return waits.join(", within it: ");
+}
+
 /** Read `read` until `ok` holds; the reading that held. */
 export async function until<T>(browser: WebdriverIO.Browser, read: () => Promise<T>, ok: (value: T) => boolean, what: string, timeout = 15000): Promise<T> {
   let last: T | undefined;
   let held = false;
+  waits.push(what);
   try {
     await browser.waitUntil(async () => {
       last = await read();
@@ -14,6 +23,8 @@ export async function until<T>(browser: WebdriverIO.Browser, read: () => Promise
     }, { timeout, timeoutMsg: `timed out: ${what}` });
   } catch (error) {
     throw new Error(`${what}: the window showed ${JSON.stringify(last)}`, { cause: error });
+  } finally {
+    waits.pop();
   }
   return last as T;
 }

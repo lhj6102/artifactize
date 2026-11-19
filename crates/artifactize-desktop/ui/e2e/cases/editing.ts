@@ -247,6 +247,7 @@ export const scenarios: Scenario[] = [
       await app.eventually(() => /\[annotations\.comment\]/.test(definitionText(fixture, "core") ?? "") && !/annotations/.test(definitionText(fixture, "docs") ?? ""),
         "the comment moved from docs's file to core's");
       await app.graph.node("a:core", (node) => node.comment === "Read the core first\nthen the docs", "drawn under core");
+      await app.graph.node("a:docs", (node) => node.comment === "", "and no longer under docs");
     },
   }),
 ];

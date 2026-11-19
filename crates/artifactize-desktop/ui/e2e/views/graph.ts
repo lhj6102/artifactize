@@ -268,6 +268,30 @@ export class Graph {
     return this.browser.$(`${GRAPH} [data-navigator]`).isDisplayed();
   }
 
+  /** The drawn Artifact nearest the middle of the graph's view, and how far from the middle it
+   * is drawn (as `offCentre` says it). */
+  async central(): Promise<{ id: string; x: number; y: number }> {
+    const ids = (await this.nodes()).map((node) => node.id);
+    let nearest: { id: string; x: number; y: number } | undefined;
+    for (const id of ids) {
+      const off = await this.offCentre(id);
+      if (off && (!nearest || Math.hypot(off.x, off.y) < Math.hypot(nearest.x, nearest.y))) nearest = { id, ...off };
+    }
+    if (!nearest) throw new Error("the graph draws no Artifact in view");
+    return nearest;
+  }
+
+  /** The part in view as the Navigator frames it: the frame's middle as fractions of the map's
+   * width and height, and how many pixels of the view one pixel of the map stands for. */
+  navigatorFrame(): Promise<{ fx: number; fy: number; step: number }> {
+    return this.browser.execute((graph) => {
+      const map = document.querySelector(`${graph} [data-navigator] .map`)!.getBoundingClientRect();
+      const frame = document.querySelector(`${graph} [data-navigator] .frame`)!.getBoundingClientRect();
+      const view = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
+      return { fx: (frame.left + frame.width / 2 - map.left) / map.width, fy: (frame.top + frame.height / 2 - map.top) / map.height, step: view.width / frame.width };
+    }, GRAPH);
+  }
+
   /** Click the Navigator's map at `fx`, `fy` (fractions of its width and height), and wait
    * until the frame of the part in view is drawn around that place. Returns the clicked point
    * and the frame's middle. */
