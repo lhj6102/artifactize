@@ -67,11 +67,13 @@ export const config = {
   async onPrepare(_config: unknown, capabilities: Capability[]) {
     try {
       const ports = await embeddedPorts(selected.length);
+      const unset = new Set<string>();
       for (const [index, item] of selected.entries()) {
         const scope = own(nativePath(candidate.root, "fixtures"));
         owned.push(scope);
         const input = await item.prepare(scope);
         const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
+        for (const [name, value] of Object.entries(env)) if (value === undefined) unset.add(name);
         const context = nativePath(scope.root, "context.json");
         writeJson(context, { ...input, root: scope.root, port: ports[index] } satisfies Context);
         capabilities[index]["artifactize:context"] = context;
@@ -82,8 +84,10 @@ export const config = {
         };
       }
       // The service starts each app with this process's variables under the scenario's own:
-      // none of the runner's reaches an app unless its scenario sets it.
+      // none of the runner's reaches an app unless its scenario sets it, and none a scenario
+      // removes comes back from here.
       const safe: Environment = { ...environment({ root: makeDirectory(nativePath(candidate.root, "runner")) }), ...displayEnvironment() };
+      for (const name of unset) delete safe[name];
       for (const name of Object.keys(process.env)) setVariable(name, undefined);
       for (const [name, value] of Object.entries(safe)) setVariable(name, value);
     } catch (cause) {

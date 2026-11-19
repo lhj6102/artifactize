@@ -25,8 +25,7 @@ export function batches(scenarios: readonly Pick<Scenario, "id" | "alone">[], si
 
 let interrupted = false;
 
-/** Run `program` with this terminal's output until it exits; its exit code. An interrupt
- * reaches it as it reaches this runner, which waits for it to end. */
+/** Run `program` with this terminal's output until it exits; its exit code. */
 function child(program: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
   return new Promise((done, fail) => {
     const started = spawn(program, args, { env, stdio: "inherit" });
@@ -35,28 +34,35 @@ function child(program: string, args: string[], env: NodeJS.ProcessEnv): Promise
   });
 }
 
+/** An interrupt (a terminal's Ctrl+C reaches the batch too) lets the running batch close its
+ * apps and fixtures, starts no other, and fails the run. */
+function interrupt(): void {
+  interrupted = true;
+}
+
 async function suite(ids: string[]): Promise<void> {
   checkSuite();
   const { selectedScenarios } = await import("./catalog.ts");
   const groups = batches(selectedScenarios(ids), appsAtOnce);
   const declared = variable("ARTIFACTIZE_OUTPUT_DIR");
   const output = declared ? asNativePath(declared) : newDirectory(scratchDirectory(), "desktop-e2e-");
-  const candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratchDirectory()) : await prepare();
   const failed: string[] = [];
   const failures: unknown[] = [];
+  let candidate: Awaited<ReturnType<typeof prepare>> | undefined;
   try {
+    candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratchDirectory()) : await prepare();
     for (const [index, ids] of groups.entries()) {
-      if (interrupted) {
-        failures.push(new Error("interrupted: the remaining scenarios did not run"));
-        break;
-      }
+      if (interrupted) break;
       const env = { ...process.env, DESKTOP_TEST_CANDIDATE: candidate.manifest, DESKTOP_TEST_BATCH: JSON.stringify(ids),
         DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${index + 1}`) };
       const command = runnerCommand([suitePath("run.ts"), "batch"], env);
       if (await child(command.program, command.args, command.env) !== 0) failed.push(...ids);
     }
+    if (interrupted) failures.push(new Error("interrupted: the suite did not run to its end"));
+  } catch (error) {
+    failures.push(error);
   } finally {
-    try { cleanup(candidate.root); } catch (error) { failures.push(error); }
+    try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
     if (!declared) try { removeTree(output); } catch (error) { failures.push(error); }
   }
   if (failed.length) failures.unshift(new Error(`desktop scenarios failed: ${failed.join(", ")}`));
@@ -101,9 +107,8 @@ async function unit(): Promise<void> {
 
 if (import.meta.main) {
   const mode = process.argv[2] ?? "suite";
-  // Ctrl+C reaches every process of the terminal: this runner waits for its child to end.
-  process.on("SIGINT", () => { interrupted = true; });
-  process.on("SIGTERM", () => { interrupted = true; });
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
   try {
     if (mode === "suite") await suite(process.argv.slice(3));
     else if (mode === "batch") await batch();
