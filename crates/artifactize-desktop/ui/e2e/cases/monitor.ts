@@ -434,7 +434,12 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the overflowing Tool log follows its newest line" });
       // Scrolled up to its first line, it stays there while the next run's lines arrive below,
       // and the rest of the review stays where it was.
-      await browser.$(`${LOG} p.start`).scrollIntoView({ block: "nearest" });
+      // The person scrolls the log with the wheel over it.
+      const wheel = async (deltaY: number) => {
+        const over = await visibleCenter(browser, await browser.$(LOG).getElement());
+        await browser.action("wheel").scroll({ x: over.x, y: over.y, deltaX: 0, deltaY }).perform();
+      };
+      await wheel(-100000);
       // Its first line sits at the top of the box, below the box's own padding.
       await browser.waitUntil(async () => { const at = await box(); return at.top < 24 && at.below >= 24; },
         { timeout: 15000, timeoutMsg: "the Tool log scrolled up" });
@@ -444,7 +449,7 @@ export const scenarios: Scenario[] = [
       assert.ok(held.below > up.below, "the new lines arrived below");
       assert.equal(held.review, up.review, "the rest of the review did not scroll");
       // Back at its bottom, it follows each newest line again.
-      await browser.$(`${LOG} p.end:last-child`).scrollIntoView({ block: "nearest" });
+      await wheel(100000);
       await browser.waitUntil(async () => (await box()).below < 24, { timeout: 15000, timeoutMsg: "the Tool log at its bottom" });
       await runNotes();
       await browser.waitUntil(async () => (await box()).below < 24,

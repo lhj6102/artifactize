@@ -32,12 +32,12 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomInt } from "node:crypto";
 import {
   closeSync, constants as fsConstants, existsSync, mkdtempSync, openSync, linkSync, readdirSync, readFileSync, readlinkSync,
-  realpathSync, renameSync, rmSync, writeFileSync,
+  realpathSync, rmSync, writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
 import { constants, homedir, tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve, sep, toNamespacedPath } from "node:path";
-import { type LoopbackServer, type NativePath, appendText, asNativePath, closeDirectory, exists, listFiles, makeDirectory, nameOf, nativePath, readJson, readText, readTextIfExists, replaceText, serveLoopback, serveLoopbackHttp, textPath, writeText } from "./portable.ts";
+import { type LoopbackServer, type NativePath, appendText, asNativePath, exists, listFiles, makeDirectory, nameOf, nativePath, readJson, readText, readTextIfExists, replaceText, serveLoopback, serveLoopbackHttp, sourceTree, writeText } from "./portable.ts";
 
 // ---------------------------------------------------------------------------------
 // Operating system values
@@ -1037,6 +1037,28 @@ export function commandDirectory(env: Environment, bin: NativePath): Environment
   return withVariable({ ...env }, "PATH", [bin, ...programPath(env)].join(delimiter));
 }
 
+/** Loopback ports that stand for once-per-machine resources, outside every OS's ephemeral
+ * range: while a run holds one, a second run on this machine cannot claim it, and the OS frees
+ * it when the holder's process ends, even by a crash. */
+const MACHINE_RESOURCES = { "auth-callback": 21455, clipboard: 21456, "foreground-window": 21457 } as const;
+
+/** Claim a once-per-machine resource for this run (E2E-ISOLATED); the result releases it. A
+ * resource another run holds is an explicit failure, not a wait. */
+export async function claimMachineResource(name: keyof typeof MACHINE_RESOURCES): Promise<() => Promise<void>> {
+  try {
+    return (await serveLoopback(undefined, MACHINE_RESOURCES[name])).close;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+    throw new Error(`another E2E run on this machine holds the ${name}; one app instance uses it at a time`, { cause: error });
+  }
+}
+
+/** On Windows, claim the desktop's one foreground window for this run (see appsAtOnce);
+ * other systems give every window focus events, so there is nothing to claim. */
+export async function claimForegroundWindow(): Promise<() => Promise<void>> {
+  return WINDOWS ? claimMachineResource("foreground-window") : async () => {};
+}
+
 /** How many test apps run at once. A Windows desktop has one foreground window, and WebView2
  * gives no focus events to a page whose window is not it (focusing the WebView alone does not
  * do it): an app beside another one missed its own focus changes. The foreground window is the
@@ -1259,190 +1281,40 @@ if (!reply.ok) throw new Error(await reply.text());
   };
 }
 
-/** A scripted Claude Code (`claude auth status|login|logout`) first on the app's PATH, keeping
- * its sign-in as the file `signed-in` in `root`. `login` serves a loopback origin, prints its
- * sign-in URL there and signs in when the browser returns to its `/callback` or the code
- * `good-code` is pasted; any other path of it answers while it runs, and its input closing
- * stops it. Claude Code's own configuration points into `root`, never the user's. */
-export function claudeCodeEnvironment(root: NativePath, env: Environment, watchdogMs = 120000): Environment {
-  const bin = makeDirectory(nativePath(root, "claude-bin"));
-  const program = nativePath(bin, "claude.mjs");
-  const logins = makeDirectory(nativePath(root, "claude-logins"), { private: true });
-  writeText(program, `import { appendFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-const [group, command] = process.argv.slice(2);
-const signedIn = process.env.DESKTOP_TEST_CLAUDE_SIGNED_IN;
-const vault = process.env.DESKTOP_TEST_CLAUDE_VAULT;
-const account = (path) => fetch(vault + path);
-const say = (text) => process.stdout.write(text);
-if (group !== "auth") process.exit(2);
-// An older Claude Code, which has no auth command: it reports nothing and says why.
-if (existsSync(process.env.DESKTOP_TEST_CLAUDE_BROKEN)) {
-  process.stderr.write("error: unknown command 'auth'\\n");
-  process.exit(1);
-}
-if (command === "status") {
-  const signed = vault ? !!(await (await account("/credential")).text()) : existsSync(signedIn);
-  say(JSON.stringify(signed
-    ? { loggedIn: true, authMethod: "claude.ai", subscriptionType: "max", email: "person@example.com" }
-    : { loggedIn: false, authMethod: "none" }) + "\\n");
-  process.exit(signed ? 0 : 1);
-}
-if (command === "logout") {
-  if (vault) {
-    if (!(await account("/logout")).ok) process.exit(1);
-  } else rmSync(signedIn, { force: true });
-  say("Successfully logged out.\\n");
-  process.exit(0);
-}
-if (command !== "login") process.exit(2);
-// Admit the actual login process before allocating any resources. Teardown can
-// atomically close admission; late starts then cannot serve or open anything.
-const logins = process.env.DESKTOP_TEST_CLAUDE_LOGINS;
-writeFileSync(join(logins, process.pid + "-" + randomUUID() + ".pid"), "", { flag: "wx" });
-setInterval(() => { if (!existsSync(logins)) process.exit(1); }, 100).unref();
-setTimeout(() => process.exit(1), ${watchdogMs}).unref();
-let finishing = false;
-const finish = async () => {
-  if (finishing) return;
-  finishing = true;
-  if (vault) {
-    if (!(await account("/login")).ok) process.exit(1);
-  } else writeFileSync(signedIn, "claude.ai");
-  say("Login successful.\\n");
-  process.exit(0);
-};
-const server = createServer((request, response) => {
-  // What the browser visits is recorded, for the case to see that it opened.
-  if (request.url.startsWith("/oauth/authorize")) appendFileSync(process.env.DESKTOP_TEST_CLAUDE_VISITS, request.url + "\\n");
-  response.end("signed in");
-  if (request.url.startsWith("/callback")) finish();
-});
-server.listen(0, "127.0.0.1", () => {
-  const address = \`http://127.0.0.1:\${server.address().port}\`;
-  appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OWNERS, JSON.stringify({ address, pid: process.pid }) + "\\n");
-  const url = \`\${address}/oauth/authorize?code=true\`;
-  say(\`Opening browser to sign in\\nIf the browser didn't open, visit: \${url}\\nPaste code here if prompted > \`);
-  // As Claude Code does, it opens the system browser itself: only the case's fixture browser,
-  // never the person's own.
-  if (process.env.DESKTOP_TEST_BROWSER_ENTRIES) {
-    appendFileSync(process.env.DESKTOP_TEST_BROWSER_ENTRIES, url + "\\n");
-  }
-  const failed = (reason) => {
-    const text = "Claude fixture browser opener failed: " + String(reason);
-    appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OPEN_ERRORS, text + "\\n");
-    process.stderr.write(text + "\\n");
-    process.exit(1);
-  };
-  const opener = process.env.DESKTOP_TEST_BROWSER_CLIENT
-    ? spawn(process.env.DESKTOP_TEST_BROWSER_NODE, [process.env.DESKTOP_TEST_BROWSER_CLIENT, url], { stdio: "inherit" })
-    : process.env.DESKTOP_TEST_BROWSER_PROGRAM
-      ? spawn(${JSON.stringify(MACOS ? "open" : "xdg-open")}, [url], { stdio: "inherit" })
-      : null;
-  if (!opener) return failed("no owned browser client was configured");
-  opener.on("error", failed);
-  // Admitted from its spawn, like the login itself: teardown joins it even if it never
-  // reaches the fixture's server.
-  if (opener.pid !== undefined) {
-    try { writeFileSync(join(logins, opener.pid + "-" + randomUUID() + ".pid"), "", { flag: "wx" }); }
-    catch (error) { opener.kill(); failed(error); }
-  }
-  opener.on("close", (code, signal) => {
-    if (code !== 0) return failed(signal ?? "exit " + code);
-    appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OPENED, url + "\\n");
-  });
-});
-let input = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (text) => {
-  input += text;
-  if (!input.includes("\\n")) return;
-  if (input.split("\\n")[0].trim() === "good-code") { void finish(); return; }
-  process.stderr.write("Login failed: That code was not accepted.\\n");
-  process.exit(1);
-});
-process.stdin.on("end", () => { if (!finishing) process.exit(1); });
-`);
-  // Paths are arguments, never interpreted as shell source.
+/** The program that hands a URL to the desktop's default browser on Unix. */
+export const unixOpener = MACOS ? "open" : "xdg-open";
+
+/** Write the command `name` into `bin`, as this OS finds commands on PATH (a `.cmd` shim on
+ * Windows, an executable script elsewhere), running Node with the script that the variable
+ * `scriptVariable` names and passing its arguments on; the Node program is DESKTOP_TEST_NODE.
+ * Paths stay arguments, never shell source. Returns the command's file name. */
+export function writeNodeCommand(bin: NativePath, name: string, scriptVariable: string): string {
   if (WINDOWS) {
-    writeText(nativePath(bin, "claude.cmd"), '@"%DESKTOP_TEST_NODE%" "%DESKTOP_TEST_CLAUDE_PROGRAM%" %*\r\n');
-  } else {
-    writeFileSync(join(bin, "claude"), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_CLAUDE_PROGRAM" "$@"\n', { mode: 0o755 });
+    writeText(nativePath(bin, `${name}.cmd`), `@"%DESKTOP_TEST_NODE%" "%${scriptVariable}%" %*\r\n`);
+    return `${name}.cmd`;
   }
-  // The fixture's Claude Code is the only one the app can find: a folder of PATH holding
-  // another one, such as the developer's own, is left out, so hiding the fixture's leaves none.
-  const others = programPath(env).filter((folder) => !holdsClaudeCode(folder));
-  return {
-    ...withVariable({ ...env }, "PATH", [bin, ...others].join(delimiter)),
-    DESKTOP_TEST_NODE: process.execPath,
-    DESKTOP_TEST_CLAUDE_PROGRAM: program,
-    DESKTOP_TEST_CLAUDE_SIGNED_IN: nativePath(root, "signed-in"),
-    DESKTOP_TEST_CLAUDE_BROKEN: nativePath(root, "claude-broken"),
-    DESKTOP_TEST_CLAUDE_VISITS: nativePath(root, "claude-visits"),
-    DESKTOP_TEST_CLAUDE_OWNERS: nativePath(root, "claude-owners.jsonl"),
-    DESKTOP_TEST_CLAUDE_LOGINS: logins,
-    DESKTOP_TEST_CLAUDE_OPEN_ERRORS: nativePath(root, "claude-browser-errors"),
-    DESKTOP_TEST_CLAUDE_OPENED: nativePath(root, "claude-browser-opened"),
-    CLAUDE_CONFIG_DIR: makeDirectory(nativePath(root, "claude-config"), { private: true }),
-  };
+  writeFileSync(join(bin, name), `#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$${scriptVariable}" "$@"\n`, { mode: 0o755 });
+  return name;
 }
 
-/** A result recorded by the actual login command, not just its printed sign-in URL. */
-export function claudeBrowserOpened(root: NativePath): string[] {
-  const failures = readTextIfExists(nativePath(root, "claude-browser-errors"));
-  if (failures) throw new Error(failures.trim());
-  return (readTextIfExists(nativePath(root, "claude-browser-opened")) ?? "").split("\n").filter(Boolean);
+/** The file name of the command `name` as writeNodeCommand writes it on this OS. */
+export function commandFile(name: string): string {
+  return WINDOWS ? `${name}.cmd` : name;
 }
 
-/** Stop and join admitted Claude logins after the app stops, before closing their browser. */
-export async function releaseClaudeLogins(root: NativePath): Promise<void> {
-  const stopped = nativePath(root, "closed-claude-logins");
-  closeDirectory(nativePath(root, "claude-logins"), stopped);
-  if (!exists(stopped)) return;
-  const pids = listFiles(stopped).map((file) => {
-    const pid = Number(/^(\d+)-[a-f0-9-]+\.pid$/.exec(nameOf(file))?.[1]);
-    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`invalid Claude login owner: ${file}`);
-    return pid;
-  });
-  const deadline = Date.now() + 15000;
-  while (pids.some(processRunning)) {
-    if (Date.now() >= deadline) throw new Error(`Claude login still owns fixture ${root}`);
-    await new Promise((done) => setTimeout(done, 25));
-  }
-  removeTree(stopped);
-}
-
-/** Read the actual login process that announced this origin while it was live. */
-export function claudeLoginOwner(root: NativePath, address: string): number {
-  const records = readText(nativePath(root, "claude-owners.jsonl")).split("\n").filter(Boolean)
-    .map((line) => JSON.parse(line) as { address: string; pid: number });
-  const pid = records.findLast((entry) => entry.address === address)?.pid;
-  if (pid === undefined || !Number.isSafeInteger(pid) || pid <= 0) throw new Error(`Claude fixture did not record the owner of ${address}`);
-  return pid;
-}
-
-/** The file name the fixture's Claude Code is found by on PATH. */
-const CLAUDE_CODE = WINDOWS ? "claude.cmd" : "claude";
-
-/** Whether `folder` holds a program a shell would run as `claude`. A folder that cannot be
- * read holds none the app could run either. */
-function holdsClaudeCode(folder: string): boolean {
+/** Whether `folder` holds a program a shell would run as `name`. A folder that cannot be read
+ * holds none the app could run either. */
+export function folderHoldsCommand(folder: string, name: string): boolean {
   try {
-    return readdirSync(folder).some((name) => name.toLowerCase().replace(/\.(cmd|exe|bat|ps1)$/, "") === "claude");
+    return readdirSync(folder).some((entry) => entry.toLowerCase().replace(/\.(cmd|exe|bat|ps1)$/, "") === name);
   } catch {
     return false;
   }
 }
 
-/** Take the fixture's Claude Code off PATH, or put it back: `claudeCodeEnvironment(root, …)`
- * left no other one there, so the app then finds none. */
-export function claudeCodeInstalled(root: NativePath, installed: boolean): void {
-  const bin = nativePath(root, "claude-bin");
-  const [from, to] = installed ? [`${CLAUDE_CODE}.off`, CLAUDE_CODE] : [CLAUDE_CODE, `${CLAUDE_CODE}.off`];
-  renameSync(join(bin, from), join(bin, to));
+/** `env` with PATH set to `folders` and those of its PATH that `keep` accepts after them. */
+export function withPathFirst(env: Environment, folders: string[], keep: (folder: string) => boolean): Environment {
+  return withVariable({ ...env }, "PATH", [...folders, ...programPath(env).filter(keep)].join(delimiter));
 }
 
 /** The evaluated test-build device reaches only the engine's text-input API. This
@@ -1483,17 +1355,6 @@ export function nativeCrashReports(app: NativePath): string[] {
     }));
   }
   return reports;
-}
-
-/** Every non-directory entry of a source tree, including links and special files. */
-export function sourceTree(root: NativePath): { path: NativePath; name: string; kind: "file" | "other" }[] {
-  const visit = (directory: NativePath, prefix: string): { path: NativePath; name: string; kind: "file" | "other" }[] =>
-    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-      const path = nativePath(directory, entry.name);
-      const name = prefix ? textPath(prefix, entry.name) : entry.name;
-      return entry.isDirectory() ? visit(path, name) : [{ path, name, kind: entry.isFile() ? "file" : "other" }];
-    });
-  return visit(root, "").sort((left, right) => left.name.localeCompare(right.name));
 }
 
 /** Failure-only native/backend diagnostics from this batch's service-owned log files. */

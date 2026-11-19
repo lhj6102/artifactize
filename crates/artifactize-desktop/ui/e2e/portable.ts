@@ -253,3 +253,14 @@ export function sendLoopback(port: number, text: string): Promise<void> {
 
 /** Original bytes, for checksum-based upstream provenance rather than text normalization. */
 export function readBytes(path: NativePath): Uint8Array { return readFileSync(path); }
+
+/** Every non-directory entry of a source tree, including links and special files. */
+export function sourceTree(root: NativePath): { path: NativePath; name: string; kind: "file" | "other" }[] {
+  const visit = (directory: NativePath, prefix: string): { path: NativePath; name: string; kind: "file" | "other" }[] =>
+    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = nativePath(directory, entry.name);
+      const name = prefix ? textPath(prefix, entry.name) : entry.name;
+      return entry.isDirectory() ? visit(path, name) : [{ path, name, kind: entry.isFile() ? "file" : "other" }];
+    });
+  return visit(root, "").sort((left, right) => left.name.localeCompare(right.name));
+}

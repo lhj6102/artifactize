@@ -1598,6 +1598,8 @@ docs = [0.0, 0.0]
         });
         await waitFor(browser, async () => (await comments(browser))["a:docs"] === KIT_NOTE && !(await browser.$(".lifted").isDisplayed()),
           `the comment is visible back under docs after release over ${where}`);
+        // Any write the release submitted is native work, finished once none is pending.
+        await commandsRendered(browser);
         assert.deepEqual(allDefinitions(), noDropFiles, `release over ${where} writes nothing`);
       }
       // Held over core, which would take it, Esc puts it back before the button is let go; the

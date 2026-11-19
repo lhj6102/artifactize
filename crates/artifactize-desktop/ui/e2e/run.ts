@@ -3,7 +3,7 @@ import { inspect } from "node:util";
 import { assertAdmissionsStopped, assertAppsStopped, retireOwnAdmissions } from "./observation.ts";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
-import { appsAtOnce, assertHarnessPlatform, assertRunnerMachine, inheritedEnvironment, nativeCrashReports, nodeProgram, processId, processRunning, requiredVariable, removeTree, setVariable, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment, newDirectory } from "./platform.ts";
+import { appsAtOnce, awaitReleased, assertHarnessPlatform, assertRunnerMachine, inheritedEnvironment, nativeCrashReports, nodeProgram, processId, processRunning, requiredVariable, removeTree, setVariable, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment, newDirectory } from "./platform.ts";
 import { absolutePath, asNativePath, exists, listFiles, nativePath, readText, writeTextOnce, type NativePath } from "./portable.ts";
 
 const file = suitePath("run.ts");
@@ -56,6 +56,9 @@ async function launchBatch(): Promise<void> {
       if (cases.length !== 1) throw new Error("a relaunch case owns its own Launcher batch");
       if (!configuration.ownerFiles) throw new Error("the first launch has no app admission journal");
       assertAppsStopped(readCandidate().observer, configuration.ownerFiles);
+      // The first app's web engine helpers may outlive it and still hold its profile: the
+      // second app opens the fixture only once nothing does.
+      for (const root of configuration.preparedRoots()) await awaitReleased(root);
       setVariable("DESKTOP_TEST_RELAUNCH", "1");
       const next = new Launcher(suitePath("wdio.conf.ts"));
       await next.initialize();
