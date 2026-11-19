@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use artifactize_tools::scope::{Artifact, ArtifactId, ChildPrefix, Scope, ScopedPath, Target};
+use artifactize_tools::scope::{
+    Artifact, ArtifactId, ArtifactKind, ChildPrefix, Scope, ScopedPath, Target,
+};
 
 fn id(value: &str) -> ArtifactId {
     ArtifactId::new(value).unwrap()
@@ -95,4 +97,16 @@ fn stored_targets_accept_slash_paths_and_keep_live_addresses_opaque() {
             "{text:?}"
         );
     }
+}
+
+#[test]
+fn the_project_root_cannot_be_a_file_target() {
+    for root in ["", "."] {
+        let target: Target = serde_json::from_value(serde_json::json!(root)).unwrap();
+        assert!(target.with_kind(ArtifactKind::File, vec![]).is_err());
+    }
+    let target: Target = serde_json::from_value(serde_json::json!("src/note.md")).unwrap();
+    let target = target.with_kind(ArtifactKind::File, vec![]).unwrap();
+    assert_eq!(target.kind(), ArtifactKind::File);
+    assert_eq!(target.folder(), std::path::Path::new("src"));
 }

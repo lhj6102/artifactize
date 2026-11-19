@@ -28,8 +28,9 @@ pub async fn timeout_tree(root: &Path) -> LaunchResult {
 
 /// Exercise fixture ownership when an async caller unwinds after the native handshake.
 pub async fn unwind_tree(root: &Path) {
-    let (tree, result) = NativeTree::start(root).await;
-    let mut connections = tree.connections.clone_streams();
+    let (mut tree, result) = NativeTree::start(root).await;
+    let (fallback, fallback_used) = oneshot::channel();
+    tree.fallback = Some(fallback);
     let unwind = tokio::spawn(async move {
         let _tree = tree;
         panic!("intentional fixture unwind");
@@ -38,7 +39,10 @@ pub async fn unwind_tree(root: &Path) {
     .unwrap_err();
     assert!(unwind.is_panic());
     assert!(matches!(result.await.unwrap(), Err(LaunchError::Cancelled)));
-    connections.assert_terminated();
+    assert!(
+        fallback_used.await.is_err(),
+        "the launcher left native fixture processes alive"
+    );
 }
 
 // These bound broken startup/cleanup, never decide expiry or success by elapsed time.
@@ -49,6 +53,7 @@ const TREE_EXPIRY: Duration = Duration::from_secs(3600);
 struct NativeTree {
     running: NativeRun,
     connections: Connections,
+    fallback: Option<oneshot::Sender<()>>,
 }
 
 impl NativeTree {
@@ -102,6 +107,7 @@ fn main() {
             Self {
                 running,
                 connections,
+                fallback: None,
             },
             result,
         )
@@ -112,19 +118,30 @@ impl Drop for NativeTree {
     fn drop(&mut self) {
         // Let the product demonstrate cancellation before using the independent
         // socket shutdown, which also works when observers cloned the streams.
-        if !self.running.cancel_and_wait() {
-            self.connections.release();
-            // The fixture closes its sockets at process exit. Observe both even
-            // if the launcher itself failed, before the temporary root can drop.
-            let exits = self.connections.wait_for_exit();
-            self.running.abort_and_join();
-            for (role, exit) in exits {
-                if let Err(error) = exit {
-                    eprintln!("native fixture {role} did not exit: {error}");
-                }
-            }
-            assert!(std::thread::panicking(), "native launcher cleanup watchdog");
+        if self.running.cancel_and_wait()
+            && self
+                .connections
+                .wait_for_exit()
+                .iter()
+                .all(|(_, exit)| exit.is_ok())
+        {
+            self.running.join();
+            return;
         }
+        if let Some(fallback) = self.fallback.take() {
+            let _ = fallback.send(());
+        }
+        self.connections.release();
+        // The fixture closes its sockets at process exit. Observe both even
+        // if the launcher already returned, before the temporary root can drop.
+        let exits = self.connections.wait_for_exit();
+        self.running.abort_and_join();
+        for (role, exit) in exits {
+            if let Err(error) = exit {
+                eprintln!("native fixture {role} did not exit: {error}");
+            }
+        }
+        assert!(std::thread::panicking(), "native launcher cleanup watchdog");
     }
 }
 
@@ -154,13 +171,6 @@ impl Connections {
         Self {
             parent: parent.unwrap(),
             child: child.unwrap(),
-        }
-    }
-
-    fn clone_streams(&self) -> Self {
-        Self {
-            parent: self.parent.try_clone().unwrap(),
-            child: self.child.try_clone().unwrap(),
         }
     }
 
@@ -268,7 +278,6 @@ impl NativeRun {
         {
             return false;
         }
-        self.join();
         true
     }
 
@@ -289,7 +298,9 @@ impl NativeRun {
 
 impl Drop for NativeRun {
     fn drop(&mut self) {
-        if !self.cancel_and_wait() {
+        if self.cancel_and_wait() {
+            self.join();
+        } else {
             // The tree owner released its connections, or startup failed and the
             // listener and partial connections were already dropped.
             self.abort_and_join();

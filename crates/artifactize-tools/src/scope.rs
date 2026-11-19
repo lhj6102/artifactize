@@ -15,7 +15,7 @@ pub use open::{OpenError, open_child, open_input, open_scoped, scoped_path};
 mod logical;
 pub use logical::LogicalPath;
 mod target;
-pub use target::{LocalTarget, Target, Uri};
+pub use target::{FileTarget, LocalTarget, Target, Uri};
 
 /// Bound logical tool paths in UTF-16 units, matching JSON Schema string limits
 /// across supported clients without tying scoped paths to an OS-specific PATH_MAX.

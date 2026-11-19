@@ -129,12 +129,7 @@ fn native_path_text(path: &std::path::Path) -> String {
 /// Convert a native relative path into logical components; roots, traversal and non-UTF-8
 /// names are refused rather than guessing at the host's separator or prefix rules.
 pub fn logical_from_native(path: &std::path::Path) -> Option<String> {
-    relative_names(path)
-        .ok()?
-        .into_iter()
-        .map(logical_entry_name)
-        .collect::<Option<Vec<_>>>()
-        .map(|names| names.join("/"))
+    scoped_relative(path).ok()
 }
 
 /// The native name can be represented as one logical component, with no reinterpretation.
@@ -169,11 +164,16 @@ pub(crate) fn relative_names(path: &Path) -> io::Result<Vec<&OsStr>> {
 }
 
 pub fn scoped_relative(path: &Path) -> io::Result<String> {
-    Ok(relative_names(path)?
-        .into_iter()
+    relative_names(path).map(|names| relative_text(&names))
+}
+
+/// Render entry names already validated by `relative_names` as a logical slash path.
+pub(crate) fn relative_text(names: &[&OsStr]) -> String {
+    names
+        .iter()
         .map(|name| name.to_str().expect("validated logical name"))
         .collect::<Vec<_>>()
-        .join("/"))
+        .join("/")
 }
 
 /// Decode a persisted slash path into a native path and its validated entry names.

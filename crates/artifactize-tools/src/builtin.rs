@@ -147,7 +147,7 @@ impl Reader<'_> {
         let viewed_path = location
             .artifact
             .file_name()
-            .unwrap_or(location.path.as_str());
+            .map_or_else(|| location.path.as_ref(), Path::new);
         let file = crate::artf::reader(file, viewed_path).map_err(|error| error.to_string())?;
         let mut reader = BufReader::new(file);
         let mut scan = scan::Read::new(offset, limit);

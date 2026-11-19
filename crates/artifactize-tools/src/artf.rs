@@ -3,6 +3,7 @@ use std::{
     borrow::Cow,
     fs::File,
     io::{self, Read},
+    path::Path,
 };
 
 /// A canonical TOML definition: remove only the top-level `annotations` key.
@@ -48,8 +49,10 @@ const DOCUMENT_BYTES: u64 = 8 * 1024 * 1024;
 /// Read one extra byte to distinguish an exact fit from an oversized declaration.
 const OVERFLOW_PROBE_BYTES: u64 = 1;
 
-pub(crate) fn reader(file: File, path: &str) -> io::Result<Box<dyn Read>> {
-    if !path.ends_with(".artf") {
+pub(crate) fn reader(file: File, path: &Path) -> io::Result<Box<dyn Read>> {
+    if !path.extension().is_some_and(|ext| ext == "artf")
+        && !path.file_name().is_some_and(|name| name == ".artf")
+    {
         return Ok(Box::new(file));
     }
     let mut bytes = Vec::new();

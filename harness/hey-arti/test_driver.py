@@ -1,6 +1,7 @@
 """Deterministic harness seams. Fake declarations are tests, not skill-quality evidence."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import errno
 import importlib.util
@@ -16,6 +17,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+from threading import Event
 import traceback
 import time
 import unittest
@@ -761,17 +763,29 @@ print(ui['render'](api['response']()))
         port = listener.getsockname()[1]
         script = repo / "preview/probe.py"
         probe = script.read_text()
-        ready = '    print("ready", flush=True)\n'
-        self.assertIn(ready, probe, "the preview must announce readiness after publishing its port")
-        probe = probe.replace(ready, '    await_shutdown_gate(b"r")\n' + ready, 1)
         script.write_text(f'''import json, os, socket, sys
 from pathlib import Path
 
 def await_shutdown_gate(stage):
     with socket.create_connection(("127.0.0.1", {port}), timeout={READY_BOUND}) as gate:
-        gate.sendall(stage)
+        gate.sendall(stage + owner.name.encode("ascii") + b"\\n")
         if gate.recv(1) != b"x":
-            sys.exit("Preview fixture did not release shutdown")
+            sys.exit("Preview fixture did not release its gate")
+
+class ReadyOutput:
+    def __init__(self, output):
+        self.output = output
+        self.ready = False
+
+    def write(self, text):
+        return self.output.write(text)
+
+    def flush(self):
+        port = Path(os.environ["ARTIFACTIZE_SESSION_DIR"]) / "preview-port"
+        if not self.ready and port.is_file():
+            self.ready = True
+            await_shutdown_gate(b"r")
+        self.output.flush()
 
 role = sys.argv[1]
 if role in ("start", "stop"):
@@ -782,7 +796,11 @@ if role in ("start", "stop"):
     staging.replace(owner)
     if not Path({str(permit)!r}).exists():
         sys.exit("Preview fixture already closed")
-if role == "stop":
+    # Pin every process, including replacements, before it can start or stop a server.
+    await_shutdown_gate(b"a")
+if role == "start":
+    sys.stdout = ReadyOutput(sys.stdout)
+elif role == "stop":
     await_shutdown_gate(b"s")
     if os.environ.get("HEY_ARTI_TEST_SKIP_GRACEFUL_STOP"):
         # Report success without sending the real stop message; only the
@@ -825,6 +843,7 @@ elif operation == "stop":
             environment.pop("HEY_ARTI_TEST_SKIP_GRACEFUL_STOP", None)
         else:
             environment["HEY_ARTI_TEST_SKIP_GRACEFUL_STOP"] = "1"
+        previous = {receipt.name for receipt in owners.glob("*.json")}
         with ExitStack() as observation:
             # Files let the candidate finish without a pipe reader that might
             # also reap it and run the harness's fallback group cleanup.
@@ -835,72 +854,87 @@ elif operation == "stop":
             cli = owned_descriptor(lambda: os.pidfd_open(process.pid), observation.callback)
             exits = observation.enter_context(select.epoll())
             exits.register(cli, select.EPOLLIN | select.EPOLLONESHOT)
+            exits.register(listener.fileno(), select.EPOLLIN)
+            admitted = {}
+            pending = set()
+            ready = set()
+            gates = {}
+            unblocked = {b"r"}
+            complete = False
 
-            def live_owner(receipt):
-                owner = json.loads(receipt.read_text())
-                descriptor = owned_descriptor(lambda: driver.process_descriptor(owner), observation.callback)
-                if descriptor is not None and not select.select([descriptor], [], [], 0)[0]:
-                    return descriptor
-                return None
+            def allow(gate):
+                with gate:
+                    gate.sendall(b"x")
 
-            with ExitStack() as startup:
-                gates = {}
-                for _ in ("listening port", "stop"):
-                    gate = startup.enter_context(listener.accept()[0])
-                    gate.settimeout(READY_BOUND)
-                    stage = gate.recv(1)
-                    gates[stage] = gate
-                    if stage == b"r":
-                        gate.sendall(b"x")  # Allow the start process to publish its ready marker.
-                self.assertEqual(set(gates), {b"r", b"s"})
-                self.assertFalse(select.select([cli], [], [], 0)[0],
-                                 "CLI exited before the stop command was released")
-                previews = [fd for receipt in owners.glob("start-*.json")
-                            if (fd := live_owner(receipt)) is not None]
-                stops = [fd for receipt in owners.glob("stop-*.json")
-                         if (fd := live_owner(receipt)) is not None]
-                self.assertTrue(previews, "the shutdown gate must hold an active preview")
-                self.assertEqual(len(stops), 1, "the stop gate must hold the actual stop process")
-                for descriptor in previews + stops:
+            def accept_gate():
+                gate = observation.enter_context(listener.accept()[0])
+                gate.settimeout(READY_BOUND)
+                with gate.makefile("rb") as stream:
+                    message = stream.readline()
+                stage, receipt = message[:1], message[1:-1].decode("ascii")
+                if stage == b"a":
+                    self.assertNotIn(receipt, previous | admitted.keys())
+                    owner = json.loads((owners / receipt).read_text())
+                    descriptor = owned_descriptor(lambda: driver.process_descriptor(owner), observation.callback)
+                    self.assertIsNotNone(descriptor, f"lost the gated process {receipt} before observing it")
                     exits.register(descriptor, select.EPOLLIN | select.EPOLLONESHOT)
-                gates[b"s"].sendall(b"x")
+                    admitted[receipt] = descriptor
+                    pending.add(descriptor)
+                    allow(gate)
+                else:
+                    self.assertIn(stage, {b"r", b"s", b"p", b"d"})
+                    descriptor = admitted[receipt]
+                    if stage == b"r":
+                        ready.add(descriptor)
+                    if stage in unblocked:
+                        allow(gate)
+                    else:
+                        gates.setdefault(stage, []).append((descriptor, gate))
+
+            def release(stage):
+                unblocked.add(stage)
+                for _, gate in gates.pop(stage, []):
+                    allow(gate)
+
+            def observe_until(done):
+                nonlocal complete
+                deadline = time.monotonic() + READY_BOUND
+                while not done():
+                    self.assertFalse(complete, "CLI exited before the expected fixture state")
+                    remaining = deadline - time.monotonic()
+                    self.assertGreater(remaining, 0, "candidate and fixture events did not arrive")
+                    # Consume in kernel readiness order. Every fixture pidfd is
+                    # registered before its admission gate is released.
+                    for descriptor, _ in exits.poll(remaining, 1):
+                        if descriptor == listener.fileno():
+                            accept_gate()
+                        elif descriptor == cli:
+                            self.assertFalse(pending, f"preview or stop outlived the CLI (graceful={graceful})")
+                            complete = True
+                        else:
+                            pending.remove(descriptor)
+
+            observe_until(lambda: bool(ready & pending) and bool(gates.get(b"s")))
+            self.assertFalse(select.select([cli], [], [], 0)[0],
+                             "CLI exited before the stop command was released")
+            release(b"s")
 
             if graceful:
-                with ExitStack() as shutdown:
-                    gates = {}
-                    for _ in ("preview", "stop"):
-                        gate = shutdown.enter_context(listener.accept()[0])
-                        gate.settimeout(READY_BOUND)
-                        gates[gate.recv(1)] = gate
-                    self.assertEqual(set(gates), {b"p", b"d"})
-                    self.assertFalse(select.select([cli, *previews, *stops], [], [], 0)[0],
-                                     "CLI, preview and stop must still be alive at the shutdown gates")
-                    gates[b"p"].sendall(b"x")
-                    for descriptor in previews:
-                        self.assert_exit_ready(descriptor)
-                    self.assertFalse(select.select([cli], [], [], 0)[0],
-                                     "the CLI must still be alive after the preview has exited")
-                    gates[b"d"].sendall(b"x")
+                observe_until(lambda: bool(gates.get(b"p")) and bool(gates.get(b"d")))
+                previews = {descriptor for descriptor, _ in gates[b"p"]}
+                stops = {descriptor for descriptor, _ in gates[b"d"]}
+                self.assertFalse(select.select([cli, *previews, *stops], [], [], 0)[0],
+                                 "CLI, preview and stop must still be alive at the shutdown gates")
+                release(b"p")
+                observe_until(lambda: previews.isdisjoint(pending))
+                self.assertFalse(select.select([cli], [], [], 0)[0],
+                                 "the CLI must still be alive after the preview has exited")
+                release(b"d")
 
-            # Register while the gates hold every process alive. Linux epoll's
-            # ready queue delivers the first wakeups in enqueue order; one-shot
-            # registrations keep later level-triggered polls from reordering them.
-            # Do not reap the CLI (which also drains its group) before reading it.
-            pending = set(previews + stops)
-            deadline = time.monotonic() + READY_BOUND
-            complete = False
-            while not complete:
-                remaining = deadline - time.monotonic()
-                self.assertGreater(remaining, 0, "candidate and fixture exit events did not arrive")
-                for descriptor, _ in exits.poll(remaining):
-                    if descriptor == cli:
-                        self.assertFalse(pending, f"preview or stop outlived the CLI (graceful={graceful})")
-                        complete = True
-                        break
-                    pending.remove(descriptor)
-            # Include any replacement started after opening the gates.
-            for receipt in owners.glob("*.json"):
-                self.assertIsNone(live_owner(receipt), f"{receipt.stem} outlived candidate completion")
+            observe_until(lambda: complete)
+            # A receipt without a pidfd admission cannot prove exit order, even
+            # if the process is already gone when checked after the CLI exits.
+            self.assertEqual(admitted.keys(), {receipt.name for receipt in owners.glob("*.json")} - previous)
 
             result = process.wait(timeout=READY_BOUND)
             stdout.seek(0)
@@ -1022,12 +1056,17 @@ class HostLifecycleTests(OwnedTestCase):
                                          "the process must still be alive when the CLI reports terminal")
                     return result
 
+                observing = Event()
+
                 def observe_exit(waited, timeout):
                     if pidfd_pid(waited) == process.pid:
-                        # Release the fixture only when the harness actually
-                        # starts observing this process, not on terminal publication.
-                        process.stdin.close()
+                        observing.set()
                     return exit_ready(waited, timeout)
+
+                def release_worker():
+                    self.assertTrue(observing.wait(READY_BOUND), "the harness never observed the worker")
+                    self.assertFalse(select.select([descriptor], [], [], 0)[0], "worker exited before release")
+                    process.stdin.close()
 
                 def require_worker_exit(action):
                     self.assertTrue(select.select([descriptor], [], [], 0)[0],
@@ -1043,13 +1082,16 @@ class HostLifecycleTests(OwnedTestCase):
                         require_worker_exit("deletion")
                     return remove_tree(path, *args, **kwargs)
 
-                # Let the harness perform the real exit wait. Archive and
-                # deletion observe readiness through the fixture's own pidfd.
-                with mock.patch.object(driver, "run_command", side_effect=respond), \
-                        mock.patch.object(driver, "exit_ready", side_effect=observe_exit), \
-                        mock.patch.object(shutil, "copytree", side_effect=copy), \
-                        mock.patch.object(shutil, "rmtree", side_effect=remove):
-                    live.run(self.candidate, self.output, "test-model", self.evidence)
+                # A separate fixture action releases the waiting worker. The
+                # harness observer only reports the wait and reads its pidfd.
+                with ThreadPoolExecutor(max_workers=1) as actions:
+                    release = actions.submit(release_worker)
+                    with mock.patch.object(driver, "run_command", side_effect=respond), \
+                            mock.patch.object(driver, "exit_ready", side_effect=observe_exit), \
+                            mock.patch.object(shutil, "copytree", side_effect=copy), \
+                            mock.patch.object(shutil, "rmtree", side_effect=remove):
+                        live.run(self.candidate, self.output, "test-model", self.evidence)
+                    release.result()
                 self.assertFalse(self.output.exists())
                 cleanup = json.loads((self.evidence / "library-consumer/evidence/cleanup.json").read_text())
                 self.assertEqual(cleanup[0]["worker_exit"], "observed")
@@ -1361,6 +1403,30 @@ class HostLifecycleTests(OwnedTestCase):
                 if options.get("failure") != "listing":
                     self.assert_cancel_precedes_wait(self.calls)
 
+    def test_shutdown_retry_removes_working_files_without_replacing_published_archive(self):
+        cleanup = driver.ChildCleanup()
+        remove = shutil.rmtree
+        working = self.output / "library-consumer"
+
+        def fail_removal(path, *args, **kwargs):
+            if Path(path) == working:
+                raise PermissionError("working files are temporarily unavailable")
+            return remove(path, *args, **kwargs)
+
+        with mock.patch.object(driver, "child_cleanup", cleanup):
+            with mock.patch.object(shutil, "rmtree", side_effect=fail_removal):
+                with self.assertRaises(ExceptionGroup) as failure:
+                    self.run_live()
+            self.assertIsNotNone(failure.exception.subgroup(PermissionError))
+            self.assertTrue((working / "bin/artifactize").is_file())
+            evidence = self.evidence / "library-consumer/evidence"
+            self.assertTrue((evidence / "live.json").is_file())
+            marker = evidence / "archive-observed"
+            marker.touch()
+            cleanup.retry()
+            self.assertFalse(self.output.exists())
+            self.assertTrue(marker.is_file(), "deletion retry must not replace the published archive")
+
     def test_archive_failure_releases_host_inputs_and_keeps_recovery_data_after_join(self):
         copytree = shutil.copytree
         def fail_archive(source, destination, *args, **kwargs):
@@ -1472,7 +1538,7 @@ class HostLifecycleTests(OwnedTestCase):
         # Separate from setUp's disposable root: failed teardown must retain the
         # actual Run's files, rather than an unrelated tempdir cleanup deleting them.
         handles = {}
-        run_commands = []
+        run_commands = set()
         cleanup_commands = live.RunCommands()
         detached = driver.Descendants()
         submission_attempted = False
@@ -1495,10 +1561,16 @@ class HostLifecycleTests(OwnedTestCase):
             return handles[identity]
 
         def command(arguments, check=True, **ownership):
-            return self.command([str(candidate), "--repo", str(repo), "--state-dir", str(state)] + arguments,
-                                  env=dict(os.environ, ARTIFACTIZE_REMOTE="off"), capture_output=True,
-                                  text=True, timeout=observation_bound, check=check,
-                                  on_spawn=run_commands.append, **ownership)
+            try:
+                return self.command([str(candidate), "--repo", str(repo), "--state-dir", str(state)] + arguments,
+                                    env=dict(os.environ, ARTIFACTIZE_REMOTE="off"), capture_output=True,
+                                    text=True, timeout=observation_bound, check=check,
+                                    on_spawn=run_commands.add, **ownership)
+            except driver.ProcessExitError as error:
+                if error.process is not None:
+                    # A failed launch can own a process before on_spawn runs.
+                    run_commands.add(error.process)
+                raise
 
         def release():
             with driver.defer_interrupts():

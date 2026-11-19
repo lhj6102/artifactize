@@ -8,7 +8,7 @@ use std::{
 };
 use thiserror::Error;
 
-use super::{Artifact, InputPath, Location, ScopeError, file_input};
+use super::{Artifact, InputPath, Location, MAX_PATH_UNITS, ScopeError, file_input};
 use crate::files as platform;
 
 /// Why a scoped open failed. Missing entries stay distinct so callers can name the input.
@@ -160,12 +160,16 @@ fn open_root(root: &Path) -> Result<Opened<'_>, OpenError> {
 
 /// Open a relative path below an absolute root without following any symlink components.
 pub fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
-    walk(root, InputPath::parse(path)?).map(|opened| opened.file)
+    let path = InputPath::parse(path)?;
+    walk(root, path.names().map(OsStr::new)).map(|opened| opened.file)
 }
 
-fn walk<'a>(root: &'a Path, path: InputPath<&'a str>) -> Result<Opened<'a>, OpenError> {
+fn walk<'a>(
+    root: &'a Path,
+    names: impl IntoIterator<Item = &'a OsStr>,
+) -> Result<Opened<'a>, OpenError> {
     let mut opened = open_root(root)?;
-    for name in path.names().map(OsStr::new) {
+    for name in names {
         opened.descend(name)?;
     }
     Ok(opened)
@@ -204,12 +208,14 @@ fn open_named(directory: &File, name: &OsStr, exact: bool) -> Result<File, OpenE
 
 /// Resolve a physical input below a canonical root. No component may be a symlink.
 pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
-    let relative = platform::scoped_relative(path).map_err(io_scope)?;
-    native_path(
-        walk(root, InputPath::parse(relative.as_str())?),
-        root,
-        &relative,
-    )
+    let names = platform::relative_names(path).map_err(io_scope)?;
+    let relative = platform::relative_text(&names);
+    if relative.encode_utf16().count() > MAX_PATH_UNITS {
+        return Err(ScopeError(
+            "Artifact path must be a safe relative logical path.".into(),
+        ));
+    }
+    native_path(walk(root, names), root, &relative)
 }
 
 fn native_path(

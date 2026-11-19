@@ -77,7 +77,9 @@ def process_table():
         pid = int(path.parent.name)
         try:
             fields = stat_fields(pid)
-        except (FileNotFoundError, ProcessLookupError):
+        except OSError:
+            # An unreadable unrelated /proc entry cannot prevent teardown.
+            # drain_tree still requires waitpid to report no children.
             continue
         yield pid, (int(fields[1]), int(fields[3]), int(fields[19]))
 

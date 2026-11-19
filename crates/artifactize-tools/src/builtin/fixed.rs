@@ -258,7 +258,7 @@ fn read_text(
     {
         return Err("Reading requires a regular file.".into());
     }
-    let file = crate::artf::reader(file, path.as_str()).map_err(|error| error.to_string())?;
+    let file = crate::artf::reader(file, path.as_ref()).map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     file.take((kind.limit() + OVERFLOW_PROBE_BYTES) as u64)
         .read_to_end(&mut bytes)

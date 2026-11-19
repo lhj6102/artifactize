@@ -75,11 +75,15 @@ impl TryFrom<PathBuf> for LocalTarget {
     }
 }
 
+/// A local target with at least one entry name. The project root cannot be a file target.
+#[derive(Debug, Clone)]
+pub struct FileTarget(LocalTarget);
+
 /// Kind and local selection travel with the target, so a Live URI cannot be a folder.
 #[derive(Debug, Clone)]
 pub enum Target {
     Folder(LocalTarget),
-    File(LocalTarget),
+    File(FileTarget),
     Aspect {
         path: LocalTarget,
         select: Vec<LogicalPath>,
@@ -104,10 +108,8 @@ impl Target {
     }
     fn local_target(&self) -> Option<&LocalTarget> {
         match self {
-            Self::Folder(path)
-            | Self::File(path)
-            | Self::Graph(path)
-            | Self::Aspect { path, .. } => Some(path),
+            Self::Folder(path) | Self::Graph(path) | Self::Aspect { path, .. } => Some(path),
+            Self::File(path) => Some(&path.0),
             Self::Live(_) => None,
         }
     }
@@ -128,19 +130,26 @@ impl Target {
             Self::Folder(local) | Self::Graph(local) | Self::Aspect { path: local, .. } => {
                 &local.path
             }
-            Self::File(local) => crate::files::parent(&local.path).unwrap_or(Path::new("")),
+            Self::File(file) => crate::files::parent(&file.0.path).expect("file has a parent"),
             Self::Live(_) => Path::new(""),
         }
     }
     pub(super) fn folder_names(&self) -> Option<&[OsString]> {
         match self {
-            Self::File(local) => Some(local.names.split_last().map_or(&[], |(_, names)| names)),
+            Self::File(file) => Some(file.0.names.split_last().expect("file has a name").1),
             _ => self.local_target().map(|local| local.names.as_slice()),
         }
     }
     pub(super) fn file_name(&self) -> Option<&str> {
         match self {
-            Self::File(local) => local.names.last()?.to_str(),
+            Self::File(file) => Some(
+                file.0
+                    .names
+                    .last()
+                    .expect("file has a name")
+                    .to_str()
+                    .expect("validated name"),
+            ),
             _ => None,
         }
     }
@@ -157,10 +166,8 @@ impl Target {
             ));
         }
         let path = match self {
-            Self::Folder(path)
-            | Self::File(path)
-            | Self::Graph(path)
-            | Self::Aspect { path, .. } => path,
+            Self::Folder(path) | Self::Graph(path) | Self::Aspect { path, .. } => path,
+            Self::File(path) => path.0,
             Self::Live(_) if kind == ArtifactKind::Live => return Ok(self),
             Self::Live(_) => {
                 return Err(ScopeError(
@@ -170,7 +177,10 @@ impl Target {
         };
         match kind {
             ArtifactKind::Folder => Ok(Self::Folder(path)),
-            ArtifactKind::File => Ok(Self::File(path)),
+            ArtifactKind::File if path.names.is_empty() => Err(ScopeError(
+                "A File Artifact must name a file, not the project root.".into(),
+            )),
+            ArtifactKind::File => Ok(Self::File(FileTarget(path))),
             ArtifactKind::Aspect => Ok(Self::Aspect { path, select }),
             ArtifactKind::Graph => Ok(Self::Graph(path)),
             ArtifactKind::Live => Err(ScopeError("A Live target needs a URI.".into())),
@@ -233,7 +243,7 @@ impl PartialEq for Target {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Folder(first), Self::Folder(second))
-            | (Self::File(first), Self::File(second))
+            | (Self::File(FileTarget(first)), Self::File(FileTarget(second)))
             | (Self::Graph(first), Self::Graph(second)) => {
                 crate::files::paths_equal(&first.path, &second.path)
             }

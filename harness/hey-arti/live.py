@@ -250,6 +250,8 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
     detached = driver.Descendants()
     commands = RunCommands()
     host_exit_error = None
+    archive = None
+    keep_recovery = False
     failures = []
 
     def settle(*, final=False):
@@ -280,30 +282,37 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
         detached.finish()
 
     def archive_and_release():
-        try:
-            archive = archive_case(area, evidence_root, records)
-        except BaseException as error:
-            error.add_note(f"Working repository, state and diagnostics retained at {area.as_posix()}")
+        nonlocal archive, keep_recovery
+        if archive is None:
             try:
-                release_case_tools(area)
-            except Exception as cleanup_error:
-                raise BaseExceptionGroup("Archival and disposable host cleanup failed", [error, cleanup_error])
-            raise
+                archive = archive_case(area, evidence_root, records)
+            except BaseException as error:
+                keep_recovery = True
+                error.add_note(f"Working repository, state and diagnostics retained at {area.as_posix()}")
+                try:
+                    release_case_tools(area)
+                except Exception as cleanup_error:
+                    raise BaseExceptionGroup("Archival and disposable host cleanup failed", [error, cleanup_error])
+                driver.child_cleanup.fixtures.discard(retry)
+                raise
         shutil.rmtree(area)
         print(f"{case_id}: evidence {archive.as_posix()}; working files removed", flush=True)
 
     def retry():
         with driver.defer_interrupts():
-            if not area.exists():
-                return
-            settle(final=True)
-            # The first attempt may have published diagnostic-only evidence;
-            # store the authoritative final snapshot once settlement succeeds.
-            diagnostic_only = evidence_root / case_id
-            if diagnostic_only.exists():
-                shutil.rmtree(diagnostic_only)
-            archive_and_release()
-            if not any(area.parent.iterdir()):
+            if area.exists():
+                if keep_recovery:
+                    release_case_tools(area)
+                    return
+                if archive is None:
+                    settle(final=True)
+                    # Replace diagnostic-only evidence with the authoritative snapshot.
+                    diagnostic_only = evidence_root / case_id
+                    if diagnostic_only.exists():
+                        shutil.rmtree(diagnostic_only)
+                # A published archive is authoritative even if deletion failed.
+                archive_and_release()
+            if area.parent.exists() and not any(area.parent.iterdir()):
                 area.parent.rmdir()
 
     try:
@@ -428,9 +437,7 @@ CANONICAL SKILL
                         archive_and_release()
                     except BaseException as error:
                         failures.append(error)
-                    finally:
-                        # An archival failure leaves recovery data intentionally,
-                        # not a case awaiting settlement.
+                    else:
                         driver.child_cleanup.fixtures.discard(retry)
     if failures:
         if len(failures) == 1 and isinstance(failures[0], driver.Terminated):
