@@ -19,10 +19,10 @@ TOOLS = {"verify_start", "verify_status", "verify_wait", "verify_watch", "verify
          "session_show", "tools_check", "doctor", "models", "remote_status", "cache_show"}
 
 
-def capture(command, repo, env, timeout, stdout_path, stderr_path=None):
+def capture(commands, command, repo, env, timeout, stdout_path, stderr_path=None):
     """Keep host diagnostics even when registration or inventory fails."""
     try:
-        result = driver.run_command(command, cwd=repo, env=env, capture_output=True,
+        result = commands.run(command, cwd=repo, env=env, capture_output=True,
                                 text=True, timeout=timeout)
     except subprocess.TimeoutExpired as error:
         stdout, stderr = (value.decode(errors="replace") if isinstance(value, bytes) else value or ""
@@ -41,12 +41,11 @@ def capture(command, repo, env, timeout, stdout_path, stderr_path=None):
 def smoke(host, candidate, output, model):
     candidate = candidate.resolve(strict=True)
     output = output.resolve()
-    unconfirmed = None
+    commands = driver.Commands()
 
     def release():
         with driver.defer_interrupts():
-            if unconfirmed is not None:
-                driver.child_cleanup.close(unconfirmed)
+            commands.join()
             failures = []
             for name in ("repo", "config", "bin", "state"):
                 path = output / name
@@ -65,13 +64,10 @@ def smoke(host, candidate, output, model):
         output.mkdir(mode=0o700, parents=True, exist_ok=False)
         driver.child_cleanup.fixtures.add(release)
     try:
-        inventory(host, candidate, output, model)
-    except driver.ProcessExitError as error:
-        # Keep inputs while the host might still use them. Retry only when an
-        # owned handle can confirm its exit before deleting anything.
-        unconfirmed = error.process
-        if unconfirmed is None:
-            driver.child_cleanup.fixtures.discard(release)
+        inventory(host, candidate, output, model, commands)
+    except driver.ProcessExitError:
+        # The launch ledger is already populated. Leave inputs intact until the
+        # registered finalizer can confirm that all commands are gone.
         raise
     except BaseException:
         release()
@@ -107,7 +103,7 @@ def rpc_response(reader, stream, pending, messages, identifier, deadline):
             return message["result"]
 
 
-def inventory(host, candidate, output, model):
+def inventory(host, candidate, output, model, commands):
     repo = output / "repo"
     repo.mkdir(mode=0o700)
     (repo / ".artifactize").mkdir()
@@ -127,8 +123,8 @@ def inventory(host, candidate, output, model):
     if host == "claude":
         args += ["--transport", "stdio", "--scope", "project"]
     args += ["artifactize", "--", str(executable), "--state-dir", str(output / "state"), "mcp"]
-    capture(args, repo, env, 60, output / "registration.txt")
-    capture([host, "mcp", "get", "artifactize"], repo, env, 60, output / "get.txt")
+    capture(commands, args, repo, env, 60, output / "registration.txt")
+    capture(commands, [host, "mcp", "get", "artifactize"], repo, env, 60, output / "get.txt")
     if host == "claude":
         gateway = env.get("ANTHROPIC_BASE_URL", "")
         if gateway.startswith(("http://127.0.0.1:", "http://localhost:")):
@@ -140,7 +136,7 @@ def inventory(host, candidate, output, model):
         command = shlex.join([sys.executable, "-I", "-c", f"print({json.dumps(deny)!r})"])
         settings = {"hooks": {"PreToolUse": [{"matcher": "mcp__artifactize__.*",
                                                "hooks": [{"type": "command", "command": command}]}]}}
-        result = capture([host, "-p", "--model", model, "--verbose", "--output-format", "stream-json",
+        result = capture(commands, [host, "-p", "--model", model, "--verbose", "--output-format", "stream-json",
                                  "--no-session-persistence", "--setting-sources", "", "--tools", "",
                                  "--settings", json.dumps(settings), "--strict-mcp-config", "--mcp-config",
                                  str(repo / ".mcp.json"), "--", "List the names of all artifactize MCP tools you have."],
@@ -158,7 +154,7 @@ def inventory(host, candidate, output, model):
                 "".join(json.dumps(message) + "\n" for message in messages))
 
         try:
-            with (output / "stderr.txt").open("w") as errors, driver.owned_child(
+            with (output / "stderr.txt").open("w") as errors, commands.child(
                 [host, "app-server", "--stdio"], cwd=repo, env=env,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True,
             ) as process:

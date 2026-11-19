@@ -56,6 +56,15 @@ impl<T> ContentBlocks<T> {
     pub fn into_vec(self) -> Vec<T> {
         self.0
     }
+
+    /// A successful one-to-one mapping preserves the already validated count.
+    fn try_map<U, E>(self, map: impl FnMut(T) -> Result<U, E>) -> Result<ContentBlocks<U>, E> {
+        self.0
+            .into_iter()
+            .map(map)
+            .collect::<Result<_, _>>()
+            .map(ContentBlocks)
+    }
 }
 
 /// A single nonblank text block. Keeping the block itself lets callers borrow
@@ -227,11 +236,13 @@ pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutp
             ToolResult::Error(message)
         }
         CommandOutput::Success(blocks) => {
-            let mut normalized = Normalized::default();
-            for block in blocks.into_vec() {
-                normalized.push(load(block, output_dir)?)?;
-            }
-            ToolResult::try_success(normalized.content).map_err(|_| InvalidOutput)?
+            let mut size = 0;
+            let normalized = blocks.try_map(|block| {
+                let block = normalize(load(block, output_dir)?)?;
+                size += serde_json::to_vec(&block).map_err(|_| InvalidOutput)?.len();
+                (size <= RESULT_LIMIT).then_some(block).ok_or(InvalidOutput)
+            })?;
+            ToolResult::Success(normalized)
         }
     };
     if serde_json::to_vec(&result)
@@ -290,35 +301,21 @@ fn load(
 }
 
 /// Normalize one loaded block at a time to bound memory and stop I/O at the first failure.
-#[derive(Default)]
-struct Normalized {
-    content: Vec<Content>,
-    size: usize,
-}
-
-impl Normalized {
-    fn push(&mut self, block: WireContent<LoadedImage>) -> Result<(), InvalidOutput> {
-        let block = match block {
-            WireContent::Text { text } if text.len() <= TEXT_LIMIT => Content::Text { text },
-            WireContent::Json { data }
-                if serde_json::to_vec(&data).map_err(|_| InvalidOutput)?.len() <= JSON_LIMIT =>
-            {
-                Content::Json { data }
-            }
-            WireContent::Image(LoadedImage::Data(InlineImage { mime_type, data })) => {
-                image::normalize_base64(&data, mime_type).map_err(|_| InvalidOutput)?
-            }
-            WireContent::Image(LoadedImage::FileBytes { mime_type, bytes }) => {
-                image::normalize(&bytes, Some(mime_type)).map_err(|_| InvalidOutput)?
-            }
-            _ => return Err(InvalidOutput),
-        };
-        self.size += serde_json::to_vec(&block).map_err(|_| InvalidOutput)?.len();
-        if self.size > RESULT_LIMIT {
-            return Err(InvalidOutput);
+fn normalize(block: WireContent<LoadedImage>) -> Result<Content, InvalidOutput> {
+    match block {
+        WireContent::Text { text } if text.len() <= TEXT_LIMIT => Ok(Content::Text { text }),
+        WireContent::Json { data }
+            if serde_json::to_vec(&data).map_err(|_| InvalidOutput)?.len() <= JSON_LIMIT =>
+        {
+            Ok(Content::Json { data })
         }
-        self.content.push(block);
-        Ok(())
+        WireContent::Image(LoadedImage::Data(InlineImage { mime_type, data })) => {
+            image::normalize_base64(&data, mime_type).map_err(|_| InvalidOutput)
+        }
+        WireContent::Image(LoadedImage::FileBytes { mime_type, bytes }) => {
+            image::normalize(&bytes, Some(mime_type)).map_err(|_| InvalidOutput)
+        }
+        _ => Err(InvalidOutput),
     }
 }
 

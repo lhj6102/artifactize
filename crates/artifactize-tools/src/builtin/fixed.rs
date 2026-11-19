@@ -172,10 +172,14 @@ impl FixedInput {
         validate_args(builtin, Some(args), false)?;
         let validator = crate::schema::compile(&fixed_schema(builtin, args))?;
         crate::schema::validate(&validator, &value)?;
-        let path = || args.first().cloned().ok_or("Missing builtin target.");
+        let path = || {
+            args.first()
+                .expect("validated builtin requires a target")
+                .clone()
+        };
         match builtin {
-            Builtin::Read => Self::read(path()?),
-            Builtin::List => Self::list(path()?),
+            Builtin::Read => Self::read(path()),
+            Builtin::List => Self::list(path()),
             Builtin::Section => {
                 let input: SectionInput = serde_json::from_value(value)
                     .map_err(|_| "Tool arguments cannot be read as the declared builtin input.")?;
@@ -183,8 +187,8 @@ impl FixedInput {
                     .get(1)
                     .cloned()
                     .or(input.heading)
-                    .ok_or("Section requires heading.")?;
-                Self::with_heading(path()?, heading)
+                    .expect("validated section requires a heading");
+                Self::with_heading(path(), heading)
             }
             Builtin::Help => Ok(Self::with_help(args)),
             _ => Err("This builtin cannot run as a fixed Agent tool.".into()),

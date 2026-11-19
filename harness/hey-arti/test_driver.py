@@ -483,13 +483,23 @@ ctypes.CDLL(None).pthread_exit(None)
 
     def test_draining_a_fixture_does_not_reap_an_unrelated_child(self):
         unrelated = [sys.executable, "-I", "-c", "raise SystemExit(23)"]
-        with subprocess.Popen(unrelated) as process, ExitStack() as observation:
+        def join(process):
+            with driver.defer_interrupts():
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=READY_BOUND)
+
+        with driver.defer_interrupts():
+            process = subprocess.Popen(unrelated)
+            self.addCleanup(join, process)
+        with ExitStack() as observation:
             descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), observation.callback)
             self.assert_exit_ready(descriptor)
             self.command([sys.executable, "-I", "-c", "pass"], timeout=READY_BOUND, check=True)
             status = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
             self.assertIsNotNone(status)
             self.assertEqual((status.si_code, status.si_status), (os.CLD_EXITED, 23))
+        self.assertEqual(process.wait(timeout=READY_BOUND), 23)
 
     def test_subreaper_drains_descendants_when_leader_stop_fails(self):
         reaper = """import socket, subprocess, sys
@@ -556,10 +566,16 @@ sys.stdin.read()
             with self.assertRaises(driver.ProcessExitError):
                 driver.close_child(process)
         self.assertIsNone(process.returncode)
+        descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), self.addCleanup)
         driver.close_child(process)
-        self.assertIsNotNone(process.returncode)
-        with mock.patch.object(driver.process_owner, "send", side_effect=AssertionError("group no longer owned")):
+        self.assertEqual(pidfd_pid(descriptor), -1, "the process must already be reaped")
+        with mock.patch.object(os, "kill") as kill, \
+                mock.patch.object(os, "killpg") as kill_group, \
+                mock.patch.object(signal, "pidfd_send_signal") as kill_pidfd:
             driver.close_child(process)
+        kill.assert_not_called()
+        kill_group.assert_not_called()
+        kill_pidfd.assert_not_called()
 
     def test_managed_child_with_unconfirmed_exit_stays_owned_until_retry(self):
         owner = driver.ChildCleanup()
@@ -1203,7 +1219,7 @@ class HostLifecycleTests(OwnedTestCase):
         defer = driver.defer_interrupts
         ready = False
 
-        def inventory(host, candidate, output, model):
+        def inventory(host, candidate, output, model, commands):
             nonlocal ready
             for name in ("repo", "config", "bin", "state"):
                 (output / name).mkdir()
@@ -1229,22 +1245,61 @@ class HostLifecycleTests(OwnedTestCase):
         process, _ = self.controlled_worker()
         cleanup = driver.ChildCleanup()
 
-        def inventory(host, candidate, output, model):
-            for name in ("repo", "config", "bin", "state"):
-                (output / name).mkdir()
-            (output / "transcript.jsonl").write_text("recorded output\n")
-            raise driver.ProcessExitError("join not confirmed", process=process)
+        def run_command(command, **options):
+            if "-p" not in command:
+                return self.response(command)
+            options["on_spawn"](process)
+            raise driver.ProcessExitError("join not confirmed")
 
         with mock.patch.object(driver, "child_cleanup", cleanup), \
-                mock.patch.object(host_smoke, "inventory", side_effect=inventory):
+                mock.patch.object(driver, "run_command", side_effect=run_command):
             with self.assertRaises(driver.ProcessExitError):
                 host_smoke.smoke("claude", self.candidate, self.output, "test-model")
             self.assertIsNone(process.returncode)
             self.assertTrue((self.output / "bin").is_dir())
             cleanup.retry()
         self.assertIsNotNone(process.returncode)
-        self.assertEqual({path.name for path in self.output.iterdir()}, {"transcript.jsonl"})
-        self.assertEqual((self.output / "transcript.jsonl").read_text(), "recorded output\n")
+        self.assertEqual({path.name for path in self.output.iterdir()}, {"registration.txt", "get.txt"})
+
+    def test_registration_inputs_remain_owned_if_interrupted_before_failure_is_observed(self):
+        for mode in ("smoke", "live"):
+            with self.subTest(mode=mode):
+                cleanup = driver.ChildCleanup()
+                process, _ = self.controlled_worker()
+                descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), self.addCleanup)
+                close_child = driver.close_child
+                cli = self.host_cli()
+                blocked = True
+                self.output = self.root / f"working-{mode}"
+                self.evidence = self.root / f"saved-{mode}"
+
+                def interrupt_registration(command, **options):
+                    if command[:3] == ["claude", "mcp", "add"]:
+                        options["on_spawn"](process)
+                        os.kill(os.getpid(), signal.SIGTERM)
+                    return cli(command, **options)
+
+                def close(process_to_close):
+                    if process_to_close is process and blocked:
+                        raise driver.ProcessExitError("registration exit not confirmed", process=process)
+                    close_child(process_to_close)
+
+                with driver.term_as_interrupt(), mock.patch.object(driver, "child_cleanup", cleanup), \
+                        mock.patch.object(driver, "run_command", side_effect=interrupt_registration), \
+                        mock.patch.object(driver, "close_child", side_effect=close):
+                    with self.assertRaises(BaseExceptionGroup):
+                        if mode == "smoke":
+                            host_smoke.smoke("claude", self.candidate, self.output, "test-model")
+                        else:
+                            live.run(self.candidate, self.output, "test-model", self.evidence)
+                    working = self.output if mode == "smoke" else self.output / "library-consumer"
+                    cleanup.retry()
+                    self.assertTrue((working / "bin/artifactize").is_file())
+                    self.assertFalse(select.select([descriptor], [], [], 0)[0])
+                    blocked = False
+                    cleanup.retry()
+                    self.assertTrue(select.select([descriptor], [], [], 0)[0])
+                    self.assertFalse((working / "bin").exists())
 
     def test_shutdown_retry_joins_host_then_settles_and_archives_owned_runs(self):
         process, _ = self.controlled_worker()
@@ -1419,18 +1474,23 @@ class HostLifecycleTests(OwnedTestCase):
                     self.run_live()
             self.assertIsNotNone(failure.exception.subgroup(PermissionError))
             self.assertTrue((working / "bin/artifactize").is_file())
-            evidence = self.evidence / "library-consumer/evidence"
-            self.assertTrue((evidence / "live.json").is_file())
-            marker = evidence / "archive-observed"
-            marker.touch()
+            archive = self.evidence / "library-consumer"
+            descriptor = owned_descriptor(lambda: os.open(archive, os.O_RDONLY | os.O_DIRECTORY), self.addCleanup)
+            manifest = self.evidence / "index.json"
+            live_json = archive / "evidence/live.json"
+            published = (manifest.read_bytes(), live_json.read_bytes())
             cleanup.retry()
             self.assertFalse(self.output.exists())
-            self.assertTrue(marker.is_file(), "deletion retry must not replace the published archive")
+            self.assertTrue(os.path.samestat(os.fstat(descriptor), archive.stat()),
+                            "deletion retry must not replace the published archive")
+            self.assertEqual((manifest.read_bytes(), live_json.read_bytes()), published)
 
     def test_archive_failure_releases_host_inputs_and_keeps_recovery_data_after_join(self):
         copytree = shutil.copytree
         def fail_archive(source, destination, *args, **kwargs):
             if Path(destination).is_relative_to(self.evidence):
+                Path(destination).mkdir()
+                (Path(destination) / "partial.txt").touch()
                 raise OSError("archive storage unavailable")
             return copytree(source, destination, *args, **kwargs)
         with mock.patch.object(live.shutil, "copytree", side_effect=fail_archive):
@@ -1445,6 +1505,7 @@ class HostLifecycleTests(OwnedTestCase):
         for disposable in ("host", "bin", "repo/.mcp.json"):
             self.assertFalse((retained / disposable).exists(), disposable)
         self.assertFalse((self.evidence / "index.json").exists())
+        self.assertFalse((self.evidence / "library-consumer").exists(), "partial archive must be removed")
 
     def test_shutdown_retry_owns_claimed_and_unclaimed_cases_at_teardown(self):
         cleanup = driver.ChildCleanup()
@@ -1539,7 +1600,7 @@ class HostLifecycleTests(OwnedTestCase):
         # actual Run's files, rather than an unrelated tempdir cleanup deleting them.
         handles = {}
         run_commands = set()
-        cleanup_commands = live.RunCommands()
+        cleanup_commands = driver.Commands()
         detached = driver.Descendants()
         submission_attempted = False
         identifier = None

@@ -307,7 +307,16 @@ def owned_child(command, *, on_spawn=None, **options):
     try:
         try:
             with defer_interrupts():
-                process = spawn(command, **options)
+                try:
+                    process = spawn(command, **options)
+                except ProcessExitError as error:
+                    # Even a launch that never completed can own a subprocess.
+                    # Publish its handle before restoring interrupt handlers.
+                    if error.process is not None:
+                        child_cleanup.add(error.process)
+                        if on_spawn is not None:
+                            on_spawn(error.process)
+                    raise
                 child_cleanup.add(process)
                 if on_spawn is not None:
                     on_spawn(process)
@@ -378,6 +387,54 @@ def run_command(command, *, timeout, check=False, capture_output=False, input=No
         if check:
             result.check_returncode()
         return result
+
+
+class Commands:
+    """Retain commands that might still be using the caller's private inputs."""
+
+    def __init__(self):
+        self.pending = set()
+        self.unidentified = []
+
+    @contextmanager
+    def track(self):
+        spawned = None
+
+        def register(process):
+            nonlocal spawned
+            spawned = process
+            self.pending.add(process)
+
+        try:
+            yield register
+        except ProcessExitError as error:
+            if error.process is not None:
+                self.pending.add(error.process)
+            elif spawned is None:
+                self.unidentified.append(error)
+            raise
+        else:
+            self.pending.discard(spawned)
+
+    def run(self, command, **options):
+        with self.track() as register:
+            return run_command(command, on_spawn=register, **options)
+
+    @contextmanager
+    def child(self, command, **options):
+        with self.track() as register, owned_child(command, on_spawn=register, **options) as process:
+            yield process
+
+    def join(self):
+        failures = list(self.unidentified)
+        for process in tuple(self.pending):
+            try:
+                child_cleanup.close(process)
+                self.pending.remove(process)
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise BaseExceptionGroup("Fixture commands did not settle", failures)
 
 
 def run_tests(candidate):

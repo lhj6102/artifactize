@@ -208,4 +208,23 @@ mod tests {
         assert!(crate::files::is_absolute(&file));
         assert_eq!(targets, [file]);
     }
+
+    #[tokio::test]
+    async fn scoped_cli_open_refuses_links_and_escapes_without_a_handoff() {
+        let fixture = crate::test_os::tempdir();
+        let root = fixture.path().join("scope");
+        std::fs::create_dir(&root).unwrap();
+        let outside = crate::test_os::opener_input(fixture.path());
+        let relative_escape = Path::new("..").join(outside.file_name().unwrap());
+        crate::test_os::symlink_file(&outside, root.join("link.md"));
+        for target in [Path::new("link.md"), &relative_escape, &outside] {
+            let cli = Cli::try_parse_from(["artifactize-tools", "open", target.to_str().unwrap()])
+                .unwrap();
+            let outcome = execute_in(cli.command, &root, async |_| {
+                panic!("rejected path reached the desktop handoff")
+            })
+            .await;
+            assert!(outcome.is_err(), "{target:?} was not rejected");
+        }
+    }
 }

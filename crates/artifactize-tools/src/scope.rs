@@ -180,7 +180,8 @@ impl Artifact {
 
     /// Whether the logical `path` below its folder is the Artifact's: always for a folder,
     /// and for an aspect a selected path, a path below one, or a folder leading to one.
-    pub fn admits(&self, path: &str) -> bool {
+    pub fn admits(&self, path: InputPath<&str>) -> bool {
+        let path = path.as_str();
         if path.is_empty() {
             return true;
         }
@@ -263,7 +264,7 @@ impl Scope {
                 remaining = rest;
                 continue;
             }
-            file_input(artifact, remaining.as_str())?;
+            file_input(artifact, remaining)?;
             return Ok(Location {
                 artifact_id: current,
                 artifact,
@@ -374,7 +375,7 @@ impl<'a> InputPath<&'a str> {
 
 /// A file Artifact exposes a virtual root containing only its target, and an aspect one
 /// containing only its selected paths.
-fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
+fn file_input(artifact: &Artifact, path: InputPath<&str>) -> Result<(), ScopeError> {
     if artifact.admits(path) {
         return Ok(());
     }

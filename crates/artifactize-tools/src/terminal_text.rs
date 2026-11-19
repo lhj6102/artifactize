@@ -17,19 +17,16 @@ pub fn clean_output(bytes: &[u8]) -> Vec<u8> {
     let mut clean = Vec::with_capacity(bytes.len());
     while let Some((&byte, tail)) = bytes.split_first() {
         if bytes.starts_with(CSI_PREFIX) {
-            let mut end = CSI_PREFIX.len();
-            while bytes
-                .get(end)
-                .is_some_and(|byte| CSI_PARAMETER.contains(byte))
-            {
-                end += 1;
-            }
-            while bytes
-                .get(end)
-                .is_some_and(|byte| CSI_INTERMEDIATE.contains(byte))
-            {
-                end += 1;
-            }
+            let parameters = bytes[CSI_PREFIX.len()..]
+                .iter()
+                .take_while(|byte| CSI_PARAMETER.contains(byte))
+                .count();
+            let intermediate_start = CSI_PREFIX.len() + parameters;
+            let intermediates = bytes[intermediate_start..]
+                .iter()
+                .take_while(|byte| CSI_INTERMEDIATE.contains(byte))
+                .count();
+            let end = intermediate_start + intermediates;
             if bytes.get(end).is_some_and(|byte| CSI_FINAL.contains(byte)) {
                 bytes = &bytes[end + 1..];
                 continue;

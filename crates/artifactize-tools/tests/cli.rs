@@ -61,7 +61,7 @@ fn subcommands_share_scoped_files_and_exit_codes() {
     assert_eq!(os::exit_code(&missing), 1);
     let error = String::from_utf8(missing.stderr).unwrap();
     assert!(error.contains("First\nChild\nNext"), "{error}");
-    for sub in ["read", "list", "glob", "grep", "section", "open"] {
+    for sub in ["read", "list", "glob", "grep", "section"] {
         let mut args = match sub {
             "glob" => vec![sub, "*", "../outside"],
             "grep" => vec![sub, "alpha", "../outside"],
@@ -105,11 +105,7 @@ fn symlink_inputs_are_not_followed() {
     fs::write(root.path().join("real.md"), "# First\nbody\n").unwrap();
     let link = root.path().join("link.md");
     os::symlink_file(root.path().join("real.md"), &link);
-    for args in [
-        vec!["read", "link.md"],
-        vec!["section", "link.md", "First"],
-        vec!["open", "link.md"],
-    ] {
+    for args in [vec!["read", "link.md"], vec!["section", "link.md", "First"]] {
         let output = call(root.path(), &args);
         assert_eq!(os::exit_code(&output), 1);
     }

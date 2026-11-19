@@ -49,6 +49,8 @@ pub const SEARCH_FILE_BYTES: usize = 8 * 1024 * 1024;
 const SEARCH_BYTES: usize = 64 * 1024 * 1024;
 /// Patterns are user input rather than paths, but share their bounded schema size.
 const MAX_PATTERN_UNITS: usize = scope::MAX_PATH_UNITS;
+/// Read offsets and returned line numbers are one-based.
+const FIRST_LINE: usize = 1;
 /// An ordinary read starts with eighty lines; owners can page further or request
 /// up to five hundred without scanning an unbounded number of lines in one call.
 const DEFAULT_READ_LINES: usize = 80;
@@ -219,7 +221,9 @@ impl Reader<'_> {
                 let Some(entry_path) = location.path.child(name) else {
                     continue;
                 };
-                if !owner.admits(entry_path.as_str()) || self.excludes(owner, entry_path.as_str()) {
+                if !owner.admits(entry_path.borrowed())
+                    || self.excludes(owner, entry_path.borrowed())
+                {
                     continue;
                 }
                 let kind = entry
@@ -245,11 +249,10 @@ impl Reader<'_> {
 
     /// A folder Artifact nested in `owner` at `path` that this review does not admit: its
     /// files belong to neither, so listings and searches pass over it.
-    fn excludes(&self, owner: &scope::Artifact, path: &str) -> bool {
-        owner
-            .nested
-            .iter()
-            .any(|(prefix, id)| prefix.as_str() == path && !self.scope.artifacts.contains_key(id))
+    fn excludes(&self, owner: &scope::Artifact, path: InputPath<&str>) -> bool {
+        owner.nested.iter().any(|(prefix, id)| {
+            prefix.as_str() == path.as_str() && !self.scope.artifacts.contains_key(id)
+        })
     }
 
     fn list(&self, path: InputPath<&str>, offset: usize, limit: usize) -> Result<Output, String> {
@@ -269,13 +272,14 @@ impl Reader<'_> {
         let mut pending = vec![path.owned()];
         let mut files = BTreeSet::new();
         let mut seen = 0;
-        let mut truncated = false;
-        while let Some(path) = pending.pop() {
+        let truncated = 'walk: loop {
+            let Some(path) = pending.pop() else {
+                break false;
+            };
             self.check_cancelled()?;
             for entry in self.entries(path.borrowed())? {
                 if seen == MAX_ENTRIES {
-                    truncated = true;
-                    break;
+                    break 'walk true;
                 }
                 seen += 1;
                 match entry.kind {
@@ -286,10 +290,7 @@ impl Reader<'_> {
                     EntryKind::Symlink | EntryKind::Other => {}
                 }
             }
-            if truncated {
-                break;
-            }
-        }
+        };
         Ok((files, truncated))
     }
 

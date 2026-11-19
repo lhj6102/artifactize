@@ -23,46 +23,10 @@ TERMINAL_STATUSES = {"GREEN", "RED", "INCOMPLETE", "YELLOW", "ERROR"}
 RUN_PAGE_SIZE = 100  # Read every owned Run, not just the CLI's first page.
 
 
-class RunCommands:
-    """Keep failed CLI invocations tied to their case across settlement attempts."""
-
-    def __init__(self):
-        self.pending = set()
-
-    def run(self, command, **options):
-        spawned = None
-
-        def register(process):
-            nonlocal spawned
-            spawned = process
-            self.pending.add(process)
-
-        try:
-            result = driver.run_command(command, on_spawn=register, **options)
-        except driver.ProcessExitError as error:
-            if error.process is not None:
-                self.pending.add(error.process)
-            raise
-        else:
-            self.pending.discard(spawned)
-            return result
-
-    def join(self):
-        failures = []
-        for process in tuple(self.pending):
-            try:
-                driver.child_cleanup.close(process)
-                self.pending.remove(process)
-            except BaseException as error:
-                failures.append(error)
-        if failures:
-            raise BaseExceptionGroup("Run cleanup commands did not settle", failures)
-
-
 def settle_runs(candidate, area, commands=None):
     """Cancel active fixture Runs and require an authoritative terminal snapshot."""
     if commands is None:
-        commands = RunCommands()
+        commands = driver.Commands()
     with driver.defer_interrupts():
         commands.join()
         _settle_runs(candidate, area, commands.run)
@@ -149,16 +113,27 @@ def _settle_runs(candidate, area, run_command):
 def archive_case(area, evidence_root, records):
     archive = evidence_root / area.name
     archive.mkdir(mode=0o700)
-    for name in ("repo", "evidence", "state"):
-        source = area / name
-        if source.is_symlink():
-            raise ValueError(f"Cannot archive a linked case directory: {source.as_posix()}")
-        if source.exists():
-            shutil.copytree(source, archive / name, symlinks=True,
-                            ignore=shutil.ignore_patterns(".mcp.json", "__pycache__"))
-    records[area.name] = archive.as_posix()
-    manifest = json.dumps({"version": 1, "cases": records}, indent=2)
-    (evidence_root / "index.json").write_text(manifest)
+    entry = {area.name: archive.as_posix()}
+    try:
+        for name in ("repo", "evidence", "state"):
+            source = area / name
+            if source.is_symlink():
+                raise ValueError(f"Cannot archive a linked case directory: {source.as_posix()}")
+            if source.exists():
+                shutil.copytree(source, archive / name, symlinks=True,
+                                ignore=shutil.ignore_patterns(".mcp.json", "__pycache__"))
+        # Publish the new index only after all files have been copied. Until
+        # then the candidate index belongs to the disposable partial archive.
+        pending = archive / "index.json.pending"
+        pending.write_text(json.dumps({"version": 1, "cases": records | entry}, indent=2))
+        pending.replace(evidence_root / "index.json")
+    except BaseException as error:
+        try:
+            shutil.rmtree(archive)
+        except OSError as cleanup_error:
+            raise BaseExceptionGroup("Could not remove unpublished archive", [error, cleanup_error]) from None
+        raise
+    records.update(entry)
     return archive
 
 
@@ -248,7 +223,8 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
     case_id = area.name
     builder_started = False
     detached = driver.Descendants()
-    commands = RunCommands()
+    commands = driver.Commands()
+    host_commands = driver.Commands()
     host_exit_error = None
     archive = None
     keep_recovery = False
@@ -256,10 +232,7 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
 
     def settle(*, final=False):
         try:
-            if host_exit_error is not None:
-                if host_exit_error.process is None:
-                    raise host_exit_error
-                driver.child_cleanup.close(host_exit_error.process)
+            host_commands.join()
             if builder_started:
                 # Stop submissions before listing; do not kill admitted workers
                 # before the owned Runs can acknowledge cancellation and settle.
@@ -348,7 +321,7 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
         mcp_command = [str(executable), "--state-dir", str(area / "state"), "mcp"]
         command.extend(["--", *mcp_command])
         try:
-            registration = driver.run_command(command, cwd=repo, env=env, capture_output=True, text=True, timeout=60)
+            registration = host_commands.run(command, cwd=repo, env=env, capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired as error:
             # TimeoutExpired may carry bytes even when text=True.
             captured = [value.decode(errors="replace") if isinstance(value, bytes) else value or ""
@@ -400,7 +373,7 @@ CANONICAL SKILL
         (area / "evidence/prompt.txt").write_text(prompt)
         with (area / "evidence/transcript.jsonl").open("w") as transcript, (area / "evidence/stderr.txt").open("w") as errors:
             builder_started = True
-            result = driver.run_command(["claude", "-p", "--model", model, "--verbose", "--output-format", "stream-json",
+            result = host_commands.run(["claude", "-p", "--model", model, "--verbose", "--output-format", "stream-json",
                                      "--no-session-persistence", "--setting-sources", "", "--settings", json.dumps(settings),
                                      "--strict-mcp-config", "--mcp-config", str(repo / ".mcp.json"),
                                      "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep", "mcp__artifactize__*", "--", prompt],

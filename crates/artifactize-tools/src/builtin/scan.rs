@@ -35,7 +35,7 @@ impl Read {
             limit,
             lines: Vec::new(),
             line: Vec::new(),
-            current: 1,
+            current: super::FIRST_LINE,
             returned_bytes: 0,
             partial_line: false,
         }

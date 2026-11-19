@@ -3,7 +3,7 @@
 use crate::{Builtin, scope};
 use serde_json::{Value, json};
 
-use super::{DEFAULT_READ_LINES, MAX_PATTERN_UNITS, MAX_READ_LINES, MAX_RESULTS};
+use super::{DEFAULT_READ_LINES, FIRST_LINE, MAX_PATTERN_UNITS, MAX_READ_LINES, MAX_RESULTS};
 
 pub fn description(builtin: Builtin) -> &'static str {
     match builtin {
@@ -44,7 +44,7 @@ pub fn input_schema(builtin: Builtin) -> Value {
         Builtin::Read => (
             json!({
                 "path":path,
-                "offset":integer(1, crate::MAX_SAFE_JSON_INTEGER, 1),
+                "offset":integer(FIRST_LINE as u64, crate::MAX_SAFE_JSON_INTEGER, FIRST_LINE as u64),
                 "limit":integer(1, MAX_READ_LINES as u64, DEFAULT_READ_LINES as u64),
             }),
             vec!["path"],

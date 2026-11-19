@@ -54,7 +54,7 @@ impl Location<'_, '_> {
 /// through a link.
 pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, OpenError> {
     let path = InputPath::parse(path)?;
-    file_input(artifact, path.as_str())?;
+    file_input(artifact, path)?;
     open_owned(root, artifact, path).map(|opened| opened.file)
 }
 

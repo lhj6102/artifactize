@@ -212,7 +212,7 @@ pub struct ViewImage {
 }
 
 fn first_line() -> usize {
-    1
+    super::FIRST_LINE
 }
 fn read_lines() -> usize {
     super::DEFAULT_READ_LINES
