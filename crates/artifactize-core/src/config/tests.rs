@@ -72,6 +72,37 @@ fn editor_view_preserves_authored_path_as_well_as_resolved_target_kind() {
 }
 
 #[test]
+fn editor_removing_the_last_part_preserves_unrelated_toml_comments() {
+    let root = crate::test_os::tempdir();
+    let directory = root.path().join(discovery::DEFINITION_DIR);
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(directory.join("kit.artf"), "path = 'kit/'\nbasis = true\n").unwrap();
+    let file = directory.join("core.artf");
+    std::fs::write(
+        &file,
+        "# Core header\npath = 'core/'\n\n# Basis note\nbasis = true\n# reviewed\nparts = [\"kit\"]\n\n# End of file\n",
+    )
+    .unwrap();
+
+    let based_on = edit::read(root.path()).unwrap();
+    edit::apply(
+        root.path(),
+        &based_on,
+        edit::Operation::RemovePart {
+            whole: "core".parse().unwrap(),
+            part: "kit".parse().unwrap(),
+        },
+    )
+    .unwrap();
+
+    // `# reviewed` leads the `parts` key and goes with it when the last part is removed.
+    assert_eq!(
+        std::fs::read_to_string(file).unwrap(),
+        "# Core header\npath = 'core/'\n\n# Basis note\nbasis = true\n\n# End of file\n",
+    );
+}
+
+#[test]
 fn eval_mutex_declarations_are_typed_and_excluded_from_criteria() {
     let declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
     let baseline = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
