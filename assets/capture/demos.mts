@@ -168,7 +168,7 @@ async function corner(browser: WebdriverIO.Browser, selector: string): Promise<{
 
 /** Take frames until `done` resolves and the app shows the final state `final` waits for,
  * then one more, so that final state is the recording's last frame. */
-async function record(browser: WebdriverIO.Browser, directory: string, done: Promise<unknown>, final: () => Promise<boolean>): Promise<Frame[]> {
+async function record(browser: WebdriverIO.Browser, directory: string, done: Promise<unknown>, final: () => Promise<boolean>, live: () => Promise<boolean>): Promise<Frame[]> {
   const frames: Frame[] = [];
   let finished = false;
   void done.finally(() => { finished = true; });
@@ -177,7 +177,14 @@ async function record(browser: WebdriverIO.Browser, directory: string, done: Pro
     writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
     frames.push({ file, at: performance.now() / 1000 });
   };
-  while (!finished) await take();
+  // Frames that show the Run still in progress: the loop must be seen running, not only ended.
+  let running = 0;
+  while (!finished) {
+    const shown = await live();
+    await take();
+    if (shown && !finished) running += 1;
+  }
+  if (running < LIVE_FRAMES) throw new Error(`only ${running} frames showed the Run in progress`);
   await done;
   const until = performance.now() + WAIT;
   while (!await final()) {
@@ -193,6 +200,9 @@ async function record(browser: WebdriverIO.Browser, directory: string, done: Pro
   }
   return frames;
 }
+
+/** The fewest frames a try must show of its Run in progress. */
+const LIVE_FRAMES = 8;
 
 /** drawtext's text, with its own special characters escaped. */
 function drawn(text: string): string {
@@ -382,7 +392,13 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         watcher.once("error", failed);
         watcher.once("close", (code) => done({ code, text }));
       });
-      segments.push({ frames: await record(browser, frames, settled, () => ended(id, fails)), speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED}`, hold: GIF.hold });
+      /** The Run `id` is shown in progress: an Artifact of its graph still waits or runs. */
+      const live = () => browser.execute((id, main) => {
+        const shown = document.querySelector(main);
+        const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
+        return [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].some((node) => node.dataset.light === "waiting" || node.dataset.light === "active");
+      }, id, MAIN);
+      segments.push({ frames: await record(browser, frames, settled, () => ended(id, fails), live), speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED}`, hold: GIF.hold });
       const area = await corner(browser, `${MAIN} .run .canvas`);
       at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
       const { code, text } = await settled;
@@ -584,7 +600,10 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.id ?? ""));
         const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
         const refresh = document.querySelector<HTMLButtonElement>('section.panel[aria-label="Main area"] > header .actions button');
-        return !!refresh && !refresh.disabled && `${artifacts}\n${edges}` === expected;
+        // The graph shown was read at the scan that just ended, not kept from the one before.
+        const host = document.querySelector<HTMLElement>('section.panel[aria-label="Main area"] .host');
+        const current = !!host && host.dataset.read !== undefined && host.dataset.read === host.dataset.drawn;
+        return !!refresh && !refresh.disabled && current && `${artifacts}\n${edges}` === expected;
       }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector('section.panel[aria-label="Main area"] > header .failure')?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
@@ -598,7 +617,8 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
           const set = (values: string[]) => [...new Set(values)].sort().join(" ");
           const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
           const artifacts = set(nodes.filter((node) => node.dataset.artifact !== undefined).map((node) => node.dataset.id ?? ""));
-          const camera = document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style");
+          // The camera, the revision drawn and every node's light: none may change while it holds.
+          const camera = `${document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style")} ${document.querySelector<HTMLElement>('section.panel[aria-label="Main area"] .host')?.dataset.drawn} ${nodes.map((node) => `${node.dataset.id}=${node.dataset.light}`).join(",")}`;
           // Fitted out until names do not read, the graph checked above is painted as blocks.
           if (inside && nodes.length === 0 && document.querySelector(".current canvas.paint")) return `painted ${camera}`;
           if (`${artifacts}\n${set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")))}` !== expected) return null;

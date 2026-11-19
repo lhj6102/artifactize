@@ -51,8 +51,7 @@ import { NO_ANNOTATIONS } from "./annotations";
   /** Read the graph again for every new snapshot or scan and for another source: the lights of
    * the shape shown, or a new shape to lay out. Only the newest read shows what it read. */
   const reread: Attachment<HTMLElement> = () => {
-    void revision;
-    const [at, wanted] = [key, source];
+    const [at, wanted, atRevision] = [key, source, revision];
     // What it holds and its count of reads are its own: showing a read must not read again.
     const [read, held] = untrack(() => [++g.reads, g.shown && keyOf(g.shown.source) === at ? g.shown : null] as const);
     call(commands.graph(wanted, held?.shape ?? null)).then(
@@ -62,6 +61,7 @@ import { NO_ANNOTATIONS } from "./annotations";
         if (next.update.kind === "lights") {
           const graph = held?.shape === next.shape ? relight(held.graph, next.update) : null;
           if (held && graph && graph !== held.graph) g.shown = { ...held, graph };
+          if (held && graph) g.drawn = atRevision;
           return;
         }
         const graph = { nodes: next.update.nodes, edges: next.update.edges };
@@ -71,6 +71,9 @@ import { NO_ANNOTATIONS } from "./annotations";
           .then(() => definitions.ready(branch))
           .catch(() => {})
           .then(() => lay(next.source, next.shape, graph, () => read === g.reads, () => graph))
+          .then(() => {
+            if (read === g.reads) g.drawn = atRevision;
+          })
           .catch((failure) => {
           if (read === g.reads) g.error = message(failure);
         });
@@ -119,7 +122,8 @@ import { NO_ANNOTATIONS } from "./annotations";
   }
 </script>
 
-<div class="host" {@attach reread} {@attach replace}>
+<!-- The revision the graph was read at, and the one drawn: equal once the newest read shows. -->
+<div class="host" data-read={revision} data-drawn={g.drawn} {@attach reread} {@attach replace}>
 {#if g.error}
   <div class="pending"><GraphTools /><p class="note error">{g.error}</p></div>
 {:else if !g.shown}

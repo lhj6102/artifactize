@@ -18,6 +18,8 @@ export type Shown = { source: Source; shape: ShapeKey; graph: Shape; minimized: 
 export class SourceGraphState {
   shown = $state.raw<Shown | null>(null);
   error = $state<string | null>(null);
+  /** The snapshot's or scan's revision the graph shown was read at; -1 before one shows. */
+  drawn = $state(-1);
   /** Each read of the graph; only the newest one may show what it read. */
   reads = 0;
   /** Layouts by source, shape and minimized wholes, finished or in flight: a read of a shape
