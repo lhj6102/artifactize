@@ -178,13 +178,13 @@ fn large_tool_result_body_is_not_presented_and_large_prose_pages_in() {
     let event = Event {
         at: None,
         send: None,
-        kind: Kind::Message(MessageEvent {
-            turn: 1,
-            message: Message::tool_results(results),
-            repair: false,
-            is_error: vec![false; 4],
-            question: None,
-        }),
+        kind: Kind::Message(MessageEvent::new(
+            1,
+            Message::tool_results(results),
+            false,
+            vec![false; 4],
+            None,
+        )),
     };
     let bytes = serde_json::to_string(&event).unwrap();
     assert!(bytes.len() > 16 * 1024 * 1024);

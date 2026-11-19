@@ -113,7 +113,7 @@ fn initial_header_is_lazy_authoritative_and_repeated_end_preserves_saved_referen
     );
     assert!(matches!(
         &conversation.events()[0].kind,
-        Kind::Message(message) if message.turn == 1 && message.message == Message::user("recorded")
+        Kind::Message(message) if message.turn == 1 && message.message() == &Message::user("recorded")
     ));
     assert!(matches!(
         &conversation.events()[1].kind,

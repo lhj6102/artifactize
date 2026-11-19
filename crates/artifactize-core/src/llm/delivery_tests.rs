@@ -318,16 +318,16 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
     for patch in transcript.apply(&session::Event {
         at: None,
         send: None,
-        kind: Kind::Message(session::MessageEvent {
-            turn: 1,
-            message: Message::Assistant {
+        kind: Kind::Message(session::MessageEvent::new(
+            1,
+            Message::Assistant {
                 id: response.message_id,
                 content: response.choice,
             },
-            repair: false,
-            is_error: vec![],
-            question: None,
-        }),
+            false,
+            vec![],
+            None,
+        )),
     }) {
         blocks.insert(patch.id, patch.text);
     }

@@ -59,7 +59,6 @@ impl<'a> Scheduler<'a, '_> {
                 .expect("blocked state");
                 request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
                 request.blocked_reason = Some(crate::project::verify::gate_reason(eval));
-                request.queue = None;
                 self.receipts.block_request(&request).await?;
                 self.requests[index] = request;
                 return Ok(());

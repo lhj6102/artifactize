@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::*;
 use crate::config::{ArtifactName, CONFIG_FILE, EvalDeclaration, read_workspace_config};
-use crate::test_os::symlink_file;
+use crate::test_os::{file_link, remove_file_link};
 
 struct Repo {
     root: TempDir,
@@ -220,10 +220,9 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
         );
         assert!(error.contains("fingerprint.ignore"), "{error}");
     };
-    if symlink_file("a.txt", &link).is_some() {
-        check(repo.fingerprint("owner").await.unwrap_err());
-        crate::test_declaration::remove_file(&link).unwrap();
-    }
+    file_link(&repo.root.path().join("owner/a.txt"), &link);
+    check(repo.fingerprint("owner").await.unwrap_err());
+    remove_file_link(&link);
     repo.write("elsewhere/b.txt", "b");
     crate::test_os::link_dir(&repo.root.path().join("elsewhere"), &link);
     check(repo.fingerprint("owner").await.unwrap_err());

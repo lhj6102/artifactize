@@ -623,13 +623,13 @@ async fn continue_conversation(
                 .collect::<Result<_, String>>()?,
         ),
     }));
-    recorder.event(session::Kind::Message(session::MessageEvent {
-        turn: 1,
-        message: question,
-        question: Some(message.into()),
-        repair: false,
-        is_error: Vec::new(),
-    }));
+    recorder.event(session::Kind::Message(session::MessageEvent::new(
+        1,
+        question,
+        false,
+        Vec::new(),
+        Some(message.into()),
+    )));
     let mut turns = Turns {
         client: &client,
         registry: &registry,

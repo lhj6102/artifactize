@@ -123,17 +123,28 @@ async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alon
     );
     let mut open = input(&state, &repo, Some("run-large"), Changed::Nothing);
     open.force = true;
-    let (opened, requests, _, _) = loaded(loader.load(open).unwrap());
+    loader.reader.traced_statements();
+    let (_, requests, _, _) = loaded(loader.load(open).unwrap());
     assert_eq!(requests.len(), LARGE);
+    let statements = loader.reader.traced_statements();
+    assert!(
+        statements.iter().any(|sql| sql.contains("run_definitions")),
+        "{statements:?}"
+    );
 
     // A write to the open Run reads its changed request again, never its definitions.
     fail(&receipts, &large_requests, "run-large-a7").await;
-    let (reread, requests, _, _) = loaded(
+    loader.reader.traced_statements();
+    let (_, requests, _, _) = loaded(
         loader
             .load(input(&state, &repo, Some("run-large"), hinted("run-large")))
             .unwrap(),
     );
-    assert!(reread.run.definitions.shared(&opened.run.definitions));
+    let statements = loader.reader.traced_statements();
+    assert!(
+        !statements.iter().any(|sql| sql.contains("run_definitions")),
+        "{statements:?}"
+    );
     let failed = requests
         .iter()
         .find(|view| view.request.id.as_str() == "run-large-a7")

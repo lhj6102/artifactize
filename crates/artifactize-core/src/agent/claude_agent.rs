@@ -285,13 +285,13 @@ pub(super) async fn follow_up(
                 .collect::<Result<_, String>>()?,
         ),
     }));
-    recorder.event(session::Kind::Message(session::MessageEvent {
-        turn: 1,
-        message: question,
-        question: Some(message.into()),
-        repair: false,
-        is_error: Vec::new(),
-    }));
+    recorder.event(session::Kind::Message(session::MessageEvent::new(
+        1,
+        question,
+        false,
+        Vec::new(),
+        Some(message.into()),
+    )));
     let launch = Launch {
         model: Some(model.as_str()),
         effort: header.reasoning.map(crate::config::Reasoning::as_str),

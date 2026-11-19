@@ -255,7 +255,7 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
         );
         assert!(fixture.path().is_dir());
         assert_eq!(
-            artifactize_core::store::read_run(&state, &run.run.id)
+            artifactize_core::store::read_run_snapshot(&state, &run.run.id)
                 .await
                 .unwrap()
                 .run

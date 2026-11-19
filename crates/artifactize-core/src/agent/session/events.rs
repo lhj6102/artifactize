@@ -5,10 +5,13 @@ use crate::{
     llm::Attempt,
     types::{RequestId, RunId, SessionId},
 };
-use rig_core::{completion::ToolDefinition, message::Message};
+use rig_core::{
+    completion::ToolDefinition,
+    message::{AssistantContent, Message, ToolCall},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
@@ -110,17 +113,112 @@ pub struct Budgets {
     pub max_tokens: Option<u64>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", from = "MessageWire")]
 pub struct MessageEvent {
-    #[serde(default)]
     pub turn: usize,
-    pub message: Message,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    message: Message,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub repair: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub is_error: Vec<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub question: Option<String>,
+    // The complete message stays on the wire for replay; only the safe, known targets
+    // are exposed to the transcript. The key is the position in the assistant message.
+    #[serde(skip)]
+    targets: BTreeMap<usize, BuiltinTarget>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MessageWire {
+    #[serde(default)]
+    turn: usize,
+    message: Message,
+    #[serde(default)]
+    repair: bool,
+    #[serde(default)]
+    is_error: Vec<bool>,
+    question: Option<String>,
+}
+
+impl From<MessageWire> for MessageEvent {
+    fn from(wire: MessageWire) -> Self {
+        Self::new(
+            wire.turn,
+            wire.message,
+            wire.repair,
+            wire.is_error,
+            wire.question,
+        )
+    }
+}
+
+impl MessageEvent {
+    pub fn new(
+        turn: usize,
+        message: Message,
+        repair: bool,
+        is_error: Vec<bool>,
+        question: Option<String>,
+    ) -> Self {
+        let targets = match &message {
+            Message::Assistant { content, .. } => content
+                .iter()
+                .enumerate()
+                .filter_map(|(index, part)| match part {
+                    AssistantContent::ToolCall(call) => {
+                        BuiltinTarget::decode(call).map(|target| (index, target))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            _ => BTreeMap::new(),
+        };
+        Self {
+            turn,
+            message,
+            repair,
+            is_error,
+            question,
+            targets,
+        }
+    }
+
+    pub fn message(&self) -> &Message {
+        &self.message
+    }
+
+    pub(super) fn builtin_target(&self, index: usize) -> Option<&BuiltinTarget> {
+        self.targets.get(&index)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct BuiltinTarget {
+    pub path: Option<PathBuf>,
+    pub pattern: Option<String>,
+}
+
+impl BuiltinTarget {
+    fn decode(call: &ToolCall) -> Option<Self> {
+        let name = call.function.name.as_str();
+        let builtin = ["read", "list", "glob", "grep", "view_image"]
+            .iter()
+            .any(|base| {
+                name == *base
+                    || name
+                        .strip_prefix(base)
+                        .is_some_and(|rest| rest.starts_with('_'))
+            });
+        builtin.then(|| {
+            let text = |field| call.function.arguments.get(field).and_then(Value::as_str);
+            Self {
+                path: text("path").map(PathBuf::from),
+                pattern: text("pattern").map(str::to_owned),
+            }
+        })
+    }
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

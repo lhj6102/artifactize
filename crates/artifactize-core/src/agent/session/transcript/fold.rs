@@ -9,10 +9,7 @@ use super::{
     },
 };
 use rig_core::message::{AssistantContent, Message, ToolCall, ToolResult, UserContent};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 struct LiveBlock {
     id: BlockId,
@@ -27,32 +24,6 @@ struct Correlation(String);
 impl Correlation {
     fn of(id: &rig_core::message::CallId) -> Self {
         Self(id.wire().into_owned())
-    }
-}
-
-/// Project the recorded wire arguments onto only the built-in fields this view exposes.
-fn call_target(call: &ToolCall) -> Target<'_> {
-    let name = call.function.name.as_str();
-    let builtin = ["read", "list", "glob", "grep", "view_image"]
-        .iter()
-        .any(|base| {
-            name == *base
-                || name
-                    .strip_prefix(base)
-                    .is_some_and(|rest| rest.starts_with('_'))
-        });
-    if !builtin {
-        return Target::Unrecorded;
-    }
-    let text = |field| {
-        call.function
-            .arguments
-            .get(field)
-            .and_then(serde_json::Value::as_str)
-    };
-    Target::Builtin {
-        path: text("path").map(Path::new),
-        pattern: text("pattern"),
     }
 }
 
@@ -113,7 +84,13 @@ impl Transcript {
         self.active = Some(id);
         id
     }
-    fn call(&mut self, send: Option<usize>, call: &ToolCall, dirty: &mut BTreeSet<BlockId>) {
+    fn call(
+        &mut self,
+        send: Option<usize>,
+        call: &ToolCall,
+        call_target: Target<'_>,
+        dirty: &mut BTreeSet<BlockId>,
+    ) {
         let key = (send, Correlation::of(&call.id));
         // Repeated recorded IDs do not invent another execution or attach to a later call.
         if self.calls.contains_key(&key) {
@@ -124,7 +101,7 @@ impl Transcript {
         let index = group.activities.len();
         group.activities.push(Activity {
             name: header(call.function.name.as_str()),
-            target: target(call_target(call)),
+            target: target(call_target),
             state: State::Running,
             orphan: false,
         });
@@ -300,10 +277,10 @@ impl Transcript {
                     }
                     self.question = None;
                 } else {
-                    match &message.message {
+                    match message.message() {
                         Message::System { .. } => {}
                         Message::Assistant { content, .. } => {
-                            for part in content {
+                            for (index, part) in content.iter().enumerate() {
                                 match part {
                                     AssistantContent::Text(text) => {
                                         if !self
@@ -314,7 +291,14 @@ impl Transcript {
                                         }
                                     }
                                     AssistantContent::ToolCall(call) => {
-                                        self.call(event.send, call, &mut dirty)
+                                        let target = message.builtin_target(index).map_or(
+                                            Target::Unrecorded,
+                                            |target| Target::Builtin {
+                                                path: target.path.as_deref(),
+                                                pattern: target.pattern.as_deref(),
+                                            },
+                                        );
+                                        self.call(event.send, call, target, &mut dirty);
                                     }
                                     AssistantContent::Reasoning(_) | AssistantContent::Image(_) => {
                                     }

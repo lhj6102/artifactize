@@ -81,7 +81,7 @@ impl Summary {
         for event in conversation.events() {
             match &event.kind {
                 super::Kind::Attempt(attempt) => summary.attempt(event.send, attempt),
-                super::Kind::Message(event) => match &event.message {
+                super::Kind::Message(event) => match event.message() {
                     Message::Assistant { content, .. } => {
                         for part in content {
                             if let AssistantContent::ToolCall(call) = part {

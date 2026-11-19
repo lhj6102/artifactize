@@ -29,14 +29,6 @@ impl Definitions {
     pub fn from_view(view: &crate::query::GraphView<'_>) -> Result<Self, serde_json::Error> {
         serde_json::from_value(serde_json::to_value(view)?)
     }
-    /// Whether both are the same decoded graph, not merely equal ones.
-    pub fn shared(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            (Some(one), Some(other)) => Arc::ptr_eq(one, other),
-            (None, None) => true,
-            _ => false,
-        }
-    }
 }
 impl Serialize for Definitions {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -425,7 +417,7 @@ pub enum RelationKind {
         eval_id: crate::types::EvalId,
         index: usize,
         name: config::ReferenceName,
-        path: String,
+        path: crate::scope::LogicalTarget,
     },
     #[serde(untagged)]
     Unknown { kind: String },

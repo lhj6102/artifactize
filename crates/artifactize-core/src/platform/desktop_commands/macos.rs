@@ -76,9 +76,14 @@ pub(super) fn register(
         Consent::Declined => {
             declined.push(bin.to_owned());
             fs::create_dir_all(state)?;
+            #[derive(serde::Serialize)]
+            struct Declined<'a>(
+                #[serde(serialize_with = "crate::platform::serialize_paths")]
+                &'a [std::path::PathBuf],
+            );
             fs::write(
                 declined_file,
-                serde_json::to_vec(&declined).map_err(io::Error::other)?,
+                serde_json::to_vec(&Declined(&declined)).map_err(io::Error::other)?,
             )
         }
     }
@@ -111,8 +116,8 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
     if super::bounded_status(&mut sudo, SUDO_TIMEOUT)?.success() {
         return Ok(Consent::Installed);
     }
-    // AppleScript's elevation API accepts only a shell command (the P-COMMANDS exception):
-    // the script is constant and AppleScript quotes both paths, which arrive as arguments.
+    // AppleScript's elevation API accepts only a shell command. The script is constant,
+    // and AppleScript quotes both paths, which arrive as arguments.
     const SCRIPT: &str = "on run argv\n do shell script \"/usr/bin/install -m 644 \" & quoted form of item 1 of argv & \" \" & quoted form of item 2 of argv with prompt \"Artifactize wants to make the artifactize command available in Terminal.\" with administrator privileges\nend run";
     let errors = tempfile::NamedTempFile::new()?;
     let mut prompt = Command::new("/usr/bin/osascript");
@@ -209,6 +214,11 @@ mod tests {
         );
         fs::remove_file(&paths).unwrap();
         register(&moved, &paths, &state, false, |_, _| Ok(Consent::Declined)).unwrap();
+        let declined = fs::read(state.join("desktop-cli-declined.json")).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Vec<String>>(&declined).unwrap(),
+            [crate::platform::path_text(&moved)]
+        );
         register(&moved, &paths, &state, false, |_, _| {
             panic!("declined for this bundle")
         })

@@ -28,6 +28,28 @@ pub struct Views {
 }
 
 impl Views {
+    fn parse(location: &Location<'_, '_>) -> Result<Self, String> {
+        let mut views = Self::default();
+        for (key, _) in location.table()? {
+            let field = location.child(key.get_ref());
+            match key.get_ref().as_ref() {
+                "agent_sessions" => views.agent_sessions = tool_map(&field, |value, _| value.deserialize())?,
+                "agent_tools" => views.agent_tools = tool_map(&field, |value, tool| {
+                    if tool.get("builtin").is_some() {
+                        value.deserialize::<BuiltinTool>().map(AgentTool::Builtin)
+                    } else {
+                        value.deserialize::<CommandTool>().map(AgentTool::Command)
+                    }
+                })?,
+                "human_tools" => views.human_tools = tool_map(&field, |value, _| value.deserialize())?,
+                name => return Err(location.key(name).error(format!(
+                    "unknown field `{name}`, expected `agent_sessions`, `agent_tools`, or `human_tools`"
+                ))),
+            }
+        }
+        Ok(views)
+    }
+
     fn validate(
         &self,
         location: &Location<'_, '_>,
@@ -35,9 +57,6 @@ impl Views {
     ) -> Result<(), String> {
         for (name, session) in &self.agent_sessions {
             let sessions = location.child("agent_sessions");
-            sessions
-                .key(name)
-                .check(identifier(name, "Tool session name"))?;
             sessions
                 .child(name)
                 .child("start")
@@ -58,7 +77,6 @@ impl Views {
                     .child("session")
                     .error(format!("Unknown tool session: {session}")));
             }
-            tools.key(name).check(identifier(name, "Agent tool name"))?;
             tools.child(name).check(
                 tool.validate(schemas)
                     .map_err(|e| format!("Tool {name}: {e}")),
@@ -66,13 +84,28 @@ impl Views {
         }
         for (name, tool) in &self.human_tools {
             let tools = location.child("human_tools");
-            tools.key(name).check(identifier(name, "Human tool name"))?;
             tools
                 .child(name)
                 .check(tool.validate().map_err(|e| format!("Tool {name}: {e}")))?;
         }
         Ok(())
     }
+}
+
+fn tool_map<T>(
+    location: &Location<'_, '_>,
+    parse: impl Fn(Location<'_, '_>, &toml::de::DeValue<'_>) -> Result<T, String>,
+) -> Result<BTreeMap<ToolOperationName, T>, String> {
+    location
+        .table()?
+        .iter()
+        .map(|(name, value)| {
+            let name = name.get_ref().as_ref();
+            let id = location.key(name).check(name.parse())?;
+            let tool = parse(location.child(name), value.get_ref())?;
+            Ok((id, tool))
+        })
+        .collect()
 }
 
 /// The developer's definition of what an Artifact's reviews depend on: a script's output or
@@ -143,6 +176,10 @@ fn default_fingerprint() -> Option<Fingerprint> {
     Some(Fingerprint::default())
 }
 
+const INVALID_FINGERPRINT: &str =
+    "fingerprint must be false or an object declaring artifactsum (files, ignore) or a script.";
+const REMOVED_DEPENDENCIES: &str = "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its children and referenced Artifacts. Remove the field.";
+
 fn declared_fingerprint<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Fingerprint>, D::Error> {
@@ -152,9 +189,31 @@ fn declared_fingerprint<'de, D: serde::Deserializer<'de>>(
         Value::Object(object) => Fingerprint::try_from(object)
             .map(Some)
             .map_err(D::Error::custom),
-        _ => Err(D::Error::custom(
-            "fingerprint must be false or an object declaring artifactsum (files, ignore) or a script.",
-        )),
+        _ => Err(D::Error::custom(INVALID_FINGERPRINT)),
+    }
+}
+
+impl From<ScriptForm> for Fingerprint {
+    fn from(form: ScriptForm) -> Self {
+        let ScriptFields {
+            command,
+            args,
+            files,
+            timeout_ms,
+        } = form.script;
+        Self::Script {
+            command,
+            args,
+            files,
+            timeout_ms,
+        }
+    }
+}
+
+impl From<ArtifactsumForm> for Fingerprint {
+    fn from(form: ArtifactsumForm) -> Self {
+        let ArtifactsumForm { files, ignore } = form;
+        Self::Artifactsum { files, ignore }
     }
 }
 
@@ -163,29 +222,12 @@ impl TryFrom<Map<String, Value>> for Fingerprint {
 
     fn try_from(object: Map<String, Value>) -> Result<Self, Self::Error> {
         Ok(if object.contains_key("script") {
-            let ScriptForm {
-                script:
-                    ScriptFields {
-                        command,
-                        args,
-                        files,
-                        timeout_ms,
-                    },
-            } = serde_json::from_value(Value::Object(object))?;
-            Self::Script {
-                command,
-                args,
-                files,
-                timeout_ms,
-            }
+            serde_json::from_value::<ScriptForm>(Value::Object(object))?.into()
         } else {
             if object.contains_key("dependencies") {
-                return Err(serde::de::Error::custom(
-                    "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its children and referenced Artifacts. Remove the field.",
-                ));
+                return Err(serde::de::Error::custom(REMOVED_DEPENDENCIES));
             }
-            let ArtifactsumForm { files, ignore } = serde_json::from_value(Value::Object(object))?;
-            Self::Artifactsum { files, ignore }
+            serde_json::from_value::<ArtifactsumForm>(Value::Object(object))?.into()
         })
     }
 }
@@ -215,6 +257,26 @@ impl From<Fingerprint> for Value {
 }
 
 impl Fingerprint {
+    fn parse(
+        location: &Location<'_, '_>,
+        value: &toml::de::DeValue<'_>,
+    ) -> Result<Option<Self>, String> {
+        use toml::de::DeValue;
+        match value {
+            DeValue::Boolean(false) => Ok(None),
+            DeValue::Table(fields) if fields.contains_key("script") => location
+                .deserialize::<ScriptForm>()
+                .map(|form| Some(form.into())),
+            DeValue::Table(fields) if fields.contains_key("dependencies") => {
+                Err(location.child("dependencies").error(REMOVED_DEPENDENCIES))
+            }
+            DeValue::Table(_) => location
+                .deserialize::<ArtifactsumForm>()
+                .map(|form| Some(form.into())),
+            _ => Err(location.error(INVALID_FINGERPRINT)),
+        }
+    }
+
     pub fn kind(&self) -> crate::types::FingerprintKind {
         match self {
             Self::Graph => crate::types::FingerprintKind::Graph,
@@ -422,71 +484,31 @@ pub(super) fn parse_declaration_table(
     // TOML buffers enum/table-key deserialization. Check lexical fields at their
     // own source positions before constructing validated identities, not in discovery.
     validate_identity_locations(&location, &document)?;
-    // These sum types use JSON maps internally; pin field errors to their original spans.
-    if let Some(fingerprint) = document.get_ref().get("fingerprint")
-        && let Some(fields) = fingerprint.get_ref().as_table()
+    // Decode these fields directly from their spanned TOML nodes. Keep the original
+    // document for validation diagnostics, but don't deserialize those fields again.
+    let mut body = document.get_ref().as_table().unwrap().clone();
+    let views = if body.remove("views").is_some() {
+        Views::parse(&location.child("views"))?
+    } else {
+        Views::default()
+    };
+    let fingerprint = match body
+        .remove("fingerprint")
+        .as_ref()
+        .map(toml::Spanned::get_ref)
     {
-        let fingerprint_location = location.child("fingerprint");
-        if fields.contains_key("script") {
-            fingerprint_location.deserialize::<ScriptForm>()?;
-        } else if !fields.contains_key("dependencies") {
-            fingerprint_location.deserialize::<ArtifactsumForm>()?;
-        }
-    }
-    if let Some(tools) = document
-        .get_ref()
-        .get("views")
-        .and_then(|views| views.get_ref().get("agent_tools"))
-        .and_then(|tools| tools.get_ref().as_table())
-    {
-        for (name, tool) in tools {
-            if tool.get_ref().as_table().is_some() {
-                let tool_location = location
-                    .child("views")
-                    .child("agent_tools")
-                    .child(name.get_ref());
-                if tool.get_ref().get("builtin").is_some() {
-                    tool_location.deserialize::<BuiltinTool>()?;
-                } else {
-                    tool_location.deserialize::<CommandTool>()?;
-                }
-            }
-        }
-    }
-    if let Some(tools) = document
-        .get_ref()
-        .get("views")
-        .and_then(|views| views.get_ref().get("human_tools"))
-        .and_then(|tools| tools.get_ref().as_table())
-    {
-        for (name, _) in tools {
-            location
-                .child("views")
-                .child("human_tools")
-                .child(name.get_ref())
-                .deserialize::<HumanTool>()?;
-        }
-    }
-    if let Some(sessions) = document
-        .get_ref()
-        .get("views")
-        .and_then(|views| views.get_ref().get("agent_sessions"))
-        .and_then(|sessions| sessions.get_ref().as_table())
-    {
-        for (name, _) in sessions {
-            location
-                .child("views")
-                .child("agent_sessions")
-                .child(name.get_ref())
-                .deserialize::<ToolSession>()?;
-        }
-    }
-    let mut declaration =
-        ArtifactDeclaration::deserialize(toml::de::ValueDeserializer::from(document.clone()))
-            .map_err(|mut error| {
-                error.set_input(Some(source));
-                error.to_string()
-            })?;
+        Some(value) => Fingerprint::parse(&location.child("fingerprint"), value)?,
+        None => default_fingerprint(),
+    };
+    let mut declaration = ArtifactDeclaration::deserialize(toml::de::ValueDeserializer::from(
+        toml::Spanned::new(document.span(), toml::de::DeValue::Table(body)),
+    ))
+    .map_err(|mut error| {
+        error.set_input(Some(source));
+        error.to_string()
+    })?;
+    declaration.views = views;
+    declaration.fingerprint = fingerprint;
     declaration.share(schemas);
     declaration.validate(&location, schemas)?;
     Ok(declaration)

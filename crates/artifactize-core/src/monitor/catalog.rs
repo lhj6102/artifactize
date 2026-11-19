@@ -61,6 +61,27 @@ pub struct CatalogRow {
     /// A row standing for this repository's worktrees without Runs; Space shows or hides them.
     pub fold: Option<Repository>,
 }
+/// The representative paths for physical directories in this catalog snapshot.
+#[derive(Default)]
+struct Directories {
+    spellings: BTreeMap<PathBuf, PathBuf>,
+    identities: BTreeMap<crate::platform::FileIdentity, PathBuf>,
+}
+
+impl Directories {
+    fn resolve(&mut self, path: PathBuf) -> PathBuf {
+        self.spellings
+            .entry(path.clone())
+            .or_insert_with(|| {
+                crate::platform::paths::directory_identity(&path).map_or_else(
+                    |_| path,
+                    |(id, canonical)| self.identities.entry(id).or_insert(canonical).clone(),
+                )
+            })
+            .clone()
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct Catalog {
     facts: std::sync::Arc<Vec<CatalogRun>>,
@@ -135,14 +156,8 @@ impl Catalog {
         let mut badges: BTreeMap<Scope, Badge> = BTreeMap::new();
         let mut paths: BTreeMap<Scope, BTreeSet<PathBuf>> = BTreeMap::new();
         let mut branches: BTreeMap<Scope, Option<String>> = BTreeMap::new();
-        let mut workspaces = BTreeMap::new();
+        let mut directories = Directories::default();
         for run in runs {
-            let mut workspace = || {
-                crate::platform::paths::directory_identity(&run.repo_path).map_or_else(
-                    |_| run.repo_path.clone(),
-                    |(id, path)| workspaces.entry(id).or_insert(path).clone(),
-                )
-            };
             let identity =
                 if run.repository.common_dir.is_some() && run.repository.worktree_path.is_some() {
                     run.repository.clone()
@@ -150,9 +165,12 @@ impl Catalog {
                     self.identity(&run.repo_path)
                 };
             let (repository, tree) = match (identity.common_dir, identity.worktree_path) {
-                (Some(common), Some(tree)) => (Repository::Git(common), tree),
+                (Some(common), Some(tree)) => (
+                    Repository::Git(directories.resolve(common)),
+                    directories.resolve(tree),
+                ),
                 _ => {
-                    let path = workspace();
+                    let path = directories.resolve(run.repo_path.clone());
                     (Repository::Workspace(path.clone()), path)
                 }
             };
@@ -166,14 +184,20 @@ impl Catalog {
                 badges.entry(scope).or_default().add(run);
             }
         }
-        if let Some(path) = initial {
-            let scope = self.initial_path(path, &paths);
-            if let Scope::Worktree(repository, _) = &scope {
-                paths
-                    .entry(Scope::Repository(repository.clone()))
-                    .or_default();
-                paths.entry(scope).or_default();
-            }
+        if let Some(path) = initial
+            && let Scope::Worktree(repository, tree) = self.initial_path(path, &paths)
+        {
+            let (repository, tree) = match repository {
+                Repository::Git(common) => (
+                    Repository::Git(directories.resolve(common)),
+                    directories.resolve(tree),
+                ),
+                workspace => (workspace, tree),
+            };
+            paths
+                .entry(Scope::Repository(repository.clone()))
+                .or_default();
+            paths.entry(Scope::Worktree(repository, tree)).or_default();
         }
         let repositories: Vec<_> = paths
             .keys()
@@ -185,7 +209,7 @@ impl Catalog {
         for repository in &repositories {
             if let Repository::Git(common) = repository {
                 for tree in self.trees(common) {
-                    let scope = Scope::Worktree(repository.clone(), tree.path);
+                    let scope = Scope::Worktree(repository.clone(), directories.resolve(tree.path));
                     paths.entry(scope.clone()).or_default();
                     branches.entry(scope).or_insert(tree.branch);
                 }

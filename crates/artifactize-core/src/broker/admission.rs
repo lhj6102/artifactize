@@ -112,7 +112,6 @@ impl<'a> Scheduler<'a, '_> {
                     .expect("blocked state");
                     request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
                     request.blocked_reason = Some(crate::project::verify::gate_reason(eval));
-                    request.queue = None;
                     self.receipts.block_request(request).await?;
                 }
             }
@@ -209,7 +208,6 @@ impl<'a> Scheduler<'a, '_> {
                             crate::store::RequestState::pending(status, request.completed_at())
                                 .expect("gated request");
                         request.blocked_by = blocked_by;
-                        request.queue = None;
                         request.blocked_reason = Some(crate::project::verify::gate_reason(eval));
                         self.receipts.save_request(request).await?;
                     }
@@ -220,7 +218,6 @@ impl<'a> Scheduler<'a, '_> {
             let declared = declarations[&request.eval_id];
             if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
                 admissions[index] = Admission::Idle;
-                request.queue = None;
                 request.blocked_reason = None;
                 request.state = crate::store::RequestState::failed(
                     error,
@@ -338,7 +335,6 @@ impl<'a> Scheduler<'a, '_> {
                             None,
                         )
                         .expect("mutex waiter is queued");
-                        request.queue = None;
                         request.blocked_reason = Some(reason);
                         self.receipts.save_request(request).await?;
                     }
@@ -350,9 +346,12 @@ impl<'a> Scheduler<'a, '_> {
                     let newly_waiting = !matches!(admissions[index], Admission::Capacity);
                     admissions[index] = Admission::Capacity;
                     if newly_waiting {
-                        request.queue = Some(crate::store::QueueReason::Slot {
-                            backend: backend.clone(),
-                        });
+                        request.state = crate::store::RequestState::Queued {
+                            at: request.completed_at(),
+                            reason: Some(crate::store::QueueReason::Slot {
+                                backend: backend.clone(),
+                            }),
+                        };
                         request.blocked_reason = Some(format!(
                             "Waiting for a free {backend} slot: all {limit} are in use on this machine (limits.json)."
                         ));
@@ -383,7 +382,6 @@ impl<'a> Scheduler<'a, '_> {
                         request.completed_at(),
                     )
                     .expect("pending request state");
-                    request.queue = None;
                     request.blocked_reason = Some(not_reused_reason(kind));
                     self.receipts.save_request(request).await?;
                     evidence.insert(request.eval_id.clone(), Evidence::Stale);
@@ -399,7 +397,6 @@ impl<'a> Scheduler<'a, '_> {
                     } else {
                         crate::store::RequestState::WaitingHuman
                     };
-                    request.queue = None;
                     request.blocked_reason =
                         Some("Waiting for the active Human execution of this reuse key.".into());
                     *request = self.receipts.follow_human(request).await?;
@@ -419,7 +416,6 @@ impl<'a> Scheduler<'a, '_> {
                             request.completed_at(),
                         )
                         .expect("pending request state");
-                        request.queue = None;
                         request.blocked_reason = Some(format!(
                             "Waiting for execution {id} with the same reuse key and profile."
                         ));
@@ -430,7 +426,6 @@ impl<'a> Scheduler<'a, '_> {
                 Claim::BudgetExhausted if let Some(cause) = backend_stopped => {
                     admissions[index] = Admission::Idle;
                     // A request waiting for a slot stops waiting.
-                    request.queue = None;
                     request.blocked_reason = None;
                     request.state = crate::store::RequestState::failed(
                         format!(
@@ -459,7 +454,6 @@ impl<'a> Scheduler<'a, '_> {
                             request.completed_at(),
                         )
                         .expect("pending request state");
-                        request.queue = None;
                         request.blocked_reason = Some(reason);
                         self.receipts.save_request(request).await?;
                     }
@@ -474,7 +468,6 @@ impl<'a> Scheduler<'a, '_> {
                 .as_ref()
                 .filter(|_| !request.force)
                 .map(|_| execution.id.clone());
-            request.queue = None;
             request.blocked_reason = None;
             let eval = declarations[&request.eval_id];
             let prepared = execution::prepare(

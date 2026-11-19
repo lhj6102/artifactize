@@ -386,7 +386,6 @@ impl Scheduler<'_, '_> {
                         if let Some(index) = index {
                             admissions[index] = Admission::Idle;
                             let request = &mut self.requests[index];
-                            request.queue = None;
                             request.blocked_reason = None;
                             request.state = crate::store::RequestState::failed(
                                 error,

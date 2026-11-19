@@ -658,10 +658,15 @@ async fn a_run_saved_again_keeps_its_definitions_as_saved_with_the_run() {
     saved.definitions =
         serde_json::from_value(json!({"artifacts":{"web":{"path":"web"}},"evals":[]})).unwrap();
     receipts.save_run(&saved).await.unwrap();
+    reader.traced_statements();
     let second = read(&mut reader, &state, &id, 2).unwrap().0;
     assert_eq!(second.run.jobs, Some(7));
-    assert!(second.run.definitions.shared(&first.run.definitions));
-    let fresh = store::read_run(&state, "run-0").await.unwrap();
+    let statements = reader.traced_statements();
+    assert!(
+        !statements.iter().any(|sql| sql.contains("run_definitions")),
+        "{statements:?}"
+    );
+    let fresh = store::read_run_snapshot(&state, "run-0").await.unwrap();
     let artifacts = fresh
         .run
         .definitions
@@ -673,7 +678,7 @@ async fn a_run_saved_again_keeps_its_definitions_as_saved_with_the_run() {
     assert!(artifacts.contains_key("app") && !artifacts.contains_key("web"));
 }
 #[tokio::test]
-async fn a_changed_request_is_read_alone_and_the_rest_stay_shared_with_the_shown_snapshot() {
+async fn a_refresh_reads_only_the_changed_request_and_preserves_the_shown_snapshot() {
     // A Run of thousands of requests stays shown while one of them changes: the next snapshot
     // reads that request again and shares every other one, and the Run's definitions, with the
     // snapshot still shown instead of copying them.
@@ -699,25 +704,35 @@ async fn a_changed_request_is_read_alone_and_the_rest_stay_shared_with_the_shown
         [],
     )
     .unwrap();
+    reader.traced_statements();
     let (run, next) = read(&mut reader, &state, &id, 1).unwrap();
-    assert_eq!(next[1].request.title, "Changed");
-    assert_eq!(shown[1].request.title, "Title");
-    for n in [0, 2] {
-        assert!(std::sync::Arc::ptr_eq(&shown[n].request, &next[n].request));
-    }
+    let statements = reader.traced_statements();
     assert!(
-        run.requests
-            .iter()
-            .zip(&next)
-            .all(|(request, view)| std::sync::Arc::ptr_eq(request, &view.request))
+        !statements.iter().any(|sql| sql.contains("run_definitions")),
+        "{statements:?}"
     );
-    let graph = run.run.definitions.graph().unwrap();
-    for (view, eval) in next.iter().zip(graph.evals()) {
+    let payload_reads: Vec<_> = statements
+        .iter()
+        .filter(|sql| sql.contains("q.run_id,q.data"))
+        .collect();
+    assert_eq!(payload_reads.len(), 1, "{statements:?}");
+    assert!(
+        payload_reads[0].contains(r#"["run-1-a1"]"#),
+        "{payload_reads:?}"
+    );
+    let titles: Vec<_> = run
+        .requests
+        .iter()
+        .map(|request| request.title.as_str())
+        .collect();
+    assert_eq!(titles, ["Title", "Changed", "Title"]);
+    assert_eq!(shown[1].request.title, "Title");
+    for (view, name) in next.iter().zip(names) {
         let definition = view.definition.as_ref().unwrap();
-        assert!(std::ptr::eq(definition.eval(), eval));
-        assert!(std::ptr::eq(
-            definition.artifact(),
-            graph.artifact(&eval.target).unwrap()
-        ));
+        assert_eq!(definition.eval().id.as_str(), format!("{name}/check"));
+        assert_eq!(
+            definition.artifact().path.value().unwrap().local(),
+            Some(Path::new(name))
+        );
     }
 }

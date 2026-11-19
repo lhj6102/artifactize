@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use super::*;
 use crate::{
     config::{RepoConfig, read_workspace_config},
-    test_os::symlink_file,
+    test_os::file_link,
 };
 
 async fn prepare_all<'a>(
@@ -83,7 +83,10 @@ async fn fingerprint_false_is_not_prepared_or_rechecked_and_leaves_no_key() {
         }]}),
     );
     // Even an invalid artifactsum input is never read for a disabled fingerprint.
-    let _ = symlink_file("missing", repo.root.path().join("link"));
+    file_link(
+        &repo.root.path().join("missing"),
+        &repo.root.path().join("link"),
+    );
     let config = read_workspace_config(repo.root.path()).unwrap();
     let fingerprints = prepare(
         &config,

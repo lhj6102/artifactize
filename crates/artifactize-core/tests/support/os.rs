@@ -2887,7 +2887,7 @@ pub fn port_fixture(path: &Path) {
                                     || command.starts_with("/usr/bin/")
                                     || command == "sh") =>
                         {
-                            let resolved = bin(command);
+                            let resolved = path_text(Path::new(&bin(command)));
                             let changed = *command != resolved;
                             *command = resolved;
                             changed

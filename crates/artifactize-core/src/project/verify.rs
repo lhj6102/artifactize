@@ -168,7 +168,6 @@ pub(crate) async fn reserve(
                 argv: None,
                 child: None,
                 blocked_reason: None,
-                queue: None,
                 blocked_by: Vec::new(),
             })
             .collect();
@@ -318,7 +317,12 @@ pub(crate) async fn execute(
             .evals
             .iter()
             .find(|eval| eval.id == request.eval_id)
-            .expect("request eval");
+            .ok_or_else(|| {
+                format!(
+                    "Saved request {} in Run {} refers to Eval {}, which is missing from the workspace configuration.",
+                    request.id, request.run_id, request.eval_id
+                )
+            })?;
         request.fingerprints = cache::dependencies(&config, eval)
             .into_iter()
             .filter_map(|name| {
@@ -387,7 +391,6 @@ pub(crate) async fn execute(
             request.state =
                 crate::store::RequestState::pending(status(eval.status), request.completed_at())
                     .expect("non-executed request state");
-            request.queue = None;
             request.blocked_reason = Some(gate_reason(eval));
         }
     }

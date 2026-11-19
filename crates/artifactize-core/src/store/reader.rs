@@ -324,16 +324,26 @@ impl Cache {
     ) -> Result<Option<(RunView, Vec<RequestView>)>, Error> {
         let saved = self.selected.take().filter(|saved| &saved.run.id == id);
         // The state's text only when its revision moved, the definitions only on opening.
-        let (repo, revision, data, definitions): (String, i64, Option<String>, Option<String>) = db
-            .query_row(
-                "SELECT r.repo,r.revision,CASE WHEN r.revision IS ?2 THEN NULL ELSE r.data END,
-                CASE WHEN ?2 IS NULL THEN (SELECT d.data FROM run_definitions d WHERE d.run_id=r.id) END
-                FROM runs r WHERE r.id=?1",
-                rusqlite::params![id, saved.as_ref().map(|saved| saved.revision)],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-            )
-            .optional()?
-            .ok_or_else(|| Error::Invalid("Run not found.".into()))?;
+        type RunRow = (String, i64, Option<String>, Option<String>);
+        let decode = |row: &rusqlite::Row<'_>| -> rusqlite::Result<RunRow> {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        };
+        let (repo, revision, data, definitions) = match &saved {
+            Some(saved) => db.query_row(
+                "SELECT repo,revision,CASE WHEN revision IS ?2 THEN NULL ELSE data END,NULL
+                FROM runs WHERE id=?1",
+                rusqlite::params![id, saved.revision],
+                decode,
+            ),
+            None => db.query_row(
+                "SELECT r.repo,r.revision,r.data,d.data
+                FROM runs r LEFT JOIN run_definitions d ON d.run_id=r.id WHERE r.id=?1",
+                [id],
+                decode,
+            ),
+        }
+        .optional()?
+        .ok_or_else(|| Error::Invalid("Run not found.".into()))?;
         outside_workspace(Path::new(&repo), state)
             .map_err(|error| Error::Invalid(error.to_string()))?;
         let (mut selected, state_changed) = match (saved, data) {

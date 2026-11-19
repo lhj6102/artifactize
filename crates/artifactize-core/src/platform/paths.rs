@@ -13,6 +13,11 @@ pub(crate) fn target_exists(path: &Path) -> io::Result<bool> {
     path.try_exists()
 }
 
+/// Whether the resolved target is a regular file. Missing or unqueryable targets are false.
+pub(crate) fn target_is_file(path: &Path) -> bool {
+    path.is_file()
+}
+
 pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
     let mut resolved = PathBuf::new();
     for component in std::path::absolute(path)?.components() {

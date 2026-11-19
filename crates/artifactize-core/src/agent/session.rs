@@ -312,13 +312,13 @@ impl Recorder {
         if !self.active() {
             return;
         }
-        self.event(Kind::Message(MessageEvent {
+        self.event(Kind::Message(MessageEvent::new(
             turn,
-            message: message.clone(),
+            message.clone(),
             repair,
-            is_error: Vec::new(),
-            question: None,
-        }));
+            Vec::new(),
+            None,
+        )));
     }
 
     /// The message of tool results that `turn` sends, with whether each failed.
@@ -326,13 +326,13 @@ impl Recorder {
         if !self.active() {
             return;
         }
-        self.event(Kind::Message(MessageEvent {
+        self.event(Kind::Message(MessageEvent::new(
             turn,
-            message: message.clone(),
-            repair: false,
-            is_error: failed.to_vec(),
-            question: None,
-        }));
+            message.clone(),
+            false,
+            failed.to_vec(),
+            None,
+        )));
     }
 
     /// Append an event, stamped with its time and the follow-up it belongs to. End events do
@@ -526,7 +526,7 @@ impl Conversation {
             .events
             .iter()
             .filter_map(|event| match &event.kind {
-                Kind::Message(event) => Some(event.message.clone()),
+                Kind::Message(event) => Some(event.message().clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();

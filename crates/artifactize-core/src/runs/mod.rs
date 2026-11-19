@@ -133,7 +133,7 @@ pub async fn start(
 ) -> Result<RunObservation, String> {
     // Keys are attempt identity, not checkout identity. Retry before discovering declarations.
     if let Some(key) = &request_key
-        && context.state.join(store::DATABASE).is_file()
+        && crate::platform::paths::target_is_file(&context.state.join(store::DATABASE))
     {
         let receipts = Receipts::open(&context.state, &context.repo).await?;
         let result = receipts.keyed_run(&context.repo, key).await;

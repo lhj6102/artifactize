@@ -263,8 +263,6 @@ pub struct Request {
     pub blocked_reason: Option<String>,
     /// Unfulfilled Evals behind this request’s dependency gates.
     pub blocked_by: Vec<store::Blocker>,
-    /// What a queued request waits for besides a job; `blocked_reason` says it in words.
-    pub queue: Option<QueueReason>,
 }
 
 /// What a queued request waits for besides a job slot of its Run.
@@ -359,13 +357,17 @@ struct RequestWire {
 impl TryFrom<RequestWire> for Request {
     type Error = String;
     fn try_from(wire: RequestWire) -> Result<Self, Self::Error> {
-        let state = store::RequestState::from_parts(
+        let mut state = store::RequestState::from_parts(
             wire.status,
             wire.result,
             wire.error,
             wire.error_code,
             wire.completed_at,
         )?;
+        // Old receipts could carry a queue reason on a different state; only queued ones use it.
+        if let store::RequestState::Queued { reason, .. } = &mut state {
+            *reason = wire.queue;
+        }
         Ok(Self {
             state,
             id: wire.id,
@@ -403,13 +405,13 @@ impl TryFrom<RequestWire> for Request {
             child: wire.child,
             blocked_reason: wire.blocked_reason,
             blocked_by: wire.blocked_by,
-            queue: wire.queue,
         })
     }
 }
 impl From<Request> for RequestWire {
     fn from(record: Request) -> Self {
         Self {
+            queue: record.state.queue_reason().cloned(),
             status: record.status(),
             result: record.result().cloned(),
             error: record.error().map(str::to_owned),
@@ -450,7 +452,6 @@ impl From<Request> for RequestWire {
             child: record.child,
             blocked_reason: record.blocked_reason,
             blocked_by: record.blocked_by,
-            queue: record.queue,
         }
     }
 }
@@ -479,4 +480,20 @@ pub struct RunView {
     pub requests: Vec<std::sync::Arc<Request>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unreadable: Vec<store::Unreadable>,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn only_a_queued_request_keeps_the_saved_slot_reason() {
+        let slot = json!({"kind": "slot", "backend": "openai"});
+        for status in ["QUEUED", "GREEN"] {
+            let view = crate::test_request::request("app/check", status, json!({"queue": slot}));
+            let wire = serde_json::to_value(&view.request).unwrap();
+            assert_eq!(wire["status"], status);
+            assert_eq!(wire.get("queue"), (status == "QUEUED").then_some(&slot));
+        }
+    }
 }

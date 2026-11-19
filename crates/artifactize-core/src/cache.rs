@@ -45,7 +45,6 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: crate::
         .and_then(|producer| producer.session.clone());
     request.reviewer = execution.reviewer.clone();
     request.origin = execution.origin.clone();
-    request.queue = None;
     request.blocked_reason = None;
 }
 

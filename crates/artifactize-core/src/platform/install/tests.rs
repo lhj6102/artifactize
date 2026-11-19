@@ -108,7 +108,7 @@ fn linux_bundles_are_known_by_the_data_directory_the_appimage_and_dpkg() {
 }
 
 fn path_text(path: &Path) -> String {
-    real(path).to_str().unwrap().to_owned()
+    crate::platform::path_text(&real(path))
 }
 
 #[test]
