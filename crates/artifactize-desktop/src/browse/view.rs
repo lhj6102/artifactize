@@ -9,24 +9,39 @@ use artifactize_core::{
     },
     types::RunStatus,
 };
-use artifactize_tools::files::path_text;
+use artifactize_tools::files::{path_from_text, path_text};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
 use time::OffsetDateTime;
 
-/// A path as the frontend holds it: text with `/` on every system, which `PathBuf` reads back
-/// on all of them. Only this type makes or reads one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(transparent)]
-pub struct PathKey(String);
+/// A path as the frontend holds it: text with `/` on every system and a reversible encoding
+/// for names that are not Unicode, read back into the same native path where it enters.
+#[derive(Debug, Clone, PartialEq, Eq, Type)]
+#[specta(transparent)]
+pub struct PathKey(#[specta(type = String)] PathBuf);
 
 impl PathKey {
     pub fn new(path: &std::path::Path) -> Self {
-        Self(path_text(path))
+        Self(path.to_owned())
     }
     pub fn to_path(&self) -> PathBuf {
-        PathBuf::from(&self.0)
+        self.0.clone()
+    }
+}
+
+impl Serialize for PathKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&path_text(&self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for PathKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        path_from_text(&text)
+            .map(Self)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -487,3 +502,6 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         revision: shown.revision,
     }
 }
+
+#[cfg(test)]
+mod tests;

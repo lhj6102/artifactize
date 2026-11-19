@@ -852,8 +852,8 @@ session: string } |
 { kind: "unavailable"; text: string };
 
 /**
- *  A path as the frontend holds it: text with `/` on every system, which `PathBuf` reads back
- *  on all of them. Only this type makes or reads one.
+ *  A path as the frontend holds it: text with `/` on every system and a reversible encoding
+ *  for names that are not Unicode, read back into the same native path where it enters.
  */
 export type PathKey = string;
 

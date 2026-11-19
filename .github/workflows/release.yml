@@ -9,8 +9,9 @@ name: Release
 #
 # 1. The Linux release builds run after reading the tag.
 # 2. Once they pass, publish creates the GitHub release with the Linux archives and
-#    their .sha256 checksums, so install.sh serves the new version, then publishes the
-#    crate to crates.io. A failed Linux build publishes nothing.
+#    their .sha256 checksums, so install.sh serves the new version; crates then publishes
+#    the crates to crates.io. A failed Linux build publishes nothing, and a failed
+#    crates.io publish never keeps the other packages off the GitHub release.
 # 3. The Windows zip (with the desktop app), both macOS tarballs and the desktop
 #    bundles (macOS dmg, Linux AppImage and deb) build alongside and are attached
 #    when ready. Until v1 they are best effort: they never delay or fail the release.
@@ -87,13 +88,10 @@ jobs:
     environment: release
     permissions:
       contents: write # the GitHub release
-      id-token: write # crates.io Trusted Publishing
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       PRERELEASE: ${{ needs.plan.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/download-artifact@v4
         with:
           pattern: binaries-*-linux-musl
@@ -119,18 +117,30 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
               --generate-notes $flags dist/*
           fi
+
+  # The packages attach to the GitHub release whether or not crates.io accepts the crates.
+  crates:
+    needs: [plan, publish]
+    if: needs.plan.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # crates.io Trusted Publishing
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Set the version
-        if: env.PRERELEASE == 'false'
         run: sh .github/scripts/set-version.sh "$VERSION"
       # crates.io Trusted Publishing: the crate trusts this workflow in environment
       # "release", so the job exchanges its OIDC token for a short-lived publish token.
       - uses: rust-lang/crates-io-auth-action@v1
-        if: env.PRERELEASE == 'false'
         id: auth
       # PR verification and the release builds already passed, so the script skips the
       # verification build; it waits for each crate to reach the index before the next.
       - name: Publish to crates.io
-        if: env.PRERELEASE == 'false'
         run: sh .github/scripts/publish-crates.sh "$VERSION"
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
@@ -154,7 +164,7 @@ jobs:
         run: |
           cd dist
           sha256sum -c ./*.sha256
-          gh release upload "$GITHUB_REF_NAME" ./*
+          gh release upload "$GITHUB_REF_NAME" --clobber ./*
 
   attach-macos:
     name: Attach the macOS tarballs (best effort)
@@ -179,7 +189,7 @@ jobs:
         working-directory: dist
         run: |
           sha256sum -c ./*.sha256
-          gh release upload "$GITHUB_REF_NAME" ./*
+          gh release upload "$GITHUB_REF_NAME" --clobber ./*
 
   attach-desktop:
     name: Attach the desktop bundles (best effort)
@@ -215,7 +225,7 @@ jobs:
             cp "$deb" Artifactize-amd64.deb
             sha256sum Artifactize-amd64.deb >Artifactize-amd64.deb.sha256
           done
-          gh release upload "$GITHUB_REF_NAME" ./*
+          gh release upload "$GITHUB_REF_NAME" --clobber ./*
 
   attach-channels:
     name: Attach the unsigned Store upload (best effort)
@@ -233,7 +243,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" channels/store/*
+        run: gh release upload "$GITHUB_REF_NAME" --clobber channels/store/*
 
   homebrew:
     name: Update Homebrew tap (optional)

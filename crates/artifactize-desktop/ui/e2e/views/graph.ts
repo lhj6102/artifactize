@@ -418,6 +418,7 @@ export class Graph {
         await option.click();
         await until(this.browser, () => this.browser.execute(() => document.querySelector('aside[aria-label="Detail"] h2')?.textContent?.trim() ?? ""),
           (shown) => shown === title, `${name} found and its Detail opened`);
+        await until(this.browser, () => this.found(), (shown) => shown === null, `the find field closed once ${name} was chosen`);
         return;
       }
     }

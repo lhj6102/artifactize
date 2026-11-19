@@ -50,7 +50,9 @@ switch (operation) {
     process.stderr.write("warning: B is slower\n");
     break;
   case "slow":
-    // Runs until it is cancelled (or its fixture closes).
+    // Runs until it is cancelled (or its fixture closes); each run adds its process ID to
+    // `<gate>.pids`, so its scenario can see the process end.
+    appendFileSync(`${resolve(argument)}.pids`, `${process.pid}\n`);
     await opened(resolve(argument));
     break;
   case "hold":

@@ -48,8 +48,7 @@
   --red: #f2675d;
   --error: #f0883e;
   --running: #6cb6ff;
-  /* A running eval and a running eval waiting for its Human share a graph verdict. */
-  --human: var(--running);
+  --human: #4c8ff0;
   --yellow: #e3b341;
   --queued: #9ba1ad;
   --blocked: #c27c8e;

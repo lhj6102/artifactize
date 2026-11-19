@@ -196,6 +196,17 @@ export function stopTree(child: ChildProcess): void {
   }
 }
 
+/** Whether process `pid` still runs. Signal 0 only checks it, on every OS; a process that
+ * exists but belongs to someone else (EPERM) runs too. */
+export function processRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
 /** The variables that send a build's temporary files into `folder`, as this OS's tools read
  * them. */
 export function tempEnvironment(folder: NativePath): Environment {

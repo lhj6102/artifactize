@@ -260,10 +260,12 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "current-chosen",
-    title: "the Current chosen in a branch's timeline scans the worktree as it is now: its Artifacts checked, then coloured in place by what verify would do",
+    title: "the Current chosen in a branch's timeline scans the worktree as it is now: its Artifacts checked, then coloured in place by what verify would do, a result whose input changed since the Run to run again",
     journeys: ["J-MAIN-CURRENT"],
     prepare: async (own) => {
       const fixture = await createCheckedOnce(own);
+      // quick changes after the Run: its saved result is stale.
+      writeText(nativePath(fixture.repo, "quick", "changed.md"), "quick changed after the Run\n");
       return { fixture, data: { gate: fixture.gate } };
     },
     run: async (app, { data: { gate } }) => {
@@ -273,9 +275,10 @@ export const scenarios: Scenario[] = [
       await app.graph.titled("Current · repo  master");
       await app.graph.node("a:slow", (node) => node.label === "slow: checking", "slow is being checked");
       writeText(gate, "go");
-      // Nothing changed since the Run: every result would be reused.
+      // slow and other did not change since the Run: their results would be reused; quick did.
       await app.graph.node("a:slow", (node) => /^slow: reused/.test(node.label), "slow coloured in place as reused once its fingerprint is in");
       await app.graph.node("a:other", (node) => /^other: reused/.test(node.label), "other's sign-off would be reused");
+      await app.graph.node("a:quick", (node) => node.label === "quick: would run (1 eval)", "quick, changed since the Run, would run again");
       assert.match(await app.graph.scan(), /^Scanned at /);
     },
   }),

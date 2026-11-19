@@ -334,6 +334,8 @@ jobs:
     if: inputs.platform != 'linux' && inputs.platform != 'windows' && inputs.platform != 'macos'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # Best effort on a release tag (release.yml), a gate on main PRs and rehearsals.
+    continue-on-error: ${{ github.event_name == 'push' }}
     strategy:
       fail-fast: false
       matrix:

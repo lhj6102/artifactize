@@ -2,7 +2,8 @@
 // their Tool log, its GREEN and RED forms, text in any language, and stepping back out of it.
 import assert from "node:assert/strict";
 import { artifactize, createRelease, request } from "../fixtures/repo.ts";
-import { nativePath, writeText } from "../portable.ts";
+import { processRunning } from "../platform.ts";
+import { nativePath, readTextIfExists, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
@@ -151,10 +152,19 @@ export const scenarios: Scenario[] = [
     journeys: ["J-HUMAN-ESC"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
-      return { fixture, args: ["--repo", fixture.repo], data: null };
+      return { fixture, args: ["--repo", fixture.repo], data: { pids: nativePath(fixture.root, "slow.gate.pids") } };
     },
-    run: async (app) => {
+    run: async (app, { data: { pids } }) => {
       const review = app.detailReview;
+      /** The process of the tool's `run`th start, once it has started. */
+      const started = async (run: number): Promise<number> => {
+        let pid = 0;
+        await app.until(async () => {
+          pid = Number((readTextIfExists(pids) ?? "").trim().split("\n")[run - 1] ?? 0);
+          return pid > 0;
+        }, `the tool's process ${run} started`);
+        return pid;
+      };
       await app.graph.open("a:release", "Artifact release");
       await app.detail.openEval("release/signoff");
       await review.claim();
@@ -162,13 +172,17 @@ export const scenarios: Scenario[] = [
       await review.enter("comment", "kept while stepping back");
       await review.runTool("slow");
       await review.until((each) => each.running !== "", "the tool runs");
+      const first = await started(1);
       await review.cancel();
       await review.runUntil("slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Cancel ended the run as cancelled");
+      await app.until(async () => !processRunning(first), "Cancel stopped the tool's process");
       // Close steps back one thing at a time.
       await review.runTool("slow");
       await review.until((each) => each.running !== "", "the tool runs again");
+      const second = await started(2);
       await app.detail.close();
       await review.runUntil("slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Close first cancelled the running tool");
+      await app.until(async () => !processRunning(second), "Close stopped the tool's process");
       assert.equal(await review.value("comment"), "kept while stepping back", "the form still open");
       await app.detail.close();
       await review.until((each) => each.verdict === "", "Close then left the form");
