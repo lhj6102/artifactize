@@ -4,7 +4,7 @@ import { assertAdmissionsStopped, assertAppsStopped, retireOwnAdmissions } from 
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import { serviceFailureLogs } from "./portable.ts";
-import { appsAtOnce, awaitReleased, assertHarnessPlatform, assertRunnerMachine, inheritedEnvironment, nativeCrashReports, nodeProgram, processId, processRunning, requiredVariable, removeTree, setVariable, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment, newDirectory } from "./platform.ts";
+import { appsAtOnce, awaitEngineReleased, assertHarnessPlatform, assertRunnerMachine, inheritedEnvironment, nativeCrashReports, nodeProgram, processId, processRunning, requiredVariable, removeTree, setVariable, runForwardingInterrupts, runnerCommand, scratchDirectory, suitePath, variable, type Environment, newDirectory } from "./platform.ts";
 import { absolutePath, asNativePath, exists, listFiles, nativePath, readText, writeTextOnce, type NativePath } from "./portable.ts";
 
 const file = suitePath("run.ts");
@@ -59,7 +59,7 @@ async function launchBatch(): Promise<void> {
       assertAppsStopped(readCandidate().observer, configuration.ownerFiles);
       // The first app's web engine helpers may outlive it and still hold its profile: the
       // second app opens the fixture only once nothing does.
-      for (const root of configuration.preparedRoots()) await awaitReleased(root);
+      for (const root of configuration.preparedRoots()) await awaitEngineReleased(root);
       setVariable("DESKTOP_TEST_RELAUNCH", "1");
       const next = new Launcher(suitePath("wdio.conf.ts"));
       await next.initialize();

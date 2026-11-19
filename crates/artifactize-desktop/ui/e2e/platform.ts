@@ -211,6 +211,14 @@ export function storePackageDirectory(root: NativePath): NativePath {
   return nativePath(root, "WindowsApps", "lhj6102.Artifactize_9.9.9.0_x64__ayfzfzbsv48sg");
 }
 
+/** Whether a process name or command line is the web engine's helper (WebKitGTK's
+ * WebKitWebProcess and WebKitNetworkProcess, WKWebView's com.apple.WebKit.* services). Session
+ * services activated for the app, such as the desktop portals, also inherit fixture paths but
+ * live as long as the run's private session and do not write the fixture. */
+function webEngineHelper(name: string): boolean {
+  return /WebKit/.test(name);
+}
+
 /** Processes other than this one that hold a file open, or work, inside `root`, or that still
  * run with an environment naming it (the app's web engine helpers inherit the fixture's data
  * folders, and may outlive their last open file). Unix lets a held file be deleted, so
@@ -248,7 +256,7 @@ function holdersOf(root: NativePath): number[] {
     if (running.error || running.status !== 0) {
       throw new Error(`ps could not tell what runs for fixture ${root}: ${running.error?.message ?? `exit ${running.status}`}`);
     }
-    const named = running.stdout.split("\n").filter((line) => line.includes(root)).map((line) => Number(line.trim().split(/\s+/)[0]))
+    const named = running.stdout.split("\n").filter((line) => webEngineHelper(line) && line.includes(root)).map((line) => Number(line.trim().split(/\s+/)[0]))
       .filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
     return [...new Set([...open, ...named])];
   }
@@ -261,7 +269,8 @@ function holdersOf(root: NativePath): number[] {
       const fds = `/proc/${pid}/fd`;
       const held = inside(readlinkSync(`/proc/${pid}/cwd`)) || readdirSync(fds).some((fd) => {
         try { return inside(readlinkSync(join(fds, fd))); } catch { return false; }
-      }) || readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").some((variable) => variable.includes(`=${root}`));
+      }) || webEngineHelper(readFileSync(`/proc/${pid}/comm`, "utf8"))
+        && readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").some((variable) => variable.includes(`=${root}`));
       if (held) holders.push(pid);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -271,6 +280,28 @@ function holdersOf(root: NativePath): number[] {
   return holders;
 }
 
+/** Wait, bounded, until the ended app's web engine helpers no longer hold anything inside a
+ * fixture root, the fixture's own Runs and tools still running: what a relaunch of the same
+ * fixture needs. Unix only; Windows refuses a held profile to the next app, which then fails. */
+export async function awaitEngineReleased(root: NativePath, timeout = 60000): Promise<void> {
+  if (WINDOWS) return;
+  const helpers = () => holdersOf(root).filter((pid) => webEngineHelper(processName(pid)));
+  const until = performance.now() + timeout;
+  let held = helpers();
+  while (held.length > 0) {
+    if (performance.now() > until) throw new Error(`web engine helpers ${held.join(", ")} still hold fixture ${root}; preserve inputs`);
+    await new Promise((done) => setTimeout(done, 100));
+    held = helpers();
+  }
+}
+
+/** A process's name (Linux) or command line (macOS); "" once it has gone. */
+function processName(pid: number): string {
+  if (LINUX) return (readTextIfExists(`/proc/${pid}/comm` as NativePath) ?? "").trim();
+  const listed = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT });
+  return listed.status === 0 ? listed.stdout.trim() : "";
+}
+
 /** Wait, bounded, until no other process holds anything inside a fixture root: the app's web
  * engine helpers (WebKitGTK's web and network processes, WKWebView's) outlive the app for a
  * moment and keep or still write its data folders (E2E-OWNED-FIXTURES). */
@@ -278,7 +309,10 @@ export async function awaitReleased(root: NativePath, timeout = 60000): Promise<
   const until = performance.now() + timeout;
   let holders = holdersOf(root);
   while (holders.length > 0) {
-    if (performance.now() > until) throw new Error(`processes ${holders.join(", ")} still hold fixture ${root}; preserve inputs`);
+    if (performance.now() > until) {
+      const named = holders.map((pid) => `${pid} (${processName(pid) || "?"})`);
+      throw new Error(`processes ${named.join(", ")} still hold fixture ${root}; preserve inputs`);
+    }
     await new Promise((done) => setTimeout(done, 100));
     holders = holdersOf(root);
   }
