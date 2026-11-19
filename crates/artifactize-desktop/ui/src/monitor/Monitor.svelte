@@ -463,7 +463,7 @@
           {notice}
           bind:noticeOpen={m.noticeOpen}
           bind:element={panes.main}
-          onfocus={() => m.focus !== "detail" && (m.focus = "main")}
+          onfocus={() => (m.focus = "main")}
           onkeydown={mainKey}
         >
           {#snippet headline()}

@@ -157,8 +157,11 @@ export class Review {
     this.view = view;
     this.id = view.id;
     this.tool = Math.min(this.tool, Math.max(view.tools.length - 1, 0));
-    // Settled here or by another command: nothing is left to edit.
-    if (view.stage === "completed") this.stopEditing();
+    // Settled here or by another command: nothing is left to edit, and the Tool log is cleared.
+    if (view.stage === "completed") {
+      this.stopEditing();
+      this.log = [];
+    }
   }
 
   #acted(acted: Pick<Acted, "notice" | "view">): void {
@@ -298,6 +301,7 @@ export class Review {
 
   /** This review's Tool log, whole, as the backend sends it after each change. */
   logged(entries: LogEntry[]): void {
+    if (this.view?.stage === "completed") return;
     this.log = entries;
   }
 

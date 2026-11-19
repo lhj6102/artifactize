@@ -10,8 +10,11 @@
   const palette = new PaletteState();
   setPaletteState(palette);
 
+  /** The commands possible now whose visible name holds what is typed, ignoring case, in their
+   * own order, by group (D-OVL-2). */
   const groups = $derived.by(() => {
-    const enabled = commands.all.filter((command) => command.enabled?.() ?? true);
+    const typed = palette.search.trim().toLowerCase();
+    const enabled = commands.all.filter((command) => (command.enabled?.() ?? true) && command.label.toLowerCase().includes(typed));
     const names = [...new Set(enabled.map((command) => command.group))];
     return names.map((name) => ({
       name,
@@ -55,7 +58,7 @@
       onCloseAutoFocus={() => (palette.selected = "")}
     >
       <Dialog.Title class="sr-only">Command palette</Dialog.Title>
-      <Command.Root loop bind:value={palette.selected}>
+      <Command.Root loop shouldFilter={false} bind:value={palette.selected}>
         <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={palette.input} bind:value={palette.search} onkeydown={keydown} />
         <Command.List class="palette-list">
           <Command.Viewport>
@@ -68,7 +71,6 @@
                     <Command.Item
                       class="palette-item"
                       value={command.id}
-                      keywords={[command.label]}
                       onSelect={() => run(command.id)}
                     >
                       <span>{command.label}</span>
