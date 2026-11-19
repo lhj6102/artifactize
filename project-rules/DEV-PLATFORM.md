@@ -10,7 +10,8 @@ tests cover every OS.
 - **P-ONE-LAYER**: everything whose implementation or behavior differs between operating
   systems lives in the platform layer. Code outside it calls the layer's portable interface
   and has no operating-system calls (`std::os::unix`, `std::os::windows`, `libc`,
-  `windows-sys`) and no `cfg(unix)`, `cfg(windows)` or `cfg(target_os = …)` branches.
+  `windows-sys`) and no `cfg(unix)`, `cfg(windows)` or `cfg(target_os = …)` branches, except
+  the test gates P-TEST-EVERY-OS allows.
 - **P-NO-OS-VALUES**: code outside the platform layer names no operating-system specific
   value: no `/tmp`, `/proc`, `/dev/null`, `/bin/…`, `.exe`, `sh`, `cmd`,
   `xdg-open`, `open`, `explorer` or `HOME`.
@@ -47,10 +48,10 @@ memory, configuration and cache directories, and console color modes.
 ## Tests
 
 - **P-TEST-EVERY-OS**: a test of a portable interface runs on Linux, macOS and Windows; only a
-  test of behavior one operating system lacks is gated, and its `cfg` gate carries a comment
-  saying why. Operating-system setup in tests
-  (programs, temporary paths, links, permissions, processes) goes through shared test
-  helpers, never hard-coded values.
+  test of behavior one operating system lacks is gated, and its `cfg` gate, the one `cfg`
+  branch P-ONE-LAYER allows outside the platform layer, carries a comment saying why.
+  Operating-system setup in tests (programs, temporary paths, links, permissions, processes)
+  goes through shared test helpers, never hard-coded operating-system values.
 - **P-TEST-NO-TIMING**: clock resolution and scheduling differ between systems, so tests do
   not depend on the host clock's reading, sleep lengths or names made from the time; fixed
   timestamps and controlled clocks are fine.
