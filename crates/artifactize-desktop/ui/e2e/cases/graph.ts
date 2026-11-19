@@ -2,7 +2,7 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
-import { createChecking, createLarge, createParts, createRelease, createStates, request, savedRuns } from "../fixtures/repo.ts";
+import { REVIEW_MODEL, createChecking, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
 import { writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -39,9 +39,30 @@ export const scenarios: Scenario[] = [
   }),
 
   scenario({
+    id: "eval-summary",
+    title: "an eval's tab shows its Summary: its status with what running it took and spent, its instruction and its result, each owner field by name",
+    journeys: ["J-DETAIL-SUMMARY"],
+    prepare: async (own) => {
+      const fixture = await createReviewed(own);
+      return { fixture, data: { run: savedRuns(fixture)[0].id } };
+    },
+    run: async (app, { data: { run } }) => {
+      await app.pane.choose("repo  master", run);
+      await app.graph.open("a:report", "Artifact report");
+      await app.detail.openEval("report/agent");
+      const summary = await app.detail.summaryUntil((shown) => shown.status !== "", "the eval's Summary");
+      assert.match(summary.status, /^GREEN/, "its status");
+      assert.ok(summary.status.includes(REVIEW_MODEL) && /48(\.\d)?k/.test(summary.status), `what it took and spent, its model and tokens: ${summary.status}`);
+      assert.equal(summary.instruction, "Review the receipt.");
+      const result = await app.detail.section("Result");
+      assert.ok(/owner\s*Orchard reviewer/.test(result) && result.includes("The receipt reads right."), `its result by owner field: ${result}`);
+    },
+  }),
+
+  scenario({
     id: "graph-detail",
     title: "a click on an Artifact docks its Detail at the graph's right edge without moving the camera; its tab lists its evals and folded Neighbours, an eval's tab shows its Summary, and the background closes it",
-    journeys: ["J-DETAIL", "J-DETAIL-NEIGHBOURS", "J-DETAIL-SECTIONS", "J-DETAIL-SUMMARY", "J-GRAPH-CAMERA"],
+    journeys: ["J-DETAIL", "J-DETAIL-NEIGHBOURS", "J-DETAIL-SECTIONS", "J-GRAPH-CAMERA"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], data: null };

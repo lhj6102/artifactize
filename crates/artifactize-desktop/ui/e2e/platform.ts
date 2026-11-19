@@ -194,15 +194,18 @@ export function stopTree(child: ChildProcess): void {
  * on Linux inside its own D-Bus session and X server, so no app reaches the user's desktop. */
 export function runnerCommand(args: string[], env: Environment = process.env): { program: string; args: string[]; env: Environment } {
   if (!LINUX) return { program: process.execPath, args, env };
-  const headless: Environment = { ...env, GDK_BACKEND: "x11" };
+  // The batch checks that it got a display and a bus of its own, not these (assertHeadless).
+  const outer = { DESKTOP_TEST_OUTER_DISPLAY: env.DISPLAY ?? "", DESKTOP_TEST_OUTER_BUS: env.DBUS_SESSION_BUS_ADDRESS ?? "" };
+  const headless: Environment = { ...env, ...outer, GDK_BACKEND: "x11" };
   delete headless.WAYLAND_DISPLAY;
   return { program: "dbus-run-session", args: ["--", "xvfb-run", "-a", process.execPath, ...args], env: headless };
 }
 
 /** Fail unless this process runs where `runnerCommand` puts it: on Linux, a display and a
- * session bus of its own, never a Wayland desktop. */
+ * session bus of its own, never the ones it was started from nor a Wayland desktop. */
 export function assertHeadless(): void {
-  if (LINUX && (!process.env.DISPLAY || !process.env.DBUS_SESSION_BUS_ADDRESS || process.env.WAYLAND_DISPLAY)) {
+  const { DISPLAY: display, DBUS_SESSION_BUS_ADDRESS: bus, DESKTOP_TEST_OUTER_DISPLAY: outerDisplay, DESKTOP_TEST_OUTER_BUS: outerBus } = process.env;
+  if (LINUX && (!display || !bus || outerDisplay === undefined || outerBus === undefined || display === outerDisplay || bus === outerBus || process.env.WAYLAND_DISPLAY)) {
     throw new Error("Linux desktop E2E runs inside dbus-run-session -- xvfb-run -a: start it with `pnpm e2e`");
   }
 }

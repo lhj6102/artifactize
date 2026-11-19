@@ -110,6 +110,7 @@ export const scenarios: Scenario[] = [
       await app.runCommand("Open a request by ID");
       await app.openById(docs);
       await app.graph.titled("docs/lint · Check docs · read-only");
+      assert.equal((await app.graph.recordDebug()).Request, docs, "the request of the ID entered, not the other repository's");
       // Choosing a branch leaves what the main area showed.
       const branch = await app.pane.selectBranch("repo  master");
       await app.graph.titled(branch.entries.find((entry) => entry.shown)!.id);

@@ -2,7 +2,7 @@
 // Git, each in its scenario's own folder with an environment that never reaches the person's.
 import { readCandidate } from "../build.ts";
 import { isolatedEnvironment, portablePath, type Environment } from "../platform.ts";
-import { makeDirectory, nativePath, readTextIfExists, runProgram, runProgramAsync, runProgramOk, updateDatabase, writeText, type NativePath } from "../portable.ts";
+import { makeDirectory, nativePath, readTextIfExists, runProgram, runProgramAsync, runProgramOk, serveLoopbackHttp, updateDatabase, writeText, type NativePath } from "../portable.ts";
 import { check, commandFields, declareArtifact, runtimeProfile, type Operation } from "./declarations.ts";
 import type { Owned } from "./owned.ts";
 
@@ -349,4 +349,48 @@ export function definitionText(fixture: Fixture, name: string): string | null {
 /** Replace the definition file of `name`, as another writer would. */
 export function rewriteDefinition(fixture: Fixture, name: string, text: string): void {
   writeText(nativePath(fixture.repo, ".artifactize", `${name}.artf`), text);
+}
+
+// ---------------------------------------------------------------------------------
+// An Agent eval's saved result
+
+export const REVIEW_MODEL = "fixture-review-model";
+export const REVIEW_OWNER = "Orchard reviewer";
+
+/** A repository whose Artifact report has an Agent eval, verified GREEN once through a loopback
+ * stand-in of the provider that answers with an owner field and a summary. */
+export async function createReviewed(own: Owned): Promise<Fixture> {
+  const answer = JSON.stringify({ verdict: "GREEN", owner: REVIEW_OWNER, summary: "The receipt reads right." });
+  const provider = await serveLoopbackHttp((request, response) => {
+    request.resume();
+    if (request.method !== "POST" || !request.url?.endsWith("/responses")) {
+      response.writeHead(404).end();
+      return;
+    }
+    const completed = { type: "response.completed", sequence_number: 0, response: {
+      id: "resp_fixture", object: "response", created_at: 1, model: REVIEW_MODEL, status: "completed",
+      output: [{ type: "message", id: "msg_fixture", role: "assistant", status: "completed", content: [{ type: "output_text", text: answer, annotations: [] }] }],
+      usage: { input_tokens: 48000, output_tokens: 200, total_tokens: 48200, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+    } };
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end(`event: ${completed.type}\ndata: ${JSON.stringify(completed)}\n\n`);
+  });
+  try {
+    const fixture = newFixture(own);
+    declareArtifact(fixture.repo, ["report"], "report", `
+[evals.agent]
+title = "Review the receipt"
+profile = { kind = "agent", backend = "openai", model = "${REVIEW_MODEL}", timeout_ms = 60000 }
+payload.instruction = "Review the receipt."
+pass_schema = { type = "object", properties = { summary = { type = "string" }, owner = { type = "string" } }, required = ["summary", "owner"], additionalProperties = false }
+fail_schema = { type = "object", properties = { summary = { type = "string" } }, required = ["summary"], additionalProperties = false }
+`);
+    initRepo(fixture);
+    const env = { OPENAI_API_KEY: "fixture-not-a-secret", ARTIFACTIZE_OPENAI_BASE_URL: provider.url };
+    const verified = await artifactizeAsync(fixture, ["verify", "--all", "--wait", "--json"], env);
+    if (verified.status !== 0) throw new Error(`the Agent eval did not pass: ${verified.stdout}${verified.stderr}`);
+    return fixture;
+  } finally {
+    await provider.close();
+  }
 }

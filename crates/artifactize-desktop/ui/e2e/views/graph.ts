@@ -72,6 +72,16 @@ export class Graph {
     await holds(this.browser, check, what, timeout);
   }
 
+  /** The facts under Debug of a request the main area shows read-only, by name, unfolding Debug
+   * with a click on its header row when it is folded. */
+  async recordDebug(): Promise<Record<string, string>> {
+    const head = this.browser.$(`${MAIN} [role="document"] section.section[aria-label="Debug"] > button.head`);
+    await head.waitForExist({ timeout: 15000, timeoutMsg: "the request's Debug section" });
+    if ((await head.getAttribute("aria-expanded")) === "false") await head.click();
+    return until(this.browser, () => this.browser.execute((main) => Object.fromEntries([...document.querySelectorAll(`${main} [role="document"] section.section[aria-label="Debug"] dt`)]
+      .map((term) => [term.textContent?.trim() ?? "", term.nextElementSibling?.textContent?.trim() ?? ""])), MAIN), (facts) => Object.keys(facts).length > 0, "Debug unfolded");
+  }
+
   /** Click the Run's headline: the Run's own Detail opens. */
   async openRunDetail(): Promise<void> {
     await this.browser.$(`${MAIN} > header button.headline`).click();

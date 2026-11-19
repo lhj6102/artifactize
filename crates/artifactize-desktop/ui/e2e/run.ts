@@ -107,8 +107,11 @@ async function unit(): Promise<void> {
 
 if (import.meta.main) {
   const mode = process.argv[2] ?? "suite";
-  process.on("SIGINT", interrupt);
-  process.on("SIGTERM", interrupt);
+  // The suite waits for its running batch; a batch, like any other mode, ends on an interrupt.
+  if (mode === "suite") {
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", interrupt);
+  }
   try {
     if (mode === "suite") await suite(process.argv.slice(3));
     else if (mode === "batch") await batch();

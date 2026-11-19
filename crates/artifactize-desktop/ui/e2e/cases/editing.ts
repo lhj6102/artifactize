@@ -159,12 +159,18 @@ export const scenarios: Scenario[] = [
       const before = (await app.graph.box("a:core"))!;
       await app.graph.drag("a:core", 0, 60);
       await app.eventually(() => ["app", "bundle", "core", "docs"].every((name) => placed(definitionText(fixture, name))), "every top-level place written");
-      await app.graph.node("a:core", () => true, "core redrawn");
-      const after = (await app.graph.box("a:core"))!;
-      assert.ok(Math.abs(after.y - before.y - 60) <= 12, `core stays where it was released: ${JSON.stringify({ before, after })}`);
+      // The graph draws core at its saved place: where it was released.
+      await app.graph.until(async () => {
+        const after = await app.graph.box("a:core");
+        return !!after && Math.abs(after.y - before.y - 60) <= 12 && Math.abs(after.x - before.x) <= 12;
+      }, "core drawn where it was released");
       await app.graph.until(() => app.graph.hasTool("Reset layout"), "Reset layout offered for the top level");
       await app.graph.tool("Reset layout");
       await app.eventually(() => ["app", "bundle", "core", "docs"].every((name) => !placed(definitionText(fixture, name))), "every place left the files");
+      await app.graph.until(async () => {
+        const reset = await app.graph.box("a:core");
+        return !!reset && Math.abs(reset.y - before.y) <= 12 && Math.abs(reset.x - before.x) <= 12;
+      }, "core drawn at its automatic place again");
       // docs dropped on app's box becomes app's part.
       await app.graph.dragOnto("a:docs", "a:app");
       await app.eventually(() => /^parts = \[.*"docs".*\]/m.test(definitionText(fixture, "app") ?? ""), "docs added to app's parts");

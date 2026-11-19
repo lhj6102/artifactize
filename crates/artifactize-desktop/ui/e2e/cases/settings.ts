@@ -245,7 +245,8 @@ export const scenarios: Scenario[] = [
       await app.settings.enter("grace-seconds", "45");
       await app.settings.button("Save");
       await app.eventually(() => signoffGrace(fixture) === 45, "the CLI reads the new grace");
-      assert.equal(await app.settings.value("grace-seconds"), "45");
+      // Saved, the field holds the grace in force and Save waits for another value again.
+      await app.until(async () => !(await app.settings.usable("Save")) && (await app.settings.value("grace-seconds")) === "45", "the window shows the grace saved");
     },
   }),
 ];
