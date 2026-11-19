@@ -6,8 +6,10 @@ use std::{
     path::PathBuf,
 };
 
-use super::{Cli, Command, CommandArgs, ToolsCommand, interactive::Scope};
-use artifactize_core::types::{RequestId, ReviewerId};
+use super::{
+    Cli, Command, CommandArgs, ToolsCommand,
+    interactive::{Launch, Scope, Screen},
+};
 
 /// What the CLI can dispatch, after resolving flags that choose mutually exclusive scopes.
 pub(super) enum Invocation {
@@ -17,12 +19,7 @@ pub(super) enum Invocation {
         repo: Option<PathBuf>,
     },
     Tool(artifactize_tools::cli::Tool),
-    Monitor(Scope),
-    Review {
-        scope: Scope,
-        request: Option<RequestId>,
-        reviewer: Option<ReviewerId>,
-    },
+    Desktop(Launch),
 }
 
 pub(super) struct Parsed {
@@ -152,18 +149,18 @@ pub(super) fn parse_args(args: &[OsString]) -> Result<Parsed, ParseError> {
         .and_then(|state| state.resolve(cli.state_dir));
     let invalid = |message| ParseError::InvalidOptions { message, json };
     let invocation = match cli.command {
-        Some(CommandArgs::Monitor { all, path }) => {
-            Invocation::Monitor(Scope::from_args(all, path, repo).map_err(invalid)?)
-        }
+        Some(CommandArgs::Monitor { all, path }) => Invocation::Desktop(Launch {
+            scope: Scope::from_args(all, path, repo).map_err(invalid)?,
+            screen: Screen::Monitor,
+        }),
         Some(CommandArgs::Review {
             request,
             all,
             reviewer,
-        }) => Invocation::Review {
+        }) => Invocation::Desktop(Launch {
             scope: Scope::for_review(all, repo).map_err(invalid)?,
-            request,
-            reviewer,
-        },
+            screen: Screen::Review { request, reviewer },
+        }),
         Some(CommandArgs::Tools { command }) => match command {
             ToolsCommand::Check(args) => Invocation::ToolCheck {
                 options: args.try_into().map_err(invalid)?,

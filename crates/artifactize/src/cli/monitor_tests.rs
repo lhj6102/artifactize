@@ -26,16 +26,13 @@ fn monitor_forwards_the_initial_scope_and_native_paths() {
     ] {
         let Parsed {
             state_dir,
-            invocation: Invocation::Monitor(scope),
+            invocation: Invocation::Desktop(launch),
             ..
         } = parse_desktop(&tail).unwrap()
         else {
             panic!("expected a Monitor launch");
         };
-        assert_eq!(
-            interactive::args("monitor", state_dir, scope, None, None),
-            expected
-        );
+        assert_eq!(launch.args(state_dir), expected);
     }
     for tail in [
         ["monitor", ".", "--all"].as_slice(),
@@ -50,12 +47,7 @@ fn monitor_forwards_the_initial_scope_and_native_paths() {
 fn review_forwards_the_request_reviewer_and_state_to_desktop() {
     let Parsed {
         state_dir,
-        invocation:
-            Invocation::Review {
-                scope,
-                request,
-                reviewer,
-            },
+        invocation: Invocation::Desktop(launch),
         ..
     } = parse_desktop(&[
         "--state-dir",
@@ -71,29 +63,29 @@ fn review_forwards_the_request_reviewer_and_state_to_desktop() {
         panic!("expected a Review launch");
     };
     assert_eq!(
-        interactive::args("review", state_dir, scope, request, reviewer),
+        launch.args(state_dir),
         [
             "review",
             "request-1",
+            "--reviewer=alice",
             "--repo=.",
-            "--state-dir=state directory",
-            "--reviewer=alice"
+            "--state-dir=state directory"
         ],
     );
 }
 
 #[test]
 fn review_parses_one_scope_and_rejects_conflicts_with_either_repo_syntax() {
-    use interactive::Scope;
+    use interactive::{Launch, Scope, Screen};
 
     let parse = |tail: &[&str]| parse_desktop(tail).map(|parsed| parsed.invocation);
     for args in [&["review"][..], &["review", "--all"]] {
         assert!(matches!(
             parse(args).unwrap(),
-            Invocation::Review {
+            Invocation::Desktop(Launch {
                 scope: Scope::All,
-                ..
-            }
+                screen: Screen::Review { .. },
+            })
         ));
     }
     for args in [
@@ -101,7 +93,7 @@ fn review_parses_one_scope_and_rejects_conflicts_with_either_repo_syntax() {
         &["review", "--repo=selected"],
     ] {
         assert!(
-            matches!(parse(args).unwrap(), Invocation::Review { scope: Scope::Repository(path), .. }
+            matches!(parse(args).unwrap(), Invocation::Desktop(Launch { scope: Scope::Repository(path), screen: Screen::Review { .. } })
             if path == std::path::Path::new("selected"))
         );
     }

@@ -2,7 +2,7 @@
 
 use super::{
     Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, account, cache, config,
-    interactive, maintenance, provider, remote, request, run, server, session, status, workflow,
+    maintenance, provider, remote, request, run, server, session, status, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -20,12 +20,7 @@ pub(super) async fn execute(cli: Parsed) -> Result<u8, String> {
         invocation,
     } = cli;
     match invocation {
-        Invocation::Monitor(scope) => interactive::monitor(state_dir, scope, json),
-        Invocation::Review {
-            scope,
-            request,
-            reviewer,
-        } => interactive::review(state_dir, scope, request, reviewer, json).await,
+        Invocation::Desktop(launch) => launch.run(state_dir, json).await,
         Invocation::ToolCheck { options, repo } => {
             maintenance::tools(
                 Context {

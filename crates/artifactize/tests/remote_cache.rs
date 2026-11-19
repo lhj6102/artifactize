@@ -93,26 +93,7 @@ impl Server {
             .collect()
     }
 
-    /// The last use of each stored record, by execution ID; a lookup updates the record it
-    /// returns.
-    fn last_used(&self) -> Vec<(String, String)> {
-        let db = Connection::open_with_flags(
-            self.state.join("review-store.sqlite"),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .unwrap();
-        let mut statement = db
-            .prepare("SELECT execution_id,last_used FROM entries ORDER BY execution_id")
-            .unwrap();
-        statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect()
-    }
-
-    /// Seed completion and last-use fixture times. A forbidden lookup must not hide
-    /// behind a host clock that returns the same timestamp as the original write.
+    /// Seed completion and LRU ordering independently of the host clock.
     fn completed_at(&self, execution: &str, at: &str) {
         let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
         let data: String = db
@@ -673,6 +654,49 @@ fn remote_push_publishes_results_produced_offline_once() {
 }
 
 #[test]
+fn forced_verify_publishes_without_looking_up_remote_evidence() {
+    let root = owned_run::Root::from(support::os::tempdir());
+    let server = support::FakeProvider::start(|request| {
+        match (request.method.as_str(), request.path.as_str()) {
+            ("GET", "/v1/whoami") => {
+                support::Reply::Json(200, json!({"principal":"bob","scopes":["read","publish"]}))
+            }
+            ("POST", "/v1/lookup") => support::Reply::Json(200, json!({"entries":[]})),
+            ("PUT", path) if path.starts_with("/v1/entries/") => {
+                support::Reply::Json(201, json!({"created":true}))
+            }
+            _ => panic!(
+                "unexpected review-store request: {} {}",
+                request.method, request.path
+            ),
+        }
+    });
+    let bob = Machine::new(&root, "bob", &server.url, "azt_fixture");
+    let repo = runtime_repo(root.path(), "repo", "v1");
+    let forced = bob.json(&repo, &["verify", "--wait", "--all", "--force"], 0);
+    let request = &forced["requests"][0];
+    let publish_path = format!("/v1/entries/{}", request["key"].as_str().unwrap());
+    let observed = server.requests();
+    assert!(observed.iter().any(|call| {
+        call.method == "PUT"
+            && call.path == publish_path
+            && call.body["executionId"] == request["executionId"]
+    }));
+    assert!(!observed.iter().any(|call| call.path == "/v1/lookup"));
+
+    // A fresh, ordinary verification of the same key uses the same lookup endpoint.
+    let carol = Machine::new(&root, "carol", &server.url, "azt_fixture");
+    carol.json(&repo, &["verify", "--wait", "--all"], 0);
+    assert!(server.requests()[observed.len()..].iter().any(|call| {
+        call.method == "POST"
+            && call.path == "/v1/lookup"
+            && call.body["keys"]
+                .as_array()
+                .is_some_and(|keys| keys.contains(&request["key"]))
+    }));
+}
+
+#[test]
 fn the_newer_record_wins_across_local_history_and_the_store() {
     // Explicitly ordered fixture timestamps make clock resolution and scheduling irrelevant.
     const FIRST: &str = "2000-01-01T00:00:01.000000000Z";
@@ -732,10 +756,8 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     server.completed_at(alice_record, FIRST);
     let key = first["requests"][0]["key"].as_str().unwrap().to_owned();
     assert_eq!(server.entries().len(), 1);
-    let used = server.last_used();
 
-    // Bob reviews again by force: it reads nothing from the store, so no record's last use
-    // changes, and its RED is published as a newer record without `remote push`.
+    // Bob reviews again by force. Its RED is published as a newer record without `remote push`.
     fs::write(support::declaration::source_path(repo_b.join("broken")), "").unwrap();
     let forced = bob.json(&repo_b, &["verify", "--wait", "--all", "--force"], 1);
     let bob_record = forced["requests"][0]["executionId"].as_str().unwrap();
@@ -746,14 +768,6 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[1].0, "bob-laptop");
     assert_eq!(entries[1].1["verdict"], "RED");
-    let last_use = |used: &[(String, String)]| {
-        used.iter()
-            .find(|(id, _)| id == alice_record)
-            .unwrap()
-            .1
-            .clone()
-    };
-    assert_eq!(last_use(&server.last_used()), last_use(&used));
     assert_eq!(
         bob.json(&repo_b, &["remote", "push"], 0),
         json!({"dryRun":false,"pushed":0,"existing":1,"skipped":0})

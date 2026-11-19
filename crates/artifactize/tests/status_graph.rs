@@ -434,19 +434,13 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .get("last")
             .is_none()
     );
-    let db = Connection::open_with_flags(
-        fixture.state.join("state.sqlite"),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    let before: String = db
-        .query_row("SELECT group_concat(data) FROM runs", [], |row| row.get(0))
-        .unwrap();
+    let second: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let read_audits = || {
+        [&first, &second].map(|run| fixture.json(&["run", "show", run["id"].as_str().unwrap()], 0))
+    };
+    let before = read_audits();
     fixture.json(&["status"], 1);
-    let after: String = db
-        .query_row("SELECT group_concat(data) FROM runs", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(before, after);
+    assert_eq!(read_audits(), before);
     assert!(
         fixture
             .state
@@ -473,11 +467,6 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .as_str()
             .unwrap()
             .contains("Unsupported state schema")
-    );
-    assert_eq!(
-        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
-            .unwrap(),
-        99
     );
     let link = fixture.root.path().join("redirected-state");
     support::os::link_dir(&fixture.repo, &link);

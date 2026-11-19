@@ -40,52 +40,60 @@ impl Scope {
     }
 }
 
-pub(super) fn monitor(state_dir: Option<PathBuf>, scope: Scope, json: bool) -> Result<u8, String> {
-    launch(args("monitor", state_dir, scope, None, None), json)
+pub(super) enum Screen {
+    Monitor,
+    Review {
+        request: Option<RequestId>,
+        reviewer: Option<ReviewerId>,
+    },
 }
 
-pub(super) async fn review(
-    state_dir: Option<PathBuf>,
-    scope: Scope,
-    request: Option<RequestId>,
-    reviewer: Option<ReviewerId>,
-    json: bool,
-) -> Result<u8, String> {
-    if !json && let Some(id) = &request {
-        let state = artifactize_core::store::state_dir(state_dir.as_deref())?;
-        artifactize_core::store::read_request(&state, id).await?;
-    }
-    launch(args("review", state_dir, scope, request, reviewer), json)
+pub(super) struct Launch {
+    pub scope: Scope,
+    pub screen: Screen,
 }
 
-fn launch(args: Vec<OsString>, json: bool) -> Result<u8, String> {
-    if json {
-        return Err("Desktop launch shortcuts do not support --json.".into());
-    }
-    artifactize_core::platform::launch_desktop(&args)?;
-    Ok(0)
-}
-
-pub(super) fn args(
-    command: &str,
-    state_dir: Option<PathBuf>,
-    scope: Scope,
-    request: Option<RequestId>,
-    reviewer: Option<ReviewerId>,
-) -> Vec<OsString> {
-    let mut args = vec![OsString::from(command)];
-    args.extend(request.map(|id| OsString::from(id.as_str())));
-    for (flag, value) in [
-        ("--repo", scope.repository().map(PathBuf::into_os_string)),
-        ("--state-dir", state_dir.map(PathBuf::into_os_string)),
-        ("--reviewer", reviewer.map(|id| OsString::from(id.as_str()))),
-    ] {
-        if let Some(value) = value {
-            let mut option = OsString::from(flag);
-            option.push("=");
-            option.push(value);
-            args.push(option);
+impl Launch {
+    pub(super) async fn run(self, state_dir: Option<PathBuf>, json: bool) -> Result<u8, String> {
+        if json {
+            return Err("Desktop launch shortcuts do not support --json.".into());
         }
+        if let Screen::Review {
+            request: Some(id), ..
+        } = &self.screen
+        {
+            let state = artifactize_core::store::state_dir(state_dir.as_deref())?;
+            artifactize_core::store::read_request(&state, id).await?;
+        }
+        artifactize_core::platform::launch_desktop(&self.args(state_dir))?;
+        Ok(0)
     }
-    args
+
+    pub(super) fn args(self, state_dir: Option<PathBuf>) -> Vec<OsString> {
+        let mut args = match self.screen {
+            Screen::Monitor => vec!["monitor".into()],
+            Screen::Review { request, reviewer } => {
+                let mut args = vec!["review".into()];
+                args.extend(request.map(|id| OsString::from(id.as_str())));
+                if let Some(id) = reviewer {
+                    args.push(option("--reviewer", id.as_str()));
+                }
+                args
+            }
+        };
+        if let Some(repo) = self.scope.repository() {
+            args.push(option("--repo", repo));
+        }
+        if let Some(state) = state_dir {
+            args.push(option("--state-dir", state));
+        }
+        args
+    }
+}
+
+fn option(flag: &str, value: impl AsRef<std::ffi::OsStr>) -> OsString {
+    let mut argument = OsString::from(flag);
+    argument.push("=");
+    argument.push(value);
+    argument
 }

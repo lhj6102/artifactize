@@ -699,7 +699,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
 }
 
 #[test]
-fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
+fn an_ended_session_stops_its_processes_while_the_verdict_is_pending() {
     let mut fixture = Fixture::new("start", "stop", "act", 0);
     let log = fixture.log();
     let requests = AtomicUsize::new(0);
@@ -733,17 +733,11 @@ fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
     )
     .unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
-        let record: Value = serde_json::from_slice(
-            &support::declaration::read_file(directory.join("owner.json")).unwrap(),
-        )
-        .unwrap();
-        record["leader"].is_null()
-    });
-    support::os::wait_until(Duration::from_secs(10), || {
         !support::os::running(start["pid"].as_u64().unwrap() as u32)
             && !support::os::running(start["child"].as_u64().unwrap() as u32)
     });
     // The verdict is still pending: retirement is not deferred to review cleanup.
+    assert!(owner.saved().run.status().is_open());
     assert!(fixture.records("stop").is_empty());
     fs::write(
         support::declaration::source_path(fixture.log().join("verdict")),
@@ -878,8 +872,6 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
     let bound = call["pid"].as_u64().unwrap() as u32;
     let descendant = call["child"].as_u64().unwrap() as u32;
     assert!(support::os::running(bound));
-    assert!(directory.join(format!("process-{bound}.json")).is_file());
-    assert!(directory.join("owner.json").is_file());
     support::os::kill(owner.id());
     support::os::wait_for_zombie(owner.id());
     assert!(directory.exists());

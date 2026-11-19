@@ -484,23 +484,16 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
     let mut child = RunChild::new(child, &fixture.state, &fixture.repo);
     // A created marker may still be empty, and child registration is saved separately.
     // Observe both exact states before asserting writer availability or cancelling.
-    let database = Connection::open_with_flags(
-        fixture.state.join(artifactize_core::store::DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
     support::os::wait_until(Duration::from_secs(5), || {
         let marker_ready = support::declaration::read_text(&marker)
             .ok()
-            .is_some_and(|contents| contents.trim().parse::<u32>().is_ok_and(|pid| pid > 0));
-        let child_saved = database
-            .query_row(
-                "SELECT json_extract(data,'$.child.pid') FROM requests WHERE run_id=?",
-                [child.run()],
-                |row| row.get::<_, Option<u32>>(0),
-            )
-            .is_ok_and(|pid| pid.is_some_and(|pid| pid > 0));
-        marker_ready && child_saved
+            .is_some_and(|contents| contents.trim().parse::<std::num::NonZeroU32>().is_ok());
+        marker_ready
+            && child
+                .saved()
+                .requests
+                .iter()
+                .any(|request| request.child.is_some())
     });
     // Acquiring a writer is the explicit probe under test, not the observation interface.
     let writer = Connection::open(fixture.state.join(artifactize_core::store::DATABASE)).unwrap();

@@ -272,21 +272,16 @@ async fn repositories_share_one_state_database() {
             saved.push((id, repo.clone(), name));
         }
     }
-    let db = Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    assert_eq!(
-        db.query_row::<u32, _, _>("SELECT count(DISTINCT repo) FROM runs", [], |r| r.get(0))
-            .unwrap(),
-        2
-    );
-    assert_eq!(
-        db.query_row::<u32, _, _>("SELECT count(*) FROM runs", [], |r| r.get(0))
-            .unwrap(),
-        4
-    );
+    let listed = read_runs(&state, None, 10, 0).await.unwrap();
+    let actual = listed
+        .iter()
+        .map(|run| (run.id.as_str(), run.repo_path.as_path()))
+        .collect::<std::collections::BTreeSet<_>>();
+    let expected = saved
+        .iter()
+        .map(|(id, repo, _)| (id.as_str(), repo.as_path()))
+        .collect();
+    assert_eq!(actual, expected);
     fs::remove_dir_all(&first).unwrap();
     fs::remove_dir_all(&second).unwrap();
     for (id, repo, name) in saved {
