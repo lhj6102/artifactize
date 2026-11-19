@@ -46,7 +46,9 @@ including e2e tests and harnesses.
   cleans them up.
 - **TEST-SELF-CONTAINED**: tests build or declare every executable and input they use; they
   do not rely on an earlier local build.
-- **TEST-SEAMS**: tests check observable behaviour through public interfaces, not private internals.
+- **TEST-SEAMS**: tests check observable behaviour; a module's own unit tests may call its private
+  functions, and integration tests use the public interface; tests do not assert implementation
+  details that callers can't observe.
 
 ## Code written with AI
 
