@@ -31,3 +31,33 @@ type = "object"
 properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
 required = ["change"]
 additionalProperties = false
+
+[evals.serves-purpose]
+title = "Every platform rule serves the checklist's purpose, and none overlap or contradict"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.serves-purpose.payload]
+instruction = """
+Read the platform checklist DEV-PLATFORM.md of {rules-platform}. Its purpose: code that passes its checks on one \
+operating system very likely behaves the same on the others; to that end, everything that differs between operating \
+systems goes through one platform layer, and tests cover every OS. Review the rules themselves, rule by rule (P- \
+items), and report: a rule that does not serve the purpose (for example a style preference with no cross-platform \
+or reliability effect); two rules that overlap or contradict each other; a known way Linux, macOS and Windows differ \
+(files, paths, programs, processes, environment, terminals, IPC, desktop integration, text and time) that no rule \
+governs. Report only what a rule item states or omits against this purpose: each finding names the item (or the \
+pair of items, or the missing difference) and points to the concrete text that does not meet the purpose. A \
+rewording, a further split or an extra example the purpose does not require is not a finding. Submit GREEN when \
+every rule serves the purpose and none conflict. Otherwise submit RED with up to 20 findings, most important first, \
+each with the rule id or ids (item), the rule text or the OS difference (where) and one sentence on what to change."""
+
+[evals.serves-purpose.pass_schema]
+type = "object"
+properties = { summary = { type = "string", minLength = 1 } }
+required = ["summary"]
+additionalProperties = false
+
+[evals.serves-purpose.fail_schema]
+type = "object"
+properties = { findings = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
+required = ["findings"]
+additionalProperties = false
