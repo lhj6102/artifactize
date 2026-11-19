@@ -90,10 +90,12 @@ fail_schema = { type = "object", properties = { violations = { type = "array", m
 title = "The release app compiles in none of the E2E test build's WebdriverIO plugins"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 payload.instruction = """
-Read E2E-TEST-BUILD-ONLY of the end-to-end rules {desktop-e2e-rules}. Then read how {desktop} assembles its app: \
+Read E2E-TEST-BUILD-ONLY of the end-to-end rules {desktop-e2e-rules}, which names the WebdriverIO plugins (their Rust \
+crates, capability permissions and the frontend import) that only the E2E test build may get. The release app, its \
+default capabilities and its frontend bundle contain none of them. Read how {desktop} assembles its app: \
 Cargo.toml (features and optional dependencies), build.rs, src/ where it registers plugins, the capability files and \
 tauri*.json, and the frontend entry and build configuration in ui/. Check the release app, built with the default \
-Cargo features and the default frontend build, against what that rule says the release app contains; how the suite \
+Cargo features and the default frontend build, against that; how the suite \
 selects the test build is judged by desktop-e2e. Submit GREEN when the release app holds none of them. Otherwise submit RED with \
 up to 10 findings, each with a path:line (where) and one sentence on what to change (change).
 """
