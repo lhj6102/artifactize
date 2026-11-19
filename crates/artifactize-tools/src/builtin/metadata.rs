@@ -3,7 +3,9 @@
 use crate::{Builtin, scope};
 use serde_json::{Value, json};
 
-use super::{DEFAULT_READ_LINES, FIRST_LINE, MAX_PATTERN_UNITS, MAX_READ_LINES, MAX_RESULTS};
+use super::{
+    DEFAULT_READ_LINES, FIRST_LINE, MAX_PATTERN_UNITS, MAX_READ_LINES, MAX_RESULTS, MIN_RESULTS,
+};
 
 pub fn description(builtin: Builtin) -> &'static str {
     match builtin {
@@ -45,7 +47,7 @@ pub fn input_schema(builtin: Builtin) -> Value {
             json!({
                 "path":path,
                 "offset":integer(FIRST_LINE as u64, crate::MAX_SAFE_JSON_INTEGER, FIRST_LINE as u64),
-                "limit":integer(1, MAX_READ_LINES as u64, DEFAULT_READ_LINES as u64),
+                "limit":integer(MIN_RESULTS, MAX_READ_LINES as u64, DEFAULT_READ_LINES as u64),
             }),
             vec!["path"],
         ),
@@ -53,7 +55,7 @@ pub fn input_schema(builtin: Builtin) -> Value {
             json!({
                 "path":path,
                 "offset":integer(0, crate::MAX_SAFE_JSON_INTEGER, 0),
-                "limit":integer(1, MAX_RESULTS as u64, MAX_RESULTS as u64),
+                "limit":integer(MIN_RESULTS, MAX_RESULTS as u64, MAX_RESULTS as u64),
             }),
             vec![],
         ),
@@ -65,7 +67,7 @@ pub fn input_schema(builtin: Builtin) -> Value {
                 "path":path,
                 "glob":pattern,
                 "caseInsensitive":{"type":"boolean","default":false},
-                "maxResults":integer(1, MAX_RESULTS as u64, MAX_RESULTS as u64),
+                "maxResults":integer(MIN_RESULTS, MAX_RESULTS as u64, MAX_RESULTS as u64),
             }),
             vec!["pattern"],
         ),

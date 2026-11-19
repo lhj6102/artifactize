@@ -7,6 +7,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+mod text;
+use text::native_path_text;
+pub use text::path_from_text;
+
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
@@ -37,10 +41,14 @@ pub fn is_absolute(path: &std::path::Path) -> bool {
 /// `root` (`None` outside it), a relative one is already logical.
 pub fn logical_below(root: &Path, path: &Path) -> Option<String> {
     if path.is_absolute() {
-        logical_from_native(path.strip_prefix(root).ok()?)
+        logical_from_native(relative_below(root, path)?)
     } else {
         path.to_str().map(str::to_owned)
     }
+}
+
+pub(crate) fn relative_below<'a>(root: &Path, path: &'a Path) -> Option<&'a Path> {
+    path.strip_prefix(root).ok()
 }
 
 pub(crate) fn parent(path: &Path) -> Option<&Path> {
@@ -101,31 +109,6 @@ pub fn path_text<P: PathText + ?Sized>(path: &P) -> String {
     path.path_text()
 }
 
-fn native_path_text(path: &std::path::Path) -> String {
-    let text = path.to_string_lossy();
-    #[cfg(windows)]
-    {
-        use std::path::{Component, Prefix};
-        let text = text.replace('\\', "/");
-        // Canonical Windows paths carry verbatim prefixes that are not useful in a
-        // breadcrumb. Only disk/UNC prefixes have equivalent ordinary path spellings.
-        const VERBATIM: &str = "//?/";
-        const VERBATIM_UNC: &str = "//?/UNC/";
-        match path.components().next() {
-            Some(Component::Prefix(prefix)) => match prefix.kind() {
-                Prefix::VerbatimDisk(_) => text[VERBATIM.len()..].to_owned(),
-                Prefix::VerbatimUNC(_, _) => format!("//{}", &text[VERBATIM_UNC.len()..]),
-                _ => text,
-            },
-            _ => text,
-        }
-    }
-    #[cfg(unix)]
-    {
-        text.into_owned()
-    }
-}
-
 /// Convert a native relative path into logical components; roots, traversal and non-UTF-8
 /// names are refused rather than guessing at the host's separator or prefix rules.
 pub fn logical_from_native(path: &std::path::Path) -> Option<String> {
@@ -151,8 +134,11 @@ pub(crate) fn relative_names(path: &Path) -> io::Result<Vec<&OsStr>> {
             "Artifact path must be relative to its declared root and use logical names.",
         )
     };
-    let text = native_path_text(path);
-    if text.split('/').any(|part| matches!(part, "." | "..")) {
+    let text = path.to_str().ok_or_else(invalid)?;
+    if text
+        .split(|character| character == '/' || cfg!(windows) && character == '\\')
+        .any(|part| matches!(part, "." | ".."))
+    {
         return Err(invalid());
     }
     path.components()
@@ -164,13 +150,13 @@ pub(crate) fn relative_names(path: &Path) -> io::Result<Vec<&OsStr>> {
 }
 
 pub fn scoped_relative(path: &Path) -> io::Result<String> {
-    relative_names(path).map(|names| relative_text(&names))
+    relative_names(path).map(relative_text)
 }
 
 /// Render entry names already validated by `relative_names` as a logical slash path.
-pub(crate) fn relative_text(names: &[&OsStr]) -> String {
+pub(crate) fn relative_text<'a>(names: impl IntoIterator<Item = &'a OsStr>) -> String {
     names
-        .iter()
+        .into_iter()
         .map(|name| name.to_str().expect("validated logical name"))
         .collect::<Vec<_>>()
         .join("/")

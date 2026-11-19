@@ -51,6 +51,8 @@ const SEARCH_BYTES: usize = 64 * 1024 * 1024;
 const MAX_PATTERN_UNITS: usize = scope::MAX_PATH_UNITS;
 /// Read offsets and returned line numbers are one-based.
 const FIRST_LINE: usize = 1;
+/// A page or search request must allow at least one result to make progress.
+const MIN_RESULTS: u64 = 1;
 /// An ordinary read starts with eighty lines; owners can page further or request
 /// up to five hundred without scanning an unbounded number of lines in one call.
 const DEFAULT_READ_LINES: usize = 80;

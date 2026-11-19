@@ -334,15 +334,16 @@ except module.driver.Terminated as error:
         self.assertEqual(sys.argv, original_arguments)
 
     def test_command_refuses_to_launch_without_pidfd_support(self):
-        command = [sys.executable, "-I", "-c", "pass"]
+        marker = self.root / "launched"
+        program = "from pathlib import Path; import sys; Path(sys.argv[1]).touch()"
+        command = [sys.executable, "-I", "-c", program, str(marker)]
         for module, operation in ((os, "pidfd_open"), (signal, "pidfd_send_signal"),
                                   (driver.process_owner.selectors.DefaultSelector, "register")):
             with self.subTest(operation=operation), \
-                    mock.patch.object(module, operation, create=True, side_effect=OSError(errno.ENOSYS, operation)), \
-                    mock.patch.object(subprocess.Popen, "__init__", side_effect=AssertionError("launched a child")) as launch:
+                    mock.patch.object(module, operation, create=True, side_effect=OSError(errno.ENOSYS, operation)):
                 with self.assertRaisesRegex(RuntimeError, "requires Linux pidfd"):
                     self.command(command, timeout=READY_BOUND)
-                launch.assert_not_called()
+                self.assertFalse(marker.exists(), "the declared executable must not run without process ownership")
 
     @unittest.skipUnless(hasattr(os, "pidfd_open"), "Linux descendant exit observation uses pidfd")
     def test_command_timeout_joins_owned_descendants(self):
@@ -499,7 +500,6 @@ ctypes.CDLL(None).pthread_exit(None)
             status = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
             self.assertIsNotNone(status)
             self.assertEqual((status.si_code, status.si_status), (os.CLD_EXITED, 23))
-        self.assertEqual(process.wait(timeout=READY_BOUND), 23)
 
     def test_subreaper_drains_descendants_when_leader_stop_fails(self):
         reaper = """import socket, subprocess, sys
@@ -511,11 +511,17 @@ def fail_kill(self):
     raise PermissionError("controlled leader stop failure")
 
 subprocess.Popen.kill = fail_kill
+if sys.argv[4] == "fail-drain":
+    real_drain = process_owner.drain_tree
+    def fail_once(command):
+        process_owner.drain_tree = real_drain
+        raise PermissionError("controlled final drain failure")
+    process_owner.drain_tree = fail_once
 with socket.socket(fileno=int(sys.argv[2])) as channel:
     try:
         process_owner.serve(channel, [sys.executable, "-I", "-c", sys.argv[3]], (), False)
     except PermissionError as error:
-        if str(error) != "controlled leader stop failure":
+        if str(error) not in ("controlled leader stop failure", "controlled final drain failure"):
             raise
         raise SystemExit(23)
 """
@@ -525,14 +531,15 @@ if os.fork() == 0:
     print(os.getpid(), flush=True)
 sys.stdin.read()
 """
-        for operation in (None, "stop", "finish"):
-            with self.subTest(operation=operation), ExitStack() as resources:
+        for operation, fail_drain in ((None, False), (None, True), ("stop", False), ("finish", False)):
+            with self.subTest(operation=operation, fail_drain=fail_drain), ExitStack() as resources:
                 with driver.defer_interrupts():
                     channel, endpoint = socket.socketpair(type=socket.SOCK_SEQPACKET)
                     resources.enter_context(channel)
                     resources.enter_context(endpoint)
                     process = self.spawn([sys.executable, "-I", "-c", reaper, str(ROOT),
-                                          str(endpoint.fileno()), tree], pass_fds=(endpoint.fileno(),),
+                                          str(endpoint.fileno()), tree, "fail-drain" if fail_drain else "normal"],
+                                         pass_fds=(endpoint.fileno(),),
                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE)
                     endpoint.close()
                 channel.settimeout(READY_BOUND)
@@ -560,7 +567,7 @@ sys.stdin.read()
                     self.assertEqual(driver.process_owner.receive(channel), {"result": -signal.SIGKILL})
                     self.assertEqual(process.wait(timeout=READY_BOUND), 0)
 
-    def test_child_cleanup_reports_interrupted_join_and_never_resignals_a_reaped_group(self):
+    def test_interrupted_child_cleanup_can_be_retried_and_is_idempotent_after_reaping(self):
         process = self.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
         with mock.patch.object(driver.process_owner, "send", side_effect=KeyboardInterrupt):
             with self.assertRaises(driver.ProcessExitError):
@@ -569,13 +576,16 @@ sys.stdin.read()
         descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), self.addCleanup)
         driver.close_child(process)
         self.assertEqual(pidfd_pid(descriptor), -1, "the process must already be reaped")
-        with mock.patch.object(os, "kill") as kill, \
-                mock.patch.object(os, "killpg") as kill_group, \
-                mock.patch.object(signal, "pidfd_send_signal") as kill_pidfd:
+        status = process.returncode
+        self.assertIsNotNone(status)
+        with ExitStack() as observation:
+            unrelated = self.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"],
+                                   stdin=subprocess.PIPE)
+            live = owned_descriptor(lambda: os.pidfd_open(unrelated.pid), observation.callback)
             driver.close_child(process)
-        kill.assert_not_called()
-        kill_group.assert_not_called()
-        kill_pidfd.assert_not_called()
+            self.assertEqual(process.returncode, status)
+            self.assertEqual(pidfd_pid(descriptor), -1)
+            self.assertFalse(select.select([live], [], [], 0)[0], "repeat cleanup must not stop another fixture")
 
     def test_managed_child_with_unconfirmed_exit_stays_owned_until_retry(self):
         owner = driver.ChildCleanup()

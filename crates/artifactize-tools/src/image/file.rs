@@ -9,10 +9,14 @@ use crate::scope;
 const GROWTH_PROBE_BYTES: usize = 1;
 
 pub(crate) fn read_output(root: &Path, path: &Path) -> Result<Vec<u8>, String> {
-    let relative = crate::files::logical_below(root, path)
-        .ok_or("Image path must be a UTF-8 path below the tool output directory.")?;
-    let file = scope::open_scoped(root, &relative)
-        .map_err(|e| format!("Image {}: {e}", crate::files::path_text(&relative)))?;
+    let invalid = "Image path must be a UTF-8 path below the tool output directory.";
+    let file = if crate::files::is_absolute(path) {
+        let relative = crate::files::relative_below(root, path).ok_or(invalid)?;
+        scope::open_native_scoped(root, relative)
+    } else {
+        scope::open_scoped(root, path.to_str().ok_or(invalid)?)
+    }
+    .map_err(|e| format!("Image {}: {e}", crate::files::path_text(path)))?;
     read(file)
 }
 

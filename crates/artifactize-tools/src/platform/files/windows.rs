@@ -26,10 +26,9 @@ use windows_sys::{
             STATUS_INVALID_PARAMETER, UNICODE_STRING,
         },
         Storage::FileSystem::{
-            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
-            FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
-            FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, FileAttributeTagInfo, GetFileInformationByHandleEx,
+            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_NAME_NORMALIZED,
+            FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
             GetFinalPathNameByHandleW, SYNCHRONIZE, VOLUME_NAME_DOS,
         },
         System::IO::IO_STATUS_BLOCK,
@@ -42,6 +41,7 @@ mod directory;
 mod path;
 pub use directory::read_dir;
 pub use path::canonicalize;
+pub(super) use path::plain;
 
 /// Reparse tags with this bit name another file: symbolic links, junctions and mount points.
 const NAME_SURROGATE: u32 = 0x2000_0000;
@@ -109,8 +109,17 @@ pub fn open_entry(directory: &File, name: &EntryName) -> io::Result<File> {
 pub fn entry_kind(directory: &File, name: &OsStr) -> io::Result<FileKind> {
     let name = EntryName::new(name).ok_or(io::ErrorKind::InvalidInput)?;
     let file = open_relative(directory, &name.0, FILE_READ_ATTRIBUTES | SYNCHRONIZE)?;
-    let info = attribute_tag(&file)?;
-    Ok(kind(info.FileAttributes, info.ReparseTag))
+    let metadata = file.metadata()?;
+    let kind = metadata.file_type();
+    Ok(if kind.is_symlink() {
+        FileKind::Symlink
+    } else if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        FileKind::Other
+    } else if kind.is_dir() {
+        FileKind::Directory
+    } else {
+        FileKind::File
+    })
 }
 
 /// `NtCreateFile` relative to a pinned directory handle: the Windows `openat`. The name is a
@@ -166,23 +175,6 @@ fn open_relative(directory: &File, name: &[u16], access: u32) -> io::Result<File
     }
     // SAFETY: NtCreateFile succeeded, so `handle` is a new handle that nothing else owns.
     Ok(unsafe { File::from_raw_handle(handle) })
-}
-
-fn attribute_tag(file: &File) -> io::Result<FILE_ATTRIBUTE_TAG_INFO> {
-    let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
-    // SAFETY: the buffer is a FILE_ATTRIBUTE_TAG_INFO of the size passed.
-    let ok = unsafe {
-        GetFileInformationByHandleEx(
-            file.as_raw_handle(),
-            FileAttributeTagInfo,
-            (&raw mut info).cast(),
-            mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
-        )
-    };
-    if ok == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(info)
 }
 
 fn kind(attributes: u32, reparse_tag: u32) -> FileKind {

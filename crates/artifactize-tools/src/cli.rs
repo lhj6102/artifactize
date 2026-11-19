@@ -30,30 +30,30 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Tool {
     /// Print a UTF-8 file (at most 64 KiB).
-    Read { path: String },
+    Read { path: PathBuf },
     /// List a directory, as JSON.
     List {
         #[arg(default_value = ".")]
-        path: String,
+        path: PathBuf,
     },
     /// Find logical file paths, as JSON.
     Glob {
         pattern: String,
         #[arg(default_value = ".")]
-        path: String,
+        path: PathBuf,
     },
     /// Search UTF-8 files, as JSON.
     Grep {
         pattern: String,
         #[arg(default_value = ".")]
-        path: String,
+        path: PathBuf,
         #[arg(long)]
         glob: Option<String>,
         #[arg(long)]
         case_insensitive: bool,
     },
     /// Print a Markdown section, selected by its exact heading.
-    Section { path: String, heading: String },
+    Section { path: PathBuf, heading: String },
     /// Run PROGRAM SUBCOMMAND... --help (10 seconds, 64 KiB).
     Help {
         #[arg(required = true, num_args = 1.., trailing_var_arg = true)]
@@ -75,8 +75,9 @@ pub async fn run(tool: Tool) -> u8 {
     }
 }
 
-fn logical(path: String) -> String {
-    if path == "." { String::new() } else { path }
+fn logical(path: &Path) -> Result<&str, String> {
+    let text = path.to_str().ok_or("Tool paths must be valid Unicode.")?;
+    Ok(if text == "." { "" } else { text })
 }
 
 async fn execute(tool: Tool) -> Result<(), String> {
@@ -112,14 +113,14 @@ async fn execute_in(
         Dynamic(builtin::Input),
     }
     let invocation = match tool {
-        Tool::Read { path } => Invocation::Fixed(FixedInput::read(logical(path))),
-        Tool::List { path } => Invocation::Fixed(FixedInput::list(logical(path))),
+        Tool::Read { path } => Invocation::Fixed(FixedInput::read(logical(&path)?.to_owned())),
+        Tool::List { path } => Invocation::Fixed(FixedInput::list(logical(&path)?.to_owned())),
         Tool::Section { path, heading } => {
-            Invocation::Fixed(FixedInput::section(logical(path), heading))
+            Invocation::Fixed(FixedInput::section(logical(&path)?.to_owned(), heading))
         }
         Tool::Help { args } => Invocation::Fixed(FixedInput::help(&args)),
         Tool::Glob { pattern, path } => {
-            Invocation::Dynamic(builtin::Input::glob(&pattern, logical(path))?)
+            Invocation::Dynamic(builtin::Input::glob(&pattern, logical(&path)?.to_owned())?)
         }
         Tool::Grep {
             pattern,
@@ -128,7 +129,7 @@ async fn execute_in(
             case_insensitive,
         } => Invocation::Dynamic(builtin::Input::grep(
             &pattern,
-            logical(path),
+            logical(&path)?.to_owned(),
             glob.as_deref(),
             case_insensitive,
         )?),
@@ -137,7 +138,7 @@ async fn execute_in(
                 target.into()
             } else {
                 scope
-                    .resolve_input(root, &owner, &logical(target))
+                    .resolve_input(root, &owner, logical(Path::new(&target))?)
                     .map_err(|error| error.to_string())?
                     .into_os_string()
             };

@@ -190,24 +190,55 @@ impl Connections {
     }
 
     fn wait_for_exit(&mut self) -> [(&'static str, io::Result<()>); 2] {
-        [("parent", &mut self.parent), ("child", &mut self.child)].map(|(role, stream)| {
-            let exit = stream
-                .set_read_timeout(Some(NATIVE_WATCHDOG))
-                .and_then(|()| match stream.read(&mut [0]) {
-                    Ok(0) => Ok(()),
-                    Ok(_) => Err(io::Error::other("unexpected data on the exit socket")),
-                    Err(error)
-                        if matches!(
-                            error.kind(),
-                            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
-                        ) =>
-                    {
-                        Ok(())
+        // These sockets are closed by process exit, not by the launcher worker.
+        // A separate watchdog releases broken fixtures; no read has a deadline,
+        // and needing the fallback is distinct from observing native exit.
+        let parent = self.parent.try_clone().expect("fixture parent socket");
+        let child = self.child.try_clone().expect("fixture child socket");
+        std::thread::scope(|scope| {
+            let (finished, done) = std::sync::mpsc::channel::<()>();
+            let watchdog = scope.spawn(move || {
+                let expired = done.recv_timeout(NATIVE_WATCHDOG)
+                    == Err(std::sync::mpsc::RecvTimeoutError::Timeout);
+                if expired {
+                    for stream in [parent, child] {
+                        let _ = stream.shutdown(std::net::Shutdown::Write);
                     }
-                    Err(error) => Err(error),
+                }
+                expired
+            });
+            let exits = [("parent", &mut self.parent), ("child", &mut self.child)]
+                .map(|(role, stream)| (role, read_exit(stream)));
+            drop(finished);
+            if watchdog.join().expect("native exit watchdog") {
+                return exits.map(|(role, _)| {
+                    (
+                        role,
+                        Err(io::Error::other("fixture needed a rescue to exit")),
+                    )
                 });
-            (role, exit)
+            }
+            exits
         })
+    }
+}
+
+fn read_exit(stream: &mut TcpStream) -> io::Result<()> {
+    loop {
+        match stream.read(&mut [0]) {
+            Ok(0) => return Ok(()),
+            Ok(_) => return Err(io::Error::other("unexpected data on the exit socket")),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+                ) =>
+            {
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        }
     }
 }
 

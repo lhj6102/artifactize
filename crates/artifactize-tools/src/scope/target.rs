@@ -189,8 +189,12 @@ impl Target {
     pub fn text(&self) -> Cow<'_, str> {
         match self {
             Self::Live(uri) => Cow::Borrowed(uri.as_str()),
-            _ => Cow::Owned(crate::files::path_text(
-                self.local().expect("local variant"),
+            _ => Cow::Owned(crate::files::relative_text(
+                self.local_target()
+                    .expect("local variant")
+                    .names
+                    .iter()
+                    .map(OsString::as_os_str),
             )),
         }
     }

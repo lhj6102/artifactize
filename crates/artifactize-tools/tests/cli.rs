@@ -172,7 +172,7 @@ async fn help_tree_fixture_cleans_up_when_its_caller_unwinds() {
 #[test]
 fn open_passes_one_absolute_target_to_the_recording_opener() {
     let root = os::tempdir();
-    os::recording_program(root.path(), os::OPENER);
+    os::recording_program(root.path(), os::opener_program());
     let file = os::opener_input(root.path());
     let record = root.path().join("record");
     let output = os::open_recording(

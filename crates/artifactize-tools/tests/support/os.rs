@@ -35,37 +35,17 @@ pub fn trailing_dot_alias(root: &Path) -> PathBuf {
     root
 }
 
-/// Make `path` runnable by name: mode 0700 on Unix. Windows runs any file whose
-/// extension is in `PATHEXT`, so nothing changes there.
-pub fn make_executable(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
-    }
-    #[cfg(windows)]
-    let _ = path;
-}
+#[path = "platform.rs"]
+mod platform;
+use platform::{make_executable, set_program_extensions};
 
-/// A symbolic link to a file, which may not exist. Windows test runners must have
-/// Developer Mode or elevation so they actually exercise the no-follow contract.
 pub fn symlink_file(target: impl AsRef<Path>, link: impl AsRef<Path>) {
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(target, link).expect("test runner can create symbolic links");
-    #[cfg(windows)]
-    std::os::windows::fs::symlink_file(target, link).expect(
-        "Windows test runner must enable Developer Mode or run with symbolic-link privileges",
-    );
+    platform::symlink_file(target, link);
 }
 
-/// The program a Unix desktop opens files with: `open` on macOS, `xdg-open` elsewhere.
-/// Windows opens through ShellExecute and runs no program by name.
-#[cfg(unix)]
-pub const OPENER: &str = if cfg!(target_os = "macos") {
-    "open"
-} else {
-    "xdg-open"
-};
+pub fn opener_program() -> &'static str {
+    platform::OPENER.expect("test requires a native opener command")
+}
 
 /// This test binary, set to run only the test `name`: for a test that runs itself again in
 /// an environment of its own, such as a `PATH` that holds only stand-ins.
@@ -166,6 +146,13 @@ pub fn rename_case(root: &Path, from: &str, to: &str) {
     fs::rename(staging.path(), root.join(to)).unwrap();
 }
 
+/// Replace a directory name while its original handle stays pinned for a test.
+pub fn replace_pinned_directory(root: &Path, original: &Path) {
+    fs::rename(original, root.join("moved")).unwrap();
+    fs::create_dir(original).unwrap();
+    fs::write(original.join("replacement"), "not pinned").unwrap();
+}
+
 /// The command Cargo built, with native process setup kept in the OS fixture layer.
 pub fn tools(binary: &str) -> Command {
     Command::new(binary)
@@ -185,8 +172,7 @@ pub fn call(binary: &str, root: &Path, args: &[&str]) -> std::process::Output {
 
 pub fn help(binary: &str, root: &Path, program: &str, args: &[&str]) -> std::process::Output {
     let mut command = tools(binary);
-    #[cfg(windows)]
-    command.env("PATHEXT", ".CMD;.BAT;.EXE");
+    set_program_extensions(&mut command);
     command
         .current_dir(root)
         .env("PATH", root)

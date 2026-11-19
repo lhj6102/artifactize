@@ -44,16 +44,16 @@ fn help_output(finished: Finished) -> Result<String, String> {
         return Err(format!(
             "Help exited unsuccessfully ({}).\n{}",
             finished.status,
-            String::from_utf8_lossy(&finished.stderr)
+            crate::platform::text::output(&finished.stderr)
         ));
     }
-    let mut bytes = finished.stdout;
-    bytes.extend(finished.stderr);
-    if finished.truncated || bytes.len() > TEXT_BYTES {
+    if finished.truncated || finished.stdout.len() + finished.stderr.len() > TEXT_BYTES {
         return Err("Help output exceeds 64 KiB.".into());
     }
-    Ok(
-        String::from_utf8(crate::terminal_text::clean_output(&bytes))
-            .expect("clean output is UTF-8"),
-    )
+    let mut bytes = crate::terminal_text::clean_output(&finished.stdout);
+    bytes.extend(crate::terminal_text::clean_output(&finished.stderr));
+    if bytes.len() > TEXT_BYTES {
+        return Err("Help output exceeds 64 KiB.".into());
+    }
+    Ok(String::from_utf8(bytes).expect("clean output is UTF-8"))
 }

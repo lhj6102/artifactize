@@ -219,7 +219,13 @@ struct InlineImage {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImageFile {
     mime_type: image::Mime,
+    #[serde(deserialize_with = "image_path")]
     path: PathBuf,
+}
+
+fn image_path<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<PathBuf, D::Error> {
+    let path = String::deserialize(deserializer)?;
+    crate::files::path_from_text(&path).map_err(serde::de::Error::custom)
 }
 
 /// Malformed or oversized command output; callers expose their own execution diagnostic.

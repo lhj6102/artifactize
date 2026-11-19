@@ -208,14 +208,25 @@ fn open_named(directory: &File, name: &OsStr, exact: bool) -> Result<File, OpenE
 
 /// Resolve a physical input below a canonical root. No component may be a symlink.
 pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
+    let (names, relative) = native_relative(path)?;
+    native_path(walk(root, names), root, &relative)
+}
+
+/// Open a native relative path without a second logical parse.
+pub(crate) fn open_native_scoped(root: &Path, path: &Path) -> Result<File, OpenError> {
+    let (names, _) = native_relative(path)?;
+    walk(root, names).map(|opened| opened.file)
+}
+
+fn native_relative(path: &Path) -> Result<(Vec<&OsStr>, String), ScopeError> {
     let names = platform::relative_names(path).map_err(io_scope)?;
-    let relative = platform::relative_text(&names);
+    let relative = platform::relative_text(names.iter().copied());
     if relative.encode_utf16().count() > MAX_PATH_UNITS {
         return Err(ScopeError(
             "Artifact path must be a safe relative logical path.".into(),
         ));
     }
-    native_path(walk(root, names), root, &relative)
+    Ok((names, relative))
 }
 
 fn native_path(

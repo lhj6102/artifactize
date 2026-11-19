@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
 mod open;
+pub(crate) use open::open_native_scoped;
 pub use open::{OpenError, open_child, open_input, open_scoped, scoped_path};
 mod logical;
 pub use logical::LogicalPath;

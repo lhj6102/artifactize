@@ -110,3 +110,11 @@ fn the_project_root_cannot_be_a_file_target() {
     assert_eq!(target.kind(), ArtifactKind::File);
     assert_eq!(target.folder(), std::path::Path::new("src"));
 }
+
+#[test]
+fn saved_local_target_uses_canonical_slashes() {
+    let target = Target::try_from("notes//draft.md").unwrap();
+    let saved = serde_json::to_value(&target).unwrap();
+    assert_eq!(saved, serde_json::json!("notes/draft.md"));
+    assert_eq!(serde_json::from_value::<Target>(saved).unwrap(), target);
+}

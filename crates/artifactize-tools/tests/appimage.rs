@@ -49,7 +49,7 @@ impl Fixture {
         let outside = root.path().join("artifactize-desktop");
         os::copy_test_binary(&outside);
         fs::create_dir(root.path().join("bin")).unwrap();
-        os::environment_recording_program(&root.path().join("bin"), os::OPENER);
+        os::environment_recording_program(&root.path().join("bin"), os::opener_program());
         Self {
             root,
             bundle,

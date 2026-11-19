@@ -11,7 +11,7 @@ use std::{ffi::OsStr, fs};
 #[test]
 fn target_is_one_literal_argument() {
     let root = os::tempdir();
-    os::recording_program(root.path(), os::OPENER);
+    os::recording_program(root.path(), os::opener_program());
     let record = root.path().join("record");
     let output = os::rerun_recording(root.path(), &record, "open_fixture_targets");
     assert!(

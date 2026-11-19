@@ -49,7 +49,7 @@ fn resolve_from(
                 io::ErrorKind::NotFound,
                 format!(
                     "Program is unavailable: {}",
-                    program.to_string_lossy().replace('\\', "/")
+                    super::files::path_text(Path::new(program))
                 ),
             )
         })

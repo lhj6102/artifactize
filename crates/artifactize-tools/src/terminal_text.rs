@@ -12,7 +12,7 @@ const CSI_PREFIX: &[u8] = b"\x1b[";
 const C0_CONTROLS: &[std::ops::RangeInclusive<u8>] = &[0..=8, 11..=12, 14..=31];
 
 pub fn clean_output(bytes: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8_lossy(bytes);
+    let text = crate::platform::text::output(bytes);
     let mut bytes = text.as_bytes();
     let mut clean = Vec::with_capacity(bytes.len());
     while let Some((&byte, tail)) = bytes.split_first() {

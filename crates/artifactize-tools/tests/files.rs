@@ -12,9 +12,7 @@ fn listings_and_kinds_stay_relative_to_the_pinned_directory() {
     fs::create_dir(&original).unwrap();
     fs::write(original.join("input"), "pinned").unwrap();
     let directory = files::open_directory(&original).unwrap();
-    fs::rename(&original, root.path().join("moved")).unwrap();
-    fs::create_dir(&original).unwrap();
-    fs::write(original.join("replacement"), "not pinned").unwrap();
+    os::replace_pinned_directory(root.path(), &original);
 
     // Independent scans must start at the beginning, including while another scan is live.
     let first = files::read_dir(&directory).unwrap();

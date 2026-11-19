@@ -13,6 +13,8 @@ import time
 
 # A watchdog bounds failed cleanup, not the lifetime of a running command.
 EXIT_BOUND = 30
+# Avoid spinning on a persistent resource error after the controller disconnects.
+DISCONNECTED_RETRY_DELAY = 0.1
 # Linux prctl(2) request to adopt this subtree's orphans, including zombies.
 PR_SET_CHILD_SUBREAPER = 36
 # Control packets contain only a PID, status, error, or the MCP command to stop.
@@ -234,7 +236,19 @@ def serve(channel, command, inherited, deferred):
                     return
     finally:
         if not finished:
-            finish_command()
+            try:
+                finish_command()
+            except Exception:
+                # No controller remains to retry. Keep our subreaper role until
+                # waitpid can confirm there are no children, even after I/O failure.
+                while True:
+                    try:
+                        drain_tree(child)
+                    except Exception:
+                        time.sleep(DISCONNECTED_RETRY_DELAY)
+                    else:
+                        break
+                raise
 
 
 if __name__ == "__main__":
