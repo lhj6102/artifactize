@@ -158,7 +158,8 @@ function commandLinesNaming(files: readonly NativePath[]): boolean {
   }
   const [program, args] = MACOS ? ["ps", ["-A", "-o", "args="]]
     : ["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-      "Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }"]];
+      // Node decodes the output as UTF-8: a fixture path with non-ASCII text must arrive whole.
+      "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }"]];
   const listed = spawnSync(program, args, { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT, windowsHide: true });
   if (listed.error || listed.status !== 0) {
     throw new Error(`cannot list command lines: ${listed.error?.message ?? `${program} exited ${listed.status}: ${listed.stderr}`}`);
@@ -594,9 +595,12 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand> & 
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => { if (visible?.stderr) process.stderr.write(chunk); else stderr += chunk; });
   // Abort and spawn errors can precede close; neither releases fixture ownership.
   child.on("error", (error) => { failures.push(error); });
-  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => {
-    child.once("close", (code, signal) => done({ code, signal }));
+  // The root's exit, not its pipes' close: a descendant holding an inherited pipe would keep
+  // them open until the group is torn down.
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => {
+    child.once("exit", (code, signal) => done({ code, signal }));
   });
+  const closed = new Promise<void>((done) => { child.once("close", () => done()); });
   let cancellation: Promise<void> | undefined;
   const cancel = () => {
     cancellation ??= stopTree(child).catch((error: unknown) => {
@@ -606,11 +610,12 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand> & 
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
   try {
-    const outcome = await closed;
-    // A closed wrapper can leave descendants that closed their inherited pipes.
-    // Always settle its owned tree; an abort remains attached throughout teardown.
+    const outcome = await exited;
+    // An exited root can leave descendants, holding its pipes or not. Always settle its owned
+    // tree, then read its pipes to their end; an abort remains attached throughout teardown.
     cancel();
     await cancellation;
+    await closed;
     if (signal.aborted) failures.unshift(signal.reason);
     else if (outcome.signal) failures.push(new Error(`fixture runner terminated by ${outcome.signal}`));
     if (failures.length === 1) throw failures[0];
@@ -926,16 +931,6 @@ export function processRunning(pid: number): boolean {
     throw new Error(`cannot observe live fixture PID ${pid}: ps exited ${state.status}: ${state.stderr}`);
   }
   return true;
-}
-
-/** Own a child whose parent must exit while the child remains live: a runner
- * regression seam, not an app/driver launcher. */
-export function startOrphanFixture(program: string, args: string[]): Promise<void> {
-  const child = spawn(program, args, { stdio: "ignore" });
-  return new Promise((done, fail) => {
-    child.once("error", fail);
-    child.once("spawn", () => { child.unref(); done(); });
-  });
 }
 
 /** Native display/session inputs survive fixture auth/profile sanitization. */

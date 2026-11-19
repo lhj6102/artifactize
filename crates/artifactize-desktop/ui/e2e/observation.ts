@@ -1,6 +1,6 @@
 import { readCandidate } from "./build.ts";
 import { processId, processRunning, removeTree, runProgramOk, variable, newDirectory, writeJson } from "./platform.ts";
-import { asNativePath, childDirectories, exists, nameOf, nativePath, readJson, saveScreenshot, type NativePath } from "./portable.ts";
+import { asNativePath, childDirectories, exists, nameOf, nativePath, readJson, saveScreenshot, writeTextOnce, type NativePath } from "./portable.ts";
 import type { Fixture } from "./fixture.ts";
 import type { Identity } from "./runs.ts";
 
@@ -95,19 +95,27 @@ export class AppStillAlive extends Error {}
 /** Service/runner exit alone is not proof that its native apps stopped. Missing birth
  * records or live owners keep fixture inputs intact; this observes, never signals them. */
 export function assertAppsStopped(observer: NativePath, files: NativePath[]): void {
-  const owners = files.map((file) => {
+  const owners = files.flatMap((file) => {
     if (!exists(file)) throw new Error(`Native shutdown is unconfirmed; birth record missing: ${file}`);
-    const value = readJson(file) as Partial<Identity>;
+    const value = readJson(file) as Partial<Identity> & { neverLaunched?: boolean };
+    if (value.neverLaunched === true) return [];
     if (!Number.isSafeInteger(value.pid) || (value.pid ?? 0) <= 0 || typeof value.start_time !== "string" || !/^\d+$/.test(value.start_time)) {
       throw new Error(`Native shutdown is unconfirmed; invalid birth record: ${file}`);
     }
-    return value as Identity;
+    return [value as Identity];
   });
+  if (owners.length === 0) return;
   const alive: unknown = JSON.parse(runProgramOk(observer, ["alive"], { input: JSON.stringify(owners), timeout: 5000 }));
   if (!Array.isArray(alive) || alive.length !== owners.length || alive.some((value) => typeof value !== "boolean")) {
     throw new Error("Native shutdown is unconfirmed; invalid native observation");
   }
   if (alive.some(Boolean)) throw new AppStillAlive("A native app still owns its fixtures and executable inputs");
+}
+
+/** Settle an admitted app that its launcher (an app confirmed ended) never started, and that
+ * is confirmed not running: its record says so, unless its own birth record got there first. */
+export function recordNeverLaunched(file: NativePath): void {
+  writeTextOnce(file, JSON.stringify({ neverLaunched: true }));
 }
 
 function admissions(root: NativePath): NativePath[] {

@@ -196,7 +196,9 @@ export const scenarios: Scenario[] = [
           .map((term) => [term.textContent?.trim() ?? "", term.nextElementSibling as HTMLElement]));
         const marks = (dd: HTMLElement | undefined) => [...(dd?.querySelectorAll(":scope > span") ?? [])]
           .map((part) => [part.querySelector("svg")?.getAttribute("data-icon") ?? "", part.textContent?.trim() ?? ""]);
+        const section = dock.querySelector<HTMLElement>('section[aria-label="Outcome"]');
         return {
+          shown: !!section && section.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && section.getBoundingClientRect().height > 0,
           status: facts.Status?.textContent?.trim() ?? "",
           statusIcon: facts.Status?.querySelector("svg")?.getAttribute("data-icon") ?? "",
           failed: marks(facts.Failed),
@@ -207,7 +209,8 @@ export const scenarios: Scenario[] = [
         };
       });
       let read = await outcome();
-      await browser.waitUntil(async () => (read = await outcome()).status !== "", { timeout: 15000, timeoutMsg: "the Run's outcome" })
+      await browser.waitUntil(async () => (read = await outcome()).shown && read.status === "WAITING HUMAN" && read.tally.length === 7,
+        { timeout: 15000, timeoutMsg: "the Run's outcome shown with its status and tally" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(read)}`); });
       assert.equal(read.statusIcon, "human", `its status, said once, by the headline's mark: ${read.status}`);
       assert.deepEqual(read.failed, [["red", `red/check${ATTENTION_SUFFIX}`], ["error", `crash/check${ATTENTION_SUFFIX}`]], "the evals that failed, by name");

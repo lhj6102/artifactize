@@ -153,7 +153,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-REFRESH J-MAIN-CURRENT
+  // UX journey: J-REFRESH
   scenario<{ worktree: NativePath }>(
     "navigation-refresh",
     "reloads from disk on the same view: the palette's Refresh and the Current's own Refresh scan the shown Current again",

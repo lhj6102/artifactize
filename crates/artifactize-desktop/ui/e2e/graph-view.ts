@@ -1,11 +1,22 @@
 // A Run's or a Current's graph in the Main area as a person sees it: the Artifact that has the
 // keyboard, and the Detail a click opens over the graph's right side with its tabs. Every reading is read-only; a timeout
 // reports what the window showed instead.
-import { ICONS } from "../src/shell/icons.ts";
+import { suitePath } from "./platform.ts";
+import { absolutePath, readText } from "./portable.ts";
 
-/** Each of the app's marks by the shapes its icon sheet draws (a path's outline, and whether it
- * is filled), so a reader names a mark from what is drawn rather than from what it is labelled. */
-const MARKS = new Map(Object.entries(ICONS).map(([name, shapes]) => [shapes.map((shape) => `${shape.d}|${shape.fill ? "fill" : "line"}`).join(" "), name]));
+/** Each mark of the design's icon sheet (design/mock.css, independent of the app's own icon
+ * code) by the shapes it draws: each path's outline, a circle's as the path that traces it, and
+ * whether it is filled. A reader names a drawn mark from its shapes, never from its labels. */
+const MARKS = new Map([...readText(absolutePath(suitePath(), "../../design/mock.css"))
+  .matchAll(/--i-([a-z-]+): url\("data:image\/svg\+xml,([^"]+)"\)/g)].map(([, name, data]) => {
+  const shapes = [...decodeURIComponent(data).matchAll(/<(path|circle|rect)\s([^>]*?)\/>/g)].map(([, kind, text]) => {
+    const at = Object.fromEntries([...text.matchAll(/([a-z-]+)='([^']*)'/g)].map(([, key, value]) => [key, value]));
+    const [cx, cy, r] = [Number(at.cx), Number(at.cy), Number(at.r)];
+    const outline = kind === "circle" ? `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0` : kind === "path" ? at.d : `rect ${text}`;
+    return `${outline}|${at.fill === "currentColor" ? "fill" : "line"}`;
+  });
+  return [shapes.join(" "), name] as const;
+}));
 
 /** The name of the mark whose shapes `drawn` lists (as the page's paths read: outline and fill),
  * the text when no SVG mark is drawn, or `?` with the shapes when none of the sheet's matches. */
@@ -41,8 +52,9 @@ export async function graphShown(browser: WebdriverIO.Browser, id: string, timeo
 }
 
 /** The camera (translation and scale) of the Main area's graph, read once it holds still over a
- * painted frame: a zoom control animates it. */
-export async function camera(browser: WebdriverIO.Browser): Promise<string> {
+ * painted frame: a zoom control animates it. With `from`, the camera an action started from,
+ * only a camera that has moved away from it and come to rest counts. */
+export async function camera(browser: WebdriverIO.Browser, from?: string): Promise<string> {
   const read = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>(".svelte-flow__viewport")]
     .find((viewport) => !viewport.closest('aside[aria-label="Detail"]'))?.style.transform ?? "");
   let shown = await read();
@@ -50,8 +62,8 @@ export async function camera(browser: WebdriverIO.Browser): Promise<string> {
     const before = shown;
     await browser.execute(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
     shown = await read();
-    return shown !== "" && before === shown;
-  }, { timeout: 15000, timeoutMsg: "the graph's camera held still" });
+    return shown !== "" && before === shown && shown !== from;
+  }, { timeout: 15000, timeoutMsg: from === undefined ? "the graph's camera held still" : "the graph's camera moved and held still" });
   return shown;
 }
 

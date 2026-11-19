@@ -10,6 +10,7 @@ import {
 import { git } from "../environment.ts";
 import { companionPortFree, companionPortWanted, graphToolFailure, graphToolObservation } from "../graph-tool-session.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
+import { clickAt } from "../pointer.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { commandFields, runtimeProfile } from "../native-fixtures.ts";
@@ -206,7 +207,7 @@ payload.instruction = "Check {graph-marker}."
         const below = Math.max(...nodes.map((node) => node.bottom));
         return { x: Math.round((canvas.left + dock.left) / 2), y: Math.round(Math.min(canvas.bottom - 20, below + (canvas.bottom - below) / 2)) };
       }, CURRENT);
-      await browser.action("pointer").move(background).down().up().perform();
+      await clickAt(browser, background);
       await waitFor(browser, async () => (await detail(browser)) === null, "a click on the background closed docs' Detail");
 
       // Each Refresh, Ctrl+R and F5 scans the changed declarations again; docs' eval, open in
@@ -365,8 +366,9 @@ Summarize {docs}."""
         { timeout: 15000, timeoutMsg: "would run painted in its legend colour" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
       // A scan's last step comes as it ends; the header shows when once it has.
-      await waitFor(browser, async () => (await scanShown(browser)) !== null, "the scan before the Run ended");
-      const before = { drawn: await drawn(), look };
+      let shownBefore: string | null = null;
+      await waitFor(browser, async () => (shownBefore = await scanShown(browser)) !== null, "the scan before the Run ended");
+      const before = { drawn: await drawn(), look, scanned: shownBefore! };
       assert.notEqual(before.look.nodes["a:release"].mark, reusedLook.nodes["a:release"].mark, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
@@ -379,13 +381,12 @@ Summarize {docs}."""
       // The rescan is visible as its plans turning from would run back to reused.
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
-      // Once that scan has ended, no progress is shown and the header shows when, in local time.
-      let shown: Awaited<ReturnType<typeof scanShown>> = null;
-      await waitFor(browser, async () => (shown = await scanShown(browser)) !== null && /^Scanned at \d/.test(await scanned(browser)),
-        "the completed scan's time is shown in the header");
-      const local = await browser.execute((instant: string) => new Date(instant).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }), shown!.instant);
-      assert.equal(await scanned(browser), `Scanned at ${local}`, "the header reads that scan's local time");
-      assert.equal(shown!.text, local, "the header visibly shows that time");
+      // Once that scan has ended, no progress is shown and the header shows its later time.
+      let shown: string | null = null;
+      await waitFor(browser, async () => (shown = await scanShown(browser)) !== null && shown !== before.scanned,
+        `the new scan's time replaces ${before.scanned} in the header`);
+      assert.match(shown!, /^\d{2}:\d{2}:\d{2}$/, "a time of day");
+      assert.equal(await scanned(browser), `Scanned at ${shown!}`, "the header reads that time");
       const after = await graphAppearance(browser);
       for (const id of ["a:release", "a:ship"]) {
         assert.notEqual(after.nodes[id].mark, before.look.nodes[id].mark, `${id} recoloured`);

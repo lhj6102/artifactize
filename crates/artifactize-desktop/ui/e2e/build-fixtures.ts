@@ -66,10 +66,11 @@ export function createdRoots(): NativePath[] {
 /** Marks a fixture kept for diagnosis, so a later cleanup of the candidate keeps it too. */
 const RETAINED = "retained-for-diagnosis";
 
-/** Stop what every fixture runs, and delete only fixtures whose app and any companion have
- * been confirmed stopped; a retained fixture keeps its files for diagnosis, and stays retained
- * for every later cleanup. Returns the fixtures kept. */
-export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate(),
+/** Stop what each of `roots` runs and delete those fixtures. The caller names only fixtures
+ * whose app instance (and anything it launched) it has confirmed ended, and `retain`s those
+ * whose end it could not confirm: a retained fixture keeps its files for diagnosis, and stays
+ * retained for every later cleanup. Returns the fixtures kept. */
+export async function releaseFixtures(roots: readonly NativePath[], candidate: Candidate = readCandidate(),
   retain: ReadonlySet<NativePath> = new Set()): Promise<NativePath[]> {
   const failures: unknown[] = [];
   const kept: NativePath[] = [];

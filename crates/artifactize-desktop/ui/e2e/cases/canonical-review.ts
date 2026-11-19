@@ -4,7 +4,7 @@ import { artifactize, create, requests, savedRuns, verifyWaiting } from "../fixt
 import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { primaryModifier } from "../platform.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
 import { entriesFocused, expectMainReview, mainTitle, showRun } from "../pane.ts";
 
 export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
@@ -32,7 +32,11 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
       async function open(id: string) {
         await showRun(browser, "repo  master", run);
         await human().waitForDisplayed({ reverse: true });
-        await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isDisplayed(), "the request ID dialog");
+        // The palette's Open a request by ID, the journey's visible path.
+        await browser.$("header.bar").$("button*=Commands").click();
+        await choosePaletteCommand(browser, "Open a request by ID");
+        await browser.$('.palette [role="option"][aria-selected="true"]').click();
+        await browser.$('[aria-label="Request ID"]').waitForDisplayed({ timeout: 15000, timeoutMsg: "the request ID dialog" });
         await fill(browser, '[aria-label="Request ID"]', id);
         await browser.$('[role="dialog"] button[type="submit"]').click();
         await browser.$('[aria-label="Request ID"]').waitForDisplayed({ reverse: true });

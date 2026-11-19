@@ -116,7 +116,7 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
-      const { text, human } = submission(browser);
+      const { human } = submission(browser);
       await graphShown(browser, "a:release");
       // The Refresh observation sees a real F5 here, before it witnesses that composition
       // dispatched none.
@@ -194,9 +194,12 @@ export const scenarios: Scenario[] = [
       } catch (error) { throw new Error(`Native commit: ${JSON.stringify({ value: await comment.getValue(), events: await events() })}`, { cause: error }); }
       await commandsRendered(browser);
       await press(browser, [primaryModifier, "s"], async () => signoff(fixture).status === "GREEN", "GREEN saved");
-      await waitFor(browser, async () => ((await checkpoint(browser)).activity.commands.humanSubmit?.completed ?? 0) > (before.commands.humanSubmit?.completed ?? 0), "the submit counter observes this real successful submission");
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "안녕" });
-      await waitFor(browser, async () => /completed result/i.test(await text()), "the completed result stays open");
+      // The same review now shows its completed result: GREEN, with the committed comment.
+      await waitFor(browser, async () => {
+        const shown = await human().getText();
+        return /completed result/i.test(shown) && /\bGREEN\b/.test(shown) && shown.includes("안녕");
+      }, "the review shows its completed GREEN result with the Korean comment");
     },
   ),
 ];

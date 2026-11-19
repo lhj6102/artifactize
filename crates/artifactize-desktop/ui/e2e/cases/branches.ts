@@ -353,7 +353,8 @@ export const scenarios: Scenario[] = [
       }, "the deleted folder's review is gone while the retained review still waits");
       // A worktree Git no longer lists goes too, though its folder and files stay.
       removeTree(nativePath(fixture.root, "scope-two", ".git"));
-      git(fixture.repo, "-C", fixture.repo, "worktree", "prune");
+      git(fixture.repo, "-C", fixture.repo, "worktree", "prune", "--expire=now");
+      assert.equal(exists(nativePath(fixture.repo, ".git", "worktrees", "scope-two")), false, "Git no longer lists scope-two");
       await waitFor(browser, async () => (await names()).length === 2, "the unlisted worktree gone");
       assert.deepEqual(await names(), ["repo  loose", "repo  master"]);
       assert.equal(exists(nativePath(fixture.root, "scope-two", "release", "notes.md")), true, "its folder and files stay");

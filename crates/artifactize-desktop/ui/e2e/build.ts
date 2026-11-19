@@ -155,6 +155,8 @@ export async function cleanup(root: NativePath): Promise<void> {
     setVariable("DESKTOP_TEST_CANDIDATE", nativePath(root, "candidate.json"));
     try {
       const { releaseFixtures } = await import("./fixture.ts");
+      // Called once every batch runner and every app it admitted is confirmed ended, so each
+      // fixture left under the candidate has no running owner.
       const kept = await releaseFixtures(childDirectories(fixtures));
       // A fixture kept for diagnosis keeps the candidate that holds it.
       if (kept.length > 0) throw new Error(`fixtures retained for diagnosis: ${kept.join(", ")}`);

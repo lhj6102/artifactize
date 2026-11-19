@@ -545,7 +545,8 @@ export const scenarios: Scenario[] = [
       await press(browser, [primaryModifier, "f"], async () => (await findField(browser))?.focused === true, "the find field open over the Current");
       await fill(browser, FIND, "site");
       await browser.waitUntil(async () => JSON.stringify((await findField(browser))?.entries.map((entry) => entry.name)) === JSON.stringify(["site"]), { timeout: 15000, timeoutMsg: "site listed once" });
-      const first = await browser.execute((under) => [...document.querySelectorAll<HTMLElement>(`${under} .svelte-flow__node[data-artifact="a:site"]`)][0]?.dataset.id ?? "", current);
+      // In the graph's order, by name, docs (which holds site) comes before suite.
+      const first = "a:docs/a:site";
       await press(browser, ["Enter"], async () => (await findField(browser)) === null && (await detail(browser))?.title === "Artifact site", "Enter opens site's Detail");
       await browser.waitUntil(async () => {
         const at = await offCentre(browser, first);
@@ -1227,7 +1228,7 @@ payload.instruction = "Check the Live Artifact."
     },
   ),
 
-  // UX journeys: J-GRAPH-FIND J-PANE-SEARCH
+  // UX journey: J-GRAPH-FIND (Ctrl+F in the Pane still searches the Pane; J-PANE-SEARCH itself is search.ts's)
   scenario<Record<string, never>>(
     "graph-find",
     "Ctrl+F searches the Pane from the Pane; over the Run's graph it finds Artifacts and evals by name, opens the chosen one's Detail on its tab with the Artifact in the middle of the graph left of the Detail, and Esc or a click outside closes it",

@@ -964,7 +964,7 @@ export const scenarios: Scenario[] = [
       await browser.$(DETAIL).$("button=Close").click();
       await waitFor(browser, async () => (await detail(browser)) === null, "the Detail closed before the next drop");
       await browser.$(TOOLS).$("button=Fit").click();
-      await camera(browser);
+      await stillCamera(browser);
 
       // A whole is dragged by its title row, carrying its parts; minimized, it is dragged as a node.
       const bundleTitle = await titleOf(browser, "a:bundle");
@@ -988,7 +988,7 @@ export const scenarios: Scenario[] = [
       // left its center behind an edge of this smaller viewport.
       await browser.$(TOOLS).$("button=Fit").click();
       await graphShown(browser, "a:bundle");
-      await camera(browser);
+      await stillCamera(browser);
       const folded = await visibleCenter(browser, await browser.$(`${CURRENT} ${nodeAt("a:bundle")} .whole`).getElement());
       const foldedAt = ownAt(fixture, "bundle");
       await drag(browser, folded, await below(browser, folded.x + 30, folded.y));

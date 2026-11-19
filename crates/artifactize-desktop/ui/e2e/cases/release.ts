@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { readCandidate } from "../build.ts";
 import { app, cli, create, createOutside, environment, type Fixture } from "../fixture.ts";
-import { checkpoint } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { dispatchInput } from "../input.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { mainTitle } from "../pane.ts";
@@ -86,15 +86,13 @@ function baseline() {
 }
 
 /** The app's release lookup has answered at least once, none of its calls failed, and the
- * window shows its answer. */
+ * window has rendered once its native work settled, so the header shows that answer. */
 async function lookedUp(browser: WebdriverIO.Browser): Promise<void> {
   const calls = async () => (await checkpoint(browser)).activity.commands.releaseNotice;
-  // The app starts its next look only after it has put the previous answer in the header,
-  // so a second look begun means the first answer is applied; then its frame is drawn.
-  await browser.waitUntil(async () => ((await calls())?.completed ?? 0) >= 1 && ((await calls())?.started ?? 0) >= 2,
-    { timeout: 15000, timeoutMsg: "the app looked up the latest release and applied its answer" });
+  await browser.waitUntil(async () => ((await calls())?.completed ?? 0) >= 1,
+    { timeout: 15000, timeoutMsg: "the app looked up the latest release" });
   assert.equal((await calls())?.failed, 0, "the app's release lookup succeeded");
-  await afterRender(browser);
+  await commandsRendered(browser);
 }
 
 const notice = (browser: WebdriverIO.Browser) => browser.$(`button=${LATEST} available`);
@@ -261,7 +259,8 @@ export const scenarios: Scenario[] = [
       assert.equal(await mainTitle(browser), view, "the notice leaves the shown view as it was");
       const header = await browser.execute(() =>
         [...document.querySelectorAll("header.bar button")].map((button) => button.textContent?.trim() ?? ""));
-      assert.ok(header.indexOf(`${LATEST} available`) < header.indexOf("Settings"), `the notice comes before Settings: ${header.join(" | ")}`);
+      const [shownAt, settingsAt] = [header.indexOf(`${LATEST} available`), header.indexOf("Settings")];
+      assert.ok(shownAt >= 0 && settingsAt >= 0 && shownAt < settingsAt, `the notice comes before Settings in the header: ${header.join(" | ")}`);
       // doctor makes the same lookup and finds the same release, with the same update.
       const report = JSON.parse(runProgramOk(cli(), ["--state-dir", fixture.state, "doctor", "--json"], { env })) as {
         checks: { name: string; status: string; details: { latest?: string; update?: { kind: string; url?: string } } }[];

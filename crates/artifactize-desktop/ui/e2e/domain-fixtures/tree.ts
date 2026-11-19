@@ -1,6 +1,7 @@
 // A runner-owned process tree for the cancellation regression: `owner` starts one
 // `descendant`, which reports its process id to the test and stays alive until stopped.
-import { nodeProgram, processId, startOrphanFixture, suitePath } from "../platform.ts";
+import { spawn } from "node:child_process";
+import { nodeProgram, processId, suitePath } from "../platform.ts";
 import { sendLoopback, serveLoopback } from "../portable.ts";
 
 const [role, receiver] = process.argv.slice(2);
@@ -29,4 +30,13 @@ if (role === "owner") {
   await sendLoopback(Number(receiver), JSON.stringify(processId()));
 } else {
   throw new Error(`unknown process tree role ${role}`);
+}
+
+/** Start a child that outlives this process: the orphan a runner's teardown must still join. */
+function startOrphanFixture(program: string, args: string[]): Promise<void> {
+  const child = spawn(program, args, { stdio: "ignore" });
+  return new Promise((done, fail) => {
+    child.once("error", fail);
+    child.once("spawn", () => { child.unref(); done(); });
+  });
 }

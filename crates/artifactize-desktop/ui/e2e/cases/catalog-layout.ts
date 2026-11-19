@@ -7,7 +7,7 @@ import { CATALOG_NOTE, createEmptyAudit, createLayout } from "../catalog-fixture
 import { scenario, type Scenario } from "../scenario.ts";
 import { chooseChip, listed, mainTitle, scanned, showRun } from "../pane.ts";
 import { aside, camera, detail, FIND, findField, graphShown, nodeAt, offCentre, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
-import { afterRender, fill, press } from "../keys.ts";
+import { fill, press } from "../keys.ts";
 import { canvasSnapshot } from "../rendering.ts";
 import { listFiles, nativePath, readText } from "../portable.ts";
 import { dispatchInput } from "../input.ts";
@@ -116,9 +116,8 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await slot(browser))?.text.includes("Choose a branch or a waiting review in the Pane.") === true,
         { timeout: 15000, timeoutMsg: "nothing is chosen at launch" });
       const before = (await slot(browser))!;
-      // Only accept a loading note that is still visible on both sides of a
-      // rendering opportunity. A note replaced in the first callback's frame
-      // can never be evidence, even if it already had layout geometry.
+      // Each frame's state as it is about to be painted (read at its animation-frame callback),
+      // recorded when it differs from the last: a loading note shown for one frame counts.
       await browser.execute(() => {
         const trace = { frames: [] as { text: string; layOutAll: boolean; bounds: number[]; divider: boolean }[], done: false };
         (window as unknown as { catalogLoading: typeof trace }).catalogLoading = trace;
@@ -137,17 +136,14 @@ export const scenarios: Scenario[] = [
           });
           // Whether the frame offers "Lay out all" is recorded on its own, so a frame showing it
           // beside a loading note still counts.
-          return { note, frame: { text: note?.innerText ?? "", layOutAll: stage.innerText.includes("Lay out all"),
+          return { frame: { text: note?.innerText ?? "", layOutAll: stage.innerText.includes("Lay out all"),
             bounds: [box.left, box.top, box.width, box.height].map(Math.round),
             divider: !!divider && divider.width > 0 && divider.left > 0 && divider.right <= box.left + 1 } };
         };
-        let previous: ReturnType<typeof read> | undefined;
         function sample() {
           if (trace.done) return;
           const now = read();
-          if (previous && now.note === previous.note && now.frame.text === previous.frame.text && now.frame.layOutAll === previous.frame.layOutAll
-            && JSON.stringify(trace.frames.at(-1)) !== JSON.stringify(now.frame)) trace.frames.push(now.frame);
-          previous = now;
+          if (JSON.stringify(trace.frames.at(-1)) !== JSON.stringify(now.frame)) trace.frames.push(now.frame);
           requestAnimationFrame(sample);
         }
         requestAnimationFrame(sample);
@@ -222,8 +218,9 @@ export const scenarios: Scenario[] = [
       const zoomIn = await browser.$(ZOOM_IN);
       let zooms = 0;
       for (; zooms < 20 && (await brought()).length === 0; zooms += 1) {
+        const from = await camera(browser);
         await zoomIn.click();
-        await afterRender(browser);
+        await camera(browser, from);
       }
       await browser.waitUntil(async () => (await brought()).length > 0, { timeout: 15000, timeoutMsg: "zooming in drew Artifacts it brought into view" });
       assert.ok(zooms > 0, "the Artifacts were brought into view by zooming in");
@@ -333,8 +330,9 @@ export const scenarios: Scenario[] = [
       };
       const zoomedOut = async () => (await painted())?.zoom ?? Infinity;
       for (let step = 0; step < 12 && await zoomedOut() >= 0.3; step += 1) {
+        const from = await camera(browser);
         await browser.$(ZOOM_OUT).click();
-        await camera(browser);
+        await camera(browser, from);
       }
       let far: Awaited<ReturnType<typeof painted>> = null;
       await browser.waitUntil(async () => {
@@ -352,8 +350,9 @@ export const scenarios: Scenario[] = [
       // Still zoomed out, it is not a named box; zoomed in again, it is.
       assert.equal(await browser.$(node).isExisting(), false, "zoomed out, w00 is painted without its name box");
       for (let step = 0; step < 12 && !(await browser.$(node).isExisting()); step += 1) {
+        const from = await camera(browser);
         await browser.$(ZOOM_IN).click();
-        await camera(browser);
+        await camera(browser, from);
       }
       await browser.$(node).waitForExist({ timeout: 15000, timeoutMsg: "w00 a box again" });
       assert.equal(await browser.$(node).$(".name").getText(), "w00", "named");
@@ -388,8 +387,9 @@ export const scenarios: Scenario[] = [
         return { x: (node.x + node.width / 2 - canvas.x - matrix.e) / matrix.a, y: (node.y + node.height / 2 - canvas.y - matrix.f) / matrix.a };
       }, node, current);
       for (let step = 0; step < 12 && await browser.$(node).isExisting(); step += 1) {
+        const from = await camera(browser);
         await browser.$(ZOOM_OUT).click();
-        await camera(browser);
+        await camera(browser, from);
       }
       const read = async () => {
         const sample = await browser.execute((root, at, selector) => {

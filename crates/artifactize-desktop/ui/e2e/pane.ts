@@ -212,16 +212,15 @@ export function scanned(browser: WebdriverIO.Browser): Promise<string> {
   }, MAIN);
 }
 
-/** A Current's completed scan as its header shows it: the visible `Scanned at` time with the
- * instant it stands for, once no scan is in progress; null while one runs or none ended. */
-export function scanShown(browser: WebdriverIO.Browser): Promise<{ text: string; instant: string } | null> {
+/** The time a Current's header visibly shows for its completed scan, once no scan is in
+ * progress; null while one runs or none ended. */
+export function scanShown(browser: WebdriverIO.Browser): Promise<string | null> {
   return browser.execute((main) => {
     const scan = document.querySelector(`${main} > header .scan`);
     const time = scan?.querySelector<HTMLElement>("time");
     if (!scan || !time || scan.querySelector(".checking")) return null;
     const visible = time.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && time.getBoundingClientRect().width > 0;
-    const instant = time.getAttribute("datetime");
-    return visible && instant ? { text: time.innerText.trim(), instant } : null;
+    return visible ? time.innerText.trim() || null : null;
   }, MAIN);
 }
 

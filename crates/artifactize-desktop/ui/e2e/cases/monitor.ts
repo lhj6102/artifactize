@@ -836,7 +836,15 @@ export const scenarios: Scenario[] = [
       });
       const keysAt = (target: string) => browser.execute((id) =>
         (window as unknown as { fieldKeys: { key: string; target: string }[] }).fieldKeys.filter((seen) => seen.target === id).map((seen) => seen.key).join(""), target);
-      for (const [field, focus, id] of [["the true/false field", async () => {}, "field-confirmed"], ["the choice field", focusChoice, "field-channel"]] as const) {
+      // The true/false field gets the keyboard by Tab from the choice field: a click may check a
+      // box without focusing it (as WebKit on macOS does).
+      const focusConfirmed = async () => {
+        await focusChoice();
+        const focused = () => browser.execute(() => document.activeElement?.id || document.activeElement?.getAttribute("name") || "");
+        for (let step = 0; step < 6 && await focused() !== "field-confirmed"; step += 1) await tab(browser);
+        assert.equal(await focused(), "field-confirmed", "Tab reached the true/false field");
+      };
+      for (const [field, focus, id] of [["the true/false field", focusConfirmed, "field-confirmed"], ["the choice field", focusChoice, "field-channel"]] as const) {
         await focus();
         await browser.keys(["u", "r", "t"]);
         await browser.waitUntil(async () => (await keysAt(id)).endsWith("urt"), { timeout: 15000, timeoutMsg: `u, r and t reached ${field}` });

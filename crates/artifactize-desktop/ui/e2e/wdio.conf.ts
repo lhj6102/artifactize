@@ -1,7 +1,7 @@
 // The upstream embedded service is the sole native app/driver lifecycle owner.
 import { remote, SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
-import { AppStillAlive, assertAppsStopped, recordAdmission } from "./observation.ts";
+import { AppStillAlive, assertAppsStopped, recordAdmission, recordNeverLaunched } from "./observation.ts";
 import { companionPortFree, companionPortWanted, graphToolFailure, observeGraphTool } from "./graph-tool-session.ts";
 import { observe } from "./domain-fixtures/observe.ts";
 import { selectedScenarios } from "./catalog.ts";
@@ -69,8 +69,10 @@ export async function releasePrepared(): Promise<void> {
     const companion = companions.get(index);
     // The primary app's end is confirmed on its own; the companion's handoff and end are
     // confirmed whatever that check found.
+    let primaryEnded = false;
     try {
       if (ownerFiles?.[index]) assertAppsStopped(candidate.observer, [ownerFiles[index]]);
+      primaryEnded = !!ownerFiles?.[index];
     } catch (error) {
       failures.push(error);
       retained.add(input.fixture.root);
@@ -85,6 +87,8 @@ export async function releasePrepared(): Promise<void> {
         const program = companion.program;
         await observe(() => !programRunning(program),
           () => "a graph companion without a birth record is still running", 65000);
+        // Nothing can launch it any more: its admission is settled as never launched.
+        if (companion.owner && primaryEnded) recordNeverLaunched(companion.owner);
       }
       if (launched && companion?.observation) await release(() => companion.observation!);
       if (launched && companion?.owner) {
@@ -196,7 +200,7 @@ export const config = {
             polling = setInterval(() => {
               if (!exists(companionPortWanted(fixture))) return;
               clearInterval(polling);
-              endpoint.close().then(() => { writeText(companionPortFree(fixture), ""); done(); }, fail);
+              endpoint.close().then(() => writeText(companionPortFree(fixture), "")).then(done, fail);
             }, 50);
           });
           void handoff.catch(() => {});
