@@ -53,10 +53,13 @@ export async function releasePrepared(): Promise<void> {
   };
   for (const [index, input] of prepared.splice(0).entries()) {
     const companion = companions.get(index);
-    if (companion?.observation) await release(() => companion.observation!);
     try {
       if (ownerFiles?.[index]) assertAppsStopped(candidate.observer, [ownerFiles[index]]);
-      if (companion?.owner) {
+      // The app that would launch the companion has ended: a companion it launched has written
+      // its birth record; without one, the case ended before the graph tool was clicked.
+      const launched = !!companion?.owner && exists(companion.owner);
+      if (launched && companion?.observation) await release(() => companion.observation!);
+      if (launched && companion?.owner) {
         const owner = companion.owner;
         // The test build's companion has a native close watchdog if attachment failed.
         // Do not report a routine deadline as success, or delete without the native join.
@@ -79,7 +82,7 @@ export async function releasePrepared(): Promise<void> {
     if (failures.length !== before) retained.add(input.fixture.root);
   }
   for (const releaseClaim of driverClaims.splice(0)) await release(releaseClaim);
-  await release(() => releaseFixtures(roots, candidate, retained));
+  await release(async () => { await releaseFixtures(roots, candidate, retained); });
   if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
 }
 

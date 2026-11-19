@@ -845,7 +845,7 @@ export function createOutside(): Fixture & { remove: () => Promise<void> } {
   return prepareFixture((root) => {
     const repo = makeDirectory(nativePath(root, "repo"));
     // The caller invokes this only after the service/app has exited.
-    const remove = () => releaseFixtures([root]);
+    const remove = async () => { await releaseFixtures([root]); };
     return { root, repo, state: nativePath(root, "state"), remove };
   });
 }

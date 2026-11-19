@@ -7,7 +7,7 @@ import { readCandidate } from "../build.ts";
 import { app, cli, create, createOutside, environment, type Fixture } from "../fixture.ts";
 import { checkpoint } from "../commands.ts";
 import { dispatchInput } from "../input.ts";
-import { afterRender, press } from "../keys.ts";
+import { afterRender, fill, press } from "../keys.ts";
 import { mainTitle } from "../pane.ts";
 import { scenario, type Prepared, type Scenario } from "../scenario.ts";
 import {
@@ -90,8 +90,10 @@ function baseline() {
  * window shows its answer. */
 async function lookedUp(browser: WebdriverIO.Browser): Promise<void> {
   const calls = async () => (await checkpoint(browser)).activity.commands.releaseNotice;
-  await browser.waitUntil(async () => ((await calls())?.completed ?? 0) >= 1,
-    { timeout: 15000, timeoutMsg: "the app looked up the latest release" });
+  // The app starts its next look only after it has put the previous answer in the header,
+  // so a second look begun means the first answer is applied; then its frame is drawn.
+  await browser.waitUntil(async () => ((await calls())?.completed ?? 0) >= 1 && ((await calls())?.started ?? 0) >= 2,
+    { timeout: 15000, timeoutMsg: "the app looked up the latest release and applied its answer" });
   assert.equal((await calls())?.failed, 0, "the app's release lookup succeeded");
   await afterRender(browser);
 }
@@ -193,8 +195,12 @@ async function pasted(browser: WebdriverIO.Browser, wanted: string, what: string
   const field = browser.$('input[aria-label="Request ID"]');
   await press(browser, [primaryModifier, "o"], () => field.isDisplayed(), "a field to paste into");
   await field.click();
+  // The field may keep an earlier draft; the paste goes into an empty one.
+  await fill(browser, 'input[aria-label="Request ID"]', "");
   await nativeInput(browser, { type: "paste" });
-  await browser.waitUntil(async () => await field.getValue() === wanted, { timeout: 15000, timeoutMsg: what });
+  let got = "";
+  await browser.waitUntil(async () => (got = await field.getValue()) === wanted, { timeout: 15000, timeoutMsg: what })
+    .catch((error: Error) => { throw new Error(`${error.message}: pasted ${JSON.stringify(got)}`); });
   await press(browser, ["Escape"], async () => !(await field.isDisplayed()), "the paste field closed");
 }
 

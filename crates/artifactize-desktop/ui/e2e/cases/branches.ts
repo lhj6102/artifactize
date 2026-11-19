@@ -503,10 +503,11 @@ export const scenarios: Scenario[] = [
       assert.equal(artifactize(fixture, "request", "show", id), 0);
       // Opened again, it is as it was left: claimed, its form and draft open.
       await openWaiting(browser, id);
-      await browser.$("#field-comment").waitForExist({ timeout: 15000, timeoutMsg: "the form as it was left" });
-      assert.equal(await browser.$("#field-comment").getValue(), "half-written note");
-      assert.match(await requestState(browser), /claimed by you \(alice\)/);
-      assert.deepEqual(await runOf(browser, REVIEW, "notes"), logged, "its Tool log kept the run made before it was left");
+      await browser.waitUntil(async () => await browser.$("#field-comment").isExisting()
+        && await browser.$("#field-comment").getValue() === "half-written note"
+        && /claimed by you \(alice\)/.test(await requestState(browser))
+        && JSON.stringify(await runOf(browser, REVIEW, "notes")) === JSON.stringify(logged),
+      { timeout: 15000, timeoutMsg: "the review as it was left: its draft, its claim and its Tool log" });
     },
   ),
 

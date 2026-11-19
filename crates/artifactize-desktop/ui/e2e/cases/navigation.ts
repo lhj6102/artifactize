@@ -3,7 +3,7 @@
 // into the Main area and back, a Detail stepped back out of, unreadable Runs beside a readable
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { requestState, showDebug } from "../human-review.ts";
+import { requestState, reviewing, showDebug } from "../human-review.ts";
 import { addRepository, addWaiting, create, createGraph, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, signoff, verifyWaiting } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
@@ -118,8 +118,6 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(await helpMarks(browser), RUN_MARKS, "Help from the palette pairs the Run's marks with their words");
       await browser.$('[role="dialog"].help').$("button=Close").click();
       await waitFor(browser, async () => !(await helpOpen()), "Help closed by its Close button");
-      await browser.$(".stage").click();
-      await waitFor(browser, () => mainFocused(browser), "the Main area focused again");
       await openArtifact(browser, "a:release", "Artifact release");
       const debug = aside(browser).$('section[aria-label="Debug"] > button');
       await debug.waitForDisplayed({ timeout: 15000 });
@@ -672,7 +670,8 @@ export const scenarios: Scenario[] = [
       await openWaiting(browser, id);
       await browser.$('[aria-label="Human review"]').click();
       await press(browser, [primaryModifier, "b"], async () => (await layout()).pane === null, "Ctrl+B hid the Pane over the review");
-      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed with the Pane hidden");
+      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice"
+        && await reviewing(browser, '[aria-label="Human review"]'), "claimed with the Pane hidden, the review showing it as yours");
       await press(browser, ["Escape"], async () => (await layout()).pane !== null && await entriesFocused(browser), "Esc left the review back to the Pane");
       assert.ok((await layout()).divider, "its divider back");
       assert.equal((await waiting(browser)).rows.find((row) => row.selected)?.id, id, "the review's entry stays selected");

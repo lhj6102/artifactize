@@ -55,10 +55,12 @@ const errors = (browser: WebdriverIO.Browser) => browser.execute(() => (window a
 
 /** The open palette as rendered, top to bottom: each group's heading, then its commands, each
  * with the key it shows ("" without one). */
+/** The palette's groups as shown: a group or command filtered away is not drawn. */
 const rendered = (browser: WebdriverIO.Browser) => browser.execute(() =>
-  [...document.querySelectorAll('[aria-label="Command palette"] [data-command-group]')].map((group) => ({
+  [...document.querySelectorAll<HTMLElement>('[aria-label="Command palette"] [data-command-group]')].filter((group) => group.checkVisibility()).map((group) => ({
     group: group.querySelector("[data-command-group-heading]")?.textContent?.trim() ?? "",
-    commands: [...group.querySelectorAll("[data-command-item]")].map((item) => [item.querySelector("span")?.textContent?.trim() ?? "", item.querySelector("kbd")?.textContent?.trim() ?? ""]),
+    commands: [...group.querySelectorAll<HTMLElement>("[data-command-item]")].filter((item) => item.checkVisibility())
+      .map((item) => [item.querySelector("span")?.textContent?.trim() ?? "", item.querySelector("kbd")?.textContent?.trim() ?? ""]),
   })));
 
 /** The app's own commands, first in every palette, with their keys. */
@@ -73,10 +75,11 @@ function palette(browser: WebdriverIO.Browser) {
   const opened = (how: string) => waitFor(browser, shown, `the palette opens (${how})`);
   const closed = (how: string) => waitFor(browser, async () => !(await shown()), `the palette closes (${how})`);
   const hidden = async () => !(await shown());
-  /** Run the command labelled `label` from the open palette by typing and Enter. */
+  /** Run the command labelled `label` from the open palette: typed, then clicked. */
   const run = async (label: string) => {
     await choosePaletteCommand(browser, label);
-    await press(browser, ["Enter"], hidden, `${label} selected and palette closed`);
+    await browser.$('.palette [role="option"][aria-selected="true"]').click();
+    await waitFor(browser, hidden, `${label} clicked and palette closed`);
   };
   /** A command with a new visible outcome: the keys open, and close again. */
   const help = async () => {

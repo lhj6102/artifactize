@@ -1,7 +1,7 @@
 // Domain fixture roots are inputs, not candidate leases or native lifecycle owners.
 // The outer runner calls releaseFixtures only after the service/app has exited.
 import { readCandidate, type Candidate } from "./build.ts";
-import { awaitReleased, childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseClaudeLogins, releaseRecordedBrowser, removeTree, type NativePath } from "./platform.ts";
+import { awaitReleased, childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseClaudeLogins, releaseRecordedBrowser, removeTree, writeText, type NativePath } from "./platform.ts";
 import { removeFixture, settleFixtureRuns } from "./runs.ts";
 import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.ts";
 import { observe } from "./domain-fixtures/observe.ts";
@@ -41,11 +41,16 @@ export function createdRoots(): NativePath[] {
   return childDirectories(scratch).filter((root) => nameOf(root).startsWith("fixture-"));
 }
 
+/** Marks a fixture kept for diagnosis, so a later cleanup of the candidate keeps it too. */
+const RETAINED = "retained-for-diagnosis";
+
 /** Stop what every fixture runs, and delete only fixtures whose app and any companion have
- * been confirmed stopped; a retained fixture keeps its files for diagnosis. */
+ * been confirmed stopped; a retained fixture keeps its files for diagnosis, and stays retained
+ * for every later cleanup. Returns the fixtures kept. */
 export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate(),
-  retain: ReadonlySet<NativePath> = new Set()): Promise<void> {
+  retain: ReadonlySet<NativePath> = new Set()): Promise<NativePath[]> {
   const failures: unknown[] = [];
+  const kept: NativePath[] = [];
   for (const root of roots) {
     if (!exists(root)) continue;
     if (parentOf(root) !== nativePath(candidate.root, "fixtures") || !nameOf(root).startsWith("fixture-") || isLink(root)) {
@@ -62,12 +67,18 @@ export async function releaseFixtures(roots: readonly NativePath[] = createdRoot
     try {
       const active = slowTool(fixture);
       if (active) await observe(async () => !await active(), () => `tool still owns fixture ${root}; preserve inputs`);
-      if (before === failures.length && !retain.has(root)) {
+      const keep = retain.has(root) || exists(nativePath(root, RETAINED));
+      if (before === failures.length && !keep) {
         await awaitReleased(root);
         removeTree(root);
       }
     } catch (error) { failures.push(error); }
+    if (exists(root)) {
+      kept.push(root);
+      try { writeText(nativePath(root, RETAINED), ""); } catch (error) { failures.push(error); }
+    }
   }
+  if (failures.length === 0) return kept;
   if (failures.length === 1) throw failures[0];
-  if (failures.length > 1) throw new AggregateError(failures, "domain fixture cleanup failed; preserve failed inputs");
+  throw new AggregateError(failures, "domain fixture cleanup failed; preserve failed inputs");
 }

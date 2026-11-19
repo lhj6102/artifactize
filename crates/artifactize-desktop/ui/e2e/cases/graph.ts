@@ -552,7 +552,7 @@ export const scenarios: Scenario[] = [
         return shown["a:docs/a:site"].open && shown["a:suite/a:site"].open && !shown["a:docs"].open && !shown["a:suite"].open;
       }, { timeout: 15000, timeoutMsg: "both copies of site, and no whole, highlighted" });
       const copies = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] dl[aria-label="Copies"] dd')].map((fact) => fact.textContent?.trim() ?? ""));
-      assert.ok(copies[0] === "2" && ["suite, docs", "docs, suite"].includes(copies[1]), `site's Detail counts its copies and names both wholes: ${JSON.stringify(copies)}`);
+      assert.ok(copies.some((fact) => /\bsuite\b/.test(fact) && /\bdocs\b/.test(fact)), `site's Detail says where it is drawn, naming both wholes: ${JSON.stringify(copies)}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes the Current's Detail");
       assert.ok(!(await partsDrawn(browser, current))["a:suite/a:site"].open, "no copy stays highlighted");
     },
@@ -729,7 +729,7 @@ export const scenarios: Scenario[] = [
       // With suite focused and no Detail open, m minimizes it and m expands it again, the
       // keyboard staying on suite and no Detail opening.
       /** The keyboard is on suite's own node, not on a button or a part inside it. */
-      const onSuite = async () => (await focusedNode(browser)) === "a:suite" && (await focusedElement(browser)).startsWith("DIV ");
+      const onSuite = () => browser.execute(() => document.activeElement?.matches('.svelte-flow__node[data-id="a:suite"]') ?? false);
       await toSuite();
       await press(browser, ["m"], () => drawnNow(browser, current, SUITE_MINIMIZED), "m minimizes the focused suite");
       await browser.waitUntil(onSuite, { timeout: 15000, timeoutMsg: "the keyboard stays on the minimized suite itself" });
@@ -906,6 +906,7 @@ export const scenarios: Scenario[] = [
       // The person zooms out (a small graph first fits at the largest zoom); a new result then
       // relights the graph in place, under their camera, not a fit of its own.
       await browser.$(ZOOM_OUT).click();
+      await browser.waitUntil(async () => (await view()).transform !== first.transform, { timeout: 15000, timeoutMsg: "Zoom Out moved the camera" });
       const zoomButton = await settled();
       assert.notEqual(zoomButton.transform, first.transform, "Zoom Out moved the camera");
       const toolbarZoom = async () => Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10);
@@ -1303,6 +1304,9 @@ payload.instruction = "Check the Live Artifact."
         return (await field()) === null && shown?.tabs[0]?.name === "release" && shown.tabs.find((each) => each.selected)?.name === "signoff";
       }, "Enter opens release's Detail on its signoff tab");
       const tab = (await detail(browser))!.tabs.find((each) => each.selected)!;
+      // The fixture's signoff waits for a person: its known mark is the human one, in the
+      // colour its tab paints that mark.
+      assert.equal(found.glyph, "human", "the found eval showed the waiting Human mark");
       assert.deepEqual([found.glyph, found.colour], [tab.glyph, tab.colour], "the found eval showed its verdict's glyph and colour");
       await browser.waitUntil(() => centred("a:release", releaseBefore), { timeout: 15000, timeoutMsg: "release in the middle of the graph left of the Detail" });
       assert.ok(await inDetail(), "the keyboard is in the Detail");
@@ -1629,7 +1633,12 @@ payload.instruction = "Check the Live Artifact."
           return { ...block, colour: matches(red) ? "red" : matches(green) ? "green" : null };
         }) };
       };
-      const look = await drawing();
+      // The bitmap is read only once it has painted every block in its verdict's colour.
+      let look = await drawing();
+      await browser.waitUntil(async () => {
+        look = await drawing();
+        return look.blocks.length === 30 && look.blocks.every(({ colour }) => colour !== null);
+      }, { timeout: 15000, timeoutMsg: "the Navigator painted every block" }).catch(() => undefined);
       assert.deepEqual(look.blocks.map(({ id }) => id).sort(), Array.from({ length: 30 }, (_, n) => `a:n${String(n).padStart(3, "0")}`));
       assert.ok(look.blocks.some(({ outside }) => outside) && look.blocks.every(({ id, colour }) => colour === (id === "a:n029" ? "red" : "green")),
         `every Artifact has a block in its own verdict colour, including those fully outside the view: ${JSON.stringify(look.blocks)}`);

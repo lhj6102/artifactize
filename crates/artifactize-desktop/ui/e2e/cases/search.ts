@@ -68,7 +68,7 @@ export const scenarios: Scenario[] = [
     "narrows the Branches and the Waiting stack alike by free text, repo: and branch:, takes suggestions, and steps back with Esc",
     prepareSearch,
     async (browser) => {
-      const { query, holds, suggestions, names, narrowed, set } = search(browser);
+      const { query, holds, suggestions, names, where, narrowed, set } = search(browser);
       await waitFor(browser, narrowed(ALL), "every branch and every waiting review listed");
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
       await browser.$(SEARCH).click();
@@ -77,13 +77,14 @@ export const scenarios: Scenario[] = [
       // Free text: part of a branch, here of two worktrees' branches.
       await set("sort:recent scope");
       await waitFor(browser, narrowed(["repo  scope-one", "repo  scope-two"]), "both lists narrowed to the scope branches");
-      // Free text also matches a waiting review's eval: every review waits for release/signoff,
-      // while no project or branch is named so.
       // Free text found only in a project's name narrows both lists to that project.
       await set("sort:recent thi");
       await waitFor(browser, narrowed(["third  master"]), "a project's name fragment narrowed both lists");
+      // Free text also matches a waiting review's eval: every review waits for release/signoff,
+      // while no project or branch is named so.
       await set("sort:recent signoff");
-      await waitFor(browser, async () => (await names()).length === 0 && (await waiting(browser)).rows.length === ALL.length, "only the waiting reviews match their eval");
+      await waitFor(browser, async () => (await names()).length === 0
+        && JSON.stringify([...await where()].sort()) === JSON.stringify([...ALL].sort()), "every waiting review shown by its eval, and no branch");
       // branch: matches part of the branch alone.
       await set("sort:recent branch:one");
       await waitFor(browser, narrowed(["repo  scope-one"]), "branch:one narrowed to scope-one");
@@ -121,6 +122,10 @@ export const scenarios: Scenario[] = [
       await browser.$('section[aria-label="Pane"] [aria-label="Pane entries"]').click();
       await waitFor(browser, async () => !(await searchFocused(browser)) && (await suggestions()).length === 0, "losing focus closes the suggestions");
       await browser.$(SEARCH).click();
+      // Suggestions shown in the focused field, then the field emptied: they close.
+      await set("sort:recent ");
+      await typeText(browser, "bra");
+      await waitFor(browser, async () => (await suggestions()).includes("branch:"), "suggestions shown before the field is emptied");
       await set("");
       await waitFor(browser, async () => await query() === "" && (await suggestions()).length === 0, "empty search closes the suggestions");
       // The branch and sort keys offer their own values once taken.

@@ -239,7 +239,19 @@ export function storePackageDirectory(root: NativePath): NativePath {
  * held file be deleted, so deletion succeeding there proves nothing: Linux reads /proc and
  * macOS asks lsof. Windows refuses to delete a held file, which removeTree reports. */
 function holdersOf(root: NativePath): number[] {
-  if (WINDOWS) return [];
+  if (WINDOWS) {
+    // Windows refuses to rename a folder while a process holds a file inside it; the rename
+    // there and back changes nothing and deletes nothing. -1: some process, unnamed.
+    const probe = `${root}.release-probe`;
+    try { renameSync(root, probe); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EBUSY" || code === "EPERM" || code === "EACCES") return [-1];
+      throw error;
+    }
+    renameSync(probe, root);
+    return [];
+  }
   if (MACOS) {
     const listed = spawnSync("lsof", ["-t", "+D", root], { encoding: "utf8" });
     return listed.stdout.split("\n").map(Number).filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
@@ -444,20 +456,33 @@ export async function runStep(program: string, args: readonly string[], options:
  * signal there by terminating the process, so nothing is sent. */
 export async function runForwardingInterrupts(
   program: string, args: readonly string[], env: Environment, cwd: NativePath, interrupted: () => void,
-  owner: () => number | null = () => null,
+  owner?: () => number | null,
 ): Promise<number> {
   const child = spawn(program, args, { env, cwd, stdio: "inherit" });
   // On Linux the child is a session wrapper (dbus-run-session, xvfb-run) that passes no
   // signal on, so the request goes to the runner it wraps once that runner has said who it is.
-  const forward = (signal: NodeJS.Signals) => () => {
-    interrupted();
-    if (WINDOWS) return;
-    const runner = owner();
+  let exited = false;
+  child.once("exit", () => { exited = true; });
+  /** Signal the wrapped runner; until it has said who it is, keep trying while the wrapper
+   * lives, so an interrupt early in its start still reaches it rather than the wrapper. */
+  const deliver = (signal: NodeJS.Signals, tries: number) => {
+    if (exited) return;
+    const runner = owner ? owner() : null;
     if (runner !== null) {
       try { process.kill(runner, signal); return; }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    } else if (owner && tries > 0) {
+      setTimeout(() => deliver(signal, tries - 1), 50);
+      return;
     }
     child.kill(signal);
+  };
+  // Long enough for the wrapped runner to start and claim its candidate.
+  const OWNER_TRIES = 1200;
+  const forward = (signal: NodeJS.Signals) => () => {
+    interrupted();
+    if (WINDOWS) return;
+    deliver(signal, OWNER_TRIES);
   };
   const interrupt = forward("SIGINT");
   const terminate = forward("SIGTERM");
@@ -602,6 +627,7 @@ async function stopTree(child: ChildProcess): Promise<void> {
 async function windowsFixtureRunner(command: ReturnType<typeof runnerCommand> & { cwd?: NativePath; owner?: NativePath; holdDescendants?: boolean }, signal: AbortSignal,
   visible?: TtyOutput) {
   const root = newDirectory(scratchDirectory(), "fixture-job-");
+  let retained = false;
   const script = nativePath(root, "job.ps1");
   const input = nativePath(root, "command.json");
   const output = nativePath(root, "outcome.json");
@@ -678,7 +704,13 @@ try {
   $info.ArgumentList.Add($StarterPath)
   $info.ArgumentList.Add($InputPath)
   $starter = [Diagnostics.Process]::Start($info)
-  [FixtureJob]::Attach($job, $starter.Handle)
+  try { [FixtureJob]::Attach($job, $starter.Handle) }
+  catch {
+    # Outside the job the starter must not start the command: close its gate and join it.
+    $starter.StandardInput.Close()
+    $starter.WaitForExit()
+    throw
+  }
   $cancelled = [IO.StreamReader]::new([Console]::OpenStandardInput()).ReadLineAsync()
   $starter.StandardInput.WriteLine('start')
   $starter.StandardInput.Close()
@@ -729,14 +761,16 @@ try {
       const status = await new Promise<number | null>((done) => child.once("close", done));
       if (status !== 0 || !exists(output)) {
         if (child.pid === undefined && failure) throw failure;
-        throw new ProcessTreeNotJoined(`Windows fixture job teardown was not confirmed (${status}): ${stderr}`, { cause: failure });
+        // A job whose end is unconfirmed may still use the starter and command files.
+        retained = true;
+        throw new ProcessTreeNotJoined(`Windows fixture job teardown was not confirmed (${status}): ${stderr}; retained inputs at ${root}`, { cause: failure });
       }
       if (failure) throw failure;
       signal.throwIfAborted();
       const { code } = readJson(output) as { code: number | null };
       return { code, stdout, stderr };
     } finally { signal.removeEventListener("abort", cancel); }
-  } finally { removeTree(root); }
+  } finally { if (!retained) removeTree(root); }
 }
 
 /** pnpm scripts inherit their real CLI entry point. Use it rather than Windows'
@@ -1409,6 +1443,12 @@ server.listen(0, "127.0.0.1", () => {
       : null;
   if (!opener) return failed("no owned browser client was configured");
   opener.on("error", failed);
+  // Admitted from its spawn, like the login itself: teardown joins it even if it never
+  // reaches the fixture's server.
+  if (opener.pid !== undefined) {
+    try { writeFileSync(join(logins, opener.pid + "-" + randomUUID() + ".pid"), "", { flag: "wx" }); }
+    catch (error) { opener.kill(); failed(error); }
+  }
   opener.on("close", (code, signal) => {
     if (code !== 0) return failed(signal ?? "exit " + code);
     appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OPENED, url + "\\n");

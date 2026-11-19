@@ -9,7 +9,8 @@ import { sessionEndedByApp } from "../observation.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativePath, primaryModifier, readText, removeTree, requestWindowClose, writeText } from "../platform.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
+import { nativePath, readText, removeTree, requestWindowClose, writeText } from "../platform.ts";
 import { branch, entriesFocused, expand, MAIN, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
 import { detail, openArtifact, openTab } from "../graph-view.ts";
 
@@ -32,7 +33,11 @@ async function claimReview(browser: WebdriverIO.Browser, fixture: Fixture) {
 
 /** Open `id` with Ctrl+O and wait for its review. */
 async function openById(browser: WebdriverIO.Browser, id: string) {
-  await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+  // The visible way: the palette's Open a request by ID, clicked.
+  await browser.$("header.bar").$("button*=Commands").click();
+  await choosePaletteCommand(browser, "Open a request by ID");
+  await browser.$('.palette [role="option"][aria-selected="true"]').click();
+  await waitFor(browser, () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
   await fill(browser, '[aria-label="Request ID"]', id);
   await browser.$('[role="dialog"] button[type="submit"]').click();
   await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
@@ -91,7 +96,8 @@ export const scenarios: Scenario[] = [
         .find((field) => field.textContent === "Request")?.nextElementSibling?.textContent ?? "");
       await waitFor(browser, async () => (await openedId()) === original, "the review is exactly the entered request");
       await browser.waitUntil(() => claimable(browser), { timeout: 15000, timeoutMsg: "the claim stage" });
-      await press(browser, ["c"], async () =>
+      await browser.$('[aria-label="Human review"]').$("button=Claim to review").click();
+      await waitFor(browser, async () =>
         requests(fixture).find((request) => request.id === original)?.claim?.reviewer === "alice" &&
         await reviewing(browser, '[aria-label="Human review"][tabindex="0"]'), "the entered request's saved claim and rendered review");
       assert.equal(requests(fixture).find((request) => request.id === added.id)?.claim, null, "the other review was not claimed");
@@ -320,6 +326,10 @@ export const scenarios: Scenario[] = [
       assert.ok(wide.viewer.right <= wide.side.left + 1 && wide.side.right >= wide.area.right - 1, `the Tool log at the left, the column at the right: ${JSON.stringify(wide)}`);
       assert.ok(wide.log.bottom >= wide.area.bottom - 2 && wide.viewer.top <= wide.area.top + 2, `the Tool log fills its panel's height: ${JSON.stringify(wide)}`);
       assert.deepEqual(wide.sections, ["Tools", "Result", "Debug"], "the column holds the Tools, the Result and Debug");
+      assert.ok(wide.instruction && wide.tools && wide.result && wide.side
+        && wide.instruction.left >= wide.side.left - 1 && wide.instruction.right <= wide.side.right + 1
+        && wide.instruction.bottom <= wide.tools.top + 1 && wide.tools.bottom <= wide.result.top + 1,
+      `the instruction stands in the right column above the Tools and the Result: ${JSON.stringify(wide)}`);
       assert.ok(Math.abs(wide.side.right - wide.side.left - wideSizes.detail) <= 2,
         `the column at the right is as wide as the Detail: ${JSON.stringify({ side: wide.side, detail: wideSizes.detail })}`);
       assert.ok(wide.actionsLast, "the row of actions ends the Result");

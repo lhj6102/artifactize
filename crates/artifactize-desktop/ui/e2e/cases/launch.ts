@@ -111,10 +111,15 @@ export const scenarios: Scenario[] = [
         ["docs", "e:docs/lint", "green", /^GREEN(?: · reused)?$/],
       ] as const) {
         await openArtifact(browser, `a:${artifact}`, `Artifact ${artifact}`);
-        const shown = await browser.execute((selector) => {
-          const row = document.querySelector(selector);
-          return { glyph: row?.querySelector(".glyph svg")?.getAttribute("data-icon"), status: row?.querySelector(".status")?.textContent?.trim() };
+        const row = () => browser.execute((selector) => {
+          const found = document.querySelector(selector);
+          return { glyph: found?.querySelector(".glyph svg")?.getAttribute("data-icon"), status: found?.querySelector(".status")?.textContent?.trim() };
         }, evalAt(path));
+        let shown = await row();
+        await browser.waitUntil(async () => {
+          shown = await row();
+          return shown.glyph === glyph && status.test(shown.status ?? "");
+        }, { timeout: 15000, timeoutMsg: `${path}'s row rendered` }).catch(() => undefined);
         assert.equal(shown.glyph, glyph, `${path}'s verdict mark`);
         assert.match(shown.status ?? "missing row", status, `${path}'s own status`);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${artifact}'s Detail closed`);

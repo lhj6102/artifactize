@@ -33,12 +33,12 @@ function cargoEnvironment(root: NativePath): Environment {
 }
 
 /** Build only the selected frontend and inspect its actual bundler inputs. */
-async function frontend(root: NativePath, build: { kind: "production" } | { kind: "e2e"; signal: AbortSignal }): Promise<Environment> {
+async function frontend(root: NativePath, build: { kind: "production" | "e2e"; signal: AbortSignal }): Promise<Environment> {
   const env = cargoEnvironment(root);
   const selected = build.kind;
   const dist = nativePath(root, `frontend-${selected}`);
   const frontend = packageCommand(["-C", ui, "build", "--mode", selected, "--outDir", dist, "--manifest"]);
-  await runStep(frontend.program, frontend.args, { env, cwd: workspace, signal: build.kind === "e2e" ? build.signal : undefined });
+  await runStep(frontend.program, frontend.args, { env, cwd: workspace, signal: build.signal });
   const manifest = readJson(nativePath(dist, ".vite", "manifest.json")) as Record<string, unknown>;
   const plugin = Object.keys(manifest).some((key) => key.includes("/@wdio/tauri-plugin/"));
   if (plugin !== (selected === "e2e")) throw new Error(`${selected} frontend has the wrong WebDriver plugin inputs`);
@@ -60,17 +60,17 @@ export async function prepareApp(): Promise<{ root: NativePath; app: NativePath 
   const root = resourceRoot();
   try {
     console.log(`Building the production desktop app in ${root}`);
-    const env = await frontend(root, { kind: "production" });
-    // Keep both commands beside the app, just as in an installed distribution. Source
-    // builds do not register them on PATH or change the person's command installation.
-    await runStep("cargo", ["build", "--locked", "-p", "artifactize-desktop", "-p", "artifactize", "-p", "artifactize-tools", "--bins"],
-      { env, cwd: workspace });
-    return { root, app: nativePath(root, "target", "debug", executableName("artifactize-desktop")) };
-  } catch (error) {
-    removeTree(root);
-    console.log(`Build failed; removed ${root}`);
-    throw error;
-  }
+    // The build runs as an owned process tree, so an interrupt or failure removes its folder
+    // only once every compiler process in it has ended.
+    return await withBuildInterrupts(async (signal) => {
+      const env = await frontend(root, { kind: "production", signal });
+      // Keep both commands beside the app, just as in an installed distribution. Source
+      // builds do not register them on PATH or change the person's command installation.
+      await runStep("cargo", ["build", "--locked", "-p", "artifactize-desktop", "-p", "artifactize", "-p", "artifactize-tools", "--bins"],
+        { env, cwd: workspace, signal });
+      return { root, app: nativePath(root, "target", "debug", executableName("artifactize-desktop")) };
+    });
+  } catch (error) { failedBuild(root, error); }
 }
 
 function save(root: NativePath, cli: NativePath, app: NativePath, observer: NativePath): Candidate {
@@ -158,7 +158,9 @@ export async function cleanup(root: NativePath): Promise<void> {
     setVariable("DESKTOP_TEST_CANDIDATE", nativePath(root, "candidate.json"));
     try {
       const { releaseFixtures } = await import("./fixture.ts");
-      await releaseFixtures(childDirectories(fixtures));
+      const kept = await releaseFixtures(childDirectories(fixtures));
+      // A fixture kept for diagnosis keeps the candidate that holds it.
+      if (kept.length > 0) throw new Error(`fixtures retained for diagnosis: ${kept.join(", ")}`);
     } finally {
       setVariable("DESKTOP_TEST_CANDIDATE", previous);
     }

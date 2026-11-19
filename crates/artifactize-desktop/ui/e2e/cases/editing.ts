@@ -240,8 +240,17 @@ async function settled(browser: WebdriverIO.Browser, id: string) {
   return shown!;
 }
 
-/** Whether the drawn copy `id` is outlined as the drop target. */
-const targeted = (browser: WebdriverIO.Browser, id: string) => browser.execute((selector) => !!document.querySelector(`${selector} .artifact.target, ${selector} .whole.target`), `${CURRENT} ${nodeAt(id)}`);
+/** Whether the drawn copy `id` is outlined as the drop target: its border painted in the
+ * accent colour, as a person sees it. */
+const targeted = (browser: WebdriverIO.Browser, id: string) => browser.execute((selector) => {
+  const face = document.querySelector(`${selector} .artifact, ${selector} .whole`);
+  if (!face) return false;
+  const token = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(token);
+  const accent = hex ? `rgb(${hex.slice(1).map((part) => Number.parseInt(part, 16)).join(", ")})` : token;
+  const style = getComputedStyle(face);
+  return style.borderTopColor === accent && style.borderTopStyle !== "none" && style.boxShadow.includes(accent);
+}, `${CURRENT} ${nodeAt(id)}`);
 
 /** Press at `from`, move to `to` in steps and release there, through the suite's one input
  * helper: the embedded provider has no pointerdown or pointerup of its own. `held` runs while
@@ -825,7 +834,12 @@ export const scenarios: Scenario[] = [
       await dialog().waitForExist({ timeout: 15000 });
       assert.equal(await dialog().$(".dialog-title").getText(), "Delete piece?");
       await dialog().$("button=Delete").click();
-      await waitFor(browser, async () => await refusal().isDisplayed() && /\bapp\b/.test(await refusal().getText()) && /\bbundle\b/.test(await refusal().getText()), "deletion refused in the same dialog, naming the wholes app and bundle");
+      await waitFor(browser, async () => {
+        if (!(await refusal().isDisplayed())) return false;
+        const said = await refusal().getText();
+        const words = said.split(/[^a-z]+/i);
+        return ["app", "bundle", "docs"].every((whole) => words.includes(whole));
+      }, "deletion refused in the same dialog, naming every whole that holds it: app, bundle and docs");
       assert.deepEqual(all(), beforePartDelete, "the part and both whole definitions stayed unchanged");
       await dialog().$("button=Cancel").click();
       await dialog().waitForExist({ reverse: true, timeout: 15000 });

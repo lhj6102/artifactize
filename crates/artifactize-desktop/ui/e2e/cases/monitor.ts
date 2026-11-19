@@ -4,6 +4,7 @@
 // groups of fields, Korean text and GREEN submission, a live update from another process, and
 // the dragged split and Detail width.
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { artifactize, create, finishTalk, type Fixture, launched, requests, signoff, slowTool, type SignoffDefinition } from "../fixture.ts";
 import { chooseVerdict, claimable, reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
@@ -617,11 +618,21 @@ export const scenarios: Scenario[] = [
       const saved = signoff(fixture);
       assert.equal(saved.status, "DEFERRED");
       assert.equal(saved.result, null, "cancellation did not save a verdict");
+      // The visible Cancel stops a gated submission the same way.
+      const roundsBeforeCancel = rounds();
+      await human().$("button=Submit GREEN").click();
+      await browser.waitUntil(async () => await running("Submitting GREEN") && rounds() > roundsBeforeCancel,
+        { timeout: 15000, timeoutMsg: "the second submission reached its gated check" });
+      await human().$('button[aria-label^="Cancel"]').click();
+      await browser.waitUntil(async () => !(await running("Submitting GREEN")), { timeout: 15000, timeoutMsg: "the visible Cancel stopped the submission" });
+      await joinGatedTools(fixture);
+      assert.equal(await browser.$("#field-comment").getValue(), draft, "the draft stays open after Cancel");
+      assert.equal(signoff(fixture).result, null, "Cancel saved no verdict");
       // The same draft can still be submitted normally once the external check is allowed through.
       writeText(gate, "go");
       await human().$("button=Submit GREEN").click();
       await browser.waitUntil(async () => /completed result/i.test(await human().getText())
-        && JSON.stringify(signoff(fixture).result) === JSON.stringify({ verdict: "GREEN", approved: true, comment: draft }),
+        && isDeepStrictEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: draft }),
       { timeout: 15000, timeoutMsg: "the retried submission is saved as that GREEN and shown complete" });
     },
   ),
@@ -737,10 +748,11 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(signoff(fixture).result, { verdict: "RED", reason: "two problems found", findings: [{ problem: "date" }], steps: ["check the title"] });
       // Submitted: the form gives way to the completed RED result, which shows what was sent.
       const completed = () => browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? "");
-      await browser.waitUntil(async () => /completed result/i.test(await completed()), { timeout: 15000, timeoutMsg: "the completed RED result is open" });
-      assert.equal(await browser.$("#field-reason").isExisting(), false, "the completed result replaced the form");
-      const shown = await completed();
-      for (const value of ["RED", "two problems found", "check the title", "date"]) assert.ok(shown.includes(value), `the completed result shows ${value}`);
+      await browser.waitUntil(async () => {
+        const shown = await completed();
+        return /completed result/i.test(shown) && !(await browser.$("#field-reason").isExisting())
+          && ["RED", "two problems found", "check the title", "date"].every((value) => shown.includes(value));
+      }, { timeout: 15000, timeoutMsg: "the completed RED result replaced the form and shows what was sent" });
     },
   ),
 

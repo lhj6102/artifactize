@@ -240,7 +240,14 @@ export const scenarios: Scenario[] = [
       writeText(broken, "");
       await browser.$("button=Check again").click();
       await shows("Claude Code could not report its sign-in: error: unknown command 'auth'", "Claude Code's own error is shown");
-      assert.ok((await browser.$('[data-testid="claude-agent-status"]').getAttribute("class"))?.includes("error"), "in red, as a fact of the grid");
+      const statusRed = await browser.execute(() => {
+        const fact = document.querySelector('[data-testid="claude-agent-status"]');
+        const token = getComputedStyle(document.documentElement).getPropertyValue("--red").trim();
+        const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(token);
+        const red = hex ? `rgb(${hex.slice(1).map((part) => Number.parseInt(part, 16)).join(", ")})` : token;
+        return !!fact && getComputedStyle(fact).color === red;
+      });
+      assert.ok(statusRed, "in red, as a fact of the grid");
       removeTree(broken);
       claudeCodeInstalled(fixture.root, false);
       await browser.$("button=Check again").click();
@@ -502,6 +509,22 @@ payload.instruction = "Check the worker."
       await browser.$("button=Save").waitForEnabled();
       await browser.$("button=Save").click();
       await browser.waitUntil(async () => signoffGrace(fixture) === 300 && (await saved()) && (await shown()) === "300", { timeout: 15000, timeoutMsg: "the saved idle grace" });
+      const limitsSaid = () => browser.execute(() =>
+        [...document.querySelectorAll('section[aria-labelledby="grace-title"] [role="status"], section[aria-labelledby="grace-title"] [role="alert"]')]
+          .map((line) => line.textContent?.trim() ?? "").filter(Boolean));
+      assert.deepEqual(await limitsSaid(), [], "a successful save says nothing; the field holds the new grace");
+      // A save the state refuses is said in Limits, and the grace in force stays.
+      const limitsFile = nativePath(fixture.state, "limits.json");
+      const keptLimits = readText(limitsFile);
+      removeTree(limitsFile);
+      makeDirectory(limitsFile);
+      await fill(browser, "#grace-seconds", "200");
+      await browser.$("button=Save").waitForEnabled();
+      await browser.$("button=Save").click();
+      await browser.waitUntil(async () => (await limitsSaid()).some((line) => /limits\.json/.test(line)), { timeout: 15000, timeoutMsg: "the failed save is said in Limits" });
+      removeTree(limitsFile);
+      writeText(limitsFile, keptLimits);
+      assert.equal(signoffGrace(fixture), 300, "the failed save changed nothing");
       // Set by the CLI, it shows when Settings is shown again.
       assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "45"), 0);
       await showLimits(browser);
@@ -729,9 +752,22 @@ Review the agent folder."""
       writeText(receivedFile, "");
       // While this file exists the store holds its status answer, so a request stays in flight.
       const holdFile = nativePath(fixture.root, "remote-hold");
-      const store = await serveLoopbackHttp(async (request, response) => {
-        request.resume();
-        for (let waited = 0; exists(holdFile) && waited < 30000; waited += 50) await new Promise((done) => setTimeout(done, 50));
+      // While this file exists the store refuses records, so a push fails.
+      const refuseFile = nativePath(fixture.root, "remote-refuse");
+      // Teardown stops held handlers and awaits every one before the files go.
+      let closing = false;
+      const inFlight = new Set<Promise<void>>();
+      const store = await serveLoopbackHttp((request, response) => {
+        const handled = (async () => {
+          request.resume();
+          for (let waited = 0; exists(holdFile) && !closing && waited < 30000; waited += 50) await new Promise((done) => setTimeout(done, 50));
+          if (closing) { response.destroy(); return; }
+          serve(request, response);
+        })();
+        inFlight.add(handled);
+        void handled.finally(() => inFlight.delete(handled));
+      });
+      function serve(...[request, response]: Parameters<Parameters<typeof serveLoopbackHttp>[0]>) {
         const signedIn = request.headers.authorization === `Bearer ${TOKEN}`;
         const answer = (status: number, body: unknown) => {
           response.writeHead(status, { "content-type": "application/json" });
@@ -745,19 +781,24 @@ Review the agent folder."""
         // Nothing is in the store yet; each record put is received once.
         if (request.method === "POST" && request.url === "/v1/lookup") return answer(200, { entries: [] });
         if (request.method === "PUT" && request.url?.startsWith("/v1/entries/")) {
+          if (exists(refuseFile)) return answer(503, { error: "Store refused the record." });
           writeText(receivedFile, `${readText(receivedFile)}${request.url}\n`);
           return answer(200, { created: true });
         }
         return answer(404, { error: "Not found." });
-      });
+      }
       return {
         fixture,
         env: { ...env, ARTIFACTIZE_E2E_DATE: String(Date.UTC(2026, 0, 12, 12) / 1000) },
-        data: { url: `${store.url}/`, principalFile, receivedFile, holdFile, token: TOKEN },
-        release: () => store.close(),
+        data: { url: `${store.url}/`, principalFile, receivedFile, holdFile, refuseFile, token: TOKEN },
+        release: async () => {
+          closing = true;
+          await Promise.all(inFlight);
+          await store.close();
+        },
       };
     },
-    async (browser, { fixture, data: { url, principalFile, receivedFile, holdFile, token } }) => {
+    async (browser, { fixture, data: { url, principalFile, receivedFile, holdFile, refuseFile, token } }) => {
       const received = () => readText(receivedFile).split("\n").filter(Boolean).length;
       const text = () => browser.execute(() => document.body.innerText);
       const html = () => browser.execute(() => document.documentElement.outerHTML);
@@ -782,7 +823,18 @@ Review the agent folder."""
       await typeText(browser, token);
       await browser.$('input[name="share"][value="full"]').click();
       assert.equal(await browser.$("#remote-token").getAttribute("type"), "password");
-      await browser.$("button=Sign in to the store").click();
+      // While a request is in flight every button of the tab is disabled; the store holds its
+      // answer while the hold file exists.
+      const remoteButtons = () => browser.execute(() =>
+        [...document.querySelectorAll<HTMLButtonElement>('section[aria-labelledby="remote-title"] button')].map((button) => button.disabled));
+      const whileHeld = async (button: string, what: string) => {
+        writeText(holdFile, "");
+        await browser.$(`button=${button}`).click();
+        await browser.waitUntil(async () => { const states = await remoteButtons(); return states.length > 0 && states.every(Boolean); },
+          { timeout: 15000, timeoutMsg: `every Remote button disabled while ${what} is in flight` });
+        removeTree(holdFile);
+      };
+      await whileHeld("Sign in to the store", "the sign-in");
       const storeFacts = 'section[aria-labelledby="remote-title"] dl[aria-label="Remote store"]';
       const facts = () => browser.execute((selector) => Object.fromEntries([...document.querySelectorAll(`${selector} > dt`)]
         .map((label) => [label.textContent?.trim(), (label.nextElementSibling as HTMLElement | null)?.innerText.trim()])), storeFacts);
@@ -819,17 +871,8 @@ Review the agent folder."""
         const pushed = statusLine().$('[data-testid="remote-pushed"]');
         return await pushed.isDisplayed() ? await pushed.getText() : "";
       };
-      // While a request is in flight every button of the tab is disabled.
-      const remoteButtons = () => browser.execute(() =>
-        [...document.querySelectorAll<HTMLButtonElement>('section[aria-labelledby="remote-title"] button')].map((button) => button.disabled));
-      writeText(holdFile, "");
-      await browser.$("button=Check status").click();
-      await browser.waitUntil(async () => { const states = await remoteButtons(); return states.length > 0 && states.every(Boolean); },
-        { timeout: 15000, timeoutMsg: "every Remote button disabled while Check status is in flight" });
-      removeTree(holdFile);
-      await browser.waitUntil(async () => (await remoteButtons()).every((disabled) => !disabled), { timeout: 15000, timeoutMsg: "the buttons usable again once it answered" });
       // A dry run's summary takes the status line and stays there until Check status.
-      await browser.$("button=Push (dry run)").click();
+      await whileHeld("Push (dry run)", "the dry run");
       await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Would push 1, already in the store 0, skipped 0\./.test(await statusLine().getText()),
         { timeout: 15000, timeoutMsg: "the dry run's summary takes the status line" });
       await commandsRendered(browser);
@@ -845,7 +888,7 @@ Review the agent folder."""
         && await statusLine().getText() === "Signed in · alice-after-dry-run (scopes: read, publish) · 0 pushed today",
       { timeout: 15000, timeoutMsg: "the fresh status after the dry run shows nothing pushed today" });
       // A real push: the store receives the record, and the same status counts it.
-      await browser.$("button=Push results").click();
+      await whileHeld("Push results", "the push");
       await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Pushed 1, already in the store 0, skipped 0\./.test(await statusLine().getText()),
         { timeout: 15000, timeoutMsg: "the push's summary takes the status line" });
       assert.equal(received(), 1, "the store received the one record");
@@ -868,6 +911,25 @@ Review the agent folder."""
       writeText(principalFile, "alice-desktop");
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "the store recovered" });
+      // A failed push takes the same status line, in red, in place of the status.
+      writeText(refuseFile, "");
+      await browser.$("button=Push results").click();
+      let failedLine = "";
+      await browser.waitUntil(async () => await statusLine().isDisplayed() && /Store refused the record/.test(failedLine = await statusLine().getText()),
+        { timeout: 15000, timeoutMsg: "the push's failure takes the status line" })
+        .catch((error: Error) => { throw new Error(`${error.message}: the line says ${JSON.stringify(failedLine)}`); });
+      const red = await browser.execute((selector) => {
+        const token = getComputedStyle(document.documentElement).getPropertyValue("--red").trim();
+        const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(token);
+        const wanted = hex ? `rgb(${hex.slice(1).map((part) => Number.parseInt(part, 16)).join(", ")})` : token;
+        const line = document.querySelector(selector);
+        return !!line && getComputedStyle(line).color === wanted;
+      }, `${storeFacts} dt:last-of-type + dd`);
+      assert.ok(red, "the failure is painted red");
+      assert.equal(await browser.$('[data-testid="remote-principal"]').isDisplayed(), false, "the failure replaced the signed-in status");
+      removeTree(refuseFile);
+      await browser.$("button=Check status").click();
+      await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "Check status puts the status back" });
       await browser.$("button=Sign out of the store").click();
       const remote = browser.$('section[aria-labelledby="remote-title"]');
       const signedOut = remote.$('p[aria-label="Remote store"]');
