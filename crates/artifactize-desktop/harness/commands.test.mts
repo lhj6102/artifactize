@@ -1,7 +1,7 @@
 // The completion oracle is independent of elapsed time and of unchanged screenshots.
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { completed, type Checkpoint } from "./commands.ts";
+import { completed, type Checkpoint } from "./commands.mts";
 
 const searched = (query: string, sequence: number, done = true, pending = 0): Checkpoint => ({
   query,

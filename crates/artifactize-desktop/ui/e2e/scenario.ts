@@ -1,53 +1,38 @@
-import type { Fixture } from "./fixture.ts";
-import type { BrowserEntry } from "./browser-fixtures.ts";
+// A scenario: one journey flow on one app, with the fixtures it prepares before the app starts.
 import type { Environment } from "./platform.ts";
 import type { NativePath } from "./portable.ts";
+import type { Owned } from "./fixtures/owned.ts";
+import type { Fixture } from "./fixtures/repo.ts";
+import type { App } from "./views/app.ts";
 
-/** Domain inputs prepared before the service launches a capability's app. */
-export type Prepared<T = unknown> = {
-  fixture: Fixture;
-  args?: string[];
-  env?: Environment;
-  data: T;
-  /** Only this fixture’s exact origins or files are eligible for browser cleanup. */
-  browser?: BrowserEntry;
-  /** The candidate app placed elsewhere ([`placeApp`]); the case launches it instead. */
-  app?: NativePath;
-  /** Stops what the fixture runs (servers, jobs); always called at teardown. */
-  release?: () => Promise<void>;
-  /** Puts the fixture's files back before they are deleted; skipped when they are kept for
-   * diagnosis because the app's end could not be confirmed. */
-  restore?: () => Promise<void>;
-};
+/** What a scenario prepares: the fixture the app opens, data its run reads (JSON), the app's
+ * extra arguments and variables (an `undefined` removes one), and another place to run the app
+ * from. */
+export type Prepared<T = unknown> = { fixture: Fixture; data: T; args?: string[]; env?: Environment; app?: NativePath };
 
-/** A case is a whole independent app scenario, never an app lifecycle owner. */
+/** What a scenario's run gets: what it prepared, its folder, and the port of the app's
+ * embedded WebDriver server, which lives as long as the app. */
+export type Context<T = unknown> = Prepared<T> & { root: NativePath; port: number };
+
 export type Scenario = {
   id: string;
   title: string;
-  prepare: () => Promise<Prepared>;
-  run: (browser: WebdriverIO.Browser, input: Prepared) => Promise<void>;
-  /** A second service-owned app lifetime, on this case's still-owned fixture. */
-  relaunched?: (browser: WebdriverIO.Browser, input: Prepared) => Promise<void>;
+  /** The journeys (J- ids of UX-FEATURES.md) it covers (E2E-COVERAGE). */
+  journeys: string[];
+  /** It uses a once-per-machine resource: no other app runs beside it (E2E-ISOLATED). */
+  alone?: boolean;
+  /** How long its run may take, in milliseconds. */
+  timeout?: number;
+  prepare: (own: Owned) => Promise<Prepared>;
+  run: (app: App, input: Context) => Promise<void>;
 };
 
-export function scenario<T>(
-  id: string,
-  title: string,
-  prepare: () => Promise<Prepared<T>>,
-  run: (browser: WebdriverIO.Browser, input: Prepared<T>) => Promise<void>,
-  relaunched?: (browser: WebdriverIO.Browser, input: Prepared<T>) => Promise<void>,
-): Scenario {
-  return {
-    id,
-    title,
-    prepare,
-    run: (browser, input) => run(browser, input as Prepared<T>),
-    ...(relaunched ? { relaunched: (browser: WebdriverIO.Browser, input: Prepared) => relaunched(browser, input as Prepared<T>) } : {}),
-  };
+export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
+  prepare: (own: Owned) => Promise<Prepared<T>>;
+  run: (app: App, input: Context<T>) => Promise<void>;
+}): Scenario {
+  return definition as Scenario;
 }
 
-/** The file a scenario's spec writes into its fixture root once its run (or its relaunch) has
- * passed to its end; a batch without it for every scenario and phase failed. */
-export function completionMarker(relaunch: boolean): string {
-  return relaunch ? "completed-relaunch" : "completed-run";
-}
+/** The file a scenario's spec writes into its folder once its run has passed to its end. */
+export const COMPLETED = "completed";

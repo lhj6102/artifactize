@@ -1,7 +1,7 @@
-// Native command observations use the app's read-only IPC boundary, never a replacement
+// The harness waits for the app's native work through its read-only IPC activity record, never a replacement
 // invoke or a command dispatched by the observer.
-import type { CommandActivity } from "../src/ipc/activity.ts";
-import { afterRender } from "./keys.ts";
+import type { CommandActivity } from "../ui/src/ipc/activity.ts";
+import { afterRender } from "../ui/e2e/keys.ts";
 
 export type Checkpoint = { activity: CommandActivity; query: string | null; queryFailure?: string | null };
 

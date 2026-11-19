@@ -1,5 +1,5 @@
 path = "crates/artifactize-desktop/ui/e2e/"
-select = ["platform.ts", "portable.ts", "run.ts", "wdio.conf.ts", "build.ts", "scenario.ts", "catalog.ts", "journey.spec.ts", "fixture.ts", "environment.ts", "build-fixtures.ts", "browser-fixtures.ts", "catalog-fixtures.ts", "declaration-fixtures.ts", "native-fixtures.ts", "process-fixtures.ts", "rich-fixture.ts", "run-fixtures.ts", "runs.ts", "observation.ts", "graph-tool-session.ts", "domain-fixtures", "input.ts", "keys.ts", "pointer.ts", "commands.ts", "check-integrity.ts", "package.json", "tsconfig.json", "provider-upstream.json", "input.test.ts", "keys.test.ts", "commands.test.ts", "observation.test.ts", "runner.test.ts"]
+select = ["platform.ts", "portable.ts", "build.ts", "run.ts", "wdio.conf.ts", "journey.spec.ts", "scenario.ts", "catalog.ts", "fixtures", "input.ts", "keys.ts", "check-integrity.ts", "package.json", "tsconfig.json", "provider-upstream.json", "input.test.ts", "keys.test.ts", "runner.test.ts"]
 # The E2E suite's infrastructure: the platform layer, the runner and build, the fixtures and
 # the input helpers the views use; a part of desktop-e2e.
 

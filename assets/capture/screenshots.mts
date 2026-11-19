@@ -106,7 +106,7 @@ function fresh(): void {
 /** The example project: core feeds cli and release; cli feeds docs. cli's tests fail, so docs
  * is blocked; release's sign-off waits for a person after its own check passed. Each Artifact
  * is defined in `.artifactize/{name}.artf` and targets its own folder; cli carries a comment. */
-function project(repo: string, fixtures: typeof import("../../crates/artifactize-desktop/ui/e2e/native-fixtures.ts")) {
+function project(repo: string, fixtures: typeof import("../../crates/artifactize-desktop/ui/e2e/fixtures/declarations.ts")) {
   const { runtimeProfile, commandFields } = fixtures;
   mkdirSync(join(repo, ".artifactize"), { recursive: true });
   const artifact = (name: string, text: string) => {
@@ -165,11 +165,11 @@ payload.instruction = "Read the release notes and approve them for publication."
 async function capture(output: string, work: string): Promise<void> {
   const e2e = "../../crates/artifactize-desktop/ui/e2e";
   const { adopt, cleanup, prepare } = await import(`${e2e}/build.ts`);
-  const fixtures = await import(`${e2e}/native-fixtures.ts`);
-  const { environment, git } = await import(`${e2e}/environment.ts`);
-  const { graphShown, openArtifact } = await import(`${e2e}/graph-view.ts`);
-  const { claimable, reviewing } = await import(`${e2e}/human-review.ts`);
-  const { embeddedPorts } = await import(`${e2e}/platform.ts`);
+  const fixtures = await import(`${e2e}/fixtures/declarations.ts`);
+  const { environment, git } = await import(`${e2e}/fixtures/repo.ts`);
+  const { Graph } = await import(`${e2e}/views/graph.ts`);
+  const { Review } = await import(`${e2e}/views/review.ts`);
+  const { embeddedPorts } = await import(`${e2e}/portable.ts`);
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
   mkdirSync(output, { recursive: true });
   const candidate = adopt(await prepare(work));
@@ -180,7 +180,7 @@ async function capture(output: string, work: string): Promise<void> {
   try {
     mkdirSync(fixture.repo, { recursive: true });
     project(fixture.repo, fixtures);
-    git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+    git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
     // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
     const grace = spawnSync(candidate.cli, ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", "0"],
       { env: environment(fixture), encoding: "utf8" });
@@ -225,7 +225,9 @@ async function capture(output: string, work: string): Promise<void> {
     await app.$(runChip).click();
     await app.waitUntil(() => app.execute((main) => /^run-/.test(document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? ""), MAIN),
       { timeout: WAIT, timeoutMsg: "the Main area shows the Run" });
-    await graphShown(app, "a:release", WAIT);
+    const graph = new Graph(app);
+    const review = new Review(app, "main");
+    await graph.node("a:release");
     await app.$('[aria-label="Waiting reviews"] [role="option"]').waitForExist({ timeout: WAIT, timeoutMsg: "the sign-off waits in the Pane" });
     // core → cli, core → release and cli → docs.
     await app.waitUntil(() => app.execute(() => document.querySelectorAll(".svelte-flow__edge").length === 3),
@@ -245,7 +247,7 @@ async function capture(output: string, work: string): Promise<void> {
 
     // B. cli's Detail on its Artifact tab: its evals with their verdicts, and, unfolded, cli
     // between the core it uses and the docs that use it.
-    await openArtifact(app, "a:cli", "Artifact cli");
+    await graph.open("a:cli", "Artifact cli");
     const neighboursRow = app.$('[aria-label="Detail"]').$("button=Neighbours");
     await neighboursRow.waitForExist({ timeout: WAIT });
     if ((await neighboursRow.getAttribute("aria-expanded")) !== "true") await neighboursRow.click();
@@ -266,13 +268,13 @@ async function capture(output: string, work: string): Promise<void> {
     await app.$('[aria-label="Waiting reviews"] [role="option"]').click();
     await app.waitUntil(() => app.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === "Review", MAIN),
       { timeout: WAIT, timeoutMsg: "the Main area shows the review" });
-    await app.waitUntil(() => claimable(app), { timeout: WAIT, timeoutMsg: "the sign-off can be claimed" });
+    await review.until((shown) => shown.stage === "CLAIM" && !shown.running, "the sign-off can be claimed", WAIT);
     await app.$("button=Claim to review").click();
-    await app.waitUntil(() => reviewing(app), { timeout: WAIT, timeoutMsg: "the sign-off is claimed" });
+    await review.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the sign-off is claimed", WAIT);
     await app.$('[aria-label="Human review"]').$("button=notes").click();
     await app.waitUntil(() => app.execute(() => document.body.innerText.includes("■ exit 0")),
       { timeout: WAIT, timeoutMsg: "the notes tool finished" });
-    await app.waitUntil(() => reviewing(app), { timeout: WAIT, timeoutMsg: "the notes run settled" });
+    await review.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the notes run settled", WAIT);
     await app.$('[aria-label="Human review"]').$("button=GREEN").click();
     await app.$('[aria-label="Human review"] .form').waitForExist({ timeout: WAIT });
     await shot("review.png");

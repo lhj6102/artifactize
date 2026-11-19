@@ -1,5 +1,5 @@
 path = "crates/artifactize-desktop/ui/e2e/"
-select = ["cases", "graph-view.ts", "human-review.ts", "palette-commands.ts", "pane.ts", "rendering.ts", "tool-log.ts"]
+select = ["views", "cases"]
 # The E2E suite's views (what the cases read from the window and how each action waits for its
 # visible result) and its cases, the journey flows; a part of desktop-e2e.
 

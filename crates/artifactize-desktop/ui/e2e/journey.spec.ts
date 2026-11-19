@@ -1,42 +1,35 @@
-// One spec execution, one independent scenario, one upstream-owned app capability.
-import { recordKeys } from "./keys.ts";
+// One spec run per app: the scenario the runner gave this capability.
 import { selectedScenarios } from "./catalog.ts";
+import { recordKeys } from "./keys.ts";
 import { takeSystemFocus, variable } from "./platform.ts";
-import { completionMarker } from "./scenario.ts";
 import { asNativePath, nativePath, readJson, writeText } from "./portable.ts";
-import type { Prepared } from "./scenario.ts";
+import { COMPLETED, type Context } from "./scenario.ts";
+import { App } from "./views/app.ts";
 
-// These globals are injected by the configured WDIO Mocha adapter, not node:test.
+// Globals of the configured WDIO Mocha adapter.
 declare const describe: (title: string, body: () => void) => void;
 declare const it: (title: string, body: () => Promise<void>) => void;
 declare const browser: WebdriverIO.Browser;
 
 const id = variable("DESKTOP_TEST_SCENARIO");
 const context = variable("DESKTOP_TEST_CONTEXT");
-if (!id || !context) throw new Error("WDIO did not provide the prepared scenario context");
+if (!id || !context) throw new Error("WDIO did not give the spec its scenario");
 const [item] = selectedScenarios([id]);
-const input = readJson(asNativePath(context)) as Prepared;
+const input = readJson(asNativePath(context)) as Context;
 
 describe(item.title, () => {
   it(item.id, async () => {
+    const app = new App(browser);
     try {
-      // Setup is complete only when the app runs its own frontend; anything else fails here
-      // once, by name, rather than as every later wait of the scenario.
-      await browser.waitUntil(() => browser.execute(() => (document.getElementById("app")?.childElementCount ?? 0) > 0),
-        { timeout: 30000, timeoutMsg: "setup failed: the test app did not load its frontend" });
+      await app.loaded();
       await takeSystemFocus(browser);
       await recordKeys(browser);
-      const relaunch = variable("DESKTOP_TEST_RELAUNCH") === "1";
-      if (relaunch) {
-        if (!item.relaunched) throw new Error("this scenario has no relaunch assertion");
-        await item.relaunched(browser, input);
-      } else await item.run(browser, input);
-      // The runner accepts a batch only when each of its scenarios and phases says it ran to its end.
-      writeText(nativePath(input.fixture.root, completionMarker(relaunch)), "", { exclusive: true });
+      await item.run(app, input);
+      // The runner accepts the batch only when every scenario says it ran to its end.
+      writeText(nativePath(input.root, COMPLETED), "");
     } catch (error) {
-      // CI keeps no screenshots: a failure carries what the window showed when it failed.
-      const shown = await browser.execute(() => document.body.innerText)
-        .catch((cause: unknown) => `(the window text could not be read: ${String(cause)})`);
+      // A failure carries what the window showed when it failed.
+      const shown = await app.text().catch((cause: unknown) => `(the window could not be read: ${String(cause)})`);
       if (error instanceof Error) error.message += `\n--- the window showed ---\n${shown.slice(0, 4000)}`;
       throw error;
     }

@@ -1,7 +1,7 @@
-// Mechanical E2E input and provider-provenance rules. Filesystem access stays in platform.ts.
+// The mechanical part of E2E-INPUT: no injection API in the suite or the device, and the
+// vendored provider unmodified.
 import { createHash } from "node:crypto";
-import { suitePath } from "../e2e/platform.ts";
-import { absolutePath, readBytes, readJson, readText, sourceTree } from "../e2e/portable.ts";
+import { absolutePath, readBytes, readJson, readText, sourceTree, suitePath } from "../e2e/portable.ts";
 
 // A trailing underscore is the PyObjC spelling of the same selector (sendEvent_). CDP's key
 // command is matched by its full method name, dotted or split by domain as WebdriverIO's

@@ -249,7 +249,7 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
 
 /** Launch the app on `args` in `env`, at the demo's size. */
 async function launch(service: any, app: string, args: string[], env: NodeJS.ProcessEnv): Promise<WebdriverIO.Browser> {
-  const { embeddedPorts } = await import("../../crates/artifactize-desktop/ui/e2e/platform.ts");
+  const { embeddedPorts } = await import("../../crates/artifactize-desktop/ui/e2e/portable.ts");
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   Object.assign(process.env, env);
   const capabilities = service.createTauriCapabilities(app, {
@@ -318,7 +318,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
   mkdirSync(fixture.repo, { recursive: true });
   loopProject(root, fixture.repo);
-  e2e.git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+  e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
   const env = e2e.environment(fixture);
   // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
   const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
@@ -598,7 +598,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
 async function capture(output: string, work: string): Promise<void> {
   const base = "../../crates/artifactize-desktop/ui/e2e";
   const { adopt, cleanup, prepare } = await import(`${base}/build.ts`);
-  const e2e = await import(`${base}/environment.ts`);
+  const e2e = await import(`${base}/fixtures/repo.ts`);
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
   mkdirSync(work, { recursive: true });
   const candidate = adopt(await prepare(join(work, "build")));

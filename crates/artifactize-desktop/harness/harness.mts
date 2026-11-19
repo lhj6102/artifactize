@@ -12,14 +12,13 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { create, createdRoots, environment, releaseFixtures, type Fixture } from "../ui/e2e/fixture.ts";
-import { assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
-import { asNativePath, nativePath } from "../ui/e2e/portable.ts";
+import { own, type Owned } from "../ui/e2e/fixtures/owned.ts";
+import { createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
+import { assertHeadless, displayEnvironment, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
+import { asNativePath, embeddedPorts, nativePath } from "../ui/e2e/portable.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
 import { adopt, cargoGate, cleanup, prepare, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
-import { checkpoint, commandsRendered, type Checkpoint } from "../ui/e2e/commands.ts";
-import { assertAppsStopped, recordAdmission } from "../ui/e2e/observation.ts";
-import { settleFixtureRuns } from "../ui/e2e/runs.ts";
+import { checkpoint, commandsRendered, type Checkpoint } from "./commands.mts";
 
 // Resolve the public package entry from the frontend which declares this dependency.
 const service = createRequire(new URL("../ui/package.json", import.meta.url))("@wdio/tauri-service") as
@@ -109,7 +108,7 @@ async function rendered(browser: WebdriverIO.Browser, screen: Screen) {
     const main = document.querySelector('section.panel[aria-label="Main area"]');
     // Without arguments: the Pane lists the fixture's branch, the Main area shows nothing chosen.
     if (entry === "monitor") {
-      return [...document.querySelectorAll('[aria-label="Branches"] [role="option"]')].some((row) => row.textContent?.includes("repo"))
+      return [...document.querySelectorAll('[aria-label="Branches"] [role="treeitem"]')].some((row) => row.textContent?.includes("repo"))
         && main?.querySelector(":scope > header h2")?.textContent?.trim() === "Nothing chosen";
     }
     if (entry === "review") return !!main?.querySelector('[aria-label="Human review"] .instruction');
@@ -136,9 +135,8 @@ async function pressKey(browser: WebdriverIO.Browser, key: string): Promise<void
 }
 
 /** The service merges process.env into the app environment, so sanitize that source too. */
-async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Record<string, string>, args: string[] = []): Promise<Session> {
-  const [owner] = recordAdmission(candidate.root, ["harness"]);
-  const env: Environment = { ...environment(fixture), ...platformEnv, ARTIFACTIZE_E2E_OWNER_FILE: owner };
+async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Environment, args: string[] = []): Promise<Session> {
+  const env: Environment = { ...environment(fixture), ...platformEnv };
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   for (const [name, value] of Object.entries(env)) if (value !== undefined) process.env[name] = value;
   const capabilities = createTauriCapabilities(candidate.app, {
@@ -149,27 +147,18 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Recor
     logLevel: "error",
   });
   capabilities["wdio:enforceWebDriverClassic"] = true;
-  const [endpoint] = await reserveEmbeddedPorts(1);
-  const serviceOptions = {
+  const [port] = await embeddedPorts(1);
+  capabilities["wdio:tauriServiceOptions"] = {
     ...capabilities["wdio:tauriServiceOptions"],
-    embeddedPort: endpoint.port,
+    embeddedPort: port,
     logDir: join(candidate.root, "logs"),
   };
-  capabilities["wdio:tauriServiceOptions"] = serviceOptions;
-  const browser = await (async () => {
-    try {
-      await endpoint.close();
-      return await startWdioSession(capabilities);
-    } finally { await endpoint.release(); }
-  })();
+  const browser = await startWdioSession(capabilities);
   // Commands must fail within one attempt rather than replaying actions after transport loss.
   browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
   browser.options.connectionRetryCount = 0;
   let ending: Promise<void> | undefined;
-  return { browser, stop: () => ending ??= (async () => {
-    await cleanupWdioSession(browser);
-    assertAppsStopped(candidate.observer, [owner]);
-  })() };
+  return { browser, stop: () => ending ??= cleanupWdioSession(browser) };
 }
 
 async function handle(candidate: Candidate, session: Session, fixture: Fixture, request: Request): Promise<unknown> {
@@ -318,12 +307,13 @@ async function start(): Promise<void> {
 
 async function serve(): Promise<void> {
   if (!sessionDir) throw new Error("ARTIFACTIZE_SESSION_DIR is not set; run this as a tool session.");
-  assertHarnessPlatform();
-  const platformEnv = harnessEnvironment();
+  assertHeadless();
+  const platformEnv = displayEnvironment();
   process.chdir(sessionDir);
   let candidate: Candidate | undefined;
   let shown: { session: Session; fixture: Fixture } | undefined;
   let fixture: Fixture;
+  let scope: Owned | undefined;
   let startupFailure: unknown;
   const acquire = async (...args: Parameters<typeof launch>): Promise<Session> => {
     try { return await launch(...args); }
@@ -342,21 +332,12 @@ async function serve(): Promise<void> {
     try { await shown?.session.stop(); }
     catch (error) { failures.push(error); }
     if (failures.length === 0) shown = undefined;
-    if (startupFailure !== undefined) failures.push(new Error("App startup cleanup is unconfirmed", { cause: startupFailure }));
-    if (failures.length > 0) {
-      // Native ownership may be unknown, so keep every input. The fixture's domain
-      // Runs were already submitted before app admission; cancel and join them anyway.
-      if (candidate) for (const root of createdRoots()) {
-        try { settleFixtureRuns(candidate.cli, root, candidate.observer); }
-        catch (error) { failures.push(error); }
-      }
-      throw new AggregateError(failures, "Desktop cleanup is unconfirmed; preserve fixture and candidate inputs");
-    }
-    if (candidate) {
-      await releaseFixtures();
-      await cleanup(candidate.root);
-    }
+    if (startupFailure !== undefined) failures.push(new Error("App startup failed", { cause: startupFailure }));
+    // The fixture's Runs end and its files go, then the build.
+    try { await scope?.close(); } catch (error) { failures.push(error); }
+    try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
     rmSync(join(sessionDir, ENDPOINT), { force: true });
+    if (failures.length > 0) throw new AggregateError(failures, "Desktop cleanup failed");
   };
   let edits = 0;
   let graphLaunches = 0;
@@ -457,7 +438,8 @@ async function serve(): Promise<void> {
         ? await snapshotCandidate(asNativePath(sessionDir))
         : adopt(await prepare(asNativePath(sessionDir)));
       if (stopping) return;
-      fixture = await create();
+      scope = own(nativePath(candidate.root, "fixtures"));
+      fixture = await createRelease(scope);
       if (stopping) return;
       const session = await acquire(candidate, fixture, platformEnv);
       shown = { session, fixture };

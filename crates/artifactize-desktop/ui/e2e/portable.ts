@@ -1,21 +1,22 @@
-// Portable helpers of the desktop E2E suite: native paths built with node:path, files, loopback
-// servers and SQLite fixtures. They behave the same on every OS; what differs between operating
-// systems stays in platform.ts (E2E-PLATFORM).
+// Portable helpers of the desktop E2E suite: native paths built with node:path, files,
+// programs, loopback servers and SQLite fixtures. They behave the same on every OS; what
+// differs between operating systems stays in platform.ts (E2E-PLATFORM).
+import { spawn, spawnSync } from "node:child_process";
 import {
-  appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync,
+  appendFileSync, chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync,
+  renameSync, rmSync, writeFileSync,
 } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createConnection, createServer, type Socket } from "node:net";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 declare const native: unique symbol;
-export type { Socket as LoopbackSocket } from "node:net";
 
 /** A path in this OS's own form, for file system and process calls only. */
 export type NativePath = string & { readonly [native]: true };
 
-/** Join path segments into a native path. */
 export function nativePath(first: string, ...rest: string[]): NativePath {
   return join(first, ...rest) as NativePath;
 }
@@ -25,7 +26,7 @@ export function absolutePath(first: string, ...rest: string[]): NativePath {
   return resolve(first, ...rest) as NativePath;
 }
 
-/** Accept an absolute path from a variable, an argument or serialized data, in its native form. */
+/** An absolute path from a variable, an argument or serialized data, in its native form. */
 export function asNativePath(path: string): NativePath {
   if (!isAbsolute(path)) throw new Error(`not an absolute native path: ${path}`);
   return normalize(path) as NativePath;
@@ -39,10 +40,20 @@ export function nameOf(path: NativePath): string {
   return basename(path);
 }
 
-/** A path written into a file, a declaration or an argument template, or compared with
- * what the product shows: segments joined by `/` on every OS. */
+/** A path written into a declaration or compared with what the app shows: `/` on every OS. */
 export function textPath(...segments: string[]): string {
   return segments.join("/");
+}
+
+/** A file of the E2E suite itself. */
+export function suitePath(...segments: string[]): NativePath {
+  return join(import.meta.dirname, ...segments) as NativePath;
+}
+
+/** The folder the suite's scratch lives under: the product's declared scratch folder when the
+ * suite runs as an eval, otherwise the OS temporary folder. */
+export function scratchDirectory(): NativePath {
+  return (process.env.ARTIFACTIZE_TMP_DIR ?? tmpdir()) as NativePath;
 }
 
 export function exists(path: NativePath): boolean {
@@ -55,10 +66,17 @@ export function makeDirectory(path: NativePath, { private: owner = false } = {})
   return path;
 }
 
-/** Entries of `directory` that are real directories (never links), sorted by name. */
-export function childDirectories(directory: NativePath): NativePath[] {
-  return readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory())
-    .map((entry) => join(directory, entry.name) as NativePath).sort();
+/** A new, uniquely named directory under `parent`, as its canonical path: links resolved,
+ * Windows short names and macOS `/var` aliases expanded, as the app canonicalizes paths. */
+export function newDirectory(parent: NativePath, prefix: string): NativePath {
+  makeDirectory(parent);
+  return realpathSync.native(mkdtempSync(join(parent, prefix))) as NativePath;
+}
+
+/** Remove a directory tree, retrying while the OS still holds it: a web engine's helper
+ * processes and the tools an app started let go of their files a moment after it ends. */
+export function removeTree(path: NativePath): void {
+  rmSync(path, { recursive: true, force: true, maxRetries: 15, retryDelay: 200 });
 }
 
 /** Entries of `directory` that are regular files, sorted by name. */
@@ -67,16 +85,12 @@ export function listFiles(directory: NativePath): NativePath[] {
     .map((entry) => join(directory, entry.name) as NativePath).sort();
 }
 
-export function isLink(path: NativePath): boolean {
-  return lstatSync(path).isSymbolicLink();
-}
-
 /** Text files are UTF-8 and keep `\n` line endings on every OS. */
 export function readText(path: NativePath): string {
   return readFileSync(path, "utf8");
 }
 
-/** Read a text file, or `null` when it does not exist. */
+/** A text file's content, or `null` when it does not exist. */
 export function readTextIfExists(path: NativePath): string | null {
   try { return readText(path); }
   catch (error) {
@@ -85,24 +99,9 @@ export function readTextIfExists(path: NativePath): string | null {
   }
 }
 
-/** Write a text file. `exclusive` fails when it exists; `private` keeps it to the user. */
-export function writeText(path: NativePath, text: string, { exclusive = false, private: owner = false } = {}): void {
-  writeFileSync(path, text, { ...(exclusive ? { flag: "wx" } : {}), ...(owner ? { mode: 0o600 } : {}) });
-}
-
-/** Write a text file only when it does not exist yet; returns whether it was written. */
-export function writeTextOnce(path: NativePath, text: string, options: { private?: boolean } = {}): boolean {
-  try { writeText(path, text, { ...options, exclusive: true }); return true; }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-    throw error;
-  }
-}
-
-/** Read JSON written by `writeJson`, with its absolute paths in native form again. */
-export function readJson(path: NativePath): unknown {
-  return JSON.parse(readText(path), (_key, item: unknown) =>
-    typeof item === "string" && isAbsolute(item) ? normalize(item) : item);
+/** Write a text file; `private` keeps it to the user. */
+export function writeText(path: NativePath, text: string, { private: owner = false } = {}): void {
+  writeFileSync(path, text, owner ? { mode: 0o600 } : {});
 }
 
 export function appendText(path: NativePath, text: string): void {
@@ -116,51 +115,83 @@ export function replaceText(path: NativePath, text: string): void {
   renameSync(pending, path);
 }
 
-/** Atomically close an admission directory. It must not be recreated by late clients. */
-export function closeDirectory(from: NativePath, to: NativePath): void {
-  if (exists(from)) renameSync(from, to);
+export function readJson(path: NativePath): unknown {
+  return JSON.parse(readText(path));
+}
+
+export function writeJson(path: NativePath, value: unknown, options: { private?: boolean } = {}): void {
+  writeText(path, JSON.stringify(value), options);
 }
 
 export function copyFile(from: NativePath, to: NativePath): void {
   copyFileSync(from, to);
 }
 
-/** Save what the window shows as a PNG file. */
-export async function saveScreenshot(browser: WebdriverIO.Browser, path: NativePath): Promise<void> {
-  writeFileSync(path, Buffer.from(await browser.takeScreenshot(), "base64"));
+/** The app as a link in `directory`, so it runs from where an install channel puts it while the
+ * build stays one file; a copy where a link cannot cross volumes. */
+export function placeApp(app: NativePath, directory: NativePath): NativePath {
+  const placed = nativePath(makeDirectory(directory), nameOf(app));
+  try { linkSync(app, placed); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    copyFileSync(app, placed);
+    chmodSync(placed, 0o755);
+  }
+  return placed;
 }
 
-export type LoopbackServer = { port: number; listening: () => boolean; close: () => Promise<void> };
+// ---------------------------------------------------------------------------------
+// Programs
 
-/** Listen on a loopback TCP port (0: one the OS assigns) and own all accepted peers. */
-export function serveLoopback(onConnection: (socket: Socket) => void = (socket) => socket.end(), port = 0): Promise<LoopbackServer> {
-  const sockets = new Set<Socket>();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.once("close", () => sockets.delete(socket));
-    onConnection(socket);
-  });
-  let closing: Promise<void> | undefined;
-  const close = () => closing ??= new Promise<void>((done, fail) => {
-    server.close((error) => error ? fail(error) : done());
-    for (const socket of sockets) socket.destroy();
-  });
+export type Completed = { status: number; stdout: string; stderr: string };
+type RunOptions = { env?: NodeJS.ProcessEnv; cwd?: NativePath; input?: string; timeout?: number };
+
+/** Run a program with an argument vector (never a shell string) until it exits. A program
+ * that cannot start is an error; its exit status is the caller's to judge. */
+export function runProgram(program: string, args: readonly string[], options: RunOptions = {}): Completed {
+  const result = spawnSync(program, args, { encoding: "utf8", windowsHide: true, timeout: 120000, ...options });
+  if (result.error) throw result.error;
+  return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
+}
+
+/** As `runProgram`, but an exit status other than 0 is an error. */
+export function runProgramOk(program: string, args: readonly string[], options: RunOptions = {}): string {
+  const result = runProgram(program, args, options);
+  if (result.status !== 0) throw new Error(`${program} ${args.join(" ")} exited ${result.status}: ${result.stderr}${result.stdout}`);
+  return result.stdout;
+}
+
+/** As `runProgram`, without blocking this process, so a server it serves can answer. */
+export function runProgramAsync(program: string, args: readonly string[], options: RunOptions = {}): Promise<Completed> {
   return new Promise((done, fail) => {
-    server.once("error", fail);
-    server.listen(port, "127.0.0.1", () => {
-      server.off("error", fail);
-      const address = server.address();
-      if (!address || typeof address === "string") return fail(new Error("no loopback port was assigned"));
-      done({ port: address.port, listening: () => server.listening, close });
-    });
+    const child = spawn(program, args, { env: options.env, cwd: options.cwd, windowsHide: true, timeout: options.timeout ?? 120000 });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+    child.stdin.end(options.input ?? "");
+    child.once("error", fail);
+    child.once("close", (code) => done({ status: code ?? -1, stdout, stderr }));
   });
 }
 
-export type HttpServer = { url: string; close: () => Promise<void> };
+/** Run a program with this terminal's input and output until it exits; its exit status. */
+export function runVisible(program: string, args: readonly string[], env: NodeJS.ProcessEnv, cwd: NativePath): Promise<number> {
+  return new Promise((done, fail) => {
+    const child = spawn(program, args, { env, cwd, stdio: "inherit" });
+    child.once("error", fail);
+    child.once("close", (code) => done(code ?? 1));
+  });
+}
 
-/** Serve HTTP on a loopback port the OS assigns, as http://127.0.0.1:<port>. Closing also
- * ends kept-alive connections, so the port is released when `close` resolves. */
-export function serveLoopbackHttp(handle: (request: IncomingMessage, response: ServerResponse) => void): Promise<HttpServer> {
+// ---------------------------------------------------------------------------------
+// Loopback
+
+export type HttpServer = { url: string; port: number; close: () => Promise<void> };
+
+/** Serve HTTP on a loopback port the OS assigns, as http://127.0.0.1:<port>. Closing ends
+ * kept-alive connections too, so the port is free once `close` resolves. */
+export function serveLoopbackHttp(handle: (request: IncomingMessage, response: ServerResponse) => void, port = 0): Promise<HttpServer> {
   const server = createHttpServer(handle);
   let closing: Promise<void> | undefined;
   const close = () => closing ??= new Promise<void>((done, fail) => {
@@ -169,105 +200,51 @@ export function serveLoopbackHttp(handle: (request: IncomingMessage, response: S
   });
   return new Promise((done, fail) => {
     server.once("error", fail);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(port, "127.0.0.1", () => {
       server.off("error", fail);
       const address = server.address();
-      if (!address || typeof address === "string") {
-        void close().finally(() => fail(new Error("no loopback port was assigned")));
-        return;
-      }
-      done({ url: `http://127.0.0.1:${address.port}`, close });
+      if (!address || typeof address === "string") return fail(new Error("no loopback port was assigned"));
+      done({ url: `http://127.0.0.1:${address.port}`, port: address.port, close });
     });
   });
 }
 
-/** Close every server, reporting all failures together. */
-export async function closeServers(servers: readonly HttpServer[], what: string): Promise<void> {
-  const results = await Promise.allSettled(servers.map((server) => server.close()));
-  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
-  if (failures.length) throw new AggregateError(failures, `${what} did not close`);
-}
-
-/** Read liveness of a configured embedded WebDriver endpoint without attaching. */
-export async function embeddedReady(port: number): Promise<boolean> {
+/** `count` loopback ports the OS assigns, free again once returned, for the embedded
+ * WebDriver servers the service starts. */
+export async function embeddedPorts(count: number): Promise<number[]> {
+  const ports: number[] = [];
+  const servers = [];
   try {
-    const reply = await fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(500) });
-    const contents = await reply.json() as { value?: { ready?: boolean } };
-    return reply.ok && contents.value?.ready === true;
-  } catch { return false; }
-}
-
-/** GET `url` as the system browser would, resolving its host name, and return the status. */
-export async function httpGet(url: string): Promise<number> {
-  const reply = await fetch(url);
-  await reply.body?.cancel();
-  return reply.status;
-}
-
-export type Database = DatabaseSync;
-
-/** Change a file-backed SQLite database whose handle never outlives the call. */
-export function updateDatabase(path: NativePath, change: (database: Database) => void): void {
-  const database = new DatabaseSync(path);
-  try {
-    database.exec("PRAGMA busy_timeout=5000");
-    change(database);
-  } finally { database.close(); }
-}
-
-/** Loopback ports that stand for once-per-machine resources, outside every OS's ephemeral
- * range: while a run holds one, a second run on this machine cannot claim it, and the OS frees
- * it when the holder's process ends, even by a crash. */
-const MACHINE_RESOURCES = { "auth-callback": 3455, clipboard: 3456, "foreground-window": 3457 } as const;
-
-/** Claim a once-per-machine resource for this run (E2E-ISOLATED); the result releases it. A
- * resource another run holds is an explicit failure, not a wait. */
-export async function claimMachineResource(name: keyof typeof MACHINE_RESOURCES): Promise<() => Promise<void>> {
-  try {
-    return (await serveLoopback(undefined, MACHINE_RESOURCES[name])).close;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
-    throw new Error(`another E2E run on this machine holds the ${name}; one app instance uses it at a time`, { cause: error });
+    for (let index = 0; index < count; index++) {
+      const server = createServer();
+      servers.push(server);
+      await new Promise<void>((done, fail) => {
+        server.once("error", fail);
+        server.listen(0, "127.0.0.1", () => done());
+      });
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("no loopback port was assigned");
+      ports.push(address.port);
+    }
+    return ports;
+  } finally {
+    await Promise.all(servers.map((server) => new Promise<void>((done) => server.close(() => done()))));
   }
 }
 
-/** Fail unless the product's fixed loopback `port` can be bound right now. */
-export async function requireFreeLoopbackPort(port: number, why: string): Promise<void> {
-  try { await (await serveLoopback(undefined, port)).close(); }
-  catch (cause) { throw new Error(why, { cause }); }
-}
-
-/** Connect to a loopback port and read until the peer ends the connection. A refused or
- * reset connection is `null`: nothing serves the port. `timeout` bounds a stalled peer. */
-export function readLoopback(port: number, timeout: number): Promise<string | null> {
-  return new Promise((done, fail) => {
-    const socket = createConnection({ host: "127.0.0.1", port });
-    let output = "";
-    socket.setEncoding("utf8");
-    socket.setTimeout(timeout, () => socket.destroy(new Error("loopback read timed out")));
-    socket.on("data", (chunk: string) => { output += chunk; });
-    socket.once("end", () => done(output));
-    socket.once("error", (error: NodeJS.ErrnoException) => {
-      if (["ECONNREFUSED", "ECONNRESET"].includes(error.code ?? "")) done(null);
-      else fail(error);
-    });
-    socket.once("close", () => socket.destroy());
-  });
-}
-
-/** Connect to a loopback port, send `text` and end the connection. */
-export function sendLoopback(port: number, text: string): Promise<void> {
-  return new Promise((done, fail) => {
-    const socket = createConnection({ host: "127.0.0.1", port });
-    socket.once("error", fail);
-    socket.on("connect", () => socket.end(text, () => done()));
-  });
+/** Whether the embedded WebDriver server at `port` answers: it lives inside the app's process. */
+export async function embeddedReady(port: number): Promise<boolean> {
+  try {
+    const reply = await fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(1000) });
+    await reply.body?.cancel();
+    return reply.ok;
+  } catch { return false; }
 }
 
 // ---------------------------------------------------------------------------------
-// Runner machine and native session
+// Files read whole
 
-/** Original bytes, for checksum-based upstream provenance rather than text normalization. */
+/** A file's original bytes, for checksums. */
 export function readBytes(path: NativePath): Uint8Array { return readFileSync(path); }
 
 /** Every non-directory entry of a source tree, including links and special files. */
@@ -276,42 +253,27 @@ export function sourceTree(root: NativePath): { path: NativePath; name: string; 
     readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const path = nativePath(directory, entry.name);
       const name = prefix ? textPath(prefix, entry.name) : entry.name;
-      return entry.isDirectory() ? visit(path, name) : [{ path, name, kind: entry.isFile() ? "file" : "other" }];
+      return entry.isDirectory() ? visit(path, name) : [{ path, name, kind: entry.isFile() ? "file" as const : "other" as const }];
     });
   return visit(root, "").sort((left, right) => left.name.localeCompare(right.name));
 }
 
-/** Failure-only native/backend diagnostics from this batch's service-owned log files. */
-export function serviceFailureLogs(directory: NativePath): string[] {
-  // Keep startup and crash causes visible in CI without replaying entire backend logs.
-  const tailCharacters = 16 * 1024;
-  return sourceTree(directory).filter((item) => item.kind === "file" && item.name.endsWith(".log"))
-    .map((item) => `--- service log ${item.name} ---\n${readText(item.path).slice(-tailCharacters)}`);
+/** Change a file-backed SQLite database whose handle never outlives the call. */
+export function updateDatabase(path: NativePath, change: (database: DatabaseSync) => void): void {
+  const database = new DatabaseSync(path);
+  try {
+    database.exec("PRAGMA busy_timeout=5000");
+    change(database);
+  } finally { database.close(); }
 }
 
-/** Select distinct OS-assigned loopback endpoints for the upstream embedded service.
- * Release the reservation before service startup; the service owns the actual listeners. */
-export async function embeddedPorts(count: number): Promise<number[]> {
-  if (!Number.isInteger(count) || count < 1) throw new Error("embedded port count must be a positive integer");
-  const sockets: ReturnType<typeof createServer>[] = [];
-  const ports: number[] = [];
-  const failures: unknown[] = [];
-  try {
-    for (let index = 0; index < count; index++) {
-      const socket = createServer();
-      sockets.push(socket);
-      await new Promise<void>((done, fail) => {
-        socket.once("error", fail);
-        socket.listen(0, "127.0.0.1", () => { socket.off("error", fail); done(); });
-      });
-      const address = socket.address();
-      if (!address || typeof address === "string") throw new Error("no embedded WebDriver port allocated");
-      ports.push(address.port);
-    }
-  } catch (error) { failures.push(error); }
-  const released = await Promise.allSettled(sockets.filter((socket) => socket.listening).map((socket) =>
-    new Promise<void>((done, fail) => socket.close((error) => error ? fail(error) : done()))));
-  for (const result of released) if (result.status === "rejected") failures.push(result.reason);
-  if (failures.length) throw new AggregateError(failures, "embedded endpoint selection or release failed");
-  return ports;
+/** Call the app window's own Tauri API (the frame's close, focus or title), which the page cannot
+ * reach; what it answers. */
+export async function callWindow(browser: WebdriverIO.Browser, method: "setFocus" | "close" | "title"): Promise<unknown> {
+  const answer = await browser.executeAsync((name: string, done: (answer: { value?: unknown; error?: string }) => void) => {
+    type Api = { __TAURI__: { window: { getCurrentWindow: () => Record<string, () => Promise<unknown>> } } };
+    (window as unknown as Api).__TAURI__.window.getCurrentWindow()[name]().then((value) => done({ value }), (error: unknown) => done({ error: String(error) }));
+  }, method);
+  if (answer.error !== undefined) throw new Error(`the window's ${method} failed: ${answer.error}`);
+  return answer.value;
 }

@@ -1,0 +1,350 @@
+// The main area as a person reads it: its header, and the graph of a Run or a Current with its
+// tool strip, its find field and its navigator; each action waits for what it shows.
+import { PNG } from "pngjs";
+import { clickAt, dispatchInput, visibleCenter } from "../input.ts";
+import { press, typeText } from "../keys.ts";
+import { holds, until } from "./wait.ts";
+
+const MAIN = 'section.panel[aria-label="Main area"]';
+/** The main area's graph, never the one a Detail draws of an Artifact's neighbours. */
+const GRAPH = `${MAIN} .graph`;
+const TOOLS = '[aria-label="Graph tools"]';
+const FIND = 'input[aria-label="Find in the graph"]';
+
+/** A drawn Artifact: its id (`a:name`, a part `a:whole/a:part`), what it reads aloud (its name
+ * and verdict), its verdict's icon, its comment and whether a whole is minimized. */
+export type Node = { id: string; label: string; icon: string; light: string; comment: string };
+
+/** The find field: whether it has the keyboard, its text, what it lists (name and whether it
+ * is chosen) and its note. */
+export type Found = { focused: boolean; value: string; entries: { name: string; chosen: boolean }[]; note: string };
+
+export const nodeAt = (id: string) => `${GRAPH} .svelte-flow__node[data-id="${id}"]`;
+
+export class Graph {
+  private readonly browser: WebdriverIO.Browser;
+
+  constructor(browser: WebdriverIO.Browser) {
+    this.browser = browser;
+  }
+
+  // -------------------------------------------------------------------------------
+  // The main area's header
+
+  /** The header's title: the Run's ID, `Current · {branch}`, `Review`, or `Nothing chosen`. */
+  title(): Promise<string> {
+    return this.browser.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? "", MAIN);
+  }
+
+  /** Wait until the header's title is `title`. */
+  async titled(title: string): Promise<void> {
+    await until(this.browser, () => this.title(), (shown) => shown === title, `the main area shows ${title}`);
+  }
+
+  /** The Run's headline as it reads aloud: its verdict and what needs attention. */
+  headline(): Promise<string> {
+    return this.browser.execute((main) => document.querySelector(`${main} > header button.headline`)?.getAttribute("aria-label") ?? "", MAIN);
+  }
+
+  /** What the header's row says beside the title, as text. */
+  header(): Promise<string> {
+    return this.browser.execute((main) => (document.querySelector<HTMLElement>(`${main} > header`)?.innerText ?? "").replace(/\s+/g, " ").trim(), MAIN);
+  }
+
+  /** A Current's scan as its header says it: `Scanned at …` once a scan ended, `N left` while
+   * one runs, then a failure's words if any. */
+  scan(): Promise<string> {
+    return this.browser.execute((main) => {
+      const scan = document.querySelector(`${main} > header .scan`);
+      const said = scan?.querySelector("time")?.getAttribute("aria-label") ?? scan?.querySelector(".checking")?.getAttribute("aria-label") ?? "";
+      const failure = scan?.querySelector(".failure")?.textContent?.trim();
+      return failure ? `${said} ${failure}` : said;
+    }, MAIN);
+  }
+
+  /** What the main area says where its view would be (nothing chosen, a Run it cannot read). */
+  empty(): Promise<string> {
+    return this.browser.execute((main) => document.querySelector(`${main} .empty`)?.textContent?.trim() ?? "", MAIN);
+  }
+
+  /** The main area's notice, as it reads. */
+  notice(): Promise<string> {
+    return this.browser.execute((main) => document.querySelector(`${main} [role="alert"], ${main} .notice`)?.textContent?.trim() ?? "", MAIN);
+  }
+
+  /** Click the Run's headline: the Run's own Detail opens. */
+  async openRunDetail(): Promise<void> {
+    await this.browser.$(`${MAIN} > header button.headline`).click();
+    await holds(this.browser, async () => (await this.browser.$('aside[aria-label="Detail"] h2').isExisting()), "the Run's Detail opened");
+  }
+
+  /** Click the header's Refresh of a Current: it scans again. */
+  async refresh(): Promise<string> {
+    const before = await this.scan();
+    await this.browser.$(MAIN).$("button=Refresh").click();
+    return until(this.browser, () => this.scan(), (shown) => /^Scanned at /.test(shown) && shown !== before, "the Current scanned again");
+  }
+
+  /** Whether the main area has the keyboard. */
+  focused(): Promise<boolean> {
+    return this.browser.$(MAIN).isFocused();
+  }
+
+  /** Press `keys` with the main area's view as it is. */
+  async press(keys: string[], done: () => Promise<boolean>, what: string): Promise<void> {
+    await press(this.browser, keys, done, what);
+  }
+
+  /** How wide the main area is. */
+  width(): Promise<number> {
+    return this.browser.execute((main) => Math.round(document.querySelector(main)?.getBoundingClientRect().width ?? 0), MAIN);
+  }
+
+  // -------------------------------------------------------------------------------
+  // Nodes
+
+  /** The drawn Artifacts. */
+  nodes(): Promise<Node[]> {
+    return this.browser.execute((graph) => [...document.querySelectorAll<HTMLElement>(`${graph} .svelte-flow__node`)].map((node) => ({
+      id: node.dataset.id ?? "",
+      label: node.getAttribute("aria-label") ?? "",
+      icon: node.querySelector(".light svg")?.getAttribute("data-icon") ?? "",
+      light: node.dataset.light ?? "",
+      comment: (node.querySelector<HTMLElement>(":scope > * > .comment, :scope .artifact > .comment, :scope .whole > .comment")?.innerText ?? "").trim(),
+    })), GRAPH);
+  }
+
+  /** The node `id` once it is drawn, hit-testable and `ok` holds for it. */
+  async node(id: string, ok: (node: Node) => boolean = () => true, what = `the graph draws ${id}`): Promise<Node> {
+    const found = await until(this.browser, async () => {
+      const visible = await this.browser.execute((selector) => {
+        const node = document.querySelector(selector);
+        const box = node?.getBoundingClientRect();
+        if (!node || !box || box.width <= 0 || box.height <= 0) return false;
+        return document.elementFromPoint(box.left + box.width / 2, box.top + Math.min(box.height / 2, 12))?.closest(".svelte-flow__node") === node;
+      }, nodeAt(id));
+      return visible ? (await this.nodes()).find((node) => node.id === id) : undefined;
+    }, (node) => !!node && ok(node), what);
+    return found!;
+  }
+
+  /** Wait until the node `id` is not drawn. */
+  async gone(id: string): Promise<void> {
+    await holds(this.browser, async () => !(await this.browser.$(nodeAt(id)).isExisting()), `${id} is not drawn`);
+  }
+
+  /** Click the node `id` (on its name): its Detail opens, titled `title`. */
+  async open(id: string, title: string): Promise<void> {
+    await this.node(id);
+    await this.browser.$(`${nodeAt(id)} .name`).click();
+    await until(this.browser, () => this.browser.execute(() => document.querySelector('aside[aria-label="Detail"] h2')?.textContent?.trim() ?? ""),
+      (shown) => shown === title, `${id}'s Detail opened`);
+  }
+
+  /** Click the graph's background: an open Detail closes. */
+  async clickBackground(): Promise<void> {
+    const point = await this.browser.execute((graph) => {
+      const canvas = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
+      const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const right = detail && detail.left > canvas.left ? detail.left : canvas.right;
+      // The first empty point along the canvas's bottom edge, left of a Detail.
+      for (let x = canvas.left + 12; x < right - 12; x += 16) {
+        for (const y of [canvas.bottom - 12, canvas.top + 40]) {
+          const hit = document.elementFromPoint(x, y);
+          if (hit?.classList.contains("svelte-flow__pane")) return { x: Math.round(x), y: Math.round(y) };
+        }
+      }
+      return null;
+    }, GRAPH);
+    if (!point) throw new Error("the graph shows no background to click");
+    await clickAt(this.browser, point);
+  }
+
+  /** The node with the keyboard, or null. */
+  focusedNode(): Promise<string | null> {
+    return this.browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
+  }
+
+  /** Drag the node `id` (by its title row for a whole) by `dx`, `dy` pixels and release it. */
+  async drag(id: string, dx: number, dy: number, handle = ".name"): Promise<void> {
+    const from = await visibleCenter(this.browser, await this.browser.$(`${nodeAt(id)} ${handle}`).getElement());
+    await this.pointerDrag(from, { x: from.x + dx, y: from.y + dy });
+  }
+
+  /** Drag the node `id` onto the node `onto` and release it there. */
+  async dragOnto(id: string, onto: string, handle = ".name"): Promise<void> {
+    const from = await visibleCenter(this.browser, await this.browser.$(`${nodeAt(id)} ${handle}`).getElement());
+    const to = await visibleCenter(this.browser, await this.browser.$(`${nodeAt(onto)} .name`).getElement());
+    await this.pointerDrag(from, to);
+  }
+
+  /** Press at `from`, move through a few points to `to`, release there, as a mouse does. */
+  async pointerDrag(from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
+    await dispatchInput(this.browser, { kind: "pointer", phase: "down", ...from });
+    for (const step of [0.25, 0.5, 0.75, 1]) {
+      await dispatchInput(this.browser, { kind: "pointer", phase: "move", x: Math.round(from.x + (to.x - from.x) * step), y: Math.round(from.y + (to.y - from.y) * step) });
+    }
+    await dispatchInput(this.browser, { kind: "pointer", phase: "up", ...to });
+  }
+
+  /** Where the node `id` is drawn, in window pixels. */
+  box(id: string): Promise<{ x: number; y: number; width: number; height: number } | null> {
+    return this.browser.execute((selector) => {
+      const box = document.querySelector(selector)?.getBoundingClientRect();
+      return box ? { x: Math.round(box.left), y: Math.round(box.top), width: Math.round(box.width), height: Math.round(box.height) } : null;
+    }, nodeAt(id));
+  }
+
+  /** Click the whole's Minimize or Expand button; the whole is drawn as `minimized` says. */
+  async minimize(id: string, name: string, minimized: boolean): Promise<void> {
+    await this.browser.$(`${nodeAt(id)} button[aria-label="${minimized ? "Minimize" : "Expand"} ${name} (m)"]`).click();
+    await this.node(id, (node) => /, minimized,/.test(node.label) === minimized, `${name} ${minimized ? "minimized" : "expanded"}`);
+  }
+
+  /** Click the whole's Reset layout. */
+  async resetLayout(id: string, name: string): Promise<void> {
+    await this.browser.$(`${nodeAt(id)} button[aria-label="Reset layout of ${name}"]`).click();
+    await holds(this.browser, async () => !(await this.browser.$(`${nodeAt(id)} button[aria-label="Reset layout of ${name}"]`).isExisting()), `${name}'s layout reset`);
+  }
+
+  /** Whether the tool strip shows `name` (Find, Fit, New Artifact, Reset layout…). */
+  async hasTool(name: string): Promise<boolean> {
+    return this.browser.$(TOOLS).$(`button*=${name}`).isExisting();
+  }
+
+  /** Click the tool strip's `name`. */
+  async tool(name: string): Promise<void> {
+    await this.browser.$(TOOLS).$(`button*=${name}`).click();
+  }
+
+  // -------------------------------------------------------------------------------
+  // Camera
+
+  /** The graph's camera: its translation and zoom, once it holds still. */
+  async camera(): Promise<string> {
+    let last = "";
+    return until(this.browser, async () => {
+      const before = last;
+      last = await this.browser.execute((graph) => document.querySelector<HTMLElement>(`${graph} .svelte-flow__viewport`)?.style.transform ?? "", GRAPH);
+      return before === last ? last : "";
+    }, (shown) => shown !== "", "the graph's camera held still");
+  }
+
+  /** The zoom the tool strip says, in percent. */
+  async zoom(): Promise<number> {
+    return Number((await this.browser.$(TOOLS).$('[aria-label="Zoom"]').getText()).replace("%", ""));
+  }
+
+  /** Click a camera tool (Zoom out, Zoom in, Fit): the camera moves and comes to rest. */
+  async cameraTool(name: "Zoom out" | "Zoom in" | "Fit"): Promise<string> {
+    const before = await this.camera();
+    await (name === "Fit" ? this.browser.$(TOOLS).$("button*=Fit") : this.browser.$(TOOLS).$(`button[aria-label="${name}"]`)).click();
+    return until(this.browser, () => this.camera(), (shown) => shown !== before, `${name} moved the camera`);
+  }
+
+  /** Turn the mouse wheel over the graph's middle, `steps` notches towards the reader (zooming in). */
+  async wheel(deltaY: number): Promise<void> {
+    const at = await visibleCenter(this.browser, await this.browser.$(`${GRAPH} .canvas`).getElement());
+    await this.browser.action("wheel").scroll({ x: at.x, y: at.y, deltaX: 0, deltaY }).perform();
+  }
+
+  /** Whether the Navigator shows. */
+  async navigatorShown(): Promise<boolean> {
+    return this.browser.$(`${GRAPH} [data-navigator]`).isDisplayed();
+  }
+
+  /** Click the Navigator's map at `fx`, `fy` (fractions of its width and height): the camera moves. */
+  async navigate(fx: number, fy: number): Promise<string> {
+    const before = await this.camera();
+    const point = await this.browser.execute((graph, x, y) => {
+      const box = document.querySelector(`${graph} [data-navigator] .map`)!.getBoundingClientRect();
+      return { x: Math.round(box.left + box.width * x), y: Math.round(box.top + box.height * y) };
+    }, GRAPH, fx, fy);
+    await dispatchInput(this.browser, { kind: "pointer", phase: "down", ...point });
+    await dispatchInput(this.browser, { kind: "pointer", phase: "up", ...point });
+    return until(this.browser, () => this.camera(), (shown) => shown !== before, "the Navigator moved the camera");
+  }
+
+  /** Whether the large graph's canvas paints anything in the middle of the graph: some pixels
+   * there differ from its background. This is a canvas, which only its pixels show. */
+  async paints(): Promise<boolean> {
+    const area = await this.browser.execute((graph) => {
+      const box = document.querySelector(`${graph} canvas.paint`)?.getBoundingClientRect();
+      return box ? { x: box.left, y: box.top, width: box.width, height: box.height, scale: devicePixelRatio } : null;
+    }, GRAPH);
+    if (!area) return false;
+    const image = PNG.sync.read(Buffer.from(await this.browser.takeScreenshot(), "base64"));
+    const at = (x: number, y: number) => {
+      const offset = (Math.round(y * area.scale) * image.width + Math.round(x * area.scale)) * 4;
+      return [image.data[offset], image.data[offset + 1], image.data[offset + 2]];
+    };
+    const background = at(area.x + 2, area.y + area.height - 2);
+    let differing = 0;
+    for (let y = area.y + area.height * 0.25; y < area.y + area.height * 0.75; y += 4) {
+      for (let x = area.x + area.width * 0.25; x < area.x + area.width * 0.75; x += 4) {
+        const pixel = at(x, y);
+        if (pixel.some((value, channel) => Math.abs(value - background[channel]) > 40)) differing += 1;
+      }
+    }
+    return differing > 20;
+  }
+
+  // -------------------------------------------------------------------------------
+  // Find
+
+  /** The find field, or null while it is closed. */
+  found(): Promise<Found | null> {
+    return this.browser.execute((selector) => {
+      const input = document.querySelector<HTMLInputElement>(selector);
+      const box = input?.closest(".find");
+      if (!input || !box) return null;
+      return {
+        focused: document.activeElement === input,
+        value: input.value,
+        entries: [...box.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => ({
+          name: option.querySelector(".name")?.textContent?.trim() ?? "", chosen: option.getAttribute("aria-selected") === "true",
+        })),
+        note: box.querySelector('[role="status"]')?.textContent?.trim() ?? "",
+      };
+    }, FIND);
+  }
+
+  /** Click Find: the find field opens with the keyboard. */
+  async openFind(): Promise<Found> {
+    await this.tool("Find");
+    return (await until(this.browser, () => this.found(), (shown) => !!shown?.focused, "the find field opened with the keyboard"))!;
+  }
+
+  /** Type `text` into the open find field: what it lists follows. */
+  async findText(text: string, ok: (found: Found) => boolean, what: string): Promise<Found> {
+    await typeText(this.browser, text);
+    return (await until(this.browser, () => this.found(), (shown) => !!shown && shown.value.endsWith(text) && ok(shown), what))!;
+  }
+
+  /** Click the listed `name`: the find field closes and its Detail opens, titled `title`. */
+  async chooseFound(name: string, title: string): Promise<void> {
+    await this.browser.$('.find [role="option"]').waitForExist();
+    const options = await this.browser.$$('.find [role="option"]').getElements();
+    for (const option of options) {
+      if ((await option.$(".name").getText()).trim() === name) {
+        await option.click();
+        await until(this.browser, () => this.browser.execute(() => document.querySelector('aside[aria-label="Detail"] h2')?.textContent?.trim() ?? ""),
+          (shown) => shown === title, `${name} found and its Detail opened`);
+        return;
+      }
+    }
+    throw new Error(`the find field does not list ${name}`);
+  }
+
+  /** How far the node `id` is drawn from the middle of the graph left of an open Detail. */
+  offCentre(id: string): Promise<{ x: number; y: number } | null> {
+    return this.browser.execute((selector, graph) => {
+      const node = document.querySelector(selector)?.getBoundingClientRect();
+      const canvas = document.querySelector(`${graph} .canvas`)?.getBoundingClientRect();
+      if (!node || !canvas) return null;
+      const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const right = detail && detail.left > canvas.left && detail.left < canvas.right ? detail.left : canvas.right;
+      return { x: Math.round(node.left + node.width / 2 - (canvas.left + right) / 2), y: Math.round(node.top + node.height / 2 - (canvas.top + canvas.height / 2)) };
+    }, nodeAt(id), GRAPH);
+  }
+}
