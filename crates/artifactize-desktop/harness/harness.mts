@@ -16,7 +16,7 @@ import { own, type Owned } from "../ui/e2e/fixtures/owned.ts";
 import { cancelRuns, createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
 import { assertHeadless, displayEnvironment, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
 import { asNativePath, embeddedPorts, nativePath } from "../ui/e2e/portable.ts";
-import { page, press, typeText } from "../ui/e2e/keys.ts";
+import { page, press, recordKeys, typeText } from "../ui/e2e/keys.ts";
 import { adopt, cargoGate, cleanup, prepare, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "./commands.mts";
 
@@ -116,6 +116,9 @@ async function rendered(browser: WebdriverIO.Browser, screen: Screen) {
     const shown = entry === "repo" ? ".graph" : ".current";
     return !!main?.querySelector(`${shown} .svelte-flow__node[data-id="a:release"]`);
   }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
+  // The key helpers read what the page received from the passive recorder, as in the suite;
+  // it goes on the page once that page has rendered.
+  await recordKeys(browser);
 }
 
 export async function target(browser: WebdriverIO.Browser, element: number) {
@@ -157,6 +160,7 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Envir
   // Commands must fail within one attempt rather than replaying actions after transport loss.
   browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
   browser.options.connectionRetryCount = 0;
+
   // One stop at a time; a stop that failed is tried again by the next, rather than reported done.
   let ending: Promise<void> | undefined;
   return {

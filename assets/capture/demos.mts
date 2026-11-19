@@ -549,21 +549,39 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them but a part's, which the Current draws as
       // the part inside its whole. A part of several wholes is drawn once in each, so the
-      // drawing is compared by the Artifacts its nodes and edges stand for, a copy's key ending
-      // in its Artifact's id. The graph drawn is this release's only once these are exactly
-      // its own, never the previous one's.
+      // drawing is compared by its copies, each keyed by the wholes it is drawn inside, and by the
+      // Artifacts its edges join, an edge's ends being copy keys ending in their Artifacts' ids.
+      // The graph drawn is this release's only once these are exactly its own, never the
+      // previous one's.
       const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
         { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string; kind: string }[] };
       const names = new Set(Object.keys(graph.artifacts));
+      // Where each Artifact is drawn: one copy inside each whole that names it as a part, its key
+      // the path of wholes down to it, and once at the top for an Artifact that is no part. A part
+      // that would close a cycle is not drawn again inside itself.
+      const partsOf = new Map<string, string[]>();
+      for (const { source, target, kind } of graph.relations) {
+        if (kind === "part" && names.has(source) && names.has(target)) partsOf.set(target, [...(partsOf.get(target) ?? []), source]);
+      }
+      const isPart = new Set([...partsOf.values()].flat());
+      const copies: string[] = [];
+      const place = (name: string, above: string | null, around: Set<string>) => {
+        const key = above === null ? `a:${name}` : `${above}/a:${name}`;
+        copies.push(key);
+        for (const part of partsOf.get(name) ?? []) if (!around.has(part)) place(part, key, new Set([...around, part]));
+      };
+      for (const name of names) if (!isPart.has(name)) place(name, null, new Set([name]));
       const expected = [
-        [...names].map((name) => `a:${name}`).sort().join(" "),
+        [...new Set(copies)].sort().join(" "),
         [...new Set(graph.relations.filter(({ source, target, kind }) => kind !== "part" && source !== target && names.has(source) && names.has(target))
           .map(({ source, target }) => `a:${source}>a:${target}`))].sort().join(" "),
       ].join("\n");
       await browser.waitUntil(() => browser.execute((expected) => {
         const set = (values: string[]) => [...new Set(values)].sort().join(" ");
         const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
-        const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.artifact ?? ""));
+        // Every copy by its key, the wholes it is drawn inside included: a previous release's
+        // drawing with the same Artifacts nested otherwise does not pass.
+        const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.id ?? ""));
         const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
         const refresh = document.querySelector<HTMLButtonElement>('section.panel[aria-label="Main area"] > header .actions button');
         return !!refresh && !refresh.disabled && `${artifacts}\n${edges}` === expected;
@@ -579,7 +597,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
           const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
           const set = (values: string[]) => [...new Set(values)].sort().join(" ");
           const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
-          const artifacts = set(nodes.map((node) => node.dataset.artifact ?? ""));
+          const artifacts = set(nodes.filter((node) => node.dataset.artifact !== undefined).map((node) => node.dataset.id ?? ""));
           const camera = document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style");
           // Fitted out until names do not read, the graph checked above is painted as blocks.
           if (inside && nodes.length === 0 && document.querySelector(".current canvas.paint")) return `painted ${camera}`;
