@@ -231,12 +231,12 @@
         {#if options.length > 0}
           <Section name="Execution options">{@render facts(options)}</Section>
         {/if}
-        <!-- How a past run ran and its fingerprint belong to that run, not to a Current; what the
-             status line says (its time, tokens and exit) is not said again. -->
-        {#if !detail.plan && metadata.length > 0}
+        <!-- On a Current too, each when its facts are present (D-INS-8); what the status line says
+             (its time, tokens and exit) is not said again. -->
+        {#if metadata.length > 0}
           <Section name="Execution metadata">{@render facts(metadata)}</Section>
         {/if}
-        {#if !detail.plan && fingerprint.length > 0}
+        {#if fingerprint.length > 0}
           <Section name="Fingerprint">{@render facts(fingerprint)}</Section>
         {/if}
         {@render debug()}

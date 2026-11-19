@@ -78,6 +78,10 @@ kbd {
 .button:hover:not(:disabled) {
   border-color: var(--line-input);
 }
+/* Unavailable, the primary button's text steps down to --ink-3 too. */
+.button.primary:disabled {
+  color: var(--ink-3);
+}
 .button.primary:hover:not(:disabled) {
   border-color: var(--ink-on-accent);
 }

@@ -488,7 +488,8 @@
     if (!v.dragging || v.dragging.cancelled) return;
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
     if (!copy || drop?.kind !== "join") {
-      v.target = null;
+      // No destination here: a check still pending for the last one lights nothing.
+      [v.aim, v.target] = [null, null];
       return;
     }
     const whole = copy.parent === null ? null : byKey.get(copy.parent)!.node.name;
@@ -541,7 +542,7 @@
     }
     const target = byKey.get(drop.key)!;
     const box = target.parts.length > 0 && !target.minimized;
-    const at = box ? freeIn(target, inside(to, target, rects.get(target.key)!, annotations)) : ([0, 0] as [number, number]);
+    const at = box ? freeIn(target, inside(to, target, rects.get(target.key)!, annotations), was) : ([0, 0] as [number, number]);
     // A box laid out automatically is placed as shown, with the new part where it was dropped.
     const shown = box && !annotations.places.has(target.node.name) ? boxPlaces(drawn, rects, annotations, target, copy.node.name) : {};
     if (await edit({ kind: "movePart", part: copy.node.name, from: whole, to: target.node.name, at })) {
@@ -549,15 +550,16 @@
     }
   }
 
-  /** `at` in the box of `whole`, or, where it would cover one of its parts, under them all. */
-  function freeIn(whole: Copy, at: [number, number]): [number, number] {
+  /** `at` in the box of `whole` for a dragged Artifact of `size`, or, where it would cover one of
+   * its parts, under them all. */
+  function freeIn(whole: Copy, at: [number, number], size: { width: number; height: number } = NODE): [number, number] {
     const box = rects.get(whole.key)!;
     const parts = whole.parts.flatMap((key) => {
       const rect = rects.get(key);
       const copy = byKey.get(key);
       return rect && copy ? [{ at: inside(anchor(copy, rect, annotations), whole, box, annotations), rect }] : [];
     });
-    const covers = parts.some(({ at: [x, y], rect }) => at[0] < x + rect.width && x < at[0] + NODE.width && at[1] < y + rect.height && y < at[1] + NODE.height);
+    const covers = parts.some(({ at: [x, y], rect }) => at[0] < x + rect.width && x < at[0] + size.width && at[1] < y + rect.height && y < at[1] + size.height);
     if (!covers) return at;
     return [at[0], Math.max(...parts.map(({ at: [, y], rect }) => y + rect.height)) + 20];
   }

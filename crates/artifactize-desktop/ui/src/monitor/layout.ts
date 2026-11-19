@@ -78,12 +78,13 @@ export async function layout(graph: Shape, minimized: readonly string[] = [], an
 
 /** The places of `members` by key, those `stored` holds (by Artifact name) where it puts them
  * and every other one in free space: a column right of them, one under the other. */
-function byHand(members: Copy[], stored: ReadonlyMap<string, Point>, size: (key: string) => Size): Map<string, Point> {
+function byHand(members: Copy[], stored: ReadonlyMap<string, Point>, size: (key: string) => Size, open: string | null = null): Map<string, Point> {
   const placed = new Map<string, Point>();
   for (const copy of members) {
     const at = stored.get(copy.node.name);
     if (at) placed.set(copy.key, at);
   }
+  makeRoom(placed, members.find((copy) => copy.node.name === open && placed.has(copy.key))?.key ?? null, size);
   const taken = around([...placed].map(([key, at]) => ({ ...at, ...size(key) })));
   let y = taken.y;
   for (const copy of members) {
@@ -92,6 +93,29 @@ function byHand(members: Copy[], stored: ReadonlyMap<string, Point>, size: (key:
     y += size(copy.key).height + ROOM.y;
   }
   return placed;
+}
+
+/** An open comment field grows the room under its node (D-CUR-8): what was placed by hand
+ * under it, in its column, moves down as far as the field reaches, and so does what that
+ * covers in turn; the places written stay as they are, and nothing else moves. */
+function makeRoom(placed: Map<string, Point>, open: string | null, size: (key: string) => Size): void {
+  if (open === null) return;
+  const order = [...placed.keys()].sort((one, other) => placed.get(one)!.y - placed.get(other)!.y);
+  const moved = [open];
+  for (const key of order.slice(order.indexOf(open) + 1)) {
+    const at = placed.get(key)!;
+    const own = size(key);
+    let y = at.y;
+    for (const above of moved) {
+      const [over, room] = [placed.get(above)!, size(above)];
+      const column = over.x < at.x + own.width && at.x < over.x + room.width;
+      if (column && over.y <= at.y && y < over.y + room.height + ROOM.y) y = over.y + room.height + ROOM.y;
+    }
+    if (y !== at.y) {
+      placed.set(key, { x: at.x, y });
+      moved.push(key);
+    }
+  }
 }
 
 /** `drawn` laid out level by level with `flat`: each whole's parts inside it, the deepest
@@ -142,7 +166,7 @@ async function nest(graph: Shape, drawn: Copy[], flat: (level: Level) => Promise
     const hand = stored !== undefined && members.some((copy) => stored.has(copy.node.name));
     const pairs = [...(edges.get(level) ?? [])].map((pair) => pair.split("\n"));
     const placed = hand
-      ? byHand(members, stored, sizeOf)
+      ? byHand(members, stored, sizeOf, annotations.open?.name ?? null)
       : members.length === 1
         ? new Map([[members[0].key, { x: 0, y: 0 }]])
         : await flat({

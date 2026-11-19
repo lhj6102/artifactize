@@ -10,7 +10,7 @@ import type { Point } from "./graph";
 import { ELK_LIMIT, NODE, layered, layout } from "./layout";
 import { REVIEWS, SHARED, catalog } from "./catalog.fixture";
 import { PRECEDENCE } from "../ipc/bindings";
-import { roomOf } from "./annotations";
+import { roomOf, withField } from "./annotations";
 import { BOX, boxes, copies, copyEdges, drawings, type Rect } from "./parts";
 
 /** How often the app loaded ELK, started it, and asked it for a layout. */
@@ -312,6 +312,18 @@ describe("layout with places and comments", () => {
     expect(rects.get("a:suite")).toMatchObject({ x: 40, y: 0 });
     // lone has no place: it stands right of everything placed, covering nothing.
     expect(placed.get("a:lone")!.x).toBeGreaterThanOrEqual(Math.max(500 + NODE.width, rects.get("a:suite")!.x + rects.get("a:suite")!.width));
+  });
+
+  it("makes room under an open comment field: what was placed below it in its column moves down, and its place stays written", async () => {
+    const at = { core: { x: 0, y: 0 }, lone: { x: 0, y: 84 }, suite: { x: 400, y: 0 } };
+    const closed = await layout(graph, [], annotations(at));
+    expect(closed.get("a:lone")).toEqual({ x: 0, y: 84 });
+    const open = await layout(graph, [], withField(annotations(at), "core", 8));
+    const room = roomOf(withField(annotations(at), "core", 8))("core", NODE.width);
+    // lone starts below the field's room; core and the box beside them stay where they were.
+    expect(open.get("a:lone")!.y).toBeGreaterThanOrEqual(NODE.height + room);
+    expect(open.get("a:core")).toEqual({ x: 0, y: 0 });
+    expect(boxes(copies(graph), open).get("a:suite")).toMatchObject({ x: 400, y: 0 });
   });
 
   it("places a box's parts from its inner corner, under its name, and the box fits around them", async () => {
