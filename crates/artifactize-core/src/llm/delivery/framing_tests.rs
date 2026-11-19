@@ -28,21 +28,26 @@ async fn concurrent_streams_deliver_only_to_their_scoped_sinks() {
         let frame = format!(
             "data: {{\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs\",\"summary_index\":0,\"delta\":\"{text}\"}}\n\n"
         );
-        let server = crate::llm::tests::Server::new(vec![
-            rig_core::test_utils::MockHttpResponse::success_typed(frame, "text/event-stream"),
-        ])
+        crate::llm::tests::Server::run(
+            vec![rig_core::test_utils::MockHttpResponse::success_typed(
+                frame,
+                "text/event-stream",
+            )],
+            async |server| {
+                let request = Request::get(format!("{}/responses", server.base))
+                    .body(Vec::<u8>::new())
+                    .unwrap();
+                let response = Tap::new(crate::llm::http_client().unwrap())
+                    .send_streaming(request)
+                    .await
+                    .unwrap();
+                let mut body = response.into_body();
+                while let Some(chunk) = body.next().await {
+                    chunk.unwrap();
+                }
+            },
+        )
         .await;
-        let request = Request::get(format!("{}/responses", server.base))
-            .body(Vec::<u8>::new())
-            .unwrap();
-        let response = Tap::new(crate::llm::http_client().unwrap())
-            .send_streaming(request)
-            .await
-            .unwrap();
-        let mut body = response.into_body();
-        while let Some(chunk) = body.next().await {
-            chunk.unwrap();
-        }
     }
 
     let first = Sink::default();

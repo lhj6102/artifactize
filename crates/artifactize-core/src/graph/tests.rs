@@ -47,6 +47,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                     .map(|(source, _)| source.parse().unwrap())
                     .collect(),
                 declaration: eval,
+                instruction_references: Vec::new(),
                 variant: None,
             });
         }

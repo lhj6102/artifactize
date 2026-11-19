@@ -42,6 +42,23 @@ async fn reservation_retry_cancel_and_failed_launch_release_their_writer_before_
 }
 
 #[test]
+fn old_wire_cancellation_markers_read_as_one_cancelling_state() {
+    for (activity, requested) in [("executing", true), ("cancelling", false)] {
+        let control: Control = serde_json::from_value(json!({
+            "worker": {"state": "legacy"}, "activity": activity, "cancellationRequested": requested,
+        }))
+        .unwrap();
+        assert!(control.is_cancelling());
+        assert_eq!(
+            serde_json::to_value(control).unwrap(),
+            json!({
+                "worker": {"state": "legacy"}, "activity": "cancelling", "cancellationRequested": true,
+            })
+        );
+    }
+}
+
+#[test]
 fn supervisor_identity_is_optional_in_saved_control_and_preserves_executor_ownership() {
     let old = json!({"worker":{"state":"admitted","owner":{"pid":1,"start_time":2}},"activity":"executing","cancellationRequested":false});
     let control: Control = serde_json::from_value(old.clone()).unwrap();

@@ -130,7 +130,7 @@ fn process_group_exited(pgid: u32) -> io::Result<bool> {
     for pid in pids.into_iter().take(read as usize) {
         // Include zombies explicitly. ESRCH means the listed member was reaped
         // during inspection; every other lookup error must remain an error.
-        match process_info(pid, 1) {
+        match process_info(pid) {
             Ok(info)
                 if info.pbi_pgid == pgid as u32
                     && info.pbi_status != libc::SZOMB
@@ -275,7 +275,7 @@ pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
 #[cfg(target_os = "macos")]
 pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
     let pid = i32::try_from(pid).map_err(|_| io::ErrorKind::InvalidInput)?;
-    let info = process_info(pid, 1)?;
+    let info = process_info(pid)?;
     if info.pbi_status == libc::SZOMB || info.pbi_flags & PROC_FLAG_INEXIT != 0 {
         Err(io::ErrorKind::NotFound.into())
     } else {
@@ -291,7 +291,7 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     if pid <= 0 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    process_birth_time(process_info(pid, 1)?)
+    process_birth_time(process_info(pid)?)
 }
 
 #[cfg(target_os = "macos")]
@@ -304,7 +304,10 @@ fn process_birth_time(info: libc::proc_bsdinfo) -> io::Result<u64> {
 }
 
 #[cfg(target_os = "macos")]
-fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo> {
+fn process_info(pid: i32) -> io::Result<libc::proc_bsdinfo> {
+    // Retrieve an unreaped process's identity too; liveness callers distinguish a
+    // zombie from an active member by inspecting its status and flags.
+    const INCLUDE_ZOMBIES: u64 = 1;
     let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
     let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
     // SAFETY: a writable buffer of the exact size required by PROC_PIDTBSDINFO. The
@@ -313,7 +316,7 @@ fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo
         libc::proc_pidinfo(
             pid,
             libc::PROC_PIDTBSDINFO,
-            include_zombies,
+            INCLUDE_ZOMBIES,
             info.as_mut_ptr().cast(),
             size,
         )

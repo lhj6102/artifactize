@@ -124,9 +124,7 @@ async fn admitted(
                         .iter()
                         .any(|request| request.status() == RequestStatus::Running)
                 },
-                |control| {
-                    !control.cancellation_requested && control.activity == runs::Activity::Waiting
-                },
+                |control| control.activity == runs::Activity::Waiting,
             );
             let admitted = match expected {
                 Some((eval, status)) => view

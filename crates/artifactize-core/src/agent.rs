@@ -375,7 +375,7 @@ async fn run(
         eval.declaration.fail_schema(),
     )?;
     let structured = verdict::Structured::new(&verdict.schema, client.api());
-    let mut request = prompt(config, eval, &registry)?;
+    let mut request = prompt(eval, &registry);
     request.additional_params = Some(Client::parameters(
         client.api(),
         reasoning.map(crate::config::Reasoning::as_str),
@@ -714,15 +714,11 @@ fn tool_content(result: ToolResult) -> Vec<ToolResultContent> {
         .collect()
 }
 
-fn prompt(
-    config: &RepoConfig,
-    eval: &Eval,
-    registry: &Registry<'_>,
-) -> Result<CompletionRequest, String> {
-    let Prompt { system, text } = prompt_text(config, eval, registry)?;
+fn prompt(eval: &Eval, registry: &Registry<'_>) -> CompletionRequest {
+    let Prompt { system, text } = prompt_text(eval, registry);
     let mut request = CompletionRequest::new(text).preamble(system);
     request.tools = definitions(registry);
-    Ok(request)
+    request
 }
 
 /// A review's system prompt and its first message.
@@ -731,17 +727,8 @@ struct Prompt {
     text: String,
 }
 
-fn prompt_text(
-    config: &RepoConfig,
-    eval: &Eval,
-    registry: &Registry<'_>,
-) -> Result<Prompt, String> {
-    let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
-    let payload = eval
-        .declaration
-        .payload()
-        .expect("Agent payload is validated");
-    let parts = scope::parse_artifact_instruction(&payload.instruction, &scope, &eval.references);
+fn prompt_text(eval: &Eval, registry: &Registry<'_>) -> Prompt {
+    let parts = scope::artifact_instruction(eval);
     let instruction: String = parts
         .iter()
         .map(|part| match part {
@@ -765,7 +752,7 @@ fn prompt_text(
         "Eval: {} ({})\nTarget Artifact: {}\nInstruction: {}\nArtifacts:\n{}",
         eval.declaration.title, eval.id, eval.target, instruction, artifacts,
     );
-    Ok(Prompt { system, text })
+    Prompt { system, text }
 }
 
 #[derive(Serialize)]

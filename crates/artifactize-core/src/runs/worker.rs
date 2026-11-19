@@ -139,7 +139,7 @@ async fn execute_admitted(
     if run
         .control
         .as_ref()
-        .is_some_and(|control| control.cancellation_requested)
+        .is_some_and(super::Control::is_cancelling)
     {
         cancellation.cancel();
     }
@@ -150,7 +150,7 @@ async fn execute_admitted(
             if current
                 .control
                 .as_ref()
-                .is_some_and(|control| control.cancellation_requested)
+                .is_some_and(super::Control::is_cancelling)
             {
                 cancellation.cancel();
                 return Ok::<(), String>(());

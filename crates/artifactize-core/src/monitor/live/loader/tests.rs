@@ -1,6 +1,5 @@
-//! The loader with a Run as large as the largest saved so far: starting lists it without
-//! reading its definitions, opening it decodes them once, and reloads while the state is
-//! written read only what a hint names.
+//! The loader's snapshots of a large Run: listing, opening, and updating the shown Run
+//! when saved state changes.
 use super::*;
 use crate::{
     changes::Change,
@@ -76,7 +75,7 @@ fn loaded(snapshot: Snapshot) -> Opened {
 }
 
 #[tokio::test]
-async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alone() {
+async fn a_large_run_is_listed_opened_and_refreshed_with_its_saved_definitions() {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -123,49 +122,68 @@ async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alon
     );
     let mut open = input(&state, &repo, Some("run-large"), Changed::Nothing);
     open.force = true;
-    loader.reader.traced_statements();
-    let (_, requests, _, _) = loaded(loader.load(open).unwrap());
-    assert_eq!(requests.len(), LARGE);
-    let statements = loader.reader.traced_statements();
-    assert!(
-        statements.iter().any(|sql| sql.contains("run_definitions")),
-        "{statements:?}"
+    let (_, before, _, _) = loaded(loader.load(open).unwrap());
+    assert_eq!(before.len(), LARGE);
+    assert_eq!(
+        before[7]
+            .definition
+            .as_ref()
+            .unwrap()
+            .eval()
+            .declaration
+            .value()
+            .and_then(|declaration| declaration.title.value())
+            .map(String::as_str),
+        Some("Check")
     );
 
-    // A write to the open Run reads its changed request again, never its definitions.
+    // The shown snapshot keeps the original definitions while reflecting changed requests.
+    rusqlite::Connection::open(state.join(DATABASE))
+        .unwrap()
+        .execute(
+            "UPDATE run_definitions SET data='{\"artifacts\":7}' WHERE run_id='run-large'",
+            [],
+        )
+        .unwrap();
     fail(&receipts, &large_requests, "run-large-a7").await;
-    loader.reader.traced_statements();
     let (_, requests, _, _) = loaded(
         loader
             .load(input(&state, &repo, Some("run-large"), hinted("run-large")))
             .unwrap(),
-    );
-    let statements = loader.reader.traced_statements();
-    assert!(
-        !statements.iter().any(|sql| sql.contains("run_definitions")),
-        "{statements:?}"
     );
     let failed = requests
         .iter()
         .find(|view| view.request.id.as_str() == "run-large-a7")
         .unwrap();
     assert_eq!(failed.request.status(), crate::types::RequestStatus::Error);
+    assert_eq!(
+        failed
+            .definition
+            .as_ref()
+            .unwrap()
+            .eval()
+            .declaration
+            .value()
+            .and_then(|declaration| declaration.title.value())
+            .map(String::as_str),
+        Some("Check")
+    );
 
-    // A write to another Run queries the list and that Run: nothing about the open one.
-    loader.reader.traced_statements();
+    // A write to another Run leaves the open Run unchanged.
     fail(&receipts, &small_requests, "run-small-a0").await;
     let other = loader
         .load(input(&state, &repo, Some("run-large"), hinted("run-small")))
         .unwrap();
     assert!(matches!(other.open_run, OpenRun::Unchanged));
-    let statements = loader.reader.traced_statements();
+    let unopened = Loader::default()
+        .load(input(&state, &repo, Some("run-large"), Changed::Nothing))
+        .unwrap();
+    assert!(matches!(unopened.open_run, OpenRun::Absent));
     assert!(
-        statements.iter().any(|sql| sql.contains("run-small")),
-        "{statements:?}"
-    );
-    assert!(
-        !statements.iter().any(|sql| sql.contains("run-large")),
-        "{statements:?}"
+        unopened
+            .unreadable
+            .iter()
+            .any(|record| record.id == "run-large")
     );
 }
 

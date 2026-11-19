@@ -1,6 +1,7 @@
 use std::fs;
 
 use rig_core::{http_client::StatusCode, test_utils::MockHttpResponse};
+use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::*;
@@ -154,94 +155,96 @@ async fn login_exchanges_the_callback_code_and_saves_private_tokens() {
     let temp = crate::test_os::tempdir();
     let storage = storage(temp.path());
     let access = jwt("account-1", 10_000 + 3600);
-    let server = Server::new(vec![tokens(&access, "refresh-1")]).await;
-    let listener = Callback::bind(0).unwrap().unwrap();
-    let port = listener.ipv4.local_addr().unwrap().port();
-    let redirect = format!("http://localhost:{port}{CALLBACK_PATH}");
-    let (send, receive) = oneshot::channel();
-    let browse = async {
-        let url: Url = receive.await.unwrap();
-        let state = url
-            .query_pairs()
-            .find(|(key, _)| key == "state")
-            .unwrap()
-            .1
-            .into_owned();
-        let host = format!("localhost:{port}");
-        // Wrong state, host or path never end the sign-in.
-        let wrong = browser(port, &host, "/auth/callback?code=x&state=wrong").await;
-        assert!(wrong.starts_with("HTTP/1.1 400"), "{wrong}");
-        let foreign = format!("/auth/callback?code=x&state={state}");
-        assert!(
-            browser(port, "evil.example", &foreign)
-                .await
-                .starts_with("HTTP/1.1 400")
+    Server::run(vec![tokens(&access, "refresh-1")], async |server| {
+        let listener = Callback::bind(0).unwrap().unwrap();
+        let port = listener.ipv4.local_addr().unwrap().port();
+        let redirect = format!("http://localhost:{port}{CALLBACK_PATH}");
+        let (send, receive) = oneshot::channel();
+        let browse = async {
+            let url: Url = receive.await.unwrap();
+            let state = url
+                .query_pairs()
+                .find(|(key, _)| key == "state")
+                .unwrap()
+                .1
+                .into_owned();
+            let host = format!("localhost:{port}");
+            // Wrong state, host or path never end the sign-in.
+            let wrong = browser(port, &host, "/auth/callback?code=x&state=wrong").await;
+            assert!(wrong.starts_with("HTTP/1.1 400"), "{wrong}");
+            let foreign = format!("/auth/callback?code=x&state={state}");
+            assert!(
+                browser(port, "evil.example", &foreign)
+                    .await
+                    .starts_with("HTTP/1.1 400")
+            );
+            assert!(
+                browser(port, &host, "/other")
+                    .await
+                    .starts_with("HTTP/1.1 404")
+            );
+            let done = browser(
+                port,
+                &host,
+                &format!("/auth/callback?code=the-code&state={state}"),
+            )
+            .await;
+            assert!(done.starts_with("HTTP/1.1 200"), "{done}");
+            url
+        };
+        let root = root(server);
+        let (result, url) = tokio::join!(
+            sign_in(
+                &storage,
+                &root,
+                Some(listener),
+                &redirect,
+                None,
+                false,
+                |url, callback| {
+                    assert!(callback);
+                    send.send(url.clone()).unwrap();
+                }
+            ),
+            browse
         );
-        assert!(
-            browser(port, &host, "/other")
-                .await
-                .starts_with("HTTP/1.1 404")
+        result.unwrap();
+        let requests = server.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].line, "POST /v1/oauth/token HTTP/1.1");
+        assert_eq!(
+            requests[0].headers["content-type"],
+            "application/x-www-form-urlencoded"
         );
-        let done = browser(
-            port,
-            &host,
-            &format!("/auth/callback?code=the-code&state={state}"),
-        )
-        .await;
-        assert!(done.starts_with("HTTP/1.1 200"), "{done}");
-        url
-    };
-    let root = root(&server);
-    let (result, url) = tokio::join!(
-        sign_in(
-            &storage,
-            &root,
-            Some(listener),
-            &redirect,
-            None,
-            false,
-            |url, callback| {
-                assert!(callback);
-                send.send(url.clone()).unwrap();
-            }
-        ),
-        browse
-    );
-    result.unwrap();
-    let requests = server.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].line, "POST /v1/oauth/token HTTP/1.1");
-    assert_eq!(
-        requests[0].headers["content-type"],
-        "application/x-www-form-urlencoded"
-    );
-    let verifier = form(&requests[0].body)["code_verifier"].clone();
-    assert_eq!(
-        url.query_pairs()
-            .find(|(key, _)| key == "code_challenge")
-            .unwrap()
-            .1,
-        URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
-    );
-    assert_eq!(
-        form(&requests[0].body),
-        BTreeMap::from([
-            ("grant_type".into(), "authorization_code".into()),
-            ("client_id".into(), "app_EMoamEEZ73f0CkXaXp7hrann".into(),),
-            ("code".into(), "the-code".into()),
-            ("code_verifier".into(), verifier),
-            ("redirect_uri".into(), redirect.clone()),
-        ])
-    );
-    let path = storage.directory.join(CREDENTIALS);
-    assert!(crate::auth::tests::private_file(&path));
-    let saved: Credentials = storage.read(CREDENTIALS).unwrap().unwrap();
-    assert_eq!(saved.access_token, access);
-    assert_eq!(saved.refresh_token, "refresh-1");
-    assert_eq!(saved.account_id, "account-1");
-    assert_eq!(saved.expires_at.seconds() - saved.saved_at.seconds(), 3600);
-    // The ID token is not kept.
-    assert!(!fs::read_to_string(path).unwrap().contains("\"id\""));
+        let verifier = form(&requests[0].body)["code_verifier"].clone();
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "code_challenge")
+                .unwrap()
+                .1,
+            URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+        );
+        assert_eq!(
+            form(&requests[0].body),
+            BTreeMap::from([
+                ("grant_type".into(), "authorization_code".into()),
+                ("client_id".into(), "app_EMoamEEZ73f0CkXaXp7hrann".into(),),
+                ("code".into(), "the-code".into()),
+                ("code_verifier".into(), verifier),
+                ("redirect_uri".into(), redirect.clone()),
+            ])
+        );
+        let path = storage.directory.join(CREDENTIALS);
+        assert!(crate::auth::tests::private_file(&path));
+        let saved: Credentials = storage.read(CREDENTIALS).unwrap().unwrap();
+        assert_eq!(saved.access_token, access);
+        assert_eq!(saved.refresh_token, "refresh-1");
+        assert_eq!(saved.account_id, "account-1");
+        assert_eq!(saved.expires_at.seconds() - saved.saved_at.seconds(), 3600);
+        // The ID token is not kept.
+        assert!(!fs::read_to_string(path).unwrap().contains("\"id\""));
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -257,47 +260,52 @@ async fn login_accepts_a_pasted_redirect_and_rejects_unusable_token_responses() 
         StatusCode::BAD_REQUEST,
         json!({"error":"invalid_grant","error_description":"secret detail"}).to_string(),
     );
-    let server = Server::new(vec![without_account, incomplete, rejected]).await;
-    for expected in [
-        "names no ChatGPT account",
-        "Invalid Codex token response",
-        "invalid_grant",
-    ] {
-        let (send, receive) = oneshot::channel();
-        let error = sign_in(
-            &storage,
-            &root(&server),
-            None,
-            REDIRECT_URI,
-            Some(receive),
-            false,
-            |url, callback| {
-                assert!(!callback);
-                let state = url.query_pairs().find(|(key, _)| key == "state").unwrap().1;
-                send.send(format!("{REDIRECT_URI}?code=pasted&state={state}"))
-                    .unwrap();
-            },
-        )
-        .await
-        .err()
-        .unwrap();
-        assert!(error.contains(expected), "{error}");
-        assert!(!error.contains("secret detail"), "{error}");
-    }
-    assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
-    assert_eq!(form(&server.requests()[0].body)["code"], "pasted");
-    let none = sign_in(
-        &storage,
-        &root(&server),
-        None,
-        REDIRECT_URI,
-        None,
-        false,
-        |_, _| panic!("nothing to show without a way back"),
+    Server::run(
+        vec![without_account, incomplete, rejected],
+        async |server| {
+            for expected in [
+                "names no ChatGPT account",
+                "Invalid Codex token response",
+                "invalid_grant",
+            ] {
+                let (send, receive) = oneshot::channel();
+                let error = sign_in(
+                    &storage,
+                    &root(server),
+                    None,
+                    REDIRECT_URI,
+                    Some(receive),
+                    false,
+                    |url, callback| {
+                        assert!(!callback);
+                        let state = url.query_pairs().find(|(key, _)| key == "state").unwrap().1;
+                        send.send(format!("{REDIRECT_URI}?code=pasted&state={state}"))
+                            .unwrap();
+                    },
+                )
+                .await
+                .err()
+                .unwrap();
+                assert!(error.contains(expected), "{error}");
+                assert!(!error.contains("secret detail"), "{error}");
+            }
+            assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
+            assert_eq!(form(&server.requests()[0].body)["code"], "pasted");
+            let none = sign_in(
+                &storage,
+                &root(server),
+                None,
+                REDIRECT_URI,
+                None,
+                false,
+                |_, _| panic!("nothing to show without a way back"),
+            )
+            .await;
+            assert!(none.unwrap_err().contains("Port 1455"));
+            assert_eq!(server.requests().len(), 3);
+        },
     )
     .await;
-    assert!(none.unwrap_err().contains("Port 1455"));
-    assert_eq!(server.requests().len(), 3);
 }
 
 #[tokio::test]
@@ -306,35 +314,67 @@ async fn expiring_tokens_refresh_once_under_the_lock_and_rotate() {
     let storage = storage(temp.path());
     stored(&storage, "old-access", 10_000 + 60);
     let fresh = jwt("account-1", 10_000 + 3600);
-    let server = Server::new(vec![tokens(&fresh, "new-refresh")]).await;
-    let root = root(&server);
-    let refresh = || stored_token_at(&storage, &root, || Ok(Timestamp::from_seconds(10_000)));
-    let first = refresh();
-    let second = refresh();
-    tokio::pin!(first, second);
-    // On this current-thread runtime the server cannot reply during either poll:
-    // the first holder waits for HTTP, then the second waits for its held lock.
-    assert!(futures_util::poll!(&mut first).is_pending());
-    assert!(futures_util::poll!(&mut second).is_pending());
-    let (first, second) = tokio::join!(first, second);
-    for result in [first, second] {
-        let token = result.unwrap();
-        assert_eq!(token.access_token, fresh);
-        assert_eq!(token.account_id, "account-1");
+    Server::run(vec![tokens(&fresh, "new-refresh")], async |server| {
+        let root = root(server);
+        let refresh = || stored_token_at(&storage, &root, || Ok(Timestamp::from_seconds(10_000)));
+        let first = refresh();
+        let second = refresh();
+        tokio::pin!(first, second);
+        // On this current-thread runtime the server cannot reply during either poll:
+        // the first holder waits for HTTP, then the second waits for its held lock.
+        assert!(futures_util::poll!(&mut first).is_pending());
+        assert!(futures_util::poll!(&mut second).is_pending());
+        let (first, second) = tokio::join!(first, second);
+        for result in [first, second] {
+            let token = result.unwrap();
+            assert_eq!(token.access_token, fresh);
+            assert_eq!(token.account_id, "account-1");
+        }
+        let requests = server.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            form(&requests[0].body),
+            BTreeMap::from([
+                ("grant_type".into(), "refresh_token".into()),
+                ("refresh_token".into(), "old-refresh".into()),
+                ("client_id".into(), "app_EMoamEEZ73f0CkXaXp7hrann".into(),),
+            ])
+        );
+        let saved: Credentials = storage.read(CREDENTIALS).unwrap().unwrap();
+        assert_eq!(saved.refresh_token, "new-refresh");
+        assert!(storage.directory.join("codex.lock").exists());
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn terminal_refresh_codes_are_recognized_in_each_oauth_error_shape() {
+    for body in [
+        json!({"error":"invalid_grant"}),
+        json!({"error":{"code":"invalid_grant"}}),
+        json!({"error":{"code":false},"code":"invalid_grant"}),
+    ] {
+        let temp = crate::test_os::tempdir();
+        let storage = storage(temp.path());
+        stored(&storage, "old-access", 1);
+        Server::run(
+            vec![MockHttpResponse::error(
+                StatusCode::BAD_REQUEST,
+                body.to_string(),
+            )],
+            async |server| {
+                let failure = stored_token_at(&storage, &root(server), || {
+                    Ok(Timestamp::from_seconds(10_000))
+                })
+                .await
+                .err()
+                .unwrap();
+                assert!(failure.message.contains("invalid_grant"));
+                assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
+            },
+        )
+        .await;
     }
-    let requests = server.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(
-        form(&requests[0].body),
-        BTreeMap::from([
-            ("grant_type".into(), "refresh_token".into()),
-            ("refresh_token".into(), "old-refresh".into()),
-            ("client_id".into(), "app_EMoamEEZ73f0CkXaXp7hrann".into(),),
-        ])
-    );
-    let saved: Credentials = storage.read(CREDENTIALS).unwrap().unwrap();
-    assert_eq!(saved.refresh_token, "new-refresh");
-    assert!(storage.directory.join("codex.lock").exists());
 }
 
 #[tokio::test]
@@ -342,60 +382,60 @@ async fn refresh_failures_keep_or_drop_the_sign_in() {
     let temp = crate::test_os::tempdir();
     let storage = storage(temp.path());
     let other = jwt("account-2", 10_000 + 3600);
-    let server = Server::new(vec![
+    Server::run(vec![
         MockHttpResponse::error(StatusCode::INTERNAL_SERVER_ERROR, "{}"),
         tokens(&other, "other-refresh"),
         MockHttpResponse::error(
             StatusCode::BAD_REQUEST,
             json!({"error":{"code":"refresh_token_reused"}}).to_string(),
         ),
-    ])
-    .await;
-    stored(&storage, "old-access", 1);
-    // A failing token endpoint is transient, so a review may retry it.
-    let transient = stored_token_at(&storage, &root(&server), || {
-        Ok(Timestamp::from_seconds(10_000))
-    })
-    .await
-    .err()
-    .unwrap();
-    assert!(transient.transient);
-    let transient = transient.message;
-    assert!(
-        transient.contains("HTTP 500") && transient.contains("kept"),
-        "{transient}"
-    );
-    let mismatch = stored_token_at(&storage, &root(&server), || {
-        Ok(Timestamp::from_seconds(10_000))
-    })
-    .await
-    .err()
-    .unwrap();
-    assert!(!mismatch.transient);
-    let mismatch = mismatch.message;
-    assert!(mismatch.contains("another ChatGPT account"), "{mismatch}");
-    assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_some());
-    let terminal = stored_token_at(&storage, &root(&server), || {
-        Ok(Timestamp::from_seconds(10_000))
-    })
-    .await
-    .err()
-    .unwrap();
-    assert!(!terminal.transient);
-    let terminal = terminal.message;
-    assert!(terminal.contains("refresh_token_reused"), "{terminal}");
-    assert!(terminal.contains("artifactize login codex"), "{terminal}");
-    assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
-    let missing = stored_token_at(&storage, &root(&server), || {
-        Ok(Timestamp::from_seconds(10_000))
-    })
-    .await
-    .err()
-    .unwrap();
-    assert_eq!(
-        missing.message,
-        "Codex is not signed in; run `artifactize login codex` or set ARTIFACTIZE_CODEX_AUTH_FILE."
-    );
+    ], async |server| {
+        stored(&storage, "old-access", 1);
+        // A failing token endpoint is transient, so a review may retry it.
+        let transient = stored_token_at(&storage, &root(server), || {
+            Ok(Timestamp::from_seconds(10_000))
+        })
+        .await
+        .err()
+        .unwrap();
+        assert!(transient.transient);
+        let transient = transient.message;
+        assert!(
+            transient.contains("HTTP 500") && transient.contains("kept"),
+            "{transient}"
+        );
+        let mismatch = stored_token_at(&storage, &root(server), || {
+            Ok(Timestamp::from_seconds(10_000))
+        })
+        .await
+        .err()
+        .unwrap();
+        assert!(!mismatch.transient);
+        let mismatch = mismatch.message;
+        assert!(mismatch.contains("another ChatGPT account"), "{mismatch}");
+        assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_some());
+        let terminal = stored_token_at(&storage, &root(server), || {
+            Ok(Timestamp::from_seconds(10_000))
+        })
+        .await
+        .err()
+        .unwrap();
+        assert!(!terminal.transient);
+        let terminal = terminal.message;
+        assert!(terminal.contains("refresh_token_reused"), "{terminal}");
+        assert!(terminal.contains("artifactize login codex"), "{terminal}");
+        assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
+        let missing = stored_token_at(&storage, &root(server), || {
+            Ok(Timestamp::from_seconds(10_000))
+        })
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(
+            missing.message,
+            "Codex is not signed in; run `artifactize login codex` or set ARTIFACTIZE_CODEX_AUTH_FILE."
+        );
+    }).await;
 }
 
 #[test]
@@ -576,26 +616,26 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
 async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
     let temp = crate::test_os::tempdir();
     let storage = storage(temp.path());
-    let server = Server::new(vec![
+    Server::run(vec![
         MockHttpResponse::success("{}".to_owned()),
         MockHttpResponse::error(StatusCode::BAD_REQUEST, "{}"),
-    ])
-    .await;
-    stored(&storage, "access", 10_000 + 3600);
-    assert!(sign_out(&storage, &root(&server)).await.unwrap());
-    assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
-    let request = &server.requests()[0];
-    assert_eq!(request.line, "POST /v1/oauth/revoke HTTP/1.1");
-    assert_eq!(
-        request.body,
-        json!({"token":"old-refresh","token_type_hint":"refresh_token","client_id":"app_EMoamEEZ73f0CkXaXp7hrann"})
-    );
-    // Nothing stored: nothing to revoke.
-    assert!(sign_out(&storage, &root(&server)).await.unwrap());
-    assert_eq!(server.requests().len(), 1);
-    stored(&storage, "access", 10_000 + 3600);
-    assert!(!sign_out(&storage, &root(&server)).await.unwrap());
-    assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
+    ], async |server| {
+        stored(&storage, "access", 10_000 + 3600);
+        assert!(sign_out(&storage, &root(server)).await.unwrap());
+        assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
+        let request = &server.requests()[0];
+        assert_eq!(request.line, "POST /v1/oauth/revoke HTTP/1.1");
+        assert_eq!(
+            request.body,
+            json!({"token":"old-refresh","token_type_hint":"refresh_token","client_id":"app_EMoamEEZ73f0CkXaXp7hrann"})
+        );
+        // Nothing stored: nothing to revoke.
+        assert!(sign_out(&storage, &root(server)).await.unwrap());
+        assert_eq!(server.requests().len(), 1);
+        stored(&storage, "access", 10_000 + 3600);
+        assert!(!sign_out(&storage, &root(server)).await.unwrap());
+        assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
+    }).await;
 }
 
 #[tokio::test]

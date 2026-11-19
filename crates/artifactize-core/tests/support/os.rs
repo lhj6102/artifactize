@@ -2127,50 +2127,6 @@ impl Drop for PseudoTerminal {
     }
 }
 
-/// Check that a full-screen program left the terminal as it found it, from what the
-/// terminal showed between its start and its close. On Unix script(1) passes the program's
-/// own sequences through: it enters the alternate screen first and leaves it, showing the
-/// cursor, last. A ConPTY renders the console instead and sends its own sequences: after the
-/// program's last frame the screen is redrawn without it, and the cursor shown.
-pub fn assert_restored(output: &str, frame: &str) {
-    #[cfg(unix)]
-    {
-        let _ = frame;
-        assert!(output.starts_with("\x1b[?1049h"), "{output:?}");
-        assert!(output.ends_with("\x1b[?25h\x1b[?1049l"), "{output:?}");
-    }
-    #[cfg(windows)]
-    {
-        let last = output.rfind(frame).expect("the program drew its frame");
-        let after = &output[last..];
-        assert!(
-            ["\x1b[?1049l", "\x1b[2J", "\x1b[J", "\x1b[0J"]
-                .iter()
-                .any(|erase| after.contains(erase)),
-            "the last frame is not erased: {after:?}"
-        );
-        assert!(
-            output.rfind("\x1b[?25h") > output.rfind("\x1b[?25l"),
-            "the cursor is not shown again: {after:?}"
-        );
-    }
-}
-
-/// Unix terminals pass bracketed-paste modes through; ConPTY keeps input modes inside
-/// its console, so their ordering is observable only through the Unix terminal pipe.
-pub fn assert_bracketed_paste(output: &str) {
-    #[cfg(unix)]
-    {
-        let on = output.find("\x1b[?2004h").expect("bracketed paste enabled");
-        let off = output
-            .rfind("\x1b[?2004l")
-            .expect("bracketed paste disabled");
-        assert!(on < off, "{output:?}");
-    }
-    #[cfg(windows)]
-    let _ = output;
-}
-
 /// A ConPTY driven through its pipes, the Windows pseudo-terminal.
 #[cfg(windows)]
 mod conpty {

@@ -18,13 +18,15 @@ pub fn starred(state: Option<&Path>) -> Result<BTreeSet<Place>, String> {
 
 /// Star `place`, or take its star away, and return the starred branches as kept.
 pub fn star(state: Option<&Path>, place: &Place, on: bool) -> Result<BTreeSet<Place>, String> {
-    let mut kept = starred(state)?;
+    let dir = crate::store::state_dir(state)?;
+    let _lock = lock(&dir, BRANCHES)?;
+    let mut kept: BTreeSet<Place> = read_file(&dir, BRANCHES)?;
     if on {
         kept.insert(place.clone());
     } else {
         kept.remove(place);
     }
-    write(state, BRANCHES, &kept)?;
+    write(&dir, BRANCHES, &kept)?;
     Ok(kept)
 }
 
@@ -56,7 +58,9 @@ pub fn star_artifact(
     name: &ArtifactName,
     on: bool,
 ) -> Result<BTreeSet<ArtifactName>, String> {
-    let mut kept: Vec<Starred> = read(state, ARTIFACTS)?;
+    let dir = crate::store::state_dir(state)?;
+    let _lock = lock(&dir, ARTIFACTS)?;
+    let mut kept: Vec<Starred> = read_file(&dir, ARTIFACTS)?;
     let at = match kept.iter().position(|starred| &starred.project == project) {
         Some(at) => at,
         None => {
@@ -74,13 +78,17 @@ pub fn star_artifact(
     }
     let artifacts = kept[at].artifacts.clone();
     kept.retain(|starred| !starred.artifacts.is_empty());
-    write(state, ARTIFACTS, &kept)?;
+    write(&dir, ARTIFACTS, &kept)?;
     Ok(artifacts)
 }
 
 /// The stars kept in `file`; none before the first.
 fn read<T: DeserializeOwned + Default>(state: Option<&Path>, file: &str) -> Result<T, String> {
-    let path = crate::store::state_dir(state)?.join(file);
+    read_file(&crate::store::state_dir(state)?, file)
+}
+
+fn read_file<T: DeserializeOwned + Default>(dir: &Path, file: &str) -> Result<T, String> {
+    let path = dir.join(file);
     match std::fs::read(&path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map_err(|e| format!("{}: {e}", crate::platform::path_text(&path))),
@@ -89,11 +97,15 @@ fn read<T: DeserializeOwned + Default>(state: Option<&Path>, file: &str) -> Resu
     }
 }
 
+/// Lock a stable sidecar instead of the file being atomically replaced.
+fn lock(dir: &Path, file: &str) -> Result<std::fs::File, String> {
+    crate::platform::paths::lock_file(&dir.join(format!("{file}.lock")))
+        .map_err(|error| format!("Cannot lock {file}: {error}"))
+}
+
 /// Replace `file` with `kept` at once: a reader sees the stars before or after, never a part.
-fn write(state: Option<&Path>, file: &str, kept: &impl Serialize) -> Result<(), String> {
-    let dir = crate::store::state_dir(state)?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let mut temporary = tempfile::NamedTempFile::new_in(&dir).map_err(|e| e.to_string())?;
+fn write(dir: &Path, file: &str, kept: &impl Serialize) -> Result<(), String> {
+    let mut temporary = tempfile::NamedTempFile::new_in(dir).map_err(|e| e.to_string())?;
     serde_json::to_writer(&mut temporary, kept).map_err(|e| e.to_string())?;
     temporary.flush().map_err(|e| e.to_string())?;
     crate::platform::paths::replace_open_file(temporary, &dir.join(file))

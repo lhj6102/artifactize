@@ -305,6 +305,7 @@ pub(super) fn insert_artifact(
             references: BTreeMap::new(),
             deps: Vec::new(),
             declaration,
+            instruction_references: Vec::new(),
             variant: None,
         });
     }

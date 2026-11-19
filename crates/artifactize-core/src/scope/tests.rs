@@ -238,7 +238,7 @@ fn references_keep_canonical_ids() {
     );
     let source = &eval.declaration.payload().as_ref().unwrap().instruction;
     assert_eq!(
-        parse_artifact_instruction(source, &scope, &eval.references),
+        artifact_instruction(eval),
         vec![
             InstructionPart::Text("Read ".into()),
             InstructionPart::Artifact("input".parse().unwrap()),
@@ -292,10 +292,11 @@ fn observation_scope_never_follows_other_evals_instructions() {
             .contains("outside this review")
     );
     assert_eq!(
-        parse_artifact_instruction("{hidden} {input}", &scope, &BTreeMap::new()),
+        artifact_instruction(eval),
         vec![
-            InstructionPart::Text("{hidden} ".into()),
+            InstructionPart::Text("Read ".into()),
             InstructionPart::Artifact("input".parse().unwrap()),
+            InstructionPart::Text(".".into()),
         ]
     );
 }

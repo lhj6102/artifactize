@@ -96,17 +96,12 @@ pub(super) fn state_for(
             State::Cancelled
         }
         RunStatus::Error => State::Error,
-        RunStatus::WaitingHuman
-            if control.is_some_and(|control| control.cancellation_requested) =>
-        {
+        RunStatus::WaitingHuman if control.is_some_and(super::Control::is_cancelling) => {
             State::Cancelling
         }
         RunStatus::WaitingHuman => State::WaitingHuman,
         RunStatus::Running => {
             if let Some(control) = control {
-                if control.cancellation_requested {
-                    return State::Cancelling;
-                }
                 return match control.activity {
                     Activity::Preparing => State::Preparing,
                     Activity::Executing | Activity::Publishing => State::Running,

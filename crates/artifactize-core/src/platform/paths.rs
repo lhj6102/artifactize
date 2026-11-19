@@ -210,6 +210,23 @@ pub(crate) fn directory_identity(path: &Path) -> io::Result<(super::FileIdentity
     Ok((identity, canonical))
 }
 
+/// Create and exclusively lock a stable sidecar until its handle is dropped.
+pub(crate) fn lock_file(path: &Path) -> io::Result<File> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = super::open_no_follow(
+        super::private_options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false),
+        path,
+    )?;
+    file.lock()?;
+    Ok(file)
+}
+
 /// Publish a file snapshot while a reader may still hold the old file open.
 /// On Windows std's rename supports that case, unlike tempfile's MoveFileEx persistence.
 pub(crate) fn replace_open_file(

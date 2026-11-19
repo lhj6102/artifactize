@@ -41,8 +41,10 @@ fn merge_scheduler_control(run: &mut Run, saved: Option<Control>, at: crate::typ
     let running = run.status().is_open();
     if let (Some(control), Some(saved)) = (&mut run.control, saved) {
         control.worker = saved.worker;
-        control.cancellation_requested |= saved.cancellation_requested;
-        if control.cancellation_requested
+        if saved.is_cancelling() {
+            control.activity = Activity::Cancelling;
+        }
+        if control.is_cancelling()
             && !running
             && control.failure_code != Some(crate::types::FailureCode::OwnerDied)
         {
@@ -54,9 +56,6 @@ fn merge_scheduler_control(run: &mut Run, saved: Option<Control>, at: crate::typ
             if let Some(validation) = &mut run.validation.0 {
                 validation.satisfied = crate::config::Field::Value(false);
             }
-        }
-        if running && control.cancellation_requested {
-            control.activity = Activity::Cancelling;
         }
     }
 }
@@ -201,7 +200,6 @@ impl Receipts {
         self.control(id, |status, control| {
             if status.is_open() {
                 let control = control.get_or_insert_with(Control::legacy);
-                control.cancellation_requested = true;
                 control.activity = Activity::Cancelling;
             }
             Ok(())

@@ -132,9 +132,10 @@ pub enum Operation {
 #[derive(Debug, Serialize, thiserror::Error)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Refusal {
-    #[error("{file}: {message}")]
+    #[error("{}: {message}", crate::platform::path_text(.file))]
     Invalid {
-        file: String,
+        #[serde(with = "crate::platform::path_serde")]
+        file: PathBuf,
         message: String,
         line: Option<usize>,
         column: Option<usize>,
@@ -153,7 +154,7 @@ pub enum Refusal {
 impl From<ConfigError> for Refusal {
     fn from(error: ConfigError) -> Self {
         Self::Invalid {
-            file: crate::platform::path_text(&error.path),
+            file: error.path,
             line: position(&error.message, "line "),
             column: position(&error.message, "column "),
             message: error.message,

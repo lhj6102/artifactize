@@ -395,6 +395,37 @@ fn the_search_narrows_by_project_and_branch_and_sorts_by_recency_or_name() {
 }
 
 #[test]
+fn concurrent_stars_for_the_same_project_are_all_kept() {
+    let state = crate::test_os::tempdir();
+    let branches: Vec<_> = (0..8)
+        .map(|index| branch("project", &format!("branch-{index}"), None).place)
+        .collect();
+    let names: Vec<crate::types::ArtifactName> = (0..branches.len())
+        .map(|index| format!("artifact-{index}").parse().unwrap())
+        .collect();
+    let project = branches[0].project();
+    let start = std::sync::Barrier::new(branches.len());
+    std::thread::scope(|threads| {
+        for (place, name) in branches.iter().zip(&names) {
+            let (state, project, start) = (state.path(), &project, &start);
+            threads.spawn(move || {
+                start.wait();
+                star(Some(state), place, true).unwrap();
+                star_artifact(Some(state), project, name, true).unwrap();
+            });
+        }
+    });
+    assert_eq!(
+        starred(Some(state.path())).unwrap(),
+        branches.into_iter().collect()
+    );
+    assert_eq!(
+        starred_artifacts(Some(state.path()), &project).unwrap(),
+        names.into_iter().collect()
+    );
+}
+
+#[test]
 fn starred_branches_come_first_in_the_search_order_and_stay_starred() {
     let branches = [
         branch("beta", "main", Some(1)),

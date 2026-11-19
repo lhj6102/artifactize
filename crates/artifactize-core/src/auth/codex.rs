@@ -20,7 +20,7 @@ use base64::{
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 mod auth_file;
 mod callback;
 mod interactive;
@@ -212,6 +212,47 @@ fn credentials(tokens: TokenResponse, saved_at: Timestamp) -> Result<Credentials
     })
 }
 
+#[derive(Default, Deserialize)]
+struct OAuthError {
+    error: Option<OAuthErrorField>,
+    code: Option<OAuthCode>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OAuthErrorField {
+    Text(String),
+    Object { code: Option<OAuthCode> },
+    Other(serde::de::IgnoredAny),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OAuthCode {
+    Text(String),
+    Other(serde::de::IgnoredAny),
+}
+
+impl OAuthCode {
+    fn text(&self) -> Option<&str> {
+        match self {
+            Self::Text(code) => Some(code),
+            Self::Other(_) => None,
+        }
+    }
+}
+
+impl OAuthError {
+    fn code(&self) -> Option<&str> {
+        let error = match &self.error {
+            Some(OAuthErrorField::Text(code)) => Some(code.as_str()),
+            Some(OAuthErrorField::Object { code }) => code.as_ref().and_then(OAuthCode::text),
+            _ => None,
+        };
+        error.or_else(|| self.code.as_ref().and_then(OAuthCode::text))
+    }
+}
+
 /// Refresh errors after which the refresh token can never work again.
 fn terminal(code: &str) -> bool {
     matches!(
@@ -243,12 +284,8 @@ async fn token_request(
         })?;
     let status = response.status();
     if !status.is_success() {
-        let body: Value = response.json().await.unwrap_or_default();
-        let code = body["error"]
-            .as_str()
-            .or_else(|| body["error"]["code"].as_str())
-            .or_else(|| body["code"].as_str())
-            .unwrap_or_default();
+        let body: OAuthError = response.json().await.unwrap_or_default();
+        let code = body.code().unwrap_or_default();
         // Rate limiting and server failures pass; a client error does not.
         let transient =
             status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error();

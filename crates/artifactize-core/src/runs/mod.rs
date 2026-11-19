@@ -57,19 +57,60 @@ pub enum Worker {
     Legacy,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(from = "ControlWire", into = "ControlWire")]
 pub struct Control {
     pub worker: Worker,
     /// The supervisor keeps worker files open until its executor has exited and been checked.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supervisor: Option<process::ChildIdentity>,
     pub activity: Activity,
-    #[serde(default)]
-    pub cancellation_requested: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_code: Option<FailureCode>,
 }
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ControlWire {
+    worker: Worker,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    supervisor: Option<process::ChildIdentity>,
+    activity: Activity,
+    #[serde(default)]
+    cancellation_requested: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    failure_code: Option<FailureCode>,
+}
+
+impl From<ControlWire> for Control {
+    fn from(wire: ControlWire) -> Self {
+        Self {
+            worker: wire.worker,
+            supervisor: wire.supervisor,
+            activity: if wire.cancellation_requested {
+                Activity::Cancelling
+            } else {
+                wire.activity
+            },
+            failure_code: wire.failure_code,
+        }
+    }
+}
+
+impl From<Control> for ControlWire {
+    fn from(control: Control) -> Self {
+        Self {
+            worker: control.worker,
+            supervisor: control.supervisor,
+            activity: control.activity,
+            cancellation_requested: control.is_cancelling(),
+            failure_code: control.failure_code,
+        }
+    }
+}
+
 impl Control {
+    pub fn is_cancelling(&self) -> bool {
+        self.activity == Activity::Cancelling
+    }
+
     pub(crate) fn starting() -> Result<Self, String> {
         Ok(Self {
             worker: Worker::Starting {
@@ -77,7 +118,6 @@ impl Control {
             },
             supervisor: None,
             activity: Activity::Preparing,
-            cancellation_requested: false,
             failure_code: None,
         })
     }
@@ -86,7 +126,6 @@ impl Control {
             worker: Worker::Legacy,
             supervisor: None,
             activity: Activity::Executing,
-            cancellation_requested: false,
             failure_code: None,
         }
     }
@@ -191,9 +230,7 @@ pub async fn cancel(context: &Context, id: &RunId) -> Result<CancelAcknowledgeme
     Ok(CancelAcknowledgement {
         run: id.clone(),
         state: observe::state_for(saved, control.as_ref(), &current.counts),
-        cancellation_requested: control
-            .as_ref()
-            .is_some_and(|control| control.cancellation_requested),
+        cancellation_requested: control.as_ref().is_some_and(Control::is_cancelling),
     })
 }
 

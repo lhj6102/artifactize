@@ -287,28 +287,29 @@ pub enum InstructionPart {
     Artifact(ArtifactName),
 }
 
-/// Presentation tokens only: never expand content or mutate the authored payload.
-/// Artifact tokens carry names already validated by configuration.
-pub fn parse_artifact_instruction(
-    source: &str,
-    scope: &Scope<'_>,
-    references: &BTreeMap<crate::config::ReferenceName, ArtifactName>,
-) -> Vec<InstructionPart> {
+/// A reference resolved while loading the declaration, with its span in the authored text.
+#[derive(Debug)]
+pub(crate) struct InstructionReference {
+    span: std::ops::Range<usize>,
+    artifact: ArtifactName,
+}
+
+/// Present resolved names without expanding content or mutating the authored payload.
+pub(crate) fn artifact_instruction(eval: &Eval) -> Vec<InstructionPart> {
+    let Some(payload) = eval.declaration.payload() else {
+        return Vec::new();
+    };
+    let source = &payload.instruction;
     let mut parts = Vec::new();
     let mut start = 0;
-    for reference in instruction::references(source) {
-        let artifact = match references.get(&reference.name) {
-            Some(id) => scope.artifacts.get(id),
-            None => scope.artifacts.get(reference.name.as_str()),
-        };
-        let Some(artifact) = artifact else {
-            continue;
-        };
-        if start < reference.start {
-            parts.push(InstructionPart::Text(source[start..reference.start].into()));
+    for reference in &eval.instruction_references {
+        if start < reference.span.start {
+            parts.push(InstructionPart::Text(
+                source[start..reference.span.start].into(),
+            ));
         }
-        parts.push(InstructionPart::Artifact(artifact.name.clone()));
-        start = reference.end;
+        parts.push(InstructionPart::Artifact(reference.artifact.clone()));
+        start = reference.span.end;
     }
     if start < source.len() {
         parts.push(InstructionPart::Text(source[start..].into()));
@@ -512,6 +513,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     }
     for (eval, found) in config.evals.iter_mut().zip(resolved) {
         eval.references = found.references;
+        eval.instruction_references = found.instruction_references;
         eval.deps = found.deps;
     }
     for artifact in config.artifacts.values() {
@@ -560,6 +562,7 @@ fn everything(config: &RepoConfig) -> artifactize_tools::scope::Scope {
 
 /// What an eval's instruction and runtime arguments reference.
 struct EvalReferences {
+    instruction_references: Vec<InstructionReference>,
     references: BTreeMap<crate::config::ReferenceName, ArtifactName>,
     /// The referenced Artifacts other than the eval's target.
     deps: Vec<ArtifactName>,
@@ -585,6 +588,7 @@ fn eval_references(
         )
     };
     let mut references = BTreeMap::new();
+    let mut instruction_references = Vec::new();
     let mut deps = BTreeSet::new();
     let instruction = eval
         .declaration
@@ -598,6 +602,10 @@ fn eval_references(
             reference_path(config, source, "/")
                 .map_err(|failure| error(&["payload", "instruction"], failure))?;
         }
+        instruction_references.push(InstructionReference {
+            span: reference.start..reference.end,
+            artifact: source.clone(),
+        });
         if references.insert(name.clone(), source.clone()).is_some() {
             continue;
         }
@@ -645,6 +653,7 @@ fn eval_references(
         }
     }
     Ok(EvalReferences {
+        instruction_references,
         references,
         deps: deps.into_iter().collect(),
         relations,

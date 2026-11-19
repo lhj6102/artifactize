@@ -91,14 +91,12 @@ pub async fn read_unreadable(state: &Path, repo: Option<&Path>) -> Result<Vec<Un
             let runs = statement
                 .query_map(params![repo], |row| row.get::<_, crate::types::RunId>(0))?
                 .collect::<Result<Vec<_>, _>>()?;
-            let mut unreadable = Vec::new();
             let mut seen = BTreeSet::new();
-            for error in in_runs(&transaction, &runs)?.into_values().flatten() {
-                if seen.insert((error.kind.clone(), error.id.clone())) {
-                    unreadable.push(error);
-                }
-            }
-            Ok(unreadable)
+            Ok(in_runs(&transaction, &runs)?
+                .into_values()
+                .flatten()
+                .filter(|error| seen.insert((error.kind.clone(), error.id.clone())))
+                .collect())
         })
         .await
         .map_err(|error| error.to_string());

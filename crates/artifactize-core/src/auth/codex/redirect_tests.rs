@@ -7,44 +7,48 @@ use rig_core::test_utils::MockHttpResponse;
 async fn shared_port_redirect_matches_authorize_and_token_exchange() {
     let directory = crate::test_os::tempdir();
     let storage = Storage::new(Some(directory.path()), None, Tokens::Codex).unwrap();
-    let server = Server::new(vec![MockHttpResponse::success(
-        json!({
-            "access_token":jwt("fixture-account", u64::MAX),
-            "refresh_token":"fixture-refresh",
-            "expires_in":3600,
-        })
-        .to_string(),
-    )])
-    .await;
-    let redirect = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
-    assert_eq!(redirect, "http://localhost:1455/auth/callback");
-    let (send, receive) = oneshot::channel();
-    sign_in(
-        &storage,
-        &server.base.parse().unwrap(),
-        None,
-        &redirect,
-        Some(receive),
-        false,
-        |url, callback| {
-            assert!(!callback);
-            let pairs: BTreeMap<_, _> = url.query_pairs().into_owned().collect();
-            assert_eq!(pairs["redirect_uri"], "http://localhost:1455/auth/callback");
-            send.send(format!(
-                "{redirect}?code=fixture-code&state={}",
-                pairs["state"]
-            ))
+    Server::run(
+        vec![MockHttpResponse::success(
+            json!({
+                "access_token":jwt("fixture-account", u64::MAX),
+                "refresh_token":"fixture-refresh",
+                "expires_in":3600,
+            })
+            .to_string(),
+        )],
+        async |server| {
+            let redirect = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
+            assert_eq!(redirect, "http://localhost:1455/auth/callback");
+            let (send, receive) = oneshot::channel();
+            sign_in(
+                &storage,
+                &server.base.parse().unwrap(),
+                None,
+                &redirect,
+                Some(receive),
+                false,
+                |url, callback| {
+                    assert!(!callback);
+                    let pairs: BTreeMap<_, _> = url.query_pairs().into_owned().collect();
+                    assert_eq!(pairs["redirect_uri"], "http://localhost:1455/auth/callback");
+                    send.send(format!(
+                        "{redirect}?code=fixture-code&state={}",
+                        pairs["state"]
+                    ))
+                    .unwrap();
+                },
+            )
+            .await
             .unwrap();
+            let requests = server.requests();
+            assert_eq!(requests.len(), 1);
+            let form: BTreeMap<_, _> =
+                url::form_urlencoded::parse(requests[0].body.as_str().unwrap().as_bytes())
+                    .into_owned()
+                    .collect();
+            assert_eq!(form["redirect_uri"], "http://localhost:1455/auth/callback");
+            assert_eq!(form["code"], "fixture-code");
         },
     )
-    .await
-    .unwrap();
-    let requests = server.requests();
-    assert_eq!(requests.len(), 1);
-    let form: BTreeMap<_, _> =
-        url::form_urlencoded::parse(requests[0].body.as_str().unwrap().as_bytes())
-            .into_owned()
-            .collect();
-    assert_eq!(form["redirect_uri"], "http://localhost:1455/auth/callback");
-    assert_eq!(form["code"], "fixture-code");
+    .await;
 }

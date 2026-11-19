@@ -143,6 +143,8 @@ pub struct Eval {
     pub references: BTreeMap<crate::config::ReferenceName, ArtifactName>,
     pub deps: Vec<ArtifactName>,
     pub declaration: EvalDeclaration,
+    #[serde(skip)]
+    pub(crate) instruction_references: Vec<crate::scope::InstructionReference>,
     /// The `profileVariants` entry selected for this execution, if any: an execution option,
     /// recorded with results but never part of the saved declaration.
     #[serde(skip)]

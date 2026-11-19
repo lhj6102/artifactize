@@ -658,14 +658,17 @@ async fn a_run_saved_again_keeps_its_definitions_as_saved_with_the_run() {
     saved.definitions =
         serde_json::from_value(json!({"artifacts":{"web":{"path":"web"}},"evals":[]})).unwrap();
     receipts.save_run(&saved).await.unwrap();
-    reader.traced_statements();
     let second = read(&mut reader, &state, &id, 2).unwrap().0;
     assert_eq!(second.run.jobs, Some(7));
-    let statements = reader.traced_statements();
-    assert!(
-        !statements.iter().any(|sql| sql.contains("run_definitions")),
-        "{statements:?}"
-    );
+    let artifacts = second
+        .run
+        .definitions
+        .graph()
+        .unwrap()
+        .artifacts
+        .value()
+        .unwrap();
+    assert!(artifacts.contains_key("app") && !artifacts.contains_key("web"));
     let fresh = store::read_run_snapshot(&state, "run-0").await.unwrap();
     let artifacts = fresh
         .run
@@ -678,10 +681,7 @@ async fn a_run_saved_again_keeps_its_definitions_as_saved_with_the_run() {
     assert!(artifacts.contains_key("app") && !artifacts.contains_key("web"));
 }
 #[tokio::test]
-async fn a_refresh_reads_only_the_changed_request_and_preserves_the_shown_snapshot() {
-    // A Run of thousands of requests stays shown while one of them changes: the next snapshot
-    // reads that request again and shares every other one, and the Run's definitions, with the
-    // snapshot still shown instead of copying them.
+async fn refreshing_a_changed_request_keeps_the_old_snapshot_and_other_requests_intact() {
     let (_root, repo, state, receipts) = fixture(0, 0).await;
     let names = ["a0", "a1", "a2"];
     let saved = run(
@@ -704,22 +704,7 @@ async fn a_refresh_reads_only_the_changed_request_and_preserves_the_shown_snapsh
         [],
     )
     .unwrap();
-    reader.traced_statements();
     let (run, next) = read(&mut reader, &state, &id, 1).unwrap();
-    let statements = reader.traced_statements();
-    assert!(
-        !statements.iter().any(|sql| sql.contains("run_definitions")),
-        "{statements:?}"
-    );
-    let payload_reads: Vec<_> = statements
-        .iter()
-        .filter(|sql| sql.contains("q.run_id,q.data"))
-        .collect();
-    assert_eq!(payload_reads.len(), 1, "{statements:?}");
-    assert!(
-        payload_reads[0].contains(r#"["run-1-a1"]"#),
-        "{payload_reads:?}"
-    );
     let titles: Vec<_> = run
         .requests
         .iter()

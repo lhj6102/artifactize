@@ -262,7 +262,7 @@ pub struct Fingerprint {
     #[serde(default, skip_serializing_if = "missing")]
     pub script: Field<Script>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub files: Field<Vec<String>>,
+    pub files: Field<Vec<config::LogicalPath>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub ignore: Field<Vec<String>>,
     #[serde(flatten)]
@@ -275,7 +275,7 @@ pub struct Script {
     pub command: String,
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub files: Field<Vec<String>>,
+    pub files: Field<Vec<config::LogicalPath>>,
     #[serde(default, skip_serializing_if = "missing", with = "duration_field")]
     pub timeout_ms: Field<std::time::Duration>,
     #[serde(flatten)]

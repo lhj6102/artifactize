@@ -166,14 +166,14 @@ impl From<&config::Fingerprint> for Fingerprint {
                 script: Field::Value(Script {
                     command: crate::platform::program_text(command),
                     args: args.iter().map(ToString::to_string).collect(),
-                    files: Field::Value(files.iter().map(ToString::to_string).collect()),
+                    files: Field::Value(files.clone()),
                     timeout_ms: (*timeout_ms).into(),
                     extra: Map::new(),
                 }),
                 ..Default::default()
             },
             config::Fingerprint::Artifactsum { files, ignore } => Self {
-                files: Field::Value(files.iter().map(ToString::to_string).collect()),
+                files: Field::Value(files.clone()),
                 ignore: Field::Value(ignore.clone().into()),
                 ..Default::default()
             },

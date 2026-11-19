@@ -113,7 +113,7 @@ async fn run_review(
         eval.declaration.fail_schema(),
     )?;
     let structured = Structured::new(&verdict.schema, Api::ClaudeAgent);
-    let Prompt { system, text } = prompt_text(config, eval, &registry)?;
+    let Prompt { system, text } = prompt_text(eval, &registry);
     let effort = reasoning.map(crate::config::Reasoning::as_str);
     let mut parameters = Client::parameters(Api::ClaudeAgent, effort, recorder.id())?;
     Client::output_format(Api::ClaudeAgent, &mut parameters, structured.schema.clone());

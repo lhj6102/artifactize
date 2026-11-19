@@ -111,92 +111,108 @@ mod tests {
 
     #[tokio::test]
     async fn api_key_models_use_provider_headers_and_follow_anthropic_pages() {
-        let openai = Server::new(vec![MockHttpResponse::success(
-            json!({"data":[
-                {"id":"z-model"}, {"id":"a-model", "name":"A model"}
-            ]})
-            .to_string(),
-        )])
-        .await;
-        let models = list_at(Api::OpenaiResponses, "openai-key", &openai.base)
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::to_value(models).unwrap(),
-            json!([
-                {"slug":"z-model","display_name":"z-model"},
-                {"slug":"a-model","display_name":"A model"}
-            ])
-        );
-        let requests = openai.requests();
-        assert_eq!(requests[0].line, "GET /v1/models HTTP/1.1");
-        assert_eq!(requests[0].headers["authorization"], "Bearer openai-key");
-        assert!(!requests[0].headers.contains_key("x-api-key"));
-        assert!(requests[0].body.is_null());
-
-        let anthropic = Server::new(vec![
-            MockHttpResponse::success(
-                json!({
-                    "data":[{"id":"first", "display_name":"First"}],
-                    "has_more":true,
-                    "last_id":"first",
-                })
+        Server::run(
+            vec![MockHttpResponse::success(
+                json!({"data":[
+                    {"id":"z-model"}, {"id":"a-model", "name":"A model"}
+                ]})
                 .to_string(),
-            ),
-            MockHttpResponse::success(
-                json!({"data":[{"id":"second", "display_name":"Second"}],"has_more":false})
-                    .to_string(),
-            ),
-        ])
+            )],
+            async |openai| {
+                let models = list_at(Api::OpenaiResponses, "openai-key", &openai.base)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(models).unwrap(),
+                    json!([
+                        {"slug":"z-model","display_name":"z-model"},
+                        {"slug":"a-model","display_name":"A model"}
+                    ])
+                );
+                let requests = openai.requests();
+                assert_eq!(requests[0].line, "GET /v1/models HTTP/1.1");
+                assert_eq!(requests[0].headers["authorization"], "Bearer openai-key");
+                assert!(!requests[0].headers.contains_key("x-api-key"));
+                assert!(requests[0].body.is_null());
+            },
+        )
         .await;
-        let models = list_at(Api::Anthropic, "anthropic-key", &anthropic.base)
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::to_value(models).unwrap(),
-            json!([
-                {"slug":"first","display_name":"First"},
-                {"slug":"second","display_name":"Second"}
-            ])
-        );
-        let requests = anthropic.requests();
-        assert_eq!(requests[0].line, "GET /v1/models HTTP/1.1");
-        assert_eq!(requests[1].line, "GET /v1/models?after_id=first HTTP/1.1");
-        assert_eq!(requests[0].headers["x-api-key"], "anthropic-key");
-        assert!(requests[0].headers.contains_key("anthropic-version"));
-        assert!(!requests[0].headers.contains_key("authorization"));
+
+        Server::run(
+            vec![
+                MockHttpResponse::success(
+                    json!({
+                        "data":[{"id":"first", "display_name":"First"}],
+                        "has_more":true,
+                        "last_id":"first",
+                    })
+                    .to_string(),
+                ),
+                MockHttpResponse::success(
+                    json!({"data":[{"id":"second", "display_name":"Second"}],"has_more":false})
+                        .to_string(),
+                ),
+            ],
+            async |anthropic| {
+                let models = list_at(Api::Anthropic, "anthropic-key", &anthropic.base)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(models).unwrap(),
+                    json!([
+                        {"slug":"first","display_name":"First"},
+                        {"slug":"second","display_name":"Second"}
+                    ])
+                );
+                let requests = anthropic.requests();
+                assert_eq!(requests[0].line, "GET /v1/models HTTP/1.1");
+                assert_eq!(requests[1].line, "GET /v1/models?after_id=first HTTP/1.1");
+                assert_eq!(requests[0].headers["x-api-key"], "anthropic-key");
+                assert!(requests[0].headers.contains_key("anthropic-version"));
+                assert!(!requests[0].headers.contains_key("authorization"));
+            },
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn model_listing_errors_do_not_expose_api_keys() {
         for backend in [Api::OpenaiResponses, Api::Anthropic] {
-            let server = Server::new(vec![MockHttpResponse::error(
+            Server::run(
+                vec![MockHttpResponse::error(
                 rig_core::http_client::StatusCode::UNAUTHORIZED,
                 json!({"error":{"message":"Invalid secret-key", "type":"authentication_error"}})
                     .to_string(),
-            )])
+            )],
+                async |server| {
+                    let error = list_at(backend, "secret-key", &server.base)
+                        .await
+                        .err()
+                        .unwrap();
+                    // The provider's text held the key: withheld whole, as every server text is.
+                    assert_eq!(
+                        error,
+                        format!("Model listing failed: {}", crate::secret::WITHHELD)
+                    );
+                },
+            )
             .await;
-            let error = list_at(backend, "secret-key", &server.base)
-                .await
-                .err()
-                .unwrap();
-            // The provider's text held the key: withheld whole, as every server text is.
-            assert_eq!(
-                error,
-                format!("Model listing failed: {}", crate::secret::WITHHELD)
-            );
         }
         // Text without the key still explains the failure.
-        let server = Server::new(vec![MockHttpResponse::error(
-            rig_core::http_client::StatusCode::UNAUTHORIZED,
-            json!({"error":{"message":"Invalid API key\n", "type":"authentication_error"}})
-                .to_string(),
-        )])
+        Server::run(
+            vec![MockHttpResponse::error(
+                rig_core::http_client::StatusCode::UNAUTHORIZED,
+                json!({"error":{"message":"Invalid API key\n", "type":"authentication_error"}})
+                    .to_string(),
+            )],
+            async |server| {
+                let error = list_at(Api::OpenaiResponses, "secret-key-value", &server.base)
+                    .await
+                    .err()
+                    .unwrap();
+                assert_eq!(error, "Invalid API key");
+            },
+        )
         .await;
-        let error = list_at(Api::OpenaiResponses, "secret-key-value", &server.base)
-            .await
-            .err()
-            .unwrap();
-        assert_eq!(error, "Invalid API key");
     }
 }
