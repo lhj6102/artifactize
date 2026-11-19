@@ -324,9 +324,14 @@ impl Cache {
     ) -> Result<Option<(RunView, Vec<RequestView>)>, Error> {
         let saved = self.selected.take().filter(|saved| &saved.run.id == id);
         // The state's text only when its revision moved, the definitions only on opening.
-        type RunRow = (String, i64, Option<String>, Option<String>);
+        type RunRow = (std::path::PathBuf, i64, Option<String>, Option<String>);
         let decode = |row: &rusqlite::Row<'_>| -> rusqlite::Result<RunRow> {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((
+                super::path_column(row, 0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+            ))
         };
         let (repo, revision, data, definitions) = match &saved {
             Some(saved) => db.query_row(
@@ -344,8 +349,7 @@ impl Cache {
         }
         .optional()?
         .ok_or_else(|| Error::Invalid("Run not found.".into()))?;
-        outside_workspace(Path::new(&repo), state)
-            .map_err(|error| Error::Invalid(error.to_string()))?;
+        outside_workspace(&repo, state).map_err(|error| Error::Invalid(error.to_string()))?;
         let (mut selected, state_changed) = match (saved, data) {
             (Some(saved), None) => (saved, false),
             // The Run's state changed; its definitions did not.

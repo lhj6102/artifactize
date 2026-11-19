@@ -326,10 +326,9 @@ pub(crate) async fn read_request_repo_by_id(
                 .query_row(
                     "SELECT r.repo FROM requests q JOIN runs r ON r.id=q.run_id WHERE q.id=?",
                     [&id],
-                    |row| row.get::<_, String>(0),
+                    |row| super::path_column(row, 0),
                 )
-                .optional()?
-                .map(std::path::PathBuf::from);
+                .optional()?;
             transaction.commit()?;
             if let Some(repo) = &repo {
                 crate::workspace::outside_workspaces(std::iter::once(repo.as_path()), &state)
@@ -438,7 +437,8 @@ async fn read_with_repo(
                         }
                     }
                 };
-                let repo = std::path::PathBuf::from(repo);
+                let repo = artifactize_tools::files::path_from_text(&repo)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
                 repos.push(repo.clone());
                 indexes.insert(id, (index, repo));
             }

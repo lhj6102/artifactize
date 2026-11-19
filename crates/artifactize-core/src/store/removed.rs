@@ -53,7 +53,7 @@ async fn removed_repositories(state: &Path) -> Result<Vec<PathBuf>, String> {
             }
             let repos = transaction
                 .prepare("SELECT DISTINCT r.repo FROM requests q JOIN runs r ON r.id=q.run_id WHERE q.status IN ('WAITING_HUMAN','DEFERRED')")?
-                .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))?
+                .query_map([], |row| super::path_column(row, 0))?
                 .collect::<Result<Vec<_>, _>>()?;
             transaction.commit()?;
             Ok(repos)

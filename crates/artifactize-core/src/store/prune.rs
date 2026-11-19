@@ -134,7 +134,8 @@ pub fn prune(
     };
     let mut eligible = Vec::new();
     for (id, repo, data, status) in runs {
-        let repo = workspace::canonical_target(Path::new(&repo)).map_err(|e| e.to_string())?;
+        let repo = artifactize_tools::files::path_from_text(&repo).map_err(|e| e.to_string())?;
+        let repo = workspace::canonical_target(&repo).map_err(|e| e.to_string())?;
         workspace::outside_workspace(&repo, &state).map_err(|e| e.to_string())?;
         repositories.push(repo);
         let Some(run) = super::unreadable::evidence::<super::Run>("run", &data) else {

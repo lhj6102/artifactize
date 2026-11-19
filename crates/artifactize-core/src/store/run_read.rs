@@ -60,13 +60,13 @@ async fn snapshot<T: Send + 'static>(
 
 /// The Run with its definitions, but none of its requests.
 fn saved_run(db: &rusqlite::Connection, state: &Path, id: &RunId) -> Result<Run, Error> {
-    let saved: Option<(String, String)> = db
+    let saved: Option<(std::path::PathBuf, String)> = db
         .query_row("SELECT repo,data FROM runs WHERE id=?", [id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
+            Ok((super::path_column(row, 0)?, row.get(1)?))
         })
         .optional()?;
     let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
-    outside_workspace(Path::new(&repo), state).map_err(|e| Error::Invalid(e.to_string()))?;
+    outside_workspace(&repo, state).map_err(|e| Error::Invalid(e.to_string()))?;
     let mut run: Run =
         decode("run", id.as_str(), &data).map_err(|error| Error::Invalid(error.to_string()))?;
     run.definitions = super::run_record::definitions(db, id)?
