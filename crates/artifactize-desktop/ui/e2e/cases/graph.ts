@@ -100,13 +100,16 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "graph-find-star",
-    title: "Find lists the Artifacts matching what is typed and opens the chosen one's Detail in the middle of the graph; the star beside a Detail's title stars an Artifact, which Find lists with nothing typed",
+    // Its app started again takes the display's focus: no other app runs beside it.
+    alone: true,
+    title: "Find lists the Artifacts matching what is typed and opens the chosen one's Detail in the middle of the graph; the star beside a Detail's title stars an Artifact, which Find lists with nothing typed, still when the app starts again",
     journeys: ["J-GRAPH-FIND", "J-DETAIL-STAR"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], data: null };
     },
-    run: async (app) => {
+    run: async (first, _input, again) => {
+      let app = first;
       await app.graph.node("a:docs");
       const opened = await app.graph.openFind();
       assert.equal(opened.value, "");
@@ -119,6 +122,8 @@ export const scenarios: Scenario[] = [
       await app.detail.star();
       await app.graph.clickBackground();
       await app.detail.closed();
+      app = await again();
+      await app.graph.node("a:docs");
       const favorites = await app.graph.openFind((shown) => shown.entries.length > 0, "the find field opened listing the favorites");
       assert.deepEqual(favorites.entries.map((entry) => entry.name), ["docs"], "the starred Artifact listed with nothing typed");
       await app.graph.chooseFound("docs", "Artifact docs");
@@ -235,7 +240,9 @@ export const scenarios: Scenario[] = [
       await app.graph.titled("Current · repo  master");
       await app.graph.node("a:slow", (node) => node.label === "slow: checking", "slow is being checked");
       writeText(gate, "go");
-      await app.graph.node("a:slow", (node) => /^slow: (would run|reused)/.test(node.label), "slow coloured in place once its fingerprint is in");
+      // Nothing changed since the Run: every result would be reused.
+      await app.graph.node("a:slow", (node) => /^slow: reused/.test(node.label), "slow coloured in place as reused once its fingerprint is in");
+      await app.graph.node("a:other", (node) => /^other: reused/.test(node.label), "other's sign-off would be reused");
       assert.match(await app.graph.scan(), /^Scanned at /);
     },
   }),

@@ -132,8 +132,9 @@ export class Pane {
       const pointer = this.browser.action("pointer", { id: "divider" });
       for (let step = 0; step < 4; step += 1) pointer.move({ origin: "pointer", x: Math.round(dx / 4), y: 0 });
       await pointer.perform(true);
-      const shown = await until(this.browser, () => this.shown(), (now) => Math.abs(now.width - before - dx) <= 8, `the pane dragged ${dx}px wider`);
       await this.browser.action("pointer", { id: "divider" }).up().perform();
+      // Released: the width the pane keeps.
+      const shown = await until(this.browser, () => this.shown(), (now) => Math.abs(now.width - before - dx) <= 8, `the pane dragged ${dx}px wider`);
       return shown.width;
     } finally { await this.browser.releaseActions(); }
   }

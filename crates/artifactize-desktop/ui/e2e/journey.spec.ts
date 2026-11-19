@@ -66,8 +66,12 @@ describe(item.title, () => {
       try { await later.session?.deleteSession(); }
       catch (error) { failure ??= error; }
       finally {
+        // Its record goes once the app is known to have ended; else the runner's teardown ends it.
+        const ended = later.child.exitCode !== null ? Promise.resolve() : new Promise((done) => later!.child.once("exit", done));
         stopTree(later.child);
-        removeTree(nativePath(input.root, AGAIN));
+        await Promise.race([ended, new Promise((done) => setTimeout(done, 15000))]);
+        if (later.child.exitCode !== null || later.child.signalCode !== null) removeTree(nativePath(input.root, AGAIN));
+        else failure ??= new Error("the app started again did not end");
       }
     }
     if (failure) throw failure;

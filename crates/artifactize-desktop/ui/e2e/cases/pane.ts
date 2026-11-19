@@ -56,6 +56,8 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "branch-star",
+    // Its app started again takes the display's focus: no other app runs beside it.
+    alone: true,
     title: "a branch's star lists it before the others, still when the app starts again, and taking the star away lists it in the search's order again",
     journeys: ["J-BRANCH-STAR"],
     prepare: async (own) => {

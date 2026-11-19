@@ -120,6 +120,9 @@ async function unit(): Promise<void> {
   process.exitCode = await child(nodeProgram, ["--test", ...tests], process.env);
 }
 
+// The runner's entry needs import.meta.main (Node 24.2 and later): an older Node fails here
+// instead of running nothing.
+if (import.meta.main === undefined) throw new Error(`the desktop test runner needs Node 24.2 or later, not ${process.version}`);
 if (import.meta.main) {
   const mode = process.argv[2] ?? "suite";
   // The suite waits for its running batch; a batch, like any other mode, ends on an interrupt.

@@ -187,8 +187,12 @@ export function stopTree(child: ChildProcess): void {
 
 /** End the process tree `startTree` started whose root is `pid`, from any process. */
 export function stopTreeAt(pid: number): void {
-  if (WINDOWS) spawnSync("taskkill", ["/T", "/F", "/PID", String(pid)], { windowsHide: true });
-  else {
+  if (WINDOWS) {
+    // taskkill from the system's own folder, whatever PATH holds; 128: no such process.
+    const taskkill = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "taskkill.exe");
+    const ended = spawnSync(taskkill, ["/T", "/F", "/PID", String(pid)], { windowsHide: true, encoding: "utf8" });
+    if (ended.error || (ended.status !== 0 && ended.status !== 128)) throw new Error(`taskkill could not end process ${pid}: ${ended.error ?? ended.stderr}`);
+  } else {
     try { process.kill(-pid, "SIGKILL"); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
   }

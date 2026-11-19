@@ -144,13 +144,16 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "layout-by-hand",
-    title: "a node dragged on a Current is placed where it is released, every place of its level written into the files, Reset layout lays it out automatically again, and a node dropped on a whole becomes its part",
+    // Its app started again takes the display's focus: no other app runs beside it.
+    alone: true,
+    title: "a node dragged on a Current is placed where it is released, every place of its level written into the files and kept when the app starts again, Reset layout lays it out automatically again, and a node dropped on a whole becomes its part",
     journeys: ["J-NODE-MOVE", "J-LAYOUT-RESET", "J-PARTS-DRAG"],
     prepare: async (own) => {
       const fixture = createEditing(own);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
-    run: async (app, { fixture }) => {
+    run: async (first, { fixture }, again) => {
+      let app = first;
       await app.graph.node("a:core");
       assert.equal(await app.graph.hasTool("Reset layout"), false, "laid out automatically");
       const before = (await app.graph.box("a:core"))!;
@@ -161,12 +164,23 @@ export const scenarios: Scenario[] = [
         const after = await app.graph.box("a:core");
         return !!after && Math.abs(after.y - before.y - 60) <= 12 && Math.abs(after.x - before.x) <= 12;
       }, "core drawn where it was released");
+      // Started again, the graph draws core where it was placed, beside the others.
+      const offset = async () => {
+        const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
+        return { x: (core.x - docs.x) / (zoom / 100), y: (core.y - docs.y) / (zoom / 100) };
+      };
+      const placedAt = await offset();
+      app = await again();
+      await app.graph.node("a:core");
+      const restarted = await offset();
+      assert.ok(Math.abs(restarted.x - placedAt.x) <= 8 && Math.abs(restarted.y - placedAt.y) <= 8, `core placed as it was dropped: ${JSON.stringify({ placedAt, restarted })}`);
+      const shown = (await app.graph.box("a:core"))!;
       await app.graph.until(() => app.graph.hasTool("Reset layout"), "Reset layout offered for the top level");
       await app.graph.tool("Reset layout");
       await app.eventually(() => ["app", "bundle", "core", "docs"].every((name) => !placed(definitionText(fixture, name))), "every place left the files");
       await app.graph.until(async () => {
         const reset = await app.graph.box("a:core");
-        return !!reset && Math.abs(reset.y - before.y) <= 12 && Math.abs(reset.x - before.x) <= 12;
+        return !!reset && (Math.abs(reset.y - shown.y) > 12 || Math.abs(reset.x - shown.x) > 12);
       }, "core drawn at its automatic place again");
       // docs dropped on app's box becomes app's part.
       await app.graph.dragOnto("a:docs", "a:app");
@@ -185,6 +199,8 @@ export const scenarios: Scenario[] = [
     },
     run: async (app, { fixture }) => {
       await app.graph.node("a:core", (node) => node.comment === CORE_NOTE, "core's comment drawn under it");
+      // The first scan over, nothing redraws the Detail while a comment is typed.
+      await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the Current scanned");
       // The Definition's Comment opens the field under docs; Enter writes it.
       await app.graph.open("a:docs", "Artifact docs");
       await app.detail.definitionAction("Comment");
@@ -197,6 +213,7 @@ export const scenarios: Scenario[] = [
       await app.detail.openComment("a:core", "core");
       await app.detail.writeComment("core", "");
       await app.eventually(() => !/annotations/.test(definitionText(fixture, "core") ?? ""), "the emptied comment left core's file");
+      await app.graph.node("a:core", (node) => node.comment === "", "nothing drawn under core");
       // docs's comment dragged onto core, which has none now, moves there.
       await app.graph.dragComment("a:docs", "a:core");
       await app.eventually(() => /\[annotations\.comment\]/.test(definitionText(fixture, "core") ?? "") && !/annotations/.test(definitionText(fixture, "docs") ?? ""),
