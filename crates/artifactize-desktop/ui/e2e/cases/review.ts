@@ -369,7 +369,8 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => await browser.$('aside[aria-label="Detail"] [aria-label="Human review"] [aria-label="Instruction"]').isDisplayed() && oneColumn(await arranged()),
         "the Run Detail has the instruction above Tools, Tool log and Result in one readable column");
       await checkHeadingAndDebug('aside[aria-label="Detail"]', 'aside[aria-label="Detail"] header h2', false);
-      await review.$('[aria-label="Instruction"]').click();
+      // The Main area's review left the page with the Run's graph; focus the Detail's own.
+      await browser.$('aside[aria-label="Detail"] [aria-label="Human review"] [aria-label="Instruction"]').click();
       await press(browser, ["u"], async () => signoff(fixture).claim === null && await claimable(browser), "the same shortcut releases the idle review");
       assert.equal(await releaseCalls(), beforeBusyShortcut + 1, "the release probe detects the successful shortcut");
     },
