@@ -50,21 +50,24 @@ describe(item.title, () => {
       app = await ready(later.session);
       return app;
     };
+    let failure: unknown;
     try {
       await ready(browser);
       await item.run(app, input, again);
-      // The runner accepts the batch only when every scenario says it ran to its end.
-      writeText(nativePath(input.root, COMPLETED), "");
     } catch (error) {
       // A failure carries what the window showed when it failed.
       const shown = await app.text().catch((cause: unknown) => `(the window could not be read: ${String(cause)})`);
       if (error instanceof Error) error.message += `\n--- the window showed ---\n${shown.slice(0, 4000)}`;
-      throw error;
-    } finally {
-      if (later) {
-        await later.session?.deleteSession().catch(() => undefined);
-        stopTree(later.child);
-      }
+      failure = error;
     }
+    if (later) {
+      try { await later.session?.deleteSession(); }
+      catch (error) { failure ??= error; }
+      finally { stopTree(later.child); }
+    }
+    if (failure) throw failure;
+    // The runner accepts the batch only when every scenario says it ran to its end, its own
+    // teardown included.
+    writeText(nativePath(input.root, COMPLETED), "");
   });
 });

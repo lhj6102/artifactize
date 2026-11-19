@@ -2,7 +2,7 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
-import { REVIEW_MODEL, createChecking, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
+import { REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
 import { writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -178,9 +178,11 @@ export const scenarios: Scenario[] = [
       assert.ok(await app.graph.zoom() > whole, "zoomed in");
       await app.graph.until(() => app.graph.navigatorShown(), "part of the graph lies outside the view: the Navigator shows");
       const zoom = await app.graph.zoom();
-      // The clicked place comes to the middle of the view: the frame of the part in view is
-      // drawn around it.
+      // The clicked place comes to the middle of the view: the graph's camera moves, and the
+      // frame of the part in view is drawn around that place.
+      const named = (await app.graph.nodes()).sort();
       await app.graph.navigate(0.3, 0.6);
+      assert.notDeepEqual((await app.graph.nodes()).sort(), named, "other Artifacts in view");
       assert.equal(await app.graph.zoom(), zoom, "the Navigator keeps the zoom");
       await app.graph.cameraTool("Fit");
       assert.equal(await app.graph.zoom(), whole, "Fit shows the whole graph again");
@@ -190,7 +192,7 @@ export const scenarios: Scenario[] = [
   scenario({
     id: "current-scan",
     title: "started with graph --repo it shows the branch's Current: its graph drawn at once, Artifacts being checked until their fingerprints are in, then coloured in place by what verify would do",
-    journeys: ["J-LAUNCH", "J-MAIN-CURRENT"],
+    journeys: ["J-LAUNCH"],
     prepare: async (own) => {
       const fixture = createChecking(own);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: { gate: fixture.gate } };
@@ -204,6 +206,26 @@ export const scenarios: Scenario[] = [
       writeText(gate, "go");
       await app.graph.node("a:slow", (node) => node.label === "slow: would run (1 eval)", "slow coloured in place once its fingerprint is in");
       await app.graph.node("a:quick", (node) => /^quick: (would run|waiting)/.test(node.label), "quick too");
+      assert.match(await app.graph.scan(), /^Scanned at /);
+    },
+  }),
+
+  scenario({
+    id: "current-chosen",
+    title: "the Current chosen in a branch's timeline scans the worktree as it is now: its Artifacts checked, then coloured in place by what verify would do",
+    journeys: ["J-MAIN-CURRENT"],
+    prepare: async (own) => {
+      const fixture = await createCheckedOnce(own);
+      return { fixture, data: { gate: fixture.gate } };
+    },
+    run: async (app, { data: { gate } }) => {
+      // Chosen, the branch shows its latest Run; its timeline offers the Current.
+      await app.pane.selectBranch("repo  master");
+      await app.pane.choose("repo  master", "current");
+      await app.graph.titled("Current · repo  master");
+      await app.graph.node("a:slow", (node) => node.label === "slow: checking", "slow is being checked");
+      writeText(gate, "go");
+      await app.graph.node("a:slow", (node) => /^slow: (would run|reused)/.test(node.label), "slow coloured in place once its fingerprint is in");
       assert.match(await app.graph.scan(), /^Scanned at /);
     },
   }),

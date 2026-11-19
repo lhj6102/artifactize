@@ -185,7 +185,7 @@ export const scenarios: Scenario[] = [
       assert.equal(dialog.link, `${site}/releases/latest`, "how to update: the release page");
       await app.followReleaseLink();
       await app.eventually(async () => browserHandoffs(fixture).includes(dialog.link), "the release page opened in the browser");
-      assert.ok(readText(visits).includes("/releases/latest\n"), "the browser fetched the page");
+      await app.eventually(async () => readText(visits).split("\n").includes("/releases/latest"), "the browser fetched the release page");
       await app.dialogButton("Close");
       await app.dialogClosed();
     },

@@ -79,32 +79,26 @@ export function removeTree(path: NativePath): void {
   rmSync(path, { recursive: true, force: true, maxRetries: 15, retryDelay: 200 });
 }
 
-/** Hold the machine-wide lock `name` while `body` runs: another runner of this machine's user,
- * in another suite run, waits for it. A lock whose holder has gone is taken over. */
+/** Hold the machine-wide lock `name` while `body` runs: another runner on this machine, in
+ * another suite run, waits for it. The lock is a loopback port of its own, listened on, which
+ * the system frees when its holder goes, however it ends. */
 export async function withMachineLock<T>(name: string, body: () => Promise<T>): Promise<T> {
-  const lock = join(tmpdir(), `artifactize-desktop-e2e-${name}.lock`) as NativePath;
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) % 2000;
+  const port = 47100 + hash;
   const deadline = Date.now() + 60 * 60 * 1000;
+  const server = createServer();
   for (;;) {
-    try {
-      mkdirSync(lock);
-      writeFileSync(join(lock, "pid"), String(process.pid));
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-    const holder = Number(readTextIfExists(join(lock, "pid") as NativePath) ?? "");
-    let alive = true;
-    if (holder > 0) {
-      try { process.kill(holder, 0); }
-      catch (error) { alive = (error as NodeJS.ErrnoException).code === "EPERM"; }
-    }
-    // A holder that has not written its pid yet is still taking the lock.
-    if (holder > 0 && !alive) removeTree(lock);
-    else if (Date.now() > deadline) throw new Error(`the machine lock ${lock} was held for an hour`);
-    else await new Promise((done) => setTimeout(done, 500));
+    const taken = await new Promise<boolean>((done, fail) => {
+      server.once("error", (error: NodeJS.ErrnoException) => (error.code === "EADDRINUSE" ? done(false) : fail(error)));
+      server.listen({ port, host: "127.0.0.1", exclusive: true }, () => done(true));
+    });
+    if (taken) break;
+    if (Date.now() > deadline) throw new Error(`the machine lock ${name} (127.0.0.1:${port}) was held for an hour`);
+    await new Promise((done) => setTimeout(done, 500));
   }
   try { return await body(); }
-  finally { removeTree(lock); }
+  finally { await new Promise((done) => server.close(done)); }
 }
 
 /** Entries of `directory` that are regular files, sorted by name. */

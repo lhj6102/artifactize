@@ -2,7 +2,7 @@
 // Git, each in its scenario's own folder with an environment that never reaches the person's.
 import { readCandidate } from "../build.ts";
 import { isolatedEnvironment, portablePath, type Environment } from "../platform.ts";
-import { makeDirectory, nativePath, readTextIfExists, runProgram, runProgramAsync, runProgramOk, serveLoopbackHttp, updateDatabase, writeText, type NativePath } from "../portable.ts";
+import { makeDirectory, nativePath, readTextIfExists, removeTree, runProgram, runProgramAsync, runProgramOk, serveLoopbackHttp, updateDatabase, writeText, type NativePath } from "../portable.ts";
 import { check, commandFields, declareArtifact, runtimeProfile, type Operation } from "./declarations.ts";
 import type { Owned } from "./owned.ts";
 
@@ -297,6 +297,18 @@ export function createChecking(own: Owned): Checking {
     [["other"], "other", `\n[evals.signoff]\ntitle = "A person approves other"\nprofile = { kind = "human" }\npayload.instruction = "Approve other."\n`],
   ], false);
   return { ...fixture, gate, runs };
+}
+
+/** `createChecking` with an ended Run of it, its fingerprint let through once and its
+ * sign-off given; the gate is shut again, for the scan of a Current. */
+export async function createCheckedOnce(own: Owned): Promise<Checking> {
+  const fixture = createChecking(own);
+  writeText(fixture.gate, "go");
+  const run = await verifyWaiting(fixture);
+  signOff(fixture, request(fixture, "other/signoff").id, "{}");
+  await artifactizeAsync(fixture, ["run", "show", run, "--wait", "--json"]);
+  removeTree(fixture.gate);
+  return fixture;
 }
 
 /** Artifact `app` with one runtime eval per name, each saying `checked {name}`. Verified GREEN. */

@@ -261,7 +261,8 @@ export class Graph {
   /** Click the Navigator's map at `fx`, `fy` (fractions of its width and height), and wait
    * until the frame of the part in view is drawn around that place. Returns the clicked point
    * and the frame's middle. */
-  async navigate(fx: number, fy: number): Promise<{ clicked: { x: number; y: number }; framed: { x: number; y: number } }> {
+  async navigate(fx: number, fy: number): Promise<{ clicked: { x: number; y: number }; framed: { x: number; y: number }; camera: string }> {
+    const before = await this.camera();
     const point = await this.browser.execute((graph, x, y) => {
       const box = document.querySelector(`${graph} [data-navigator] .map`)!.getBoundingClientRect();
       return { x: Math.round(box.left + box.width * x), y: Math.round(box.top + box.height * y) };
@@ -273,7 +274,9 @@ export class Graph {
       return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
     }, GRAPH);
     const framed = await until(this.browser, frame, (middle) => Math.hypot(middle.x - point.x, middle.y - point.y) <= 3, "the Navigator framed the clicked place");
-    return { clicked: point, framed };
+    // The graph itself moved there.
+    const camera = await until(this.browser, () => this.camera(), (shown) => shown !== before, "the graph's camera moved");
+    return { clicked: point, framed, camera };
   }
 
   /** Whether the large graph's canvas paints anything in the middle of the graph: some pixels

@@ -160,8 +160,10 @@ export function packageCommand(args: string[]): { program: string; args: string[
   if (WINDOWS) {
     for (const folder of programPath(process.env)) {
       if (existsSync(join(folder, "pnpm.exe"))) return { program: join(folder, "pnpm.exe"), args };
-      const script = join(folder, "node_modules", "pnpm", "bin", "pnpm.cjs");
-      if (existsSync(script)) return { program: process.execPath, args: [script, ...args] };
+      // pnpm installed by npm, or Corepack's pnpm beside node.
+      for (const script of [join(folder, "node_modules", "pnpm", "bin", "pnpm.cjs"), join(folder, "node_modules", "corepack", "dist", "pnpm.js")]) {
+        if (existsSync(script)) return { program: process.execPath, args: [script, ...args] };
+      }
     }
     throw new Error("pnpm is missing: install pnpm, or start through pnpm");
   }
