@@ -26,7 +26,7 @@ text = "Canvas note shown in the desktop app."
 | 필드 / 식별자 | 규칙 |
 |---|---|
 | 식별자 | 영문자나 숫자로 시작하는 ASCII 영문·숫자·`_`·`-` 조합. Artifact 이름(파일 이름)은 `.artifactize/` 전체에서 대소문자 구분 없이 유일해야 하며 Windows 장치 이름(`con`, `nul`, `com1` 등)을 쓸 수 없습니다. eval ID는 해당 Artifact 안에서, 도구·세션·대체 실행 프로필 ID는 각 선언 테이블 안에서 유일해야 합니다. |
-| `path` | **필수.** `/`를 쓰는 프로젝트 루트 기준 로컬 상대 경로(`"dir/"` 또는 `"./"`는 폴더—끝의 `/` 필수—이고 `"file.ext"`는 단일 일반 파일), 또는 영문 두 글자 이상으로 이루어진 스킴을 쓰는 Live URI(예: `"https://example.com"`; HTTP(S)만 허용하는 내장 `open` 도구와 달리 Live 대상은 영문자로만 이루어진 다른 URI 스킴도 허용). |
+| `path` | **필수.** `/`를 쓰는 프로젝트 루트 기준 로컬 상대 경로를 적거나(`"dir/"` 또는 `"./"`는 폴더이며 끝의 `/`가 필수이고, `"file.ext"`는 단일 일반 파일), 영문 두 글자 이상으로 이루어진 스킴을 쓰는 Live URI(예: `"https://example.com"`)를 적습니다. HTTP(S)만 허용하는 내장 `open` 도구와 달리 Live 대상은 영문자로만 이루어진 다른 URI 스킴도 허용합니다. |
 | `select` | 폴더 `path` 안에서 고른 상대 경로 배열로 **Aspect**를 정의합니다. 파일이나 Live Artifact에는 쓸 수 없습니다. |
 | `parts` | 이 상위 Artifact를 이루는 하위 Artifact 이름 배열. 자기 자신이나 순환 구성을 포함할 수 없습니다. |
 | `basis` | 불리언(`true`는 이 Artifact 자체의 리뷰 의무만 면제하며 `evals`가 있으면 쓸 수 없음). |
@@ -67,7 +67,7 @@ Agent와 Human 결과에는 `"verdict": "GREEN" | "RED"`와 함께 사용자가 
 ## 정의 마이그레이션과 이름 변경 {#upgrading-an-in-tree-project}
 
 - **`artifactize config migrate [--repo PATH]`**: 기존 트리 내부의 `index.artf`, 개별 `.artf`, 루트 `.artf` 파일들을 명시적 `path`와 `parts`를 갖춘 `.artifactize/<name>.artf` 파일로 변환합니다. `.artfignore`에 따라 변환에서 제외한 하위 프로젝트를 알리고, 변환이 끝난 원본 파일과 `.artfignore`를 삭제합니다.
-- **`artifactize config rename OLD NEW`**: 프로젝트 유효성을 확인한 뒤 `.artifactize/**/<OLD>.artf` 파일 이름을 `<NEW>.artf`로 바꾸고 `parts`, `{OLD}` 참조, 저장된 `[annotations.style]` 부분 위치를 함께 갱신합니다.
+- **`artifactize config rename OLD NEW`**: 프로젝트 유효성을 확인한 뒤 `.artifactize/**/<OLD>.artf` 파일 이름을 `<NEW>.artf`로 바꾸고 `parts`, `{OLD}` 참조, `[annotations.style]`에 저장한 하위 Artifact의 위치를 함께 갱신합니다.
 
 ## 운영체제별 규칙 {#operating-systems}
 

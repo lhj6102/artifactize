@@ -124,7 +124,7 @@ summary = { description = "Print summary.", kind = "output", command = "python3"
 
 - 리뷰어가 Human 도구를 실행할 때는 인자를 임의로 추가할 수 없으며, 선언한 `args`에는 `{artifactPath}`와 허용된 `{name}` 참조를 쓸 수 있습니다.
 - `kind = "output"`은 실행이 끝날 때까지(`timeout_ms` 한도 안에서) 기다리며 `stdout`/`stderr`를 리뷰어의 **Tool log**에 실시간으로 보여 줍니다. 출력을 복사해 결과 양식에 붙여 넣을 수 있습니다. `kind = "launch"` 도구는 데스크톱 프로그램이나 뷰어를 띄운 뒤 종료를 기다리지 않습니다. `timeout_ms`는 앱이 실행되는 시간을 제한하지 않습니다.
-- 옵션 없는 `artifactize tools check`는 프로젝트 선언을 정적으로 검증하고 모든 Agent eval과 Human eval에서 사용할 수 있는 도구를 미리 점검합니다. 특정 eval의 범위(`{name}` 참조 포함)를 점검하려면 `--eval ID`를 넘기고, 다른 Artifact를 참조하지 않는 Artifact의 도구를 점검하려면 `--artifact NAME`을 넘기며, Run을 만들지 않고 개별 도구를 시험 실행하려면 `--execute`를 사용하세요.
+- 옵션 없는 `artifactize tools check`는 프로젝트 선언을 정적으로 검증하고 모든 Agent eval과 Human eval에서 사용할 수 있는 도구를 미리 점검합니다. 특정 eval의 범위(`{name}` 참조 포함)를 점검하려면 `--eval ID`를 넘기세요. 다른 Artifact를 참조하지 않는 Artifact의 도구를 점검할 때는 `--artifact NAME`을 넘깁니다. Run을 만들지 않고 개별 도구를 시험 실행하려면 `--execute`를 사용하세요.
   ```sh
   artifactize tools check
   artifactize tools check --eval spec/review

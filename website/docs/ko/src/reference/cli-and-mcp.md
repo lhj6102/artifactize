@@ -90,7 +90,7 @@ codex mcp add artifactize -- artifactize mcp                                    
 
 | 도구 | 인자 | 용도 |
 |---|---|---|
-| `verify_start` | **`scope`** (`{"kind":"all"}`, `{"kind":"artifact","artifactId":"..."}`, `{"kind":"eval","evalId":"..."}`, `{"kind":"artifacts","artifactIds":[...]}`, `{"kind":"evals","evalIds":[...]}`), 선택적 `request_key`, `comment`, `jobs`, `speculate` | Run을 제출하고 Run ID와 초기 상태를 돌려줍니다. |
+| `verify_start` | **`scope`** (`{"kind":"all"}`, `{"kind":"artifact","artifactId":"..."}`, `{"kind":"eval","evalId":"..."}`, `{"kind":"artifacts","artifactIds":[...]}`, `{"kind":"evals","evalIds":[...]}`), 선택적 `request_key`, `comment`, `jobs`, `speculate` | Run을 시작하고 Run ID와 초기 상태를 반환합니다. |
 | `verify_status` | **`run`** | 저장된 Run 상태, 개수, 경과 시간(초), `next_check`를 돌려줍니다. |
 | `verify_wait` | **`run`**, 선택적 `seconds` (0–40, 기본 30) | Run이 끝나거나 제한 시간이 지나면 대기를 멈춥니다. |
 | `verify_watch` | **`run`** | 최대 30초 동안 Run의 진행 상황을 실시간으로 확인합니다. 호스트가 요청 메타데이터에 `_meta.progressToken`을 넣어 호출하면 `notifications/progress`(`update`, `eval_result`, `outcome`) 알림을 보내며, 진행 알림을 표시하지 않는 호스트에서는 `verify_wait`를 쓰세요. |

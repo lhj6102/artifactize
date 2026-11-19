@@ -6,7 +6,7 @@
 |---|---|---|
 | `runtime` | 프로그램 실행 (`command` + `args`) | 종료 코드 `0`이면 `GREEN`, 그 외 종료 코드는 `RED`입니다. 실행 파일 누락, 시간 초과, 출력 저장 실패, 실행 중 파일 변경(`INPUT_CHANGED`) 같은 실행 오류는 `ERROR`로 기록됩니다. |
 | `agent` | 선언된 읽기 전용 도구를 쓰는 단일 LLM (`backend` + `model`) | 스키마 검증을 거친 `GREEN` 또는 `RED` 판정과 사용자 정의 결과 필드를 JSON 객체로 반환합니다(`pass_schema` / `fail_schema`). |
-| `human` | 대기 중인 요청을 맡아 양식을 제출하는 사람 | 스키마 검증을 거친 `GREEN` 또는 `RED` 양식 필드를 제출합니다. |
+| `human` | 대기 중인 요청을 맡아 양식을 제출하는 사람 | 리뷰어가 `GREEN` 또는 `RED` 판정 양식을 제출하면 Artifactize가 양식의 입력값을 스키마로 검증합니다. |
 
 ## Runtime eval {#runtime-evals}
 
@@ -35,8 +35,8 @@ fail_schema = { type = "object", properties = { findings = { type = "array", ite
 - **백엔드와 모델**: `backend`에는 `openai`, `anthropic`, `gemini`, `codex`, `claude-agent` 또는 [`artifactize provider`](../reference/cli-and-mcp.md#command-reference)(및 데스크톱 앱 **Settings → Providers**)로 등록한 사용자 지정 프로바이더 이름을 적습니다. 내장 모델 목록이나 자동 대체(fallback)는 없으며 `model`에는 프로바이더가 제공하는 정확한 모델 ID(`artifactize models BACKEND`)를 적어야 합니다.
 - **추론 강도와 예산**: `reasoning`은 프로바이더에 그대로 전달됩니다(`openai`와 `codex`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `claude-agent`: `low`, `medium`, `high`, `xhigh`, `max`; `anthropic`: `low`, `medium`, `high`, `max`; `gemini`: `minimal`, `low`, `medium`, `high`). 선택 필드인 `max_tokens`와 `max_tool_calls`로 프로바이더가 보고한 리뷰 전체의 토큰 사용량과 도구 호출 시도 횟수를 제한할 수 있습니다. 한도를 넘기면 `ERROR/PROVIDER_BUDGET_EXCEEDED`로 종료됩니다.
 - **읽기 전용 리뷰**: Agent는 대상 Artifact와 `{name}`으로 참조한 Artifact에 선언된 [도구](../guides/tools.md)만 사용해 리뷰합니다. `claude-agent`를 쓸 때도 로컬 Claude Code의 훅, 스킬, `CLAUDE.md`, 메모리, MCP 서버는 리뷰에 개입하지 않습니다.
-- **스키마 검증**: 최종 응답은 `pass_schema`(`GREEN`) 또는 `fail_schema`(`RED`)와 일치해야 합니다. 형식이 맞지 않으면 도구를 호출하지 않고 JSON 객체를 한 번 고칠 수 있습니다. 다시 제출한 응답도 스키마와 맞지 않으면 `ERROR/INVALID_RESULT`로 기록됩니다(`artifactize session show REF`로 저장된 대화 확인).
-- **제한 시간, 재시도, 백엔드 중단**: `timeout_ms`는 Agent 리뷰 전체 시간을 제한합니다(직접 연결하는 API 백엔드는 이 시간 안에서 일시적인 오류를 재시도하며, `claude-agent`와 그 별칭은 Claude Code 자체의 재시도 방식을 따릅니다). 인증 실패(`AUTHENTICATION`)나 할당량 초과(`QUOTA`)가 발생하면 해당 Run에서는 그 백엔드의 새 리뷰를 더 이상 시작하지 않습니다(`BACKEND_STOPPED`). `artifactize login`으로 다시 로그인하거나 할당량을 확보한 뒤 `verify`를 다시 실행하세요.
+- **스키마 검증**: 최종 응답은 `pass_schema`(`GREEN`) 또는 `fail_schema`(`RED`)와 일치해야 하며, 맞지 않으면 `ERROR/INVALID_RESULT`로 기록됩니다(`artifactize session show REF`로 저장된 대화를 확인해 지시문과 스키마를 맞추세요).
+- **제한 시간과 백엔드 중단**: `timeout_ms`는 Agent 리뷰 전체 시간을 제한합니다. 인증 실패(`AUTHENTICATION`)나 할당량 초과(`QUOTA`)가 발생하면 해당 Run에서는 그 백엔드의 새 리뷰를 더 이상 시작하지 않습니다(`BACKEND_STOPPED`). `artifactize login`으로 다시 로그인하거나 할당량을 확보한 뒤 `verify`를 다시 실행하세요.
 - **저장된 대화**: 각 리뷰의 전체 대화와 도구 호출 내역은 기본으로 로컬 `$STATE/agent-sessions/`에 저장됩니다([`limits.json`의 `agentSessions`](../reference/cli-and-mcp.md#state-cache-and-limits)로 설정). `artifactize session show REF [--summary]`로 내용을 확인하고, `artifactize session send REF "질문"`으로 기존 판정을 바꾸지 않고 후속 질문을 보낼 수 있습니다.
 
 ## Human eval {#human-reviews}

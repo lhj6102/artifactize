@@ -38,7 +38,7 @@ artifactize remote logout
 
 - **자동 조회와 업로드**: 해당 권한 범위가 있는 토큰으로 로그인해 두면 `verify`는 재사용 키가 있는 eval에 대해 저장소를 조회하고 새 판정을 업로드합니다. 로컬과 원격 기록 중 어느 쪽을 쓸지, `--force`를 지정하면 원격 조회가 어떻게 달라지는지는 [완료된 결과 재사용](../concepts/reuse.md#completed-result-reuse) 절을 참고하세요. 토큰에 `human`과 `publish`가 있으면 `request submit`이 Human 승인을 업로드합니다. `--force` 없이 시작한 Run이 Human 승인을 기다리는 동안 다른 머신에서 일치하는 승인이 올라오면 대기 중인 요청이 자동으로 완료됩니다. CLI를 계속 켜 두고 진행 상황을 보고 있지 않아도 됩니다.
 - **공유 수준 (`summary`와 `full`)**: 기본값인 `summary`에서는 팀원들이 판정, 결과 필드, 재사용 키, fingerprint, 선언된 프로필(Runtime `command`와 `args` 포함), 선언된 도구·세션 `execution_paths` 해시, 토큰 사용량, 작성자·리뷰어 이름, Agent 세션 참조를 볼 수 있습니다. 반면 로컬 저장소 루트 경로, 캡처된 `stdout`/`stderr`, Agent 대화 전문은 공유하지 않으며, `full`(`--share full`)을 선택하면 로컬 저장소 루트 경로와 캡처된 Runtime 출력도 함께 공유합니다(정확한 JSON 기록 필드는 [CLI 레퍼런스의 `remote`](../reference/cli-and-mcp.md#command-reference) 참고). `summary`에서도 선언된 `execution_paths`와 명령, `args`, 결과 필드에 직접 적은 문자열은 함께 공유되므로 선언 인자나 결과 필드에는 비밀 정보를 넣지 마세요.
-- **오프라인 동작과 `remote push`**: 저장소에 연결할 수 없거나 HTTP 5xx 오류가 나면 `verify`는 경고를 한 줄 출력한 뒤 원격 저장소 없이 로컬 상태만 사용해 검증을 계속합니다. 인증 오류(401/403), TLS 오류, 프로토콜 오류가 나면 연결을 고치거나 `artifactize remote login`을 다시 실행할 수 있도록 Run이 실패로 끝납니다(`verify --wait` 또는 `run show RUN_ID --wait`에서 종료 코드 `2`인 `ERROR` 확인; 평가 기준이나 fingerprint가 로컬 프로젝트와 맞지 않는 원격 기록은 무시하고 유효한 로컬 캐시 기록을 쓰거나 `--reuse-only`가 허용할 때 새로 실행합니다). `artifactize remote push --dry-run`으로 업로드 대상을 미리 확인하고, `artifactize remote push`로 상태 디렉터리 전체에서 재사용 키별로 가장 최근에 생성된 로컬 `GREEN` 또는 `RED` 판정을 업로드하세요.
+- **오프라인 동작과 `remote push`**: 저장소에 연결할 수 없거나 HTTP 5xx 오류가 나면 `verify`는 경고를 한 줄 출력한 뒤 원격 저장소 없이 로컬 상태만 사용해 검증을 계속합니다. 인증 오류(401/403), TLS 오류, 프로토콜 오류가 나면 Run은 종료 코드 `2`인 `ERROR`로 끝납니다(`verify --wait` 또는 `run show RUN_ID --wait`로 확인). 이 경우에는 연결 설정을 고치거나 `artifactize remote login`으로 다시 로그인하세요(평가 기준이나 fingerprint가 로컬 프로젝트와 맞지 않는 원격 기록은 무시하고 유효한 로컬 캐시 기록을 쓰거나 `--reuse-only`가 허용할 때 새로 실행합니다). `artifactize remote push --dry-run`으로 업로드 대상을 미리 확인하고, `artifactize remote push`로 상태 디렉터리 전체에서 재사용 키별로 가장 최근에 생성된 로컬 `GREEN` 또는 `RED` 판정을 업로드하세요.
 - **환경 변수 재정의**: `ARTIFACTIZE_REMOTE`(URL 또는 `off`), `ARTIFACTIZE_REMOTE_TOKEN`, `ARTIFACTIZE_REMOTE_SHARE`(`summary` 또는 `full`)는 로컬 설정보다 우선합니다.
 
 ## 3. CI 설정 (`--reuse-only agent,human`) {#ci}
@@ -55,8 +55,4 @@ CI에는 **`read`** 권한만 있는 토큰을 발급하고 `artifactize verify 
     ARTIFACTIZE_REMOTE_TOKEN: ${{ secrets.ARTIFACTIZE_READ_TOKEN }}
 ```
 
-CI 병합 게이트 동작 방식:
-
-- **Runtime eval**: 선행 조건이 충족되면 Runtime eval을 실행하되, 현재 입력과 평가 기준에 맞는 캐시 결과가 있으면 그 결과를 재사용합니다.
-- **Agent 및 Human eval**은 직접 실행하지 않습니다(`--reuse-only agent,human`). 현재 커밋의 fingerprint 및 평가 기준과 일치하는 최신 기록이 `GREEN`이면 그대로 재사용하고, 일치하는 최신 기록이 `RED`이면 그 `RED` 판정을 재사용해 하위 의존 검사를 막습니다.
-- **재사용할 리뷰 결과가 없을 때**: `--reuse-only` 대상인 Agent나 Human eval에 재사용할 수 있는 캐시 기록이 없으면 eval을 실행하지 않고 `STALE`로 표시합니다. 예를 들어 사람의 승인이 남아 개발자의 Run이 `YELLOW`로 끝난 경우나 리뷰 후 파일이 바뀐 경우가 여기에 해당합니다. 그 eval에 의존하는 하위 검사는 선행 조건이 충족될 때까지 실행하지 않습니다. 이 경우 다른 eval이 `RED`를 반환했더라도 Run은 **`INCOMPLETE`**(종료 코드 `4`)로 실패합니다. 반대로 선행 eval에서 `RED`가 나와 이미 실행이 막힌 `--reuse-only` eval은 `BLOCKED`로 남으며 Run은 종료 코드 `1`로 끝날 수 있습니다.
+`--reuse-only agent,human`을 지정하면 CI는 `runtime` 검사를 실행(또는 캐시 재사용)하고 `agent`와 `human` 검사는 직접 실행하지 않으며, 팀 저장소나 로컬 캐시에서 일치하는 최신 판정을 재사용합니다([fingerprint와 재사용](../concepts/reuse.md#completed-result-reuse)). 선행 `RED` 조건으로 이미 차단된 경우가 아닌데 `--reuse-only` 검사에 일치하는 캐시 판정이 없으면(예: 승인이 아직 `YELLOW`로 대기 중이거나 리뷰 후 파일이 바뀐 경우), 해당 검사는 실행되지 않고 `STALE`로 남으며 이에 의존하는 하위 검사도 실행되지 않고 Run은 **`INCOMPLETE`**(종료 코드 `4`)로 실패합니다(Run 결과 우선순위는 [승인과 Run의 종료](../concepts/runs.md#sign-offs-and-the-end-of-a-run) 참고).
