@@ -8,7 +8,7 @@ import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomInt } from "node:crypto";
 import {
-  appendFileSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync,
+  appendFileSync, closeSync, constants as fsConstants, copyFileSync, existsSync, openSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync,
   realpathSync, renameSync, rmSync, writeFileSync,
 } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -25,6 +25,14 @@ export type { Socket as LoopbackSocket } from "node:net";
 const WINDOWS = process.platform === "win32";
 const MACOS = process.platform === "darwin";
 const LINUX = process.platform === "linux";
+
+/** libuv's UV_FS_O_EXLOCK: on Windows, open a file with no sharing, so the open fails while
+ * another process has it open. */
+const WINDOWS_EXCLUSIVE_OPEN = 0x10000000;
+
+/** How long one scan for the processes holding a fixture may take before it counts as
+ * unobserved. */
+const HOLDER_SCAN_TIMEOUT = 10000;
 
 /** The suffix of an executable file name on this OS. */
 const executableSuffix = WINDOWS ? ".exe" : "";
@@ -224,6 +232,67 @@ export function placeApp(app: NativePath, directory: NativePath): NativePath {
   return placed;
 }
 
+/** Whether any process names one of `files` (scripts or commands this suite placed) on its
+ * command line: an opener the app started is found this way from its launch on, before it
+ * could report itself. */
+function commandLinesNaming(files: readonly NativePath[]): boolean {
+  if (LINUX) {
+    for (const entry of readdirSync("/proc")) {
+      if (!/^\d+$/.test(entry) || Number(entry) === process.pid) continue;
+      const line = readTextIfExists(`/proc/${entry}/cmdline` as NativePath);
+      if (line !== null && line.split("\0").some((arg) => files.includes(arg as NativePath))) return true;
+    }
+    return false;
+  }
+  const [program, args] = MACOS ? ["ps", ["-A", "-o", "args="]]
+    : ["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      "Get-CimInstance Win32_Process | ForEach-Object { $_.CommandLine }"]];
+  const listed = spawnSync(program, args, { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT, windowsHide: true });
+  if (listed.error || listed.status !== 0) {
+    throw new Error(`cannot list command lines: ${listed.error?.message ?? `${program} exited ${listed.status}: ${listed.stderr}`}`);
+  }
+  return listed.stdout.split(/\r?\n/).some((line) => files.some((file) => line.includes(file)));
+}
+
+/** Wait, bounded, until no fixture opener the app started is still running. */
+async function awaitOpenersEnded(root: NativePath, files: readonly NativePath[]): Promise<void> {
+  const deadline = Date.now() + 30000;
+  while (commandLinesNaming(files)) {
+    if (Date.now() >= deadline) throw new Error(`a fixture browser opener still runs for ${root}`);
+    await new Promise((done) => setTimeout(done, 25));
+  }
+}
+
+/** Whether any process runs the program file at `program` (a path this suite placed). */
+export function programRunning(program: NativePath): boolean {
+  if (LINUX) {
+    for (const entry of readdirSync("/proc")) {
+      if (!/^\d+$/.test(entry) || Number(entry) === process.pid) continue;
+      try { if (readlinkSync(`/proc/${entry}/exe`) === program) return true; }
+      catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "EACCES" && code !== "ESRCH") throw error;
+      }
+    }
+    return false;
+  }
+  if (MACOS) {
+    const listed = spawnSync("ps", ["-A", "-o", "comm="], { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT });
+    if (listed.error || listed.status !== 0) {
+      throw new Error(`cannot list running programs: ${listed.error?.message ?? `ps exited ${listed.status}: ${listed.stderr}`}`);
+    }
+    return listed.stdout.split("\n").some((line) => line.trim() === program);
+  }
+  // A running image is open: opening its file without sharing fails until it has exited.
+  try { closeSync(openSync(program, fsConstants.O_RDONLY | WINDOWS_EXCLUSIVE_OPEN)); return false; }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EBUSY" || code === "EPERM" || code === "EACCES") return true;
+    if (code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 /** A folder below `root` shaped like the app's own in a bundle dragged from the macOS disk image
  * to an Applications folder other than the person's. */
 export function diskImageAppDirectory(root: NativePath): NativePath {
@@ -240,20 +309,28 @@ export function storePackageDirectory(root: NativePath): NativePath {
  * macOS asks lsof. Windows refuses to delete a held file, which removeTree reports. */
 function holdersOf(root: NativePath): number[] {
   if (WINDOWS) {
-    // Windows refuses to rename a folder while a process holds a file inside it; the rename
-    // there and back changes nothing and deletes nothing. -1: some process, unnamed.
-    const probe = `${root}.release-probe`;
-    try { renameSync(root, probe); }
-    catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "EBUSY" || code === "EPERM" || code === "EACCES") return [-1];
-      throw error;
-    }
-    renameSync(probe, root);
-    return [];
+    // Opening a file for reading without sharing fails while any other process has it open;
+    // the open reads nothing and changes nothing. -1: some process, unnamed.
+    const held = (directory: string): boolean => readdirSync(directory, { withFileTypes: true }).some((entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return held(path);
+      try { closeSync(openSync(path, fsConstants.O_RDONLY | WINDOWS_EXCLUSIVE_OPEN)); return false; }
+      catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "EBUSY" || code === "EPERM" || code === "EACCES") return true;
+        if (code === "ENOENT") return false;
+        throw error;
+      }
+    });
+    return held(root) ? [-1] : [];
   }
   if (MACOS) {
-    const listed = spawnSync("lsof", ["-t", "+D", root], { encoding: "utf8" });
+    // lsof exits 1 with no output when nothing is open there; anything else, or no answer in
+    // time, leaves the release unobserved.
+    const listed = spawnSync("lsof", ["-t", "+D", root], { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT });
+    if (listed.error || !(listed.status === 0 || listed.status === 1 && listed.stdout.trim() === "" && listed.stderr.trim() === "")) {
+      throw new Error(`lsof could not tell what holds fixture ${root}: ${listed.error?.message ?? `exit ${listed.status}: ${listed.stderr.trim()}`}`);
+    }
     return listed.stdout.split("\n").map(Number).filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
   }
   const inside = (target: string) => target === root || target.startsWith(`${root}${sep}`);
@@ -286,6 +363,11 @@ export async function awaitReleased(root: NativePath, timeout = 60000): Promise<
     await new Promise((done) => setTimeout(done, 100));
     holders = holdersOf(root);
   }
+}
+
+/** Save what the window shows as a PNG file. */
+export async function saveScreenshot(browser: WebdriverIO.Browser, path: NativePath): Promise<void> {
+  writeFileSync(path, Buffer.from(await browser.takeScreenshot(), "base64"));
 }
 
 /** Remove a directory tree. An app's web engine helper processes (WebView2, WebKitGTK's
@@ -458,7 +540,10 @@ export async function runForwardingInterrupts(
   program: string, args: readonly string[], env: Environment, cwd: NativePath, interrupted: () => void,
   owner?: () => number | null,
 ): Promise<number> {
-  const child = spawn(program, args, { env, cwd, stdio: "inherit" });
+  // On Unix the child gets its own process group, so a terminal Ctrl+C reaches only this
+  // process: the runner then receives it below while its display and bus wrappers keep running
+  // until it has stopped its app.
+  const child = spawn(program, args, { env, cwd, stdio: "inherit", detached: !WINDOWS });
   // On Linux the child is a session wrapper (dbus-run-session, xvfb-run) that passes no
   // signal on, so the request goes to the runner it wraps once that runner has said who it is.
   let exited = false;
@@ -605,13 +690,39 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand> & 
   }
 }
 
+/** Whether any member of a Unix process group still runs: exited members that no parent has
+ * reaped yet (zombies) have ended. */
+function groupHasLiveMembers(group: number): boolean {
+  if (LINUX) {
+    for (const entry of readdirSync("/proc")) {
+      if (!/^\d+$/.test(entry)) continue;
+      const stat = readTextIfExists(`/proc/${entry}/stat` as NativePath);
+      if (stat === null) continue;
+      // After the parenthesized command name: state, parent, process group.
+      const [state, , pgrp] = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      if (Number(pgrp) === group && state !== "Z") return true;
+    }
+    return false;
+  }
+  const listed = spawnSync("ps", ["-A", "-o", "pgid=,stat="], { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT });
+  if (listed.error || listed.status !== 0) {
+    throw new Error(`cannot observe process group ${group}: ${listed.error?.message ?? `ps exited ${listed.status}: ${listed.stderr}`}`);
+  }
+  return listed.stdout.split("\n").some((line) => {
+    const [pgid, state] = line.trim().split(/\s+/);
+    return Number(pgid) === group && state !== undefined && !state.startsWith("Z");
+  });
+}
+
 /** Stop and join a Unix process group even if the initial child already exited. */
 async function stopTree(child: ChildProcess): Promise<void> {
   if (child.pid === undefined) return;
-  const group = -child.pid;
+  const leader = child.pid;
+  const group = -leader;
   const exists = () => {
-    try { process.kill(group, 0); return true; }
+    try { process.kill(group, 0); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; throw error; }
+    return groupHasLiveMembers(leader);
   };
   try { process.kill(group, "SIGKILL"); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
@@ -1155,7 +1266,14 @@ export const appsAtOnce = WINDOWS ? 1 : 2;
  * appsAtOnce); other systems deliver focus events to a page in any window. */
 export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<void> {
   if (!WINDOWS) return;
-  await browser.switchToWindow(await browser.getWindowHandle());
+  const error = await browser.executeAsync((done) => {
+    const app = window as unknown as { __TAURI__: { window: { getCurrentWindow: () => { setFocus: () => Promise<void> } } } };
+    app.__TAURI__.window.getCurrentWindow().setFocus().then(
+      () => done(null),
+      (failure: unknown) => done(String(failure)),
+    );
+  });
+  if (error !== null) throw new Error(`setup failed: native window focus failed: ${String(error)}`);
   await browser.waitUntil(() => browser.execute(() => document.hasFocus()),
     { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
 }
@@ -1204,6 +1322,7 @@ export async function browserEnvironment(root: NativePath, env: Environment, ent
   const entries = nativePath(root, "browser-entries.jsonl");
   const stop = new AbortController();
   const owners = makeDirectory(nativePath(root, "browser-jobs"), { private: true });
+  const opener = MACOS ? "open" : "xdg-open";
   const jobs: Promise<void>[] = [];
   const server = await serveLoopbackHttp((request, response) => {
     const owner = Number(request.headers["x-opener-pid"]);
@@ -1251,7 +1370,6 @@ export async function browserEnvironment(root: NativePath, env: Environment, ent
 });
 if (!reply.ok) throw new Error(await reply.text());
 `);
-    const opener = MACOS ? "open" : "xdg-open";
     writeFileSync(join(bin, opener), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_BROWSER_PROGRAM" "$@"\n', { mode: 0o755 });
   } catch (error) {
     await server.close();
@@ -1264,6 +1382,7 @@ if (!reply.ok) throw new Error(await reply.text());
       stop.abort();
       const outcomes = await Promise.allSettled([server.close(), ...jobs]);
       const failures = outcomes.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+      try { await awaitOpenersEnded(root, [program, nativePath(bin, opener)]); } catch (error) { failures.push(error); }
       const deadline = Date.now() + 30000;
       while (browserJobsAlive(root)) {
         if (Date.now() >= deadline) {
@@ -1352,6 +1471,7 @@ if (!reply.ok) throw new Error(await reply.text());
       stop.abort(released);
       const outcomes = await Promise.allSettled([server.close(), ...requests, ...jobs]);
       const failures = outcomes.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+      try { await awaitOpenersEnded(root, [program]); } catch (error) { failures.push(error); }
       try { await releaseRecordedBrowser(root); } catch (error) { failures.push(error); }
       if (failures.length) throw new AggregateError(failures, "owned Edge browser jobs failed");
     },

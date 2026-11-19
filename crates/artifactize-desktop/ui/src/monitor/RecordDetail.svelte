@@ -18,9 +18,12 @@
   let {
     detail,
     path = true,
+    debugFacts = [],
     log = $bindable(),
   }: {
     detail: DetailView;
+    /** Facts the caller knows of this Artifact, shown first under Debug. */
+    debugFacts?: [string, string][];
     /** An Artifact's Path is shown: a Current shows its Definition instead. */
     path?: boolean;
     /** The log rather than the Summary; the caller owns it. */
@@ -87,9 +90,13 @@
 {/snippet}
 
 {#snippet debug()}
-  {#if debugFields.length > 0 || waits.length > 0}
+  {#if debugFacts.length > 0 || debugFields.length > 0 || waits.length > 0}
     <Section name="Debug">
       <dl>
+        {#each debugFacts as [key, value], at (at)}
+          <dt>{key}</dt>
+          <dd>{value}</dd>
+        {/each}
         {#each debugFields as field, at (at)}
           <dt>{field.key}</dt>
           <dd>{field.value}</dd>

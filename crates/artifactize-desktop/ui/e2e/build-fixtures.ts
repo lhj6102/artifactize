@@ -1,7 +1,7 @@
 // Domain fixture roots are inputs, not candidate leases or native lifecycle owners.
 // The outer runner calls releaseFixtures only after the service/app has exited.
 import { readCandidate, type Candidate } from "./build.ts";
-import { awaitReleased, childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseClaudeLogins, releaseRecordedBrowser, removeTree, writeText, type NativePath } from "./platform.ts";
+import { awaitReleased, childDirectories, ProcessTreeNotJoined, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseClaudeLogins, releaseRecordedBrowser, removeTree, writeText, type NativePath } from "./platform.ts";
 import { removeFixture, settleFixtureRuns } from "./runs.ts";
 import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.ts";
 import { observe } from "./domain-fixtures/observe.ts";
@@ -24,6 +24,12 @@ export function newRoot(): NativePath {
  * Preserve both the setup error and a failed cleanup, retaining inputs on failure. */
 export function prepareFixture<T>(setup: (root: NativePath) => T, root = newRoot()): T {
   const failed = (error: unknown): never => {
+    // A program tree whose exit was not confirmed may still use the files: keep them.
+    if (unconfirmedEnd(error)) {
+      try { writeText(nativePath(root, RETAINED), ""); }
+      catch (mark) { throw new AggregateError([error, mark], "fixture setup failed and its retention could not be marked; preserve inputs"); }
+      throw error;
+    }
     try { removeFixture(readCandidate().cli, root); }
     catch (cleanup) { throw new AggregateError([error, cleanup], "fixture setup and cleanup failed; preserve inputs"); }
     throw error;
@@ -32,6 +38,13 @@ export function prepareFixture<T>(setup: (root: NativePath) => T, root = newRoot
     const value = setup(root);
     return value instanceof Promise ? value.catch(failed) as T : value;
   } catch (error) { return failed(error); }
+}
+
+/** Whether a failure says that some program's end was not confirmed. */
+function unconfirmedEnd(error: unknown): boolean {
+  if (error instanceof ProcessTreeNotJoined) return true;
+  if (error instanceof AggregateError) return error.errors.some(unconfirmedEnd);
+  return error instanceof Error && error.cause !== undefined && unconfirmedEnd(error.cause);
 }
 
 /** Filesystem discovery crosses WDIO worker boundaries without global exit hooks. */

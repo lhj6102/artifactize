@@ -2,13 +2,13 @@
 import { remote, SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
 import { AppStillAlive, assertAppsStopped, recordAdmission } from "./observation.ts";
-import { graphToolFailure, observeGraphTool } from "./graph-tool-session.ts";
+import { companionPortFree, companionPortWanted, graphToolFailure, observeGraphTool } from "./graph-tool-session.ts";
 import { observe } from "./domain-fixtures/observe.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { createdRoots, environment, releaseFixtures } from "./fixture.ts";
 import {
   appsAtOnce, browserEnvironment, asNativePath, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment,
-  assertClipboardDesktop, commandDirectory, embeddedReady, exists, makeDirectory, nativePath, placeApp, releaseClaudeLogins, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson, writeText,
+  assertClipboardDesktop, commandDirectory, embeddedReady, exists, makeDirectory, nativePath, placeApp, programRunning, releaseClaudeLogins, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson, writeText,
   type Environment, type NativePath,
 } from "./platform.ts";
 import type { Prepared } from "./scenario.ts";
@@ -26,7 +26,7 @@ if (selected.length > appsAtOnce) {
 }
 const outputDir = makeDirectory(asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each WDIO batch writes its own logs")));
 const prepared: Prepared[] = [];
-const companions = new Map<number, { port: number; owner?: NativePath; observation?: Promise<void> }>();
+const companions = new Map<number, { port: number; program: NativePath; owner?: NativePath; observation?: Promise<void>; handoff?: () => Promise<void> }>();
 const driverClaims: (() => Promise<void>)[] = [];
 // WDIO wraps severe hook errors; retain the original for the matching runner owner.
 export let preparationFailure: unknown;
@@ -55,9 +55,16 @@ export async function releasePrepared(): Promise<void> {
     const companion = companions.get(index);
     try {
       if (ownerFiles?.[index]) assertAppsStopped(candidate.observer, [ownerFiles[index]]);
+      if (companion?.handoff) await release(companion.handoff);
       // The app that would launch the companion has ended: a companion it launched has written
-      // its birth record; without one, the case ended before the graph tool was clicked.
+      // its birth record. Without one, confirm that no companion program runs, since one may
+      // have started and been stopped before it recorded itself.
       const launched = !!companion?.owner && exists(companion.owner);
+      if (companion && !launched) {
+        const program = companion.program;
+        await observe(() => !programRunning(program),
+          () => "a graph companion without a birth record is still running", 65000);
+      }
       if (launched && companion?.observation) await release(() => companion.observation!);
       if (launched && companion?.owner) {
         const owner = companion.owner;
@@ -147,8 +154,19 @@ export const config = {
           const app = placeApp(candidate.app, bin);
           const [endpoint] = await reserveEmbeddedPorts(1);
           driverClaims.push(endpoint.release);
-          await endpoint.close();
-          companions.set(index, { port: endpoint.port });
+          // The listener stays until the case is about to click the graph tool (it asks through
+          // a file); the claim stays until teardown.
+          const fixture = input.fixture;
+          let polling: ReturnType<typeof setInterval> | undefined;
+          const handoff = new Promise<void>((done, fail) => {
+            polling = setInterval(() => {
+              if (!exists(companionPortWanted(fixture))) return;
+              clearInterval(polling);
+              endpoint.close().then(() => { writeText(companionPortFree(fixture), ""); done(); }, fail);
+            }, 50);
+          });
+          void handoff.catch(() => {});
+          companions.set(index, { port: endpoint.port, program: app, handoff: async () => { clearInterval(polling); await endpoint.close(); await handoff.catch(() => {}); } });
           env = { ...commandDirectory(env, bin), ARTIFACTIZE_STATE_HOME: input.fixture.state, ARTIFACTIZE_E2E_COMPANION_EXE: app,
             ARTIFACTIZE_E2E_COMPANION_PORT: String(endpoint.port) };
         }

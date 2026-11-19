@@ -196,11 +196,13 @@ export class Review {
   /** Release the claim, also while the form is edited: the form is left, its draft kept. */
   async release(): Promise<void> {
     if (this.busy || this.settled) return;
-    if (this.editing) this.stopEditing();
     try {
+      // The form stays while the release runs, its Submit disabled; released, the form is
+      // left and its draft kept for the next claim.
       const acted = await this.#job("Releasing the claim", (job) =>
         call(this.ipc.humanRelease([this.id], job)),
       );
+      if (acted && this.editing) this.stopEditing();
       if (acted) this.#acted(acted);
     } catch (error) {
       this.notice = { text: message(error), error: true };

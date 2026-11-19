@@ -338,10 +338,9 @@ it("lets go of a Detail whose node the Run no longer has", async () => {
   await waitFor(() => expect(ongone).toHaveBeenCalledOnce());
 });
 
-it("says that a part of several wholes is drawn in each of them, naming them", async () => {
+it("names, under Debug, every whole a part of several wholes is drawn in", async () => {
   setup(null, { wholes: ["kit", "site"], copies: 2 });
-  await fireEvent.click(await screen.findByRole("button", { name: "Neighbours" }));
-  const facts = within(await screen.findByLabelText("Copies"));
-  expect(facts.getByText("Copies").nextElementSibling?.textContent).toBe("2");
-  expect(facts.getByText("Inside").nextElementSibling?.textContent).toBe("kit, site");
+  await fireEvent.click(await screen.findByRole("button", { name: "Debug" }));
+  const drawn = await screen.findByText("Drawn in");
+  expect(drawn.nextElementSibling?.textContent).toBe("kit, site");
 });

@@ -3,16 +3,15 @@
   // evals use on the left, the ones whose evals use it on the right, with the graph's nodes and
   // edges. It holds still: no pan, zoom or drag; a click on a neighbour opens its Detail. A
   // shared input's thousands of users are cut to the backend's first few, failing ones first,
-  // and the rest counted below. An Artifact the graph draws more than once, a part of several
-  // wholes, says so and names the wholes it is drawn in. The section is its own, read whether
-  // folded or not: an Artifact with no neighbour and drawn once has nothing to show here, so it
-  // has no Neighbours section.
+  // and the rest counted below. The section is its own, read whether folded or not, into the
+  // Detail's state (whose Debug also says which wholes a shared part is drawn in): an Artifact
+  // with no neighbour has nothing to show here, so it has no Neighbours section.
   import { SvelteFlow, SvelteFlowProvider, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, type Neighbours, type Source } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
   import { BLOCKING } from "./graph";
-  import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
+  import type { NeighboursState } from "./neighbours-state.svelte";
   import { NODE } from "./layout";
   import Section from "../shell/Section.svelte";
 
@@ -21,20 +20,21 @@
     revision,
     node,
     onopen,
+    state: n,
   }: {
     source: Source;
     /** The snapshot's or scan's revision: a new one may relight the neighbours. */
     revision: number;
     node: string;
     onopen: (node: string) => void;
+    /** Where the read neighbours are kept: the Detail's. */
+    state: NeighboursState;
   } = $props();
   const commands = useIpc();
   const nodeTypes = { artifact: ArtifactNode };
   /** Room between columns and between stacked neighbours. */
   const GAP = { x: 72, y: 16 };
 
-  const n = new NeighboursState();
-  setNeighboursState(n);
   /** Read the neighbours again for every new snapshot or scan: it may relight them. */
   const reread: Attachment<HTMLElement> = () => {
     void revision;
@@ -51,13 +51,13 @@
 
   const shown = $derived.by(() => {
     if (!n.graph) return null;
-    const { shape: graph, moreUses, moreUsedBy, wholes, copies } = n.graph;
+    const { shape: graph, moreUses, moreUsedBy } = n.graph;
     const uses = graph.edges.filter((edge) => edge.target === node);
     const usedBy = graph.edges.filter((edge) => edge.source === node);
     const byId = new Map(graph.nodes.map((item) => [item.id, item]));
     // Another Artifact's neighbours, still held while this one's are read, are not shown.
     if (!byId.has(node)) return null;
-    if (uses.length + usedBy.length + moreUses + moreUsedBy === 0 && copies <= 1) return null;
+    if (uses.length + usedBy.length + moreUses + moreUsedBy === 0) return null;
     const column = (ids: string[], x: number) => {
       const top = -((ids.length - 1) * (NODE.height + GAP.y)) / 2;
       return ids.flatMap((id, at) => {
@@ -103,8 +103,6 @@
       height: rows * (NODE.height + GAP.y) + 24,
       key: placed.map(({ item }) => item.id).join(),
       more: more.length > 0 ? `And ${more.join(" and ")}, not shown.` : "",
-      // A part drawn in several wholes: how many copies, and the wholes, as facts.
-      copies: copies > 1 ? { count: copies.toLocaleString(), inside: wholes.join(", ") } : null,
     };
   });
 </script>
@@ -138,12 +136,6 @@
     {/key}
   </div>
   {#if shown.more}<p class="more">{shown.more}</p>{/if}
-  {#if shown.copies}
-    <dl class="more copies" aria-label="Copies">
-      <dt>Copies</dt><dd>{shown.copies.count}</dd>
-      <dt>Inside</dt><dd>{shown.copies.inside}</dd>
-    </dl>
-  {/if}
 </Section>
 {/if}
 </div>
@@ -178,15 +170,5 @@
     margin: 4px 0 0;
     color: var(--ink-2);
     font-size: var(--text-small);
-  }
-  .copies {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: 2px 8px;
-  }
-  .copies dd {
-    margin: 0;
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
   }
 </style>

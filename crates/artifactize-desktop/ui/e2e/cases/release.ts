@@ -244,12 +244,14 @@ export const scenarios: Scenario[] = [
       const view = await mainTitle(browser);
       // A release comes out. The app looks again by itself, but within the day it reuses its
       // answer and does not ask the site.
-      const checks = async () => (await checkpoint(browser)).activity.commands.releaseNotice?.completed ?? 0;
-      const checked = await checks();
+      const checks = async () => (await checkpoint(browser)).activity.commands.releaseNotice;
       replaceText(data.answer, `v${LATEST}`);
-      // The app checks again by itself while the clock is still within the day; once such a
-      // check has completed and rendered, its notice and the site's log show the kept answer.
-      await browser.waitUntil(async () => await checks() > checked, { timeout: 15000, timeoutMsg: "the app checked again within the day" });
+      // The app checks again by itself while the clock is still within the day. More checks
+      // completed than had started when the site changed means one began after it; once it has
+      // rendered, its notice and the site's log show the kept answer.
+      const startedBefore = (await checks())?.started ?? 0;
+      await browser.waitUntil(async () => ((await checks())?.completed ?? 0) > startedBefore,
+        { timeout: 15000, timeoutMsg: "the app checked again within the day, after the release came out" });
       await afterRender(browser);
       assert.equal(await shownNotice(), initialNotice, "within the day the kept answer stands");
       assert.equal(lookups(), 1, "within the day the app asked the site nothing more");

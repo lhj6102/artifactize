@@ -10,7 +10,7 @@ import { chooseVerdict, claimable, reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { joinGatedTools } from "../process-fixtures.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
-import { checkpoint } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, nativePath, primaryModifier, readText, removeTree, serveLoopbackHttp, writeText, type NativePath } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
@@ -113,6 +113,28 @@ function toolCaptions(browser: WebdriverIO.Browser): Promise<string[]> {
     .map((caption) => caption.innerText.trim()));
 }
 
+/** Record, in the window, what the Human review rendered while its running work showed: whether
+ * Submit was disabled and whether every tool button was. */
+async function watchPending(browser: WebdriverIO.Browser): Promise<void> {
+  await browser.execute(() => {
+    const seen = { running: false, submitDisabled: false, toolsDisabled: false };
+    (window as unknown as { humanPending: typeof seen }).humanPending = seen;
+    const review = document.querySelector('[aria-label="Human review"]')!;
+    new MutationObserver(() => {
+      if (!review.querySelector('.busy[role="status"]')) return;
+      seen.running = true;
+      const submit = [...review.querySelectorAll<HTMLButtonElement>("button")].find((button) => /^Submit /.test(button.textContent?.trim() ?? ""));
+      if (submit?.disabled) seen.submitDisabled = true;
+      const tools = [...review.querySelectorAll<HTMLButtonElement>('section[aria-label="Tools"] button')];
+      if (tools.length > 0 && tools.every((button) => button.disabled)) seen.toolsDisabled = true;
+    }).observe(review, { attributes: true, subtree: true, childList: true, characterData: true });
+  });
+}
+
+function pendingSeen(browser: WebdriverIO.Browser): Promise<{ running: boolean; submitDisabled: boolean; toolsDisabled: boolean }> {
+  return browser.execute(() => (window as unknown as { humanPending: { running: boolean; submitDisabled: boolean; toolsDisabled: boolean } }).humanPending);
+}
+
 export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-MAIN-RUN
   scenario<null>(
@@ -202,13 +224,21 @@ export const scenarios: Scenario[] = [
       await typeText(browser, "u");
       await browser.waitUntil(async () => (await browser.$("#field-comment").getValue()) === "half-checkedu", { timeout: 15000, timeoutMsg: "u typed into the comment" });
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "u in a field releases nothing");
-      // Release claim, from the Result's row of actions, while editing.
+      // Release claim, from the Result's row of actions, while editing. While it runs, Submit
+      // stays in its place, disabled, as do the Tools: the window records whether some state it
+      // rendered with the release running showed that.
+      await watchPending(browser);
       await human().$("button=Release claim").click();
       await browser.waitUntil(async () => signoff(fixture).claim === null && !(await browser.$("#field-comment").isExisting()) && await claimable(browser),
         { timeout: 15000, timeoutMsg: "released, the form left" });
-      // Claimed again, the same verdict opens the draft as it was left.
+      assert.deepEqual(await pendingSeen(browser), { running: true, submitDisabled: true, toolsDisabled: true },
+        "while the release ran, Submit and every tool were disabled");
+      // Claimed again, the same verdict opens the draft as it was left; the Tools are disabled
+      // while the claim runs.
       await human().click();
+      await watchPending(browser);
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "claimed again");
+      assert.equal((await pendingSeen(browser)).toolsDisabled, true, "while the claim ran, every tool was disabled");
       await press(browser, ["g"], async () => (await browser.$("#field-comment").isExisting()) && (await browser.$("#field-comment").getValue()) === "half-checkedu",
         "the kept draft");
       assert.equal(signoff(fixture).status, "DEFERRED", "nothing was submitted");
@@ -529,8 +559,8 @@ export const scenarios: Scenario[] = [
       });
       await browser.waitUntil(toolButtonsDisabled, { timeout: 15000, timeoutMsg: "all Human tools are disabled while one runs" });
       await human().$("button=Cancel").click();
-      await browser.waitUntil(async () => !(await alive()) && (await runOf("slow"))?.at(-1)?.text === "■ cancelled",
-        { timeout: 15000, timeoutMsg: "the visible Cancel stops the tool and leaves its exit in the log" });
+      await browser.waitUntil(async () => !(await alive()) && (await runOf("slow"))?.at(-1)?.kind === "end",
+        { timeout: 15000, timeoutMsg: "the visible Cancel stops the tool and ends its running state in the log" });
       await human().$("button=slow").waitForEnabled();
       const slowRuns = async () => (await logIn(browser, '[aria-label="Human review"]')).rows.filter((row: LogRow) => row.kind === "start" && row.text === "▶ HH:MM:SS · slow · release").length;
       const runsBefore = await slowRuns();
@@ -777,7 +807,27 @@ export const scenarios: Scenario[] = [
       await fill(browser, "#field-note", "");
       await fill(browser, "#field-comment", "checked typed fields");
       await fill(browser, "#field-score", "7.5");
-      await human().$('input[name="field-confirmed"]').click();
+      // Ordinary keys in the true/false and choice fields do only the field's work: u (release),
+      // r (the RED form) and t (Debug) neither release nor change the form, and do not toggle
+      // the box.
+      const form = async () => ({ claim: signoff(fixture).claim?.reviewer ?? null,
+        green: await human().$("button*=Submit GREEN").isExisting(), comment: await browser.$("#field-comment").getValue() });
+      const before = await form();
+      const confirmed = human().$('input[name="field-confirmed"]');
+      await confirmed.click();
+      await browser.waitUntil(() => confirmed.isSelected(), { timeout: 15000, timeoutMsg: "the box checked by its click" });
+      // The choice field is focused by a click on its label, which does not open its list.
+      const focusChoice = async () => {
+        await human().$('label[for="field-channel"]').click();
+        await browser.waitUntil(() => browser.execute(() => document.activeElement?.id === "field-channel"), { timeout: 15000, timeoutMsg: "the choice field focused" });
+      };
+      for (const [field, focus] of [["the true/false field", async () => {}], ["the choice field", focusChoice]] as const) {
+        await focus();
+        await browser.keys(["u", "r", "t"]);
+        await commandsRendered(browser);
+        assert.deepEqual(await form(), before, `keys in ${field} released nothing and kept the GREEN form`);
+        assert.equal(await confirmed.isSelected(), true, `keys in ${field} left the box checked`);
+      }
       await clickOption(browser, await browser.$('#field-channel option[value="1"]').getElement());
       await browser.waitUntil(async () => (await browser.$("#field-channel").getValue()) === "1", { timeout: 15000, timeoutMsg: "the preview choice selected" });
       await browser.keys([primaryModifier, "s"]);
@@ -1039,8 +1089,12 @@ export const scenarios: Scenario[] = [
       await selectBranch(browser, "repo  master");
       await graphShown(browser, "a:docs");
       await openArtifact(browser, "a:docs", "Artifact docs");
-      const actual = await browser.execute(() => Math.round(document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect().width));
-      assert.ok(Math.abs(actual - width) <= 1, `the fresh service-owned app launch restores ${width}px, got ${actual}`);
+      // Wait for the Detail to render at the saved width rather than measuring its first frame.
+      const actual = () => browser.execute(() => Math.round(document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect().width ?? 0));
+      let got = 0;
+      await browser.waitUntil(async () => Math.abs((got = await actual()) - width) <= 1,
+        { timeout: 15000, timeoutMsg: `the fresh service-owned app launch restores ${width}px` })
+        .catch((error: Error) => { throw new Error(`${error.message}, got ${got}`); });
     },
   ),
 

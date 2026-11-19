@@ -118,7 +118,7 @@ export const scenarios: Scenario[] = [
       // rendering opportunity. A note replaced in the first callback's frame
       // can never be evidence, even if it already had layout geometry.
       await browser.execute(() => {
-        const trace = { frames: [] as { text: string; bounds: number[]; divider: boolean }[], done: false };
+        const trace = { frames: [] as { text: string; layOutAll: boolean; bounds: number[]; divider: boolean }[], done: false };
         (window as unknown as { catalogLoading: typeof trace }).catalogLoading = trace;
         const stage = document.querySelector<HTMLElement>(".monitor .stage")!;
         const read = () => {
@@ -133,7 +133,9 @@ export const scenarios: Scenario[] = [
             return text.width > 0 && text.height > 0
               && note.contains(document.elementFromPoint(text.left + text.width / 2, text.top + text.height / 2));
           });
-          return { note, frame: { text: note?.innerText ?? (stage.innerText.includes("Lay out all") ? "Lay out all" : ""),
+          // Whether the frame offers "Lay out all" is recorded on its own, so a frame showing it
+          // beside a loading note still counts.
+          return { note, frame: { text: note?.innerText ?? "", layOutAll: stage.innerText.includes("Lay out all"),
             bounds: [box.left, box.top, box.width, box.height].map(Math.round),
             divider: !!divider && divider.width > 0 && divider.left > 0 && divider.right <= box.left + 1 } };
         };
@@ -141,7 +143,7 @@ export const scenarios: Scenario[] = [
         function sample() {
           if (trace.done) return;
           const now = read();
-          if (previous && now.note === previous.note && now.frame.text === previous.frame.text
+          if (previous && now.note === previous.note && now.frame.text === previous.frame.text && now.frame.layOutAll === previous.frame.layOutAll
             && JSON.stringify(trace.frames.at(-1)) !== JSON.stringify(now.frame)) trace.frames.push(now.frame);
           previous = now;
           requestAnimationFrame(sample);
@@ -191,13 +193,13 @@ export const scenarios: Scenario[] = [
       assert.ok(pixels?.noComment, `no pixels of a comment are painted under the block: ${JSON.stringify(pixels)}`);
       const { corner } = pixels;
       const loading = await browser.execute(() => {
-        const trace = (window as unknown as { catalogLoading: { frames: { text: string; bounds: number[]; divider: boolean }[]; done: boolean } }).catalogLoading;
+        const trace = (window as unknown as { catalogLoading: { frames: { text: string; layOutAll: boolean; bounds: number[]; divider: boolean }[]; done: boolean } }).catalogLoading;
         trace.done = true;
         return trace.frames;
       });
       assert.ok(loading.some((shown) => /Loading the graph…|Laying out…/.test(shown.text)),
         `a completed render frame explained the loading: ${JSON.stringify(loading.map((shown) => shown.text.slice(-80)))}`);
-      assert.ok(loading.every((shown) => !/Lay out all/.test(shown.text)), "the Run lays out without asking first");
+      assert.ok(loading.every((shown) => !shown.layOutAll), "the Run lays out without asking first");
       assert.ok(loading.every((shown) => shown.divider && JSON.stringify(shown.bounds) === JSON.stringify(before.bounds)), "loading kept the same pane geometry and its divider");
       await browser.action("pointer").move({ x: corner.x, y: corner.y, origin: "viewport" }).down().up().perform();
       await browser.waitUntil(async () => (/^Artifact n1199(?:\s|$)/).test((await detail(browser))?.title ?? ""),
@@ -326,7 +328,8 @@ export const scenarios: Scenario[] = [
       await browser.action("pointer").move({ x: far!.centre.x, y: far!.centre.y, origin: "viewport" }).down().up().perform();
       await browser.waitUntil(async () => /^Artifact w00/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the painted whole opened w00's Detail" });
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
-      // Zoomed in again, it is a named box.
+      // Still zoomed out, it is not a named box; zoomed in again, it is.
+      assert.equal(await browser.$(node).isExisting(), false, "zoomed out, w00 is painted without its name box");
       for (let step = 0; step < 12 && !(await browser.$(node).isExisting()); step += 1) {
         await browser.$(ZOOM_IN).click();
         await camera(browser);

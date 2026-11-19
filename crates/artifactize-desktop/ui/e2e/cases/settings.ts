@@ -5,8 +5,8 @@ import { writeDeclaration } from "../declaration-fixtures.ts";
 // sign-off idle grace both read and set.
 import assert from "node:assert/strict";
 import {
-  artifactize, create, createOutside, createSignoffOnly, environment, newestRunStatus, providerList, remoteStatus, signoffGrace, verifyAll,
-  requests, savedRuns, type Fixture,
+  artifactize, create, createOutside, createSignoffOnly, ended, environment, newestRunStatus, providerList, remoteStatus, signOff, signoffGrace, verifyAll,
+  verifyWaiting, requests, savedRuns, type Fixture,
 } from "../fixture.ts";
 import { clickOption } from "../input.ts";
 import { git } from "../environment.ts";
@@ -738,11 +738,16 @@ Review the agent folder."""
     async () => {
       const fixture = createOutside();
       const env = settingsEnvironment(fixture);
-      // One saved GREEN result to push.
-      writeDeclaration(fixture.repo, nativePath(fixture.repo, "index.artf"), `name = "repo"\n[evals.check]\ntitle = "Check"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check."\n`);
+      // One saved GREEN result to push, and a signed-off Human result the store's token (without
+      // the human scope) cannot take, so a push skips it.
+      writeDeclaration(fixture.repo, nativePath(fixture.repo, "index.artf"), `name = "repo"\n[evals.check]\ntitle = "Check"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check."\n`
+        + `[evals.review]\ntitle = "Review"\nprofile = { kind = "human" }\npayload.instruction = "Review."\n`);
       git(fixture.repo, "init", "-q", "--initial-branch=master", fixture.repo);
-      const verified = await verifyAll(fixture);
-      assert.equal(verified.code, 0, verified.stdout);
+      const run = await verifyWaiting(fixture);
+      const review = requests(fixture).find((request) => request.evalId === "repo/review");
+      if (!review) throw new Error("no repo/review request");
+      signOff(fixture, review.id, "{}");
+      assert.equal(ended(fixture, run), "GREEN", "both results saved GREEN");
       // The outer owner serves HTTP while WDIO runs elsewhere. Only this fixture's
       // domain state crosses that process boundary, never a server or live closure: the
       // principal it answers with, and each record the store received.
@@ -782,6 +787,8 @@ Review the agent folder."""
         if (request.method === "POST" && request.url === "/v1/lookup") return answer(200, { entries: [] });
         if (request.method === "PUT" && request.url?.startsWith("/v1/entries/")) {
           if (exists(refuseFile)) return answer(503, { error: "Store refused the record." });
+          // The store keeps each record once: one sent again is not created again.
+          if (readText(receivedFile).split("\n").includes(request.url)) return answer(200, { created: false });
           writeText(receivedFile, `${readText(receivedFile)}${request.url}\n`);
           return answer(200, { created: true });
         }
@@ -793,8 +800,11 @@ Review the agent folder."""
         data: { url: `${store.url}/`, principalFile, receivedFile, holdFile, refuseFile, token: TOKEN },
         release: async () => {
           closing = true;
-          await Promise.all(inFlight);
-          await store.close();
+          // Every handler settles and the listener closes even when one of them failed.
+          const failures = (await Promise.allSettled(inFlight))
+            .flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+          try { await store.close(); } catch (error) { failures.push(error); }
+          if (failures.length) throw new AggregateError(failures, "the remote store fixture failed");
         },
       };
     },
@@ -873,10 +883,10 @@ Review the agent folder."""
       };
       // A dry run's summary takes the status line and stays there until Check status.
       await whileHeld("Push (dry run)", "the dry run");
-      await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Would push 1, already in the store 0, skipped 0\./.test(await statusLine().getText()),
+      await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Would push 1, already in the store 0, skipped 1\./.test(await statusLine().getText()),
         { timeout: 15000, timeoutMsg: "the dry run's summary takes the status line" });
       await commandsRendered(browser);
-      assert.match(await statusLine().getText(), /^Would push 1, already in the store 0, skipped 0\./, "the summary stays until Check status");
+      assert.match(await statusLine().getText(), /^Would push 1, already in the store 0, skipped 1\./, "the summary stays until Check status");
       // A dry run pushes nothing: the store received nothing, and the status, read again,
       // says nothing was pushed today.
       assert.equal(received(), 0, "the dry run sent no record");
@@ -889,7 +899,7 @@ Review the agent folder."""
       { timeout: 15000, timeoutMsg: "the fresh status after the dry run shows nothing pushed today" });
       // A real push: the store receives the record, and the same status counts it.
       await whileHeld("Push results", "the push");
-      await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Pushed 1, already in the store 0, skipped 0\./.test(await statusLine().getText()),
+      await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Pushed 1, already in the store 0, skipped 1\./.test(await statusLine().getText()),
         { timeout: 15000, timeoutMsg: "the push's summary takes the status line" });
       assert.equal(received(), 1, "the store received the one record");
       // The push reports success before its follow-up status request enables the button.
@@ -900,6 +910,13 @@ Review the agent folder."""
       await browser.waitUntil(async () => await statusLine().isDisplayed()
         && await statusLine().getText() === "Signed in · alice-after-push (scopes: read, publish) · 1 pushed today",
       { timeout: 15000, timeoutMsg: "the fresh status after the real push counts it today" });
+      // Pushed again, the record the store holds counts as already there and the sign-off is
+      // skipped again; nothing new is sent.
+      await whileHeld("Push results", "the second push");
+      await browser.waitUntil(async () => await statusLine().isDisplayed() && /^Pushed 0, already in the store 1, skipped 1\./.test(await statusLine().getText()),
+        { timeout: 15000, timeoutMsg: "the second push's summary counts the record already in the store and the skipped sign-off" });
+      assert.equal(received(), 1, "the store received no record twice");
+      await checkStatus.waitForEnabled({ timeout: 15000, timeoutMsg: "the second push's status refresh finished" });
       writeText(principalFile, "");
       await browser.$("button=Check status").click();
       const error = browser.$('section[aria-labelledby="remote-title"]').$('p[aria-label="Remote store"], [role="alert"]');
@@ -915,7 +932,7 @@ Review the agent folder."""
       writeText(refuseFile, "");
       await browser.$("button=Push results").click();
       let failedLine = "";
-      await browser.waitUntil(async () => await statusLine().isDisplayed() && /Store refused the record/.test(failedLine = await statusLine().getText()),
+      await browser.waitUntil(async () => await statusLine().isDisplayed() && /HTTP 503/.test(failedLine = await statusLine().getText()),
         { timeout: 15000, timeoutMsg: "the push's failure takes the status line" })
         .catch((error: Error) => { throw new Error(`${error.message}: the line says ${JSON.stringify(failedLine)}`); });
       const red = await browser.execute((selector) => {
@@ -930,6 +947,18 @@ Review the agent folder."""
       removeTree(refuseFile);
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "Check status puts the status back" });
+      // Sign-out asks the store nothing, so it cannot be held: the window records whether every
+      // Remote button was disabled in some state it rendered while the sign-out was pending.
+      await browser.execute(() => {
+        const seen = { allDisabled: false };
+        (window as unknown as { remoteSignOut: typeof seen }).remoteSignOut = seen;
+        const section = document.querySelector('section[aria-labelledby="remote-title"]')!;
+        const check = () => {
+          const buttons = [...section.querySelectorAll<HTMLButtonElement>("button")];
+          if (buttons.length > 0 && buttons.every((button) => button.disabled)) seen.allDisabled = true;
+        };
+        new MutationObserver(check).observe(section, { attributes: true, subtree: true, childList: true });
+      });
       await browser.$("button=Sign out of the store").click();
       const remote = browser.$('section[aria-labelledby="remote-title"]');
       const signedOut = remote.$('p[aria-label="Remote store"]');
@@ -939,6 +968,8 @@ Review the agent folder."""
         && await remote.$("button=Sign in to the store").isDisplayed(),
       { timeout: 15000, timeoutMsg: "the Remote tab shows Signed out and restores the URL, share level and token fields" });
       assert.equal(await remote.$("#remote-token").getValue(), "", "the token field is empty");
+      assert.ok(await browser.execute(() => (window as unknown as { remoteSignOut: { allDisabled: boolean } }).remoteSignOut.allDisabled),
+        "every Remote button was disabled while the sign-out was pending");
       const after = await remoteStatus(fixture);
       assert.equal(after.code, 1, after.stdout);
       assert.deepEqual(JSON.parse(after.stdout), { configured: false });

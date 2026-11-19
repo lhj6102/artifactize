@@ -6,6 +6,11 @@ import { nativePath, replaceText, requestWindowClose } from "./platform.ts";
 
 export const graphToolObservation = (fixture: Fixture) => nativePath(fixture.root, "graph-tool-window.json");
 export const graphToolFailure = (fixture: Fixture) => nativePath(fixture.root, "graph-tool-failure.txt");
+/** Written by the case just before it clicks the graph tool: the runner then frees the
+ * companion's reserved driver port. */
+export const companionPortWanted = (fixture: Fixture) => nativePath(fixture.root, "companion-port-wanted");
+/** Written by the runner once the companion's driver port is free to bind. */
+export const companionPortFree = (fixture: Fixture) => nativePath(fixture.root, "companion-port-free");
 
 export async function observeGraphTool(fixture: Fixture, window: WebdriverIO.Browser): Promise<void> {
   let shown: { title: string; selection: string[]; artifacts: string[] } | undefined;

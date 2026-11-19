@@ -1,5 +1,5 @@
 import { readCandidate } from "./build.ts";
-import { asNativePath, childDirectories, exists, nameOf, nativePath, newDirectory, processId, processRunning, readJson, removeTree, runProgramOk, variable, writeJson, type NativePath } from "./platform.ts";
+import { asNativePath, childDirectories, exists, nameOf, nativePath, newDirectory, processId, processRunning, readJson, removeTree, runProgramOk, saveScreenshot, variable, writeJson, type NativePath } from "./platform.ts";
 import type { Fixture } from "./fixture.ts";
 import type { Identity } from "./runs.ts";
 
@@ -77,7 +77,7 @@ export async function sessionEndedByApp(
 
 export async function saveEvidence(browser: WebdriverIO.Browser, fixture: Fixture, label: string): Promise<void> {
   const output = variable("HUMAN_FOCUS_EVIDENCE");
-  if (output) await browser.saveScreenshot(nativePath(asNativePath(output), `${nameOf(fixture.root)}-${label.replaceAll(" ", "-")}.png`));
+  if (output) await saveScreenshot(browser, nativePath(asNativePath(output), `${nameOf(fixture.root)}-${label.replaceAll(" ", "-")}.png`));
 }
 
 /** Explicitly separate an owned live app from an invalid observation. */

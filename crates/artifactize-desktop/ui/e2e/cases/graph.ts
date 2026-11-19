@@ -191,14 +191,21 @@ async function titledAtTop(browser: WebdriverIO.Browser, root: string, key: stri
     const whole = node?.querySelector<HTMLElement>(".whole");
     const [text, dot, row] = [whole?.querySelector<HTMLElement>(".name"), whole?.querySelector<HTMLElement>(".light"), whole?.querySelector<HTMLElement>(".title")];
     if (!whole || !text || !dot || !row) return null;
-    const inset = getComputedStyle(row).boxShadow.split(/,(?![^(]*\))/).find((part) => part.includes("inset")) ?? "";
+    // The colour the title row's strip is painted in, however it is drawn: an inset shadow, a
+    // bottom border unlike its other sides, or a bottom pseudo-element's background.
+    const style = getComputedStyle(row);
+    const inset = style.boxShadow.split(/,(?![^(]*\))/).find((part) => part.includes("inset"))?.match(/rgba?\([^)]*\)|color\([^)]*\)/)?.[0];
+    const after = getComputedStyle(row, "::after");
+    const strip = inset
+      ?? (Number.parseFloat(style.borderBottomWidth) > 0 && style.borderBottomColor !== style.borderTopColor ? style.borderBottomColor : undefined)
+      ?? (after.content !== "none" ? after.backgroundColor : "");
     return {
+      strip,
       box: whole.getBoundingClientRect().toJSON() as DOMRect,
       name: text.getBoundingClientRect().toJSON() as DOMRect,
       dot: dot.getBoundingClientRect().toJSON() as DOMRect,
       text: text.textContent?.trim() ?? "",
       colour: getComputedStyle(dot).color,
-      strip: inset.match(/rgba?\([^)]*\)|color\([^)]*\)/)?.[0] ?? "",
       border: getComputedStyle(whole).borderTopColor,
     };
   }, root, key);
@@ -546,13 +553,14 @@ export const scenarios: Scenario[] = [
 
       // A click on docs's copy of site opens site, both copies highlighted.
       await openArtifact(browser, "a:docs/a:site", "Artifact site");
-      await unfold(browser, "Neighbours");
+      await unfold(browser, "Debug");
       await browser.waitUntil(async () => {
         const shown = await partsDrawn(browser, current);
         return shown["a:docs/a:site"].open && shown["a:suite/a:site"].open && !shown["a:docs"].open && !shown["a:suite"].open;
       }, { timeout: 15000, timeoutMsg: "both copies of site, and no whole, highlighted" });
-      const copies = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] dl[aria-label="Copies"] dd')].map((fact) => fact.textContent?.trim() ?? ""));
-      assert.ok(copies.some((fact) => /\bsuite\b/.test(fact) && /\bdocs\b/.test(fact)), `site's Detail says where it is drawn, naming both wholes: ${JSON.stringify(copies)}`);
+      const drawnIn = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] dt')]
+        .find((key) => key.textContent?.trim() === "Drawn in")?.nextElementSibling?.textContent?.trim() ?? "");
+      assert.ok(/\bsuite\b/.test(drawnIn) && /\bdocs\b/.test(drawnIn), `site's Debug says where it is drawn, naming both wholes: ${JSON.stringify(drawnIn)}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes the Current's Detail");
       assert.ok(!(await partsDrawn(browser, current))["a:suite/a:site"].open, "no copy stays highlighted");
     },
@@ -970,7 +978,8 @@ export const scenarios: Scenario[] = [
       await browser.$(ZOOM_OUT).click();
       assert.notEqual((await settled()).transform, fitted.transform, "Zoom Out moved the fitted camera");
       await fitButton(browser).click();
-      assert.equal((await settled()).transform, fitted.transform, "Fit View without the Detail fits as with it open");
+      await browser.waitUntil(async () => (await settled()).transform === fitted.transform,
+        { timeout: 15000, timeoutMsg: "Fit View without the Detail fits as with it open" });
 
       // A chip whose graph is not shown yet draws it whole: the Current, then the Run again.
       const run = (await branch(browser, "repo  master"))!.chips.find((chip) => chip.id !== "current")!.id;

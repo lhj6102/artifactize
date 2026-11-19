@@ -8,7 +8,7 @@ import {
   verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
-import { graphToolFailure, graphToolObservation } from "../graph-tool-session.ts";
+import { companionPortFree, companionPortWanted, graphToolFailure, graphToolObservation } from "../graph-tool-session.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -30,12 +30,12 @@ async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolea
 const refresh = (browser: WebdriverIO.Browser) => browser.$(`${MAIN} > header`).$("button=Refresh");
 
 function current(browser: WebdriverIO.Browser) {
-  /** Each drawn Artifact as read aloud, and each edge's light. */
+  /** Each drawn Artifact as read aloud, and each drawn relation (its colour is read as painted). */
   const drawn = () => browser.execute(() => ({
     nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].filter((node) => !node.closest('aside'))
       .map((node) => [node.dataset.id ?? "", node.getAttribute("aria-label") ?? ""])),
-    edges: Object.fromEntries([...document.querySelectorAll<SVGElement>(".svelte-flow__edge")].filter((edge) => !edge.closest('aside'))
-      .map((edge) => [edge.dataset.id ?? "", edge.dataset.light ?? ""])),
+    edges: [...document.querySelectorAll<SVGElement>(".svelte-flow__edge")].filter((edge) => !edge.closest('aside'))
+      .map((edge) => edge.dataset.id ?? ""),
   }));
 
   /** The camera may have just moved (Fit View). Wait for a stable, hit-testable real pointer
@@ -111,6 +111,9 @@ payload.instruction = "Check {graph-marker}."
       assert.equal(exists(evidence), false, "no companion window was opened by setup");
       const tool = browser.$(DETAIL).$('section[aria-label="Tools of docs"]').$("button=graph");
       await tool.waitForEnabled();
+      // The runner holds the companion's driver port until the click is imminent.
+      writeText(companionPortWanted(fixture), "");
+      await waitFor(browser, () => exists(companionPortFree(fixture)), "the runner freed the companion's driver port");
       await tool.click();
       await waitFor(browser, async () => {
         const failure = graphToolFailure(fixture);
@@ -145,7 +148,7 @@ payload.instruction = "Check {graph-marker}."
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify({
         "a:docs": "docs: would run (1 eval)", "a:release": "release: would run (1 eval)", "a:ship": "ship: would run (1 eval)",
       }), `each Artifact marked by what verify would do: ${JSON.stringify(await drawn())}`);
-      await waitFor(browser, async () => JSON.stringify((await drawn()).edges) === JSON.stringify({ "a:release>a:ship": "run" }),
+      await waitFor(browser, async () => JSON.stringify((await drawn()).edges) === JSON.stringify(["a:release>a:ship"]),
         `the relation carries what its source would do: ${JSON.stringify(await drawn())}`);
       let look = await graphAppearance(browser);
       await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:release": "run", "a:ship": "run", "a:docs": "run" }, { "a:release>a:ship": "run" }),
@@ -253,7 +256,7 @@ Summarize {docs}."""
       await refresh(browser).click();
       await waitFor(browser, async () => {
         const { nodes, edges } = await drawn();
-        return nodes["a:digest"] === "digest: waiting" && edges["a:docs>a:digest"] !== undefined;
+        return nodes["a:digest"] === "digest: waiting" && edges.includes("a:docs>a:digest");
       }, "the added digest Artifact and its relation from docs drawn");
       const waiting = await graphAppearance(browser);
       assert.notEqual(waiting.nodes["a:docs"].mark, waiting.nodes["a:digest"].mark, "would run and waiting are painted apart");
@@ -373,6 +376,12 @@ Summarize {docs}."""
       const instant = (await scannedAt(browser))!;
       const local = await browser.execute((shown: string) => new Date(shown).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }), instant);
       assert.equal(await scanned(browser), `Scanned at ${local}`, "the header reads that scan's local time");
+      const shownTime = await browser.execute((main) => {
+        const time = document.querySelector<HTMLElement>(`${main} > header .scan time`);
+        const visible = !!time && time.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && time.getBoundingClientRect().width > 0;
+        return visible ? time.innerText.trim() : null;
+      }, MAIN);
+      assert.equal(shownTime, local, "the header visibly shows that time");
       const after = await graphAppearance(browser);
       for (const id of ["a:release", "a:ship"]) {
         assert.notEqual(after.nodes[id].mark, before.look.nodes[id].mark, `${id} recoloured`);

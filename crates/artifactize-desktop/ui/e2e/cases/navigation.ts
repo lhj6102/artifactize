@@ -4,13 +4,13 @@
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
 import { requestState, reviewing, showDebug } from "../human-review.ts";
-import { addRepository, addWaiting, create, createGraph, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, signoff, verifyWaiting } from "../fixture.ts";
+import { addRepository, addWaiting, create, createGraph, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, signoff, verifyCommented, verifyWaiting } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
-import { checkpoint, refreshed } from "../commands.ts";
+import { checkpoint, commandsRendered, refreshed } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, updateDatabase, writeText } from "../platform.ts";
+import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, writeText } from "../platform.ts";
 import { pointerGapClick, visibleCenter } from "../pointer.ts";
 import { aside, camera, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainFocused, mainTitle, openWaiting, scanned, SEARCH, showRun, waiting } from "../pane.ts";
@@ -164,16 +164,15 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture, data }) => {
       await graphShown(browser, "a:release");
       const run = requests(fixture)[0].runId;
-      const comment = "A Run comment saved outside the window";
-      const timeline = () => browser.$(`[data-chip="${run}"] .sub`);
-      const timelineShows = async (text: string) => await timeline().isDisplayed() && await timeline().getText() === text;
-      await waitFor(browser, () => timelineShows(run), "the Run initially has no comment");
+      const comment = "A Run started outside the window";
+      const timeline = (id: string) => browser.$(`[data-chip="${id}"] .sub`);
+      const timelineShows = async (id: string, text: string) => await timeline(id).isDisplayed() && await timeline(id).getText() === text;
+      await waitFor(browser, () => timelineShows(run, run), "the Run has no comment");
       assert.equal(await mainTitle(browser), run, "the Run is shown before refreshing");
       assert.equal(await branch(browser, "repo  after-refresh"), undefined, "the new worktree is not listed yet");
       const before = await checkpoint(browser);
-      updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
-        assert.equal(db.prepare("UPDATE runs SET data=json_set(data,'$.comment',?) WHERE id=?").run(comment, run).changes, 1);
-      });
+      // Another process starts a Run with a comment.
+      const started = verifyCommented(fixture, comment);
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "after-refresh", data.worktree);
       // Background reconciliation cannot stand in for the actual reload: bind the two
       // external changes to this command's own reply, then check they are drawn together.
@@ -183,9 +182,9 @@ export const scenarios: Scenario[] = [
       await refreshed(browser, before);
       const refresh = (await checkpoint(browser)).activity.refresh!;
       assert.ok(refresh.branches.some(({ project, name }) => project === "repo" && name === "after-refresh"), "the manual reload discovered the new worktree");
-      assert.ok(refresh.branches.some(({ runs }) => runs.some((chip) => chip.id === run && chip.comment === comment)), "the manual reload read the changed Run");
-      await waitFor(browser, async () => await timelineShows(comment) && !!(await branch(browser, "repo  after-refresh")),
-        "the changed Run and the new worktree are rendered together");
+      assert.ok(refresh.branches.some(({ runs }) => runs.some((chip) => chip.id === started && chip.comment === comment)), "the manual reload read the new Run");
+      await waitFor(browser, async () => await timelineShows(started, comment) && !!(await branch(browser, "repo  after-refresh")),
+        "the new Run and the new worktree are rendered together");
       assert.equal(await mainTitle(browser), run, "on the same view");
       assert.equal(await browser.$(`${MAIN} > header [role="status"]`).isExisting(), false, "the refresh read without an error");
       // The new branch's Current: only a refresh or its Refresh button scans it again.
@@ -618,7 +617,10 @@ export const scenarios: Scenario[] = [
         await browser.waitUntil(async () => ((await layout()).pane ?? 0) > narrow + 40, { timeout: 15000, timeoutMsg: "the dragged Pane" });
         await browser.action("pointer", { id: "divider" }).up().perform();
       } finally { await browser.releaseActions(); }
+      const sorting = await checkpoint(browser);
       await fill(browser, SEARCH, "sort:name");
+      // The sort's own search has completed and rendered before the Pane's state is taken.
+      await commandsRendered(browser, sorting);
       await expand(browser, "other  master");
       await expand(browser, "repo  master");
       const shown = await layout();

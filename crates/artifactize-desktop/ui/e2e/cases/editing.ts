@@ -2,6 +2,7 @@
 // Rename and Delete, places by hand and parts by dragging on the graph, and comments. Each case
 // ends in what the window shows and what the definition files on disk hold.
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { git } from "../environment.ts";
 import { prepareFixture } from "../build-fixtures.ts";
 import { verifyAll, type Fixture } from "../fixture.ts";
@@ -11,6 +12,7 @@ import { exists, listFiles, makeDirectory, nameOf, nativePath, primaryModifier, 
 import { camera as stillCamera, detail, FIND, findField, graphShown, nodeAt, offCentre, openArtifact } from "../graph-view.ts";
 import { MAIN, chooseChip, mainTitle, scanned, showRun } from "../pane.ts";
 import { afterRender, fill, press } from "../keys.ts";
+import { commandsRendered } from "../commands.ts";
 import { clickAt, pointerGapClick, visibleCenter } from "../pointer.ts";
 import { buttonKey, dispatchInput, tab } from "../input.ts";
 import { screenshotPixels } from "../rendering.ts";
@@ -519,13 +521,13 @@ export const scenarios: Scenario[] = [
       const core = (await box(browser, "a:core"))!;
       await drag(browser, { x: core.x, y: core.y }, { x: core.x + 60, y: core.y + 40 });
       await typed("a move over typed text refused");
-      assert.deepEqual(await box(browser, "a:core"), core, "core back where it was");
+      await waitFor(browser, async () => isDeepStrictEqual(await box(browser, "a:core"), core), "core back where it was");
       await fresh();
       const app = (await box(browser, "a:app"))!;
       await drag(browser, core, { x: app.left + 60, y: app.top + 14 });
       await typed("a drop into app's box refused");
       assert.equal(await browser.$(`${CURRENT} ${nodeAt("a:app/a:core")}`).isExisting(), false, "core not drawn in app's box");
-      assert.deepEqual(await box(browser, "a:core"), core, "core back again");
+      await waitFor(browser, async () => isDeepStrictEqual(await box(browser, "a:core"), core), "core back again");
       await fresh();
       await browser.$(TOOLS).$("button=Reset layout").click();
       await typed("Reset layout refused");
@@ -851,6 +853,19 @@ export const scenarios: Scenario[] = [
       await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the successful Delete closes its confirmation" });
       await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "its Detail closed");
       await waitFor(browser, async () => !(await browser.$(`${CURRENT} ${nodeAt("a:extra")}`).isExisting()), "its node gone");
+      // app, a whole nothing names, goes with its place of piece; piece itself stays, drawn in
+      // the other wholes that hold it.
+      await openArtifact(browser, "a:app", "Artifact app");
+      await browser.$(DETAIL).$("button=Delete").click();
+      await dialog().waitForExist({ timeout: 15000 });
+      await dialog().$("button=Delete").click();
+      await waitFor(browser, () => file(fixture, "app") === null, "app's file removed");
+      await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the successful Delete closes its confirmation" });
+      const drawn = (id: string) => browser.$(`${CURRENT} ${nodeAt(id)}`).isExisting();
+      await waitFor(browser, async () => !(await drawn("a:app")) && !(await drawn("a:app/a:piece"))
+        && (await drawn("a:bundle/a:piece") || await drawn("a:docs/a:piece")),
+      "app and its placed piece gone, piece still drawn in another whole's box");
+      assert.notEqual(file(fixture, "piece"), null, "piece's own definition stays");
     },
   ),
 
@@ -1596,7 +1611,9 @@ docs = [0.0, 0.0]
             "Esc put the comment back under docs, nothing lifted or highlighted, the button still down");
         },
       });
-      await afterRender(browser);
+      // Any write the release submitted is native work: once none is pending and the window has
+      // rendered, the files show what the cancelled gesture did.
+      await commandsRendered(browser);
       assert.deepEqual(["docs", "core"].map((name) => file(fixture, name)), unmoved, "the release after Esc wrote nothing");
 
       // Repeat over an expanded whole and a minimized whole using bundle, which has no comment.

@@ -112,6 +112,14 @@ export function artifactize(fixture: Fixture, ...args: string[]): number {
   return runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, ...args], { env: environment(fixture) }).status;
 }
 
+/** Start a Run of every eval with `comment`, as another process, without waiting for it; its ID. */
+export function verifyCommented(fixture: Fixture, comment: string): string {
+  const started = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--comment", comment, "--json"],
+    { env: environment(fixture) });
+  if (started.status !== 0) throw new Error(started.stderr || started.stdout);
+  return (JSON.parse(started.stdout) as { id: string }).id;
+}
+
 export type Saved = {
   id: string;
   runId: string;

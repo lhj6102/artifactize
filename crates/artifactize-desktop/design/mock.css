@@ -990,17 +990,6 @@
   margin: 0;
   padding: 0 var(--pad) 10px;
 }
-/* A part of several wholes: one line at the top of its Artifact tab naming each whole. */
-.m-wholes {
-  margin: 0;
-  padding: 6px var(--pad);
-  color: var(--ink-2);
-  font-size: var(--text-small);
-}
-.m-wholes b {
-  color: var(--ink);
-  font-weight: 600;
-}
 .m-summary .m-status {
   font-weight: 700;
   margin-right: 10px;

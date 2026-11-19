@@ -39,11 +39,18 @@ function readGraph(browser: WebdriverIO.Browser) {
       const style = getComputedStyle(element);
       return style.display !== "none" && style.visibility === "visible" && Number(style.opacity) > 0;
     };
-    /** The colour of an inset box shadow (a strip), or "". */
+    /** The colour a node's strip is painted in, however it is drawn: an inset shadow along its
+     * bottom, a bottom border unlike its other sides, or a bottom pseudo-element's background;
+     * "" without one. */
     const strip = (element: Element | null) => {
-      const shadow = element ? getComputedStyle(element).boxShadow : "";
-      const inset = shadow.split(/,(?![^(]*\))/).find((part) => part.includes("inset"));
-      return inset?.match(/rgba?\([^)]*\)|color\([^)]*\)|oklch\([^)]*\)/)?.[0] ?? "";
+      if (!element) return "";
+      const style = getComputedStyle(element);
+      const inset = style.boxShadow.split(/,(?![^(]*\))/).find((part) => part.includes("inset"));
+      const shadow = inset?.match(/rgba?\([^)]*\)|color\([^)]*\)|oklch\([^)]*\)/)?.[0];
+      if (shadow) return shadow;
+      if (Number.parseFloat(style.borderBottomWidth) > 0 && style.borderBottomColor !== style.borderTopColor) return style.borderBottomColor;
+      const after = getComputedStyle(element, "::after");
+      return after.content !== "none" && after.backgroundColor !== "rgba(0, 0, 0, 0)" ? after.backgroundColor : "";
     };
     // Each token as the theme declares it, read without touching the page.
     const root = getComputedStyle(document.documentElement);
