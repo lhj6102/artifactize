@@ -554,19 +554,29 @@ async function windowsFixtureRunner(command: ReturnType<typeof runnerCommand> & 
   const script = nativePath(root, "job.ps1");
   const input = nativePath(root, "command.json");
   const output = nativePath(root, "outcome.json");
+  const starter = nativePath(root, "starter.mjs");
   try {
     writeJson(input, { program: command.program, args: command.args, holdDescendants: command.holdDescendants ?? false });
-    writeText(script, String.raw`param([string]$InputPath, [string]$OutputPath, [switch]$LaunchChild)
-$ErrorActionPreference = 'Stop'
-if ($LaunchChild) {
-  if ([Console]::ReadLine() -ne 'start') { exit 1 }
-  $command = Get-Content -Raw -LiteralPath $InputPath | ConvertFrom-Json
-  $info = [Diagnostics.ProcessStartInfo]::new($command.program)
-  $info.UseShellExecute = $false
-  foreach ($arg in $command.args) { $info.ArgumentList.Add($arg) }
-  $runner = [Diagnostics.Process]::Start($info)
-  try { $runner.WaitForExit(); exit $runner.ExitCode } finally { $runner.Dispose() }
+    // A Store-packaged pwsh starter can launch children outside its assigned job.
+    // The same Node executable that runs the suite makes an ordinary Win32 spawn.
+    writeText(starter, String.raw`import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { readFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+process.exitCode = 1;
+const gate = createInterface({ input: process.stdin });
+for await (const line of gate) {
+  if (line !== "start") break;
+  const { program, args } = JSON.parse(readFileSync(process.argv[2], "utf8"));
+  const child = spawn(program, args, { stdio: ["ignore", "inherit", "inherit"] });
+  const [code] = await once(child, "exit");
+  process.exitCode = code ?? 1;
+  break;
 }
+`);
+    writeText(script, String.raw`param([string]$InputPath, [string]$OutputPath, [string]$NodePath, [string]$StarterPath)
+$ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System;
 using System.ComponentModel;
@@ -611,11 +621,11 @@ public static class FixtureJob {
 $job = [FixtureJob]::Create()
 $starter = $null
 try {
-  $info = [Diagnostics.ProcessStartInfo]::new([Environment]::ProcessPath)
+  $info = [Diagnostics.ProcessStartInfo]::new($NodePath)
   $info.UseShellExecute = $false
   $info.RedirectStandardInput = $true
-  @('-NoProfile', '-NonInteractive', '-File', $PSCommandPath, '-InputPath', $InputPath, '-LaunchChild') |
-    ForEach-Object { $info.ArgumentList.Add($_) }
+  $info.ArgumentList.Add($StarterPath)
+  $info.ArgumentList.Add($InputPath)
   $starter = [Diagnostics.Process]::Start($info)
   [FixtureJob]::Attach($job, $starter.Handle)
   $cancelled = [IO.StreamReader]::new([Console]::OpenStandardInput()).ReadLineAsync()
@@ -642,11 +652,13 @@ try {
   $job.Dispose()
 }
 `);
-    const child = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", script, "-InputPath", input, "-OutputPath", output], {
+    const child = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", script, "-InputPath", input, "-OutputPath", output,
+      "-NodePath", nodeProgram, "-StarterPath", starter], {
       cwd: command.cwd ?? resolve(import.meta.dirname, ".."), env: command.env, stdio: ["pipe", "pipe", "pipe"],
-      // The build owner handles Ctrl+C by closing the job owner's stdin, not by
-      // interrupting the PowerShell process responsible for joining the job.
-      detached: visible !== undefined, windowsHide: visible !== undefined,
+      // With piped stdio, windowsHide keeps the build job owner out of the caller's
+      // console. With detached, pwsh can exit before running the script. The build
+      // owner cancels by closing stdin so the job owner can still join.
+      windowsHide: visible !== undefined,
     });
     let stdout = "";
     let stderr = "";

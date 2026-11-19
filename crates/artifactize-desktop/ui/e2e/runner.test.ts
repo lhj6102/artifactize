@@ -6,7 +6,7 @@ import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.t
 import { environment } from "./environment.ts";
 import {
   childDirectories, executableName, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
-  exists, nodeProgram, processRunning, readLoopback, runProgramOk, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
+  exists, nodeProgram, processRunning, readLoopback, runProgramOk, runStep, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
 } from "./platform.ts";
 
 function root(): NativePath {
@@ -61,7 +61,17 @@ it("a failed preparation stops the real service before its executable boundary",
   }
 });
 
-it("cancelling a wrapped runner joins its fixture descendants before releasing inputs", { timeout: 120000 }, async (test) => {
+it("a completed build step returns its captured output", { timeout: 120000 }, async (test) => {
+  const directory = root();
+  try {
+    const stdout = await runStep(nodeProgram, ["-e", "process.stdout.write('build complete')"], {
+      env: environment(fixture(directory)), cwd: directory, capture: true, signal: test.signal,
+    });
+    assert.equal(stdout, "build complete");
+  } finally { removeTree(directory); }
+});
+
+it("cancelling a wrapped build step joins its descendants before releasing inputs", { timeout: 120000 }, async (test) => {
   const directory = root();
   const cancellation = new AbortController();
   const reason = new Error("fixture owner cancelled the runner");
@@ -83,8 +93,9 @@ it("cancelling a wrapped runner joins its fixture descendants before releasing i
     servers.push(receiver);
     const port = receiver.port;
     const command = runnerCommand([suitePath("domain-fixtures", "tree.ts"), "owner", String(port)], environment(fixture(directory)));
-    running = fixtureRunner(command, AbortSignal.any([test.signal, cancellation.signal]))
-      .then(() => ({}), (error: unknown) => ({ error }));
+    running = runStep(command.program, command.args, {
+      env: command.env, cwd: directory, capture: true, signal: AbortSignal.any([test.signal, cancellation.signal]),
+    }).then(() => ({}), (error: unknown) => ({ error }));
     const descendant = await Promise.race([ready, running.then(({ error }) => {
       throw error ?? new Error("runner exited before its descendant reported its process id");
     })]);
