@@ -25,8 +25,7 @@ dev-worker/SKILL.md of {dev-skills}. Check that:
 - the page's description of the flow and the roles says the same as the skills;
 - it uses only GitHub's public REST API without credentials, and stays usable when GitHub
   fails or its rate limit is used up.
-Submit GREEN when nothing clearly disagrees or fails; otherwise RED with up to 20 findings,
-each with a board path:line and one sentence on what to change in the board.
+Submit GREEN when nothing clearly disagrees or fails; otherwise RED. List every finding, each with a board path:line and one sentence on what to change in the board.
 """
 
 [evals.reads-the-record.pass_schema]
@@ -37,7 +36,7 @@ additionalProperties = false
 
 [evals.reads-the-record.fail_schema]
 type = "object"
-properties.findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 }
+properties.findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
 required = ["findings"]
 additionalProperties = false
 
@@ -55,8 +54,7 @@ observing the repository's live GitHub activity, its brief definitions of commit
 request, its `dev-green`/`GREEN`/`YELLOW` status labels, its `verify run-...` and `CI ...`
 shorthand in activity lines and tooltips, and its short note on GitHub's public API request
 limits are helpful visitor context and are not violations. Submit GREEN
-only when none of the three is clearly violated. Otherwise submit RED with up to 20 violations,
-most important first, each with the item id, a board path:line and one sentence on what to
+only when none of the three is clearly violated. Otherwise submit RED. List every finding, each with the item id, a board path:line and one sentence on what to
 change in the board.
 """
 
@@ -74,7 +72,6 @@ additionalProperties = false
 [evals.follows-rules.fail_schema.properties.violations]
 type = "array"
 minItems = 1
-maxItems = 20
 
 [evals.follows-rules.fail_schema.properties.violations.items]
 type = "object"

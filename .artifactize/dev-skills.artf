@@ -25,7 +25,7 @@ Check that:
   disable-model-invocation: true, and each openai.yaml sets policy.allow_implicit_invocation
   to false.
 Judge accuracy and agreement only; an omission is not a finding. Submit GREEN when
-nothing they state is wrong or contradictory; otherwise RED with up to 20 findings, each
+nothing they state is wrong or contradictory; otherwise RED. List every finding, each
 with a skill path:line and one sentence on what to change in the skill.
 """
 
@@ -37,6 +37,6 @@ additionalProperties = false
 
 [evals.correct.fail_schema]
 type = "object"
-properties.findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 }
+properties.findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
 required = ["findings"]
 additionalProperties = false

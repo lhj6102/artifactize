@@ -26,8 +26,7 @@ translation: elements with data-locale="ko" and the values of data-ko-* attribut
 Korean page. Review the English page: elements without data-locale or with data-locale="en", and
 attributes as written. Check its visible introduction and page content against every W- item;
 installer implementation scripts are not page content.
-Submit GREEN only when no item is clearly violated. Otherwise submit RED with up to 20 violations,
-most important first, each with the item id, a page path:line and one sentence on what to change
+Submit GREEN only when no item is clearly violated. Otherwise submit RED. List every finding, each with the item id, a page path:line and one sentence on what to change
 in the landing page.
 """
 
@@ -45,7 +44,6 @@ additionalProperties = false
 [evals.follows-rules.fail_schema.properties.violations]
 type = "array"
 minItems = 1
-maxItems = 20
 
 [evals.follows-rules.fail_schema.properties.violations.items]
 type = "object"
@@ -85,8 +83,7 @@ fingerprint, artifactsum, GREEN, RED, YELLOW) also stay in English in the Korean
   targets and code are unchanged; only comments in code may be translated. Both pages link to
   each other in the header and declare each other with hreflang.
 Use the list, glob, grep and read tools of {docs-landing}. Tool paths are Artifact-relative.
-Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to 20
-violations, most important first, each with the criterion id, the index.html or site.js line of the
+Submit GREEN only when no criterion is clearly violated. Otherwise submit RED. List every finding, each with the criterion id, the index.html or site.js line of the
 Korean text, the line of the English text and one sentence on how to fix the Korean page.
 """
 
@@ -104,7 +101,6 @@ additionalProperties = false
 [evals.translates-ko.fail_schema.properties.violations]
 type = "array"
 minItems = 1
-maxItems = 20
 
 [evals.translates-ko.fail_schema.properties.violations.items]
 type = "object"
@@ -127,8 +123,7 @@ Check its Korean prose against every K- item. Code, commands, configuration keys
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs-landing}; tool paths are Artifact-relative.
 Read every Korean sentence. Submit GREEN only when no sentence violates an item; a sentence
-that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED with up
-to 20 violations, most important first, each with the item id, the path:line, the text and
+that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED. List every finding, each with the item id, the path:line, the text and
 one sentence on how to rewrite it.
 """
 
@@ -146,7 +141,6 @@ additionalProperties = false
 [evals.follows-write-in-korean.fail_schema.properties.violations]
 type = "array"
 minItems = 1
-maxItems = 20
 
 [evals.follows-write-in-korean.fail_schema.properties.violations.items]
 type = "object"

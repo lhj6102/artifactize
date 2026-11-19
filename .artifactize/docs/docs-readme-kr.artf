@@ -24,8 +24,7 @@ assets/readme/. Check these criteria:
   https://artifactize.dev/docs/ko/. The language line below the badges names the same
   languages in the same order; each language links to its README except the current one,
   which is plain text.
-Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to
-20 violations, most important first, each with the criterion id, the Korean README
+Submit GREEN only when no criterion is clearly violated. Otherwise submit RED. List every finding, each with the criterion id, the Korean README
 path:line, the root README path:line and one sentence on what to change in the Korean README.
 """
 
@@ -43,7 +42,6 @@ additionalProperties = false
 [evals.translates-readme.fail_schema.properties.violations]
 type = "array"
 minItems = 1
-maxItems = 20
 
 [evals.translates-readme.fail_schema.properties.violations.items]
 type = "object"
@@ -69,8 +67,7 @@ Check its Korean prose against every K- item. Code, commands, configuration keys
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the read tool of {docs-readme-kr}.
 Read every Korean sentence. Submit GREEN only when no sentence violates an item; a sentence
-that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED with up
-to 20 violations, most important first, each with the item id, the path:line, the text and
+that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED. List every finding, each with the item id, the path:line, the text and
 one sentence on how to rewrite it.
 """
 
@@ -88,7 +85,6 @@ additionalProperties = false
 [evals.follows-write-in-korean.fail_schema.properties.violations]
 type = "array"
 minItems = 1
-maxItems = 20
 
 [evals.follows-write-in-korean.fail_schema.properties.violations.items]
 type = "object"

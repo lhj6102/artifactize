@@ -17,7 +17,7 @@ Read the journeys {desktop-ux-features} and E2E-COVERAGE of the end-to-end rules
 scenarios of {desktop-e2e} (cases/, read through the views they call) for coverage only, as E2E-COVERAGE defines \
 it. A gap is a journey no scenario covers, or one whose check would still pass with the journey's key outcome \
 broken: say which breakage would pass unnoticed. What E2E-COVERAGE makes optional is not a gap, and code style and \
-the other rules have their own reviews. At most 3 gaps, the most important first. If unsure, submit GREEN. Otherwise \
+the other rules have their own reviews. List every finding. If unsure, submit GREEN. Otherwise \
 submit RED, each gap with the journey id (item), a test path:line (where) and one sentence on the breakage that \
 passes and what to add (change)."""
 
@@ -35,7 +35,6 @@ additionalProperties = false
 [evals.covers-journeys.fail_schema.properties.gaps]
 type = "array"
 minItems = 1
-maxItems = 3
 
 [evals.covers-journeys.fail_schema.properties.gaps.items]
 type = "object"

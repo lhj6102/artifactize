@@ -18,7 +18,7 @@ an omission is not a finding. Submit GREEN when nothing it states is wrong or
 outdated; otherwise RED with concrete skill path:line findings.
 """
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 } }, required = ["findings"], additionalProperties = false }
+fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
 
 [evals.waiter]
 title = "The skill helps the user like a restaurant's waiter"
@@ -44,7 +44,7 @@ Submit GREEN when it does all of these; otherwise RED with concrete skill path:l
 findings, each naming the missing or misplaced part.
 """
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 } }, required = ["findings"], additionalProperties = false }
+fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
 
 [evals.consultant]
 title = "The skill reads like a Forward Deployed Engineer consulting on the project"

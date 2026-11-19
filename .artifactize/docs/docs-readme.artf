@@ -17,8 +17,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 instruction = """
 Read the README rules {rules-writer-readme}, the shared introduction checklist {rules-writer-introduction} and the
 root README {docs-readme}. Check every R- and W- item.
-Submit GREEN only when no item is clearly violated. Otherwise submit RED with up to 20 violations, most important
-first, each with the item id, a README path:line and one sentence on what to change in the README.
+Submit GREEN only when no item is clearly violated. Otherwise submit RED. List every finding, each with the item id, a README path:line and one sentence on what to change in the README.
 """
 
 [evals.follows-rules.pass_schema]
@@ -35,7 +34,6 @@ additionalProperties = false
 [evals.follows-rules.fail_schema.properties.violations]
 type = "array"
 minItems = 1
-maxItems = 20
 
 [evals.follows-rules.fail_schema.properties.violations.items]
 type = "object"
@@ -76,7 +74,6 @@ additionalProperties = false
 [evals.matches-landing-install.fail_schema.properties.findings]
 type = "array"
 minItems = 1
-maxItems = 10
 
 [evals.matches-landing-install.fail_schema.properties.findings.items]
 type = "object"

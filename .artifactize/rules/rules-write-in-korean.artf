@@ -19,8 +19,7 @@ instruction = """
 Read WRITE-IN-KOREAN.md of {rules-write-in-korean} with the read_rules tool. It states rules for Korean writing and \
 is itself written in Korean. Read every Korean sentence of it, including the examples, and check it against \
 every K- item of the same document. The item ids, the English words quoted as examples and the phrases quoted in '…' \
-as what not to write are not prose to judge. Submit GREEN only when no sentence violates an item. Otherwise submit RED with up to 20 violations, \
-each with the item id, the line, the text and one sentence on how to rewrite it."""
+as what not to write are not prose to judge. Submit GREEN only when no sentence violates an item. Otherwise submit RED. List every finding, each with the item id, the line, the text and one sentence on how to rewrite it."""
 
 [evals.follows-itself.pass_schema]
 type = "object"
@@ -36,7 +35,6 @@ additionalProperties = false
 [evals.follows-itself.fail_schema.properties.violations]
 type = "array"
 minItems = 1
-maxItems = 20
 
 [evals.follows-itself.fail_schema.properties.violations.items]
 type = "object"

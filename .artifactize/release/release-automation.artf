@@ -19,8 +19,7 @@ Read the workflows, scripts and packaging notes of {release-automation}. Check t
 - every desktop bundle places the artifactize command beside the app's own executable;
 - packaging/README.md describes the packages, channels and secrets as the workflows and scripts
   implement them.
-Submit GREEN only when nothing clearly contradicts these. Otherwise submit RED with up to 10
-findings, most important first, each with a path:line and one sentence on what to change.
+Submit GREEN only when nothing clearly contradicts these. Otherwise submit RED. List every finding, each with a path:line and one sentence on what to change.
 """
 
 [evals.coherent.pass_schema]
@@ -37,7 +36,6 @@ additionalProperties = false
 [evals.coherent.fail_schema.properties.findings]
 type = "array"
 minItems = 1
-maxItems = 10
 
 [evals.coherent.fail_schema.properties.findings.items]
 type = "object"

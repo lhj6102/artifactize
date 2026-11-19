@@ -15,7 +15,7 @@ finding. Submit GREEN when nothing it states is wrong or outdated; otherwise RED
 concrete skill path:line findings.
 """
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 } }, required = ["findings"], additionalProperties = false }
+fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
 
 [evals.guides]
 title = "The skill guides a builder through focus, sweep and the three plans"
@@ -41,4 +41,4 @@ guessing; otherwise RED with concrete skill path:line findings, each naming the 
 or unclear part.
 """
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 } }, required = ["findings"], additionalProperties = false }
+fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
