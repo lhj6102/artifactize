@@ -523,10 +523,28 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   const browser = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
   let at = { x: 0, y: 0 };
   try {
+    /** When the shown Current was last scanned, as its header says it; "" while none ended. */
+    const scannedAt = () => browser.execute(() => {
+      const scan = document.querySelector('section.panel[aria-label="Main area"] > header .scan');
+      return scan?.querySelector(".checking") ? "" : (scan?.querySelector("time")?.getAttribute("datetime") ?? "");
+    });
     for (const [index, step] of steps.entries()) {
+      // A scan that ended after this step's checkout: the one Refresh starts, or the first.
+      const before = index > 0 ? await scannedAt() : "";
       if (index > 0) {
         checkout(step.ref, fixture.repo, candidate.cli);
         await browser.$("button=Refresh").click();
+      }
+      await browser.waitUntil(async () => {
+        const now = await scannedAt();
+        return now !== "" && now !== before;
+      }, { timeout: WAIT, timeoutMsg: `${step.caption}'s scan ended` });
+      // Names read from about half size on: every Artifact of a graph this size is then drawn as
+      // an element, so its nodes and edges can be compared below; Fit zooms out again after.
+      for (let tries = 0; tries < 20; tries += 1) {
+        const percent = Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10);
+        if (percent >= 50) break;
+        await browser.$('[aria-label="Graph tools"] [aria-label="Zoom in"]').click();
       }
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them but a part's, which the Current draws as
@@ -548,9 +566,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.artifact ?? ""));
         const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
         const refresh = document.querySelector<HTMLButtonElement>('section.panel[aria-label="Main area"] > header .actions button');
-        // Zoomed out until names do not read, the graph is painted as blocks, with no elements.
-        const painted = document.querySelector(".current canvas.paint") !== null && artifacts === "";
-        return !!refresh && !refresh.disabled && (painted || `${artifacts}\n${edges}` === expected);
+        return !!refresh && !refresh.disabled && `${artifacts}\n${edges}` === expected;
       }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector('section.panel[aria-label="Main area"] > header .failure')?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
@@ -565,8 +581,8 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
           const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
           const artifacts = set(nodes.map((node) => node.dataset.artifact ?? ""));
           const camera = document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style");
-          // Painted as blocks where names do not read: the picture stands for every node.
-          if (nodes.length === 0 && document.querySelector(".current canvas.paint")) return `painted ${camera}`;
+          // Fitted out until names do not read, the graph checked above is painted as blocks.
+          if (inside && nodes.length === 0 && document.querySelector(".current canvas.paint")) return `painted ${camera}`;
           if (`${artifacts}\n${set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")))}` !== expected) return null;
           const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
           const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {

@@ -40,10 +40,8 @@
   const shown = $derived(m.shown);
   const run = $derived(shown.kind === "run" && view?.run.kind === "read" && view.run.id === shown.run ? view.run : null);
   const source = $derived(sourceOf(shown));
-  /** The branch whose Run or Current is shown. */
-  const branch = $derived(
-    shown.kind === "run" || shown.kind === "current" ? (branches.find((item) => keyOf(item.key) === keyOf(shown.branch)) ?? null) : null,
-  );
+  /** The branch whose Run or Current is shown, also while the Pane's search leaves it out. */
+  const branch = $derived(shown.kind === "run" || shown.kind === "current" ? browse.branch(shown.branch) : null);
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
   const review = $derived(shown.kind === "review" ? app.reviews[shown.id] : undefined);
   /** The pane's search: the library's, overridden while typed until a pause searches it; a

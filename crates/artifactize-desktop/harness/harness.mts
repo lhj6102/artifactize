@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { own, type Owned } from "../ui/e2e/fixtures/owned.ts";
-import { createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
+import { cancelRuns, createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
 import { assertHeadless, displayEnvironment, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
 import { asNativePath, embeddedPorts, nativePath } from "../ui/e2e/portable.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
@@ -389,6 +389,8 @@ async function serve(): Promise<void> {
               await shown?.session.stop();
               shown = undefined;
               const target = request.screen === "graph" ? { ...fixture, state: nativePath(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
+              // A graph launch's own state holds the Runs started in it: they end with the fixture's.
+              if (target !== fixture) scope?.defer(() => cancelRuns(target));
               const args = { monitor: [], repo: ["--repo", target.repo], review: ["review"], graph: ["graph", "--repo", target.repo] }[request.screen];
               const session = await acquire(input, target, platformEnv, args);
               // Accept the replacement before rendering can fail or shutdown can drain us.

@@ -1,8 +1,9 @@
 // The live branches, the waiting reviews and the shown Run as the frontend holds them. The
 // backend reads the database and Git; this only asks for views, coalesces change hints and
 // drops responses that arrive out of order.
+import { SvelteMap } from "svelte/reactivity";
 import { call, commands, message, type Commands } from "../ipc/client";
-import type { BranchKey, BrowseView, Completion, Navigate } from "../ipc/client";
+import type { BranchKey, BranchView, Completion, BrowseView, Navigate } from "../ipc/client";
 
 const still: Navigate = { run: { kind: "keep" }, query: null, older: null, star: null, full: false, resync: false };
 
@@ -17,6 +18,9 @@ export class Browse {
    * it as they are. */  readonly query = $derived(this.view?.query.text ?? "");
   /** The query the search starts with and Esc puts back, as the library defines it. */
   readonly start = $derived(this.view?.query.start ?? "");
+  /** Each branch as last listed, by its key: a branch the search filters out of the Pane keeps
+   * its project, name and workspace for the Run or Current still shown from it. */
+  #listed = new SvelteMap<string, BranchView>();
   #listeners: ((view: BrowseView) => void)[] = [];
   #draining = false;
   #dirty = false;
@@ -107,6 +111,13 @@ export class Browse {
     }
   }
 
+  /** The branch `key` as the Pane lists it, or as it was last listed when the search leaves it
+   * out; null for a branch never listed. */
+  branch(key: BranchKey): BranchView | null {
+    const wanted = JSON.stringify(key);
+    return this.view?.branches.find((item) => JSON.stringify(item.key) === wanted) ?? this.#listed.get(wanted) ?? null;
+  }
+
   /** Redraw ages and elapsed times from the backend's snapshot; nothing is read. */
   async redraw(): Promise<void> {
     if (!this.view) return;
@@ -117,6 +128,7 @@ export class Browse {
    * redraw that already carries a newer read's snapshot advances the revision too. */
   #show(view: BrowseView): void {
     if (this.view && view.revision < this.view.revision) return;
+    for (const branch of view.branches) this.#listed.set(JSON.stringify(branch.key), branch);
     this.view = view;
     for (const listener of this.#listeners) listener(view);
   }
