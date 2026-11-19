@@ -117,7 +117,7 @@ export function verifyCommented(fixture: Fixture, comment: string): string {
   const started = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--comment", comment, "--json"],
     { env: environment(fixture) });
   if (started.status !== 0) throw new Error(started.stderr || started.stdout);
-  return (JSON.parse(started.stdout) as { id: string }).id;
+  return (JSON.parse(started.stdout) as { run: string }).run;
 }
 
 export type Saved = {
