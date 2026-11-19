@@ -39,8 +39,9 @@ These go through the platform layer:
 - **P-IPC**: local byte-stream endpoints between processes (Unix sockets, Windows named
   pipes).
 
-Out of scope, because the code meets none of them: shell command strings (declarations are
-argument vectors and the product builds no shell text), time zones, the clipboard, shared
+Out of scope, because the code meets none of them: shell command strings that code writes
+(declarations are argument vectors; the one command line `cmd.exe` reads is the batch-file
+quoting P-PROCESSES covers), time zones, the clipboard, shared
 memory, configuration and cache directories, and console color modes.
 
 ## Tests
