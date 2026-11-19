@@ -1,6 +1,9 @@
 # Platform checklist
 
-Rules that keep code behaving the same on Linux, macOS and Windows.
+Rules that keep code behaving the same on Linux, macOS and Windows. Their purpose: code that
+passes its checks on one operating system very likely behaves the same on the others; to that
+end, everything that differs between operating systems goes through one platform layer, and
+tests cover every OS.
 
 ## One place for what differs
 
