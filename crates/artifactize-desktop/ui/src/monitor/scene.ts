@@ -321,15 +321,16 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
       else add(blocks, light).rect(x, y, w, h);
       continue;
     }
-    // A node's face, or a whole's title row, with the strip in its status's colour below it; a
-    // whole, boxed or minimized, ends its title row with its control.
+    // A node's face with the strip in its status's colour along its bottom, or a whole's box
+    // with the strip along its top edge and its title row under it; a whole, boxed or minimized,
+    // ends its title row with its control.
     const folded = what.minimized.get(at.ids[number]);
     const row = whole ? Math.min(BOX.header * zoom, h) : h;
     if (whole) boxFaces.roundRect(x, y, w, h, radius);
     else faces.roundRect(x, y, w, h, radius);
     if (folded !== undefined) stacked.roundRect(x + STACK * zoom, y + STACK * zoom, w, h, radius);
     neutral.roundRect(x, y, w, h, radius);
-    add(strips, light).rect(x, y + row - strip * zoom, w, strip * zoom);
+    add(strips, light).rect(x, whole ? y : y + row - strip * zoom, w, strip * zoom);
     marks.push({ light, x: x + NODE_PAD * zoom, y: y + row / 2 - (icon * zoom) / 2 });
     const start = (NODE_PAD + icon + NODE_GAP) * zoom;
     let end = NODE_PAD_END * zoom;

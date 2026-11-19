@@ -81,8 +81,9 @@ kbd {
 .button.primary:hover:not(:disabled) {
   border-color: var(--ink-on-accent);
 }
+/* Unavailable, a button keeps its place and face; its text steps down to --ink-3. */
 .button:disabled {
-  opacity: 0.45;
+  color: var(--ink-3);
   cursor: default;
 }
 .button.small {

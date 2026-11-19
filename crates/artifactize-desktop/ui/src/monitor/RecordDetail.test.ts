@@ -21,6 +21,7 @@ const rows = () => screen.queryAllByRole("button", { expanded: true }).concat(sc
 const card = (change: Partial<CardView> = {}): CardView => ({
   instruction: "Check that the tests follow the test rules.",
   result: null,
+  raw: null,
   exitCode: null,
   error: null,
   reused: false,

@@ -504,7 +504,7 @@
               <div class="record"><RecordDetail detail={shown.detail} bind:log={m.folds.log} /></div>
             {/key}
           {:else}
-            <p class="empty">Choose a branch or a waiting review in the Pane.</p>
+            <p class="empty">{m.paneShown ? "Choose a branch or a waiting review in the Pane." : "Show the Pane with the Pane switch to choose a branch or a waiting review."}</p>
           {/if}
         </Panel>
         {#if m.opened && source && keyOf(m.opened.source) === keyOf(source)}

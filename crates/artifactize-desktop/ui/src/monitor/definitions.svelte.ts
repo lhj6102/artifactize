@@ -25,7 +25,7 @@ export function refusalText(refusal: EditRefusal): string {
         ? `line ${refusal.line}${refusal.column !== null ? `, column ${refusal.column}` : ""}: ${refusal.message}`
         : refusal.message;
     case "changed":
-      return `${refusal.file} changed on disk.`;
+      return `${refusal.file} changed on disk; nothing written.`;
     case "notAllowed":
       return refusal.reason;
     case "io":
@@ -223,7 +223,7 @@ export class Definitions {
         const writes = checked.kind === "checked" ? checked.files : [];
         const typed = [...this.drafts.keys()].map((name) => this.node(name)?.definition).find((file) => file !== undefined && writes.includes(file));
         if (typed !== undefined) {
-          const why = `${typed} has typed text in its Source; save or revert it first.`;
+          const why = `${typed} has unsaved text in its Source; nothing written.`;
           this.notice = why;
           return why;
         }

@@ -247,6 +247,7 @@ fn card(
     Card {
         instruction: instruction.to_owned(),
         result: result.map(model::entries),
+        raw: result.map(model::raw),
         exit_code: match result {
             Some(ExecutionResult::Runtime(result)) => result.exit_code.value().copied(),
             _ => None,

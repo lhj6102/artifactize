@@ -306,7 +306,7 @@ it("folds an eval Summary's technical facts under Debug, which t shows and hides
       ? {
           ...view("e:app/lint", "app/lint · Check"),
           sections: [{ name: "request", title: "Request", fields: [{ key: "Status", value: "GREEN" }, { key: "Request", value: "run-a-3" }], waits: [] }],
-          card: { instruction: "Check lint.", result: null, error: null, exitCode: 0, reused: false, took: "2s", tokens: null, model: null },
+          card: { instruction: "Check lint.", result: null, raw: null, error: null, exitCode: 0, reused: false, took: "2s", tokens: null, model: null },
         }
       : null,
   );

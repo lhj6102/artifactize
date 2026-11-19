@@ -332,6 +332,8 @@ pub struct Card {
     pub instruction: String,
     /// The result's own entries, without its verdict and saved output.
     pub result: Option<serde_json::Map<String, Value>>,
+    /// The whole result as saved, pretty-printed JSON.
+    pub raw: Option<String>,
     pub exit_code: Option<i32>,
     pub error: Option<String>,
     pub reused: bool,
@@ -340,6 +342,11 @@ pub struct Card {
     /// Total tokens over every attempt.
     pub tokens: Option<u64>,
     pub model: Option<String>,
+}
+
+/// The whole result as saved, as a Card's Debug shows it.
+pub(crate) fn raw(result: &crate::store::ExecutionResult) -> String {
+    serde_json::to_string_pretty(&result.to_json()).expect("a saved result is JSON")
 }
 
 /// A result's own entries, without its verdict and saved output, as a Card shows them.
@@ -373,6 +380,7 @@ pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
     Card {
         instruction: request.payload.instruction().to_owned(),
         result: result.map(entries),
+        raw: result.map(raw),
         exit_code: match result {
             Some(ExecutionResult::Runtime(result)) => result.exit_code.value().copied(),
             _ => None,

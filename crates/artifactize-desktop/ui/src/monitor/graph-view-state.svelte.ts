@@ -7,6 +7,8 @@ export class GraphViewState {
   canvas = $state.raw<HTMLElement | null>(null);
   /** The canvas as last measured with a size. */
   area = $state.raw<Area | null>(null);
+  /** How wide the docked Detail covers the canvas's right side, in screen pixels; 0 without one. */
+  covered = $state(0);
   /** Svelte Flow measured the first draw. */
   initialized = $state(false);
   /** The first view showed the whole graph; from then on only the person moves the camera. */
@@ -21,7 +23,7 @@ export class GraphViewState {
   /** The copy a release would drop on, highlighted while the drop would be accepted. */
   target = $state<string | null>(null);
   /** A comment being dragged: whose copy, and where the pointer is in the canvas. */
-  comment = $state.raw<{ key: string; x: number; y: number } | null>(null);
+  comment = $state.raw<{ key: string; x: number; y: number; shape: Lifted } | null>(null);
   /** The node being dragged, and whether Esc put it back. */
   dragging = $state.raw<{ key: string; cancelled: boolean } | null>(null);
   /** Where the pointer last went down on the graph: a dropped node moved as far as the pointer
@@ -46,3 +48,7 @@ export function graphViewStateOf(): GraphViewState | null {
     return null;
   }
 }
+
+/** How a dragged comment keeps the look it had under its node: its width and padding at zoom 1,
+ * and the zoom it was drawn at. */
+export type Lifted = { width: number; padding: string; zoom: number };

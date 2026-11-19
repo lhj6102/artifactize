@@ -1,7 +1,7 @@
 //! Pure projections of saved state for the monitor screens.
 mod detail;
-pub(crate) use detail::entries;
 pub use detail::{Card, Detail, Section, card, detail};
+pub(crate) use detail::{entries, raw};
 mod graph;
 pub use graph::{Graph, GraphEdge, GraphNode, Light, graph};
 mod node_id;

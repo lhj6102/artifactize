@@ -158,15 +158,17 @@
       3px 3px 0 0 var(--line-node),
       inset 0 calc(-1 * var(--strip)) 0 var(--light);
   }
-  /* The title row, closed below by the strip in its status's colour across the box. */
+  /* The strip in its status's colour runs along the box's top edge, the title row right under
+     it, not closed below by a strip. */
   .title {
+    box-sizing: border-box;
     height: var(--header);
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 6px 0 calc(var(--pad) - 6px);
+    padding: var(--strip) 6px 0 calc(var(--pad) - 6px);
     font-weight: 600;
-    box-shadow: inset 0 calc(-1 * var(--strip)) 0 var(--light);
+    box-shadow: inset 0 var(--strip) 0 var(--light);
   }
   .minimized .title {
     height: 100%;

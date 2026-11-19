@@ -61,7 +61,7 @@
       {#if !field.required}
         <label>
           <input type="radio" name={id} checked={chosen === null} onchange={() => onset({ kind: "bool", value: null })} />
-          –
+          <span class="optional">Optional</span>
         </label>
       {/if}
     </div>
@@ -93,6 +93,7 @@
     {@const kind = field.input.kind}
     <input
       {id}
+      class="number"
       placeholder={placeholder(field.required)}
       inputmode={kind === "integer" ? "numeric" : "decimal"}
       value={text(value)}
@@ -258,17 +259,36 @@
   ::placeholder {
     color: var(--ink-3);
   }
+  /* A number takes a short one-line field. */
+  .number {
+    width: 120px;
+  }
+  /* A list of text is numbered items, each its field with the remove icon at its right. */
   .items {
     display: grid;
     gap: 6px;
     margin: 0;
-    padding-left: 22px;
+    padding: 0;
+    list-style: none;
+    counter-reset: item;
   }
   .items li {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: start;
     gap: 6px;
+    counter-increment: item;
+  }
+  .items li::before {
+    content: counter(item) ".";
+    min-width: 16px;
+    line-height: var(--control);
+    color: var(--ink-2);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .choices input {
+    accent-color: var(--accent);
   }
   .remove {
     display: inline-grid;

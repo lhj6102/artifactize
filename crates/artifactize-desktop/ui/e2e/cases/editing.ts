@@ -77,7 +77,7 @@ export const scenarios: Scenario[] = [
       await app.detail.definitionUntil("core", (each) => each.path === "core/", "core's Definition");
       const theirs = definitionText(fixture, "core")!.replace("basis = true\n", "basis = true\nparts = [\"kit\"]\n");
       rewriteDefinition(fixture, "core", theirs);
-      await app.detail.writePath("core", "moved/", (each) => each.refusals.includes(".artifactize/core.artf changed on disk."), "the edit refused, naming the file");
+      await app.detail.writePath("core", "moved/", (each) => each.refusals.includes(".artifactize/core.artf changed on disk; nothing written."), "the edit refused, naming the file");
       assert.equal(definitionText(fixture, "core"), theirs, "the file as the other writer left it");
       await app.graph.node("a:core/a:kit", () => true, "the Current scanned again: kit drawn in core's box");
     },

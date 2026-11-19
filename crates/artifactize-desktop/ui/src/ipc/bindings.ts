@@ -334,6 +334,8 @@ export type CardView = {
 	instruction: string,
 	/**  `None` until the eval has a result. */
 	result: ResultEntry[] | null,
+	/**  The whole result as saved, for Debug. */
+	raw: string | null,
 	exitCode: number | null,
 	error: string | null,
 	reused: boolean,

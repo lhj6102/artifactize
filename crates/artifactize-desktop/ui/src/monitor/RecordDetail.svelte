@@ -91,9 +91,14 @@
 {/snippet}
 
 {#snippet debug()}
-  {#if debugFacts.length > 0 || debugFields.length > 0 || waits.length > 0}
+  {#if debugFacts.length > 0 || debugFields.length > 0 || waits.length > 0 || card?.raw}
     <Section name="Debug">
-      <dl>
+      <!-- What it waits for first, then the rest of its record. -->
+      <dl class="debug">
+        {#if waits.length > 0}
+          <dt>Waits for</dt>
+          <dd>{waits.map((line) => line.text).join("\n")}</dd>
+        {/if}
         {#each debugFacts as [key, value], at (at)}
           <dt>{key}</dt>
           <dd>{value}</dd>
@@ -102,11 +107,9 @@
           <dt>{field.key}</dt>
           <dd>{field.value}</dd>
         {/each}
-        {#if waits.length > 0}
-          <dt>Waits for</dt>
-          <dd>{waits.map((line) => line.text).join("\n")}</dd>
-        {/if}
       </dl>
+      <!-- The result whole, as it is saved. -->
+      {#if card?.raw}<pre class="raw" aria-label="Raw result">{card.raw}</pre>{/if}
     </Section>
   {/if}
 {/snippet}
@@ -341,6 +344,24 @@
   }
   .muted {
     color: var(--ink-2);
+  }
+  /* Debug's values are selectable and in --mono; the raw result has its own scrolling box. */
+  .debug dd {
+    font-family: var(--mono);
+    user-select: text;
+  }
+  .raw {
+    margin: 8px 0 0;
+    max-height: 320px;
+    overflow: auto;
+    padding: 6px 8px;
+    font: var(--text-small) var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--surface-input);
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    user-select: text;
   }
   .error {
     color: var(--red);

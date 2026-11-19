@@ -130,6 +130,8 @@ pub struct CardView {
     pub instruction: String,
     /// `None` until the eval has a result.
     pub result: Option<Vec<ResultEntry>>,
+    /// The whole result as saved, for Debug.
+    pub raw: Option<String>,
     pub exit_code: Option<i32>,
     pub error: Option<String>,
     pub reused: bool,
@@ -196,6 +198,7 @@ impl From<monitor::Card> for CardView {
         Self {
             instruction: card.instruction,
             result: card.result.as_ref().map(result_entries),
+            raw: card.raw,
             exit_code: card.exit_code,
             error: card.error,
             reused: card.reused,

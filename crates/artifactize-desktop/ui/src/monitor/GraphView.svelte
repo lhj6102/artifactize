@@ -230,6 +230,19 @@
         })),
   );
 
+  /** How much of the canvas the docked Detail covers, measured as the Detail opens, closes or
+   * changes width: the Navigator shows for, and frames, only what shows. */
+  const docked: Attachment<HTMLElement> = () => {
+    const pane = opened !== null ? m.panes.detail : undefined;
+    if (!pane) {
+      v.covered = 0;
+      return;
+    }
+    const sized = new ResizeObserver(() => (v.covered = pane.getBoundingClientRect().width));
+    sized.observe(pane);
+    return () => sized.disconnect();
+  };
+
   /** The canvas, measured whenever it changes size. */
   const measure: Attachment<HTMLElement> = (canvas) => {
     v.canvas = canvas;
@@ -272,12 +285,14 @@
 
   /** Each Artifact's light by its tree id, for the Navigator. */
   const lights = $derived(new Map<string, Light>(graph.nodes.map((node) => [node.id, node.light])));
-  /** The whole graph is in view: no Navigator. */
+  /** How wide the canvas shows left of a docked Detail. */
+  const visible = $derived(v.area ? Math.max(0, v.area.width - v.covered) : 0);
+  /** The whole graph is in view, left of a docked Detail: no Navigator. */
   const allInView = $derived.by(() => {
     if (!v.area) return true;
     const { x, y, zoom } = camera.current;
     const [left, top] = [-x / zoom, -y / zoom];
-    const [right, bottom] = [left + v.area.width / zoom, top + v.area.height / zoom];
+    const [right, bottom] = [left + visible / zoom, top + v.area.height / zoom];
     // Half a pixel of slack: a fit view's rounding never shows the Navigator.
     const slack = 0.5 / zoom;
     return bounds.x >= left - slack && bounds.y >= top - slack && bounds.x + bounds.width <= right + slack && bounds.y + bounds.height <= bottom + slack;
@@ -555,12 +570,20 @@
     event.stopPropagation();
     event.preventDefault();
     const start = { x: event.clientX, y: event.clientY };
+    // The text as it is drawn under its node, so it keeps its width and lines while dragged.
+    const zoom = flow.getViewport().zoom;
+    const grabbed = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const shape = {
+      width: (grabbed?.getBoundingClientRect().width ?? NODE.width * zoom) / zoom,
+      padding: grabbed ? getComputedStyle(grabbed).padding : "0px",
+      zoom,
+    };
     let [moved, cancelled] = [false, false];
     const move = (next: PointerEvent) => {
       if (cancelled || (!moved && Math.hypot(next.clientX - start.x, next.clientY - start.y) < DRAG)) return;
       moved = true;
       const box = v.canvas?.getBoundingClientRect();
-      if (box) v.comment = { key, x: next.clientX - box.left, y: next.clientY - box.top };
+      if (box) v.comment = { key, x: next.clientX - box.left, y: next.clientY - box.top, shape };
       const at = pointOf(next);
       const target = at ? under(drawn, rects, at) : null;
       // The library says which Artifacts take the comment.
@@ -725,6 +748,7 @@
     style:background-size="{gridSize}px {gridSize}px"
     style:background-position="{camera.current.x}px {camera.current.y}px"
     {@attach measure}
+    {@attach docked}
     {@attach grid}
     {@attach created}
     {@attach escaping}
@@ -771,11 +795,11 @@
     />
     {#if v.comment}
       {@const text = annotations.comments.get(byKey.get(v.comment.key)?.node.name ?? "")}
-      <p class="lifted" aria-hidden="true" style:left="{v.comment.x}px" style:top="{v.comment.y}px">{text}</p>
+      <p class="lifted" aria-hidden="true" style:left="{v.comment.x}px" style:top="{v.comment.y}px" style:width="{v.comment.shape.width}px" style:padding={v.comment.shape.padding} style:transform="scale({v.comment.shape.zoom})">{text}</p>
     {/if}
-    {#if m.finding}<GraphFind {source} {branch} covered={opened !== null} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
+    {#if m.finding}<GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
     {#if !allInView && v.area}
-      <Navigator {laid} {lights} viewport={camera.current} width={v.area.width} height={v.area.height} onmove={navigate} />
+      <Navigator {laid} {lights} viewport={camera.current} width={visible} height={v.area.height} onmove={navigate} />
     {/if}
   </div>
 </div>
@@ -875,21 +899,21 @@
     background: var(--surface-raised);
     box-shadow: 0 2px 8px var(--scrim);
   }
-  /* A comment being dragged floats by the pointer, raised one step with the faint shadow. */
+  /* A comment being dragged: its text alone follows the pointer, in the ink, width and lines it
+     has under its node, lifted by a faint shadow on its letters, with no surface or box. */
   .lifted {
     position: absolute;
     z-index: 5;
-    max-width: 168px;
+    box-sizing: border-box;
     margin: 0;
-    padding: 2px 6px;
-    border-radius: var(--radius-control);
-    background: var(--surface-raised);
-    box-shadow: 0 2px 8px var(--scrim);
+    transform-origin: 0 0;
     color: var(--ink-2);
     font-size: var(--text-small);
     line-height: 1.4;
+    text-shadow: 0 1px 3px var(--scrim);
     pointer-events: none;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
