@@ -35,3 +35,10 @@ type = "object"
 properties = { violations = { type = "array", minItems = 1, maxItems = 3, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
 required = ["violations"]
 additionalProperties = false
+
+[evals.unit]
+title = "The infrastructure's unit tests pass"
+profile = { kind = "runtime", command = "node", args = ["run.ts", "unit"], timeout_ms = 600000 }
+
+[evals.unit.payload]
+instruction = "Run the unit tests of the suite's infrastructure {desktop-e2e-infra}: its input helpers, its key retries and its runner's pure functions."

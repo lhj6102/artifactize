@@ -14,13 +14,12 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning 
 [evals.covers-journeys.payload]
 instruction = """
 Read the journeys {desktop-ux-features} and E2E-COVERAGE of the end-to-end rules {desktop-e2e-rules}. Review the \
-scenarios of {desktop-e2e} (cases/, read through the views they call) for coverage only: every journey (J- id) has a \
-scenario that names it, performs its action by a visible path and checks its key visible outcome once. A gap is a \
-journey no scenario covers, or one whose check would still pass with the journey's key outcome broken; say which \
-breakage would pass unnoticed. What E2E-COVERAGE makes optional is not a gap, and code style and the other rules \
-have their own reviews. At most 3 gaps, the most important first. If unsure, submit GREEN. Otherwise submit RED, \
-each gap with the journey id (item), a test path:line (where) and one sentence on the breakage that passes and what \
-to add (change)."""
+scenarios of {desktop-e2e} (cases/, read through the views they call) for coverage only, as E2E-COVERAGE defines \
+it. A gap is a journey no scenario covers, or one whose check would still pass with the journey's key outcome \
+broken: say which breakage would pass unnoticed. What E2E-COVERAGE makes optional is not a gap, and code style and \
+the other rules have their own reviews. At most 3 gaps, the most important first. If unsure, submit GREEN. Otherwise \
+submit RED, each gap with the journey id (item), a test path:line (where) and one sentence on the breakage that \
+passes and what to add (change)."""
 
 [evals.covers-journeys.pass_schema]
 type = "object"
@@ -53,9 +52,3 @@ profile = { kind = "runtime", command = "pnpm", args = ["lint"], timeout_ms = 60
 [evals.lint.payload]
 instruction = "Check the source-integrity rules over the suite {desktop-e2e} and its vendored provider with its part {desktop-e2e-integrity} (the checker it runs); then run TypeScript eslint over every test and helper of {desktop-e2e}, which enforces the mechanical parts of E2E-PLATFORM and E2E-REAL-APP of {desktop-e2e-rules}, then type-check them."
 
-[evals.unit]
-title = "The runner's own unit tests pass"
-profile = { kind = "runtime", command = "node", args = ["run.ts", "unit"], timeout_ms = 600000 }
-
-[evals.unit.payload]
-instruction = "Run the unit tests of the infrastructure of {desktop-e2e}, its parts {desktop-e2e-infra} and {desktop-e2e-cases} included: the input helpers, the key retries and the runner's pure functions."
