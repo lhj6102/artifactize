@@ -37,8 +37,12 @@ function child(program: string, args: string[], env: NodeJS.ProcessEnv): Promise
   });
 }
 
-/** An interrupt (a terminal's Ctrl+C reaches the batch too) lets the running batch close its
- * apps and fixtures, starts no other, and fails the run, whenever it comes. */
+/** An interrupt fails the run, whenever it comes, and starts no other batch. One that reaches
+ * the running batch too, as a terminal's Ctrl+C does, stops its scenarios: each keeps its
+ * evidence, and the batch closes its apps and fixtures (launch). One that reaches this process
+ * alone stops no scenario: the running batch runs to its end and is judged as any other, and
+ * the run then fails naming that batch, whose logs it keeps, and the scenarios that did not
+ * run. */
 function interrupt(): void {
   interrupted = true;
   process.exitCode = 1;
@@ -76,30 +80,43 @@ async function suite(ids: string[]): Promise<void> {
   try {
     candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratchDirectory()) : await prepare();
     for (const [index, ids] of groups.entries()) {
-      if (interrupted) break;
+      if (interrupted) {
+        const left = groups.slice(index).flat();
+        failures.push(new Error(`interrupted before the batch ${ids.join(", ")} started: ${left.length} scenarios did not run (${left.join(", ")})`));
+        break;
+      }
       const env = { ...process.env, DESKTOP_TEST_CANDIDATE: candidate.manifest, DESKTOP_TEST_BATCH: JSON.stringify(ids),
         DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${index + 1}`), DESKTOP_TEST_EVIDENCE_RUN: evidence };
       const command = runnerCommand([suitePath("run.ts"), "batch"], env);
-      if (await child(command.program, command.args, command.env) !== 0) {
+      const passed = await child(command.program, command.args, command.env) === 0;
+      const logs = nativePath(output, `batch-${index + 1}`);
+      const left = groups.slice(index + 1).flat();
+      const unrun = left.length ? `${left.length} scenarios did not run (${left.join(", ")})` : "no scenario was left to run";
+      if (!passed) {
         // A batch that ended before it kept its logs, as an interrupt may end it, has them
         // printed and kept here.
-        const logs = nativePath(output, `batch-${index + 1}`);
         if (!exists(nativePath(evidence, basename(logs)))) for (const log of serviceLogs(logs, evidence)) console.error(log);
         // The scenarios that kept evidence failed; a batch that failed before any did fails whole.
         const kept = ids.filter((id) => exists(nativePath(evidence, id)));
         if (interrupted) {
           failed.push(...kept);
-          failures.push(new Error(`interrupted while the batch ${ids.join(", ")} ran: the suite did not run to its end; each scenario the interrupt stopped keeps the wait it was in as its evidence`));
+          failures.push(new Error(`interrupted while the batch ${ids.join(", ")} ran, which did not pass: each scenario the interrupt stopped keeps the wait it was in as its evidence; ${unrun}`));
           break;
         }
         failed.push(...(kept.length ? kept : ids));
-        if (!whole && index < groups.length - 1) {
-          failures.push(new Error(`stopped at the first failing batch; ${groups.slice(index + 1).flat().length} scenarios did not run (CI runs them all)`));
+        if (!whole && left.length) {
+          failures.push(new Error(`stopped at the first failing batch; ${unrun} (CI runs them all)`));
           break;
         }
+      } else if (interrupted) {
+        // The interrupt reached this process alone and stopped no scenario: the batch ran to
+        // its end and passed. Its logs are kept as the interrupted run's evidence.
+        serviceLogs(logs, evidence);
+        failures.push(new Error(`interrupted while the batch ${ids.join(", ")} ran, which ran to its end and passed (its logs are kept): ${unrun}`));
+        break;
       }
     }
-    if (interrupted && !noted()) failures.push(new Error("interrupted: the suite did not run to its end"));
+    if (interrupted && !noted()) failures.push(new Error("interrupted once every batch had run"));
   } catch (error) {
     failures.push(error);
   } finally {
