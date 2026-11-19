@@ -52,7 +52,7 @@ artifactize config graph
 artifactize status
 ```
 
-`config check`는 프로젝트 명령을 실행하지 않고 선언 문법을 검증합니다. `status`는 `guide/heading`과 `guide/mentions-hello` 두 eval이 모두 실행될 것(`execute`)이라고 알려 줍니다.
+`config check`는 프로젝트 명령을 실행하지 않고 선언 문법을 검증합니다. `status`는 `guide/heading`과 `guide/mentions-hello` 두 eval의 예상 동작을 모두 `execute`로 표시합니다.
 
 ## 2. 검증 실행과 결과 재사용 {#2-verify-and-reuse}
 
@@ -62,7 +62,7 @@ artifactize status
 artifactize verify --all --wait
 ```
 
-두 eval 모두 `GREEN`(종료 코드 `0`)으로 통과하며 저장된 Run ID(예: `run-Abc123`)가 출력됩니다. 이제 같은 명령을 한 번 더 실행해 보세요.
+두 eval은 모두 `GREEN`으로 통과하고, 명령은 종료 코드 `0`을 반환합니다. 함께 출력된 Run ID(예: `run-Abc123`)로 저장된 실행 기록을 조회할 수 있습니다. 이제 같은 명령을 한 번 더 실행해 보세요.
 
 ```sh
 artifactize verify --all --wait
@@ -79,7 +79,7 @@ printf '\nKeep greetings short.\n' >> spec.md
 artifactize status
 ```
 
-`status`를 보면 `{guide}`만 읽는 `guide/heading`은 이전 결과를 그대로 **재사용(`reuse`)**하고, `{spec}`을 참조하는 `guide/mentions-hello`만 다시 **실행(`execute`)**된다고 표시됩니다.
+`status`는 `guide/heading`에는 **재사용(`reuse`)**, `guide/mentions-hello`에는 **실행(`execute`)**을 표시합니다. Artifactize는 `{guide}`만 읽는 `guide/heading`의 이전 결과를 재사용하고, 바뀐 `{spec}`을 참조하는 `guide/mentions-hello`만 다시 실행합니다.
 
 ```sh
 artifactize verify --all --wait
@@ -101,4 +101,4 @@ artifactize verify --all --wait
 ## 다음 단계 {#next-steps}
 
 - **[코딩 에이전트와 함께 쓰기](../agent-plugin/plugin.md)**: **Arti**와 대화하며 프로젝트에 맞춰 `.artifactize/` 선언을 설계하고 **Focus then sweep**으로 빠르게 문제를 수정합니다.
-- **[데스크톱 앱과 TUI](../guides/interfaces.md)**: `artifactize-desktop`이나 `artifactize monitor`에서 실시간 그래프와 Run 기록을 살펴봅니다.
+- **[데스크톱 앱](../guides/interfaces.md)**: `artifactize-desktop`이나 `artifactize monitor`에서 실시간으로 갱신되는 Artifact Graph와 Run 기록을 살펴봅니다.

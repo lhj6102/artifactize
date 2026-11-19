@@ -1,6 +1,6 @@
 # 설치 {#installation}
 
-Artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE)으로 공개되어 있으며 Linux(`x86_64`, `aarch64`, WSL 2 포함), macOS(Apple 실리콘, Intel), Windows(`x64`)에서 실행됩니다. 한 가지 설치 방법을 골라 설치한 뒤 새 터미널에서 `artifactize --version`을 실행해 버전을 확인하고 [5분 만에 첫 프로젝트 만들어 보기](guide.md)로 이동하세요.
+Artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE)으로 공개되어 있으며 Linux(`x86_64`, `aarch64`, WSL 2 포함), macOS(Apple silicon, Intel), Windows(`x64`)에서 실행됩니다. 한 가지 설치 방법을 골라 설치하세요. 새 터미널에서 `artifactize --version`을 실행해 버전을 확인합니다. 이어서 [5분 만에 첫 프로젝트 만들어 보기](guide.md)로 이동하세요.
 
 ## 1. 데스크톱 앱 또는 CLI 설치 {#1-install-the-app-or-cli}
 
@@ -10,7 +10,7 @@ Artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/
 
 데스크톱 앱에는 `artifactize` CLI가 함께 들어 있습니다.
 
-- **macOS**: [Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg)(Apple 실리콘·Intel 공용)를 내려받아 **Artifactize**를 응용 프로그램 폴더로 옮긴 뒤 한 번 실행하세요. 권한을 묻는 창에서 허용하면 터미널에서 `artifactize` 명령을 쓸 수 있습니다.
+- **macOS**: [Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg)(Apple silicon·Intel 공용)를 내려받아 **Artifactize**를 응용 프로그램 폴더로 옮긴 뒤 한 번 실행하세요. 권한을 묻는 창에서 허용하면 터미널에서 `artifactize` 명령을 쓸 수 있습니다.
 - **Windows**: [Microsoft Store의 Artifactize](https://apps.microsoft.com/detail/9PB6W4LL165D)(`x64`)를 설치한 뒤 새 터미널을 여세요.
 - **Linux**: `x86_64` Ubuntu 22.04 또는 Debian 12 이상에서는 [Artifactize-amd64.deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)를 내려받아 `sudo apt install ./Artifactize-amd64.deb`로 설치하세요.
 
@@ -58,7 +58,7 @@ Runtime eval과 Human eval에는 모델 서비스가 필요하지 않으므로 �
 | `anthropic` | `artifactize login anthropic` 또는 `ANTHROPIC_API_KEY` 설정 | `artifactize models anthropic` |
 | `gemini` | `artifactize login gemini` 또는 `GEMINI_API_KEY` 설정 | `artifactize models gemini` |
 
-`artifactize doctor`를 실행하면 상태 디렉터리, 자격 증명, 데스크톱 앱 설치 여부, 새 릴리스 알림을 한 번에 점검할 수 있습니다. 사용자 지정 프로바이더와 `logout`은 [Agent eval](../concepts/evals.md#agent-evals)을 참고하세요.
+`artifactize doctor`를 실행하면 상태 디렉터리, 자격 증명, 데스크톱 앱 설치 여부를 한 번에 점검합니다. 새 릴리스가 있으면 함께 알려 줍니다. 사용자 지정 프로바이더와 `logout`은 [Agent eval](../concepts/evals.md#agent-evals)을 참고하세요.
 
 ## 업데이트와 제거 {#3-update-and-uninstall}
 
