@@ -157,8 +157,15 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Envir
   // Commands must fail within one attempt rather than replaying actions after transport loss.
   browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
   browser.options.connectionRetryCount = 0;
+  // One stop at a time; a stop that failed is tried again by the next, rather than reported done.
   let ending: Promise<void> | undefined;
-  return { browser, stop: () => ending ??= cleanupWdioSession(browser) };
+  return {
+    browser,
+    stop: () => ending ??= cleanupWdioSession(browser).catch((error: unknown) => {
+      ending = undefined;
+      throw error;
+    }),
+  };
 }
 
 async function handle(candidate: Candidate, session: Session, fixture: Fixture, request: Request): Promise<unknown> {
@@ -329,13 +336,22 @@ async function serve(): Promise<void> {
   const release = async () => {
     if (server.listening) server.close();
     const failures: unknown[] = [];
-    try { await shown?.session.stop(); }
-    catch (error) { failures.push(error); }
-    if (failures.length === 0) shown = undefined;
+    // A stop that failed is tried once more: the app must be gone before its files are.
+    for (let tries = 0; shown && tries < 2; tries += 1) {
+      try {
+        await shown.session.stop();
+        shown = undefined;
+      } catch (error) { failures.push(error); }
+    }
     if (startupFailure !== undefined) failures.push(new Error("App startup failed", { cause: startupFailure }));
-    // The fixture's Runs end and its files go, then the build.
-    try { await scope?.close(); } catch (error) { failures.push(error); }
-    try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
+    if (shown) {
+      // The app may still run on the fixture and the build: both are kept, and said so.
+      failures.push(new Error(`The app did not stop; its fixture and build are kept at ${candidate?.root ?? "the build folder"}`));
+    } else {
+      // The fixture's Runs end and its files go, then the build.
+      try { await scope?.close(); } catch (error) { failures.push(error); }
+      try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
+    }
     rmSync(join(sessionDir, ENDPOINT), { force: true });
     if (failures.length > 0) throw new AggregateError(failures, "Desktop cleanup failed");
   };

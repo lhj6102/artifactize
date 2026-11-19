@@ -82,18 +82,24 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    height: 48px;
-    font: 500 21px/1 var(--mono);
+    height: 38px;
+    font: 500 19px/1 var(--mono);
   }
   .tree li > ul { flex-basis: 100%; }
   .tree .chevron { width: 22px; margin-left: -34px; margin-right: -2px; color: var(--dim); }
   .tree .folder { color: var(--folder); }
   .tree .file { color: var(--dim); }
-  .tree .artf { color: var(--text); height: 27px; font-size: 17px; }
+  .tree .artf { color: var(--text); height: 24px; font-size: 16px; gap: 10px; }
   .tree .artf .file { color: var(--dim); }
+  .tree .artf svg { width: 24px; height: 24px; }
   .tree .definition { margin-bottom: 2px; }
-  .tree .definition code { flex-basis: 100%; margin-left: 44px; color: var(--dim); font: 500 16px/24px var(--mono); }
+  /* Each file's declarations, its checks included: every line is TOML as the file holds it. */
+  .tree .definition code { flex-basis: 100%; margin-left: 22px; color: var(--dim); font: 500 13px/15px var(--mono); white-space: pre; }
   .tree svg { width: 30px; height: 30px; flex: none; }
+  /* The files the definitions name, two to a row. */
+  .tree li.source { display: inline-flex; width: 50%; }
+  .tree li.source > span { font-size: 18px; gap: 10px; }
+  .tree li.source svg { width: 26px; height: 26px; }
 
   /* ---------- The graph ---------- */
 
@@ -212,17 +218,15 @@
         <ul>
           <li><span><svg class="folder"><use href="#i-folder"/></svg>.artifactize/</span>
             <ul>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>app.artf</span><code>path="./"</code><code>parts=["code","docs"]</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>problem.artf</span><code>path="PROBLEM.md"</code><code>[evals.…]</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>path="SPEC.md"</code><code>[evals.…]</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>path="code/"</code><code>[evals.…]</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>docs.artf</span><code>path="docs/"</code><code>[evals.…]</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>app.artf</span><code>path=&quot;./&quot;</code><code>parts=[&quot;code&quot;,&quot;docs&quot;]</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>problem.artf</span><code>path=&quot;PROBLEM.md&quot;</code><code>[evals.review]</code><code>profile.kind=&quot;human&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>path=&quot;SPEC.md&quot;</code><code>[evals.solves]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{problem}&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>path=&quot;code/&quot;</code><code>[evals.covers]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{design}&quot;</code><code>[evals.tests]</code><code>profile.kind=&quot;runtime&quot;</code><code>profile.command=&quot;npm&quot;</code><code>profile.args=[&quot;test&quot;]</code><code>[evals.rules]</code><code>profile.kind=&quot;agent&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>docs.artf</span><code>path=&quot;docs/&quot;</code><code>[evals.usage]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{code}&quot;</code><code>[evals.readable]</code><code>profile.kind=&quot;agent&quot;</code></li>
             </ul>
           </li>
-          <li><span><svg class="file"><use href="#i-file"/></svg>PROBLEM.md</span></li>
-          <li><span><svg class="file"><use href="#i-file"/></svg>SPEC.md</span></li>
-          <li><span><svg class="folder"><use href="#i-folder"/></svg>code/</span></li>
-          <li><span><svg class="folder"><use href="#i-folder"/></svg>docs/</span></li>
+          <li class="source"><span><svg class="file"><use href="#i-file"/></svg>PROBLEM.md</span></li><li class="source"><span><svg class="file"><use href="#i-file"/></svg>SPEC.md</span></li>
+          <li class="source"><span><svg class="folder"><use href="#i-folder"/></svg>code/</span></li><li class="source"><span><svg class="folder"><use href="#i-folder"/></svg>docs/</span></li>
         </ul>
       </li>
     </ul>
