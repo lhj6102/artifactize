@@ -1,6 +1,7 @@
 // A fixture-tree builder that writes only named definitions. The tree in the fixture
 // recipe is materialized as explicit parts, never interpreted by product discovery.
-import { makeDirectory, nativePath, parentOf, portablePath, writeText, type NativePath } from "./platform.ts";
+import { portablePath } from "./platform.ts";
+import { makeDirectory, nativePath, parentOf, writeText, type NativePath } from "./portable.ts";
 
 type Node = { name: string; target: string; source: string; declared: string[] };
 const projects = new Map<NativePath, Map<string, Node>>();

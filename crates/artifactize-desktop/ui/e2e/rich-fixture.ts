@@ -5,7 +5,8 @@ import { prepareFixture } from "./build-fixtures.ts";
 import { cli, type Fixture } from "./fixture.ts";
 import { environment, git } from "./environment.ts";
 import { runtimeProfile } from "./native-fixtures.ts";
-import { makeDirectory, nativePath, runProgramAsync, serveLoopbackHttp } from "./platform.ts";
+import { runProgramAsync } from "./platform.ts";
+import { makeDirectory, nativePath, serveLoopbackHttp } from "./portable.ts";
 
 export const LONG_NAME = `published-${"W".repeat(54)}`;
 export const LONG_WORD = `code_${"unbroken".repeat(240)}`;

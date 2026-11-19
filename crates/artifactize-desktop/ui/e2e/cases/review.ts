@@ -10,7 +10,8 @@ import { clickAt, visibleCenter } from "../pointer.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
-import { nativePath, readText, removeTree, requestWindowClose, writeText } from "../platform.ts";
+import { removeTree, requestWindowClose } from "../platform.ts";
+import { nativePath, readText, writeText } from "../portable.ts";
 import { branch, entriesFocused, expand, MAIN, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
 import { detail, openArtifact, openTab } from "../graph-view.ts";
 

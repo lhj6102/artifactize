@@ -1,7 +1,8 @@
 // Read-only lifetime observations for tools executed by the real application.
 // There are no PID identities, process scans, signals or app lifecycle controls here.
 import type { Fixture } from "./fixture.ts";
-import { closeDirectory, exists, listFiles, nameOf, nativePath, processRunning, readLoopback, readTextIfExists } from "./platform.ts";
+import { processRunning } from "./platform.ts";
+import { closeDirectory, exists, listFiles, nameOf, nativePath, readLoopback, readTextIfExists } from "./portable.ts";
 import { observe } from "./domain-fixtures/observe.ts";
 
 /** A protocol watchdog, never a delay used to infer that a tool stopped. */

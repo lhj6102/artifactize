@@ -4,7 +4,7 @@ import { writeDeclaration } from "./declaration-fixtures.ts";
 import { prepareFixture } from "./build-fixtures.ts";
 import { artifactize, cancelRuns, createChain, type Fixture } from "./fixture.ts";
 import { git } from "./environment.ts";
-import { makeDirectory, nativePath, updateDatabase } from "./platform.ts";
+import { makeDirectory, nativePath, updateDatabase } from "./portable.ts";
 
 /** A readable legacy audit with no saved definitions or requests to draw. */
 export function createEmptyAudit(): { fixture: Fixture; restore: () => void } {

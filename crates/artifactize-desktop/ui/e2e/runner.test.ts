@@ -4,10 +4,8 @@ import { it } from "node:test";
 import { observe } from "./domain-fixtures/observe.ts";
 import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.ts";
 import { environment } from "./environment.ts";
-import {
-  childDirectories, executableName, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
-  exists, nodeProgram, processRunning, readLoopback, runProgramOk, runStep, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
-} from "./platform.ts";
+import { executableName, fixtureRunner, removeTree, runnerCommand, scratchDirectory, nodeProgram, processRunning, runProgramOk, runStep, suitePath, newDirectory, writeJson } from "./platform.ts";
+import { childDirectories, makeDirectory, nativePath, exists, readLoopback, serveLoopback, writeText, type LoopbackServer, type NativePath } from "./portable.ts";
 
 function root(): NativePath {
   return newDirectory(scratchDirectory(), "desktop-startup-test-");

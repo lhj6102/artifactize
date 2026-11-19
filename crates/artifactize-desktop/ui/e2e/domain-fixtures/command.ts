@@ -1,6 +1,7 @@
 // Declared portable programs used by real runtime evaluations and Human tools.
 import { randomUUID } from "node:crypto";
-import { absolutePath, appendText, exists, nativePath, parentOf, processId, readText, replaceText, serveLoopback, writeText, type NativePath } from "../platform.ts";
+import { processId } from "../platform.ts";
+import { absolutePath, appendText, exists, nativePath, parentOf, readText, replaceText, serveLoopback, writeText, type NativePath } from "../portable.ts";
 
 /** How often a stand-in looks for the gate its test opens: a poll, never a wait for time. */
 const GATE_POLL = 20;

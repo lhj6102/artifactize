@@ -18,7 +18,8 @@ import { branch, mainTitle, openWaiting, showRun } from "../pane.ts";
 import { observe } from "../domain-fixtures/observe.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { childDirectories, claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, listFiles, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readBytes, readText, replaceText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
+import { claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, portablePath, primaryModifier, processRunning, removeTree } from "../platform.ts";
+import { childDirectories, exists, httpGet, listFiles, makeDirectory, nativePath, readBytes, readText, replaceText, serveLoopbackHttp, writeText } from "../portable.ts";
 
 const KEY = "sk-e2e-settings-value";
 const SAVED = "sk-e2e-saved-gemini-key";

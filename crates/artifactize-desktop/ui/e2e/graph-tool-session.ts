@@ -2,7 +2,8 @@
 import type { Fixture } from "./fixture.ts";
 import { sessionEndedByApp } from "./observation.ts";
 import { MAIN } from "./pane.ts";
-import { nativePath, replaceText, requestWindowClose } from "./platform.ts";
+import { requestWindowClose } from "./platform.ts";
+import { nativePath, replaceText } from "./portable.ts";
 
 export const graphToolObservation = (fixture: Fixture) => nativePath(fixture.root, "graph-tool-window.json");
 export const graphToolFailure = (fixture: Fixture) => nativePath(fixture.root, "graph-tool-failure.txt");

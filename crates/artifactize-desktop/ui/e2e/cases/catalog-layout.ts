@@ -9,7 +9,7 @@ import { chooseChip, listed, mainTitle, scanned, showRun } from "../pane.ts";
 import { aside, camera, detail, FIND, findField, graphShown, nodeAt, offCentre, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { canvasSnapshot } from "../rendering.ts";
-import { listFiles, nativePath, readText } from "../platform.ts";
+import { listFiles, nativePath, readText } from "../portable.ts";
 import { dispatchInput } from "../input.ts";
 
 function slot(browser: WebdriverIO.Browser) {

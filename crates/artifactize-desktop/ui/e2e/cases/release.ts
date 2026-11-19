@@ -10,11 +10,8 @@ import { dispatchInput } from "../input.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { mainTitle } from "../pane.ts";
 import { scenario, type Prepared, type Scenario } from "../scenario.ts";
-import {
-  appendText, browserHandoffs, browserTransferComplete, commandDirectory, copyFile, diskImageAppDirectory, executableName, nativeInput, nativePath, placeApp,
-  primaryModifier, readText, replaceText, runProgramOk, serveLoopbackHttp, storePackageDirectory, writeText,
-  type Environment, type HttpServer, type NativePath,
-} from "../platform.ts";
+import { browserHandoffs, browserTransferComplete, commandDirectory, diskImageAppDirectory, executableName, nativeInput, placeApp, primaryModifier, runProgramOk, storePackageDirectory, type Environment } from "../platform.ts";
+import { appendText, copyFile, nativePath, readText, replaceText, serveLoopbackHttp, writeText, type HttpServer, type NativePath } from "../portable.ts";
 
 const LATEST = "9.9.9";
 const LOOKUP = "/api/releases/latest";

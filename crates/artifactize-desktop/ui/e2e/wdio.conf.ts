@@ -6,11 +6,8 @@ import { companionPortFree, companionPortWanted, graphToolFailure, observeGraphT
 import { observe } from "./domain-fixtures/observe.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { createdRoots, environment, releaseFixtures } from "./fixture.ts";
-import {
-  appsAtOnce, browserEnvironment, asNativePath, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment,
-  assertClipboardDesktop, commandDirectory, embeddedReady, exists, makeDirectory, nativePath, placeApp, programRunning, releaseClaudeLogins, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson, writeText,
-  type Environment, type NativePath,
-} from "./platform.ts";
+import { appsAtOnce, browserEnvironment, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment, assertClipboardDesktop, commandDirectory, placeApp, programRunning, releaseClaudeLogins, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, type Environment, writeJson } from "./platform.ts";
+import { asNativePath, embeddedReady, exists, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
 import type { Prepared } from "./scenario.ts";
 
 // Reject an unsafe OS session before any fixture or service is initialized.

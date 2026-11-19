@@ -1,5 +1,6 @@
 import type { Fixture } from "./fixture.ts";
-import type { BrowserEntry, Environment, NativePath } from "./platform.ts";
+import type { BrowserEntry, Environment } from "./platform.ts";
+import type { NativePath } from "./portable.ts";
 
 /** Domain inputs prepared before the service launches a capability's app. */
 export type Prepared<T = unknown> = {

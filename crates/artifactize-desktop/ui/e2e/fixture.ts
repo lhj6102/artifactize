@@ -9,10 +9,8 @@ import { environment, git } from "./environment.ts";
 import { prepareFixture, releaseFixtures } from "./build-fixtures.ts";
 import { commandFields, runtimeProfile, type Operation } from "./native-fixtures.ts";
 import { waitingRun } from "./run-fixtures.ts";
-import {
-  exists, makeDirectory, nativePath, parentOf, portablePath, readTextIfExists, runProgram, runProgramAsync, textPath, updateDatabase, writeText,
-  type Environment, type NativePath,
-} from "./platform.ts";
+import { portablePath, runProgram, runProgramAsync, type Environment } from "./platform.ts";
+import { exists, makeDirectory, nativePath, parentOf, readTextIfExists, textPath, updateDatabase, writeText, type NativePath } from "./portable.ts";
 export { environment } from "./environment.ts";
 export { createdRoots, releaseFixtures } from "./build-fixtures.ts";
 export { slowTool } from "./process-fixtures.ts";

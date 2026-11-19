@@ -2,7 +2,8 @@
 // It never scans processes, signals workers, or controls the application lifecycle.
 import { readCandidate } from "./build.ts";
 import { environment } from "./environment.ts";
-import { childDirectories, exists, nativePath, parentOf, removeTree, runProgram, runProgramOk, type NativePath } from "./platform.ts";
+import { removeTree, runProgram, runProgramOk } from "./platform.ts";
+import { childDirectories, exists, nativePath, parentOf, type NativePath } from "./portable.ts";
 
 export type Identity = { pid: number; start_time: string };
 type RunView = {

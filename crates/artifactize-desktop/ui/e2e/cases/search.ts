@@ -11,7 +11,8 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
-import { nativePath, primaryModifier } from "../platform.ts";
+import { primaryModifier } from "../platform.ts";
+import { nativePath } from "../portable.ts";
 import { branches, entriesFocused, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {

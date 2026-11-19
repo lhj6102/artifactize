@@ -1,7 +1,8 @@
 // One spec execution, one independent scenario, one upstream-owned app capability.
 import { recordKeys } from "./keys.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { asNativePath, readJson, takeSystemFocus, variable } from "./platform.ts";
+import { takeSystemFocus, variable } from "./platform.ts";
+import { asNativePath, readJson } from "./portable.ts";
 import type { Prepared } from "./scenario.ts";
 
 // These globals are injected by the configured WDIO Mocha adapter, not node:test.

@@ -1,10 +1,7 @@
 // Invocation-owned build inputs for the Human app launcher and WDIO test runners.
 // Test app/driver lifetimes belong exclusively to WDIO's Tauri service.
-import {
-  ProcessTreeNotJoined, absolutePath, asNativePath, childDirectories, copyFile, executableName, exists, inheritedEnvironment, isInside,
-  makeDirectory, nativePath, newDirectory, packageCommand, pathNotUrl, readJson, removeTree, runStep, scratchDirectory,
-  setVariable, suitePath, testWindowOptions, variable, withBuildInterrupts, writeJson, type Environment, type NativePath,
-} from "./platform.ts";
+import { ProcessTreeNotJoined, executableName, inheritedEnvironment, packageCommand, removeTree, runStep, scratchDirectory, setVariable, suitePath, testWindowOptions, variable, withBuildInterrupts, type Environment, isInside, newDirectory, pathNotUrl, writeJson } from "./platform.ts";
+import { absolutePath, asNativePath, childDirectories, copyFile, exists, makeDirectory, nativePath, readJson, type NativePath } from "./portable.ts";
 
 export const workspace = absolutePath(suitePath(), "../../../..");
 const ui = absolutePath(suitePath(), "..");

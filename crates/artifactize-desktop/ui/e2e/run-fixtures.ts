@@ -1,7 +1,8 @@
 // Domain setup observes the real Run API; this module never owns an app or driver.
 import type { Fixture, Saved } from "./fixture.ts";
 import { environment } from "./environment.ts";
-import { runProgram, type NativePath } from "./platform.ts";
+import { runProgram } from "./platform.ts";
+import { type NativePath } from "./portable.ts";
 import { observe } from "./domain-fixtures/observe.ts";
 
 /** The longest sign-off idle grace: a fixture's Run stays open until its sign-off is submitted. */

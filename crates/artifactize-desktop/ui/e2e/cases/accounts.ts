@@ -5,10 +5,7 @@ import assert from "node:assert/strict";
 import { createOutside, environment } from "../fixture.ts";
 import { fill } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import {
-  appendText, closeServers, nativePath, readText, requireFreeLoopbackPort, serveLoopbackHttp, writeText,
-  type HttpServer,
-} from "../platform.ts";
+import { appendText, closeServers, nativePath, readText, requireFreeLoopbackPort, serveLoopbackHttp, writeText, type HttpServer } from "../portable.ts";
 
 /** An unsigned fixture access token naming the account returned by the auth server. */
 function token(): string {

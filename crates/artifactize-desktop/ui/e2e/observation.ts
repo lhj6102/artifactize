@@ -1,5 +1,6 @@
 import { readCandidate } from "./build.ts";
-import { asNativePath, childDirectories, exists, nameOf, nativePath, newDirectory, processId, processRunning, readJson, removeTree, runProgramOk, saveScreenshot, variable, writeJson, type NativePath } from "./platform.ts";
+import { processId, processRunning, removeTree, runProgramOk, variable, newDirectory, writeJson } from "./platform.ts";
+import { asNativePath, childDirectories, exists, nameOf, nativePath, readJson, saveScreenshot, type NativePath } from "./portable.ts";
 import type { Fixture } from "./fixture.ts";
 import type { Identity } from "./runs.ts";
 

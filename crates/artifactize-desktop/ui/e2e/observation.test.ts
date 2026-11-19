@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { serveLoopback } from "./platform.ts";
+import { serveLoopback } from "./portable.ts";
 import { sessionEndedByApp } from "./observation.ts";
 import type { Identity } from "./runs.ts";
 

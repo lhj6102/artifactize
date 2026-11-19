@@ -1,7 +1,8 @@
 // Domain fixture roots are inputs, not candidate leases or native lifecycle owners.
 // The outer runner calls releaseFixtures only after the service/app has exited.
 import { readCandidate, type Candidate } from "./build.ts";
-import { awaitReleased, childDirectories, ProcessTreeNotJoined, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseClaudeLogins, releaseRecordedBrowser, removeTree, writeText, type NativePath } from "./platform.ts";
+import { awaitReleased, ProcessTreeNotJoined, releaseClaudeLogins, releaseRecordedBrowser, removeTree, newDirectory } from "./platform.ts";
+import { childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, parentOf, writeText, type NativePath } from "./portable.ts";
 import { removeFixture, settleFixtureRuns } from "./runs.ts";
 import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.ts";
 import { observe } from "./domain-fixtures/observe.ts";

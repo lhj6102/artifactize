@@ -14,7 +14,8 @@ import {
 } from "../graph-view.ts";
 import { git } from "../environment.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
-import { makeDirectory, nativeInput, nativePath, primaryModifier, writeText } from "../platform.ts";
+import { nativeInput, primaryModifier } from "../platform.ts";
+import { makeDirectory, nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { canvasSnapshot } from "../rendering.ts";
 import { graphAppearance, graphHasColours, visibleColour, type GraphAppearance } from "./graph-appearance.ts";

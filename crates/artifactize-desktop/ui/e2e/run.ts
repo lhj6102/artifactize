@@ -3,10 +3,8 @@ import { inspect } from "node:util";
 import { assertAdmissionsStopped, assertAppsStopped, retireOwnAdmissions } from "./observation.ts";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
-import {
-  absolutePath, appsAtOnce, asNativePath, assertHarnessPlatform, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nativeCrashReports, nodeProgram, processId, processRunning, readText, requiredVariable, removeTree, setVariable, writeTextOnce, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment, type NativePath,
-} from "./platform.ts";
+import { appsAtOnce, assertHarnessPlatform, assertRunnerMachine, inheritedEnvironment, nativeCrashReports, nodeProgram, processId, processRunning, requiredVariable, removeTree, setVariable, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment, newDirectory } from "./platform.ts";
+import { absolutePath, asNativePath, exists, listFiles, nativePath, readText, writeTextOnce, type NativePath } from "./portable.ts";
 
 const file = suitePath("run.ts");
 const ui = absolutePath(suitePath(), "..");

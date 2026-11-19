@@ -1,6 +1,7 @@
 // A runner-owned process tree for the cancellation regression: `owner` starts one
 // `descendant`, which reports its process id to the test and stays alive until stopped.
-import { nodeProgram, processId, sendLoopback, serveLoopback, startOrphanFixture, suitePath } from "../platform.ts";
+import { nodeProgram, processId, startOrphanFixture, suitePath } from "../platform.ts";
+import { sendLoopback, serveLoopback } from "../portable.ts";
 
 const [role, receiver] = process.argv.slice(2);
 if (role === "owner") {

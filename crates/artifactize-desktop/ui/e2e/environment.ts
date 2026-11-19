@@ -1,10 +1,8 @@
 // One fixture-local environment shared by setup, the real app and its executed tools.
 // Construct a copy: no fixture ever modifies the runner's or the person's environment.
 import type { Fixture } from "./fixture.ts";
-import {
-  gitProgram, isolatedEnvironment, makeDirectory, nativePath, parentOf, portablePath, runProgramOk, writeTextOnce,
-  type Environment, type NativePath,
-} from "./platform.ts";
+import { gitProgram, isolatedEnvironment, portablePath, runProgramOk, type Environment } from "./platform.ts";
+import { makeDirectory, nativePath, parentOf, writeTextOnce, type NativePath } from "./portable.ts";
 
 /** Inherited variables that would let a fixture reach the person's credentials,
  * configuration or network routes, by upper-case name. */
