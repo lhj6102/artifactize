@@ -52,17 +52,14 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
     const words = (element: Element | null | undefined) => (element?.textContent ?? "").replace(/\s+/g, " ").trim();
     // `rgb(r, g, b)` or `color(srgb r g b)`: the first three numbers after the space name.
     const channels = (colour: string) => (colour.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
-    // The star as painted: the filled star is drawn in --ink, the outline in --ink-3.
-    const theme = getComputedStyle(document.documentElement);
-    const token = (name: string) => {
-      const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(theme.getPropertyValue(name).trim());
-      return hex ? hex.slice(1).map((part) => Number.parseInt(part, 16)).join() : "";
-    };
-    const [on, off] = [token("--ink"), token("--ink-3")];
+    // Filled or outlined as drawn: a shape painted with a fill is the filled star.
     const paintedStar = (icon: Element | null) => {
       if (!icon || icon.getBoundingClientRect().width === 0) return "";
-      const colour = channels(getComputedStyle(icon).color).map(Math.round).join();
-      return colour === on ? "★" : colour === off ? "☆" : "";
+      const filled = [...icon.querySelectorAll("path, polygon")].some((shape) => {
+        const fill = getComputedStyle(shape).fill;
+        return fill !== "none" && !/rgba\([^)]*,\s*0\)/.test(fill) && fill !== "transparent";
+      });
+      return filled ? "★" : "☆";
     };
     return [...document.querySelectorAll<HTMLElement>('[aria-label="Branches"] > [role="treeitem"]')].map((row) => {
       const project = words(row.querySelector(".project")).replace(/ \/$/, "");

@@ -8,11 +8,14 @@ export type LogRow = { text: string; kind: "start" | "line" | "end"; error: bool
 export function toolLog(browser: WebdriverIO.Browser, scope: string): Promise<{ notice: string; noticeError: boolean; rows: LogRow[] }> {
   return browser.execute((within) => {
     const root = document.querySelector(within);
-    // Red is the painted colour, compared with the app's own red token.
-    const token = getComputedStyle(document.documentElement).getPropertyValue("--red").trim();
-    const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(token);
-    const red = hex ? `rgb(${hex.slice(1).map((part) => Number.parseInt(part, 16)).join(", ")})` : token;
-    const isRed = (element: Element | null | undefined) => !!element && getComputedStyle(element).color === red;
+    // Red as a person sees it: the painted colour's red clearly outweighs its green and blue,
+    // whatever the theme's token says.
+    const isRed = (element: Element | null | undefined) => {
+      if (!element) return false;
+      const [r, g, b] = (getComputedStyle(element).color.replace("srgb", "").match(/[\d.]+/g) ?? []).slice(0, 3)
+        .map((part) => Number(part) <= 1 && part.includes(".") ? Number(part) * 255 : Number(part));
+      return r > 150 && r > g * 1.6 && r > b * 1.6;
+    };
     const notice = root?.querySelector('p[role="status"]:not(.busy)');
     const log = root?.querySelector('[role="log"][aria-label="Tool log"]');
     return {

@@ -31,7 +31,7 @@ import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomInt } from "node:crypto";
 import {
-  closeSync, constants as fsConstants, existsSync, mkdtempSync, openSync, linkSync, readdirSync, readFileSync, readlinkSync,
+  chmodSync, closeSync, constants as fsConstants, copyFileSync, existsSync, statSync, mkdtempSync, openSync, linkSync, readdirSync, readFileSync, readlinkSync,
   realpathSync, rmSync, writeFileSync,
 } from "node:fs";
 import { constants, homedir, tmpdir } from "node:os";
@@ -134,7 +134,13 @@ export function scratchDirectory(): NativePath {
  * while the build stays one file. Removing the fixture removes only the link. */
 export function placeApp(app: NativePath, directory: NativePath): NativePath {
   const placed = nativePath(makeDirectory(directory), nameOf(app));
-  linkSync(app, placed);
+  try { linkSync(app, placed); }
+  catch (error) {
+    // A link cannot cross volumes: the scratch folder may be on another one than the build.
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    copyFileSync(app, placed);
+    if (!WINDOWS) chmodSync(placed, 0o755);
+  }
   return placed;
 }
 
@@ -1313,7 +1319,14 @@ export function commandFile(name: string): string {
  * holds none the app could run either. */
 export function folderHoldsCommand(folder: string, name: string): boolean {
   try {
-    return readdirSync(folder).some((entry) => entry.toLowerCase().replace(/\.(cmd|exe|bat|ps1)$/, "") === name);
+    if (WINDOWS) {
+      // As Windows finds a bare name: with each extension PATHEXT names, case-insensitively.
+      const extensions = (variable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean).map((ext) => ext.toLowerCase());
+      return readdirSync(folder).some((entry) => extensions.some((ext) => entry.toLowerCase() === `${name}${ext}`));
+    }
+    // Unix runs the exact name, if it is executable.
+    const path = join(folder, name);
+    return existsSync(path) && (statSync(path).mode & 0o111) !== 0;
   } catch {
     return false;
   }
