@@ -208,7 +208,7 @@
             onfield: (written: string | null) => void closeField(written),
             onpan: editable ? (event: PointerEvent) => pan(event) : undefined,
           },
-          draggable: editable && !canvased,
+          draggable: editable && !painted,
           connectable: false,
           ariaLabel: `${node.name}: ${node.note ?? `${WORDS[node.light]}${tallyWords(node.tally)}`}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
           domAttributes: { "data-light": node.light, "data-artifact": node.id },
@@ -771,7 +771,7 @@
       {fitViewOptions}
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
-      nodesDraggable={editable && !canvased}
+      nodesDraggable={editable && !painted}
       nodeDragThreshold={DRAG}
       onnodedragstart={({ targetNode }) => targetNode && dragStart(targetNode.id)}
       onnodedrag={({ targetNode, event }) => targetNode && dragMove(targetNode.id, event)}
