@@ -51,8 +51,13 @@ switch (operation) {
     break;
   case "slow":
     // Runs until it is cancelled (or its fixture closes); each run adds its process ID to
-    // `<gate>.pids`, so its scenario can see the process end.
-    appendFileSync(`${resolve(argument)}.pids`, `${process.pid}\n`);
+    // `<gate>.pids`, so its scenario can see the process end. A fixture already closed and
+    // removed has no scenario to tell: the run ends as it would at its gate.
+    try {
+      appendFileSync(`${resolve(argument)}.pids`, `${process.pid}\n`);
+    } catch {
+      break;
+    }
     await opened(resolve(argument));
     break;
   case "hold":

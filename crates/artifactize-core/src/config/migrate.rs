@@ -174,6 +174,9 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
             read_regular_text(&ignore).map_err(|error| ConfigError::new(&ignore, error))?,
         );
     }
+    if existed {
+        refuse_case_aliases(&destination, &sources)?;
+    }
     let staged = tempfile::Builder::new()
         .prefix(".artifactize-migrate-")
         .tempdir_in(&root)
@@ -221,6 +224,36 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         }
     }
     Ok(report)
+}
+
+/// A name `.artifactize/` already holds in another case is the same file on a case-insensitive
+/// volume, which the rename would replace: refuse it on every volume, so migration writes the
+/// same on all of them.
+fn refuse_case_aliases(
+    destination: &Path,
+    sources: &BTreeMap<PathBuf, String>,
+) -> Result<(), ConfigError> {
+    let wanted: BTreeSet<String> = sources
+        .keys()
+        .filter_map(|file| file.file_name())
+        .map(|name| name.to_string_lossy().to_lowercase())
+        .collect();
+    let opened = crate::platform::open_directory(destination)
+        .map_err(|error| ConfigError::new(destination, error))?;
+    for entry in
+        crate::platform::read_dir(&opened).map_err(|error| ConfigError::new(destination, error))?
+    {
+        let name = entry
+            .map_err(|error| ConfigError::new(destination, error))?
+            .file_name();
+        if wanted.contains(&name.to_string_lossy().to_lowercase()) {
+            return Err(ConfigError::new(
+                destination.join(&name),
+                "This name is taken in .artifactize/ in another case; migration writes nothing.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Agent evals report prioritized findings: drop their old result schemas, and with them every
@@ -285,6 +318,25 @@ fn normalize_commands(table: &mut dyn toml_edit::TableLike) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn migration_refuses_a_definition_name_taken_in_another_case() {
+        let temp = crate::test_os::tempdir();
+        let root = temp.path();
+        let original = root.join("index.artf");
+        let source = "name = 'root'\nbasis = true\n";
+        std::fs::write(&original, source).unwrap();
+        let destination = root.join(discovery::DEFINITION_DIR);
+        std::fs::create_dir(&destination).unwrap();
+        let alias = destination.join("ROOT.ARTF");
+        std::fs::write(&alias, "kept").unwrap();
+
+        let error = migrate(root).unwrap_err();
+        assert!(error.message.contains("another case"), "{}", error.message);
+        assert_eq!(std::fs::read_to_string(&alias).unwrap(), "kept");
+        assert_eq!(std::fs::read_to_string(&original).unwrap(), source);
+        assert_eq!(std::fs::read_dir(&destination).unwrap().count(), 1);
+    }
 
     #[test]
     fn migration_refuses_a_destination_link_or_case_alias_without_writing() {

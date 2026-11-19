@@ -207,4 +207,7 @@ if __name__ == "__main__":
     # there they could outlive the check and keep its scratch configuration in use.
     if os.name != "posix":
         sys.exit("The agent plugin check runs on Linux and macOS only.")
+    # A termination unwinds like an interrupt: each host command's group is ended and the
+    # scratch configuration removed on the way out, by the same finally blocks.
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
     main(sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]))
