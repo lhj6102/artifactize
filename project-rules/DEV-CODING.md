@@ -17,12 +17,10 @@ including e2e tests and harnesses.
 
 - **M-DOCUMENTED-MAGIC**: a limit, size or other magic value is a named constant with a comment saying why.
 - **M-WEASEL-WORDS / M-SHORT-NAMES**: names are short and concrete, without words like Manager, Helper or Util.
-- **M-BALANCED-MODULES**: modules are balanced in size and scope; a module that grows past one concern is split.
 
 ## Types (type-driven)
 
-- **M-STRONG-TYPES**: values use the proper type, such as `PathBuf` for paths and `Duration` for time.
-- **M-STRONG-TYPES-GUARD / T-NEWTYPE-IDS**: identifiers (IDs, keys, hashes) are newtypes that guard their invariants.
+- **M-STRONG-TYPES**: paths are `PathBuf`/`Path` and durations are `Duration`, not strings or integers.
 - **T-ILLEGAL-STATES**: a state is an enum, not a string or a set of booleans, so that illegal states cannot be written.
 - **T-PARSE-AT-EDGE**: external input (configuration, CLI arguments, database rows, network responses) is parsed into types once, at the edge. The core does not pass `serde_json::Value` around.
 
@@ -48,7 +46,7 @@ including e2e tests and harnesses.
   cleans them up.
 - **TEST-SELF-CONTAINED**: tests build or declare every executable and input they use; they
   do not rely on an earlier local build.
-- **TEST-SEAMS**: tests check seams only (observable boundaries), with no over-verification.
+- **TEST-SEAMS**: tests check observable behaviour through public interfaces, not private internals.
 
 ## Code written with AI
 
