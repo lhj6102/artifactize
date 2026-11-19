@@ -10,9 +10,13 @@ import type { App } from "./views/app.ts";
  * from. */
 export type Prepared<T = unknown> = { fixture: Fixture; data: T; args?: string[]; env?: Environment; app?: NativePath };
 
-/** What a scenario's run gets: what it prepared, its folder, and the port of the app's
- * embedded WebDriver server, which lives as long as the app. */
-export type Context<T = unknown> = Prepared<T> & { root: NativePath; port: number };
+/** What a scenario's run gets: what it prepared, its folder, the port of the app's embedded
+ * WebDriver server, which lives as long as the app, and how the app was started. */
+export type Context<T = unknown> = Prepared<T> & { root: NativePath; port: number; launch: { app: NativePath; args: string[]; env: Record<string, string> } };
+
+/** Quit the app by closing its window and start it again as it was started, on the same state:
+ * a later app of this machine's user. Once per scenario. */
+export type Again = () => Promise<App>;
 
 export type Scenario = {
   id: string;
@@ -24,12 +28,12 @@ export type Scenario = {
   /** How long its run may take, in milliseconds. */
   timeout?: number;
   prepare: (own: Owned) => Promise<Prepared>;
-  run: (app: App, input: Context) => Promise<void>;
+  run: (app: App, input: Context, again: Again) => Promise<void>;
 };
 
 export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
   prepare: (own: Owned) => Promise<Prepared<T>>;
-  run: (app: App, input: Context<T>) => Promise<void>;
+  run: (app: App, input: Context<T>, again: Again) => Promise<void>;
 }): Scenario {
   return definition as Scenario;
 }

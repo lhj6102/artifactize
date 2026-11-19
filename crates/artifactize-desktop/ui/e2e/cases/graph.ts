@@ -114,7 +114,7 @@ export const scenarios: Scenario[] = [
       await app.detail.star();
       await app.graph.clickBackground();
       await app.detail.closed();
-      const favorites = await app.graph.openFind();
+      const favorites = await app.graph.openFind((shown) => shown.entries.length > 0, "the find field opened listing the favorites");
       assert.deepEqual(favorites.entries.map((entry) => entry.name), ["docs"], "the starred Artifact listed with nothing typed");
       await app.graph.chooseFound("docs", "Artifact docs");
       await app.detail.star();
@@ -178,7 +178,9 @@ export const scenarios: Scenario[] = [
       assert.ok(await app.graph.zoom() > whole, "zoomed in");
       await app.graph.until(() => app.graph.navigatorShown(), "part of the graph lies outside the view: the Navigator shows");
       const zoom = await app.graph.zoom();
-      await app.graph.navigate(0.1, 0.1);
+      // The clicked place comes to the middle of the view: the frame of the part in view is
+      // drawn around it.
+      await app.graph.navigate(0.3, 0.6);
       assert.equal(await app.graph.zoom(), zoom, "the Navigator keeps the zoom");
       await app.graph.cameraTool("Fit");
       assert.equal(await app.graph.zoom(), whole, "Fit shows the whole graph again");

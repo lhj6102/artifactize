@@ -36,7 +36,8 @@ it("gives a fixture's programs homes inside it and none of the person's credenti
 });
 
 it("teardown runs every cleanup, last first, ends a stand-in waiting for its gate and deletes the folder", async () => {
-  const scope = own(nativePath(scratchDirectory(), "desktop-owned-test"));
+  const parent = newDirectory(scratchDirectory(), "desktop-owned-test-");
+  const scope = own(parent);
   const order: string[] = [];
   scope.defer(() => { order.push("first"); });
   scope.defer(() => { throw new Error("a cleanup that fails"); });
@@ -48,7 +49,7 @@ it("teardown runs every cleanup, last first, ends a stand-in waiting for its gat
   assert.deepEqual(order, ["last", "first"]);
   assert.equal(await ended, 0, "the stand-in ended once its fixture closed");
   assert.equal(exists(scope.root), false);
-  removeTree(nativePath(scratchDirectory(), "desktop-owned-test"));
+  removeTree(parent);
 });
 
 it("returns a build step's output and fails a step that fails", async () => {

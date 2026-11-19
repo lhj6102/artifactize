@@ -7,8 +7,9 @@ import { spawn } from "node:child_process";
 import { inspect } from "node:util";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
-import { appsAtOnce, assertHeadless, nodeProgram, runnerCommand, variable } from "./platform.ts";
-import { asNativePath, exists, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, type NativePath } from "./portable.ts";
+import { selectedScenarios } from "./catalog.ts";
+import { appsAtOnce, assertHeadless, desktopResources, nodeProgram, runnerCommand, variable } from "./platform.ts";
+import { asNativePath, exists, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, type NativePath } from "./portable.ts";
 import type { Scenario } from "./scenario.ts";
 
 /** Scenarios in batches of at most `size`, in their order; one that runs alone has a batch of
@@ -76,8 +77,22 @@ function serviceLogs(directory: NativePath): string[] {
     .map((item) => `--- service log ${item.name} ---\n${readText(item.path).slice(-16384)}`);
 }
 
+/** Run `body` holding the machine-wide resources the batch's apps use: this OS's desktop
+ * ones, and for a scenario that runs alone, its own (E2E-ISOLATED), so that another suite run
+ * of this machine waits for them. */
+async function holding(body: () => Promise<void>): Promise<void> {
+  const ids = JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[];
+  const names = [...desktopResources, ...selectedScenarios(ids).filter((item) => item.alone).map((item) => `alone-${item.id}`)];
+  const run = (at: number): Promise<void> => at === names.length ? body() : withMachineLock(names[at], () => run(at + 1));
+  await run(0);
+}
+
 async function batch(): Promise<void> {
   assertHeadless();
+  await holding(launch);
+}
+
+async function launch(): Promise<void> {
   const output = asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? "");
   const { Launcher } = await import("@wdio/cli");
   const launcher = new Launcher(suitePath("wdio.conf.ts"));

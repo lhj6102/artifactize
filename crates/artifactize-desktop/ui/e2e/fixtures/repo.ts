@@ -97,8 +97,14 @@ export function cancelRuns(fixture: Fixture): void {
   if (readTextIfExists(nativePath(fixture.state, "state.sqlite")) === null) return;
   for (const run of savedRuns(fixture)) {
     if (run.status !== "RUNNING" && run.status !== "WAITING_HUMAN") continue;
-    artifactize(fixture, ["run", "cancel", run.id]);
-    artifactize(fixture, ["run", "show", run.id, "--wait", "--json"]);
+    const cancelled = artifactize(fixture, ["run", "cancel", run.id]);
+    const shown = artifactize(fixture, ["run", "show", run.id, "--wait", "--json"]);
+    // Its exit code tells the Run's outcome; its JSON tells whether it ended.
+    let status = "unknown";
+    try { status = (JSON.parse(shown.stdout) as { status: string }).status; } catch { /* not JSON: unknown */ }
+    if (status === "RUNNING" || status === "WAITING_HUMAN" || status === "unknown") {
+      throw new Error(`the fixture's Run ${run.id} did not end (${status}): ${cancelled.stderr}${shown.stderr}`);
+    }
   }
 }
 

@@ -228,6 +228,10 @@ export function testWindowOptions(windows: readonly Record<string, unknown>[]): 
  * desktop's one foreground window, so Windows runs one app at a time. */
 export const appsAtOnce = WINDOWS ? 1 : 2;
 
+/** The machine-wide resources a batch holds while its apps run: on Windows the desktop's
+ * foreground window, which another suite run's app would take away. */
+export const desktopResources: readonly string[] = WINDOWS ? ["foreground"] : [];
+
 /** On Windows, give the scenario's window the desktop's focus before it starts (see
  * appsAtOnce); other systems deliver focus events to a page in any window. */
 export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<void> {

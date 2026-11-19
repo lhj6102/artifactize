@@ -56,7 +56,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "branch-star",
-    title: "a branch's star lists it before the others and taking the star away lists it in the search's order again",
+    title: "a branch's star lists it before the others, still when the app starts again, and taking the star away lists it in the search's order again",
     journeys: ["J-BRANCH-STAR"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -67,18 +67,21 @@ export const scenarios: Scenario[] = [
       orderRuns(fixture, [first, second]);
       return { fixture, data: null };
     },
-    run: async (app) => {
+    run: async (app, _input, again) => {
       await app.pane.listed(["other  master", "repo  master"], "the newest Run's branch first");
       await app.pane.star("repo  master");
       await app.pane.listed(["repo  master", "other  master"], "the starred branch first");
-      await app.pane.star("repo  master");
-      await app.pane.listed(["other  master", "repo  master"], "in the search's order again");
+      // A later app of this machine's user keeps the star.
+      const later = await again();
+      await later.pane.listed(["repo  master", "other  master"], "still starred and first after the app started again");
+      await later.pane.star("repo  master");
+      await later.pane.listed(["other  master", "repo  master"], "in the search's order again");
     },
   }),
 
   scenario({
     id: "pane-search",
-    title: "a click in the search field focuses it; free text and key:value terms narrow the branches, and typing a term suggests keys and their values, a click taking one",
+    title: "a click in the search field focuses it; free text and key:value terms narrow the branches and the waiting reviews alike, and typing a term suggests keys and their values, a click taking one",
     journeys: ["J-PANE-SEARCH", "J-PANE-SUGGEST"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -91,8 +94,11 @@ export const scenarios: Scenario[] = [
       await app.pane.focusSearch();
       assert.equal((await app.pane.search()).query, "sort:recent", "the starting query");
       const names = async () => (await app.pane.branches()).map((branch) => branch.name).sort();
+      const waiting = async () => (await app.pane.waiting()).rows.map((row) => row.where).sort();
+      await app.until(async () => JSON.stringify(await waiting()) === JSON.stringify(["other  master", "repo  master", "repo  scope-one", "repo  scope-two"]), "every branch's waiting review listed");
       await app.pane.searchFor("sort:recent scope");
-      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]), "free text narrowed to the scope branches");
+      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]) && JSON.stringify(await waiting()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]),
+        "free text narrowed the branches and the waiting reviews to the scope ones");
       await app.pane.searchFor("sort:recent branch:one");
       await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one"]), "branch: narrowed to scope-one");
       // A key is suggested, then its values; a click takes each.
@@ -100,7 +106,8 @@ export const scenarios: Scenario[] = [
       await app.pane.typeSearch("rep");
       assert.equal(await app.pane.takeSuggestion("repo:"), "sort:recent repo:");
       assert.equal(await app.pane.takeSuggestion("repo:other"), "sort:recent repo:other ");
-      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["other  master"]), "repo:other narrowed to its branch");
+      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["other  master"]) && JSON.stringify(await waiting()) === JSON.stringify(["other  master"]),
+        "repo:other narrowed the branches and the waiting reviews to its own");
       await app.pane.typeSearch("bra");
       await app.until(async () => (await app.pane.search()).suggestions.includes("branch:"), "the branch key suggested");
       await app.pane.leaveSearch();

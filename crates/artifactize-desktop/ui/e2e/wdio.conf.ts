@@ -75,13 +75,11 @@ export const config = {
         const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
         for (const [name, value] of Object.entries(env)) if (value === undefined) unset.add(name);
         const context = nativePath(scope.root, "context.json");
-        writeJson(context, { ...input, root: scope.root, port: ports[index] } satisfies Context);
+        const launch = { app: input.app ?? candidate.app, args: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])], env: set(env) };
+        writeJson(context, { ...input, root: scope.root, port: ports[index], launch } satisfies Context);
         capabilities[index]["artifactize:context"] = context;
         if (input.app) capabilities[index]["tauri:options"] = { application: input.app };
-        capabilities[index]["wdio:tauriServiceOptions"] = {
-          appArgs: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])],
-          env: set(env), embeddedPort: ports[index],
-        };
+        capabilities[index]["wdio:tauriServiceOptions"] = { appArgs: launch.args, env: launch.env, embeddedPort: ports[index] };
       }
       // The service starts each app with this process's variables under the scenario's own:
       // none of the runner's reaches an app unless its scenario sets it, and none a scenario

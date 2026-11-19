@@ -131,8 +131,10 @@ export class App {
 
   /** In the open palette, type `query` and click the command `label`; the palette closes. */
   async runCommand(query: string, label = query): Promise<void> {
+    const unfiltered = (await this.palette())?.commands.length ?? 0;
     await typeText(this.browser, query);
-    await until(this.browser, () => this.palette(), (shown) => !!shown?.commands.some((command) => command.label === label), `the palette lists ${label}`);
+    await until(this.browser, () => this.palette(), (shown) => shown?.query === query && shown.commands.length < unfiltered && shown.commands.some((command) => command.label === label),
+      `the palette narrowed to ${query} and lists ${label}`);
     for (const option of await this.browser.$$(`${PALETTE} [role="option"]`).getElements()) {
       if ((await option.$("span").getText()).trim() !== label) continue;
       await option.click();

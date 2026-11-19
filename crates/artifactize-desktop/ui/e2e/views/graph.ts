@@ -258,16 +258,22 @@ export class Graph {
     return this.browser.$(`${GRAPH} [data-navigator]`).isDisplayed();
   }
 
-  /** Click the Navigator's map at `fx`, `fy` (fractions of its width and height): the camera moves. */
-  async navigate(fx: number, fy: number): Promise<string> {
-    const before = await this.camera();
+  /** Click the Navigator's map at `fx`, `fy` (fractions of its width and height), and wait
+   * until the frame of the part in view is drawn around that place. Returns the clicked point
+   * and the frame's middle. */
+  async navigate(fx: number, fy: number): Promise<{ clicked: { x: number; y: number }; framed: { x: number; y: number } }> {
     const point = await this.browser.execute((graph, x, y) => {
       const box = document.querySelector(`${graph} [data-navigator] .map`)!.getBoundingClientRect();
       return { x: Math.round(box.left + box.width * x), y: Math.round(box.top + box.height * y) };
     }, GRAPH, fx, fy);
     await dispatchInput(this.browser, { kind: "pointer", phase: "down", ...point });
     await dispatchInput(this.browser, { kind: "pointer", phase: "up", ...point });
-    return until(this.browser, () => this.camera(), (shown) => shown !== before, "the Navigator moved the camera");
+    const frame = () => this.browser.execute((graph) => {
+      const box = document.querySelector(`${graph} [data-navigator] .frame`)!.getBoundingClientRect();
+      return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    }, GRAPH);
+    const framed = await until(this.browser, frame, (middle) => Math.hypot(middle.x - point.x, middle.y - point.y) <= 3, "the Navigator framed the clicked place");
+    return { clicked: point, framed };
   }
 
   /** Whether the large graph's canvas paints anything in the middle of the graph: some pixels
@@ -314,10 +320,10 @@ export class Graph {
     }, FIND);
   }
 
-  /** Click Find: the find field opens with the keyboard. */
-  async openFind(): Promise<Found> {
+  /** Click Find: the find field opens with the keyboard, once what it lists satisfies `ok`. */
+  async openFind(ok: (found: Found) => boolean = () => true, what = "the find field opened with the keyboard"): Promise<Found> {
     await this.tool("Find");
-    return (await until(this.browser, () => this.found(), (shown) => !!shown?.focused, "the find field opened with the keyboard"))!;
+    return (await until(this.browser, () => this.found(), (shown) => !!shown?.focused && ok(shown), what))!;
   }
 
   /** Type `text` into the open find field: what it lists follows. */

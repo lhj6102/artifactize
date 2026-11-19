@@ -212,10 +212,11 @@ export class Detail {
     return until(this.browser, () => this.definition(name), ok, what);
   }
 
-  /** Type `path` into the Path field and press Enter: it is written, or refused. */
-  async writePath(name: string, path: string): Promise<void> {
+  /** Type `path` into the Path field and press Enter, until the Definition shows `outcome`:
+   * what writing it, or refusing it, shows. */
+  async writePath(name: string, path: string, outcome: (shown: Awaited<ReturnType<Detail["definition"]>>) => boolean, what: string): Promise<void> {
     await fill(this.browser, `${DETAIL} input[aria-label="Path of ${name}"]`, path);
-    await press(this.browser, ["Enter"], async () => true, "Enter in the Path field");
+    await press(this.browser, ["Enter"], async () => outcome(await this.definition(name)), what);
   }
 
   /** Press Esc in the Path field: what was typed is put back. */

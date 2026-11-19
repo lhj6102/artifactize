@@ -22,13 +22,11 @@ export const scenarios: Scenario[] = [
       assert.equal(shown.path, "core/");
       assert.equal(shown.source, null, "the Source folded until unfolded");
       // A Path is written by Enter; a missing target is said beside it.
-      await app.detail.writePath("core", "gone/");
+      await app.detail.writePath("core", "gone/", (each) => each.missing === "gone/ does not exist.", "the missing target said beside the Path");
       await app.eventually(() => definitionText(fixture, "core")?.includes('path = "gone/"') === true, "the file holds the new Path");
-      await app.detail.definitionUntil("core", (each) => each.missing === "gone/ does not exist.", "the missing target said beside the Path");
       // A Path the project would not accept writes nothing and says why.
       const kept = definitionText(fixture, "core");
-      await app.detail.writePath("core", "../outside/");
-      await app.detail.definitionUntil("core", (each) => each.refusals.length > 0, "the Path refused under it");
+      await app.detail.writePath("core", "../outside/", (each) => each.refusals.length > 0, "the Path refused under it");
       assert.equal(definitionText(fixture, "core"), kept, "a refused Path writes nothing");
       await app.detail.discardPath("core");
       await app.detail.definitionUntil("core", (each) => each.path === "gone/" && each.refusals.length === 0, "Esc put the Path back");
@@ -39,7 +37,7 @@ export const scenarios: Scenario[] = [
       await app.graph.open("a:core", "Artifact core");
       shown = await app.detail.definitionUntil("core", (each) => each.path === "kept-draft/", "the draft shown again");
       assert.equal(definitionText(fixture, "core"), kept, "the draft was not written");
-      await app.detail.writePath("core", "core/");
+      await app.detail.writePath("core", "core/", (each) => each.path === "core/" && each.missing === "" && each.refusals.length === 0, "core/ shown again without the missing target");
       await app.eventually(() => definitionText(fixture, "core")?.includes('path = "core/"') === true, "the Path written back");
       // Typing in the Source offers Save, which writes the file; Revert puts back its text.
       const text = definitionText(fixture, "core")!;
@@ -70,8 +68,7 @@ export const scenarios: Scenario[] = [
       await app.detail.definitionUntil("core", (each) => each.path === "core/", "core's Definition");
       const theirs = definitionText(fixture, "core")!.replace("basis = true\n", "basis = true\nparts = [\"kit\"]\n");
       rewriteDefinition(fixture, "core", theirs);
-      await app.detail.writePath("core", "moved/");
-      await app.detail.definitionUntil("core", (each) => each.refusals.includes(".artifactize/core.artf changed on disk."), "the edit refused, naming the file");
+      await app.detail.writePath("core", "moved/", (each) => each.refusals.includes(".artifactize/core.artf changed on disk."), "the edit refused, naming the file");
       assert.equal(definitionText(fixture, "core"), theirs, "the file as the other writer left it");
       await app.graph.node("a:core/a:kit", () => true, "the Current scanned again: kit drawn in core's box");
     },
