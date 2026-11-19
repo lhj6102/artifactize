@@ -1,7 +1,10 @@
-// The window: how it opens in each launch mode, its one screen, the palette, Help, opening a
-// request by ID, a newer release, and quitting.
+// The window: how it opens, its one screen, the command palette and Help, opening a request by
+// ID, a newer release, refreshing and quitting.
 import assert from "node:assert/strict";
-import { addRepository, addWorktrees, createRelease, request } from "../fixtures/repo.ts";
+import { standInBrowser, browserHandoffs } from "../fixtures/browser.ts";
+import { addRepository, addWorktrees, createEmpty, createRelease, declareRelease, environment, newFixture, request, requests } from "../fixtures/repo.ts";
+import { shortcutLabel } from "../platform.ts";
+import { nativePath, readText, writeText, serveLoopbackHttp } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
@@ -33,8 +36,7 @@ export const scenarios: Scenario[] = [
       // A click on its name expands it to its timeline, its newest Run shown in the main area.
       const expanded = await app.pane.selectBranch("repo  master");
       assert.equal(expanded.latest, "", "expanded, the timeline replaces the newest Run's status");
-      // Its one Run, in progress, is its newest entry and the one shown.
-      assert.deepEqual(expanded.entries.map((entry) => [entry.id, entry.shown]), [[run, true]]);
+      assert.deepEqual(expanded.entries.map((entry) => [entry.id, entry.shown]), [[run, true]], "its Run in progress is its newest entry");
       assert.match(expanded.entries[0].text, /^Waiting for sign-off \d+[smh]/);
       await app.graph.titled(run);
       assert.match(await app.graph.headline(), /^WAITING_HUMAN: release\/signoff /);
@@ -45,6 +47,168 @@ export const scenarios: Scenario[] = [
       await app.graph.titled(worktree);
       // Folded again, the branch reads its newest Run's status again.
       assert.match((await app.pane.toggle("repo  master")).latest, /^Waiting for sign-off/);
+    },
+  }),
+
+  scenario({
+    id: "palette-help",
+    title: "the Commands button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
+    journeys: ["J-PALETTE", "J-HELP"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["--repo", fixture.repo], data: null };
+    },
+    run: async (app) => {
+      await app.graph.node("a:release");
+      const palette = await app.openPalette();
+      const commands = palette.commands.map((command) => [command.label, command.keys]);
+      for (const expected of [["Keyboard shortcuts", "?"], ["Show Settings", shortcutLabel("Ctrl+,")], ["Show or hide the Pane", shortcutLabel("Ctrl+B")],
+        ["Search the branches", "/"], ["Open a request by ID", shortcutLabel("Ctrl+O")], ["Refresh", shortcutLabel("Ctrl+R")], ["Quit", "q"], ["Find", shortcutLabel("Ctrl+F")]]) {
+        assert.ok(commands.some(([label, keys]) => label === expected[0] && keys.includes(expected[1])), `the palette lists ${expected[0]} with ${expected[1]}: ${JSON.stringify(commands)}`);
+      }
+      // The app's commands come before the graph's.
+      assert.ok(commands.findIndex(([label]) => label === "Quit") < commands.findIndex(([label]) => label === "Find"));
+      await app.type("ow Sett");
+      assert.deepEqual((await app.palette())?.commands.map((command) => command.label), ["Show Settings"], "typing filters the commands");
+      await app.press(["Escape"], async () => (await app.palette()) === null, "the palette closed");
+      // A click on a command runs it.
+      await app.openPalette();
+      await app.runCommand("Show Settings");
+      await app.settings.until((shown) => shown.tabs.some((tab) => tab.name === "Providers" && tab.selected), "Settings opened by the palette");
+      await app.settings.close("Close");
+      // Keyboard shortcuts opens Help: the keys of what has focus and, with the graph focused, its marks.
+      await app.graph.focus();
+      await app.command("Keyboard shortcuts");
+      const help = (await app.help())!;
+      assert.ok(help.keys.some((key) => key.action === "Command palette" && key.keys === shortcutLabel("Ctrl+K")), `Help lists the palette's key: ${JSON.stringify(help.keys)}`);
+      assert.deepEqual(help.marks.map((mark) => mark.word), ["GREEN", "in progress", "waiting", "RED", "ERROR", "blocked by upstream"], "a Run's marks, each with its word");
+      assert.ok(help.marks.every((mark) => mark.icon !== ""), "each mark beside its word");
+      await app.closeHelp("Close");
+      await app.command("Keyboard shortcuts");
+      await app.closeHelp("outside");
+    },
+  }),
+
+  scenario({
+    id: "open-review-by-id",
+    title: "started with review ID it opens that waiting review in the main area, named once in its header; the palette's Open a request by ID opens another request read-only, and choosing a branch leaves the review",
+    journeys: ["J-LAUNCH", "J-MAIN-REVIEW", "J-OPEN-ID"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      const first = request(fixture).id;
+      await addRepository(fixture, "other");
+      const docs = requests(fixture).find((saved) => saved.evalId === "docs/lint")!.id;
+      return { fixture, args: ["review", first], data: { first, docs } };
+    },
+    run: async (app, { data: { first, docs } }) => {
+      await app.graph.titled("Review");
+      assert.match(await app.graph.header(), /release\/signoff/, "the review's eval named in the header");
+      assert.match(await app.review.debugState(), new RegExp(`^Request ${first} · DEFERRED · unclaimed`), "the named review, not the newest one");
+      await app.review.until((shown) => shown.stage === "CLAIM" && shown.tools.length > 0, "the review is actionable: it can be claimed");
+      // Another request by its ID opens read-only.
+      await app.openPalette();
+      await app.runCommand("Open a request by ID");
+      await app.openById(docs);
+      await app.graph.titled("docs/lint · Check docs · read-only");
+      // Choosing a branch leaves what the main area showed.
+      const branch = await app.pane.selectBranch("repo  master");
+      await app.graph.titled(branch.entries.find((entry) => entry.shown)!.id);
+    },
+  }),
+
+  scenario({
+    id: "quit-with-claims",
+    title: "the palette's Quit asks first while this window holds a claim, naming it: Stay keeps the window and the claim, Release and quit releases it and the app exits",
+    journeys: ["J-QUIT"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["review"], data: { id: request(fixture).id } };
+    },
+    run: async (app, { fixture, data: { id }, port }) => {
+      await app.graph.titled("Review");
+      await app.review.claim();
+      await app.command("Quit");
+      const asked = await app.dialogTitled("Leave the review?");
+      assert.match(asked.text, new RegExp(`This window holds 1 review claim: .*${id}`));
+      await app.dialogButton("Stay");
+      await app.dialogClosed();
+      assert.equal(request(fixture).claim?.reviewer, "alice", "Stay keeps the claim");
+      await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the window and its review stay");
+      await app.command("Quit");
+      await app.dialogTitled("Leave the review?");
+      await app.exitsBy(() => app.dialogButton("Release and quit"), port);
+      assert.equal(request(fixture).claim, null, "Release and quit released the claim");
+    },
+  }),
+
+  scenario({
+    id: "quit-closing-the-window",
+    title: "closing the window with no claim held quits at once, asking nothing",
+    journeys: ["J-QUIT"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["--repo", fixture.repo], data: null };
+    },
+    run: async (app, { port }) => {
+      await app.graph.node("a:release");
+      await app.exitsBy(() => app.closeWindow(), port);
+    },
+  }),
+
+  scenario({
+    id: "update-notice",
+    title: "a newer stable release shows as `{version} available` before Settings; its dialog names both versions and links the release page, which opens in the browser",
+    journeys: ["J-UPDATE"],
+    prepare: async (own) => {
+      const fixture = createEmpty(own);
+      const visits = nativePath(own.root, "site-visits");
+      writeText(visits, "");
+      const site = await serveLoopbackHttp((incoming, response) => {
+        incoming.resume();
+        writeText(visits, `${readText(visits)}${incoming.url}\n`);
+        const lookup = incoming.url === "/api/releases/latest";
+        response.writeHead(200, { "content-type": lookup ? "application/json" : "text/html" });
+        response.end(lookup ? JSON.stringify({ tag_name: "v9.9.9" }) : "<title>Release notes</title>");
+      });
+      own.defer(() => site.close());
+      const env = standInBrowser(fixture, { ...environment(fixture), ARTIFACTIZE_RELEASES_URL: site.url, ARTIFACTIZE_NO_UPDATE_CHECK: undefined });
+      return { fixture, env, data: { site: site.url, visits } };
+    },
+    run: async (app, { fixture, data: { site, visits } }) => {
+      const header = await app.headerUntil((shown) => shown.items.includes("9.9.9 available"), "the newer release shows in the header");
+      assert.ok(header.items.indexOf("9.9.9 available") < header.items.findIndex((item) => item.startsWith("Settings")), "before Settings");
+      await app.headerButton("9.9.9 available");
+      await app.dialogTitled("Update artifactize");
+      const dialog = (await app.releaseDialog())!;
+      assert.match(dialog.versions, / → 9\.9\.9$/, "the running and the new version");
+      assert.equal(dialog.link, `${site}/releases/latest`, "how to update: the release page");
+      await app.followReleaseLink();
+      await app.eventually(async () => browserHandoffs(fixture).includes(dialog.link), "the release page opened in the browser");
+      assert.ok(readText(visits).includes("/releases/latest\n"), "the browser fetched the page");
+      await app.dialogButton("Close");
+      await app.dialogClosed();
+    },
+  }),
+
+  scenario({
+    id: "refresh",
+    title: "the palette's Refresh scans a shown Current again: a definition changed on disk shows after it, on the same view",
+    journeys: ["J-REFRESH"],
+    prepare: async (own) => {
+      const fixture = newFixture(own);
+      declareRelease(fixture);
+      return { fixture, args: ["graph", "--repo", fixture.repo], data: { definition: nativePath(fixture.repo, ".artifactize", "docs.artf") } };
+    },
+    run: async (app, { data: { definition } }) => {
+      await app.graph.node("a:docs");
+      await app.graph.open("a:docs", "Artifact docs");
+      await app.detail.openEval("docs/lint");
+      assert.equal((await app.detail.summary()).instruction, "Check docs.");
+      writeText(definition, readText(definition).replace('payload.instruction = "Check docs."', 'payload.instruction = "Check the docs again."'));
+      const title = await app.graph.title();
+      await app.command("Refresh");
+      await app.detail.summaryUntil((summary) => summary.instruction === "Check the docs again.", "the Refresh read the changed definition");
+      assert.equal(await app.graph.title(), title, "on the same view");
     },
   }),
 ];

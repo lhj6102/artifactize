@@ -1,8 +1,13 @@
 // Every scenario of the suite, in the order the runner batches them.
 import type { Scenario } from "./scenario.ts";
+import { scenarios as editing } from "./cases/editing.ts";
+import { scenarios as graph } from "./cases/graph.ts";
+import { scenarios as pane } from "./cases/pane.ts";
+import { scenarios as review } from "./cases/review.ts";
+import { scenarios as settings } from "./cases/settings.ts";
 import { scenarios as window } from "./cases/window.ts";
 
-export const scenarios: Scenario[] = [...window];
+export const scenarios: Scenario[] = [...window, ...pane, ...graph, ...editing, ...review, ...settings];
 
 const ids = new Set<string>();
 for (const item of scenarios) {

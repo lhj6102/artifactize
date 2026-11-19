@@ -15,7 +15,7 @@ export default [
   // recommended rules cover it and the build configuration.
   ...typescript(["e2e/**/*.ts", "vite.config.ts"]),
   ...e2ePlatform(["e2e/**/*.ts", "e2e/**/*.mjs", "e2e/**/*.js"], "e2e/platform.ts"),
-  ...e2eCases(["e2e/cases/**/*.ts"], "warn"),
+  ...e2eCases(["e2e/cases/**/*.ts"]),
   {
     files: ["src/**/*.svelte", "src/**/*.svelte.ts"],
     languageOptions: {

@@ -311,3 +311,42 @@ export function createEmpty(own: Owned): Fixture {
   return fixture;
 }
 
+
+// ---------------------------------------------------------------------------------
+// Definitions to edit on a Current
+
+export const APP_NOTE = "Ship the app with its kit.";
+export const CORE_NOTE = "Core stays small.";
+
+/** A branch without a Run whose definitions are one file each in `.artifactize/`: app and
+ * bundle each hold kit, core is on its own, docs reads core. With `comments`, app and core
+ * carry one; with `placed`, the top level is placed by hand. */
+export function createEditing(own: Owned, { comments = false, placed = false } = {}): Fixture {
+  const fixture = newFixture(own);
+  const note = (text: string) => (comments ? `\n[annotations.comment]\ntext = ${JSON.stringify(text)}\n` : "");
+  const at = (x: number, y: number) => (placed ? `\n[annotations.style]\nat = [${x.toFixed(1)}, ${y.toFixed(1)}]\n` : "");
+  const files: Record<string, string> = {
+    app: `path = "app/"\nparts = ["kit"]\nbasis = true\n${at(0, 0)}${note(APP_NOTE)}`,
+    bundle: `path = "bundle/"\nparts = ["kit"]\nbasis = true\n${at(420, 0)}`,
+    kit: `path = "kit/"\nbasis = true\n`,
+    core: `path = "core/"\nbasis = true\n${at(0, 320)}${note(CORE_NOTE)}`,
+    docs: `path = "docs/"\n${at(420, 320)}${check("check", "docs", "pass", "Check {docs} against {core}.")}`,
+  };
+  const folder = makeDirectory(nativePath(fixture.repo, ".artifactize"));
+  for (const [name, text] of Object.entries(files)) {
+    writeText(nativePath(makeDirectory(nativePath(fixture.repo, name)), "readme.md"), `${name}\n`);
+    writeText(nativePath(folder, `${name}.artf`), text);
+  }
+  initRepo(fixture);
+  return fixture;
+}
+
+/** The definition file of `name` as it is on disk now, or `null` once it is gone. */
+export function definitionText(fixture: Fixture, name: string): string | null {
+  return readTextIfExists(nativePath(fixture.repo, ".artifactize", `${name}.artf`));
+}
+
+/** Replace the definition file of `name`, as another writer would. */
+export function rewriteDefinition(fixture: Fixture, name: string, text: string): void {
+  writeText(nativePath(fixture.repo, ".artifactize", `${name}.artf`), text);
+}
