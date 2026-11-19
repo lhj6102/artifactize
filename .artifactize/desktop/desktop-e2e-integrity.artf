@@ -11,4 +11,4 @@ read = { builtin = "read" }
 [evals.tests]
 title = "The integrity checker's tests pass"
 profile = { kind = "runtime", command = "node", args = ["--test", "e2e-integrity.test.js"], timeout_ms = 60000 }
-payload.instruction = "Run the tests of the integrity checker {desktop-e2e-integrity}, which pin each mechanical part of E2E-INPUT and E2E-PROVIDER-UPSTREAM of {desktop-e2e-rules} that it checks."
+payload.instruction = "Run the tests of the integrity checker {desktop-e2e-integrity}, which pin each mechanical part of E2E-INPUT of {desktop-e2e-rules} that it checks: no injection API and an unmodified provider."

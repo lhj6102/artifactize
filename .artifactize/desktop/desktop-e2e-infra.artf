@@ -1,0 +1,37 @@
+path = "crates/artifactize-desktop/ui/e2e/"
+select = ["platform.ts", "portable.ts", "run.ts", "wdio.conf.ts", "build.ts", "scenario.ts", "catalog.ts", "journey.spec.ts", "fixture.ts", "environment.ts", "build-fixtures.ts", "browser-fixtures.ts", "catalog-fixtures.ts", "declaration-fixtures.ts", "native-fixtures.ts", "process-fixtures.ts", "rich-fixture.ts", "run-fixtures.ts", "runs.ts", "observation.ts", "graph-tool-session.ts", "domain-fixtures", "input.ts", "keys.ts", "pointer.ts", "commands.ts", "check-integrity.ts", "package.json", "tsconfig.json", "provider-upstream.json", "input.test.ts", "keys.test.ts", "commands.test.ts", "observation.test.ts", "runner.test.ts"]
+# The E2E suite's infrastructure: the platform layer, the runner and build, the fixtures and
+# the input helpers the views use; a part of desktop-e2e.
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.follows-rules]
+title = "The suite's infrastructure runs every scenario isolated and portably and fails explicitly"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+
+[evals.follows-rules.payload]
+instruction = """
+Read E2E-INPUT, E2E-PLATFORM, E2E-ISOLATED and E2E-EXPLICIT-FAILURE of the end-to-end rules {desktop-e2e-rules} and \
+the platform checklist {rules-platform}. Review the infrastructure of the suite {desktop-e2e-infra} (the platform \
+layer, the runner and build, the fixtures and the input helpers) against them. Report only a defect you can show: \
+name the OS, the order of scenarios or the timing under which it happens and the concrete failure or false pass it \
+causes, such as a scenario that breaks on one OS, a result that depends on order, state that reaches the user's or \
+another scenario's, or a failure that passes. Hardening, theoretical edge cases, further checks and style are not \
+findings. At most 3 findings, most severe first. If unsure, submit GREEN. Otherwise submit RED, each finding with \
+the rule id (item), a path:line (where) and one sentence on the failure and what to change (change)."""
+
+[evals.follows-rules.pass_schema]
+type = "object"
+properties = { summary = { type = "string", minLength = 1 } }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-rules.fail_schema]
+type = "object"
+properties = { violations = { type = "array", minItems = 1, maxItems = 3, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }
+required = ["violations"]
+additionalProperties = false
