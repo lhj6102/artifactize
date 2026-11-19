@@ -12,7 +12,7 @@ pub mod schema;
 pub mod scope;
 mod terminal_text;
 
-pub use platform::{environment, files, outcome::exit_code, program};
+pub use platform::{environment, files, outcome::exit_code, program, text};
 
 /// Temporary roots, links and executable files, shared with the integration tests.
 #[cfg(test)]

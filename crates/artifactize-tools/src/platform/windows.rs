@@ -151,13 +151,15 @@ fn resume(child: &SuspendedChild) -> io::Result<()> {
 
 impl Tree {
     /// Close the job, which kills every process still in it.
-    pub(crate) fn kill(&mut self) {
+    pub(crate) fn kill(&mut self) -> std::io::Result<()> {
         self.job.take();
+        Ok(())
     }
 }
 
 impl Drop for Tree {
     fn drop(&mut self) {
-        self.kill();
+        // Closing the job cannot fail; the result only matches the Unix tree's.
+        let _ = self.kill();
     }
 }

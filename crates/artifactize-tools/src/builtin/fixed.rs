@@ -155,17 +155,20 @@ impl FixedInput {
 
     pub(crate) fn help(args: &[String]) -> Result<Self, String> {
         validate_args(Builtin::Help, Some(args), false)?;
-        Ok(Self::with_help(args))
+        Self::with_help(args)
     }
 
-    fn with_help(args: &[String]) -> Self {
+    fn with_help(args: &[String]) -> Result<Self, String> {
         let (program, args) = args
             .split_first()
             .expect("validated help requires a program");
-        Self(Invocation::Help {
-            program: OsString::from(program),
+        // A program given as shown path text (encoded or verbatim) is read back to its native
+        // path before the lookup.
+        let program = crate::files::path_from_text(program).map_err(|error| error.to_string())?;
+        Ok(Self(Invocation::Help {
+            program: program.into_os_string(),
             args: args.iter().map(OsString::from).collect(),
-        })
+        }))
     }
 
     fn parse(builtin: Builtin, args: &[String], value: Value) -> Result<Self, String> {
@@ -190,7 +193,7 @@ impl FixedInput {
                     .expect("validated section requires a heading");
                 Self::with_heading(path(), heading)
             }
-            Builtin::Help => Ok(Self::with_help(args)),
+            Builtin::Help => Self::with_help(args),
             _ => Err("This builtin cannot run as a fixed Agent tool.".into()),
         }
     }

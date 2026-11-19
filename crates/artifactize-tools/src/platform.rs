@@ -18,7 +18,7 @@ pub mod environment;
 pub(crate) mod outcome;
 pub(crate) mod process;
 pub mod program;
-pub(crate) mod text;
+pub mod text;
 
 #[cfg(unix)]
 mod unix;

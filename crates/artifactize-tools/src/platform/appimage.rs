@@ -32,7 +32,10 @@ const SET_BY_BUNDLE: [&str; 5] = [
 
 /// The GTK hook adds the system's data directory right after the bundle's own.
 const DATA_DIRECTORIES: &str = "XDG_DATA_DIRS";
-const HOOK_DATA_DIRECTORY: &str = "/usr/share";
+/// The system data directory the GTK hook inserts.
+fn hook_data_directory() -> &'static Path {
+    Path::new("/usr/share")
+}
 
 /// Only XDG_DATA_DIRS can have one GTK-inserted system entry to remove.
 enum HookRemoval {
@@ -111,7 +114,7 @@ impl Bundle {
                 continue;
             }
             if matches!(hook, HookRemoval::AfterBundle) {
-                if entry == Path::new(HOOK_DATA_DIRECTORY) {
+                if entry == hook_data_directory() {
                     hook = HookRemoval::Inactive;
                     continue;
                 }

@@ -6,7 +6,10 @@
 #[path = "support/os.rs"]
 mod os;
 
-use std::{ffi::OsStr, fs};
+use std::{ffi::OsStr, fs, time::Duration};
+
+/// A bound no correct handoff reaches, even on a loaded host.
+const TEST_HANDOFF_DEADLINE: Duration = Duration::from_secs(120);
 
 #[test]
 fn target_is_one_literal_argument() {
@@ -36,7 +39,8 @@ async fn open_fixture_targets() {
         "notes with spaces.md",
         "https://example.invalid/?a=1&b=two words",
     ] {
-        artifactize_tools::opener::open(OsStr::new(target))
+        // The test sets the handoff's bound itself, so a slow host cannot fail a correct one.
+        artifactize_tools::opener::open_within(OsStr::new(target), TEST_HANDOFF_DEADLINE)
             .await
             .unwrap();
     }

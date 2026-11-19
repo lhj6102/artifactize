@@ -98,16 +98,41 @@ const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
 
 /// One candidate per `PATHEXT` suffix, in its order.
 fn pathext_candidates(program: &Path, pathext: Option<&OsStr>) -> Vec<PathBuf> {
-    pathext
-        .unwrap_or_else(|| OsStr::new(DEFAULT_PATHEXT))
-        .to_string_lossy()
-        .split(';')
-        .filter(|extension| extension.starts_with('.') && !extension.contains(['/', '\\']))
+    let pathext = pathext.unwrap_or_else(|| OsStr::new(DEFAULT_PATHEXT));
+    // Split the native string itself, so an extension keeps every byte or UTF-16 unit it was
+    // given rather than a lossy text copy.
+    split_list(pathext)
+        .into_iter()
+        .filter(|extension| {
+            let bytes = extension.as_encoded_bytes();
+            bytes.first() == Some(&b'.') && !bytes.iter().any(|byte| matches!(byte, b'/' | b'\\'))
+        })
         .map(|extension| {
             let mut candidate = program.as_os_str().to_owned();
             candidate.push(extension);
             PathBuf::from(candidate)
         })
+        .collect()
+}
+
+/// The `;`-separated entries of a native list, each exactly as the OS string holds it.
+#[cfg(windows)]
+fn split_list(list: &OsStr) -> Vec<OsString> {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let units: Vec<u16> = list.encode_wide().collect();
+    units
+        .split(|unit| *unit == u16::from(b';'))
+        .map(OsString::from_wide)
+        .collect()
+}
+
+/// The `;`-separated entries of a native list, each exactly as the OS string holds it.
+#[cfg(unix)]
+fn split_list(list: &OsStr) -> Vec<OsString> {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    list.as_bytes()
+        .split(|byte| *byte == b';')
+        .map(|entry| OsString::from_vec(entry.to_vec()))
         .collect()
 }
 

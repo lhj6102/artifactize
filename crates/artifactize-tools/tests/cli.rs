@@ -10,7 +10,7 @@ use std::{fs, process::Output};
 
 fn text(output: Output) -> String {
     assert!(os::succeeded(&output.status), "{output:?}");
-    String::from_utf8(output.stdout).unwrap()
+    artifactize_tools::text::output(&output.stdout).into_owned()
 }
 
 #[test]

@@ -42,17 +42,22 @@ pub(crate) fn spawn_tree(command: &mut tokio::process::Command) -> io::Result<Tr
 }
 
 impl Tree {
-    /// Kill every process left in the group; a group that has already gone is fine.
-    pub(crate) fn kill(&mut self) {
+    /// Kill every process left in the group; a group that has already gone is fine, any
+    /// other failure is the caller's.
+    pub(crate) fn kill(&mut self) -> std::io::Result<()> {
         if let Some(group) = self.group.take() {
-            // A group that has already gone is the expected outcome, not an error.
-            let _ = rustix::process::kill_process_group(group.0, rustix::process::Signal::KILL);
+            match rustix::process::kill_process_group(group.0, rustix::process::Signal::KILL) {
+                Ok(()) | Err(rustix::io::Errno::SRCH) => {}
+                Err(error) => return Err(error.into()),
+            }
         }
+        Ok(())
     }
 }
 
 impl Drop for Tree {
     fn drop(&mut self) {
-        self.kill();
+        // A drop has no caller to report to; the launcher has already killed and reported.
+        let _ = self.kill();
     }
 }

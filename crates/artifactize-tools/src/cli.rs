@@ -75,9 +75,13 @@ pub async fn run(tool: Tool) -> u8 {
     }
 }
 
-fn logical(path: &Path) -> Result<&str, String> {
-    let text = path.to_str().ok_or("Tool paths must be valid Unicode.")?;
-    Ok(if text == "." { "" } else { text })
+/// A command-line path as the tools' logical text, through the platform's path layer: its
+/// names validated, roots and traversal refused, `.` the project root.
+fn logical(path: &Path) -> Result<String, String> {
+    if path == Path::new(".") {
+        return Ok(String::new());
+    }
+    crate::files::scoped_relative(path).map_err(|error| error.to_string())
 }
 
 async fn execute(tool: Tool) -> Result<(), String> {
@@ -113,14 +117,14 @@ async fn execute_in(
         Dynamic(builtin::Input),
     }
     let invocation = match tool {
-        Tool::Read { path } => Invocation::Fixed(FixedInput::read(logical(&path)?.to_owned())),
-        Tool::List { path } => Invocation::Fixed(FixedInput::list(logical(&path)?.to_owned())),
+        Tool::Read { path } => Invocation::Fixed(FixedInput::read(logical(&path)?)),
+        Tool::List { path } => Invocation::Fixed(FixedInput::list(logical(&path)?)),
         Tool::Section { path, heading } => {
-            Invocation::Fixed(FixedInput::section(logical(&path)?.to_owned(), heading))
+            Invocation::Fixed(FixedInput::section(logical(&path)?, heading))
         }
         Tool::Help { args } => Invocation::Fixed(FixedInput::help(&args)),
         Tool::Glob { pattern, path } => {
-            Invocation::Dynamic(builtin::Input::glob(&pattern, logical(&path)?.to_owned())?)
+            Invocation::Dynamic(builtin::Input::glob(&pattern, logical(&path)?)?)
         }
         Tool::Grep {
             pattern,
@@ -129,7 +133,7 @@ async fn execute_in(
             case_insensitive,
         } => Invocation::Dynamic(builtin::Input::grep(
             &pattern,
-            logical(&path)?.to_owned(),
+            logical(&path)?,
             glob.as_deref(),
             case_insensitive,
         )?),
@@ -138,7 +142,7 @@ async fn execute_in(
                 target.into()
             } else {
                 scope
-                    .resolve_input(root, &owner, logical(Path::new(&target))?)
+                    .resolve_input(root, &owner, &logical(Path::new(&target))?)
                     .map_err(|error| error.to_string())?
                     .into_os_string()
             };

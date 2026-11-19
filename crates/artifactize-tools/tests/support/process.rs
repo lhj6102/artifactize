@@ -118,13 +118,10 @@ impl Drop for NativeTree {
     fn drop(&mut self) {
         // Let the product demonstrate cancellation before using the independent
         // socket shutdown, which also works when observers cloned the streams.
-        if self.running.cancel_and_wait()
-            && self
-                .connections
-                .wait_for_exit()
-                .iter()
-                .all(|(_, exit)| exit.is_ok())
-        {
+        if self.running.cancel_and_wait() && {
+            let observed = self.connections.wait_for_exit();
+            !observed.rescued && observed.exits.iter().all(|(_, exit)| exit.is_ok())
+        } {
             self.running.join();
             return;
         }
@@ -134,9 +131,12 @@ impl Drop for NativeTree {
         self.connections.release();
         // The fixture closes its sockets at process exit. Observe both even
         // if the launcher already returned, before the temporary root can drop.
-        let exits = self.connections.wait_for_exit();
+        let observed = self.connections.wait_for_exit();
         self.running.abort_and_join();
-        for (role, exit) in exits {
+        if observed.rescued {
+            eprintln!("native fixture needed the watchdog's rescue");
+        }
+        for (role, exit) in observed.exits {
             if let Err(error) = exit {
                 eprintln!("native fixture {role} did not exit: {error}");
             }
@@ -181,7 +181,14 @@ impl Connections {
     }
 
     fn assert_terminated(&mut self) {
-        for (role, exit) in self.wait_for_exit() {
+        let observed = self.wait_for_exit();
+        // The watchdog is a host-clock rescue for a broken fixture, reported apart from what
+        // the exit sockets themselves showed.
+        assert!(
+            !observed.rescued,
+            "the native fixture needed the watchdog's rescue"
+        );
+        for (role, exit) in observed.exits {
             assert!(
                 exit.is_ok(),
                 "the help {role} outlived tree cleanup: {exit:?}"
@@ -189,7 +196,7 @@ impl Connections {
         }
     }
 
-    fn wait_for_exit(&mut self) -> [(&'static str, io::Result<()>); 2] {
+    fn wait_for_exit(&mut self) -> ObservedExit {
         // These sockets are closed by process exit, not by the launcher worker.
         // A separate watchdog releases broken fixtures; no read has a deadline,
         // and needing the fallback is distinct from observing native exit.
@@ -210,17 +217,17 @@ impl Connections {
             let exits = [("parent", &mut self.parent), ("child", &mut self.child)]
                 .map(|(role, stream)| (role, read_exit(stream)));
             drop(finished);
-            if watchdog.join().expect("native exit watchdog") {
-                return exits.map(|(role, _)| {
-                    (
-                        role,
-                        Err(io::Error::other("fixture needed a rescue to exit")),
-                    )
-                });
-            }
-            exits
+            let rescued = watchdog.join().expect("native exit watchdog");
+            ObservedExit { exits, rescued }
         })
     }
+}
+
+/// What the exit sockets showed, and, separately, whether the host-clock watchdog had to
+/// release the fixture.
+struct ObservedExit {
+    exits: [(&'static str, io::Result<()>); 2],
+    rescued: bool,
 }
 
 fn read_exit(stream: &mut TcpStream) -> io::Result<()> {

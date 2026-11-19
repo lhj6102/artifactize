@@ -3,8 +3,9 @@
 use std::{ffi::OsStr, io, os::windows::ffi::OsStrExt, ptr};
 use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
 
-/// Hand the target to ShellExecute's default verb on a blocking thread.
-pub(crate) async fn open_desktop(target: &OsStr) -> io::Result<()> {
+/// Hand the target to ShellExecute's default verb on a blocking thread. ShellExecute returns
+/// once it has handed the target off, so there is no wait for the deadline to bound.
+pub(crate) async fn open_desktop(target: &OsStr, _deadline: std::time::Duration) -> io::Result<()> {
     #[cfg(feature = "fixture-opener")]
     if let Some(program) = std::env::var_os("ARTIFACTIZE_E2E_BROWSER_PROGRAM") {
         let node = std::env::var_os("ARTIFACTIZE_E2E_BROWSER_NODE").ok_or_else(|| {

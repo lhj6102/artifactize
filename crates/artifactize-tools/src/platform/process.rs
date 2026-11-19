@@ -55,10 +55,13 @@ pub(crate) async fn run(
             result.unwrap_or(Err(LaunchError::TimedOut))
         }
     };
-    tree.kill();
+    let killed = tree.kill();
     // Expiry/cancellation must reap the direct child before returning, not leave it
     // to Tokio's best-effort orphan queue when the caller shuts down its runtime.
     let _ = tree.child.wait().await;
+    killed.map_err(|error| {
+        LaunchError::Failed(format!("Could not stop the command's processes: {error}"))
+    })?;
     result
 }
 

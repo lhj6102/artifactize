@@ -167,6 +167,16 @@ class OwnedChild:
     def _reply(self):
         reply = process_owner.receive(self.channel)
         if reply is None:
+            # The subreaper's end of the channel is gone: the same read cannot answer again.
+            # Close it and reap the subreaper; the command's descendants stay unconfirmed, so
+            # the caller keeps their working files.
+            self.channel.close()
+            self.channel = None
+            self.pending = None
+            try:
+                self.pipes.join_reaper()
+            except BaseException as reaper_error:
+                raise RuntimeError("Fixture subreaper did not confirm cleanup") from reaper_error
             raise RuntimeError("Fixture subreaper did not confirm cleanup")
         operation, self.pending = self.pending[0], None
         if "error" in reply:
@@ -187,7 +197,7 @@ class OwnedChild:
                 try:
                     self._reply()
                 except RuntimeError:
-                    if self.pending is not None or previous == request:
+                    if self.pending is not None or previous == request or self.channel is None:
                         raise
                 if previous == request:
                     return

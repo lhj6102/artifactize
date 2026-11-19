@@ -2,7 +2,8 @@
 
 use std::borrow::Cow;
 
-pub(crate) fn output(bytes: &[u8]) -> Cow<'_, str> {
+/// A program's captured output as text: UTF-8 or Windows UTF-16, its CRLF line endings as `\n`.
+pub fn output(bytes: &[u8]) -> Cow<'_, str> {
     let text = decode(bytes);
     if text.contains("\r\n") {
         Cow::Owned(text.replace("\r\n", "\n"))
@@ -11,13 +12,22 @@ pub(crate) fn output(bytes: &[u8]) -> Cow<'_, str> {
     }
 }
 
+/// The UTF-8 byte-order mark some Windows programs write before their output; it is no text.
+const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
+
 fn decode(bytes: &[u8]) -> Cow<'_, str> {
     #[cfg(windows)]
     if let Some(text) = utf16_output(bytes) {
         return Cow::Owned(text);
     }
-    String::from_utf8_lossy(bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes))
+    String::from_utf8_lossy(bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes))
 }
+
+/// BOM-less UTF-16LE is recognized only when more than this share of its code units are ASCII
+/// characters with a zero high byte: cmd's Unicode mode writes mostly ASCII text that way, and
+/// a lower share would mistake ordinary bytes for UTF-16.
+#[cfg(windows)]
+const UTF16_ASCII_MAJORITY_DIVISOR: usize = 2;
 
 #[cfg(windows)]
 fn utf16_output(bytes: &[u8]) -> Option<String> {
@@ -33,7 +43,7 @@ fn utf16_output(bytes: &[u8]) -> Option<String> {
             .iter()
             .filter(|[low, high]| *low != 0 && low.is_ascii() && *high == 0)
             .count();
-        if ascii <= units.len() / 2 || units.contains(&[0, 0]) {
+        if ascii <= units.len() / UTF16_ASCII_MAJORITY_DIVISOR || units.contains(&[0, 0]) {
             return None;
         }
         (bytes, true)
