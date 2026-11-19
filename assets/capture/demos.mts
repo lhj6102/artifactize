@@ -548,7 +548,9 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.artifact ?? ""));
         const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
         const refresh = document.querySelector<HTMLButtonElement>('section.panel[aria-label="Main area"] > header .actions button');
-        return !!refresh && !refresh.disabled && `${artifacts}\n${edges}` === expected;
+        // Zoomed out until names do not read, the graph is painted as blocks, with no elements.
+        const painted = document.querySelector(".current canvas.paint") !== null && artifacts === "";
+        return !!refresh && !refresh.disabled && (painted || `${artifacts}\n${edges}` === expected);
       }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector('section.panel[aria-label="Main area"] > header .failure')?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
@@ -562,6 +564,9 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
           const set = (values: string[]) => [...new Set(values)].sort().join(" ");
           const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
           const artifacts = set(nodes.map((node) => node.dataset.artifact ?? ""));
+          const camera = document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style");
+          // Painted as blocks where names do not read: the picture stands for every node.
+          if (nodes.length === 0 && document.querySelector(".current canvas.paint")) return `painted ${camera}`;
           if (`${artifacts}\n${set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")))}` !== expected) return null;
           const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
           const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
@@ -572,7 +577,6 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
             const box = node.getBoundingClientRect();
             return box.width > 0 && (!inside || (box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom));
           });
-          const camera = document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style");
           return within && nodes.length > 0 && lines === edges ? `${nodes.length} ${edges} ${camera}` : null;
         };
         const before = shown();
