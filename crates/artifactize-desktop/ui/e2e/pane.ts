@@ -34,6 +34,7 @@ export type Branch = {
   selected: boolean;
   expanded: boolean;
   latest: string;
+  latestDot: number[];
   star: string;
   starred: boolean;
   chips: Chip[];
@@ -54,6 +55,7 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
     return [...document.querySelectorAll<HTMLElement>('[aria-label="Branches"] > [role="treeitem"]')].map((row) => {
       const project = words(row.querySelector(".project")).replace(/ \/$/, "");
       const branch = words(row.querySelector(".branch-name"));
+      const latestDot = row.querySelector(".latest .dot");
       return {
         name: project ? `${project}  ${branch}` : branch,
         label: words(row.querySelector(".label")),
@@ -61,6 +63,7 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
         selected: row.getAttribute("aria-selected") === "true" || row.querySelector('[role="treeitem"][aria-selected="true"]') !== null,
         expanded: row.getAttribute("aria-expanded") === "true",
         latest: words(row.querySelector(".latest")),
+        latestDot: latestDot && latestDot.getBoundingClientRect().width > 0 ? channels(getComputedStyle(latestDot).backgroundColor) : [],
         star: ({ "star-on": "★", star: "☆" } as Record<string, string>)[row.querySelector(".star svg")?.getAttribute("data-icon") ?? ""] ?? "",
         starred: row.querySelector(".star")?.getAttribute("aria-pressed") === "true",
         chips: [...row.querySelectorAll<HTMLElement>("button[data-chip]")].map((chip) => ({

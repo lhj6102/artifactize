@@ -19,6 +19,11 @@ export function claimable(browser: WebdriverIO.Browser, selector = '[aria-label=
   }, selector);
 }
 
+/** Choose a verdict in the current form; each verdict rebuilds its own fields. */
+export async function chooseVerdict(browser: WebdriverIO.Browser, verdict: "GREEN" | "RED"): Promise<void> {
+  await browser.$('[aria-label="Human review"] [role="radiogroup"][aria-label="Verdict"]').$(`[role="radio"]=${verdict}`).click();
+}
+
 /** Unfold the review's Debug section with a click on its header row, once the review shows it;
  * a Debug already unfolded is left as it is. */
 export async function showDebug(browser: WebdriverIO.Browser, selector = '[aria-label="Human review"]'): Promise<void> {

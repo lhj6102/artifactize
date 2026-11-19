@@ -9,6 +9,8 @@ import { git } from "../environment.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { clickAt, visibleCenter } from "../pointer.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
 import { nativePath, primaryModifier } from "../platform.ts";
 import { branches, entriesFocused, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
 
@@ -60,7 +62,7 @@ function search(browser: WebdriverIO.Browser) {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-PANE-SEARCH
+  // UX journeys: J-PANE-SEARCH J-PANE-SUGGEST
   scenario<Record<string, never>>(
     "search-terms",
     "narrows the Branches and the Waiting stack alike by free text, repo: and branch:, takes suggestions, and steps back with Esc",
@@ -69,8 +71,8 @@ export const scenarios: Scenario[] = [
       const { query, holds, suggestions, names, narrowed, set } = search(browser);
       await waitFor(browser, narrowed(ALL), "every branch and every waiting review listed");
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
-      // / focuses the search without typing a slash; its starting query is sort:recent.
-      await press(browser, ["/"], () => searchFocused(browser), "the search focused");
+      await browser.$(SEARCH).click();
+      await waitFor(browser, () => searchFocused(browser), "click focuses the search");
       assert.equal(await query(), "sort:recent");
       // Free text: part of a branch, here of two worktrees' branches.
       await set("sort:recent scope");
@@ -97,16 +99,28 @@ export const scenarios: Scenario[] = [
       await set("sort:recent ");
       await typeText(browser, "rep");
       await waitFor(browser, async () => (await suggestions()).includes("repo:"), "the repo key suggested");
-      const chosen = () => browser.execute(() => document.querySelector('[aria-label="Suggestions"] [aria-selected="true"]')?.textContent?.trim() ?? null);
-      await press(browser, ["ArrowDown"], async () => (await chosen()) === "repo:", "the repo key chosen", { handled: true });
-      await press(browser, ["Enter"], holds("sort:recent repo:"), "the repo key taken");
+      const take = async (text: string) => {
+        const suggestion = browser.$('[aria-label="Suggestions"]').$(`[role="option"]=${text}`);
+        await clickAt(browser, await visibleCenter(browser, await suggestion.getElement()));
+      };
+      await take("repo:");
+      await waitFor(browser, holds("sort:recent repo:"), "clicking the key replaced the partial term");
       await waitFor(browser, async () => (await suggestions()).includes("repo:other"), "the projects as its values");
       await typeText(browser, "oth");
       await waitFor(browser, async () => JSON.stringify(await suggestions()) === JSON.stringify(["repo:other"]), "only the other project left");
       const beforeRepository = await checkpoint(browser);
-      await press(browser, ["Tab"], holds("sort:recent repo:other "), "the project taken");
+      await take("repo:other");
+      await waitFor(browser, holds("sort:recent repo:other "), "clicking the value completed the term");
       await commandsRendered(browser, beforeRepository);
       await waitFor(browser, narrowed(["other  master"]), "repo:other narrowed both lists to its branch");
+      await typeText(browser, "bra");
+      await waitFor(browser, async () => (await suggestions()).includes("branch:"), "the branch key suggested");
+      await browser.$('section[aria-label="Pane"] [aria-label="Pane entries"]').click();
+      await waitFor(browser, async () => !(await searchFocused(browser)) && (await suggestions()).length === 0, "losing focus closes the suggestions");
+      await browser.$(SEARCH).click();
+      await set("");
+      await waitFor(browser, async () => await query() === "" && (await suggestions()).length === 0, "empty search closes the suggestions");
+      await set("sort:recent repo:other ");
       // Esc closes the suggestions first, keeping the query.
       await typeText(browser, "bra");
       await waitFor(browser, async () => (await suggestions()).includes("branch:"), "the branch key suggested");
@@ -165,7 +179,18 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture, data: { id } }) => {
       const record = () => browser.$('section.panel[aria-label="Main area"] [role="document"]');
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
-      await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
+      const openByPalette = async () => {
+        await browser.$("button*=Commands").click();
+        await choosePaletteCommand(browser, "Open a request by ID");
+        await browser.$('.palette [role="option"][aria-selected="true"]').click();
+        await browser.$('[aria-label="Request ID"]').waitForDisplayed();
+      };
+      const before = await mainTitle(browser);
+      await openByPalette();
+      await browser.$('[role="dialog"]').$("button=Cancel").click();
+      await browser.$('[aria-label="Request ID"]').waitForDisplayed({ reverse: true });
+      assert.equal(await mainTitle(browser), before, "Cancel opened nothing");
+      await openByPalette();
       await fill(browser, '[aria-label="Request ID"]', id);
       await browser.$('[role="dialog"] button[type="submit"]').click();
       await waitFor(browser, async () => (await mainTitle(browser)) === "docs/lint · Docs build · read-only", "the request open read-only");

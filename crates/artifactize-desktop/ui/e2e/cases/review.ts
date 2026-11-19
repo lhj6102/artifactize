@@ -2,13 +2,14 @@
 // one by its ID, leaving its form and then the review back to the Pane, quitting with an
 // unsubmitted claim (stay, then release and quit), and the completed result kept open.
 import assert from "node:assert/strict";
-import { addRepository, artifactize, create, type Fixture, orderRuns, requests, savedRuns, signoff, slowTool } from "../fixture.ts";
+import { addRepository, addWaiting, artifactize, create, type Fixture, orderRuns, requests, savedRuns, signoff, slowTool } from "../fixture.ts";
 import { claimable, requestState, showDebug, reviewing } from "../human-review.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
+import { clickAt, visibleCenter } from "../pointer.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { primaryModifier, requestWindowClose } from "../platform.ts";
+import { nativePath, primaryModifier, readText, removeTree, requestWindowClose, writeText } from "../platform.ts";
 import { branch, entriesFocused, expand, MAIN, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
 import { detail, openArtifact, openTab } from "../graph-view.ts";
 
@@ -123,59 +124,64 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journey: J-QUIT
-  scenario<null>(
+  scenario<{ second: string }>(
     "review-quit-claim",
-    "types q in a field; outside a field asks before quitting with the claim: Esc stays, u releases and quits",
-    async () => ({ fixture: await create(), args: ["review"], data: null }),
-    async (browser, { fixture }) => {
+    "asks before quitting with two claims; Stay keeps both, Release and quit releases both and closes the window",
+    async () => {
+      const fixture = await create();
+      const [second] = await addWaiting(fixture, "second-review", 1);
+      assert.ok(second);
+      return { fixture, args: ["review", signoff(fixture).id], data: { second } };
+    },
+    async (browser, { fixture, data: { second } }) => {
       await claimReview(browser, fixture);
-      const dialog = await browser.$('[role="alertdialog"]');
+      const dialog = () => browser.$('[role="alertdialog"]');
       const field = browser.$("#field-comment");
-      await press(browser, ["g"], () => field.isDisplayed(), "the GREEN form");
+      await browser.$('[aria-label="Human review"]').$("button=GREEN").click();
+      await field.waitForDisplayed();
       await field.click();
       await waitFor(browser, () => field.isFocused(), "the comment field takes the keyboard");
       await typeText(browser, "q");
       await afterRender(browser);
-      assert.equal(await dialog.isExisting(), false, "q in a field does not open Leave");
+      assert.equal(await dialog().isExisting(), false, "q in a field does not open Leave");
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "typing leaves the window and its claim alone");
       await press(browser, ["Escape"], async () => !(await field.isExisting()) && await reviewing(browser), "left the form before trying q outside it");
-      /** The prompt is open and holds focus, so its keys reach it. */
-      const prompted = async () => {
-        await browser.keys(["q"]);
-        await dialog.waitForExist({ timeout: 10000 });
-        await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('[role="alertdialog"]')), { timeout: 15000, timeoutMsg: "focus in the prompt" });
+      await openWaiting(browser, second);
+      await waitFor(browser, () => claimable(browser), "the second review asks for a claim");
+      await browser.$('[aria-label="Human review"]').$("button=Claim to review").click();
+      const ids = [signoff(fixture).id, second];
+      const held = () => requests(fixture).filter((request) => ids.includes(request.id));
+      const bothClaimed = () => {
+        const found = held();
+        return found.length === 2 && found.every((request) => request.claim?.reviewer === "alice");
       };
-      await prompted();
-      const shown = await browser.execute((element) => (element as HTMLElement).innerText, dialog);
-      assert.match(shown, new RegExp(signoff(fixture).id));
-      // Its two keys show as hints on its buttons: Esc on Stay, u on Release and quit.
-      const hints = await browser.execute((element) => [...(element as HTMLElement).querySelectorAll("button")]
-        .map((button) => {
-          const label = [...button.childNodes].filter((node) => node.nodeName !== "KBD").map((node) => node.textContent ?? "").join("");
-          return [label.trim(), button.querySelector("kbd")?.textContent?.trim() ?? ""];
-        }), dialog);
-      assert.deepEqual(hints, [["Stay", "Esc"], ["Release and quit", "u"]], `the Leave dialog's key hints: ${JSON.stringify(hints)}`);
-      await browser.keys(["Escape"]);
-      await dialog.waitForExist({ reverse: true, timeout: 10000 });
-      assert.equal(signoff(fixture).claim?.reviewer, "alice", "staying keeps the claim");
-      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]')), { timeout: 15000, timeoutMsg: "focus back in the review" });
+      await waitFor(browser, async () => bothClaimed() && await reviewing(browser), "the same window holds both claims");
+      await requestWindowClose(browser);
+      await waitFor(browser, async () => {
+        if (!(await dialog().isDisplayed())) return false;
+        const text = await dialog().getText();
+        return ids.every((id) => text.includes(id));
+      }, "Leave visibly names both claims");
+      await dialog().$("button*=Stay").click();
+      await dialog().waitForExist({ reverse: true, timeout: 10000 });
+      assert.ok(bothClaimed(), "staying keeps both claims");
+      await waitFor(browser, () => reviewing(browser), "the review stays open");
 
       // The window's own close requests, twice in a row: both wait for the prompt's answer.
       await requestWindowClose(browser);
       await requestWindowClose(browser);
-      await dialog.waitForExist({ timeout: 10000 });
+      await dialog().waitForExist({ timeout: 10000 });
       assert.equal(await browser.execute(() => document.title), "Artifactize", "the window stays");
-      assert.equal(signoff(fixture).claim?.reviewer, "alice");
+      assert.ok(bothClaimed(), "neither close request released a claim before the answer");
       await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('[role="alertdialog"]')), { timeout: 15000, timeoutMsg: "focus in the prompt" });
-      await browser.keys(["Escape"]);
-      await dialog.waitForExist({ reverse: true, timeout: 10000 });
-
-      await prompted();
-      // A disappearing window may end this keystroke's response, but a generic driver
-      // failure is not closure. The native helper only accepts a terminal window outcome.
-      await sessionEndedByApp(browser, () => browser.keys(["u"]));
-      await browser.waitUntil(() => signoff(fixture).claim === null, { timeout: 15000, timeoutMsg: "released on quit" });
-      assert.equal(signoff(fixture).status, "DEFERRED");
+      // A disappearing window may end the click's response. The native helper only accepts
+      // a terminal window outcome, and both requests must still exist without a claim.
+      const leave = await visibleCenter(browser, await dialog().$("button*=Release and quit").getElement());
+      await sessionEndedByApp(browser, () => clickAt(browser, leave));
+      await waitFor(browser, () => {
+        const found = held();
+        return found.length === 2 && found.every((request) => request.claim === null && request.status === "DEFERRED");
+      }, "both reviews are unclaimed and waiting after the window quit");
     },
   ),
 
@@ -221,7 +227,8 @@ export const scenarios: Scenario[] = [
   scenario<null>(
     "review-layout",
     "lays a review in the Main area out as two panels where it is at least twice the Detail's width, the Tool log the view at the left and the rest a column at the right, and in one column where it is narrower",
-    async () => ({ fixture: await create(), args: ["review"], data: null }),
+    async () => ({ fixture: await create({ title: "A person approves the release", instruction: "Read the release notes and approve them.", gatedFingerprint: true }),
+      args: ["review"], data: null }),
     async (browser, { fixture }) => {
       // The Detail's width as a Run's graph opens it, and the Main area's, at a window size.
       const run = savedRuns(fixture)[0].id;
@@ -321,20 +328,26 @@ export const scenarios: Scenario[] = [
       await fill(browser, "#field-comment", "draft kept through the tool");
       await browser.$('[aria-label="Human review"]').$("button=slow").click();
       const row = () => browser.execute(() => {
-        const actions = document.querySelector('[aria-label="Human review"] .actions');
-        const at = (selector: string) => actions?.querySelector(selector)?.getBoundingClientRect().left ?? null;
-        return {
-          release: at('button[aria-label="Release claim (u)"]'),
-          seconds: actions?.querySelector(".busy .seconds")?.textContent?.trim() ?? "",
-          cancel: at('button[aria-label="Cancel (Esc)"]'),
-          submit: at("button.primary"),
+        const result = document.querySelector<HTMLElement>('[aria-label="Human review"] section[aria-label="Result"]');
+        const actions = result?.querySelector(".actions");
+        const at = (selector: string) => {
+          const control = actions?.querySelector(selector);
+          const box = control?.getBoundingClientRect();
+          if (!box || !box.width || !box.height || !control?.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))) return null;
+          return { left: box.left, right: box.right, middle: box.y + box.height / 2 };
         };
+        const boxes = [at("button[aria-label^='Release claim']"), at(".busy .seconds"), at("button[aria-label^='Cancel']"), at("button.primary")];
+        const form = result?.querySelector("#field-comment")?.getBoundingClientRect();
+        const sameRow = !!form && boxes.every((box, index) => box && box.middle >= form.bottom
+          && Math.abs(box.middle - boxes[0]!.middle) <= 2 && (index === 0 || boxes[index - 1]!.right <= box.left));
+        return { sameRow, boxes, seconds: actions?.querySelector(".busy .seconds")?.textContent?.trim() ?? "" };
       });
       let running = await row();
-      await browser.waitUntil(async () => /^\d+s$/.test((running = await row()).seconds), { timeout: 15000, timeoutMsg: "the running tool's time in the row" })
+      await browser.waitUntil(async () => {
+        running = await row();
+        return running.sameRow && /^\d+s$/.test(running.seconds);
+      }, { timeout: 15000, timeoutMsg: "Release claim, seconds, Cancel and Submit share one visible row beneath the Result" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(running)}`); });
-      assert.ok(running.release !== null && running.cancel !== null && running.submit !== null && running.release < running.cancel && running.cancel < running.submit,
-        `Release claim, then the running tool's time and Cancel, then Submit: ${JSON.stringify(running)}`);
       await waitFor(browser, async () => await slowTool(fixture)?.() === true, "the owned slow tool is listening before Cancel");
       const alive = slowTool(fixture)!;
       const review = browser.$('[aria-label="Human review"]');
@@ -373,6 +386,30 @@ export const scenarios: Scenario[] = [
       await browser.$('aside[aria-label="Detail"] [aria-label="Human review"] [aria-label="Instruction"]').click();
       await press(browser, ["u"], async () => signoff(fixture).claim === null && await claimable(browser), "the same shortcut releases the idle review");
       assert.equal(await releaseCalls(), beforeBusyShortcut + 1, "the release probe detects the successful shortcut");
+      const inDock = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"]');
+      await inDock().$("button=Claim to review").click();
+      await waitFor(browser, () => reviewing(browser), "the review is claimed again");
+      await inDock().$("button=GREEN").click();
+      const approved = "ready after cancelling the tool";
+      await fill(browser, "#field-comment", approved);
+      await inDock().$("button=slow").click();
+      const submit = () => inDock().$("button=Submit GREEN");
+      await waitFor(browser, async () => await slowTool(fixture)?.() === true && await submit().isEnabled(), "Submit stays usable with the tool running");
+      const activeTool = slowTool(fixture)!;
+      const gate = nativePath(fixture.root, "submit.gate");
+      const fingerprints = () => readText(nativePath(fixture.root, "submit.runs")).split("\n").filter(Boolean).length;
+      const beforeSubmit = fingerprints();
+      removeTree(gate);
+      await submit().click();
+      await waitFor(browser, () => fingerprints() > beforeSubmit, "Submit reaches the gated fingerprint check");
+      assert.equal(await activeTool(), false, "the tool has already exited when submission starts");
+      assert.equal(signoff(fixture).result, null, "the gated submit has not saved yet");
+      assert.equal(await inDock().$('button[aria-label^="Release claim"]').isEnabled(), false, "Release remains disabled while submitting");
+      assert.equal(await submit().isEnabled(), false, "Submit is disabled while submitting");
+      writeText(gate, "go");
+      const completed = () => inDock().$('section[aria-label="Result"] pre');
+      await waitFor(browser, async () => !(await activeTool()) && signoff(fixture).status === "GREEN"
+        && await completed().isDisplayed() && (await completed().getText()).includes(approved), "the tool stopped and the form was submitted");
     },
   ),
 ];

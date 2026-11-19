@@ -69,6 +69,8 @@ export type Detail = {
    * Run's headline or a Current's scan header) down to the area's bottom, without a gap on any
    * of the three, some of the area left on its left. */
   docked: boolean;
+  /** The four edges of each participating box, for a failed docking observation. */
+  docking: { panel: number[]; stage: number[]; header: number[]; canvas: number[] | null };
 };
 
 /** The open Detail, or null while none is open. */
@@ -82,6 +84,7 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
     // The graph's box, below whatever the view shows above it.
     const graph = area.querySelector("[data-graph-area]")?.getBoundingClientRect();
     const box = aside.getBoundingClientRect();
+    const edges = (rect: DOMRect) => [rect.left, rect.top, rect.right, rect.bottom];
     return {
       title: aside.querySelector("h2")?.textContent?.trim() ?? "",
       tabs: [...aside.querySelectorAll<HTMLElement>('[role="tablist"][aria-label^="Tabs of "] [role="tab"]')].map((tab) => {
@@ -111,9 +114,22 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
         name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
         status: row.querySelector(".status")?.textContent?.trim() ?? "",
       })),
-      docked: box.left > stage.left && Math.abs(stage.right - box.right) <= 1 && !!graph && graph.top >= header.bottom && Math.abs(box.top - graph.top) <= 1 && Math.abs(stage.bottom - box.bottom) <= 1,
+      docked: box.left > stage.left && Math.abs(stage.right - box.right) <= 1 && !!graph && graph.top >= header.bottom - 1
+        && Math.abs(box.top - graph.top) <= 1 && Math.abs(stage.bottom - box.bottom) <= 1,
+      docking: { panel: edges(box), stage: edges(stage), header: edges(header), canvas: graph ? edges(graph) : null },
     };
   });
+}
+
+/** Wait for the named Detail and its docking geometry in the same painted view. */
+export async function dockedDetail(browser: WebdriverIO.Browser, title: string): Promise<Detail> {
+  let shown: Detail | null = null;
+  await browser.waitUntil(async () => {
+    shown = await detail(browser);
+    return shown?.title === title && shown.docked;
+  }, { timeout: 15000, timeoutMsg: `${title} is docked at the graph's right edge` })
+    .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(shown)}`); });
+  return shown!;
 }
 
 /** Click the Artifact `id` and wait for its Detail on the Artifact tab. */

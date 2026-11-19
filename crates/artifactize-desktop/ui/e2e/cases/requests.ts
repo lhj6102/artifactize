@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { artifactize, create, signoff } from "../fixture.ts";
 import { fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
-import { requestState, showDebug, reviewing } from "../human-review.ts";
+import { chooseVerdict, requestState, showDebug, reviewing } from "../human-review.ts";
 import { MAIN, mainTitle } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, primaryModifier } from "../platform.ts";
@@ -56,29 +56,21 @@ export const scenarios: Scenario[] = [
       await showDebug(browser);
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review" && await exists(), "the waiting review open at launch");
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
-      await human().click();
-      await press(browser, ["c"], () => reviewing(browser), "claimed");
-      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
-      assert.ok(!(await browser.$("#field-reason").isExisting()), "no RED field in the GREEN form");
+      await human().$("button*=Claim").click();
+      await waitFor(browser, () => reviewing(browser), "claimed");
+      await human().$("button=GREEN").click();
+      const green = () => browser.$("#field-comment"), red = () => browser.$("#field-reason");
+      await green().waitForDisplayed();
+      assert.equal(await red().isExisting(), false, "no RED field in the GREEN form");
       await fill(browser, "#field-comment", "GREEN draft stays");
-      // An idempotent verdict leaves the same field visible: require the real chord's
-      // defaultPrevented flag after the app handler, not only that already-true field state.
-      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G handled", { handled: true });
-      await commandsRendered(browser);
-      assert.equal(await browser.$("#field-comment").getValue(), "GREEN draft stays");
-      assert.ok(!(await browser.$("#field-reason").isExisting()), "Ctrl+G kept the GREEN schema");
-      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "the RED form");
-      assert.ok(!(await browser.$("#field-comment").isExisting()), "no GREEN field in the RED form");
+      await chooseVerdict(browser, "RED");
+      await red().waitForDisplayed();
+      assert.equal(await green().isExisting(), false, "no GREEN field in the RED form");
       await fill(browser, "#field-reason", "RED draft stays");
-      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R handled", { handled: true });
-      await commandsRendered(browser);
-      assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
-      assert.ok(!(await browser.$("#field-comment").isExisting()), "Ctrl+R kept the RED schema");
-      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
-      assert.equal(await browser.$("#field-comment").getValue(), "GREEN draft stays");
-      // Whatever the idempotent Ctrl+R did after its handler, the RED draft outlived it.
-      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "the RED form again");
-      assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
+      await chooseVerdict(browser, "GREEN");
+      await waitFor(browser, async () => await green().isDisplayed() && await green().getValue() === "GREEN draft stays", "GREEN restores its own draft");
+      await chooseVerdict(browser, "RED");
+      await waitFor(browser, async () => await red().isDisplayed() && await red().getValue() === "RED draft stays", "RED restores its own draft");
     },
   ),
   // UX journey: J-HUMAN-CLAIM

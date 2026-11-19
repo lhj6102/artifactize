@@ -10,8 +10,14 @@ function fixturesRoot(): NativePath { return nativePath(readCandidate().root, "f
 
 export function newRoot(): NativePath {
   const root = newDirectory(fixturesRoot(), "fixture-");
-  makeDirectory(nativePath(root, "gated-tools"));
-  return root;
+  try {
+    makeDirectory(nativePath(root, "gated-tools"));
+    return root;
+  } catch (error) {
+    try { removeTree(root); }
+    catch (cleanup) { throw new AggregateError([error, cleanup], "fixture root initialization and cleanup failed"); }
+    throw error;
+  }
 }
 
 /** Failed acquisition has no app owner yet, so it can settle its own domain work.
@@ -35,13 +41,12 @@ export function createdRoots(): NativePath[] {
   return childDirectories(scratch).filter((root) => nameOf(root).startsWith("fixture-"));
 }
 
-/** Stop fixture-owned work independently of file deletion. An unconfirmed native owner
- * can still read its inputs; it never owns the stand-ins or already submitted Runs. */
+/** Release only fixtures whose app and any companion have been confirmed stopped. */
 export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate(),
   retain: ReadonlySet<NativePath> = new Set()): Promise<void> {
   const failures: unknown[] = [];
   for (const root of roots) {
-    if (!exists(root)) continue;
+    if (retain.has(root) || !exists(root)) continue;
     if (parentOf(root) !== nativePath(candidate.root, "fixtures") || !nameOf(root).startsWith("fixture-") || isLink(root)) {
       failures.push(new Error(`refuse cleanup outside candidate-owned fixture roots: ${root}`));
       continue;
@@ -56,7 +61,7 @@ export async function releaseFixtures(roots: readonly NativePath[] = createdRoot
     try {
       const active = slowTool(fixture);
       if (active) await observe(async () => !await active(), () => `tool still owns fixture ${root}; preserve inputs`);
-      if (!retain.has(root) && before === failures.length) removeTree(root);
+      if (before === failures.length) removeTree(root);
     } catch (error) { failures.push(error); }
   }
   if (failures.length === 1) throw failures[0];

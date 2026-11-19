@@ -1095,6 +1095,16 @@ export function browserHandoffs(root: NativePath): string[] {
   return (readTextIfExists(browserHandoffLog(root)) ?? "").split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
 }
 
+/** The release fixture records a page after load, or owns the browser's completed download.
+ * The Unix browser stand-in instead records each handoff only after consuming its HTTP body. */
+export function browserTransferComplete(root: NativePath, url: string, after: number, transfer:
+  { pageLoaded: NativePath } | { download: string; body: string }): boolean {
+  if (!browserHandoffs(root).slice(after).includes(url)) return false;
+  if (!WINDOWS) return true;
+  if ("pageLoaded" in transfer) return exists(transfer.pageLoaded);
+  return readTextIfExists(nativePath(root, "browser-downloads", transfer.download)) === transfer.body;
+}
+
 /** The system browser of a case that opens `entry`, an address on its private loopback server,
  * or one below it. Unix desktop openers are declared fixture executables performing the real
  * HTTP GET. */
@@ -1136,16 +1146,18 @@ export async function browserEnvironment(root: NativePath, env: Environment, ent
         if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !agreed) {
           throw new Error("the handoff did not name the owned browser origin");
         }
-        appendText(browserHandoffLog(root), `${JSON.stringify(target)}\n`);
       }
       const reply = await fetch(url, { signal: AbortSignal.any([stop.signal, AbortSignal.timeout(30000)]) });
       await reply.arrayBuffer();
       if (!reply.ok) throw new Error(`browser HTTP ${reply.status}`);
+      if (!file) appendText(browserHandoffLog(root), `${JSON.stringify(target)}\n`);
       response.writeHead(204).end();
     })().catch((error: unknown) => {
       if (!response.headersSent && !response.destroyed) response.writeHead(500).end(String(error));
+      throw error;
     });
     jobs.push(job);
+    void job.catch(() => {}); // joined by the owning fixture even if the app ignores opener failure
   });
   try {
     writeText(program, `const reply = await fetch(${JSON.stringify(`${server.url}/open`)}, {
@@ -1165,13 +1177,17 @@ if (!reply.ok) throw new Error(await reply.text());
       DESKTOP_TEST_BROWSER_ENTRIES: entries },
     release: async () => {
       stop.abort();
-      await server.close();
-      await Promise.all(jobs);
+      const outcomes = await Promise.allSettled([server.close(), ...jobs]);
+      const failures = outcomes.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
       const deadline = Date.now() + 30000;
       while (browserJobsAlive(root)) {
-        if (Date.now() >= deadline) throw new Error(`fixture browser opener still owns ${root}`);
+        if (Date.now() >= deadline) {
+          failures.push(new Error(`fixture browser opener still owns ${root}`));
+          break;
+        }
         await new Promise((done) => setTimeout(done, 25));
       }
+      if (failures.length) throw new AggregateError(failures, "owned browser handoffs failed");
     },
   };
 }
@@ -1185,22 +1201,29 @@ async function ownedWindowsBrowser(root: NativePath, env: Environment, entry: Br
     .map((directory) => nativePath(directory, "Microsoft", "Edge", "Application", "msedge.exe")).find(exists);
   if (!edge) throw new Error("the disposable Windows runner has no declared Edge browser");
   const profile = makeDirectory(nativePath(root, "edge-profile"), { private: true });
+  const downloads = makeDirectory(nativePath(root, "browser-downloads"), { private: true });
+  const defaults = makeDirectory(nativePath(profile, "Default"));
+  writeJson(nativePath(defaults, "Preferences"), { download: { default_directory: downloads, prompt_for_download: false } });
   const owners = makeDirectory(nativePath(root, "browser-jobs"), { private: true });
   const program = nativePath(root, "owned-browser.mjs");
   const entries = nativePath(root, "browser-entries.jsonl");
   const stop = new AbortController();
   const released = new Error("fixture browser released");
   const jobs: Promise<void>[] = [];
+  const requests: Promise<void>[] = [];
   const server = await serveLoopbackHttp((request, response) => {
-    void (async () => {
-      if (request.method !== "POST" || request.url !== "/open" || stop.signal.aborted) {
-        response.writeHead(404).end(); return;
-      }
+    if (request.method !== "POST" || request.url !== "/open" || stop.signal.aborted) {
+      response.writeHead(404).end(); return;
+    }
+    const admitted = (async () => {
       let target = "";
       for await (const chunk of request) {
         target += String(chunk);
         if (target.length > 16384) throw new Error("browser request is too long");
       }
+      // Closing the listener interrupts bodies in flight. No request still
+      // reading its body at the teardown boundary can acquire an Edge job.
+      stop.signal.throwIfAborted();
       const launch = file ? canonicalPath(asNativePath(target)) : target;
       if (file) {
         if (launch !== canonicalPath(file)) throw new Error("the handoff did not name the owned file");
@@ -1219,7 +1242,13 @@ async function ownedWindowsBrowser(root: NativePath, env: Environment, entry: Br
       jobs.push(job);
       void job.catch(() => {}); // handled collectively by release
       response.writeHead(204).end();
-    })().catch((error: unknown) => { if (!response.headersSent) response.writeHead(500).end(String(error)); });
+    })().catch((error: unknown) => {
+      if (error === released || (stop.signal.aborted && !request.complete)) return;
+      if (!response.headersSent && !response.destroyed) response.writeHead(500).end(String(error));
+      throw error;
+    });
+    requests.push(admitted);
+    void admitted.catch(() => {}); // joined by the owning fixture
   });
   try {
     writeText(program, `const reply = await fetch(${JSON.stringify(`${server.url}/open`)}, { method: "POST", body: process.argv[2] });
@@ -1236,9 +1265,10 @@ if (!reply.ok) throw new Error(await reply.text());
       DESKTOP_TEST_BROWSER_ENTRIES: entries },
     release: async () => {
       stop.abort(released);
-      const failures = (await Promise.allSettled([server.close(), ...jobs])).flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+      const outcomes = await Promise.allSettled([server.close(), ...requests, ...jobs]);
+      const failures = outcomes.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+      try { await releaseRecordedBrowser(root); } catch (error) { failures.push(error); }
       if (failures.length) throw new AggregateError(failures, "owned Edge browser jobs failed");
-      await releaseRecordedBrowser(root);
     },
   };
 }

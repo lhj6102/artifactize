@@ -499,23 +499,24 @@ export function createChain(count: number, redEnd = false, name = (index: number
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
-    if (redEnd ? status === 0 : status !== 0) throw new Error(`verify exited ${status}, expected ${redEnd ? "a RED run" : "GREEN"}`);
+    const expected = redEnd ? 1 : 0; // Public verify exit status: RED or GREEN.
+    if (status !== expected) throw new Error(`verify exited ${status}, expected ${expected} (${redEnd ? "RED" : "GREEN"})`);
     return fixture;
   });
 }
 
 /**
  * Give the saved Runs `runs` and their requests explicit creation times, oldest first, a minute
- * apart and ending a minute ago: their order never depends on the clock's resolution or on how
+ * apart by default and ending a minute ago: order does not depend on the clock's resolution or on how
  * fast the writers ran. A Run still waiting keeps them: its later writes read the record first.
  */
-export function orderRuns(fixture: Fixture, runs: readonly string[]): void {
+export function orderRuns(fixture: Fixture, runs: readonly string[], gapMinutes = 1): void {
   const saved = requests(fixture);
   const now = Date.now();
   updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
     runs.forEach((id, index) => {
       // The saved form: nanoseconds, UTC.
-      const created = new Date(now - (runs.length - index) * 60_000).toISOString().replace(/\.(\d{3})Z$/, ".$1000000Z");
+      const created = new Date(now - (1 + (runs.length - index - 1) * gapMinutes) * 60_000).toISOString().replace(/\.(\d{3})Z$/, ".$1000000Z");
       if (db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(created, id).changes !== 1) {
         throw new Error(`Run ${id} was not dated`);
       }
@@ -531,7 +532,7 @@ export function orderRuns(fixture: Fixture, runs: readonly string[]): void {
  * branch whose chip row holds more Runs than it first shows. The newest Run is requested with
  * `comment` when one is given. Returns the Runs, oldest first.
  */
-export function createHistory(count: number, comment?: string): { fixture: Fixture; runs: string[] } {
+export function createHistory(count: number, comment?: string, gapMinutes = 1): { fixture: Fixture; runs: string[] } {
   const fixture = createChain(1);
   return prepareFixture(() => {
     const runs = savedRuns(fixture).map((run) => run.id);
@@ -544,7 +545,7 @@ export function createHistory(count: number, comment?: string): { fixture: Fixtu
     }
     // Join every writer before the app reads the Runs, so none of them is still in progress.
     settleRuns(cli(), fixture.repo, fixture.state);
-    orderRuns(fixture, runs);
+    orderRuns(fixture, runs, gapMinutes);
     return { fixture, runs };
   }, fixture.root);
 }

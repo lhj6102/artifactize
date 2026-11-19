@@ -135,19 +135,25 @@ test("a cancelled pointerdown keeps its gesture's compatibility mouse events fro
       if (cancelled) box.addEventListener("pointerdown", (event) => event.preventDefault());
       const events: string[] = [];
       const pointerMoves: number[][] = [];
-      const clicks: string[] = [];
+      const presses: number[] = [];
+      const clicks: [string, number][] = [];
+      box.addEventListener("pointerdown", (event) => presses.push((event as PointerEvent).detail));
       box.addEventListener("pointermove", (event) => {
         const pointer = event as PointerEvent;
         pointerMoves.push([pointer.button, pointer.buttons, pointer.detail]);
       });
-      box.addEventListener("click", (event) => clicks.push((event as PointerEvent).pointerType));
+      box.addEventListener("click", (event) => {
+        const click = event as PointerEvent;
+        clicks.push([click.pointerType, click.detail]);
+      });
       for (const kind of ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "click"]) {
         box.addEventListener(kind, () => events.push(kind));
       }
       for (const phase of ["down", "move", "up"] as const) await dispatchInput(browser, { kind: "pointer", phase, x: 5, y: 5 });
       assert.deepEqual(pointerMoves, [[-1, 1, 0]]);
-      assert.deepEqual(clicks, ["mouse"], "the drag ends with a mouse PointerEvent click");
       await dispatchInput(browser, { kind: "click", x: 5, y: 5 });
+      assert.deepEqual(presses, [0, 0], "neither pointerdown carries a click count");
+      assert.deepEqual(clicks, [["mouse", 1], ["mouse", 1]], "the drag and click end in mouse PointerEvent clicks with a click count");
       const pointers = ["pointerdown", "pointermove", "pointerup"];
       const gesture = cancelled ? pointers : ["pointerdown", "mousedown", "pointermove", "mousemove", "pointerup", "mouseup"];
       const click = cancelled ? ["pointerdown", "pointerup", "click"] : ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];

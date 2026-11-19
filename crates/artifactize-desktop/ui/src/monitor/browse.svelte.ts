@@ -34,13 +34,18 @@ export class Browse {
 
   /** Navigate and read: selection changes reuse the cached reviews, refreshes read them. */
   async navigate(step: Partial<Navigate>): Promise<boolean> {
+    return (await this.#read(step)) !== null;
+  }
+
+  async #read(step: Partial<Navigate>): Promise<BrowseView | null> {
     try {
-      this.#show(await call(this.ipc.browse({ ...still, ...step })));
+      const snapshot = await call(this.ipc.browse({ ...still, ...step }));
+      this.#show(snapshot);
       this.error = null;
-      return true;
+      return snapshot;
     } catch (error) {
       this.error = message(error);
-      return false;
+      return null;
     }
   }
 
@@ -74,9 +79,9 @@ export class Browse {
     return this.ipc.paneComplete(query);
   }
 
-  /** A manual refresh: every cache dropped, the branches scanned again. Whether it read. */
-  reload(): Promise<boolean> {
-    return this.navigate({ full: true, resync: true });
+  /** A manual refresh: every cache dropped, the branches scanned again. Its own snapshot. */
+  reload(): Promise<BrowseView | null> {
+    return this.#read({ full: true, resync: true });
   }
 
   /** State hints pass their explicit resync flag. One read is in flight, and later hints

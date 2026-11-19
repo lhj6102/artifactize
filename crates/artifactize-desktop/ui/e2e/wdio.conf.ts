@@ -64,6 +64,7 @@ export async function releasePrepared(): Promise<void> {
     catch (error) {
       failures.push(error);
       retained.add(input.fixture.root);
+      continue;
     }
     const before = failures.length;
     await release(() => releaseClaudeLogins(input.fixture.root));

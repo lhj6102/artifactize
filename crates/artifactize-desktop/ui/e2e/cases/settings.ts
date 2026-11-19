@@ -11,10 +11,11 @@ import {
 import { clickOption } from "../input.ts";
 import { git } from "../environment.ts";
 import { commandFields, runtimeProfile } from "../native-fixtures.ts";
-import { afterRender, fill, press, typeText } from "../keys.ts";
+import { fill, press, typeText } from "../keys.ts";
 import { graphShown, ZOOM_IN } from "../graph-view.ts";
-import { clickAt, visibleCenter } from "../pointer.ts";
+import { clickAt, pointerGapClick, visibleCenter } from "../pointer.ts";
 import { branch, mainTitle, openWaiting, showRun } from "../pane.ts";
+import { observe } from "../domain-fixtures/observe.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { childDirectories, claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, listFiles, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readBytes, readText, replaceText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
@@ -127,11 +128,10 @@ export const scenarios: Scenario[] = [
         const box = document.querySelector('[role="dialog"][aria-labelledby="settings-title"]')!.getBoundingClientRect();
         return x < box.left || x >= box.right || y < box.top || y >= box.bottom;
       }, graphPoint), true, "the graph control is outside the dialog, not just covered by its panel");
-      await clickAt(browser, graphPoint);
-      await afterRender(browser);
-      // The outside click may dismiss the dialog; it must not reach the underlying graph.
-      assert.equal(await zoom(), zoomBefore, "Settings blocks the graph's Zoom in control");
-      if (!(await open())) await press(browser, [primaryModifier, ","], open, "Settings reopened after outside click");
+      await pointerGapClick(browser, graphPoint);
+      await browser.waitUntil(closed, { timeout: 15000, timeoutMsg: "an outside click closes Settings" });
+      assert.equal(await zoom(), zoomBefore, "the outside click did not reach the graph's Zoom in control");
+      await press(browser, [primaryModifier, ","], open, "Settings reopened after outside click");
       assert.equal(await mainTitle(browser), before, "the screen beneath Settings stays as it was");
       await press(browser, ["Escape"], closed, "Settings closed by Esc");
       assert.equal(await mainTitle(browser), before);
@@ -304,31 +304,40 @@ export const scenarios: Scenario[] = [
       await signOut();
     },
   ),
-  // UX journeys: J-SET-PROVIDERS J-SET-KEY
+  // UX journeys: J-SET-PROVIDERS J-SET-KEY J-SET-MODELS
   scenario(
     "settings-keys",
     "settings: lists the providers on the left, shows where each key comes from without its value, saves and removes a key as the CLI sees it, and keeps a set variable first",
     async () => {
       const fixture = createOutside();
       const seen = nativePath(fixture.root, "openai-authorization");
+      const models = nativePath(fixture.root, "openai-models");
       writeText(seen, "");
+      writeText(models, "hold");
       // Everything that can fail comes before the server starts, so it is always released.
       const env = settingsEnvironment(fixture);
       const openai = await serveLoopbackHttp((request, response) => {
         request.resume();
         const listing = request.url === "/v1/models";
-        if (listing) writeText(seen, request.headers.authorization ?? "");
-        response.writeHead(listing ? 200 : 404, { "content-type": "application/json" });
-        response.end(JSON.stringify(listing ? { object: "list", data: [{ id: "openai-model", object: "model", created: 0, owned_by: "e2e" }] } : {}));
+        if (!listing) { response.writeHead(404).end(); return; }
+        writeText(seen, request.headers.authorization ?? "");
+        void observe(() => response.destroyed || readText(models) !== "hold", () => "the fixture never released the model response")
+          .then(() => {
+            if (response.destroyed) return;
+            const mode = readText(models);
+            const data = mode === "list" ? [{ id: "openai-model", object: "model", created: 0, owned_by: "e2e" }] : [];
+            response.writeHead(mode === "error" ? 503 : 200, { "content-type": "application/json" });
+            response.end(JSON.stringify(mode === "error" ? { error: { message: "Fixture catalog unavailable" } } : { object: "list", data }));
+          }, (error: Error) => { if (!response.destroyed) response.writeHead(500).end(error.message); });
       });
       return {
         fixture,
         env: { ...env, ARTIFACTIZE_OPENAI_BASE_URL: `${openai.url}/v1` },
-        data: { key: KEY, saved: SAVED, shadowed: SHADOWED, seen },
+        data: { key: KEY, saved: SAVED, shadowed: SHADOWED, seen, models },
         release: () => openai.close(),
       };
     },
-    async (browser, { fixture, data: { key, saved, shadowed, seen } }) => {
+    async (browser, { fixture, data: { key, saved, shadowed, seen, models } }) => {
       const html = () => browser.execute(() => document.documentElement.outerHTML);
       await openSettings(browser);
       const providers = ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "Custom provider"];
@@ -382,8 +391,25 @@ export const scenarios: Scenario[] = [
       assert.equal(await keyText(browser, "openai"), shadowedMessage);
       const both = JSON.parse((await providerList(fixture, { OPENAI_API_KEY: key })).stdout).keys.find((one: { provider: string }) => one.provider === "openai");
       assert.deepEqual([both.source, both.saved], ["environment", true]);
-      await listModels(browser, "openai-model");
-      assert.equal(readText(seen), `Bearer ${key}`, "the listing used the variable's key, not the saved one");
+      const list = () => browser.$("button=List models");
+      const shown = () => browser.$('ul[aria-label="Models"]');
+      await list().click();
+      await browser.waitUntil(async () => readText(seen) === `Bearer ${key}` && !(await list().isEnabled()),
+        { timeout: 15000, timeoutMsg: "the request uses the environment key and the List models button is disabled until the reply" });
+      replaceText(models, "list");
+      await browser.waitUntil(async () => await shown().isDisplayed() && (await shown().getText()).includes("openai-model") && await list().isEnabled(),
+        { timeout: 15000, timeoutMsg: "the released catalog is rendered and its button re-enabled" });
+      await choose(browser, "Gemini");
+      await browser.waitUntil(async () => !(await shown().isDisplayed()), { timeout: 15000, timeoutMsg: "changing provider empties the list" });
+      await choose(browser, "OpenAI");
+      assert.equal(await shown().isDisplayed(), false, "returning to OpenAI does not resurrect its old list");
+      replaceText(models, "empty");
+      await list().click();
+      await browser.$("p=No models listed.").waitForDisplayed();
+      replaceText(models, "error");
+      await list().click();
+      await browser.waitUntil(async () => (await browser.$('[role="dialog"]').getText()).includes("Fixture catalog unavailable"),
+        { timeout: 15000, timeoutMsg: "the listing failure is shown in Settings" });
       await browser.$("button=Remove saved key").click();
       await browser.waitUntil(async () => !(await browser.$("button=Remove saved key").isExisting()), { timeout: 15000, timeoutMsg: "the saved OpenAI key is removed" });
       assert.equal(await keyText(browser, "openai"), "set from the environment (OPENAI_API_KEY)", "the variable is still set");
@@ -467,7 +493,9 @@ payload.instruction = "Check the worker."
       const saved = async () => !(await browser.$("button=Save").isEnabled());
       await showLimits(browser);
       await browser.waitUntil(async () => (await shown()) === "120", { timeout: 15000, timeoutMsg: "the default idle grace" });
+      assert.ok(await saved(), "Save is disabled for the unchanged grace");
       await fill(browser, "#grace-seconds", "300");
+      await browser.$("button=Save").waitForEnabled();
       await browser.$("button=Save").click();
       await browser.waitUntil(async () => signoffGrace(fixture) === 300 && (await saved()) && (await shown()) === "300", { timeout: 15000, timeoutMsg: "the saved idle grace" });
       // Set by the CLI, it shows when Settings is shown again.
@@ -671,10 +699,12 @@ Review the agent folder."""
 
       await browser.$("button=Remove provider").click();
       await browser.waitUntil(async () => !(await listed(browser)).includes("local"), { timeout: 15000, timeoutMsg: "local is removed" });
+      await browser.waitUntil(async () => !("local" in await custom()),
+        { timeout: 15000, timeoutMsg: "the CLI reads the persisted provider removal" });
       assert.deepEqual(Object.keys(await custom()), ["claude-local", "gemini-local", "work"]);
     },
   ),
-  // UX journey: J-SET-REMOTE
+  // UX journeys: J-SET-REMOTE J-SET-REMOTE-STATUS
   scenario(
     "settings-remote",
     "settings: remote sign-in, shared CLI status, fresh identity, dry run and sign-out",
@@ -729,6 +759,11 @@ Review the agent folder."""
       await browser.waitUntil(async () => (await browser.$('[role="tab"][aria-selected="true"]').getText()) === "Remote", { timeout: 15000, timeoutMsg: "the Remote tab shows" });
       // No store yet: the fields that sign in to one, and nothing said about it.
       await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "no store is configured yet" });
+      const signedOutCheck = () => browser.$("button=Check status");
+      assert.ok(await signedOutCheck().isDisplayed() && await signedOutCheck().isEnabled(), "signed-out Settings offers Check status beside Sign in");
+      await signedOutCheck().click();
+      await commandsRendered(browser);
+      assert.ok(await browser.$("button=Sign in to the store").isDisplayed(), "checking without a store keeps the sign-in view");
       assert.ok(!(await text()).includes("No remote review store is configured."), "no sentence for the normal state");
       await browser.$("#remote-url").click();
       await typeText(browser, url);

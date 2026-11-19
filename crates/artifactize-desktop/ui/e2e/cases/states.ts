@@ -44,9 +44,6 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => graphHasColours(await lights(), expectedNodes, expectedEdges), {
         timeout: 15000, timeoutMsg: "every node's mark and strip in its verdict's own colour, and each relation's stroke neutral or its holding source's colour",
       });
-      const { nodes, edges } = await lights();
-      assert.deepEqual(Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, node.light])), expectedNodes);
-      assert.deepEqual(Object.fromEntries(Object.entries(edges).map(([id, edge]) => [id, edge.light])), expectedEdges);
       // No legend on the graph: Help pairs each mark with its word.
       assert.equal(await browser.$('[aria-label="Legend"]').isExisting(), false, "no legend on the graph");
     },

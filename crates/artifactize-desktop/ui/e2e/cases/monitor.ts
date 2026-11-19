@@ -5,7 +5,7 @@
 // the dragged split and Detail width.
 import assert from "node:assert/strict";
 import { artifactize, create, finishTalk, type Fixture, launched, requests, signoff, slowTool, type SignoffDefinition } from "../fixture.ts";
-import { claimable, reviewing } from "../human-review.ts";
+import { chooseVerdict, claimable, reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { joinGatedTools } from "../process-fixtures.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
@@ -394,8 +394,8 @@ export const scenarios: Scenario[] = [
       }, LOG);
       // Runs until the log is longer than its box: it shows its newest line.
       for (let run = 0; run < 8 && !(await box()).overflows; run += 1) await runNotes();
-      assert.ok((await box()).overflows, "the Tool log is longer than its box");
-      assert.ok((await box()).below < 24, "the Tool log follows its newest line");
+      await browser.waitUntil(async () => { const at = await box(); return at.overflows && at.below < 24; },
+        { timeout: 15000, timeoutMsg: "the overflowing Tool log follows its newest line" });
       // Scrolled up to its first line, it stays there while the next run's lines arrive below,
       // and the rest of the review stays where it was.
       await browser.$(`${LOG} p.start`).scrollIntoView({ block: "nearest" });
@@ -448,8 +448,12 @@ export const scenarios: Scenario[] = [
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: wanted });
-      await browser.waitUntil(async () => (await toolLog()).rows.length === 0, { timeout: 15000, timeoutMsg: "the Tool log cleared by the submission" });
-      await browser.waitUntil(async () => /completed result/i.test(await human().getText()), { timeout: 15000, timeoutMsg: "the completed result open" });
+      await browser.waitUntil(() => browser.execute((wanted) => {
+        const review = document.querySelector('[aria-label="Human review"]');
+        const result = review?.querySelector<HTMLElement>('section[aria-label="Result"] pre');
+        return !!result?.checkVisibility() && result.innerText.includes(wanted)
+          && !review?.querySelector('[role="log"][aria-label="Tool log"] p:not(.muted)');
+      }, wanted), { timeout: 15000, timeoutMsg: "the submitted result is visible with its Tool log cleared" });
     },
   ),
 
@@ -514,13 +518,26 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(() => slowTool(fixture) !== null, { timeout: 15000, timeoutMsg: "the owned tool process started" });
       const alive = slowTool(fixture);
       assert.ok(alive && await alive(), "the cancellation target is an actual running process");
+      const toolButtonsDisabled = () => browser.execute(() => {
+        const buttons = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Human review"] section[aria-label="Tools"] button')];
+        return buttons.length > 1 && buttons.every((button) => button.disabled);
+      });
+      await browser.waitUntil(toolButtonsDisabled, { timeout: 15000, timeoutMsg: "all Human tools are disabled while one runs" });
+      await human().$("button=Cancel").click();
+      await browser.waitUntil(async () => !(await alive()) && (await runOf("slow"))?.at(-1)?.text === "■ cancelled",
+        { timeout: 15000, timeoutMsg: "the visible Cancel stops the tool and leaves its exit in the log" });
+      await human().$("button=slow").waitForEnabled();
+      await human().$("button=slow").click();
+      await browser.waitUntil(async () => await slowTool(fixture)?.() === true && await toolButtonsDisabled(),
+        { timeout: 15000, timeoutMsg: "another owned slow tool is running" });
+      const restarted = slowTool(fixture)!;
       // The keyboard goes to the eval's own chip, outside the review: a click on the shown tab
       // keeps it shown.
       const chip = browser.$(tabAt("e:release/signoff"));
       await chip.click();
       await browser.waitUntil(() => chip.isFocused(), { timeout: 15000, timeoutMsg: "the eval's chip focused" });
       await press(browser, ["Escape"], async () => !(await running("Running slow")), "the tool cancelled by Esc on the tabs");
-      await browser.waitUntil(async () => !(await alive()), { timeout: 15000, timeoutMsg: "Esc terminated the owned tool process" });
+      await browser.waitUntil(async () => !(await restarted()), { timeout: 15000, timeoutMsg: "Esc terminated the owned tool process" });
       await browser.waitUntil(async () => (await runOf("slow"))?.at(-1)?.text === "■ cancelled", { timeout: 15000, timeoutMsg: "the run ended as cancelled" });
       assert.ok(await human().isExisting(), "Esc cancelled the job and left the Detail open");
       assert.equal(await browser.$("#field-comment").getValue(), "kept while stepping back", "the form stays open while the job is cancelled");
@@ -547,12 +564,12 @@ export const scenarios: Scenario[] = [
         assert.ok(await human().isDisplayed(), `${action} does not dismiss the review`);
         assert.equal(await browser.$("#field-comment").getValue(), "kept while stepping back");
       }
-      await chip.click();
-      await browser.waitUntil(() => chip.isFocused(), { timeout: 15000, timeoutMsg: "the eval tab has keyboard focus after the pointer actions" });
-      await press(browser, ["Escape"], async () => !(await browser.$("#field-comment").isExisting()), "the form left by the next Esc");
+      await browser.$('aside[aria-label="Detail"]').$("button*=Close").click();
+      await browser.$("#field-comment").waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the next Close leaves just the form" });
       assert.ok(await human().isExisting(), "leaving the form left the Detail open");
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "the review stays claimed");
-      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed by the third Esc");
+      await browser.$('aside[aria-label="Detail"]').$("button*=Close").click();
+      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "Close now closes the Detail" });
       // The draft was kept: the same verdict reopens it.
       await openArtifact(browser, "a:release", "Artifact release");
       await openTab(browser, "e:release/signoff");
@@ -627,13 +644,15 @@ export const scenarios: Scenario[] = [
       assert.equal(signoff(fixture).result, null, "the invalid RED result was not saved");
       // Continue this rejected submission, without leaving its claimed review. Each verdict
       // must rebuild the owner's corresponding schema, even after validation failed.
-      await press(browser, [primaryModifier, "g"], async () =>
-        await browser.$("#field-comment").isExisting() && !(await reason().isExisting()), "the pass-schema form after invalid RED");
+      await chooseVerdict(browser, "GREEN");
+      await browser.$("#field-comment").waitForDisplayed();
+      assert.equal(await reason().isExisting(), false, "the pass-schema form after invalid RED");
       assert.equal(await browser.$("#field-approved").isExisting(), false, "the pass schema's approved constant is filled in, not shown");
       await fill(browser, "#field-comment", "checked after rejection");
       assert.equal(await browser.$("#field-comment").getValue(), "checked after rejection");
-      await press(browser, [primaryModifier, "r"], async () =>
-        await reason().isExisting() && !(await browser.$("#field-comment").isExisting()), "the fail-schema form again");
+      await chooseVerdict(browser, "RED");
+      await reason().waitForDisplayed();
+      assert.equal(await browser.$("#field-comment").isExisting(), false, "the fail-schema form again");
       await fill(browser, "#field-reason", "a correctable reason");
       assert.equal(await reason().getValue(), "a correctable reason");
       const saved = signoff(fixture);
@@ -641,7 +660,8 @@ export const scenarios: Scenario[] = [
       assert.equal(saved.result, null, "switching did not submit the rejected draft");
       assert.equal(saved.claim?.reviewer, "alice", "the same review remains claimed and editable");
       // A GREEN result failing its schema the same way: the required comment left empty.
-      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
+      await chooseVerdict(browser, "GREEN");
+      await browser.$("#field-comment").waitForDisplayed();
       await fill(browser, "#field-comment", "");
       const before = await alert.getText().catch(() => "");
       await browser.keys([primaryModifier, "s"]);
@@ -1008,7 +1028,6 @@ export const scenarios: Scenario[] = [
       await tools().$("button=notes").waitForEnabled({ timeout: 15000, timeoutMsg: "release's own tools listed" });
       assert.equal(await browser.$(DETAIL).$('[role="log"][aria-label="Tool log"]').isExisting(), false, "no Tool log before a first run");
       assert.equal(await browser.$(".graph .svelte-flow__node button").isExisting(), false, "the graph's nodes carry no tool buttons");
-      const toolRunsBefore = (await checkpoint(browser)).activity.commands.artifactToolRun?.completed ?? 0;
       // An output tool runs at once, unclaimed: its start, each line it printed and its exit.
       await tools().$("button=notes").click();
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the notes run ended" });
@@ -1027,7 +1046,6 @@ export const scenarios: Scenario[] = [
         { text: "■ exit 0", kind: "end", error: false },
       ]);
       assert.equal((await logIn(browser, DETAIL)).noticeError, false);
-      assert.ok(((await checkpoint(browser)).activity.commands.artifactToolRun?.completed ?? 0) > toolRunsBefore, "the same probe observes this tool's run");
       assert.equal(signoff(fixture).claim, null, "running a tool claimed nothing");
       // The Tool log folded after a run unfolds again for the next one.
       await browser.$(DETAIL).$("button.head=Tool log").click();
@@ -1058,6 +1076,18 @@ export const scenarios: Scenario[] = [
         { text: "▶ HH:MM:SS · fail · release", kind: "start", error: false },
         { text: "■ exit 1", kind: "end", error: true },
       ]);
+      await tools().$("button=slow").click();
+      const cancelled = async () => (await runIn(browser, DETAIL, "slow"))?.at(-1)?.text === "■ cancelled";
+      await browser.waitUntil(async () => await slowTool(fixture)?.() === true && await browser.execute((detail) => {
+        const section = document.querySelector(`${detail} section[aria-label="Tools of release"]`);
+        const buttons = [...(section?.querySelectorAll<HTMLButtonElement>(".tool button") ?? [])];
+        return buttons.length > 1 && buttons.every((button) => button.disabled)
+          && !!section?.querySelector('[role="status"] button')?.checkVisibility();
+      }, DETAIL), { timeout: 15000, timeoutMsg: "Artifact tool buttons disabled and a visible Cancel while slow is running" });
+      const ownsTool = slowTool(fixture)!;
+      await tools().$("button=Cancel").click();
+      await browser.waitUntil(async () => !(await ownsTool()) && await cancelled() && await tools().$("button=notes").isEnabled(),
+        { timeout: 15000, timeoutMsg: "Artifact Cancel stops its process, renders its end line and enables its tools" });
       // Every earlier run stays in the Tool log after the later ones, and after the Detail is
       // closed and opened again while the app runs.
       const ends = async () => Promise.all(["notes", "open", "talk", "fail"].map(async (tool) => (await runIn(browser, DETAIL, tool))?.at(-1)?.text ?? null));

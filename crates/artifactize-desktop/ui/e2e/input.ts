@@ -2,7 +2,7 @@
 // This delivers only input to actual UI targets: no app handlers, commands or state access.
 // The provider's special keys carry no modifier: Shift+Enter arrives as a plain Enter.
 type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "key"; key: "Enter"; shift: true } | { kind: "click" | "text-click"; x: number; y: number; shift?: true }
-  | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number };
+  | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number; target?: string };
 
 /** WebDriver Element Click's option path targets its containing select. The
  * upstream generic click skips these steps, so deliver the option sequence once. */
@@ -117,6 +117,9 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
     } else {
       const target = document.elementFromPoint(input.x, input.y);
       if (!target) throw new Error(`the pointer has no hit target at (${input.x}, ${input.y}) in a ${innerWidth}×${innerHeight} viewport`);
+      if (input.kind === "pointer" && input.phase === "down" && input.target && !target.matches(input.target)) {
+        throw new Error(`expected the pointer to hit ${input.target} at (${input.x}, ${input.y}); hit ${target.tagName}.${target.getAttribute("class") ?? ""}`);
+      }
       const common = { view: window, clientX: input.x, clientY: input.y, shiftKey: "shift" in input && input.shift === true, button: 0, detail: 1, bubbles: true, cancelable: true, composed: true };
       const pointer = { ...common, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1 };
       // A cancelled pointerdown suppresses the gesture's compatibility mouse events until its
@@ -144,7 +147,7 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
         }
         return;
       }
-      const pointerDown = target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1, pressure: 0.5 }));
+      const pointerDown = target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, detail: 0, buttons: 1, pressure: 0.5 }));
       const mouseDown = pointerDown && target.dispatchEvent(new MouseEvent("mousedown", { ...common, buttons: 1 }));
       if (input.kind === "text-click" && pointerDown && mouseDown && !(target as HTMLElement).isContentEditable && !target.closest("input, textarea")) {
         let selecting: Element | null = target;

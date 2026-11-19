@@ -5,10 +5,12 @@ import assert from "node:assert/strict";
 import { createOutside, createUnreadableRuns, savedRuns, spoilRun } from "../fixture.ts";
 import { CATALOG_NOTE, createEmptyAudit, createLayout } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { listed, mainTitle, showRun } from "../pane.ts";
+import { chooseChip, listed, mainTitle, scanned, showRun } from "../pane.ts";
 import { aside, camera, detail, FIND, findField, graphShown, nodeAt, offCentre, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { canvasSnapshot } from "../rendering.ts";
+import { listFiles, nativePath, readText } from "../platform.ts";
+import { dispatchInput } from "../input.ts";
 
 function slot(browser: WebdriverIO.Browser) {
   return browser.execute(() => {
@@ -331,6 +333,83 @@ export const scenarios: Scenario[] = [
       }
       await browser.$(node).waitForExist({ timeout: 15000, timeoutMsg: "w00 a box again" });
       assert.equal(await browser.$(node).$(".name").getText(), "w00", "named");
+    },
+  ),
+
+  // UX journey: J-NODE-MOVE
+  scenario<null>(
+    "current-block-pan",
+    "drags a painted Artifact block on a Current to pan the camera without moving the Artifact or writing a definition",
+    async () => ({ fixture: createLayout(), data: null }),
+    async (browser, { fixture }) => {
+      await listed(browser, "repo  master");
+      await chooseChip(browser, "repo  master", "current");
+      await browser.waitUntil(async () => /^Scanned at /.test(await scanned(browser)), { timeout: 15000, timeoutMsg: "the large Current scanned" });
+      const current = 'section[aria-label="Current"]';
+      const node = `${current} ${nodeAt("a:n0000")}`;
+      // Find draws the block as a named node, so its place is learned from the real view.
+      await browser.$(`${current} [aria-label="Graph tools"]`).$("button=Find").click();
+      await browser.waitUntil(async () => (await findField(browser))?.focused === true);
+      await fill(browser, FIND, "n0000");
+      await browser.waitUntil(async () => (await findField(browser))?.entries[0]?.name === "n0000");
+      await browser.$('.find [role="option"]').click();
+      await graphShown(browser, "a:n0000");
+      await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact n0000");
+      await aside(browser).$("button*=Close").click();
+      await browser.waitUntil(async () => (await detail(browser)) === null);
+      const centre = await browser.execute((selector, root) => {
+        const node = document.querySelector(selector)!.getBoundingClientRect();
+        const canvas = document.querySelector(`${root} canvas.paint`)!.getBoundingClientRect();
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(document.querySelector(`${root} .svelte-flow__viewport`)!).transform);
+        return { x: (node.x + node.width / 2 - canvas.x - matrix.e) / matrix.a, y: (node.y + node.height / 2 - canvas.y - matrix.f) / matrix.a };
+      }, node, current);
+      for (let step = 0; step < 12 && await browser.$(node).isExisting(); step += 1) {
+        await browser.$(ZOOM_OUT).click();
+        await camera(browser);
+      }
+      const read = async () => {
+        const sample = await browser.execute((root, at, selector) => {
+          const canvas = document.querySelector<HTMLCanvasElement>(`${root} canvas.paint`)!;
+          const clip = canvas.getBoundingClientRect();
+          const matrix = new DOMMatrixReadOnly(getComputedStyle(document.querySelector(`${root} .svelte-flow__viewport`)!).transform);
+          const [x, y] = [matrix.e + at.x * matrix.a, matrix.f + at.y * matrix.a];
+          const point = { x: Math.round(clip.x + x), y: Math.round(clip.y + y) };
+          return {
+            point, zoom: matrix.a, canvasX: Math.round(x * canvas.width / clip.width), canvasY: Math.round(y * canvas.height / clip.height),
+            data: canvas.toDataURL(), named: !!document.querySelector(selector),
+            reachable: !!document.elementFromPoint(point.x, point.y)?.matches(`${root} .svelte-flow__pane`),
+            direction: point.x + 72 <= clip.right ? 60 : -60,
+          };
+        }, current, centre, node);
+        const { canvasX, canvasY, data, ...position } = sample;
+        const bitmap = canvasSnapshot(data);
+        const colour = (x: number) => [...bitmap.at(canvasX + x, canvasY)];
+        return { ...position, middle: colour(0), beside: [colour(-3), colour(3)] };
+      };
+      let sample = await read();
+      await browser.waitUntil(async () => {
+        sample = await read();
+        return !sample.named && sample.reachable && sample.middle[3] === 255
+          && sample.beside.every((side) => side.join() === sample.middle.join());
+      }, { timeout: 15000, timeoutMsg: "n0000 is visible as a solid painted block, not an element" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(sample)}`); });
+      const before = sample;
+      const files = listFiles(nativePath(fixture.repo, ".artifactize"));
+      const definitions = files.map(readText);
+      const { x, y } = before.point;
+      await dispatchInput(browser, { kind: "pointer", phase: "down", x, y, target: `${current} .svelte-flow__pane` });
+      for (const offset of [15, 30, 45, 60]) {
+        await dispatchInput(browser, { kind: "pointer", phase: "move", x: x + offset * Math.sign(before.direction), y });
+      }
+      await dispatchInput(browser, { kind: "pointer", phase: "up", x: x + before.direction, y });
+      await browser.waitUntil(async () => {
+        sample = await read();
+        return sample.point.x === x + before.direction && sample.point.y === y && sample.zoom === before.zoom
+          && !sample.named && sample.middle.join() === before.middle.join() && (await detail(browser)) === null;
+      }, { timeout: 15000, timeoutMsg: "the camera moved by the drag and the same block painted at its translated position" })
+        .catch((error: Error) => { throw new Error(`${error.message}: before ${JSON.stringify(before)}, after ${JSON.stringify(sample)}`); });
+      assert.deepEqual(listFiles(nativePath(fixture.repo, ".artifactize")), files, "panning does not add or remove definitions");
+      assert.deepEqual(files.map(readText), definitions, "panning writes no definition");
     },
   ),
 ];

@@ -198,18 +198,27 @@ it("fixture teardown joins a slow tool without app cancellation", { timeout: 100
   }
 });
 
-it("closing an owned TCP endpoint joins a stalled connection and repeated callers", { timeout: 10000 }, async () => {
+it("closing an owned TCP endpoint joins a stalled connection and repeated callers", { timeout: 10000 }, async (test) => {
   let connected!: () => void;
   const accepted = new Promise<void>((done) => { connected = done; });
   const server = await serveLoopback(() => connected());
   const client = readLoopback(server.port, 5000);
+  let cancelled: () => void = () => {};
+  const interrupted = new Promise<never>((_done, fail) => {
+    cancelled = () => fail(test.signal.reason);
+    if (test.signal.aborted) cancelled();
+    else test.signal.addEventListener("abort", cancelled, { once: true });
+  });
   try {
-    await accepted;
+    await Promise.race([accepted, interrupted, client.then(() => { throw new Error("the client disconnected before acceptance"); })]);
     const checkClosed = async (closing: Promise<void>) => {
       await closing;
       assert.equal(server.listening(), false);
       assert.ok([null, ""].includes(await client), "the stalled accepted peer was disconnected");
     };
     await Promise.all([checkClosed(server.close()), checkClosed(server.close())]);
-  } finally { await server.close(); }
+  } finally {
+    test.signal.removeEventListener("abort", cancelled);
+    await server.close();
+  }
 });

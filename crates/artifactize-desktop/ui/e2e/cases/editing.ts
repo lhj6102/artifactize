@@ -8,7 +8,7 @@ import { verifyAll, type Fixture } from "../fixture.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { exists, listFiles, makeDirectory, nameOf, nativePath, primaryModifier, readText, relativeTextPath, writeText } from "../platform.ts";
-import { detail, FIND, findField, graphShown, nodeAt, offCentre, openArtifact } from "../graph-view.ts";
+import { camera as stillCamera, detail, FIND, findField, graphShown, nodeAt, offCentre, openArtifact } from "../graph-view.ts";
 import { MAIN, chooseChip, mainTitle, scanned, showRun } from "../pane.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { clickAt, pointerGapClick, visibleCenter } from "../pointer.ts";
@@ -250,10 +250,10 @@ async function drag(
   browser: WebdriverIO.Browser,
   from: { x: number; y: number },
   to: { x: number; y: number },
-  { held, escape = false, escaped }: { held?: () => Promise<void>; escape?: boolean; escaped?: () => Promise<void> } = {},
+  { held, escape = false, escaped, target }: { held?: () => Promise<void>; escape?: boolean; escaped?: () => Promise<void>; target?: string } = {},
 ) {
   const at = (point: { x: number; y: number }) => ({ x: Math.round(point.x), y: Math.round(point.y) });
-  await dispatchInput(browser, { kind: "pointer", phase: "down", ...at(from) });
+  await dispatchInput(browser, { kind: "pointer", phase: "down", ...at(from), target });
   for (let step = 1; step <= 8; step += 1) {
     await dispatchInput(browser, { kind: "pointer", phase: "move", ...at({ x: from.x + ((to.x - from.x) * step) / 8, y: from.y + ((to.y - from.y) * step) / 8 }) });
   }
@@ -332,7 +332,7 @@ const field = (browser: WebdriverIO.Browser) => browser.execute(() => {
 });
 
 export const scenarios: Scenario[] = [
-  // UX journeys: J-DEFINITION J-DEFINITION-EDIT J-PARTS-EDIT J-DEFINITION-CONFLICT
+  // UX journeys: J-DEFINITION J-DEFINITION-EDIT J-DEFINITION-DRAFT J-PARTS-EDIT J-DEFINITION-CONFLICT
   scenario<Record<string, never>>(
     "editing-definition",
     "shows and edits an Artifact's Definition and Source on the Current, refusing what the project would not accept, a changed file and a drag over typed text",
@@ -382,6 +382,16 @@ export const scenarios: Scenario[] = [
       await browser.keys("Escape");
       await waitFor(browser, async () => (await definition(browser))?.path === "core/" && (await definition(browser))?.refused.length === 0, "Esc puts the Path back, its refusal gone");
 
+      await fill(browser, path, "kept-draft/");
+      await browser.$(DETAIL).$("button=Close").click();
+      await waitFor(browser, async () => (await detail(browser)) === null, "Close leaves the typed Path draft");
+      assert.equal(file(fixture, "core"), kept, "closing did not write the Path");
+      await openArtifact(browser, "a:core", "Artifact core");
+      await waitFor(browser, async () => (await definition(browser))?.path === "kept-draft/", "reopening restores the typed Path");
+      await browser.$(path).click();
+      await browser.keys("Escape");
+      await waitFor(browser, async () => (await definition(browser))?.path === "core/", "the restored draft can still be discarded");
+
       // Typing in the Source offers Save and Revert; Ctrl+S writes it.
       const text = `${DETAIL} textarea[aria-label="Source of core"]`;
       await typeIn(browser, text, "\n# reviewed");
@@ -423,7 +433,7 @@ export const scenarios: Scenario[] = [
       await browser.$(DETAIL).$("button=Revert").click();
       await waitFor(browser, async () => (await source(browser))?.text === file(fixture, "core") && !(await source(browser))?.save, "Revert puts back the file");
 
-      // Parts: the field suggests Artifacts; Enter adds one, its button removes it.
+      // Parts: the field suggests Artifacts; a click adds one, its button removes it.
       await openArtifact(browser, "a:app", "Artifact app");
       await waitFor(browser, async () => JSON.stringify((await definition(browser))?.parts) === '["kit"]', "app's parts listed");
       await browser.$(DETAIL).$("button=Add").click();
@@ -432,7 +442,15 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$(adding).isFocused(), true, "the Parts field takes focus");
       await browser.keys("core");
       await waitFor(browser, async () => (await browser.$$(`${DETAIL} [role="option"]`).map((option) => option.getText())).join() === "core", "core suggested");
-      await browser.keys("Enter");
+      const partsBefore = file(fixture, "app");
+      await clickAt(browser, await below(browser, (await box(browser, "a:app"))!.x));
+      await waitFor(browser, async () => (await detail(browser)) === null, "background closes the Detail");
+      assert.equal(file(fixture, "app"), partsBefore, "leaving did not write the typed part");
+      await openArtifact(browser, "a:app", "Artifact app");
+      await waitFor(browser, async () => await browser.$(adding).isDisplayed() && await browser.$(adding).getValue() === "core", "reopening restores the typed part");
+      const suggestion = () => browser.$(`${DETAIL} [role="option"]`);
+      await suggestion().waitForDisplayed();
+      await suggestion().click();
       await waitFor(browser, () => /parts = \[[^\]]*"core"/.test(file(fixture, "app") ?? ""), "app's file names core as a part");
       await waitFor(browser, () => partDrawn(browser, "a:app/a:core", "a:app", true), "the graph draws core inside app's visible box");
       await browser.$(`${DETAIL} button[aria-label="Remove core from the parts of app"]`).click();
@@ -1155,29 +1173,61 @@ docs = [0.0, 0.0]
       await reset(inner, "app").waitForDisplayed({ timeout: 15000 });
       const definitions = () => ["bundle", "app", "kit", "docs", "core"].map((name) => file(fixture, name));
       const before = definitions();
-      const beforePlaces = await places(browser);
-      const cameraBefore = await camera(browser);
-      const face = await browser.execute((selector) => {
-        const surface = document.querySelector(`${selector} > .whole`);
-        const title = surface?.querySelector(".title");
-        const canvas = surface?.closest(".canvas");
-        if (!surface || !title || !canvas) return null;
-        const box = surface.getBoundingClientRect(), room = canvas.getBoundingClientRect();
-        for (let y = Math.ceil(Math.max(title.getBoundingClientRect().bottom, room.top)) + 4; y < Math.min(box.bottom, room.bottom) - 4; y += 4) {
-          for (let x = Math.ceil(Math.max(box.left, room.left)) + 4; x < Math.min(box.right, room.right) - 4; x += 4) {
-            if (document.elementFromPoint(x, y) === surface) {
-              return { from: { x, y }, to: { x: x + (x + 70 < room.right ? 60 : -60), y } };
+      const faceSelector = `${CURRENT} ${nodeAt(outer)} > .whole`;
+      const edgeSelector = `${CURRENT} .svelte-flow__edge[data-id*="a:core"][data-id*="a:docs"] .svelte-flow__edge-interaction`;
+      // The initial fit and Svelte Flow's first measurements can replace a hit test from the
+      // first mounted frame. Find a reachable point in the already fitted, editable graph.
+      await stillCamera(browser);
+      await settled(browser, outer);
+      for (const [surface, selector] of [["face", faceSelector], ["edge", edgeSelector]]) {
+        const beforePlaces = await places(browser);
+        const point = await browser.execute((selector) => {
+          const surface = document.querySelector(selector);
+          const canvas = surface?.closest(".canvas");
+          const view = canvas?.querySelector<HTMLElement>(".svelte-flow__viewport");
+          if (!surface || !canvas || !view) return null;
+          const room = canvas.getBoundingClientRect();
+          const pan = (x: number, y: number) => {
+            const dx = x + 70 < room.right ? 60 : -60;
+            if (x < room.left + 8 || x >= room.right - 8 || y < room.top + 8 || y >= room.bottom - 8
+              || x + dx < room.left + 8 || document.elementFromPoint(x, y) !== surface) return null;
+            const transform = new DOMMatrixReadOnly(getComputedStyle(view).transform);
+            return { from: { x, y }, to: { x: x + dx, y }, camera: { x: transform.e, y: transform.f, zoom: transform.a } };
+          };
+          if (surface instanceof SVGPathElement) {
+            const screen = surface.getScreenCTM();
+            if (!screen) return null;
+            const length = surface.getTotalLength();
+            for (let i = 5; i < 16; i += 1) {
+              const { x, y } = surface.getPointAtLength(length * i / 20).matrixTransform(screen);
+              const found = pan(Math.round(x), Math.round(y));
+              if (found) return found;
+            }
+          } else {
+            const box = surface.getBoundingClientRect();
+            const titleBottom = surface.querySelector(".title")!.getBoundingClientRect().bottom;
+            for (let y = Math.ceil(Math.max(titleBottom, room.top)) + 8; y < Math.min(box.bottom, room.bottom) - 8; y += 4) {
+              for (let x = Math.ceil(Math.max(box.left, room.left)) + 8; x < Math.min(box.right, room.right) - 8; x += 4) {
+                const found = pan(x, y);
+                if (found) return found;
+              }
             }
           }
-        }
-        return null;
-      }, `${CURRENT} ${nodeAt(outer)}`);
-      assert.ok(face, "a reachable point on bundle's face, below its title and outside its parts");
-      await drag(browser, face.from, face.to);
-      await waitFor(browser, async () => (await camera(browser)) !== cameraBefore, "dragging the face pans the camera");
-      await afterRender(browser);
-      assert.deepEqual(await places(browser), beforePlaces, "panning moves none of the Artifacts relative to each other");
-      assert.deepEqual(definitions(), before, "the face drag writes no placement");
+          return null;
+        }, selector);
+        assert.ok(point, `a reachable point on the ${surface}`);
+        const moved = () => browser.execute((root, start, distance) => {
+          const view = document.querySelector(`${root} .svelte-flow__viewport`);
+          if (!view) return false;
+          const end = new DOMMatrixReadOnly(getComputedStyle(view).transform);
+          return Math.abs(end.e - start.x - distance) <= 1 && Math.abs(end.f - start.y) <= 1 && end.a === start.zoom;
+        }, CURRENT, point.camera, point.to.x - point.from.x);
+        await drag(browser, point.from, point.to, { target: selector,
+          held: () => waitFor(browser, moved, `dragging the ${surface} pans the camera before release`) });
+        await waitFor(browser, moved, `the ${surface} pan remains after release`);
+        assert.deepEqual(await places(browser), beforePlaces, "panning moves none of the Artifacts relative to each other");
+        assert.deepEqual(definitions(), before, `the ${surface} drag writes no placement`);
+      }
 
       const relative = async (child: string, parent: string) => {
         const [one, other] = await Promise.all([box(browser, child), box(browser, parent)]);
@@ -1280,45 +1330,67 @@ docs = [0.0, 0.0]
       const zoom = () => browser.$(`${TOOLS} [aria-label="Zoom"]`).getText();
       for (let step = 0; step < 4 && Number.parseInt(await zoom(), 10) < 100; step++) {
         await browser.$(`${TOOLS} button[aria-label="Zoom in"]`).click();
-        await camera(browser);
+        await stillCamera(browser);
       }
       const commentInk = async () => {
-        const sample = await browser.execute((selector, thirdLine) => {
+        const sample = await browser.execute((selector, lines) => {
           const comment = document.querySelector<HTMLElement>(selector);
           const canvas = comment?.closest(".canvas");
-          if (!comment || !canvas) return null;
+          const text = [...(comment?.childNodes ?? [])].find((node) => node.nodeType === Node.TEXT_NODE && node.textContent === lines.join("\n"));
+          if (!comment || !canvas || !text) return { unavailable: "comment text node", children: [...(comment?.childNodes ?? [])].map((node) => [node.nodeType, node.textContent]) };
           const box = comment.getBoundingClientRect();
           const clip = canvas.getBoundingClientRect();
           const style = getComputedStyle(comment);
-          const context = document.createElement("canvas").getContext("2d")!;
-          context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
           const scale = box.width / comment.offsetWidth;
-          const lineHeight = Number.parseFloat(style.lineHeight) * scale;
-          const end = box.left + context.measureText(thirdLine).width * scale;
-          // Check the unoccluded geometry through the fourth row before sampling. Rows
-          // 1–3 come from the painted box; row 4 would start immediately below it.
+          let offset = 0;
+          const laid = lines.map((line) => {
+            const range = document.createRange();
+            range.setStart(text, offset);
+            range.setEnd(text, offset + line.length);
+            offset += line.length + 1;
+            return [...range.getClientRects()].filter((rect) => rect.width > 0).map(({ left, top, right, bottom }) => ({ left, top, right, bottom }));
+          });
+          const centre = (row: typeof laid[number]) => row[0] ? (row[0].top + row[0].bottom) / 2 : null;
+          const first = centre(laid[0]), second = centre(laid[1]);
+          if (first === null || second === null || second <= first) return { unavailable: "first two line boxes", laid };
+          // Read the glyph bands from native Range geometry. A line box can have leading
+          // the comment's clipped client height does not include, and engines differ in
+          // the rectangles they keep for text omitted by the line clamp.
+          const advance = second - first;
+          // The hidden fourth line's Range may be clipped away, or may overlap the third
+          // line in the clamp internals. Its sample is one native line advance below row 3.
+          const rows = laid.map((row, i) => {
+            const expected = first + i * advance;
+            const native = centre(row);
+            const middle = native !== null && Math.abs(native - expected) < advance / 2 ? native : expected;
+            return { left: box.left, right: box.right, top: middle - advance / 2, bottom: middle + advance / 2 };
+          });
+          const end = laid[2][0]?.right ?? box.left;
+          // A fourth line must lie inside the viewport but outside the painted comment.
           const top = Math.max(0, clip.top), bottom = Math.min(innerHeight, clip.bottom);
           const left = Math.max(0, clip.left), right = Math.min(innerWidth, clip.right);
-          if (box.left < left || box.right > right || box.top < top || box.bottom + lineHeight > bottom
-            || !comment.contains(document.elementFromPoint(box.left + 2, box.bottom - lineHeight / 2))) return null;
-          const rowHeight = box.height / 3;
-          const rows = [0, 1, 2, 3].map((i) => ({ left: box.left, right: box.right,
-            top: box.top + i * rowHeight, bottom: box.top + (i + 1) * rowHeight }));
+          if (box.left < left || box.right > right || rows[0].top < top || rows[3].bottom > bottom
+            || !comment.contains(document.elementFromPoint(box.left + 2, (rows[2].top + rows[2].bottom) / 2))) {
+            return { unavailable: "comment obscured or outside the viewport", laid, rows, clip: [left, top, right, bottom], scale };
+          }
           return { rows, thirdText: { ...rows[2], right: end }, suffix: { ...rows[2], left: end },
-            viewport: { width: innerWidth, height: innerHeight },
-            ink: (style.color.match(/\d+/g) ?? []).slice(0, 3).map(Number), scale };
-        }, `${CURRENT} ${nodeAt("a:core")} .comment`, CORE_LINES[2]);
-        if (!sample) return null;
+            viewport: { width: innerWidth, height: innerHeight }, laid, dpr: devicePixelRatio,
+            ink: (style.color.match(/\d+/g) ?? []).slice(0, 3).map(Number), scale, advance,
+            box: [box.left, box.top, box.right, box.bottom] };
+        }, `${CURRENT} ${nodeAt("a:core")} .comment`, CORE_LINES);
+        if (sample.unavailable !== undefined) return sample;
         const frame = await screenshotPixels(browser, sample.viewport);
-        const suffix = frame.inkColumns(sample.suffix, sample.ink);
+        const suffix = sample.suffix.right - sample.suffix.left > 1 ? frame.inkColumns(sample.suffix, sample.ink) : [];
         return { lines: sample.rows.map((row) => frame.inkColumns(row, sample.ink).some(Boolean)),
-          thirdText: frame.inkColumns(sample.thirdText, sample.ink).some(Boolean),
-          dots: suffix.filter((on, index) => on && !suffix[index - 1]).length, scale: sample.scale };
+          thirdText: sample.thirdText.right - sample.thirdText.left > 1 && frame.inkColumns(sample.thirdText, sample.ink).some(Boolean),
+          dots: suffix.filter((on, index) => on && !suffix[index - 1]).length, scale: sample.scale,
+          rows: sample.rows.map((row) => [row.left, row.top, row.right, row.bottom].map(Math.round)), laid: sample.laid,
+          ink: sample.ink, dpr: sample.dpr, viewport: sample.viewport, capture: frame.size, box: sample.box, advance: sample.advance };
       };
       let paint: Awaited<ReturnType<typeof commentInk>> | undefined;
       await waitFor(browser, async () => {
         paint = await commentInk();
-        return paint?.lines.join() === "true,true,true,false" && paint.thirdText && paint.dots === 3;
+        return paint && "lines" in paint && paint.lines.join() === "true,true,true,false" && paint.thirdText && paint.dots === 3;
       }, "three painted lines ending in an ellipsis, with the fourth line hidden")
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(paint)}`); });
       await browser.$(TOOLS).$("button=Fit").click();

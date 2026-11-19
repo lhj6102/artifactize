@@ -124,7 +124,7 @@ describe("command activity", () => {
   it("has no manual-refresh witness outside E2E builds", () => {
     expect(import.meta.env.MODE).not.toBe("e2e");
     const activity = new Activity();
-    refreshed(activity);
+    refreshed(activity, { branches: [] });
     expect(Object.keys(activity.snapshot())).toEqual(["revision", "pending", "commands", "search"]);
   });
 });

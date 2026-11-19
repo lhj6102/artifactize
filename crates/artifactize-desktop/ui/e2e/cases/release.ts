@@ -11,7 +11,7 @@ import { afterRender, press } from "../keys.ts";
 import { mainTitle } from "../pane.ts";
 import { scenario, type Prepared, type Scenario } from "../scenario.ts";
 import {
-  appendText, browserHandoffs, commandDirectory, copyFile, diskImageAppDirectory, executableName, nativeInput, nativePath, placeApp,
+  appendText, browserHandoffs, browserTransferComplete, commandDirectory, copyFile, diskImageAppDirectory, executableName, nativeInput, nativePath, placeApp,
   primaryModifier, readText, replaceText, runProgramOk, serveLoopbackHttp, storePackageDirectory, writeText,
   type Environment, type HttpServer, type NativePath,
 } from "../platform.ts";
@@ -20,32 +20,51 @@ const LATEST = "9.9.9";
 const LOOKUP = "/api/releases/latest";
 const PAGE = "/releases/latest";
 const DISK_IMAGE = "/releases/latest/download/Artifactize.dmg";
+const PAGE_LOADED = "/release-page-loaded";
+const DOWNLOAD_BODY = "fixture disk image";
+const DOWNLOAD_NAME = "Artifactize.dmg";
 const DAY_SECONDS = 24 * 60 * 60;
 const CARGO_CONTROL = ["install", "artifactize", "artifactize-tools", "--locked"];
 
-type Site = { url: string; visits: NativePath; answer: NativePath; clock: NativePath; afterDay: number };
+type Site = { url: string; visits: NativePath; transfers: NativePath; pageLoaded: NativePath; answer: NativePath; clock: NativePath; afterDay: number };
 const cargoLog = (fixture: Fixture) => nativePath(fixture.root, "cargo-launches.jsonl");
 
 /** The stand-in site: it answers the lookup with the tag in `answer`, which a case may replace
  * while the app runs, serves the release page and file, and records the path of every GET. */
 async function site(fixture: Fixture, tag: string): Promise<{ data: Site; server: HttpServer }> {
   const visits = nativePath(fixture.root, "site-get-paths.jsonl");
+  const transfers = nativePath(fixture.root, "site-transferred-paths.jsonl");
+  const pageLoaded = nativePath(fixture.root, "release-page-loaded");
   const answer = nativePath(fixture.root, "site-latest-tag.txt");
   const clock = nativePath(fixture.root, "release-clock-seconds");
   // Both the app and doctor read this same fixture clock.
   const afterDay = 1_800_000_000;
   writeText(clock, String(afterDay - DAY_SECONDS));
   writeText(visits, "");
+  writeText(transfers, "");
   writeText(answer, tag);
   const server = await serveLoopbackHttp((request, response) => {
     request.resume();
+    if (request.method === "POST" && request.url === PAGE_LOADED) {
+      writeText(pageLoaded, "The release page loaded.");
+      response.writeHead(204).end();
+      return;
+    }
     if (request.method === "GET") appendText(visits, `${JSON.stringify(request.url)}\n`);
     const lookup = request.url === LOOKUP;
     const known = lookup || request.url === PAGE || request.url === DISK_IMAGE;
-    response.writeHead(known ? 200 : 404, { "content-type": lookup ? "application/json" : "text/html" });
-    response.end(lookup ? JSON.stringify({ tag_name: readText(answer) }) : "");
+    const download = request.url === DISK_IMAGE;
+    const body = lookup ? JSON.stringify({ tag_name: readText(answer) }) : download ? DOWNLOAD_BODY
+      : `<title>Release notes</title><h1>Release notes</h1><script>addEventListener("load", () => fetch("${PAGE_LOADED}", {method:"POST"}));</script>`;
+    if (known && request.method === "GET") response.once("finish", () => appendText(transfers, `${JSON.stringify(request.url)}\n`));
+    response.writeHead(known ? 200 : 404, {
+      "content-type": lookup ? "application/json" : download ? "application/octet-stream" : "text/html",
+      "content-length": body.length,
+      ...(download ? { "content-disposition": `attachment; filename="${DOWNLOAD_NAME}"` } : {}),
+    });
+    response.end(body);
   });
-  return { data: { url: server.url, visits, answer, clock, afterDay }, server };
+  return { data: { url: server.url, visits, transfers, pageLoaded, answer, clock, afterDay }, server };
 }
 
 const visited = (data: Site): string[] => readText(data.visits).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
@@ -97,10 +116,13 @@ async function openDialog(browser: WebdriverIO.Browser): Promise<string> {
 async function follow(browser: WebdriverIO.Browser, fixture: Fixture, data: Site, path: string): Promise<void> {
   const url = `${data.url}${path}`;
   const before = browserHandoffs(fixture.root).length;
+  const transfers = () => readText(data.transfers).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
+  const sent = transfers().length;
   await dialog(browser).$(`button=${url}`).click();
-  await browser.waitUntil(() => browserHandoffs(fixture.root).slice(before).includes(url) && visited(data).includes(path), {
+  const transfer = path === DISK_IMAGE ? { download: DOWNLOAD_NAME, body: DOWNLOAD_BODY } : { pageLoaded: data.pageLoaded };
+  await browser.waitUntil(() => transfers().slice(sent).includes(path) && browserTransferComplete(fixture.root, url, before, transfer), {
     timeout: 15000,
-    timeoutMsg: `the desktop opener receives ${url} and its browser visits it`,
+    timeoutMsg: `the desktop opener receives ${url} and consumes the complete response`,
   });
   assert.equal(await shown(browser)(), true, "the dialog stays open after its link opens");
 }

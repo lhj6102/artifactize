@@ -12,8 +12,14 @@ export type Candidate = { root: NativePath; cli: NativePath; app: NativePath; ob
 
 function resourceRoot(directory = scratchDirectory()): NativePath {
   const root = newDirectory(directory, "artifactize-desktop-build-");
-  makeDirectory(nativePath(root, "tmp"));
-  return root;
+  try {
+    makeDirectory(nativePath(root, "tmp"));
+    return root;
+  } catch (error) {
+    try { removeTree(root); }
+    catch (cleanup) { throw new AggregateError([error, cleanup], "build root initialization and cleanup failed"); }
+    throw error;
+  }
 }
 
 /** Both Cargo's final artifacts and its intermediate build directory are invocation-local. */

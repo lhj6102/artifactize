@@ -11,7 +11,7 @@ import { checkpoint, refreshed } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, updateDatabase, writeText } from "../platform.ts";
-import { visibleCenter } from "../pointer.ts";
+import { pointerGapClick, visibleCenter } from "../pointer.ts";
 import { aside, camera, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainFocused, mainTitle, openWaiting, scanned, SEARCH, showRun, waiting } from "../pane.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
@@ -66,6 +66,25 @@ export const scenarios: Scenario[] = [
         await press(browser, ["Escape"], async () => !(await helpOpen()), `${where}'s keys closed`);
       };
       await graphShown(browser, "a:release");
+      const helpFromPalette = async () => {
+        await browser.$("button*=Commands").click();
+        await choosePaletteCommand(browser, "Keyboard shortcuts");
+        await browser.$('.palette [role="option"][aria-selected="true"]').click();
+        await waitFor(browser, helpOpen, "the palette opens Help");
+      };
+      await helpFromPalette();
+      await browser.$('[role="dialog"].help').$("button=Close").click();
+      await waitFor(browser, async () => !(await helpOpen()), "Help closes by its Close button");
+      await helpFromPalette();
+      const outside = await browser.execute(() => {
+        const box = document.querySelector('[role="dialog"].help')!.getBoundingClientRect();
+        return [{ x: 8, y: 8 }, { x: 8, y: innerHeight - 8 }, { x: innerWidth - 8, y: innerHeight - 8 }]
+          .find(({ x, y }) => x < box.left || x >= box.right || y < box.top || y >= box.bottom) ?? null;
+      });
+      assert.ok(outside, "Help leaves some viewport outside its panel");
+      await pointerGapClick(browser, outside);
+      await waitFor(browser, async () => !(await helpOpen()), "Help closes by an outside click");
+      await browser.$('[aria-label="Pane entries"]').click();
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
       /** The marks the open Help pairs with their words; empty without any. */
       const marks = async () => {
@@ -130,7 +149,7 @@ export const scenarios: Scenario[] = [
   // UX journeys: J-REFRESH J-MAIN-CURRENT
   scenario<{ worktree: string }>(
     "navigation-refresh",
-    "reloads the state, scans the branches and the shown Current again with F5 and Ctrl+R, on the same view",
+    "reloads the state, scans the branches and rescans the shown Current on the same view",
     async () => {
       const fixture = await create();
       git(fixture.repo, "-C", fixture.repo, "add", ".");
@@ -146,17 +165,22 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => timelineShows(run), "the Run initially has no comment");
       assert.equal(await mainTitle(browser), run, "the Run is shown before refreshing");
       assert.equal(await branch(browser, "repo  after-refresh"), undefined, "the new worktree is not listed yet");
-      let before = await checkpoint(browser);
+      const before = await checkpoint(browser);
       updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
         assert.equal(db.prepare("UPDATE runs SET data=json_set(data,'$.comment',?) WHERE id=?").run(comment, run).changes, 1);
       });
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "after-refresh", data.worktree);
-      // Background reconciliation can also pick up the edits. Require F5's own read to
-      // complete, then wait for the timeline and Branches to show the changed inputs.
-      await press(browser, ["F5"], async () => (await checkpoint(browser)).activity.refresh?.generation === (before.activity.refresh?.generation ?? 0) + 1,
-        "F5's refresh completed", { handled: true });
-      await waitFor(browser, () => timelineShows(comment), "the timeline renders the Run comment reloaded from disk");
-      await waitFor(browser, async () => !!(await branch(browser, "repo  after-refresh")), "the refreshed Branches list the new worktree");
+      // Background reconciliation cannot stand in for the actual reload: bind the two
+      // external changes to this command's own reply, then check they are drawn together.
+      await browser.$("header.bar").$("button*=Commands").click();
+      await choosePaletteCommand(browser, "Refresh");
+      await browser.$('.palette [role="option"][aria-selected="true"]').click();
+      await refreshed(browser, before);
+      const refresh = (await checkpoint(browser)).activity.refresh!;
+      assert.ok(refresh.branches.some(({ project, name }) => project === "repo" && name === "after-refresh"), "the manual reload discovered the new worktree");
+      assert.ok(refresh.branches.some(({ runs }) => runs.some((chip) => chip.id === run && chip.comment === comment)), "the manual reload read the changed Run");
+      await waitFor(browser, async () => await timelineShows(comment) && !!(await branch(browser, "repo  after-refresh")),
+        "the changed Run and the new worktree are rendered together");
       assert.equal(await mainTitle(browser), run, "on the same view");
       assert.equal(await browser.$(`${MAIN} > header [role="status"]`).isExisting(), false, "the refresh read without an error");
       // The new branch's Current: only a refresh or its Refresh button scans it again.
@@ -168,17 +192,14 @@ export const scenarios: Scenario[] = [
       const instruction = async () => (await summary(browser)).instruction;
       await waitFor(browser, async () => (await instruction()) === "Build the docs.", "docs' eval open");
       const declaration = nativePath(data.worktree, ".artifactize", "docs.artf");
-      let previous = "Build the docs.";
-      for (const [index, keys] of [["F5"], [primaryModifier, "r"]].entries()) {
-        const wanted = `Build the docs, refreshed ${index}.`;
-        writeText(declaration, readText(declaration).replace(previous, wanted));
-        assert.equal(await instruction(), previous, "the changed declaration is not shown before the refresh");
-        before = await checkpoint(browser);
-        await press(browser, keys, async () => (await instruction()) === wanted, `${keys.join("+")} scanned the Current again`, { handled: true });
-        await refreshed(browser, before);
-        previous = wanted;
-        assert.equal(await mainTitle(browser), "Current · repo  after-refresh", "on the same view");
-      }
+      const previous = "Build the docs.";
+      const wanted = "Build the docs after rescanning.";
+      writeText(declaration, readText(declaration).replace(previous, wanted));
+      assert.equal(await instruction(), previous, "the changed declaration is not shown before the refresh");
+      await browser.$(`${MAIN} > header`).$("button=Refresh").click();
+      await waitFor(browser, async () => (await instruction()) === wanted && /^Scanned at /.test(await scanned(browser)),
+        "the Refresh button scanned the Current and its Detail shows the changed declaration");
+      assert.equal(await mainTitle(browser), "Current · repo  after-refresh", "on the same view");
     },
   ),
 
@@ -260,7 +281,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-PANE-NAVIGATE J-WAITING
+  // UX journey: J-WAITING (also exercises optional keyboard navigation)
   scenario<NavigationData>(
     "navigation-pane-keys",
     "moves through the branches and then the waiting reviews by keys, expands a branch and moves through its timeline, folds it, enters the Main area and comes back",
@@ -331,7 +352,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-PANE-NAVIGATE
+  // Regression: optional keyboard navigation within a timeline.
   scenario<{ runs: string[] }>(
     "navigation-timeline-keys",
     "moves by ↓ and ↑ through a timeline longer than the Pane, the list scrolling so that each chosen entry shows, and asks for older Runs past the oldest",
@@ -413,7 +434,18 @@ export const scenarios: Scenario[] = [
           return inner.width > 0 && inner.left >= box.left && inner.right <= box.right;
         };
         const line = divider.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(toggle);
+        const fragments = [...range.getClientRects()].filter((part) => part.width > 0 && part.height > 0);
+        const clip = notice.getBoundingClientRect();
         return {
+          fragments: fragments.length,
+          visible: fragments.flatMap((part, index) => part.left >= clip.left && part.right <= clip.right + 1
+            && part.top >= clip.top && part.bottom <= clip.bottom && part.bottom <= innerHeight
+            && toggle.contains(document.elementFromPoint(part.x + part.width / 2, part.y + part.height / 2)) ? [index] : []),
+          scroll: notice.scrollTop,
+          scrollEnd: notice.scrollHeight - notice.clientHeight,
+          scrollPoint: { x: Math.round(clip.x + clip.width / 2), y: Math.round(clip.y + clip.height / 2) },
           inWindow: box.left >= 0 && box.right <= window.innerWidth,
           bodyWithin: [...section.children].every((child) => within(child as HTMLElement)),
           graph: (() => { const at = section.querySelector(".graph")!.getBoundingClientRect(); return [at.left, at.top, at.width, at.height].map(Math.round); })(),
@@ -437,15 +469,31 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:n000");
       const folded = (await pane())!;
       assert.ok(folded.cut && !folded.open, "the notice is one line, cut to the header's room");
-      for (const id of unreadable) assert.match(folded.text, new RegExp(`Unreadable run ${id}: unknown variant \`dependency\``), `the notice names ${id}`);
-      assert.doesNotMatch(folded.text, new RegExp(readable), "the readable Run is not named unreadable");
+      let expanded: Awaited<ReturnType<typeof pane>> = null;
       // A click shows the notice in full; the graph stays where it was. Another folds it.
       const toggle = () => browser.$(`${MAIN} > header [role="status"] button`);
       await toggle().click();
       await browser.waitUntil(async () => {
-        const shown = await pane();
-        return !!shown && shown.open && !shown.cut && shown.tall && shown.bodyWithin && shown.inWindow;
-      }, { timeout: 15000, timeoutMsg: "the whole notice shown, wrapped within the header" });
+        expanded = await pane();
+        return !!expanded && expanded.open && !expanded.cut && expanded.tall && expanded.bodyWithin && expanded.inWindow
+          && expanded.visible.length > 0 && unreadable.every((id) => expanded!.text.includes(`Unreadable run ${id}: unknown variant \`dependency\``));
+      }, { timeout: 15000, timeoutMsg: "the unreadable Runs' messages are laid out in the expanded notice" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(expanded)}`); });
+      let at = expanded!;
+      assert.doesNotMatch(at.text, new RegExp(readable), "the readable Run is not named unreadable");
+      const seen = new Set(at.visible);
+      // The header stays in place. Read its wrapped lines through its own scroll window.
+      while (at.scroll < at.scrollEnd && seen.size < at.fragments) {
+        const before = at.scroll;
+        await browser.action("wheel").scroll({ ...at.scrollPoint, deltaX: 0, deltaY: 8 }).perform();
+        await browser.waitUntil(async () => {
+          const shown = await pane();
+          if (shown && shown.scroll > before) { at = shown; return true; }
+          return false;
+        }, { timeout: 15000, timeoutMsg: "the expanded notice scrolls within the header" });
+        for (const index of at.visible) seen.add(index);
+      }
+      assert.equal(seen.size, at.fragments, "every line of the full messages was visible in the scrolled notice");
       assert.deepEqual((await pane())?.graph, folded.graph, "opening the full notice does not move or resize the graph");
       await graphShown(browser, "a:n000");
       await toggle().click();

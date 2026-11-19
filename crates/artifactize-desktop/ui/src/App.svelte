@@ -72,7 +72,7 @@
     // E2E builds only: witness this refresh once its own read succeeded and settled on screen.
     if (import.meta.env.MODE === "e2e" && read) {
       await tick();
-      refreshed(app.activity);
+      refreshed(app.activity, read);
     }
   }
 

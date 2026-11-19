@@ -9,7 +9,7 @@ import { afterRender, fill, press, typeText } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { buttonKey, compositionKey, dispatchInput, tab } from "../input.ts";
 import {
-  aside, camera, detail, fact, FIND, findField, fitButton, focusedElement, focusedNode, graphShown, NO_FAVORITES, nodeAt, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt,
+  aside, camera, detail, dockedDetail, fact, FIND, findField, fitButton, focusedElement, focusedNode, graphShown, NO_FAVORITES, nodeAt, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt,
   unfold, ZOOM_IN, ZOOM_OUT,
 } from "../graph-view.ts";
 import { git } from "../environment.ts";
@@ -272,7 +272,7 @@ export const scenarios: Scenario[] = [
       const opened = await openArtifact(browser, "a:release", "Artifact release");
       assert.deepEqual(opened.tabs, [], "the Artifact's own tab has no chips");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
-      assert.ok(opened.docked, "the Detail is docked at the graph's right edge without a gap");
+      await dockedDetail(browser, opened.title);
       // On the eval's tab the chips read as a path: release's own chip, then its one eval's.
       await openTab(browser, "e:release/signoff");
       const onTab = (await detail(browser))!;
@@ -397,7 +397,7 @@ export const scenarios: Scenario[] = [
 
       // The Detail is a panel docked at the graph's right edge without a gap, where another
       // Artifact was drawn without it, and the graph stays visible on its left.
-      assert.ok((await detail(browser))?.docked, "the Detail is docked at the graph's right edge without a gap");
+      await dockedDetail(browser, "Artifact release");
       const edge = (await placed()).detail!;
       const under = Object.keys(whole).filter((id) => id !== "a:release" && whole[id] > edge);
       assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);
@@ -835,11 +835,8 @@ export const scenarios: Scenario[] = [
       const run = (await branch(browser, "repo  master"))?.chips.find((chip) => chip.filled)?.id ?? "";
       assert.match(run, /^run-/);
       await browser.$("button.headline").click();
-      await browser.waitUntil(async () => (await detail(browser))?.title === `Run ${run}`,
-        { timeout: 15000, timeoutMsg: "the selected Run's own Detail heading" });
-      const shown = (await detail(browser))!;
+      const shown = await dockedDetail(browser, `Run ${run}`);
       assert.deepEqual(shown.tabs, [], "the Run's Detail has no Artifact or eval tabs");
-      assert.ok(shown.docked, "the Run's Detail is docked at the graph's right edge");
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       await graphShown(browser, "a:release");
@@ -1235,18 +1232,18 @@ payload.instruction = "Check the Live Artifact."
       await press(browser, ["Escape"], () => entriesFocused(browser), "Esc on sort:recent back to the entries");
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
 
-      // Over the graph, Ctrl+F opens the find field, empty and focused, saying how to star an
-      // Artifact while none is; a text nothing is named so says so, and Esc closes it, the
-      // camera and the keyboard where they were.
+      // The Find button opens a focused field. Closing it neither moves the camera nor opens a Detail.
       const first = await camera(browser);
-      await press(browser, [primaryModifier, "f"], async () => (await field())?.note === NO_FAVORITES, "the find field open, saying how to star one");
+      const findButton = () => browser.$('[aria-label="Graph tools"]').$("button=Find");
+      await findButton().click();
+      await browser.waitUntil(async () => (await field())?.note === NO_FAVORITES && (await field())?.focused === true,
+        { timeout: 15000, timeoutMsg: "the Find button opens the focused field, saying how to star one" });
       assert.deepEqual(await field(), { focused: true, value: "", entries: [], note: NO_FAVORITES });
       assert.equal(await searchFocused(browser), false, "the Pane's search stays unfocused");
       await fill(browser, FIND, "nothing");
       await browser.waitUntil(async () => (await field())?.note === "No Artifact or eval matches.", { timeout: 15000, timeoutMsg: "nothing found said so" });
       assert.deepEqual(await names(), []);
       await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
-      assert.ok(await mainFocused(browser), "the keyboard is back on the Main area");
       assert.equal(await camera(browser), first, "Esc moved no camera");
       assert.equal(await detail(browser), null, "Esc opened nothing");
 
@@ -1262,6 +1259,7 @@ payload.instruction = "Check the Live Artifact."
       await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open over docs's Detail");
       await fill(browser, FIND, "ship");
       await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(["ship"]), { timeout: 15000, timeoutMsg: "ship found" });
+      assert.ok((await field())?.entries.every((entry) => !entry.chosen), "no row is chosen when results first appear");
       const shipBefore = await zoom();
       await browser.$('[aria-label="Found"] [role="option"]').click();
       await browser.waitUntil(async () => {

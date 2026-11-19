@@ -10,7 +10,11 @@ export type CommandActivity = Readonly<{
   refresh?: Refresh | null;
 }>;
 
-export type Refresh = Readonly<{ generation: number }>;
+export type Refresh = Readonly<{
+  generation: number;
+  /** Only public Pane labels and comments, from this reload's own reply. */
+  branches: readonly Readonly<{ project: string; name: string; runs: readonly Readonly<{ id: string; comment: string | null }>[] }>[];
+}>;
 
 // The observation a test build publishes on its window; tests read it through WebDriver.
 declare global {

@@ -55,6 +55,8 @@ export async function screenshotPixels(browser: WebdriverIO.Browser, viewport: {
     return [...image.data.subarray(at, at + 3)];
   }
   return {
+    /** The capture's own size, which a failure reports beside the viewport it was scaled from. */
+    size: { width: image.width, height: image.height },
     at: (x: number, y: number) => rgb(Math.round(x * sx), Math.round(y * sy)),
     inkColumns: (box: ViewportBox, ink: number[]) => {
       const left = Math.ceil(box.left * sx), right = Math.floor(box.right * sx);

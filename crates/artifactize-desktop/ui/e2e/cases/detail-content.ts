@@ -147,26 +147,32 @@ export const scenarios: Scenario[] = [
         const pane = document.querySelector<HTMLElement>('aside[aria-label="Detail"] .transcript')!;
         const content = pane.closest<HTMLElement>(".content")!;
         const window = pane.querySelector<HTMLElement>('[role="log"][aria-label="Agent transcript"]')!;
-        return { top: content.scrollTop, own: !!pane.querySelector(".track .thumb"), text: pane.innerText,
-          // A loading or failed read shows a status line instead of rows.
+        const clip = window.getBoundingClientRect();
+        const rows = [...window.querySelectorAll<HTMLElement>(":scope > .row")].filter((row) => {
+          const at = row.getBoundingClientRect();
+          return at.height > 0 && at.top >= clip.top && at.bottom <= clip.bottom + 1;
+        });
+        return { top: content.scrollTop, own: !!pane.querySelector(".track .thumb"),
           status: window.querySelector(":scope > p.status")?.textContent?.trim() ?? null,
-          rows: window.querySelectorAll(":scope > .row").length,
-          // Where the shown rows sit in the whole transcript, as its scrollbar draws it.
-          at: pane.querySelector<HTMLElement>(".track .thumb")?.style.top ?? null };
+          rows: rows.map((row) => row.innerText), indicator: pane.querySelector(".indicator")?.textContent?.trim() ?? "" };
       });
       assert.ok((await transcript()).own, "the transcript has its own scrolling box");
-      // Away from the beginning first, so returning to it is a move of the transcript's own box.
+      const finalAnswer = (rows: string[]) => rows.join(" ").replace(/\s+/g, " ").includes("Receipt review complete.");
+      const top = async () => {
+        const shown = await transcript();
+        return shown.status === null && /^1\/\d+ history\b/.test(shown.indicator) && !finalAnswer(shown.rows);
+      };
+      await aside(browser).$("button*=Top").click();
+      await browser.waitUntil(top, { timeout: 15000, timeoutMsg: "the Agent log starts away from its final answer" });
       await aside(browser).$("button*=Bottom").click();
       await browser.waitUntil(async () => {
         const shown = await transcript();
-        return shown.status === null && shown.rows > 0 && shown.at !== null && shown.at !== "0%";
-      }, { timeout: 15000, timeoutMsg: `the Agent log scrolled to its end: ${JSON.stringify(await transcript())}` });
+        return shown.status === null && /\bbottom\b/.test(shown.indicator) && finalAnswer(shown.rows);
+      }, { timeout: 15000, timeoutMsg: "the Agent log scrolled to its visible final answer" })
+        .catch(async (error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(await transcript())}`); });
       const bottom = await transcript();
       await aside(browser).$("button*=Top").click();
-      await browser.waitUntil(async () => {
-        const shown = await transcript();
-        return shown.status === null && shown.rows > 0 && shown.at === "0%";
-      }, { timeout: 15000, timeoutMsg: `the Agent log scrolled independently to its beginning: ${JSON.stringify(await transcript())}` });
+      await browser.waitUntil(top, { timeout: 15000, timeoutMsg: "the Agent log scrolled independently to its beginning" });
       assert.equal((await transcript()).top, bottom.top, "the surrounding Detail did not scroll");
       assert.equal((await containment()).width, before.width, "long transcript lines do not expand the chosen Detail width");
       assert.ok((await containment()).bounded);

@@ -51,12 +51,14 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
       await browser.waitUntil(async () => (await field().getValue()) === "one canonical draft");
       await close();
       await open(ids[1]);
-      assert.equal(await field().getValue(), "one canonical draft");
+      await browser.waitUntil(async () => await field().getValue() === "one canonical draft",
+        { timeout: 15000, timeoutMsg: "the other request ID restores the first draft" });
       await fill(browser, "#field-comment", "edited through the other ID");
       await browser.waitUntil(async () => (await field().getValue()) === "edited through the other ID");
       await close();
       await open(ids[0]);
-      assert.equal(await field().getValue(), "edited through the other ID");
+      await browser.waitUntil(async () => await field().getValue() === "edited through the other ID",
+        { timeout: 15000, timeoutMsg: "the original request ID restores the edited draft" });
       assert.ok(requests(fixture).filter((request) => request.evalId === "release/signoff").every((request) => request.result === null),
         "draft editing submitted no Human verdict");
     },

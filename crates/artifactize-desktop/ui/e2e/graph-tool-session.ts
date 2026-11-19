@@ -2,7 +2,7 @@
 import type { Fixture } from "./fixture.ts";
 import { sessionEndedByApp } from "./observation.ts";
 import { MAIN } from "./pane.ts";
-import { nativePath, requestWindowClose, writeJson } from "./platform.ts";
+import { nativePath, replaceText, requestWindowClose } from "./platform.ts";
 
 export const graphToolObservation = (fixture: Fixture) => nativePath(fixture.root, "graph-tool-window.json");
 export const graphToolFailure = (fixture: Fixture) => nativePath(fixture.root, "graph-tool-failure.txt");
@@ -49,5 +49,5 @@ export async function observeGraphTool(fixture: Fixture, window: WebdriverIO.Bro
     throw error;
   }
   if (failure !== undefined) throw failure;
-  writeJson(graphToolObservation(fixture), shown);
+  replaceText(graphToolObservation(fixture), JSON.stringify(shown));
 }

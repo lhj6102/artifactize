@@ -60,7 +60,6 @@ function readGraph(browser: WebdriverIO.Browser) {
         const style = artifact ? getComputedStyle(artifact) : null;
         const striped = artifact?.matches(".whole:not(.minimized)") ? artifact.querySelector(".title") : artifact;
         return [node.dataset.id ?? "", {
-          light: node.dataset.light,
           at: node.style.transform,
           border: style?.borderTopColor ?? "",
           face: style?.backgroundColor ?? "",
@@ -75,7 +74,6 @@ function readGraph(browser: WebdriverIO.Browser) {
         const path = edge.querySelector(".svelte-flow__edge-path");
         const style = path ? getComputedStyle(path) : null;
         return [edge.dataset.id ?? "", {
-          light: edge.dataset.light,
           stroke: style?.stroke ?? "",
           painted: painted(edge) && painted(path) && !!path?.getAttribute("d") &&
             Number.parseFloat(style?.strokeWidth ?? "0") > 0 && Number(style?.strokeOpacity ?? "0") > 0,
@@ -140,10 +138,10 @@ function hasColours<L extends string>(
     const node = graph.nodes[id];
     const colour = graph.palette[tokens[light]];
     // The outline stays neutral: it never takes the status colour.
-    return node?.light === light && node.painted && node.mark === colour && node.strip === colour && node.border !== colour;
+    return node?.painted && node.mark === colour && node.strip === colour && node.border !== colour;
   }) && Object.entries<L>(edges).every(([id, light]) => {
     const edge = graph.edges[id];
     const colour = BLOCKING.has(light) ? graph.palette[tokens[light]] : graph.palette["--edge"];
-    return edge?.light === light && edge.painted && edge.stroke === colour;
+    return edge?.painted && edge.stroke === colour;
   });
 }

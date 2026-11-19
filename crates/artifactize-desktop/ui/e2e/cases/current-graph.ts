@@ -14,7 +14,7 @@ import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { commandFields, runtimeProfile } from "../native-fixtures.ts";
 import { exists, makeDirectory, nativePath, portablePath, primaryModifier, readJson, readText, removeTree, writeText, type NativePath } from "../platform.ts";
-import { camera, detail, graphShown, nodeAt, openArtifact, openArtifactTab, openTab, summary } from "../graph-view.ts";
+import { camera, detail, dockedDetail, graphShown, nodeAt, openArtifact, openArtifactTab, openTab, summary } from "../graph-view.ts";
 import { branch, chooseChip, MAIN, mainTitle, scanned, scannedAt } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
 import { currentHasColours, graphAppearance } from "./graph-appearance.ts";
@@ -156,8 +156,8 @@ payload.instruction = "Check {graph-marker}."
       assert.deepEqual(savedRuns(fixture), [], "scanning saved no Run");
 
       // A click on release opens its Detail over the Current: its eval would run, and its tools.
-      const opened = await openArtifact(browser, "a:release", "Artifact release");
-      assert.ok(opened.docked, "the Detail is docked at the right edge of the Current's graph without a gap, below its tool strip");
+      await openArtifact(browser, "a:release", "Artifact release");
+      await dockedDetail(browser, "Artifact release");
       assert.deepEqual(await evalRows(browser), [{ name: "signoff", status: "would run" }]);
       const tools = () => browser.$(`${DETAIL} section[aria-label="Tools of release"]`);
       await tools().$("button=notes").waitForEnabled({ timeout: 15000, timeoutMsg: "release's own Human tools listed" });
@@ -493,17 +493,18 @@ payload.instruction = "Check {refreshed}."
       await waitFor(browser, async () => (await scanned(browser)) === "2 left", "scanning again");
       /** What a person sees of the graph: where each Artifact is and its light, each relation, all painted. */
       const visible = async () => {
-        const { nodes, edges } = await graphAppearance(browser);
+        const { nodes, edges, palette } = await graphAppearance(browser);
         return {
-          nodes: Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, { at: node.at, light: node.light, painted: node.painted }])),
-          edges: Object.fromEntries(Object.entries(edges).map(([id, edge]) => [id, { light: edge.light, painted: edge.painted }])),
+          checking: palette["--checking"],
+          nodes: Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, { at: node.at, mark: node.mark, strip: node.strip, painted: node.painted }])),
+          edges: Object.fromEntries(Object.entries(edges).map(([id, edge]) => [id, { stroke: edge.stroke, painted: edge.painted }])),
         };
       };
       let shown = await visible();
       await waitFor(browser, async () => {
         shown = await visible();
         return JSON.stringify(Object.keys(shown.nodes).sort()) === JSON.stringify(["a:added", "a:other", "a:quick", "a:refreshed", "a:slow"]) &&
-          shown.nodes["a:slow"].light === "checking" && Object.keys(shown.edges).length > 0 &&
+          shown.nodes["a:slow"].mark === shown.checking && Object.keys(shown.edges).length > 0 &&
           Object.values({ ...shown.nodes, ...shown.edges }).every((item) => item.painted);
       }, "the running scan's graph drawn")
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(shown)}`); });

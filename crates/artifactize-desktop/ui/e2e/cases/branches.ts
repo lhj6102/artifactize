@@ -15,6 +15,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { exists, nativePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { detail, fact, graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
+import { screenshotPixels } from "../rendering.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainTitle, openWaiting, runComment, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -66,7 +67,7 @@ export const scenarios: Scenario[] = [
     "branches-timeline",
     "folds a branch to its newest Run's status, expands it on a click to its Runs newest first after its Current, each with its comment cut short to one line, brings older Runs with Older runs, and shows a clicked entry with its comment in full",
     async () => {
-      const { fixture, runs } = createHistory(24, COMMENT);
+      const { fixture, runs } = createHistory(24, COMMENT, 24 * 60);
       return { fixture, data: { runs } };
     },
     async (browser, { data: { runs } }) => {
@@ -79,7 +80,9 @@ export const scenarios: Scenario[] = [
       }
       let shown = (await branch(browser, "repo  master"))!;
       assert.equal(shown.label, "repo / master");
-      assert.match(shown.latest, /^GREEN \d+[smhd]( \d+[smh])? ago$/, `the newest Run's status and age: ${shown.latest}`);
+      const newestAge = /^GREEN [1-9]m(?: \d+s)? ago$/;
+      assert.match(shown.latest, newestAge, `only the newest Run is minutes old: ${shown.latest}`);
+      assert.ok(leans(shown.latestDot, 1), "the folded newest Run has a green dot");
       assert.deepEqual(shown.chips, [], "no timeline while folded");
       // A click on it expands it and shows its newest entry: with no Run in progress, its Current.
       await selectBranch(browser, "repo  master");
@@ -96,6 +99,8 @@ export const scenarios: Scenario[] = [
         assert.match(chip.text, /^GREEN \d+[smhd]( \d+[smh])? ago$/, `${chip.id} reads its status and age`);
         assert.ok(leans(chip.dot, 1), `${chip.id}'s dot is green: ${JSON.stringify(chip)}`);
       }
+      assert.match(shown.chips[1].text, newestAge, "the first Run is the same recent one shown while folded");
+      assert.ok(shown.chips.slice(2).every((chip) => /^GREEN \d+d/.test(chip.text)), "older Runs are at least a day old");
       // The newest Run was requested with a comment: under its status, on one line, cut short;
       // a Run without one names its Run ID there.
       const [commented, ...plain] = shown.chips.slice(1);
@@ -108,9 +113,15 @@ export const scenarios: Scenario[] = [
         const clear = (colour: string) => colour === "transparent" || /^rgba\([^)]*,\s*0\s*\)$/.test(colour);
         const items = [...document.querySelectorAll<HTMLElement>(`${first} ol.timeline > li`)];
         const dots = items.map((item) => item.querySelector<HTMLElement>(".dot")!);
-        const ring = getComputedStyle(dots[0]);
+        const dot = dots[0].getBoundingClientRect();
+        const centre = { x: dot.x + dot.width / 2, y: dot.y + dot.height / 2 };
+        const viewport = { width: innerWidth, height: innerHeight };
         return {
-          ring: ring.boxShadow.includes("inset") && ring.backgroundColor !== getComputedStyle(dots[1]).backgroundColor,
+          ring: {
+            centre, radius: dot.width / 2, viewport,
+            outer: { x: dot.left + 0.8, y: centre.y }, opposite: { x: dot.right - 1.2, y: centre.y },
+            above: { x: centre.x, y: dot.top + 0.8 }, below: { x: centre.x, y: dot.bottom - 1.2 },
+          },
           lines: items.slice(0, -1).map((item, at) => {
             const line = getComputedStyle(item, "::before");
             const centre = (box: DOMRect) => box.left + box.width / 2;
@@ -124,7 +135,12 @@ export const scenarios: Scenario[] = [
           pills: items.map((item) => !clear(getComputedStyle(item.querySelector(".entry")!).backgroundColor)),
         };
       }, FIRST);
-      assert.ok(look.ring, "the Current's dot is a ring, unlike a Run's light");
+      const { centre, radius, viewport, ...rim } = look.ring;
+      assert.ok(radius >= 3, "the Current's marker is visible");
+      const frame = await screenshotPixels(browser, viewport);
+      const hole = frame.at(centre.x, centre.y);
+      assert.ok(Object.values(rim).every((point) => Math.hypot(...frame.at(point.x, point.y).map((channel, index) => channel - hole[index])) >= 25),
+        "the Current's painted ring contrasts with its hollow centre on all sides");
       assert.ok(look.lines.length > 0 && look.lines.every(Boolean), `a line joins each dot to the next: ${JSON.stringify(look.lines)}`);
       assert.deepEqual(look.pills, [true, ...Array(first).fill(false)], "a grey pill around the shown entry only");
 

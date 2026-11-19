@@ -387,9 +387,12 @@
   const graphTop: Attachment<HTMLElement> = (stage) => {
     let watched: Element | null = null;
     const read = () => {
-      if (!watched) return;
+      if (!watched) {
+        stage.style.removeProperty("--graph-top");
+        return;
+      }
       const top = watched.getBoundingClientRect().top - stage.getBoundingClientRect().top;
-      stage.style.setProperty("--graph-top", `${Math.round(top)}px`);
+      stage.style.setProperty("--graph-top", `${top}px`);
     };
     const sized = new ResizeObserver(read);
     const find = () => {
@@ -398,6 +401,9 @@
       if (watched) sized.unobserve(watched);
       watched = area;
       if (area) sized.observe(area);
+      // A Detail can already be open when the lazy graph first mounts. Dock against
+      // that layout now; the resize observer follows any later changes.
+      read();
     };
     sized.observe(stage);
     const changed = new MutationObserver(find);

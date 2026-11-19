@@ -123,7 +123,7 @@ export const scenarios: Scenario[] = [
   // UX journey: J-PALETTE
   scenario<PaletteData>(
     "palette-reopen",
-    "opens by its button and by Ctrl+K, and again after Esc, several times",
+    "opens again after any use, runs a clicked command and lists Settings commands while Settings is open",
     async () => preparePalette(),
     async (browser) => {
       const { opened, ctrlK, escape } = palette(browser);
@@ -136,6 +136,20 @@ export const scenarios: Scenario[] = [
         await ctrlK("Ctrl+K");
         await escape("Esc");
       }
+      await browser.$("button*=Commands").click();
+      await opened("before running a command by click");
+      await choosePaletteCommand(browser, "Show Settings");
+      await browser.$('.palette [role="option"][aria-selected="true"]').click();
+      await browser.$("#settings-title").waitForDisplayed();
+      await ctrlK("over Settings");
+      const settings = (await rendered(browser)).find(({ group }) => group === "Settings");
+      assert.deepEqual(settings?.commands, [["Refresh settings", ""], ["Sign in to Codex", ""]], "Settings has its own group and no keys for these commands");
+      await escape("from the Settings palette");
+      await browser.$('[aria-labelledby="settings-title"]').$("button*=Close").click();
+      await browser.$("#settings-title").waitForDisplayed({ reverse: true });
+      await ctrlK("after Settings closes");
+      assert.ok((await rendered(browser)).every(({ group }) => group !== "Settings"), "closed Settings contributes no commands");
+      await escape("after running the command");
       assert.deepEqual(await errors(browser), []);
     },
   ),
@@ -378,7 +392,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       // Editing: switch the verdict, submit, release.
       assert.deepEqual(await reviewGroup("editing"), [
-        ["Choose GREEN", shortcutLabel("Ctrl+G")], ["Choose RED", shortcutLabel("Ctrl+R")], ["Submit", shortcutLabel("Ctrl+S")], ["Release the claim", "u"], ["Show or hide Debug", "t"],
+        ["Choose GREEN", ""], ["Choose RED", ""], ["Submit", shortcutLabel("Ctrl+S")], ["Release the claim", "u"], ["Show or hide Debug", "t"],
       ]);
     },
   ),
