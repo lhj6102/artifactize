@@ -827,9 +827,22 @@ export const scenarios: Scenario[] = [
         await human().$('label[for="field-channel"]').click();
         await browser.waitUntil(() => browser.execute(() => document.activeElement?.id === "field-channel"), { timeout: 15000, timeoutMsg: "the choice field focused" });
       };
-      for (const [field, focus] of [["the true/false field", async () => {}], ["the choice field", focusChoice]] as const) {
+      // Each key is recorded as it reaches the focused field, so a dropped key is not mistaken
+      // for an ignored one.
+      await browser.execute(() => {
+        const seen: { key: string; target: string }[] = [];
+        (window as unknown as { fieldKeys: typeof seen }).fieldKeys = seen;
+        window.addEventListener("keydown", (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          seen.push({ key: event.key, target: target?.id || target?.getAttribute("name") || "" });
+        }, { capture: true });
+      });
+      const keysAt = (target: string) => browser.execute((id) =>
+        (window as unknown as { fieldKeys: { key: string; target: string }[] }).fieldKeys.filter((seen) => seen.target === id).map((seen) => seen.key).join(""), target);
+      for (const [field, focus, id] of [["the true/false field", async () => {}, "field-confirmed"], ["the choice field", focusChoice, "field-channel"]] as const) {
         await focus();
         await browser.keys(["u", "r", "t"]);
+        await browser.waitUntil(async () => (await keysAt(id)).endsWith("urt"), { timeout: 15000, timeoutMsg: `u, r and t reached ${field}` });
         await commandsRendered(browser);
         assert.deepEqual(await form(), before, `keys in ${field} released nothing and kept the GREEN form`);
         assert.equal(await confirmed.isSelected(), true, `keys in ${field} left the box checked`);

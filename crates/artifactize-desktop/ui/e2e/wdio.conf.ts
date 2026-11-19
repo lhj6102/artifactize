@@ -56,8 +56,15 @@ export async function releasePrepared(): Promise<void> {
   };
   for (const [index, input] of prepared.splice(0).entries()) {
     const companion = companions.get(index);
+    // The primary app's end is confirmed on its own; the companion's handoff and end are
+    // confirmed whatever that check found.
     try {
       if (ownerFiles?.[index]) assertAppsStopped(candidate.observer, [ownerFiles[index]]);
+    } catch (error) {
+      failures.push(error);
+      retained.add(input.fixture.root);
+    }
+    try {
       if (companion?.handoff) await release(companion.handoff);
       // The app that would launch the companion has ended: a companion it launched has written
       // its birth record. Without one, confirm that no companion program runs, since one may
@@ -91,7 +98,10 @@ export async function releasePrepared(): Promise<void> {
     if (!retained.has(input.fixture.root)) await release(async () => { await input.restore?.(); });
     if (failures.length !== before) retained.add(input.fixture.root);
   }
-  for (const releaseClaim of driverClaims.splice(0)) await release(releaseClaim);
+  // An app whose end is unconfirmed may still use a once-per-machine resource: its claims stay
+  // held until this runner exits rather than being handed to the next batch.
+  const claims = driverClaims.splice(0);
+  if (retained.size === 0) for (const releaseClaim of claims) await release(releaseClaim);
   await release(async () => { await releaseFixtures(roots, candidate, retained); });
   if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
 }

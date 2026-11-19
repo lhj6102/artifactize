@@ -930,8 +930,8 @@ export const scenarios: Scenario[] = [
       }, { timeout: 15000, timeoutMsg: "the wheel zooms the main graph and its toolbar displays the same new scale" });
       const zoomed = await settled();
       signOff(fixture, request);
-      await browser.waitUntil(() => browser.$('.graph .svelte-flow__node[data-id="a:release"]').getAttribute("data-light").then((light) => light === "green"),
-        { timeout: 30000, timeoutMsg: "release relit GREEN" });
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:release": "green" }, {}),
+        { timeout: 30000, timeoutMsg: "release relit, painted GREEN" });
       assert.equal(await mainTitle(browser), title, "the same Run's graph stays shown");
       assert.equal((await settled()).transform, zoomed.transform, "a new result kept the person's camera");
       // The Run ends with nothing left needing attention, its headline in the one header row,
@@ -1534,9 +1534,10 @@ payload.instruction = "Check the Live Artifact."
       await fill(browser, FIND, "STAGE-");
       const expected = ["stage-zulu", "stage-alpha", "stage-mike"];
       const matches = async () => (await findField(browser))?.entries.map(({ name }) => name);
-      await browser.waitUntil(async () => (await matches())?.length === expected.length,
-        { timeout: 15000, timeoutMsg: "all three stage Artifacts were found" });
-      assert.deepEqual(await matches(), expected, "the prerequisite stage comes before both its consumers despite its name");
+      let found: string[] | undefined;
+      await browser.waitUntil(async () => JSON.stringify(found = await matches()) === JSON.stringify(expected),
+        { timeout: 15000, timeoutMsg: "the prerequisite stage comes before both its consumers despite its name" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(found)}`); });
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact stage-zulu",
         "the first match opens the upstream stage");
     },

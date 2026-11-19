@@ -269,7 +269,12 @@ Summarize {docs}."""
       removeTree(nativePath(fixture.repo, ".artifactize", "digest.artf"));
       removeTree(digest);
       await refresh(browser).click();
-      await waitFor(browser, async () => (await drawn()).nodes["a:digest"] === undefined, "the removed digest Artifact dropped");
+      // The completed scan's graph: docs drawn without digest or its relation.
+      await scanEnded();
+      await waitFor(browser, async () => {
+        const { nodes, edges } = await drawn();
+        return nodes["a:digest"] === undefined && nodes["a:docs"] !== undefined && !edges.includes("a:docs>a:digest");
+      }, "the removed digest Artifact and its relation dropped from the rescanned graph");
       // Only now a real Run in this same state: the probe that found no Run would have seen one.
       const controlRun = await verifyWaiting(fixture);
       assert.deepEqual(savedRuns(fixture).map((run) => run.id), [controlRun], "the same saved-Run probe sees this fixture's real Run");

@@ -180,10 +180,8 @@ export const scenarios: Scenario[] = [
       await browser.$("header.bar").$("button*=Commands").click();
       await choosePaletteCommand(browser, "Refresh");
       await browser.$('.palette [role="option"][aria-selected="true"]').click();
+      // The reload's completion is the barrier; what it read is checked in the window.
       await refreshed(browser, before);
-      const refresh = (await checkpoint(browser)).activity.refresh!;
-      assert.ok(refresh.branches.some(({ project, name }) => project === "repo" && name === "after-refresh"), "the manual reload discovered the new worktree");
-      assert.ok(refresh.branches.some(({ runs }) => runs.some((chip) => chip.id === started && chip.comment === comment)), "the manual reload read the new Run");
       await waitFor(browser, async () => await timelineShows(started, comment) && !!(await branch(browser, "repo  after-refresh")),
         "the new Run and the new worktree are rendered together");
       assert.equal(await mainTitle(browser), run, "on the same view");

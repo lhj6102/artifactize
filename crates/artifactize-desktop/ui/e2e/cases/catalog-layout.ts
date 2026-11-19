@@ -93,12 +93,14 @@ export const scenarios: Scenario[] = [
       const before = (await slot(browser))!;
       // Another version rewrites the shown Run: its graph can no longer be read.
       spoilRun(fixture, readable);
-      await browser.waitUntil(async () => (await slot(browser))?.text.includes("This Run cannot be read; choose another.") === true,
-        { timeout: 15000, timeoutMsg: `the graph's place says the shown Run cannot be read: ${JSON.stringify(await slot(browser))}` });
-      const after = (await slot(browser))!;
-      assert.deepEqual(after.bounds, before.bounds, "the graph's place stays where it was");
-      assert.ok(after.divider, "the divider stays");
-      assert.match(after.notice, new RegExp(`Unreadable run ${readable}`), "the notice names the Run");
+      // The placeholder and the notice naming this Run, rendered together.
+      let after = await slot(browser);
+      await browser.waitUntil(async () => {
+        after = await slot(browser);
+        return !!after && after.text.includes("This Run cannot be read; choose another.") && after.notice.includes(`Unreadable run ${readable}`);
+      }, { timeout: 15000, timeoutMsg: `the graph's place says the shown Run cannot be read, and the notice names it: ${JSON.stringify(after)}` });
+      assert.deepEqual(after!.bounds, before.bounds, "the graph's place stays where it was");
+      assert.ok(after!.divider, "the divider stays");
     },
   ),
   // UX journeys: J-MAIN-RUN J-GRAPH-LARGE

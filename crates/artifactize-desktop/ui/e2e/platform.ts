@@ -211,9 +211,11 @@ export function storePackageDirectory(root: NativePath): NativePath {
   return nativePath(root, "WindowsApps", "lhj6102.Artifactize_9.9.9.0_x64__ayfzfzbsv48sg");
 }
 
-/** Processes other than this one that hold a file open, or work, inside `root`. Unix lets a
- * held file be deleted, so deletion succeeding there proves nothing: Linux reads /proc and
- * macOS asks lsof. Windows refuses to delete a held file, which removeTree reports. */
+/** Processes other than this one that hold a file open, or work, inside `root`, or that still
+ * run with an environment naming it (the app's web engine helpers inherit the fixture's data
+ * folders, and may outlive their last open file). Unix lets a held file be deleted, so
+ * deletion succeeding there proves nothing: Linux reads /proc and macOS asks lsof and ps.
+ * Windows refuses to delete a held file, which removeTree reports. */
 function holdersOf(root: NativePath): number[] {
   if (WINDOWS) {
     // Opening a file for reading without sharing fails while any other process has it open;
@@ -238,7 +240,15 @@ function holdersOf(root: NativePath): number[] {
     if (listed.error || !(listed.status === 0 || listed.status === 1 && listed.stdout.trim() === "" && listed.stderr.trim() === "")) {
       throw new Error(`lsof could not tell what holds fixture ${root}: ${listed.error?.message ?? `exit ${listed.status}: ${listed.stderr.trim()}`}`);
     }
-    return listed.stdout.split("\n").map(Number).filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
+    const open = listed.stdout.split("\n").map(Number).filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
+    // ps -E shows each process's environment after its command.
+    const running = spawnSync("ps", ["-A", "-E", "-ww", "-o", "pid=,command="], { encoding: "utf8", timeout: HOLDER_SCAN_TIMEOUT });
+    if (running.error || running.status !== 0) {
+      throw new Error(`ps could not tell what runs for fixture ${root}: ${running.error?.message ?? `exit ${running.status}`}`);
+    }
+    const named = running.stdout.split("\n").filter((line) => line.includes(root)).map((line) => Number(line.trim().split(/\s+/)[0]))
+      .filter((pid) => Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid);
+    return [...new Set([...open, ...named])];
   }
   const inside = (target: string) => target === root || target.startsWith(`${root}${sep}`);
   const holders: number[] = [];
@@ -249,7 +259,7 @@ function holdersOf(root: NativePath): number[] {
       const fds = `/proc/${pid}/fd`;
       const held = inside(readlinkSync(`/proc/${pid}/cwd`)) || readdirSync(fds).some((fd) => {
         try { return inside(readlinkSync(join(fds, fd))); } catch { return false; }
-      });
+      }) || readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").some((variable) => variable.includes(`=${root}`));
       if (held) holders.push(pid);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1040,7 +1050,7 @@ export function commandDirectory(env: Environment, bin: NativePath): Environment
 /** Loopback ports that stand for once-per-machine resources, outside every OS's ephemeral
  * range: while a run holds one, a second run on this machine cannot claim it, and the OS frees
  * it when the holder's process ends, even by a crash. */
-const MACHINE_RESOURCES = { "auth-callback": 21455, clipboard: 21456, "foreground-window": 21457 } as const;
+const MACHINE_RESOURCES = { "auth-callback": 3455, clipboard: 3456, "foreground-window": 3457 } as const;
 
 /** Claim a once-per-machine resource for this run (E2E-ISOLATED); the result releases it. A
  * resource another run holds is an explicit failure, not a wait. */

@@ -59,8 +59,10 @@ export const scenarios: Scenario[] = [
       // The gate opens: the eval ends, the Run ends GREEN and the Current leads again.
       writeText(gate, "open");
       await waitFor(browser, () => newestRunStatus(fixture) === "GREEN", "the Run ended GREEN");
-      await waitFor(browser, async () => (await run())?.chips[0]?.id === "current", "the timeline starts with the Current again");
-      assert.match((await run())!.chips[1].text, /^GREEN \d+[smhd]( \d+[smh])? ago$/);
+      await waitFor(browser, async () => {
+        const chips = (await run())?.chips ?? [];
+        return chips[0]?.id === "current" && /^GREEN \d+[smhd]( \d+[smh])? ago$/.test(chips[1]?.text ?? "");
+      }, "the timeline starts with the Current again, the ended Run GREEN with its age");
     },
   ),
   // UX journeys: J-BRANCH-RUNS J-MAIN-RUN
