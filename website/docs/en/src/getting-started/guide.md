@@ -101,4 +101,4 @@ If you clone `https://github.com/lhj6102/artifactize`, the `examples/` directory
 ## Next steps
 
 - **[Working with Coding Agents](../agent-plugin/plugin.md)**: let **Arti** shape `.artifactize/` declarations for your own repository and iterate on failures with **focus-then-sweep**.
-- **[Desktop App and TUI](../guides/interfaces.md)**: watch Runs on a live visual graph or terminal monitor (`artifactize-desktop` or `artifactize monitor`).
+- **[Desktop App](../guides/interfaces.md)**: watch Runs on a live visual graph (`artifactize-desktop` or `artifactize monitor`).

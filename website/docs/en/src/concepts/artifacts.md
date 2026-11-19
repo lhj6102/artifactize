@@ -49,4 +49,4 @@ An Artifact can be made of other Artifacts by listing their names in `parts = ["
 
 - **`basis = true`**: marks an Artifact that owns no evals and is accepted as-is (such as an external requirement list or lockfile). Its fingerprint still participates in the reuse keys of evals that reference `{name}`.
 - **Reviewing `.artifactize/` definitions**: definitions are ordinary files. Declare an Artifact with `path = ".artifactize/"` (or a subfolder or `.artf` file) to review your project's structure; see [Fingerprints and Reuse](reuse.md#fingerprints-artifactsum-script-false) for how the normalized definition view works.
-- **`tags`**: `tags = ["type:code"]` adds display metadata for `status`, `config graph`, `monitor`, and `review` (`tag:` search) without being part of the evaluation criteria (editing a `.artf` file still changes the file fingerprint of any Artifact whose `artifactsum` covers that `.artf` file).
+- **`tags`**: `tags = ["type:code"]` adds display metadata for `status` and `config graph` without being part of the evaluation criteria (editing a `.artf` file still changes the file fingerprint of any Artifact whose `artifactsum` covers that `.artf` file).

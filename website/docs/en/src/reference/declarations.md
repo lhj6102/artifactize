@@ -12,7 +12,7 @@ path = "crates/app/"
 select = ["src", "Cargo.toml"]           # optional: makes a folder target an aspect
 parts = ["app-ui", "app-db"]             # optional: explicit composition
 basis = false                            # optional: true only when the Artifact owns no evals
-tags = ["type:code", "tier:core"]        # optional: display and review-search metadata
+tags = ["type:code", "tier:core"]        # optional: display metadata
 fingerprint = { files = ["src"], ignore = ["*.snap"] }  # optional: default is artifactsum
 
 [annotations.style]
@@ -30,7 +30,7 @@ text = "Canvas note shown in the desktop app."
 | `select` | Optional array of relative paths inside a folder `path`, defining an **aspect**. Not allowed on file or Live Artifacts. |
 | `parts` | Optional array of Artifact names composing this whole. Cannot contain self-references or cycles. |
 | `basis` | Optional boolean (`true` waives only this Artifact's own reviews; prohibited when `evals` is non-empty). |
-| `tags` | Optional array of nonblank display strings (shown in `status`, `config graph`, `monitor`, and `review` `tag:` search). |
+| `tags` | Optional array of nonblank display strings (shown in `status` and `config graph`). |
 | `fingerprint` | Optional:<br>• **Folder**: omit or `{}` for default `artifactsum`, `{ files? = [...], ignore? = [...] }` (`files` defaults to `["."]` and `ignore` defaults to `[]`), `{ script = { command = "...", args = [...], files? = [...], timeout_ms? = N } }`, or `false`.<br>• **Aspect**: omit for default `artifactsum` over `select`, `{ files = [...], ignore? = [...] }` (`files` required and within `select`; `fingerprint = {}` is rejected on an aspect), `{ script = ... }`, or `false`.<br>• **File**: omit or `{ files = ["<target-filename>"] }` (no `ignore`), `{ script = ... }`, or `false`.<br>• **Live**: omit (no snapshot), `{ script = ... }`, or `false`.<br>See [Fingerprints and Reuse](../concepts/reuse.md#fingerprints-artifactsum-script-false). |
 | `views.agent_tools` | Map of `<tool_id>` to `{ builtin = "...", args? = [...], description? = "..." }` (`args` is required for `graph`, `help`, and `section`, and optional for fixed-target `read`/`list`; see [Built-in tools](../guides/tools.md#builtin-tools)) or `{ description, protocol = "json"\|"plain", command, args, input_schema?, execution_paths?, timeout_ms?, session? }`. |
 | `views.agent_sessions` | Map of `<session_id>` to `{ start = { command, args, execution_paths? }, stop = { command, args, execution_paths? } }` (`start` and `stop` do not take `timeout_ms`; bound tools declare their own `timeout_ms`). |

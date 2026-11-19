@@ -19,7 +19,7 @@ payload.instruction = "Run the tests of {library}."
 
 - `command` (an executable, not a shell command string) and separate `args` run in the target's execution base ([Target kinds](artifacts.md#target-kinds-path-and-select); on Windows, `.cmd`/`.bat` scripts are launched via `cmd.exe`), with empty `stdin`, the author's environment (minus caller `ARTIFACTIZE_*` variables), `ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, and `ARTIFACTIZE_TMP_DIR` (with `TMPDIR`/`TMP`/`TEMP` redirected to that private scratch directory).
 - `{name}` or `{name}/subpath` in `args` resolves to the absolute path (or Live URI) of that Artifact; referencing another Artifact makes it an eval dependency (referencing the eval's own target Artifact resolves its path without adding a self-dependency).
-- Captured `stdout` and `stderr` are saved with the Run and inspected via `artifactize request logs REQUEST_ID` or the Desktop/TUI Detail view. If the post-execution recheck finds a different fingerprint or Live snapshot than when the check started, the result is `ERROR` (`INPUT_CHANGED`).
+- Captured `stdout` and `stderr` are saved with the Run and inspected via `artifactize request logs REQUEST_ID` or the Desktop Detail view. If the post-execution recheck finds a different fingerprint or Live snapshot than when the check started, the result is `ERROR` (`INPUT_CHANGED`).
 
 ## Agent evals {#agent-evals}
 

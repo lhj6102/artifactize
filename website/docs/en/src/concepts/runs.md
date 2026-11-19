@@ -28,7 +28,7 @@ Artifactize owns each Run in the background independently of the terminal or MCP
 - `artifactize verify SELECTOR --watch` (or `artifactize run watch RUN_ID`) streams JSON-line progress events (`update`, `eval_result`, `outcome`).
 - Pressing `Ctrl+C` on `--wait` or `--watch` exits `130` and stops watching **without** cancelling the Run.
 - Only `artifactize run cancel RUN_ID` (or MCP `verify_cancel`) requests cancellation of an open Run (`RUNNING` or `WAITING_HUMAN`). It returns immediately (exit `0`) once the cancellation request is recorded; the Run then stops starting new work, terminates the running work it started (cancelling a follower Run that joined an in-flight execution in another Run detaches the follower without stopping the producer Run's execution), and ends `ERROR/CANCELLED` while retaining any results already saved. Follow it with `run watch RUN_ID` or `run show RUN_ID` to confirm completion.
-- Pass `--comment "Fixing auth"` to label the Run in `run list`, Desktop, and TUI, or `--request-key KEY` to make retries return the same Run.
+- Pass `--comment "Fixing auth"` to label the Run in `run list` and the Desktop app, or `--request-key KEY` to make retries return the same Run.
 
 ## Speculation (`--speculate`) {#speculation}
 
@@ -36,7 +36,7 @@ By default, an eval waits until its upstream dependency gates are satisfied (`GR
 
 - Ready non-speculative work has priority: when it needs `--jobs` or backend capacity held by a speculative review, the speculative review is interrupted and requeued for later (each start counts toward `--max-executions`).
 - If an upstream dependency turns `GREEN`, the speculative result is kept and saves wall time.
-- If an upstream dependency turns `RED` or `ERROR`, Artifactize immediately cancels any running speculative work that depends on it outside its own Artifact and cycle, withdraws any already completed speculative result that depends on it (removing that result from the local cache and reuse even if it had entered the cache before the upstream gate resolved), and marks downstream requests (including affected sign-offs) `BLOCKED`.
+- If an upstream dependency turns `RED` or `ERROR`, Artifactize cancels any running speculative work that depends on it outside its own Artifact and cycle, invalidates any already completed speculative result so it cannot be reused, and marks downstream requests (including affected sign-offs) `BLOCKED`.
 - During iterative debugging ([Focus then sweep](../agent-plugin/plugin.md#focus-then-sweep-iterate-on-red-evals)), `verify --eval ID --speculate --wait` lets a builder rerun one eval even while its upstream inputs are stale.
 
 ## Sign-offs and the end of a Run {#sign-offs-and-the-end-of-a-run}

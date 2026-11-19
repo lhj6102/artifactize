@@ -21,5 +21,5 @@ Artifactize lets you declare how each part of a project is verified and reuses r
 - **[First Project in 5 Minutes](/docs/getting-started/guide.html)**: create a minimal project, run `verify`, and see result reuse without an AI account.
 - **[Core Concepts](/docs/concepts/artifacts.html)**: learn how Artifacts, evals, fingerprints, and Runs fit together.
 - **[Working with Coding Agents](/docs/agent-plugin/plugin.html)**: add the Claude Code or Codex plugin to use **Hey Arti** and **Focus then sweep**.
-- **[Guides](/docs/guides/tools.html)**: set up review tools, use the Desktop app and TUI, and share verdicts across a team and CI.
+- **[Guides](/docs/guides/tools.html)**: set up review tools, use the Desktop app, and share verdicts across a team and CI.
 - **[Reference](/docs/reference/declarations.html)**: look up `.artf` fields in the [Declarations Reference](/docs/reference/declarations.html) and commands, exit codes, and MCP tools in the [CLI and MCP Reference](/docs/reference/cli-and-mcp.html).

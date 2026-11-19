@@ -1,7 +1,7 @@
 # CLI and MCP Reference
 
 Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--json` before or after the subcommand:
-- `monitor` and `review` are interactive TUI screens and reject `--json`.
+- `monitor` and `review` are desktop launch shortcuts and reject `--json`.
 - `mcp` uses `--repo` and `--state-dir`, and always speaks JSON-RPC on `stdout` with diagnostics on `stderr`.
 - Current-directory built-in tools (`artifactize tools <read|list|glob|grep|section|help|open>` and standalone `artifactize-tools`) always run in the current directory with their own text or JSON output and do not use `--repo`, `--state-dir`, or `--json`.
 
@@ -11,8 +11,8 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 
 | Command | Flags & arguments | Output & behavior | Exit codes |
 |---|---|---|---|
-| `verify SELECTOR` | `[--profile NAME]` (optional; when supplied, the named variant must exist on every executable eval in the pre-variant selection, while dependencies added only by a runtime variant's `args` use their default profiles), `--recursive`, `--force`, `--jobs N`, `--fingerprint-jobs N` (default: available CPUs), `--max-executions N`, `--wait` \| `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Submits or follows a Run; see [Runs and Workflows](../concepts/runs.md). | `0` accepted, or [Run outcome](../concepts/runs.md#sign-offs-and-the-end-of-a-run) with `--wait`/`--watch` |
-| `status [SELECTOR]` (default `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (default: available CPUs) | Reports eval states (`PASS`, `RED`, `ERROR`, `BLOCKED`, `WAIT_DEPENDENCY`, `WAITING_HUMAN`, `DEFERRED`, `PROVISIONAL`, `STALE`, `UNREVIEWED`), Artifact states (`PASS`, `RED`, `ERROR`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`, `STALE`, `UNREVIEWED`, `INCOMPLETE`, `BASIS`), predicted actions (`execute`, `reuse`, `wait`, `blocked`; obligations outside the selection are marked `not included` and excluded from action totals), and changed inputs when an eval with a reuse key has no current reusable result and a prior locally cached execution exists for the same qualified eval ID and criteria. | `0` satisfied, `1` obligations remain (including per-eval `ERROR` forecasts), `2` command/state error |
+| `verify SELECTOR` | `[--profile NAME]` (see [`profile_variants`](declarations.md#eval-fields-evalsid)), `--recursive`, `--force`, `--jobs N`, `--fingerprint-jobs N` (default: available CPUs), `--max-executions N`, `--wait` \| `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Submits or follows a Run; see [Runs and Workflows](../concepts/runs.md). | `0` accepted, or [Run outcome](../concepts/runs.md#sign-offs-and-the-end-of-a-run) with `--wait`/`--watch` |
+| `status [SELECTOR]` (default `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (default: available CPUs) | Reports eval and Artifact states, predicted actions (`execute`, `reuse`, `wait`, `blocked`; see [Runs and Workflows](../concepts/runs.md)), and changed inputs when no reusable result matches (see [Fingerprints and Reuse](../concepts/reuse.md#completed-result-reuse)). | `0` satisfied, `1` obligations remain, `2` command/state error |
 | `config check` | — | Validates `.artifactize/` definitions statically without running project code. | `0` valid, `2` invalid |
 | `config graph [ARTIFACT]` | `--impact` | Prints Artifacts, evals, cycle components, and input-to-consumer relations (`--impact` adds downstream consumers). | `0` |
 | `config migrate` | `--repo PATH` | Migrates in-tree `.artf` files into `.artifactize/<name>.artf`. | `0` |
@@ -43,8 +43,8 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `doctor` | `--repo PATH` | Checks state directory, schema, limits, credentials, remote store, desktop app, and latest release. | `0` ready, `1` hard error |
 | `limits` | `--signoff-idle-grace SECONDS` | Shows or sets limits in `$STATE/limits.json` (shared by Runs using that state directory). | `0` |
 | `prune` | `[--older-than DURATION]`, `[--dry-run]` | Removes scratch output folders of finished `GREEN`/`RED`/`ERROR`/`INCOMPLETE` Runs that have no unsettled requests (omitting `--older-than` prunes all eligible finished Runs regardless of age; `YELLOW` and open Runs are skipped) and trims Agent sessions. | `0` |
-| `monitor [PATH \| --repo PATH \| --all]` | mutually exclusive initial scope selector | Launches interactive terminal Monitor UI. | `0` |
-| `review [REQUEST_ID]` | `--repo PATH` \| `--all`, `--reviewer NAME` | Launches interactive terminal Review UI. | `0` |
+| `monitor [PATH \| --repo PATH \| --all]` | mutually exclusive initial scope selector | Opens the desktop app on all projects or preselects `PATH`'s branch. | `0` |
+| `review [REQUEST_ID]` | `--repo PATH` \| `--all`, `--reviewer NAME` | Opens the desktop app on waiting Human reviews (or `REQUEST_ID` directly). | `0` |
 
 ## State, cache, and `limits.json` {#state-cache-and-limits}
 
@@ -56,13 +56,16 @@ Optional `$STATE/limits.json` configures bounds across all Runs sharing that sta
 {
   "backends": { "codex": 4, "openai": 16 },
   "signoffIdleGraceSeconds": 120,
-  "agentSessions": { "enabled": true, "maxBytes": 1073741824, "targetBytes": 805306368 }
+  "agentSessions": { "enabled": true }
 }
 ```
 
-- `backends`: max concurrent in-flight Agent reviews per backend across Runs sharing that state directory.
-- `signoffIdleGraceSeconds`: idle grace in seconds before a Run with only unclaimed sign-offs ends `YELLOW` (see [Sign-offs and the end of a Run](../concepts/runs.md#sign-offs-and-the-end-of-a-run)).
-- `agentSessions`: controls saving and automatic size cleanup of `$STATE/agent-sessions/`.
+| Setting | Default | Purpose |
+|---|---|---|
+| `backends.<name>` | unlimited | Max concurrent in-flight Agent reviews per backend across Runs sharing that state directory. |
+| `signoffIdleGraceSeconds` | `120` | Idle grace in seconds before a Run with only unclaimed sign-offs ends `YELLOW` (see [Sign-offs and the end of a Run](../concepts/runs.md#sign-offs-and-the-end-of-a-run)). |
+| `agentSessions.enabled` | `true` | Saves Agent review transcripts under `$STATE/agent-sessions/`. |
+| `agentSessions.maxBytes` / `targetBytes` | `1073741824` / `805306368` | Size ceiling and trim target (in bytes) for automatic cleanup of `$STATE/agent-sessions/`. |
 
 ## MCP stdio server (`artifactize mcp`) {#mcp-stdio-server}
 

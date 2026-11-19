@@ -17,7 +17,7 @@
 
 - [Working with Coding Agents](agent-plugin/plugin.md)
 - [Tools and Harness Sessions](guides/tools.md)
-- [Desktop App and TUI](guides/interfaces.md)
+- [Desktop App](guides/interfaces.md)
 - [Team Review Store and CI](guides/team-and-ci.md)
 
 # Reference
