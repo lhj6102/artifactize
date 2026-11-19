@@ -1,6 +1,8 @@
 # Desktop end-to-end rules
 
-How the desktop app's end-to-end suite is written and run. Their reference is Tauri's WebDriver
+How the desktop app's end-to-end suite is written and run. Their purpose: when the E2E suite
+passes locally, it should very likely pass on the other platforms too; to that end, everything
+that differs between platforms is handled in one place. Their reference is Tauri's WebDriver
 guide (https://v2.tauri.app/develop/tests/webdriver/) and the WebdriverIO Tauri service docs
 (https://webdriver.io/docs/desktop-testing/tauri/). The shared TEST- rules of
 project-rules/DEV-CODING.md apply as well.
