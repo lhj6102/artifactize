@@ -40,8 +40,11 @@ export const scenarios: Scenario[] = ["Run graph", "Review"].map((screen) =>
       assert.equal(signoff(fixture).claim?.reviewer, "alice");
       await press(browser, ["g"], () => browser.execute(() => document.activeElement?.id === "field-comment"), "the focused GREEN comment");
       await fill(browser, "#field-comment", "checked before closing");
-      await press(browser, [primaryModifier, "s"], async () =>
-        signoff(fixture).status === "GREEN" && /completed result/i.test(await text()), "the saved, completed Detail");
+      await press(browser, [primaryModifier, "s"], async () => {
+        if (signoff(fixture).status !== "GREEN" || await browser.$("#field-comment").isExisting()) return false;
+        const shown = await human().getText();
+        return /completed result/i.test(await text()) && /GREEN/.test(shown) && shown.includes("checked before closing");
+      }, "the saved, completed Detail showing the submitted verdict and comment, its form gone");
       assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "checked before closing" });
       assert.equal(await browser.$("#field-comment").isExisting(), false, "the completed result replaced the form");
       const completed = await human().getText();

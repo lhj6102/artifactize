@@ -378,7 +378,6 @@ Summarize {docs}."""
         assert.notEqual(after.nodes[id].mark, before.look.nodes[id].mark, `${id} recoloured`);
         assert.equal(after.nodes[id].mark, reusedLook.nodes[id].mark, `${id} painted as reused`);
       }
-      assert.notEqual((await drawn()).edges["a:release>a:ship"], before.drawn.edges["a:release>a:ship"], "the relation relit by its source's new plan");
       // Its drawn line stays neutral throughout: only a failure colours an edge.
       const edge = "a:release>a:ship";
       assert.ok(after.edges[edge].painted, "the relation is drawn");

@@ -624,7 +624,7 @@ export function ended(fixture: Fixture, run: string): string {
 
 /** A repository `name` beside the fixture's, in the same state, whose `count` Artifacts each
  * wait for a person's sign-off; returns their requests. */
-export async function addWaiting(fixture: Fixture, name: string, count: number): Promise<string[]> {
+export async function addWaiting(fixture: Fixture, name: string, count: number, createdAt?: string): Promise<string[]> {
   const repo = nativePath(fixture.root, name);
   for (let index = 0; index < count; index += 1) {
     humanExample(repo, `gate${String(index).padStart(2, "0")}`, "signoff", `Gate ${index} approval`);
@@ -632,7 +632,15 @@ export async function addWaiting(fixture: Fixture, name: string, count: number):
   git(repo, "init", "-q", "--initial-branch=master", repo);
   const target = { ...fixture, repo };
   const run = await verifyWaiting(target);
-  return requests(target).filter((request) => request.runId === run).map((request) => request.id);
+  const waiting = requests(target).filter((request) => request.runId === run);
+  // An explicit time places the Run among others without the wall clock deciding.
+  if (createdAt !== undefined) {
+    updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
+      db.prepare("UPDATE runs SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(createdAt, run);
+      for (const request of waiting) db.prepare("UPDATE requests SET data=json_set(data,'$.createdAt',?) WHERE id=?").run(createdAt, request.id);
+    });
+  }
+  return waiting.map((request) => request.id);
 }
 
 /** A saved Run's selection as written, and as a version that no longer reads it would see it. */

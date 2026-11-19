@@ -7,7 +7,7 @@ import { observe } from "./domain-fixtures/observe.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { createdRoots, environment, releaseFixtures } from "./fixture.ts";
 import {
-  browserEnvironment, asNativePath, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment,
+  appsAtOnce, browserEnvironment, asNativePath, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment,
   assertClipboardDesktop, commandDirectory, embeddedReady, exists, makeDirectory, nativePath, placeApp, releaseClaudeLogins, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson, writeText,
   type Environment, type NativePath,
 } from "./platform.ts";
@@ -62,9 +62,10 @@ export async function releasePrepared(): Promise<void> {
       }
     }
     catch (error) {
+      // The run fails and the files stay for diagnosis; the suite's own servers and jobs
+      // still close, since nothing would end them after the runner returns.
       failures.push(error);
       retained.add(input.fixture.root);
-      continue;
     }
     const before = failures.length;
     await release(() => releaseClaudeLogins(input.fixture.root));
@@ -93,7 +94,9 @@ export const config = {
   reporters: ["spec"],
   logLevel: "warn",
   outputDir,
-  maxInstances: selected.length,
+  // A batch started directly with several scenarios still runs no more apps at once than
+  // the platform allows (E2E-ISOLATED).
+  maxInstances: Math.min(selected.length, appsAtOnce),
   maxInstancesPerCapability: 1,
   autoXvfb: false,
   bail: 0,

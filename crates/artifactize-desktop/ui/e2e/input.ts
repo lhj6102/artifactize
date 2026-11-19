@@ -184,3 +184,22 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
     }
   }, input);
 }
+
+/** A keydown carrying the guard fields an input method sets while it composes (isComposing,
+ * keyCode 229), sent to the focused text field. The page's own logic for ignoring shortcuts
+ * during a composition is checked at those fields (E2E-INPUT); this never stands in for a
+ * user's key. */
+export async function composingKey(browser: WebdriverIO.Browser, input: {
+  key: string; primary: boolean; modifier: string; composing: boolean; keyCode: number;
+}): Promise<void> {
+  await browser.execute((input) => {
+    const target = document.activeElement;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) throw new Error("the composition field lost focus");
+    const event = new KeyboardEvent("keydown", {
+      key: input.key, code: ({ "Escape": "Escape", ",": "Comma", "F5": "F5", "?": "Slash" } as Record<string, string>)[input.key] ?? `Key${input.key.toUpperCase()}`,
+      bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode,
+      ctrlKey: input.primary && input.modifier === "Control", metaKey: input.primary && input.modifier === "Meta",
+    });
+    target.dispatchEvent(event);
+  }, input);
+}

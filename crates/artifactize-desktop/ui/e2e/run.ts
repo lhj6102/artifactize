@@ -5,7 +5,7 @@ import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertHarnessPlatform, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nativeCrashReports, nodeProgram, processId, processRunning, readText, requiredVariable, removeTree, setVariable, writeTextOnce, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
+  nativeCrashReports, nodeProgram, processId, processRunning, readText, requiredVariable, removeTree, setVariable, writeTextOnce, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment, type NativePath,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -74,6 +74,16 @@ async function launchBatch(): Promise<void> {
   }
 }
 
+/** The batch runner that owned the candidate has exited. */
+function assertBatchEnded(root: NativePath): void {
+  const runner = nativePath(root, "running.json");
+  if (!exists(runner)) return;
+  const pid = Number(readText(runner));
+  if (!Number.isSafeInteger(pid) || pid <= 0 || processRunning(pid)) {
+    throw new Error("candidate is still owned by its batch runner");
+  }
+}
+
 async function suite(ids: string[]): Promise<void> {
   const { selectedScenarios } = await import("./catalog.ts");
   const selected = selectedScenarios(ids);
@@ -116,6 +126,9 @@ async function suite(ids: string[]): Promise<void> {
         if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
       } catch (error) { failures.push(error); }
       try {
+        // The batch runner itself has ended too, not only the apps it admitted: one stopped by
+        // a signal during fixture setup may still be preparing inputs.
+        assertBatchEnded(candidate.root);
         assertAdmissionsStopped(candidate.root, candidate.observer);
         confirmed = true;
       } catch (error) { failures.push(error); }
@@ -157,13 +170,7 @@ try {
     const marker = nativePath(candidate.root, "cleaning.json");
     if (!writeTextOnce(marker, "cleanup\n")) throw new Error("candidate cleanup already started");
     try {
-      const runner = nativePath(candidate.root, "running.json");
-      if (exists(runner)) {
-        const pid = Number(readText(runner));
-        if (!Number.isSafeInteger(pid) || pid <= 0 || processRunning(pid)) {
-          throw new Error("candidate is still owned by its batch runner");
-        }
-      }
+      assertBatchEnded(candidate.root);
       assertAdmissionsStopped(candidate.root, candidate.observer);
       await cleanup(candidate.root);
     } finally { removeTree(marker); }

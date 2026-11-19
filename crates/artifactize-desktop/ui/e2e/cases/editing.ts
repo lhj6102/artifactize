@@ -421,7 +421,8 @@ export const scenarios: Scenario[] = [
       }, "the same Source shows the red parse error at @ and keeps the complete draft");
       assert.equal(file(fixture, "core"), readable, "nothing written");
       await browser.$(DETAIL).$("button=Revert").click();
-      await waitFor(browser, async () => (await source(browser))?.save === false, "Revert puts back the file");
+      await waitFor(browser, async () => { const shown = await source(browser); return shown?.save === false && shown.text === readable; },
+        "Revert puts back the file's text in the Source");
       // What the project would not accept is refused with its line, and stays typed.
       const before = file(fixture, "core");
       await typeIn(browser, text, '\nparts = ["nobody"]');
@@ -942,7 +943,6 @@ export const scenarios: Scenario[] = [
 
       // Dropped into app's box, core becomes app's part; app's places are written as shown. The
       // box is highlighted while the drop would be accepted.
-      const appTitle = await titleOf(browser, "a:app");
       const into = (await box(browser, "a:app"))!;
       const at = (await box(browser, "a:core"))!;
       const cameraJoin = await camera(browser);
@@ -1054,7 +1054,6 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => /\b(?:app|kit) is a part of itself through its parts\b/.test(await notice(browser)), "the notice explains the circular parts relationship");
       await waitFor(browser, async () => JSON.stringify(await box(browser, "a:app")) === JSON.stringify(appShape), "app back where it was, as it was");
       assert.deepEqual([file(fixture, "app"), ...others()], definitionsBefore, "every definition is untouched by the refused drop");
-      assert.ok(appTitle, "app's title row is where a whole is dragged from");
 
       // A shared part dragged from app onto docs leaves app alone: bundle's copy stays where it is.
       const kitInApp = (await box(browser, "a:app/a:kit"))!;

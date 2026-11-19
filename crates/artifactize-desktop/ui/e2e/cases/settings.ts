@@ -16,7 +16,7 @@ import { graphShown, ZOOM_IN } from "../graph-view.ts";
 import { clickAt, pointerGapClick, visibleCenter } from "../pointer.ts";
 import { branch, mainTitle, openWaiting, showRun } from "../pane.ts";
 import { observe } from "../domain-fixtures/observe.ts";
-import { commandsRendered } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { childDirectories, claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, listFiles, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readBytes, readText, replaceText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
 
@@ -761,7 +761,11 @@ Review the agent folder."""
       await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "no store is configured yet" });
       const signedOutCheck = () => browser.$("button=Check status");
       assert.ok(await signedOutCheck().isDisplayed() && await signedOutCheck().isEnabled(), "signed-out Settings offers Check status beside Sign in");
+      // This click's own status request completes before the panel is read.
+      const statusCalls = async () => (await checkpoint(browser)).activity.commands.remoteStatus?.completed ?? 0;
+      const checked = await statusCalls();
       await signedOutCheck().click();
+      await browser.waitUntil(async () => await statusCalls() > checked, { timeout: 15000, timeoutMsg: "the signed-out Check status request completed" });
       await commandsRendered(browser);
       assert.ok(await browser.$("button=Sign in to the store").isDisplayed(), "checking without a store keeps the sign-in view");
       assert.ok(!(await text()).includes("No remote review store is configured."), "no sentence for the normal state");

@@ -258,21 +258,30 @@ export const scenarios: Scenario[] = [
         tooltip: !!document.querySelector(selector)?.querySelector("[title]") || !!document.querySelector(selector)?.closest("[title]")
           || !!document.querySelector("button[data-chip][title], button[data-chip] [title]"),
       }), nodeAt("a:ship"));
+      // A hover that opened something only after a delay must still be seen: the pointer stays
+      // put while frames render, past the engine's tooltip delay, and nothing may open.
+      const HOVER_WINDOW_MS = 1500;
+      const nothingOpensWhileHovering = async () => {
+        const until = performance.now() + HOVER_WINDOW_MS;
+        while (performance.now() < until) {
+          if ((await look()).opened) return false;
+          await afterRender(browser);
+        }
+        return !(await look()).opened;
+      };
       const chip = await browser.$("button[data-chip]");
       const chipId = await chip.getAttribute("data-chip");
       assert.ok(chipId, "the timeline entry has an identity");
       await browser.action("pointer").move(await visibleCenter(browser, await chip.getElement())).perform();
       await browser.waitUntil(async () => (await look()).over.includes(chipId), { timeout: 15000, timeoutMsg: "the pointer moved over the named timeline entry" });
-      await afterRender(browser);
+      assert.ok(await nothingOpensWhileHovering(), "hovering the timeline entry opens nothing, then or later");
       const overChip = await look();
-      assert.equal(overChip.opened, false, "hovering the timeline entry opens nothing");
       assert.equal(overChip.tooltip, false, "the timeline entry has no native tooltip");
       const point = await visibleCenter(browser, await browser.$(nodeAt("a:ship")).getElement());
       await browser.action("pointer").move(point).perform();
       await browser.waitUntil(async () => (await look()).over.includes("a:ship"), { timeout: 15000, timeoutMsg: "the pointer moved over ship" });
-      await afterRender(browser);
+      assert.ok(await nothingOpensWhileHovering(), "hovering opens no Detail, summary, eval list, tooltip or menu, then or later");
       const hovered = await look();
-      assert.equal(hovered.opened, false, "hovering opens no Detail, summary, eval list, tooltip or menu");
       assert.equal(hovered.tooltip, false, "neither the Artifact nor a timeline entry carries a tooltip");
       // The same probe sees what a click opens.
       await browser.$(nodeAt("a:ship")).click();
@@ -287,12 +296,13 @@ export const scenarios: Scenario[] = [
     "moves through the branches and then the waiting reviews by keys, expands a branch and moves through its timeline, folds it, enters the Main area and comes back",
     async () => {
       const { fixture, ...data } = await createNavigationFixture();
-      const [review] = await addWaiting(fixture, "gates", 1);
+      // The gates Run is dated after the fixture's other Runs, so it is the newest.
+      const [review] = await addWaiting(fixture, "gates", 1, "2000-01-04T00:00:00.000000000Z");
       return { fixture, data: { ...data, review } };
     },
     async (browser, { data: example }) => {
       const [older, newer] = example.runs;
-      // The most recent Run first: the gates (now), other (third), then repo.
+      // The most recent Run first: the gates (the newest date), other (third), then repo.
       await waitFor(browser, async () => (await branches(browser)).length === 3, "the three live branches");
       assert.deepEqual((await branches(browser)).map((entry) => entry.name), ["gates  master", "other  master", "repo  master"]);
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");

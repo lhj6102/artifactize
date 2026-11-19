@@ -175,31 +175,48 @@ export function prepareCargoUpdate(fixture: Fixture) {
   });
 }
 
-export async function copyCargoUpdate(browser: WebdriverIO.Browser, { data, fixture }: Prepared<Site>): Promise<void> {
-  await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
-  await openDialog(browser);
-  const command = dialog(browser).$("pre.command");
-  const wanted = "cargo install artifactize artifactize-tools --locked";
-  assert.equal(await command.getText(), wanted);
+/** Select the whole text of `element` by a click at its start and a Shift-click at its end. */
+async function selectContents(browser: WebdriverIO.Browser, element: ReturnType<WebdriverIO.Browser["$"]>): Promise<void> {
   const [start, end] = await browser.execute((element: HTMLElement) => {
     const range = document.createRange();
     range.selectNodeContents(element);
     const rows = range.getClientRects();
     const first = rows[0], last = rows[rows.length - 1];
     return [{ x: first.left + 1, y: first.top + first.height / 2 }, { x: last.right - 1, y: last.top + last.height / 2 }];
-  }, await command.getElement() as unknown as HTMLElement);
+  }, await element.getElement() as unknown as HTMLElement);
   await dispatchInput(browser, { kind: "text-click", ...start });
   await dispatchInput(browser, { kind: "text-click", ...end, shift: true });
+}
+
+/** Paste the clipboard into the Open by ID field and wait for `wanted` there. */
+async function pasted(browser: WebdriverIO.Browser, wanted: string, what: string): Promise<void> {
+  const field = browser.$('input[aria-label="Request ID"]');
+  await press(browser, [primaryModifier, "o"], () => field.isDisplayed(), "a field to paste into");
+  await field.click();
+  await nativeInput(browser, { type: "paste" });
+  await browser.waitUntil(async () => await field.getValue() === wanted, { timeout: 15000, timeoutMsg: what });
+  await press(browser, ["Escape"], async () => !(await field.isDisplayed()), "the paste field closed");
+}
+
+export async function copyCargoUpdate(browser: WebdriverIO.Browser, { data, fixture }: Prepared<Site>): Promise<void> {
+  await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
+  // A clipboard baseline this case wrote itself, so only its own copy can produce the command.
+  await openDialog(browser);
+  const versions = dialog(browser).$(".versions");
+  const baseline = await versions.getText();
+  await selectContents(browser, versions);
+  await nativeInput(browser, { type: "copy" });
+  await closeByButton(browser);
+  await pasted(browser, baseline, "the clipboard holds this case's baseline");
+  await openDialog(browser);
+  const command = dialog(browser).$("pre.command");
+  const wanted = "cargo install artifactize artifactize-tools --locked";
+  assert.equal(await command.getText(), wanted);
+  await selectContents(browser, command);
   assert.equal(await browser.execute(() => getSelection()?.toString() ?? ""), wanted, "only the update command is selected");
   await nativeInput(browser, { type: "copy" });
   await closeByButton(browser);
-  const field = browser.$('input[aria-label="Request ID"]');
-  await press(browser, [primaryModifier, "o"], () => field.isDisplayed(), "a field to paste the command into");
-  await field.click();
-  await nativeInput(browser, { type: "paste" });
-  await browser.waitUntil(async () => await field.getValue() === wanted,
-    { timeout: 15000, timeoutMsg: "the update command pasted exactly" });
-  await press(browser, ["Escape"], async () => !(await field.isDisplayed()), "the paste field closed");
+  await pasted(browser, wanted, "the update command pasted exactly");
   assert.equal(readText(cargoLog(fixture)).trim(), JSON.stringify(CARGO_CONTROL), "only the fixture's positive control launched Cargo");
   onlyLookups(data);
 }
@@ -222,9 +239,8 @@ export const scenarios: Scenario[] = [
       // A release comes out. The app looks again by itself, but within the day it reuses its
       // answer and does not ask the site.
       replaceText(data.answer, `v${LATEST}`);
-      // Observe the cache through the shared lookup used by doctor, without counting the UI's
-      // internal polls. The app remains on its starting notice until the clock crosses the day.
-      assert.equal(runProgramOk(cli(), ["--state-dir", fixture.state, "doctor", "--json"], { env }).includes(LATEST), false);
+      // The app remains on its starting notice until the clock crosses the day; the rendered
+      // notice and the site's log observe that, and nothing here looks the release up itself.
       assert.equal(await shownNotice(), initialNotice, "within the day the kept answer stands");
       assert.equal(lookups(), 1, "within the day the app asked the site nothing more");
       // A day later, the next look asks the site again and finds the release.
@@ -283,11 +299,15 @@ export const scenarios: Scenario[] = [
     async (browser, { data }) => {
       await notice(browser).waitForDisplayed();
       const before = visited(data).filter((path) => path === LOOKUP).length;
+      const completed = async () => (await checkpoint(browser)).activity.commands.releaseNotice?.completed ?? 0;
+      const done = await completed();
       replaceText(data.answer, `v${LATEST}-rc.1`);
       replaceText(data.clock, String(data.afterDay));
-      await browser.waitUntil(() => visited(data).filter((path) => path === LOOKUP).length > before,
-        { timeout: 15000, timeoutMsg: "the site served the fresh prerelease lookup" });
-      await anyNotice(browser).waitForDisplayed({ reverse: true, timeout: 15000, timeoutMsg: "the applied response cleared the prior notice without showing a prerelease" });
+      // The fresh lookup was served and its answer applied; only then is the header read.
+      await browser.waitUntil(async () => visited(data).filter((path) => path === LOOKUP).length > before && await completed() > done,
+        { timeout: 15000, timeoutMsg: "the app completed the fresh prerelease lookup" });
+      await afterRender(browser);
+      assert.equal(await anyNotice(browser).isExisting(), false, "the applied response cleared the prior notice without showing a prerelease");
       onlyLookups(data);
     },
   ),

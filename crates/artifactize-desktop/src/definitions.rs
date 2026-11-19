@@ -241,7 +241,7 @@ impl From<edit::Refusal> for EditRefusal {
                 line,
                 column,
             } => Self::Invalid {
-                file,
+                file: text(&file),
                 message,
                 line: count(line),
                 column: count(column),

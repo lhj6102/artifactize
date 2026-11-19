@@ -4,19 +4,24 @@
 export type LogRow = { text: string; kind: "start" | "line" | "end"; error: boolean };
 
 /** The rows of the Tool log inside `scope`, and what its tools said: only a failure is said,
- * in red, beside them (`role="status"` with the class `error`). */
+ * in red, beside them (`role="status"`); red is read as the painted colour. */
 export function toolLog(browser: WebdriverIO.Browser, scope: string): Promise<{ notice: string; noticeError: boolean; rows: LogRow[] }> {
   return browser.execute((within) => {
     const root = document.querySelector(within);
+    // Red is the painted colour, compared with the app's own red token.
+    const token = getComputedStyle(document.documentElement).getPropertyValue("--red").trim();
+    const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(token);
+    const red = hex ? `rgb(${hex.slice(1).map((part) => Number.parseInt(part, 16)).join(", ")})` : token;
+    const isRed = (element: Element | null | undefined) => !!element && getComputedStyle(element).color === red;
     const notice = root?.querySelector('p[role="status"]:not(.busy)');
     const log = root?.querySelector('[role="log"][aria-label="Tool log"]');
     return {
       notice: notice?.textContent?.trim() ?? "",
-      noticeError: notice?.classList.contains("error") ?? false,
+      noticeError: isRed(notice),
       rows: [...(log?.querySelectorAll("p:not(.muted)") ?? [])].map((row) => ({
         text: (row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS "),
         kind: row.classList.contains("start") ? "start" : row.classList.contains("end") ? "end" : "line",
-        error: row.classList.contains("error"),
+        error: isRed(row),
       })),
     };
   }, scope) as Promise<{ notice: string; noticeError: boolean; rows: LogRow[] }>;

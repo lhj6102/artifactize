@@ -450,7 +450,7 @@ export const scenarios: Scenario[] = [
       await titledAtTop(browser, ".graph", "a:docs", "docs", ["a:docs/a:site"]);
       await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:suite": "green", "a:docs": "green" }, {}),
         { timeout: 15000, timeoutMsg: "the wholes lit in their verdict's colour" });
-      assert.deepEqual([drawn["a:suite/a:site"].artifact, drawn["a:docs/a:site"].artifact], ["a:site", "a:site"], "both copies are site");
+      assert.deepEqual([drawn["a:suite/a:site"].text, drawn["a:docs/a:site"].text], ["site", "site"], "both copies are site");
       // Each copy of site carries site's edges: from lib outside every box into it, and out of
       // it to app, within suite and across from docs into suite.
       await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:lib": "green", "a:suite/a:site": "green", "a:docs/a:site": "green" }, {

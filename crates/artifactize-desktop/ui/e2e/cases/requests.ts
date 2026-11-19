@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { artifactize, create, signoff } from "../fixture.ts";
 import { fill, press } from "../keys.ts";
+import { composingKey } from "../input.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { chooseVerdict, requestState, showDebug, reviewing } from "../human-review.ts";
 import { MAIN, mainTitle } from "../pane.ts";
@@ -162,16 +163,7 @@ export const scenarios: Scenario[] = [
         for (const [key, primary] of [["g", false], ["r", false], ["q", false], ["u", false], ["c", false], ["Escape", false], ["g", true], ["r", true], ["s", true],
           ["k", true], ["o", true], [",", true], ["b", true], ["F5", false], ["?", false]] as const) {
           const observed = (await events()).length;
-          await browser.execute((input) => {
-            const target = document.activeElement;
-            if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) throw new Error("the composition field lost focus");
-            const event = new KeyboardEvent("keydown", {
-              key: input.key, code: ({ "Escape": "Escape", ",": "Comma", "F5": "F5", "?": "Slash" } as Record<string, string>)[input.key] ?? `Key${input.key.toUpperCase()}`,
-              bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode,
-              ctrlKey: input.primary && input.modifier === "Control", metaKey: input.primary && input.modifier === "Meta",
-            });
-            target.dispatchEvent(event);
-          }, { key, primary, modifier: primaryModifier, composing, keyCode });
+          await composingKey(browser, { key, primary, modifier: primaryModifier, composing, keyCode });
           const received = (await events()).slice(observed).filter((event) => event.type === "keydown" && !event.trusted);
           assert.deepEqual(received, [{ type: "keydown", trusted: false, target: "field-comment", composing, keyCode, key }],
             "the page's capture listener saw the guard fields on the composing input");

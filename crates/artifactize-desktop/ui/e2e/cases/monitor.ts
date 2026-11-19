@@ -338,12 +338,11 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(lines.filter((row) => row.error).map((row) => row.text), ["warning: B is slower"]);
       assert.deepEqual(await runOf("notes"), otherRun, "late talk lines and its end do not replace or join the other tool run");
       assert.equal(await browser.$("#field-comment").getValue(), "chose B", "the form kept what was typed while the log grew");
-      // The log follows its newest line.
-      const followed = await browser.execute(() => {
+      // The log follows its newest line: wait until it has scrolled there.
+      await browser.waitUntil(() => browser.execute(() => {
         const log = document.querySelector('[role="log"][aria-label="Tool log"]')!;
         return log.scrollHeight - log.scrollTop - log.clientHeight < 24;
-      });
-      assert.ok(followed, "the Tool log shows its newest line");
+      }), { timeout: 15000, timeoutMsg: "the Tool log scrolled to show its newest line" });
     },
   ),
 
