@@ -16,7 +16,7 @@ pub(super) async fn help(
     launcher: &dyn Launcher,
     cancellation: &CancellationToken,
 ) -> Result<String, String> {
-    let program = program::resolve(program.as_os_str(), cwd).map_err(|error| error.to_string())?;
+    let program = program::resolve(program, cwd).map_err(|error| error.to_string())?;
     args.push(OsString::from("--help"));
     let launch = Launch {
         program,

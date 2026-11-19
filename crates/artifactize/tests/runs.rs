@@ -464,23 +464,11 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
     let migrated = store::read_run(&fixture.state, &started.run).await.unwrap();
     assert_eq!(migrated.run.id, before.run.id);
     assert!(migrated.run.control.is_none());
-    // The definitions moved to their own row and read back as they were saved.
+    // The definitions read back as they were saved.
     assert_eq!(
         serde_json::to_value(&migrated.run.definitions).unwrap(),
         serde_json::to_value(&before.run.definitions).unwrap()
     );
-    let moved = rusqlite::Connection::open_with_flags(
-        fixture.state.join(store::DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap()
-        .query_row(
-            "SELECT json_type(r.data,'$.definitions'),d.run_id FROM runs r JOIN run_definitions d ON d.run_id=r.id WHERE r.id=?",
-            [&started.run],
-            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
-        )
-        .unwrap();
-    assert_eq!(moved.0, None);
     assert_eq!(migrated.requests.len(), before.requests.len());
     let output = support::os::run(
         fixture

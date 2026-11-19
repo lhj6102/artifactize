@@ -371,7 +371,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
     // Offline: only where `claude` is; its login and version are checked when a review or a
     // model listing starts it.
     match crate::platform::program::resolve(
-        std::ffi::OsStr::new(llm::claude_agent::command::PROGRAM),
+        std::path::Path::new(llm::claude_agent::command::PROGRAM),
         &crate::platform::temporary_directory(),
     ) {
         Ok(program) => report.add(

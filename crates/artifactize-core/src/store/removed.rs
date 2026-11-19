@@ -174,7 +174,7 @@ fn affected(
         .query_map([serde_json::to_string(&query_paths)?], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                PathBuf::from(row.get::<_, String>(1)?),
+                super::path_column(row, 1)?,
                 row.get::<_, Option<String>>(2)?.map(PathBuf::from),
                 row.get::<_, ExecutionId>(3)?,
                 row.get::<_, String>(4)?,

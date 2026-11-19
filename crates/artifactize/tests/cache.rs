@@ -1341,9 +1341,7 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     );
     assert_eq!(forced["executionsStarted"], 0);
     assert_eq!(
-        support::declaration::read_text(repo.join("starts"))
-            .unwrap()
-            .replace("\r\n", "\n"),
+        support::os::output_lines(&support::declaration::read_text(repo.join("starts")).unwrap()),
         "first\n"
     );
 }

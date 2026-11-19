@@ -16,19 +16,19 @@ const EXTENSIONS: &str = "PATHEXT";
 /// Resolve against the PATH and, on Windows, PATHEXT that a started program receives (see
 /// [`super::environment::user`]). A bare name never implicitly searches the working directory;
 /// relative PATH entries are based on `cwd`.
-pub fn resolve(program: &OsStr, cwd: &Path) -> io::Result<PathBuf> {
+pub fn resolve(program: &Path, cwd: &Path) -> io::Result<PathBuf> {
     resolve_with(program, cwd, super::environment::var)
 }
 
 /// Resolve using the environment that the child will receive, not the caller's PATH:
 /// `variable` reads one variable of that environment.
 pub fn resolve_with(
-    program: &OsStr,
+    program: &Path,
     cwd: &Path,
     variable: impl Fn(&str) -> Option<OsString>,
 ) -> io::Result<PathBuf> {
     resolve_from(
-        Path::new(program),
+        program,
         cwd,
         variable(SEARCH_PATH).as_deref(),
         variable(EXTENSIONS).as_deref(),
@@ -150,13 +150,13 @@ mod tests {
         let program = crate::test_os::executable_name("shim");
         let path = OsString::from(crate::test_os::path_list(["second", "first"]));
         assert_eq!(
-            resolve_with(OsStr::new(&program), root.path(), |name| (name
+            resolve_with(Path::new(&program), root.path(), |name| (name
                 == SEARCH_PATH)
                 .then(|| path.clone()))
             .unwrap(),
             root.path().join("second").join(&program)
         );
-        assert!(resolve_with(OsStr::new(&program), root.path(), |_| None).is_err());
+        assert!(resolve_with(Path::new(&program), root.path(), |_| None).is_err());
     }
 
     // Only Windows applies PATHEXT when producing executable candidates.
@@ -183,7 +183,7 @@ mod tests {
         }
         let path = OsString::from(crate::test_os::path_list([root.path()]));
         assert_eq!(
-            resolve_with(OsStr::new("shim"), root.path(), |name| match name {
+            resolve_with(Path::new("shim"), root.path(), |name| match name {
                 SEARCH_PATH => Some(path.clone()),
                 EXTENSIONS => Some(".CMD;.EXE".into()),
                 _ => None,
@@ -192,7 +192,7 @@ mod tests {
             root.path().join("shim.CMD")
         );
         assert_eq!(
-            resolve_with(OsStr::new("shim"), root.path(), |name| match name {
+            resolve_with(Path::new("shim"), root.path(), |name| match name {
                 SEARCH_PATH => Some(path.clone()),
                 EXTENSIONS => Some(".BAT;.CMD".into()),
                 _ => None,

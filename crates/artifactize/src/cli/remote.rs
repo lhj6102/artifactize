@@ -52,7 +52,7 @@ impl TypedValueParser for LoginUrl {
         _argument: Option<&clap::Arg>,
         value: &OsStr,
     ) -> Result<Self::Value, clap::Error> {
-        artifactize_core::platform::argument_text(value)
+        artifactize_core::platform::os_text(value)
             .ok_or_else(|| "Invalid remote URL.".to_owned())
             .and_then(remote::parse_url)
             .map_err(|message| {

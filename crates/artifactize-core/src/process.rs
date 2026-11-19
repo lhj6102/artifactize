@@ -487,9 +487,11 @@ where
 
 fn child_command(command: &Command) -> Result<tokio::process::Command, Error> {
     let environment = platform::environment::for_child(&command.env);
-    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
-        platform::environment::lookup(&environment, name).map(ToOwned::to_owned)
-    })
+    let program = platform::program::resolve_with(
+        std::path::Path::new(&command.program),
+        &command.cwd,
+        |name| platform::environment::lookup(&environment, name).map(ToOwned::to_owned),
+    )
     .map_err(Error::Spawn)?;
     let mut child = tokio::process::Command::new(program);
     child
@@ -507,7 +509,8 @@ fn launch_detached(
     cwd: &std::path::Path,
     run: &mut Run,
 ) -> Result<(), Error> {
-    let program = platform::program::resolve(program, cwd).map_err(Error::Spawn)?;
+    let program =
+        platform::program::resolve(std::path::Path::new(program), cwd).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
     command
         .args(args)
@@ -559,7 +562,7 @@ pub(crate) fn launch_watched(
             Err(error) => Err((error, run)),
         };
     }
-    let program = match platform::program::resolve(program, cwd) {
+    let program = match platform::program::resolve(std::path::Path::new(program), cwd) {
         Ok(program) => program,
         Err(error) => return Err((Error::Spawn(error), run)),
     };
@@ -628,7 +631,7 @@ pub(crate) fn spawn_run(
     let stderr = options
         .open(directory.join("worker.stderr"))
         .map_err(Error::Spawn)?;
-    let program = platform::program::resolve(program.as_os_str(), repo).map_err(Error::Spawn)?;
+    let program = platform::program::resolve(program, repo).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
     command
         .arg("--repo")

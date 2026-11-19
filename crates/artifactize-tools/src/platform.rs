@@ -32,8 +32,29 @@ use windows as os;
 
 pub(crate) use os::{USES_PATHEXT, is_executable, open_desktop, spawn_tree};
 
-/// Resolves when the terminal interrupts this process: Ctrl+C, as Unix and Windows deliver it.
+/// Resolves when the terminal interrupts this process: Ctrl+C, as Unix and Windows deliver it,
+/// or, on Windows, its console closing.
 pub(crate) async fn interrupted() {
+    #[cfg(windows)]
+    {
+        let close = async {
+            match tokio::signal::windows::ctrl_close() {
+                Ok(mut close) => {
+                    close.recv().await;
+                }
+                Err(_) => std::future::pending::<()>().await,
+            }
+        };
+        tokio::select! {
+            () = interrupt() => {}
+            () = close => {}
+        }
+    }
+    #[cfg(not(windows))]
+    interrupt().await;
+}
+
+async fn interrupt() {
     if tokio::signal::ctrl_c().await.is_err() {
         // Without a handler there is no interrupt to wait for.
         std::future::pending::<()>().await;

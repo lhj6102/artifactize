@@ -250,7 +250,6 @@ fn view(
         reviewer: claim.reviewer.to_string(),
         mine: claim.reviewer.as_str() == reviewer,
     });
-    let mine = claim.as_ref().is_some_and(|claim| claim.mine);
     HumanView {
         id: request.id.clone().into(),
         title: format!("{} · {}", request.eval_id, request.title),
@@ -266,7 +265,7 @@ fn view(
             })
             .collect(),
         mark: monitor::Status::from(request.status()).into(),
-        stage: match review::stage(settled, mine) {
+        stage: match review::stage(view, reviewer) {
             review::Stage::Completed => Stage::Completed,
             review::Stage::Review => Stage::Review,
             review::Stage::Claim => Stage::Claim,

@@ -116,6 +116,14 @@ enum CommandArgs {
     General(Command),
 }
 
+/// A removed flag's value: none exists, since parsing refuses the flag.
+#[derive(Clone, Debug)]
+pub enum Removed {}
+
+fn removed_defer_human(_: &str) -> Result<Removed, String> {
+    Err("--defer-human was removed in 0.16.0: every verify lets machine work go on while sign-offs wait; remove the flag.".into())
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Serve bounded verification and inspection tools over MCP stdio.
@@ -204,9 +212,10 @@ pub enum Command {
         /// Start reviews before unresolved dependency gates; cancel blocked work.
         #[arg(long)]
         speculate: bool,
-        /// Removed in 0.16.0: a sign-off never holds up other evals.
-        #[arg(long, hide = true)]
-        defer_human: bool,
+        /// Removed in 0.16.0: a sign-off never holds up other evals. Refused while parsing, so a
+        /// parsed command never carries it.
+        #[arg(long, hide = true, num_args = 0, default_missing_value = "", value_parser = removed_defer_human)]
+        defer_human: Option<Removed>,
     },
     /// Inspect current validation, saved Run audit, and what verify would do.
     Status {

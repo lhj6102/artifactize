@@ -684,12 +684,13 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
     let markers = fixture.root.path().join("markers");
     fs::create_dir(&markers).unwrap();
     // Each script marks itself running, counts the running markers, and stays up until released.
-    let directory = support::os::path_text(&markers);
+    // The script program receives native paths.
+    let directory = support::os::native_text(&markers);
     for index in 0..8 {
         let name = format!("part{index}");
-        let running = format!("{directory}/running.{name}");
-        let counts = format!("{directory}/counts.{name}");
-        let release = format!("{directory}/release");
+        let running = support::os::native_text(&markers.join(format!("running.{name}")));
+        let counts = support::os::native_text(&markers.join(format!("counts.{name}")));
+        let release = support::os::native_text(&markers.join("release"));
         let output = format!("{name}-v1\n");
         let script = [
             "touch", &running, "count", &directory, "running.", &counts, "wait", &release,

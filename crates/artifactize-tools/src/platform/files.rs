@@ -41,14 +41,28 @@ pub fn is_absolute(path: &std::path::Path) -> bool {
 /// `root` (`None` outside it), a relative one is already logical.
 pub fn logical_below(root: &Path, path: &Path) -> Option<String> {
     if path.is_absolute() {
-        logical_from_native(relative_below(root, path)?)
+        logical_from_native(&relative_below(root, path)?)
     } else {
         logical_from_native(path)
     }
 }
 
-pub(crate) fn relative_below<'a>(root: &Path, path: &'a Path) -> Option<&'a Path> {
-    path.strip_prefix(root).ok()
+/// `path` below `root`: the part after it. On Windows a verbatim (`\\?\`) spelling of either
+/// is compared as its plain one, the spelling path text renders.
+pub(crate) fn relative_below(root: &Path, path: &Path) -> Option<PathBuf> {
+    if let Ok(relative) = path.strip_prefix(root) {
+        return Some(relative.to_path_buf());
+    }
+    #[cfg(windows)]
+    {
+        let plain = |path: &Path| windows::plain(path).unwrap_or_else(|| path.to_path_buf());
+        plain(path)
+            .strip_prefix(plain(root))
+            .ok()
+            .map(Path::to_path_buf)
+    }
+    #[cfg(not(windows))]
+    None
 }
 
 pub(crate) fn parent(path: &Path) -> Option<&Path> {

@@ -132,6 +132,20 @@ impl Fixture {
             .unwrap_or_else(|| serde_json::from_slice(&recorded.output.stdout).unwrap())
     }
 
+    /// The saved Run `id` as `run show --json` prints it, read without reconciling anything.
+    fn saved_run(&self, id: &str) -> Value {
+        let state = self.root.path().join("state");
+        let view = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(artifactize_core::store::read_run_snapshot(&state, id))
+            .unwrap();
+        serde_json::to_value(artifactize_core::query::run_output(
+            &view,
+            time::OffsetDateTime::now_utc(),
+        ))
+        .unwrap()
+    }
+
     fn text(&self, repo: &Path, args: &[&str], code: i32) -> String {
         String::from_utf8(self.run(repo, args, code).output.stdout).unwrap()
     }
@@ -269,7 +283,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
 
     let text = fixture.text(&merge, &["verify", "--wait", "--all"], 0);
     let id = line(&text, "Run:").strip_prefix("Run: ").unwrap();
-    let run = fixture.json(&merge, &["run", "show", id], 0);
+    let run = fixture.saved_run(id);
     // style waits for web's new result, then reviews again because its key covers web.
     let expected = BTreeMap::from([
         ("api/tests".into(), "reuse".into()),

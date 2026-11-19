@@ -245,7 +245,7 @@ impl Catalog {
             };
             let label = root.file_name().map_or_else(
                 || crate::platform::path_text(root),
-                |name| name.to_string_lossy().into_owned(),
+                |name| crate::platform::path_text(Path::new(name)),
             );
             // The repository row is the whole repository; there is no separate `ALL` row.
             let scope = Scope::Repository(repository.clone());

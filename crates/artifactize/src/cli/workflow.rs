@@ -96,7 +96,7 @@ pub(super) async fn verify(
         const DIAGNOSTIC_BYTES: u64 = 64 * 1024;
         let mut bytes = Vec::new();
         let _ = log.take(DIAGNOSTIC_BYTES).read_to_end(&mut bytes);
-        let text = artifactize_core::platform::output_text(&bytes).replace("\r\n", "\n");
+        let text = artifactize_core::platform::output_lines(&bytes);
         let _ = io::stderr().lock().write_all(text.as_bytes());
     }
     if let Some(error) = view.run.error() {

@@ -4,7 +4,7 @@
 //! launcher), or at one of this system's app locations.
 
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -65,9 +65,7 @@ fn find(
         .map(|bin| bin.join(format!("{PROGRAM}{}", std::env::consts::EXE_SUFFIX)))
         .filter(|beside| beside.is_file())
         .or_else(|| {
-            cwd.and_then(|cwd| {
-                super::program::resolve_with(OsStr::new(PROGRAM), cwd, variable).ok()
-            })
+            cwd.and_then(|cwd| super::program::resolve_with(Path::new(PROGRAM), cwd, variable).ok())
         })
         .or_else(|| locations.into_iter().find(|location| location.exists()))
 }
@@ -174,8 +172,7 @@ mod tests {
         let root = crate::test_os::tempdir();
         let bin = root.path().join("bin");
         std::fs::create_dir(&bin).unwrap();
-        let app = bin.join(format!("{PROGRAM}{}", std::env::consts::EXE_SUFFIX));
-        std::fs::write(&app, "").unwrap();
+        let app = crate::test_os::executable_named(&bin, PROGRAM);
         let elsewhere = root.path().join("elsewhere");
         std::fs::write(&elsewhere, "").unwrap();
         assert_eq!(

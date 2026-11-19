@@ -62,7 +62,7 @@ pub fn fixed_description(builtin: Builtin, args: &[String]) -> &'static str {
         Builtin::List => {
             "List the declared directory in {artifactName}. No input arguments; returns sorted entries and truncation metadata."
         }
-        Builtin::Section if args.len() == 1 => {
+        Builtin::Section if args.len() == SECTION_HEADING_AT_CALL => {
             "Read the declared Markdown file in {artifactName} by exact heading. Supply only heading; includes nested sections until the next same or higher level heading. Missing headings list available titles."
         }
         Builtin::Section => {
@@ -76,7 +76,7 @@ pub fn fixed_description(builtin: Builtin, args: &[String]) -> &'static str {
 }
 
 pub fn fixed_schema(builtin: Builtin, args: &[String]) -> Value {
-    if builtin == Builtin::Section && args.len() == 1 {
+    if builtin == Builtin::Section && args.len() == SECTION_HEADING_AT_CALL {
         super::super::input_schema(builtin)
     } else {
         json!({"type":"object", "properties":{}, "required":[], "additionalProperties":false})

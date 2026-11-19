@@ -1040,9 +1040,17 @@ async fn c2_retiring_a_deferred_follower_preserves_its_original_in_another_tree(
     .unwrap();
     let newer = follower.submit(&[], None);
     follower.settled(&newer).await;
-    let retired = store::read_request(&follower.state, joined.requests[0].id.as_str())
-        .await
-        .unwrap();
+    // The older follower's request is retired by its own Run's settling, which may come after
+    // the newer Run's: wait for its saved state to change.
+    let retired = loop {
+        let read = store::read_request(&follower.state, joined.requests[0].id.as_str())
+            .await
+            .unwrap();
+        if read.request.error_code().is_some() {
+            break read;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
     assert_eq!(
         retired.request.error_code(),
         Some(artifactize_core::types::FailureCode::Superseded)

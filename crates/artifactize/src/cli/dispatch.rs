@@ -20,7 +20,7 @@ pub(super) async fn execute(cli: Parsed) -> Result<u8, String> {
         invocation,
     } = cli;
     match invocation {
-        Invocation::Desktop(launch) => launch.run(state_dir, json).await,
+        Invocation::Desktop(launch) => launch.run(state_dir).await,
         Invocation::ToolCheck { options, repo } => {
             maintenance::tools(
                 Context {
@@ -130,11 +130,8 @@ async fn execute_general(command: Option<Command>, context: Context) -> Result<u
             comment,
             reuse_only,
             speculate,
-            defer_human,
+            defer_human: None,
         }) => {
-            if defer_human {
-                return Err("--defer-human was removed in 0.16.0: every verify lets machine work go on while sign-offs wait; remove the flag.".into());
-            }
             workflow::verify(
                 context,
                 selection.resolve()?,

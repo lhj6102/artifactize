@@ -15,9 +15,9 @@ pub(crate) fn read_output(root: &Path, path: &Path) -> Result<Vec<u8>, String> {
     let relative = if crate::files::is_absolute(path) {
         crate::files::relative_below(root, path).ok_or(invalid)?
     } else {
-        path
+        path.to_path_buf()
     };
-    let file = scope::open_native_scoped(root, relative)
+    let file = scope::open_native_scoped(root, &relative)
         .map_err(|e| format!("Image {}: {e}", crate::files::path_text(path)))?;
     read(file)
 }

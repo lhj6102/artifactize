@@ -385,7 +385,6 @@ async fn read_with_repo(
         session,
         ..
     } = filter;
-    let repo = repo.map(|repo| crate::platform::path_text(&repo));
     let statuses = statuses.to_vec();
     let shown = filter.shown;
     let Some(connection) = open_read(&state).await? else {
@@ -467,7 +466,7 @@ async fn read_with_repo(
 pub(super) struct Query {
     pub run: Option<crate::types::RunId>,
     pub id: Option<crate::types::RequestId>,
-    pub repo: Option<String>,
+    pub repo: Option<std::path::PathBuf>,
     pub waiting: bool,
     pub session: Option<crate::types::SessionId>,
     pub statuses: Vec<crate::types::RequestStatus>,
@@ -492,22 +491,22 @@ pub(super) struct Row {
 }
 
 pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>, Error> {
-    let mut predicates = Vec::new();
-    let mut values: Vec<rusqlite::types::Value> = Vec::new();
-    for (column, value) in [
+    // The repository is saved as its path text; it becomes text only for the parameter.
+    let (mut predicates, mut values): (Vec<String>, Vec<rusqlite::types::Value>) = [
         ("q.run_id", filter.run.as_ref().map(ToString::to_string)),
         ("q.id", filter.id.as_ref().map(ToString::to_string)),
-        ("r.repo", filter.repo.clone()),
+        (
+            "r.repo",
+            filter.repo.as_deref().map(crate::platform::path_text),
+        ),
         (
             "json_extract(q.data,'$.sessionId')",
             filter.session.as_ref().map(ToString::to_string),
         ),
-    ] {
-        if let Some(value) = value {
-            predicates.push(format!("{column}=?"));
-            values.push(value.into());
-        }
-    }
+    ]
+    .into_iter()
+    .filter_map(|(column, value)| Some((format!("{column}=?"), value?.into())))
+    .unzip();
     if filter.waiting {
         predicates.push("q.status IN ('WAITING_HUMAN','DEFERRED')".into());
     }

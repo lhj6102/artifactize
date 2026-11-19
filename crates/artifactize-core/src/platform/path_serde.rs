@@ -42,20 +42,33 @@ pub(crate) mod option {
     }
 }
 
-/// A path a started program uses as given: its native spelling, not `/` text.
+/// A path a started program uses as given: its native spelling, not `/` text. JSON carries only
+/// Unicode, so a path that is not is refused rather than altered.
 pub(crate) mod native {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
-    use serde::Serializer;
+    use serde::{Serializer, ser::Error};
+
+    pub(crate) fn serialize_path<S: Serializer>(
+        path: &Path,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(text(path)?)
+    }
 
     pub(crate) fn serialize<S: Serializer>(
         path: &Option<PathBuf>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         match path {
-            Some(path) => serializer.serialize_some(&path.to_string_lossy()),
+            Some(path) => serializer.serialize_some(text(path)?),
             None => serializer.serialize_none(),
         }
+    }
+
+    fn text<E: Error>(path: &Path) -> Result<&str, E> {
+        path.to_str()
+            .ok_or_else(|| E::custom("A path given to a tool program must be Unicode text."))
     }
 }
 

@@ -267,7 +267,9 @@ enum CommandOutput {
 }
 
 fn parse_wire(stdout: &[u8]) -> Result<CommandOutput, InvalidOutput> {
-    let wire: WireResult = serde_json::from_slice(stdout).map_err(|_| InvalidOutput)?;
+    // The program's output is text as its platform writes it (UTF-16 on a Windows console).
+    let wire: WireResult =
+        serde_json::from_str(&crate::platform::text::output(stdout)).map_err(|_| InvalidOutput)?;
     if !wire.is_error {
         return ContentBlocks::new(wire.content)
             .map(CommandOutput::Success)

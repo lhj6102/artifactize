@@ -288,7 +288,7 @@ fn snapshot(state: &std::path::Path, id: &RunId) -> Result<Observation, Error> {
     let (mut saved, control): (Observation, Option<String>) = transaction.query_row(
         "SELECT repo,status,json_extract(data,'$.control'),json_extract(data,'$.createdAt'),json_extract(data,'$.completedAt') FROM runs WHERE id=?", [id],
         |row| Ok((Observation {
-            repo: std::path::PathBuf::from(row.get::<_, String>(0)?), status: row.get(1)?, control: None,
+            repo: super::path_column(row, 0)?, status: row.get(1)?, control: None,
             created_at: row.get(3)?, completed_at: row.get(4)?, counts: Default::default(),
         }, row.get(2)?))).optional()?.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
     crate::workspace::outside_workspace(&saved.repo, state)

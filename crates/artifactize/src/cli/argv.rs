@@ -173,6 +173,12 @@ pub(super) fn parse_args(args: &[OsString]) -> Result<Parsed, ParseError> {
         Some(CommandArgs::General(command)) => Invocation::General(Some(command), repo),
         None => Invocation::General(None, repo),
     };
+    // The desktop app has no JSON output: a launch carries no output mode.
+    if json && matches!(invocation, Invocation::Desktop(_)) {
+        return Err(invalid(
+            "Desktop launch shortcuts do not support --json.".into(),
+        ));
+    }
     Ok(Parsed {
         state_dir,
         json,

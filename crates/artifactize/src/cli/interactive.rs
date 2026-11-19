@@ -54,10 +54,7 @@ pub(super) struct Launch {
 }
 
 impl Launch {
-    pub(super) async fn run(self, state_dir: Option<PathBuf>, json: bool) -> Result<u8, String> {
-        if json {
-            return Err("Desktop launch shortcuts do not support --json.".into());
-        }
+    pub(super) async fn run(self, state_dir: Option<PathBuf>) -> Result<u8, String> {
         if let Screen::Review {
             request: Some(id), ..
         } = &self.screen

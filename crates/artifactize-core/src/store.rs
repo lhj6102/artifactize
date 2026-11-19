@@ -78,6 +78,21 @@ const SQLITE_BUSY_POLL: std::time::Duration = std::time::Duration::from_millis(1
 
 /// Make `db` wait for a busy database, trying every [`SQLITE_BUSY_POLL`] for up to
 /// [`SQLITE_BUSY_TIMEOUT`].
+/// A path column, saved as its path text, read back as the same native path.
+pub(crate) fn path_column(
+    row: &rusqlite::Row<'_>,
+    index: usize,
+) -> rusqlite::Result<std::path::PathBuf> {
+    let text: String = row.get(index)?;
+    artifactize_tools::files::path_from_text(&text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
+
 pub(crate) fn wait_when_busy(db: &rusqlite::Connection) -> rusqlite::Result<()> {
     db.busy_handler(Some(busy))
 }

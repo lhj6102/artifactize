@@ -315,7 +315,7 @@ fn login_on_a_terminal_does_not_echo_the_token() {
     );
     let wait = support::os::patience(Duration::from_secs(10));
     let mut output = Vec::new();
-    while !String::from_utf8_lossy(&output).contains("Paste the remote token") {
+    while !support::os::output_lines_of(&output).contains("Paste the remote token") {
         output.extend(
             receiver
                 .recv_timeout(wait)
@@ -325,7 +325,7 @@ fn login_on_a_terminal_does_not_echo_the_token() {
     // A terminal's Enter key sends a carriage return.
     terminal.type_text(format!("{token}\r").as_bytes());
     assert!(terminal.finish_and_drain(receiver, &mut output));
-    let output = String::from_utf8_lossy(&output);
+    let output = support::os::output_lines_of(&output);
     assert!(!output.contains(&token));
     assert!(output.contains("as alice-laptop"), "{output}");
 }

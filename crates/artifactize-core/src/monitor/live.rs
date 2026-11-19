@@ -189,6 +189,16 @@ impl Discovery {
             .clone()
     }
 
+    /// Whether `path` is a folder now.
+    fn is_folder(&self, path: &Path) -> bool {
+        path.is_dir()
+    }
+
+    /// Whether the folder `path` holds declarations.
+    fn declares(&self, path: &Path) -> bool {
+        crate::workspace::has_artifact_marker(path).unwrap_or(false)
+    }
+
     fn worktrees(&mut self, common: &Path) -> Vec<Worktree> {
         self.trees
             .entry(common.to_path_buf())
@@ -381,20 +391,16 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
     live.extend(
         folders
             .into_iter()
-            .filter(|path| {
-                path.is_dir()
-                    && (started(path)
-                        || crate::workspace::has_artifact_marker(path).unwrap_or(false))
-            })
+            .filter(|path| discovery.is_folder(path) && (started(path) || discovery.declares(path)))
             .map(|path| (Place::Folder(path.clone()), path.clone())),
     );
-    // The filesystem is read here, at the edge: which newest-Run folders still exist.
+    // Which newest-Run folders still exist, as the filesystem boundary reports.
     let present: BTreeSet<PathBuf> = live
         .iter()
         .filter_map(|(place, tree)| {
             let (_, newest) = grouped.get(place)?;
             let folder = tree.join(&newest.as_ref()?.1);
-            folder.is_dir().then_some(folder)
+            discovery.is_folder(&folder).then_some(folder)
         })
         .collect();
     let mut branches: Vec<Branch> = live

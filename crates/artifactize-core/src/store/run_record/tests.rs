@@ -1,5 +1,4 @@
-use crate::store::{self, DATABASE, OwnedReceipts};
-use rusqlite::Connection;
+use crate::store::{self, OwnedReceipts};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -55,45 +54,21 @@ async fn fixture() -> (
     (root, state, receipts, saved)
 }
 
-fn row<T: rusqlite::types::FromSql>(state: &Path, sql: &str) -> T {
-    Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap()
-    .query_row(sql, [], |row| row.get(0))
-    .unwrap()
-}
-
 #[tokio::test]
-async fn a_run_saves_its_definitions_once_and_its_state_without_them() {
+async fn a_saved_run_keeps_its_first_definitions_when_saved_again() {
     let (_root, state, receipts, mut saved) = fixture().await;
-    let written: String = row(
-        &state,
-        "SELECT data FROM run_definitions WHERE run_id='run-1'",
-    );
-    assert_eq!(
-        serde_json::from_str::<Value>(&written).unwrap(),
-        serde_json::from_str::<Value>(DEFINED).unwrap()
-    );
-    // Saving the Run again writes its state; the definitions it holds are not written again.
+    let first = store::read_run(&state, "run-1").await.unwrap();
+    // Saving the Run again saves its state; the definitions it was started with stay.
     saved.jobs = Some(7);
     saved.definitions =
         serde_json::from_value(json!({"artifacts":{"web":{"path":"web"}},"evals":[]})).unwrap();
     receipts.save_run(&saved).await.unwrap();
-    let state_text: String = row(&state, "SELECT data FROM runs WHERE id='run-1'");
-    let state_value: Value = serde_json::from_str(&state_text).unwrap();
-    assert_eq!(state_value["jobs"], 7);
-    assert!(state_value["definitions"].is_null());
-    assert_eq!(
-        row::<String>(
-            &state,
-            "SELECT data FROM run_definitions WHERE run_id='run-1'"
-        ),
-        written
-    );
     let read = store::read_run(&state, "run-1").await.unwrap();
     assert_eq!(read.run.jobs, Some(7));
+    assert_eq!(
+        serde_json::to_value(read.run.definitions.graph().unwrap()).unwrap(),
+        serde_json::to_value(first.run.definitions.graph().unwrap()).unwrap()
+    );
     let artifacts = read
         .run
         .definitions

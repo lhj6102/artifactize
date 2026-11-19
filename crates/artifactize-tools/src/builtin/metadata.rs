@@ -33,13 +33,17 @@ pub fn description(builtin: Builtin) -> &'static str {
     }
 }
 
+/// The shortest pattern or heading accepted: an empty one would match everything or name no
+/// section.
+const MIN_TEXT_UNITS: usize = 1;
+
 pub fn input_schema(builtin: Builtin) -> Value {
     let path = json!({
         "type":"string",
         "maxLength":scope::MAX_PATH_UNITS,
         "description":"Logical path relative to the tool's Artifact, without the Artifact's name; no absolute paths, dot components, backslashes or symlinks. Empty means the root.",
     });
-    let pattern = json!({"type":"string","minLength":1,"maxLength":MAX_PATTERN_UNITS});
+    let pattern = json!({"type":"string","minLength":MIN_TEXT_UNITS,"maxLength":MAX_PATTERN_UNITS});
     let integer =
         |min, max, default| json!({"type":"integer","minimum":min,"maximum":max,"default":default});
     let (properties, required) = match builtin {

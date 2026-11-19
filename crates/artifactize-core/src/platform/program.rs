@@ -53,7 +53,7 @@ pub(crate) fn resolve_scoped(
             candidate
         };
         match admit(&candidate) {
-            Ok(path) if resolve(path.as_os_str(), Path::new("")).is_ok() => return Ok(path),
+            Ok(path) if resolve(&path, Path::new("")).is_ok() => return Ok(path),
             Ok(_) => (),
             Err(error) => {
                 failure.get_or_insert(error);
@@ -80,7 +80,7 @@ fn suffix_spelling(directory: &Path, candidate: &Path) -> Option<PathBuf> {
 /// Find `program` as a child whose environment `variable` reads would: by `PATH` (and on
 /// Windows `PATHEXT`) for a bare name, below `cwd` for a path.
 pub(crate) fn resolve_with(
-    program: &std::ffi::OsStr,
+    program: &Path,
     cwd: &Path,
     variable: impl Fn(&str) -> Option<std::ffi::OsString>,
 ) -> std::io::Result<PathBuf> {
@@ -89,7 +89,7 @@ pub(crate) fn resolve_with(
 
 /// Find `program` as a child with the person's environment ([`super::environment::snapshot`])
 /// would.
-pub(crate) fn resolve(program: &std::ffi::OsStr, cwd: &Path) -> std::io::Result<PathBuf> {
+pub(crate) fn resolve(program: &Path, cwd: &Path) -> std::io::Result<PathBuf> {
     artifactize_tools::program::resolve(program, cwd)
 }
 
@@ -100,7 +100,7 @@ pub(crate) fn resolve_near_current(program: &OsStr) -> io::Result<PathBuf> {
     if let Some(path) = resolve_sibling(program, &current) {
         return Ok(path);
     }
-    resolve(program, &std::env::current_dir()?)
+    resolve(Path::new(program), &std::env::current_dir()?)
 }
 
 fn resolve_sibling(program: &OsStr, current: &Path) -> Option<PathBuf> {
@@ -110,7 +110,7 @@ fn resolve_sibling(program: &OsStr, current: &Path) -> Option<PathBuf> {
         .ancestors()
         .skip(1)
         .take(SIBLING_DIRECTORIES)
-        .find_map(|directory| resolve(directory.join(program).as_os_str(), directory).ok())
+        .find_map(|directory| resolve(&directory.join(program), directory).ok())
 }
 
 /// Hand `target`, a file or URL, to the desktop's opener.
@@ -124,7 +124,7 @@ pub(crate) fn tool_output<'a>(
     args: impl IntoIterator<Item = &'a std::ffi::OsStr>,
 ) -> Option<Vec<u8>> {
     let cwd = std::env::current_dir().ok()?;
-    let program = resolve(std::ffi::OsStr::new(program), &cwd).ok()?;
+    let program = resolve(Path::new(program), &cwd).ok()?;
     let mut command = std::process::Command::new(program);
     command
         .args(args)

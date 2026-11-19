@@ -192,7 +192,7 @@ fn version_matches_the_shared_workspace_version() {
     let output = os::tools_output(env!("CARGO_BIN_EXE_artifactize-tools"), &["--version"]);
     assert!(os::succeeded(&output.status));
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
+        artifactize_tools::text::output(&output.stdout),
         format!("artifactize-tools {}\n", env!("CARGO_PKG_VERSION"))
     );
     assert!(output.stderr.is_empty());

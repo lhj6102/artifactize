@@ -4,7 +4,9 @@
 //! cannot be rejoined by dropping them afterwards), then text holding any piece of a
 //! credential is withheld whole, and only then is the rest clipped.
 
-/// Consecutive characters of a credential that count as a piece of it.
+/// Consecutive characters of a credential that count as a piece of it. Eight characters of a
+/// random token are already too many to guess from, while shorter runs (a `sk-` prefix, a common
+/// word) occur in ordinary error text and would withhold harmless messages.
 const PIECE: usize = 8;
 
 /// What is shown instead of server text that held part of a credential.

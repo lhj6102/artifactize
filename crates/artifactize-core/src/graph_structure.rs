@@ -263,10 +263,7 @@ pub(crate) fn launch(
     if let Err(error) = read(repo) {
         return Err((error, run));
     }
-    let program = match crate::platform::program::resolve(
-        std::ffi::OsStr::new("artifactize-desktop"),
-        repo,
-    ) {
+    let program = match crate::platform::program::resolve(Path::new("artifactize-desktop"), repo) {
         Ok(program) => program,
         Err(error) => return Err((format!("Cannot find artifactize-desktop: {error}"), run)),
     };

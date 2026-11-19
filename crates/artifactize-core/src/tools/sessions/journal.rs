@@ -65,7 +65,8 @@ impl Record {
             &serde_json::to_vec(&child).map_err(io::Error::other)?,
         )?;
         file.sync_all()?;
-        std::fs::rename(pending, path)?;
+        // The staged file is still open here.
+        platform::paths::rename_open_file(&pending, &path)?;
         platform::sync_dir(&self.directory)
     }
 

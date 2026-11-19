@@ -93,7 +93,10 @@ enum ContextTarget {
     Live(crate::config::Uri),
 }
 #[derive(Clone, Serialize)]
-struct ContextPath(#[serde(with = "crate::platform::path_serde")] PathBuf);
+// The tool program opens these paths: they are given in native spelling.
+struct ContextPath(
+    #[serde(serialize_with = "crate::platform::path_serde::native::serialize_path")] PathBuf,
+);
 
 struct Invocation {
     cwd: PathBuf,
@@ -529,7 +532,7 @@ fn preflight_executable(
         .map_err(|_| "Tool executable path is unavailable or outside scope.".to_owned())?;
     let cwd = scope::scoped_path(root, scope.artifacts[owner].folder())
         .map_err(|error| error.to_string())?;
-    crate::platform::program::resolve(&program, &cwd)
+    crate::platform::program::resolve(Path::new(&program), &cwd)
         .map(|_| ())
         .map_err(|_| {
             format!(

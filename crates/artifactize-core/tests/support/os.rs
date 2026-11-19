@@ -185,6 +185,15 @@ pub fn can_replace_open_database() -> bool {
 
 /// A temporary fixture below the physical OS temp root, not macOS /var or Windows 8.3
 /// aliases. Scoped file reads intentionally refuse symlink traversal.
+/// An empty executable file named `name` as this OS names programs (with its executable
+/// suffix), in `directory`.
+pub fn executable_named(directory: &Path, name: &str) -> std::path::PathBuf {
+    let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    fs::write(&program, "").unwrap();
+    make_executable(&program);
+    program
+}
+
 pub fn tempdir() -> tempfile::TempDir {
     tempfile::tempdir_in(temp_root()).unwrap()
 }
@@ -3342,6 +3351,11 @@ pub fn native_text(path: &Path) -> String {
 /// A program's captured text with Windows line endings as `\n`, for assertions on lines.
 pub fn output_lines(text: &str) -> String {
     text.replace("\r\n", "\n")
+}
+
+/// A program's captured bytes (a pipe's, a pseudo-terminal's) as text, its lines ending in `\n`.
+pub fn output_lines_of(bytes: &[u8]) -> String {
+    output_lines(&String::from_utf8_lossy(bytes))
 }
 
 /// Whether the launch probe's child is detached from its launcher: on Unix it leads its own

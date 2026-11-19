@@ -426,7 +426,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     evals.push(runtime(
         "controlled",
         support::os::python_program(),
-        json!(["-I", support::os::path_text(&script)]),
+        json!(["-I", support::os::native_text(&script)]),
     ));
     support::declaration::write(
         &(project.repo),

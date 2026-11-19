@@ -16,7 +16,7 @@ const OPENER: &str = "xdg-open";
 /// Run the desktop opener with the target as its one argument, never through a shell.
 pub(crate) async fn open_desktop(target: &OsStr, deadline: Duration) -> io::Result<()> {
     let cwd = std::env::current_dir()?;
-    let program = crate::program::resolve(OsStr::new(OPENER), &cwd)?;
+    let program = crate::program::resolve(std::path::Path::new(OPENER), &cwd)?;
     let mut command = tokio::process::Command::new(program);
     command
         .arg(target)

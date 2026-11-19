@@ -134,11 +134,16 @@ pub fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, Strin
     fields
 }
 
-/// The stage of a request that is `settled`, or open and claimed by this reviewer (`mine`).
-pub fn stage(settled: bool, mine: bool) -> Stage {
-    if settled {
+/// Where the request of `view` stands for `reviewer`: settled, open and claimed by them, or
+/// open to claim.
+pub fn stage(view: &RequestView, reviewer: &str) -> Stage {
+    if !view.request.status().is_human_wait() {
         Stage::Completed
-    } else if mine {
+    } else if view
+        .claim
+        .as_ref()
+        .is_some_and(|claim| claim.reviewer.as_str() == reviewer)
+    {
         Stage::Review
     } else {
         Stage::Claim

@@ -764,7 +764,7 @@ async fn human_environment_and_launch_probe() {
     let tools::Content::Text { text } = &result.content()[0] else {
         panic!()
     };
-    assert!(text.replace("\r\n", "\n").starts_with("absent\n"));
+    assert!(support::os::output_lines(text).starts_with("absent\n"));
     // The author's own environment, home included; artifactize's variable is not in it.
     assert!(text.contains("real-home"));
     let result = call(repo).await;

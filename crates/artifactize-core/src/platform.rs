@@ -149,9 +149,14 @@ pub fn output_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)
 }
 
-/// A command-line argument as Unicode text: `None` when the OS string is not (non-UTF-8 bytes
-/// on Unix, an unpaired UTF-16 unit on Windows).
-pub fn argument_text(value: &std::ffi::OsStr) -> Option<&str> {
+/// A program's textual output as lines ending in `\n`, whichever ending the program wrote.
+pub fn output_lines(bytes: &[u8]) -> String {
+    output_text(bytes).replace("\r\n", "\n")
+}
+
+/// An OS string (an argument, a file name) as Unicode text: `None` when it is not (non-UTF-8
+/// bytes on Unix, an unpaired UTF-16 unit on Windows).
+pub fn os_text(value: &std::ffi::OsStr) -> Option<&str> {
     value.to_str()
 }
 

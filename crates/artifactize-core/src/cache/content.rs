@@ -275,10 +275,9 @@ impl Walk {
             .map(|entry| {
                 let entry = entry.map_err(|e| format!("{label}: {e}"))?;
                 let kind = entry.file_type().map_err(|e| format!("{label}: {e}"))?;
-                let name = entry
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| "Artifact paths must be UTF-8.")?;
+                let name = platform::os_text(&entry.file_name())
+                    .map(str::to_owned)
+                    .ok_or("Artifact paths must be UTF-8.")?;
                 Ok((name, kind == FileKind::Directory))
             })
             .collect::<Result<Vec<_>, String>>()?;
