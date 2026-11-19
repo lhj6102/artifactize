@@ -2,7 +2,7 @@
 // tool strip, its find field and its navigator; each action waits for what it shows.
 import { PNG } from "pngjs";
 import { clickAt, dispatchInput, visibleCenter } from "../input.ts";
-import { press, typeText } from "../keys.ts";
+import { afterRender, press, typeText } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
 const MAIN = 'section.panel[aria-label="Main area"]';
@@ -67,22 +67,15 @@ export class Graph {
     return this.browser.execute((main) => document.querySelector(`${main} .empty`)?.textContent?.trim() ?? "", MAIN);
   }
 
-  /** The main area's notice, as it reads. */
-  notice(): Promise<string> {
-    return this.browser.execute((main) => document.querySelector(`${main} [role="alert"], ${main} .notice`)?.textContent?.trim() ?? "", MAIN);
+  /** Wait until `check`, a reading of the graph, holds. */
+  async until(check: () => Promise<boolean>, what: string, timeout = 15000): Promise<void> {
+    await holds(this.browser, check, what, timeout);
   }
 
   /** Click the Run's headline: the Run's own Detail opens. */
   async openRunDetail(): Promise<void> {
     await this.browser.$(`${MAIN} > header button.headline`).click();
     await holds(this.browser, async () => (await this.browser.$('aside[aria-label="Detail"] h2').isExisting()), "the Run's Detail opened");
-  }
-
-  /** Click the header's Refresh of a Current: it scans again. */
-  async refresh(): Promise<string> {
-    const before = await this.scan();
-    await this.browser.$(MAIN).$("button=Refresh").click();
-    return until(this.browser, () => this.scan(), (shown) => /^Scanned at /.test(shown) && shown !== before, "the Current scanned again");
   }
 
   /** Whether the main area has the keyboard. */
@@ -117,15 +110,18 @@ export class Graph {
   /** The node `id` once it is drawn, hit-testable and `ok` holds for it. */
   async node(id: string, ok: (node: Node) => boolean = () => true, what = `the graph draws ${id}`): Promise<Node> {
     const found = await until(this.browser, async () => {
-      const visible = await this.browser.execute((selector) => {
+      const covered = await this.browser.execute((selector) => {
         const node = document.querySelector(selector);
         const box = node?.getBoundingClientRect();
-        if (!node || !box || box.width <= 0 || box.height <= 0) return false;
-        return document.elementFromPoint(box.left + box.width / 2, box.top + Math.min(box.height / 2, 12))?.closest(".svelte-flow__node") === node;
+        if (!node || !box) return "not drawn";
+        if (box.width <= 0 || box.height <= 0) return "an empty box";
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + Math.min(box.height / 2, 12));
+        if (hit?.closest(".svelte-flow__node") === node) return "";
+        return `covered at ${Math.round(box.left)},${Math.round(box.top)} by ${hit?.closest("[data-id]")?.getAttribute("data-id") ?? hit?.className ?? "nothing"}`;
       }, nodeAt(id));
-      return visible ? (await this.nodes()).find((node) => node.id === id) : undefined;
-    }, (node) => !!node && ok(node), what);
-    return found!;
+      return covered ? covered : (await this.nodes()).find((node) => node.id === id) ?? "gone";
+    }, (node) => typeof node !== "string" && ok(node), what);
+    return found as Node;
   }
 
   /** Wait until the node `id` is not drawn. */
@@ -160,9 +156,11 @@ export class Graph {
     await clickAt(this.browser, point);
   }
 
-  /** The node with the keyboard, or null. */
-  focusedNode(): Promise<string | null> {
-    return this.browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
+  /** Give the main area the keyboard as a person does from the pane: Enter on its entries. */
+  async focus(): Promise<void> {
+    await this.browser.$('[role="group"][aria-label="Pane entries"]').click();
+    await holds(this.browser, () => this.browser.$('[role="group"][aria-label="Pane entries"]').isFocused(), "the pane's entries have the keyboard");
+    await press(this.browser, ["Enter"], () => this.focused(), "Enter gave the main area the keyboard");
   }
 
   /** Drag the node `id` (by its title row for a whole) by `dx`, `dy` pixels and release it. */
@@ -178,12 +176,21 @@ export class Graph {
     await this.pointerDrag(from, to);
   }
 
-  /** Press at `from`, move through a few points to `to`, release there, as a mouse does. */
+  /** Drag the comment drawn under the node `id` onto the node `onto` and release it there. */
+  async dragComment(id: string, onto: string): Promise<void> {
+    const from = await visibleCenter(this.browser, await this.browser.$(`${nodeAt(id)} .comment`).getElement());
+    const to = await visibleCenter(this.browser, await this.browser.$(`${nodeAt(onto)} .name`).getElement());
+    await this.pointerDrag(from, to);
+  }
+
+  /** Press at `from`, move through a few points to `to`, release there once the moves have
+   * been drawn, as a mouse does. */
   async pointerDrag(from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
     await dispatchInput(this.browser, { kind: "pointer", phase: "down", ...from });
-    for (const step of [0.25, 0.5, 0.75, 1]) {
-      await dispatchInput(this.browser, { kind: "pointer", phase: "move", x: Math.round(from.x + (to.x - from.x) * step), y: Math.round(from.y + (to.y - from.y) * step) });
+    for (let step = 1; step <= 8; step += 1) {
+      await dispatchInput(this.browser, { kind: "pointer", phase: "move", x: Math.round(from.x + ((to.x - from.x) * step) / 8), y: Math.round(from.y + ((to.y - from.y) * step) / 8) });
     }
+    await afterRender(this.browser);
     await dispatchInput(this.browser, { kind: "pointer", phase: "up", ...to });
   }
 
@@ -199,12 +206,6 @@ export class Graph {
   async minimize(id: string, name: string, minimized: boolean): Promise<void> {
     await this.browser.$(`${nodeAt(id)} button[aria-label="${minimized ? "Minimize" : "Expand"} ${name} (m)"]`).click();
     await this.node(id, (node) => /, minimized,/.test(node.label) === minimized, `${name} ${minimized ? "minimized" : "expanded"}`);
-  }
-
-  /** Click the whole's Reset layout. */
-  async resetLayout(id: string, name: string): Promise<void> {
-    await this.browser.$(`${nodeAt(id)} button[aria-label="Reset layout of ${name}"]`).click();
-    await holds(this.browser, async () => !(await this.browser.$(`${nodeAt(id)} button[aria-label="Reset layout of ${name}"]`).isExisting()), `${name}'s layout reset`);
   }
 
   /** Whether the tool strip shows `name` (Find, Fit, New Artifact, Reset layout…). */
@@ -240,12 +241,6 @@ export class Graph {
     const before = await this.camera();
     await (name === "Fit" ? this.browser.$(TOOLS).$("button*=Fit") : this.browser.$(TOOLS).$(`button[aria-label="${name}"]`)).click();
     return until(this.browser, () => this.camera(), (shown) => shown !== before, `${name} moved the camera`);
-  }
-
-  /** Turn the mouse wheel over the graph's middle, `steps` notches towards the reader (zooming in). */
-  async wheel(deltaY: number): Promise<void> {
-    const at = await visibleCenter(this.browser, await this.browser.$(`${GRAPH} .canvas`).getElement());
-    await this.browser.action("wheel").scroll({ x: at.x, y: at.y, deltaX: 0, deltaY }).perform();
   }
 
   /** Whether the Navigator shows. */

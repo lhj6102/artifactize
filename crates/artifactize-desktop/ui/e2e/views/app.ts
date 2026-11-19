@@ -2,7 +2,7 @@
 // opens over the screen, and its parts (the pane, the main area's graph, the Detail, a Human
 // review, Settings). Cases reach the window only through these views (E2E-REAL-APP).
 import { callWindow, embeddedReady } from "../portable.ts";
-import { clickAt, pointerGapClick, visibleCenter } from "../input.ts";
+import { pointerGapClick } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { Detail } from "./detail.ts";
 import { Graph } from "./graph.ts";
@@ -65,6 +65,27 @@ export class App {
     });
   }
 
+  /** The header once `ok` holds for it. */
+  async headerUntil(ok: (shown: Awaited<ReturnType<App["header"]>>) => boolean, what: string): Promise<Awaited<ReturnType<App["header"]>>> {
+    return until(this.browser, () => this.header(), ok, what);
+  }
+
+  /** Wait until `check`, an effect outside the window (a file a stand-in wrote, a saved
+   * request), holds. */
+  async eventually(check: () => Promise<boolean> | boolean, what: string, timeout = 15000): Promise<void> {
+    await holds(this.browser, async () => check(), what, timeout);
+  }
+
+  /** Wait until `check`, a reading of the window through the views, holds. */
+  async until(check: () => Promise<boolean>, what: string, timeout = 15000): Promise<void> {
+    await holds(this.browser, check, what, timeout);
+  }
+
+  /** How wide the window's page is. */
+  windowWidth(): Promise<number> {
+    return this.browser.execute(() => document.documentElement.clientWidth);
+  }
+
   /** Click the header's `name` (Settings, Commands, Pane, a release notice). */
   async headerButton(name: string): Promise<void> {
     await this.browser.$("header.bar").$(`button*=${name}`).click();
@@ -78,12 +99,6 @@ export class App {
   /** Type `text` where the keyboard is, a key at a time. */
   async type(text: string): Promise<void> {
     await typeText(this.browser, text);
-  }
-
-  /** Make the window `width` by `height`. */
-  async resize(width: number, height: number): Promise<void> {
-    await this.browser.setWindowSize(width, height);
-    await holds(this.browser, () => this.browser.execute((w) => Math.abs(innerWidth - w) < 40, width), "the window resized");
   }
 
   // -------------------------------------------------------------------------------
@@ -241,8 +256,11 @@ export class App {
     Reflect.set(this.browser, "sessionId", undefined);
   }
 
-  /** Click `selector` at its visible centre, as a mouse would. */
-  async clickAt(selector: string): Promise<void> {
-    await clickAt(this.browser, await visibleCenter(this.browser, await this.browser.$(selector).getElement()));
+  /** Do `action`, which ends the app, and wait until it has exited. The action's own command
+   * may lose its answer as the app goes; that alone is no failure. */
+  async exitsBy(action: () => Promise<unknown>, port: number): Promise<void> {
+    try { await action(); }
+    catch (error) { if (await embeddedReady(port)) throw error; }
+    await this.exited(port);
   }
 }

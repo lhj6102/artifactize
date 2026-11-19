@@ -82,23 +82,6 @@ export class Detail {
     return this.until((shown) => shown.tabs.some((tab) => tab.selected && id.endsWith(`/${tab.name}`)), `${id}'s tab shown`);
   }
 
-  /** Click the chip of the eval `name` on an eval's tab: its tab shows. */
-  async chip(name: string): Promise<Shown> {
-    const tabs = await this.browser.$$(`${DETAIL} [role="tab"][data-tab]`).getElements();
-    for (const tab of tabs) {
-      if ((await tab.$(".label").getText()).trim() !== name) continue;
-      await tab.click();
-      return this.until((shown) => shown.tabs.some((each) => each.name === name && each.selected), `${name}'s tab shown`);
-    }
-    throw new Error(`the Detail has no chip ${name}`);
-  }
-
-  /** Click the Artifact's own chip: its Artifact tab, without chips, shows its evals again. */
-  async artifactTab(name: string): Promise<Shown> {
-    await this.browser.$(`${DETAIL} [role="tab"][aria-label="Artifact ${name}"]`).click();
-    return this.until((shown) => shown.tabs.length === 0, `${name}'s own tab shown`);
-  }
-
   /** Click the header row of the section `name`: it folds or unfolds. */
   async toggleSection(name: string): Promise<Shown> {
     const before = (await this.read())?.sections.find((section) => section.name === name);
@@ -130,6 +113,11 @@ export class Detail {
     }, DETAIL);
   }
 
+  /** The eval's Summary once `ok` holds for it. */
+  async summaryUntil(ok: (summary: Awaited<ReturnType<Detail["summary"]>>) => boolean, what: string): Promise<Awaited<ReturnType<Detail["summary"]>>> {
+    return until(this.browser, () => this.summary(), ok, what);
+  }
+
   /** Click the star beside the Detail's title: the Artifact is starred, or not any more. */
   async star(): Promise<void> {
     const before = (await this.read())?.starred;
@@ -156,15 +144,25 @@ export class Detail {
     await this.until((shown) => shown.title === title, `${id}'s Detail opened from the Neighbours`);
   }
 
-  /** Drag the Detail's left edge by `dx` pixels: its new width. */
-  async dragEdge(dx: number): Promise<number> {
-    const width = async () => this.browser.execute((detail) => Math.round(document.querySelector(detail)?.getBoundingClientRect().width ?? 0), DETAIL);
-    const before = await width();
-    const from = await visibleCenter(this.browser, await this.browser.$(`${DETAIL} [aria-label="Detail width"]`).getElement());
-    await this.browser.action("pointer").move({ ...from, origin: "viewport" }).down()
-      .move({ x: from.x + Math.round(dx / 2), y: from.y, origin: "viewport", duration: 100 })
-      .move({ x: from.x + dx, y: from.y, origin: "viewport", duration: 100 }).up().perform();
-    return until(this.browser, width, (shown) => Math.abs(shown - (before - dx)) <= 4, `the Detail dragged ${-dx}px wider`);
+  /** How wide the Detail is, and how far it lies from the main area's left and right edges. */
+  placed(): Promise<{ width: number; left: number; right: number } | null> {
+    return this.browser.execute((detail) => {
+      const dock = document.querySelector(detail)?.getBoundingClientRect();
+      const stage = document.querySelector(".stage")!.getBoundingClientRect();
+      return dock ? { width: Math.round(dock.width), left: Math.round(dock.left - stage.left), right: Math.round(stage.right - dock.right) } : null;
+    }, DETAIL);
+  }
+
+  /** Drag the Detail's left edge `dx` pixels to the left: its new width. */
+  async widen(dx: number): Promise<number> {
+    const before = (await this.placed())!.width;
+    await this.browser.action("pointer", { id: "edge" }).move({ origin: await this.browser.$(`${DETAIL} [aria-label="Detail width"]`), x: 0, y: 0 }).down().perform(true);
+    try {
+      const pointer = this.browser.action("pointer", { id: "edge" });
+      for (let step = 0; step < 4; step += 1) pointer.move({ origin: "pointer", x: -Math.round(dx / 4), y: 0 });
+      await pointer.up().perform();
+    } finally { await this.browser.releaseActions(); }
+    return (await until(this.browser, () => this.placed(), (now) => !!now && Math.abs(now.width - before - dx) <= 8, `the Detail dragged ${dx}px wider`))!.width;
   }
 
   // -------------------------------------------------------------------------------
@@ -183,32 +181,47 @@ export class Detail {
       .map((row) => (row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS ")), DETAIL);
   }
 
-  /** What the Detail's tools say, in red, beside them. */
-  toolNotice(): Promise<string> {
-    return this.browser.execute((detail) => document.querySelector(`${detail} section[aria-label^="Tools"] p.error`)?.textContent?.trim() ?? "", DETAIL);
+  /** The Detail's Tool log once `ok` holds for it. */
+  async toolLogUntil(ok: (rows: string[]) => boolean, what: string): Promise<string[]> {
+    return until(this.browser, () => this.toolLog(), ok, what);
   }
 
   // -------------------------------------------------------------------------------
   // A Current's Definition
 
-  /** The Definition as read: its Path field, its Parts, the refusal said under a field. */
-  definition(name: string): Promise<{ path: string; parts: string[]; refusals: string[]; source: string; saving: boolean }> {
+  /** The Definition as read: its file, its Path field and the missing target said beside it,
+   * its Parts, the refusals said in red, and the Source with whether it offers Save. */
+  definition(name: string): Promise<{ file: string; path: string; missing: string; parts: string[]; refusals: string[]; source: string | null; saving: boolean }> {
     return this.browser.execute((detail, artifact) => {
       const root = document.querySelector(detail);
+      const path = root?.querySelector<HTMLInputElement>(`input[aria-label="Path of ${artifact}"]`);
       return {
-        path: root?.querySelector<HTMLInputElement>(`input[aria-label="Path of ${artifact}"]`)?.value ?? "",
-        parts: [...(root?.querySelectorAll(`ul[aria-label="Parts of ${artifact}"] > li`) ?? [])].map((part) => part.textContent?.trim() ?? ""),
+        file: root?.querySelector("section.section[aria-label=\"Definition\"] dd.file")?.textContent?.trim() ?? "",
+        path: path?.value ?? "",
+        missing: path?.parentElement?.querySelector(".refusal:not([role])")?.textContent?.trim() ?? "",
+        parts: [...(root?.querySelectorAll(`ul[aria-label="Parts of ${artifact}"] .part`) ?? [])].map((part) => part.textContent?.trim() ?? ""),
         refusals: [...(root?.querySelectorAll('[role="alert"]') ?? [])].map((alert) => alert.textContent?.trim() ?? ""),
-        source: root?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="Source of ${artifact}"]`)?.value ?? "",
-        saving: !![...(root?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.trim() === "Save"),
+        source: root?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="Source of ${artifact}"]`)?.value ?? null,
+        saving: [...(root?.querySelectorAll("button") ?? [])].some((button) => button.textContent?.trim() === "Save"),
       };
     }, DETAIL, name);
+  }
+
+  /** The Definition once `ok` holds for it. */
+  async definitionUntil(name: string, ok: (shown: Awaited<ReturnType<Detail["definition"]>>) => boolean, what: string): Promise<Awaited<ReturnType<Detail["definition"]>>> {
+    return until(this.browser, () => this.definition(name), ok, what);
   }
 
   /** Type `path` into the Path field and press Enter: it is written, or refused. */
   async writePath(name: string, path: string): Promise<void> {
     await fill(this.browser, `${DETAIL} input[aria-label="Path of ${name}"]`, path);
     await press(this.browser, ["Enter"], async () => true, "Enter in the Path field");
+  }
+
+  /** Press Esc in the Path field: what was typed is put back. */
+  async discardPath(name: string): Promise<void> {
+    await this.browser.$(`${DETAIL} input[aria-label="Path of ${name}"]`).click();
+    await press(this.browser, ["Escape"], async () => true, "Esc in the Path field");
   }
 
   /** Type `path` into the Path field without writing it. */
@@ -236,7 +249,10 @@ export class Detail {
     await this.browser.$(field).waitForDisplayed({ timeout: 15000, timeoutMsg: "the field that adds a part" });
     await this.browser.$(field).click();
     await typeText(this.browser, part);
-    await press(this.browser, ["Enter"], async () => (await this.definition(name)).parts.includes(part) || (await this.definition(name)).refusals.length > 0, `${part} added or refused`);
+    await press(this.browser, ["Enter"], async () => {
+      const shown = await this.definition(name);
+      return shown.parts.includes(part) || shown.refusals.length > 0;
+    }, `${part} added or refused`);
   }
 
   /** Click `✕` beside the part `part`. */
@@ -264,16 +280,17 @@ export class Detail {
     }, DIALOG);
   }
 
-  /** In the open dialog, type `values` into its fields in order (Name, then Path), then click
-   * its `button`; the dialog closes, or says why it refused. */
-  async submitDialog(values: string[], button: string): Promise<{ title: string; text: string; refusal: string } | null> {
+  /** In the open dialog, type `values` into its fields in order (Name, then Path) and click its
+   * `button`: with `refused`, wait until it says why it refused, else until it closes. */
+  async submitDialog(values: string[], button: string, refused = false): Promise<{ title: string; text: string; refusal: string } | null> {
     const fields = await this.browser.$$(`${DIALOG} input`).getElements();
     for (const [index, value] of values.entries()) {
       await fields[index].click();
       await fields[index].setValue(value);
     }
     await this.browser.$(DIALOG).$(`button=${button}`).click();
-    return until(this.browser, () => this.dialog(), (shown) => shown === null || shown.refusal !== "", `the ${button} dialog closed or refused`);
+    return until(this.browser, () => this.dialog(), (shown) => refused ? !!shown?.refusal : shown === null,
+      refused ? `the ${button} dialog refused` : `the ${button} dialog closed`);
   }
 
   /** Click Cancel in the open dialog: it closes. */
@@ -300,9 +317,9 @@ export class Detail {
     await press(this.browser, ["Enter"], async () => (await this.commentField(name)) === null, "the comment written");
   }
 
-  /** Click the comment drawn under `nodeSelector`: its field opens in place. */
-  async openComment(nodeSelector: string, name: string): Promise<void> {
-    const at = await visibleCenter(this.browser, await this.browser.$(`${nodeSelector} .comment`).getElement());
+  /** Click the comment drawn under the main graph's node `id`: its field opens in place. */
+  async openComment(id: string, name: string): Promise<void> {
+    const at = await visibleCenter(this.browser, await this.browser.$(`.graph .svelte-flow__node[data-id="${id}"] .comment`).getElement());
     await dispatchInput(this.browser, { kind: "click", ...at });
     await holds(this.browser, async () => (await this.commentField(name)) !== null, `${name}'s comment field opened`);
   }

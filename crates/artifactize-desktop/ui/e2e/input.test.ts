@@ -101,32 +101,6 @@ test("Tab skips disabled, inert, hidden, closed contents and negative tabindex a
 });
 
 
-test("a text click places the engine's visible caret and native focus, unless mousedown was prevented", async () => {
-  for (const prevented of [false, true]) {
-    const { page, browser } = focusPage('<textarea id="old">old selection</textarea><div id="log" tabindex="0" style="user-select:text"><p id="text">selectable notes</p></div>');
-    try {
-      const old = page.window.document.getElementById("old")!;
-      const log = page.window.document.getElementById("log")!;
-      const target = page.window.document.getElementById("text")!;
-      const text = target.firstChild!;
-      page.window.document.elementFromPoint = () => target;
-      page.window.document.caretRangeFromPoint = () => {
-        const range = page.window.document.createRange(); range.setStart(text, 3); range.collapse(true); return range;
-      };
-      old.focus();
-      if (prevented) target.addEventListener("mousedown", (event) => event.preventDefault());
-      await dispatchInput(browser, { kind: "text-click", x: 10, y: 10 });
-      if (prevented) assert.equal(page.window.document.activeElement, old);
-      else {
-        assert.equal(page.window.document.activeElement, log);
-        assert.equal(page.window.getSelection()!.anchorNode, text);
-        assert.equal(page.window.getSelection()!.anchorOffset, 3);
-        assert.ok(page.window.getSelection()!.isCollapsed);
-      }
-    } finally { page.window.close(); }
-  }
-});
-
 test("a cancelled pointerdown keeps its gesture's compatibility mouse events from the page, its click kept", async () => {
   for (const cancelled of [false, true]) {
     const { page, browser } = focusPage('<div id="box">box</div>');

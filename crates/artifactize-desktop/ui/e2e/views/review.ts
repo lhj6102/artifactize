@@ -1,9 +1,9 @@
 // A Human review as its reviewer reads it, in the main area or in a Detail: its stage, its
 // instruction, its tools and their Tool log, its result form and its Debug facts; each action
 // waits for what it shows.
-import { fill, press } from "../keys.ts";
-import { clickOption, nativeInput } from "../input.ts";
-import { holds, until } from "./wait.ts";
+import { fill, press, typeText } from "../keys.ts";
+import { nativeInput } from "../input.ts";
+import { chooseOption, holds, until } from "./wait.ts";
 
 /** The review as read: its stage (`CLAIM`, `REVIEW (yours)`), who else claimed it, what its
  * sections are in order, what its Result says (a form's verdict, or the completed result),
@@ -17,7 +17,9 @@ export type Shown = {
   readOnly: boolean;
   running: string;
   notice: string;
-  error: string;
+  /** What the form says is wrong with its result. (A page script's answer may not carry a
+   * field named `error`: WebdriverIO reads that as a failed command.) */
+  refusal: string;
   state: string;
   tools: { name: string; enabled: boolean; group: string }[];
 };
@@ -47,7 +49,7 @@ export class Review {
         readOnly: (review.textContent ?? "").includes("Read-only until released."),
         running: review.querySelector('.busy [role="img"], .busy [aria-label]')?.getAttribute("aria-label") ?? "",
         notice: review.querySelector('section[aria-label="Result"] .said [role="status"]:not(.busy)')?.textContent?.trim() ?? "",
-        error: review.querySelector('[role="alert"]')?.textContent?.trim() ?? "",
+        refusal: review.querySelector('[role="alert"]')?.textContent?.trim() ?? "",
         state: state?.nextElementSibling?.textContent?.trim() ?? "",
         tools: [...review.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Tools"] button')].map((button) => ({
           name: button.textContent?.trim() ?? "", enabled: !button.disabled,
@@ -133,19 +135,27 @@ export class Review {
 
   /** Click GREEN or RED: that verdict's form shows. */
   async choose(verdict: "GREEN" | "RED"): Promise<void> {
-    const form = this.browser.$(this.root).$(`[role="radiogroup"][aria-label="Verdict"] [role="radio"]=${verdict}`);
-    await (await form.isExisting() ? form : this.browser.$(this.root).$(`button=${verdict}`)).click();
+    // The verdict's button before a form is open, its radio in the open form.
+    await this.browser.$(this.root).$(`button=${verdict}`).click();
     await this.until((shown) => shown.verdict === verdict, `the ${verdict} form shown`);
   }
 
   /** The value of the form's field `id` (`comment`, `findings-0-problem`). */
   value(id: string): Promise<string> {
-    return this.browser.$(this.root).$(`#field-${id}`).getValue();
+    return this.browser.$(`${this.root} #field-${id}`).getValue();
   }
 
   /** Type `text` into the form's field `id`: it shows it. */
   async enter(id: string, text: string): Promise<void> {
     await fill(this.browser, `${this.root} #field-${id}`, text);
+  }
+
+  /** Click into the form's field `id` and type `text` at its end, a key at a time. */
+  async typeInto(id: string, text: string): Promise<void> {
+    const before = await this.value(id);
+    await this.browser.$(`${this.root} #field-${id}`).click();
+    await typeText(this.browser, text);
+    await until(this.browser, () => this.value(id), (value) => value === before + text, `${text} typed into ${id}`);
   }
 
   /** Type `text` into the `at`-th item of the list field `name`. */
@@ -155,15 +165,9 @@ export class Review {
 
   /** Choose `option` of the choice field `id`. */
   async select(id: string, option: string): Promise<void> {
-    const field = this.browser.$(this.root).$(`#field-${id}`);
-    for (const each of await field.$$("option").getElements()) {
-      if ((await each.getText()).trim() !== option) continue;
-      await clickOption(this.browser, each);
-      await holds(this.browser, async () => (await field.$("option:checked").getText()).trim() === option, `${option} chosen`);
-      return;
-    }
-    throw new Error(`the field ${id} offers no ${option}`);
+    await chooseOption(this.browser, `${this.root} #field-${id}`, option);
   }
+
 
   /** Click the true/false field `id`'s `option`. */
   async check(id: string, option: "true" | "false"): Promise<void> {
@@ -175,7 +179,7 @@ export class Review {
   /** Click `+ Add` of the field `name`: one more item or group. */
   async add(name: string): Promise<void> {
     const before = await this.items(name);
-    await this.browser.$(this.root).$(`#field-${name}`).parentElement().$("button*=Add").click();
+    await this.browser.$(`${this.root} #field-${name} + button.add`).click();
     await until(this.browser, () => this.items(name), (count) => count === before + 1, `one more ${name}`);
   }
 
@@ -205,13 +209,13 @@ export class Review {
   /** Click Submit: the review completes, or shows why the result fails its schema. */
   async submit(): Promise<Shown> {
     await this.browser.$(this.root).$("button*=Submit").click();
-    return this.until((shown) => shown.completed !== "" || shown.error !== "", "the submission completed or refused");
+    return this.until((shown) => !shown.running && (shown.completed !== "" || shown.refusal !== ""), "the submission completed or refused");
   }
 
   /** Paste `text` into the form's field `id` through the engine's own editing (the test-only
    * input device), as a person's input method composes it: it is committed into the field. */
   async compose(id: string, text: string): Promise<void> {
-    await this.browser.$(this.root).$(`#field-${id}`).click();
+    await this.browser.$(`${this.root} #field-${id}`).click();
     await nativeInput(this.browser, { type: "set", text });
     await nativeInput(this.browser, { type: "commit", text });
     await holds(this.browser, async () => (await this.value(id)).endsWith(text), `${text} composed into ${id}`);

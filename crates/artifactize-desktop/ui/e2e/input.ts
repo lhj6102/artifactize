@@ -3,13 +3,8 @@
 // specifies it, Tab's focus move, pointer events at a point), and the test-only native
 // text-input device. It never calls app handlers or commands or reads app state.
 // The provider's special keys carry no modifier: Shift+Enter arrives as a plain Enter.
-type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "key"; key: "Enter"; shift: true } | { kind: "click" | "text-click"; x: number; y: number; shift?: true }
-  | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number; target?: string }
-  /** A keydown carrying the guard fields an input method sets while it composes (isComposing,
-   * keyCode 229), sent to the focused text field with its native composition. The page's own
-   * logic for ignoring shortcuts during a composition is checked at those fields; this never
-   * stands in for a user's key. */
-  | { kind: "composing-key"; key: string; modifier?: "Control" | "Meta"; composing: boolean; keyCode: number };
+type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "key"; key: "Enter"; shift: true } | { kind: "click"; x: number; y: number }
+  | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number; target?: string };
 
 /** WebDriver Element Click's option path targets its containing select. The
  * upstream generic click skips these steps, so deliver the option sequence once. */
@@ -87,33 +82,9 @@ export async function tab(browser: WebdriverIO.Browser, shift = false): Promise<
   }, shift);
 }
 
-/** The provider sends synthetic keys, which never perform a native button's keyboard
- * activation. Supply that default only if the page does not cancel the key. */
-export async function buttonKey(browser: WebdriverIO.Browser, key: "Enter" | "Space"): Promise<void> {
-  await browser.execute((key) => {
-    const target = document.activeElement;
-    if (!(target instanceof HTMLButtonElement) || target.disabled) throw new Error("button key requires an enabled focused button");
-    const keyCode = key === "Enter" ? 13 : 32;
-    const input = { key: key === "Enter" ? "Enter" : " ", code: key, keyCode, which: keyCode, bubbles: true, cancelable: true, composed: true };
-    const down = target.dispatchEvent(new KeyboardEvent("keydown", input));
-    if (down && key === "Enter") target.click();
-    const up = (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keyup", input));
-    if (down && up && key === "Space" && document.activeElement === target) target.click();
-  }, key);
-}
-
 export async function dispatchInput(browser: WebdriverIO.Browser, input: Input): Promise<void> {
   await browser.execute((input) => {
-    if (input.kind === "composing-key") {
-      const target = document.activeElement;
-      if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) throw new Error("the composition field lost focus");
-      const codes: Record<string, string> = { "Escape": "Escape", ",": "Comma", "F5": "F5", "?": "Slash" };
-      target.dispatchEvent(new KeyboardEvent("keydown", {
-        key: input.key, code: codes[input.key] ?? `Key${input.key.toUpperCase()}`,
-        bubbles: true, cancelable: true, composed: true, isComposing: input.composing, keyCode: input.keyCode,
-        ctrlKey: input.modifier === "Control", metaKey: input.modifier === "Meta",
-      }));
-    } else if (input.kind === "key") {
+    if (input.kind === "key") {
       const target = document.activeElement ?? document.body;
       const keyCode = input.key === "PageUp" ? 33 : input.key === "PageDown" ? 34 : 13;
       const shiftKey = "shift" in input && input.shift;
@@ -130,7 +101,7 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
       if (input.kind === "pointer" && input.phase === "down" && input.target && !target.matches(input.target)) {
         throw new Error(`expected the pointer to hit ${input.target} at (${input.x}, ${input.y}); hit ${target.tagName}.${target.getAttribute("class") ?? ""}`);
       }
-      const common = { view: window, clientX: input.x, clientY: input.y, shiftKey: "shift" in input && input.shift === true, button: 0, detail: 1, bubbles: true, cancelable: true, composed: true };
+      const common = { view: window, clientX: input.x, clientY: input.y, button: 0, detail: 1, bubbles: true, cancelable: true, composed: true };
       const pointer = { ...common, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1 };
       // A cancelled pointerdown suppresses the gesture's compatibility mouse events until its
       // pointerup, as the engine does for a real primary pointer; its click still follows.
@@ -158,32 +129,7 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
         return;
       }
       const pointerDown = target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, detail: 0, buttons: 1, pressure: 0.5 }));
-      const mouseDown = pointerDown && target.dispatchEvent(new MouseEvent("mousedown", { ...common, buttons: 1 }));
-      if (input.kind === "text-click" && pointerDown && mouseDown && !(target as HTMLElement).isContentEditable && !target.closest("input, textarea")) {
-        let selecting: Element | null = target;
-        while (selecting.parentElement && getComputedStyle(selecting).userSelect === "auto") selecting = selecting.parentElement;
-        const selection = getSelection();
-        if (selection && getComputedStyle(selecting).userSelect !== "none") {
-          if (getComputedStyle(selecting).userSelect === "all") {
-            target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus();
-            selection.selectAllChildren(selecting);
-          } else {
-            // A real text mousedown places its caret. el.click()/focus() alone leaves
-            // Blink's old textarea selection context active, making Select All a no-op.
-            const engine = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null };
-            const caret = engine.caretPositionFromPoint?.(input.x, input.y);
-            const range = caret ? null : document.caretRangeFromPoint?.(input.x, input.y);
-            const node = caret?.offsetNode ?? range?.startContainer;
-            const offset = caret?.offset ?? range?.startOffset;
-            if (!node || offset === undefined || !target.contains(node)) throw new Error("the clicked text has no native caret position");
-            // Focus can scroll its container. Capture the clicked caret before that
-            // native focus step, rather than hit-testing the old point after a scroll.
-            target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus({ preventScroll: true });
-            if (common.shiftKey && selection.anchorNode) selection.extend(node, offset);
-            else selection.collapse(node, offset);
-          }
-        }
-      }
+      if (pointerDown) target.dispatchEvent(new MouseEvent("mousedown", { ...common, buttons: 1 }));
       const released = document.elementFromPoint(input.x, input.y);
       if (!released) return;
       released.dispatchEvent(new PointerEvent("pointerup", { ...pointer, detail: 0, buttons: 0, pressure: 0 }));

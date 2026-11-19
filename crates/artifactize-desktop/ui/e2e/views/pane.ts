@@ -1,6 +1,6 @@
 // The left pane as a person reads it: the search field, the branches with their timelines, and
 // the waiting reviews; each action waits for what it shows.
-import { press } from "../keys.ts";
+import { afterRender, press, typeText } from "../keys.ts";
 import { clickAt, visibleCenter } from "../input.ts";
 import { holds, until } from "./wait.ts";
 
@@ -124,11 +124,18 @@ export class Pane {
   /** Drag the divider between the pane and the main area by `dx` pixels: the pane's new width. */
   async dragDivider(dx: number): Promise<number> {
     const before = (await this.shown()).width;
-    const from = await visibleCenter(this.browser, await this.browser.$(".monitor [data-pane-resizer]").getElement());
-    await this.browser.action("pointer").move({ ...from, origin: "viewport" }).down()
-      .move({ x: from.x + Math.round(dx / 2), y: from.y, origin: "viewport", duration: 100 })
-      .move({ x: from.x + dx, y: from.y, origin: "viewport", duration: 100 }).up().perform();
-    return (await until(this.browser, () => this.shown(), (shown) => Math.abs(shown.width - before - dx) <= 4, `the pane dragged ${dx}px wider`)).width;
+    // The divider listens for moves only from the render after its press: the press is held
+    // across that render before the pointer moves.
+    await this.browser.action("pointer", { id: "divider" }).move({ origin: await this.browser.$(".monitor [data-pane-resizer]"), x: 2, y: 0 }).down().perform(true);
+    try {
+      await afterRender(this.browser);
+      const pointer = this.browser.action("pointer", { id: "divider" });
+      for (let step = 0; step < 4; step += 1) pointer.move({ origin: "pointer", x: Math.round(dx / 4), y: 0 });
+      await pointer.perform(true);
+      const shown = await until(this.browser, () => this.shown(), (now) => Math.abs(now.width - before - dx) <= 8, `the pane dragged ${dx}px wider`);
+      await this.browser.action("pointer", { id: "divider" }).up().perform();
+      return shown.width;
+    } finally { await this.browser.releaseActions(); }
   }
 
   // -------------------------------------------------------------------------------
@@ -158,22 +165,31 @@ export class Pane {
     await until(this.browser, () => this.search(), (shown) => shown.query === query, `the search reads ${query}`);
   }
 
+  /** Type `text` at the end of the focused search field, a key at a time. */
+  async typeSearch(text: string): Promise<void> {
+    const before = (await this.search()).query;
+    await typeText(this.browser, text);
+    await until(this.browser, () => this.search(), (shown) => shown.query === before + text, `${text} typed into the search`);
+  }
+
+  /** Click the pane's entries below the search: the search lets go of the keyboard. */
+  async leaveSearch(): Promise<void> {
+    await this.browser.$(ENTRIES).click();
+    await holds(this.browser, async () => !(await this.search()).focused, "the search let go of the keyboard");
+  }
+
   /** Click the suggestion `text`: it takes the place of the term being typed. */
   async takeSuggestion(text: string): Promise<string> {
     await until(this.browser, () => this.search(), (shown) => shown.suggestions.includes(text), `${text} is suggested`);
     const before = (await this.search()).query;
-    await this.browser.$('#search-suggestions').$(`[role="option"]=${text}`).click();
+    const option = await this.browser.$("#search-suggestions").$(`[role="option"]=${text}`).getElement();
+    await clickAt(this.browser, await visibleCenter(this.browser, option));
     return (await until(this.browser, () => this.search(), (shown) => shown.query !== before, `the suggestion ${text} taken`)).query;
   }
 
   /** Press `keys` in the pane: the search, the branches and the waiting reviews react to them. */
   async press(keys: string[], done: () => Promise<boolean>, what: string): Promise<void> {
     await press(this.browser, keys, done, what);
-  }
-
-  /** Whether the pane's entries have the keyboard. */
-  async entriesFocused(): Promise<boolean> {
-    return this.browser.$(ENTRIES).isFocused();
   }
 
   // -------------------------------------------------------------------------------

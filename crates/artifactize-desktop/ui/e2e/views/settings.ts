@@ -1,9 +1,9 @@
 // Settings as a person reads it: a modal over the screen with its tabs (Providers, Remote,
 // Limits), each provider's setup, the shared review store and the limits; each action waits
 // for what it shows.
-import { clickAt, clickOption, visibleCenter } from "../input.ts";
+import { clickAt, pointerGapClick, visibleCenter } from "../input.ts";
 import { fill } from "../keys.ts";
-import { holds, until } from "./wait.ts";
+import { chooseOption, holds, until } from "./wait.ts";
 
 const SETTINGS = '[role="dialog"].settings-dialog';
 
@@ -51,11 +51,14 @@ export class Settings {
     if (by === "Close") await this.browser.$(SETTINGS).$("button=Close").click();
     else if (by === "Settings") await this.browser.$("header.bar").$("button=Settings").click();
     else {
+      // A point of the screen beneath, outside the panel and below the header, which stays above it.
       const point = await this.browser.execute((selector) => {
         const box = document.querySelector(selector)!.getBoundingClientRect();
-        return { x: Math.round(box.left / 2) || 4, y: Math.round((box.bottom + innerHeight) / 2) };
+        const header = document.querySelector("header.bar")!.getBoundingClientRect();
+        const y = Math.round(Math.max(box.top, header.bottom) + 40);
+        return box.left > 24 ? { x: Math.round(box.left / 2), y } : { x: 12, y: Math.round((box.bottom + innerHeight) / 2) };
       }, SETTINGS);
-      await clickAt(this.browser, point);
+      await pointerGapClick(this.browser, point);
     }
     await holds(this.browser, async () => (await this.read()) === null, `Settings closed by ${by}`);
   }
@@ -95,21 +98,9 @@ export class Settings {
 
   /** Choose `option` of the choice field `id`. */
   async select(id: string, option: string): Promise<void> {
-    for (const each of await this.browser.$$(`${SETTINGS} #${id} option`).getElements()) {
-      if ((await each.getText()).trim() !== option) continue;
-      await clickOption(this.browser, each);
-      await holds(this.browser, async () => (await this.browser.$(`${SETTINGS} #${id} option:checked`).getText()).trim() === option, `${option} chosen`);
-      return;
-    }
-    throw new Error(`the field ${id} offers no ${option}`);
+    await chooseOption(this.browser, `${SETTINGS} #${id}`, option);
   }
 
-  /** Click the radio `option` of the group `group`. */
-  async radio(group: string, option: string): Promise<void> {
-    const input = this.browser.$(`${SETTINGS} [role="radiogroup"][aria-label="${group}"]`).$(`label*=${option}`).$("input");
-    await input.click();
-    await holds(this.browser, () => input.isSelected(), `${group} is ${option}`);
-  }
 
   /** Whether Settings shows the usable button `name`. */
   async usable(name: string): Promise<boolean> {
@@ -124,18 +115,59 @@ export class Settings {
     await button.click();
   }
 
-  /** The models listed, as they read. */
+  /** The models listed, each as its name and its ID beside it (`name · id`). */
   models(): Promise<string[]> {
-    return this.browser.execute((selector) => [...document.querySelectorAll(`${selector} ul[aria-label="Models"] li`)].map((item) => item.textContent?.replace(/\s+/g, " ").trim() ?? ""), SETTINGS);
+    return this.browser.execute((selector) => [...document.querySelectorAll(`${selector} ul[aria-label="Models"] li`)]
+      .map((item) => `${item.firstChild?.textContent?.trim() ?? ""} · ${item.querySelector("code")?.textContent?.trim() ?? ""}`), SETTINGS);
   }
 
-  /** What Settings says went wrong, as it reads. */
-  errors(): Promise<string[]> {
-    return this.browser.execute((selector) => [...document.querySelectorAll(`${selector} [role="alert"]`)].map((alert) => alert.textContent?.trim() ?? ""), SETTINGS);
+  /** The models listed once `ok` holds for them. */
+  async modelsUntil(ok: (models: string[]) => boolean, what: string): Promise<string[]> {
+    return until(this.browser, () => this.models(), ok, what);
+  }
+
+  /** The sign-in's address Finish by hand shows. */
+  async shownAddress(): Promise<string> {
+    const shown = this.browser.$(`${SETTINGS} pre.url`);
+    await shown.waitForDisplayed({ timeout: 15000, timeoutMsg: "the sign-in's address shown" });
+    return (await shown.getText()).trim();
   }
 
   /** The value the field `id` holds. */
   value(id: string): Promise<string> {
-    return this.browser.$(SETTINGS).$(`#${id}`).getValue();
+    return this.browser.$(`${SETTINGS} #${id}`).getValue();
+  }
+
+  /** Whether Settings shows the field `id`. */
+  hasField(id: string): Promise<boolean> {
+    return this.browser.$(`${SETTINGS} #${id}`).isExisting();
+  }
+
+  /** Click the radio `value` of the inputs named `name` (a custom provider's kind, a store's
+   * share level). */
+  async choose(name: string, value: string): Promise<void> {
+    const input = this.browser.$(`${SETTINGS} input[name="${name}"][value="${value}"]`);
+    await input.click();
+    await holds(this.browser, () => input.isSelected(), `${name} is ${value}`);
+  }
+
+  /** The shared review store's facts by name (Store URL, Share level, Status), or what it says
+   * while signed out. */
+  remote(): Promise<Record<string, string>> {
+    return this.browser.execute((selector) => {
+      const section = document.querySelector(`${selector} section[aria-labelledby="remote-title"]`);
+      const facts: Record<string, string> = {};
+      for (const term of section?.querySelectorAll('dl[aria-label="Remote store"] > dt') ?? []) {
+        facts[term.textContent?.trim() ?? ""] = (term.nextElementSibling as HTMLElement | null)?.innerText.replace(/\s+/g, " ").trim() ?? "";
+      }
+      const said = section?.querySelector<HTMLElement>('p[aria-label="Remote store"]')?.innerText.trim();
+      if (said) facts.Said = said;
+      return facts;
+    }, SETTINGS);
+  }
+
+  /** The store's facts once `ok` holds for them. */
+  async remoteUntil(ok: (facts: Record<string, string>) => boolean, what: string): Promise<Record<string, string>> {
+    return until(this.browser, () => this.remote(), ok, what);
   }
 }
