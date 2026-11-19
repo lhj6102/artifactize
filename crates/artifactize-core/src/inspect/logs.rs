@@ -339,9 +339,9 @@ fn select(
         } else {
             text
         };
-        let text = String::from_utf8_lossy(&crate::runtime::clean_output(&text))
-            .trim_end_matches(['\r', '\n'])
-            .to_owned();
+        let cleaned = crate::runtime::clean_output(&text);
+        let text =
+            crate::platform::output_text(crate::platform::output_line(&cleaned)).into_owned();
         let line = Line {
             number,
             text,

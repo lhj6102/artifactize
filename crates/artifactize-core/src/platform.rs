@@ -145,8 +145,14 @@ pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
 }
 
 /// A program's textual output, lossy only where its bytes are not UTF-8.
-pub(crate) fn output_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+pub fn output_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)
+}
+
+/// A command-line argument as Unicode text: `None` when the OS string is not (non-UTF-8 bytes
+/// on Unix, an unpaired UTF-16 unit on Windows).
+pub fn argument_text(value: &std::ffi::OsStr) -> Option<&str> {
+    value.to_str()
 }
 
 /// A captured output line, accepting either common ending even when the program

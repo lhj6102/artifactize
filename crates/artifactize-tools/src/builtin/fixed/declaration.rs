@@ -6,6 +6,11 @@ use crate::{
 use serde_json::{Value, json};
 use std::path::Path;
 
+/// A `section` declaration that fixes its heading: the path, then the heading.
+const SECTION_WITH_HEADING: usize = 2;
+/// A `section` declaration that leaves the heading to each call (Agent tools only): the path.
+const SECTION_HEADING_AT_CALL: usize = 1;
+
 pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> Result<(), String> {
     let Some(args) = args else {
         return if !human
@@ -21,7 +26,9 @@ pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> 
     let valid = match builtin {
         Builtin::Graph => args.is_empty(),
         Builtin::Read | Builtin::List => args.len() == 1,
-        Builtin::Section => args.len() == 2 || !human && args.len() == 1,
+        Builtin::Section => {
+            args.len() == SECTION_WITH_HEADING || !human && args.len() == SECTION_HEADING_AT_CALL
+        }
         Builtin::Help => !args.is_empty(),
         Builtin::Open => human && args.len() == 1,
         Builtin::Glob | Builtin::Grep | Builtin::ViewImage => false,

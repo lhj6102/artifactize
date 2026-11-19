@@ -31,3 +31,11 @@ use unix as os;
 use windows as os;
 
 pub(crate) use os::{USES_PATHEXT, is_executable, open_desktop, spawn_tree};
+
+/// Resolves when the terminal interrupts this process: Ctrl+C, as Unix and Windows deliver it.
+pub(crate) async fn interrupted() {
+    if tokio::signal::ctrl_c().await.is_err() {
+        // Without a handler there is no interrupt to wait for.
+        std::future::pending::<()>().await;
+    }
+}

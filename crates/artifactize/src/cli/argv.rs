@@ -78,13 +78,15 @@ impl Prefix {
                 Self::Trailing
             };
         } else if !token.as_encoded_bytes().starts_with(b"-") {
-            *self = match (&*self, token.to_str()) {
-                (Self::Root, Some("mcp")) => Self::Mcp,
-                (Self::Root, Some("tools")) => Self::Tools,
-                (Self::Tools, Some("help")) => Self::ToolHelp,
+            // Command names compare as native strings: no token is converted to text.
+            let named = |name: &str| token == std::ffi::OsStr::new(name);
+            *self = match &*self {
+                Self::Root if named("mcp") => Self::Mcp,
+                Self::Root if named("tools") => Self::Tools,
+                Self::Tools if named("help") => Self::ToolHelp,
                 // After the help program, its remaining arguments are opaque to the facade.
-                (Self::ToolHelp, _) => Self::Trailing,
-                (Self::Root | Self::Tools, _) => Self::Other,
+                Self::ToolHelp => Self::Trailing,
+                Self::Root | Self::Tools => Self::Other,
                 _ => return,
             };
         }

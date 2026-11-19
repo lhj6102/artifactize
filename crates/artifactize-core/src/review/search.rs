@@ -135,14 +135,33 @@ pub struct Query {
     terms: Vec<Term>,
 }
 
+/// Who holds a request's claim, as the current reviewer sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Claim {
+    Unclaimed,
+    /// Claimed by the current reviewer, named.
+    Mine(String),
+    /// Claimed by another reviewer, named.
+    Other(String),
+}
+
+impl Claim {
+    /// The claimant's name, whoever it is.
+    pub fn reviewer(&self) -> Option<&str> {
+        match self {
+            Self::Unclaimed => None,
+            Self::Mine(name) | Self::Other(name) => Some(name),
+        }
+    }
+}
+
 /// The fields of one request that a query matches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub repository: PathBuf,
     pub eval: String,
     pub request: String,
-    pub reviewer: Option<String>,
-    pub mine: bool,
+    pub claim: Claim,
     pub kind: ProfileKind,
     pub status: RequestStatus,
     pub tags: Vec<String>,
@@ -166,11 +185,13 @@ impl Entry {
             repository: repo.to_owned(),
             eval: request.eval_id.to_string(),
             request: request.id.to_string(),
-            reviewer: view.claim.as_ref().map(|claim| claim.reviewer.to_string()),
-            mine: view
-                .claim
-                .as_ref()
-                .is_some_and(|claim| &claim.reviewer == reviewer),
+            claim: match &view.claim {
+                None => Claim::Unclaimed,
+                Some(claim) if &claim.reviewer == reviewer => {
+                    Claim::Mine(claim.reviewer.to_string())
+                }
+                Some(claim) => Claim::Other(claim.reviewer.to_string()),
+            },
             kind: request.profile.kind(),
             status: request.status(),
             tags,
@@ -337,7 +358,7 @@ impl Query {
                 Some(crate::platform::path_text(&entry.repository).as_str()),
                 Some(entry.eval.as_str()),
                 Some(entry.request.as_str()),
-                entry.reviewer.as_deref(),
+                entry.claim.reviewer(),
             ]
             .into_iter()
             .flatten()
@@ -348,16 +369,18 @@ impl Query {
             Term::Field(TextField::Eval, text) => contains(&entry.eval, text),
             Term::Field(TextField::Request, text) => contains(&entry.request, text),
             Term::Field(TextField::Reviewer, text) => entry
-                .reviewer
-                .as_deref()
+                .claim
+                .reviewer()
                 .is_some_and(|reviewer| contains(reviewer, text)),
             Term::Field(TextField::Tag, text) => entry.tags.iter().any(|tag| contains(tag, text)),
             Term::Kind(kind) => entry.kind == *kind,
             Term::Status(RequestStatus::WaitingHuman) => entry.status.is_human_wait(),
             Term::Status(status) => entry.status == *status,
-            Term::Is(Is::Mine) => entry.mine,
-            Term::Is(Is::Claimed) => entry.reviewer.is_some(),
-            Term::Is(Is::Unclaimed) => entry.status.is_human_wait() && entry.reviewer.is_none(),
+            Term::Is(Is::Mine) => matches!(entry.claim, Claim::Mine(_)),
+            Term::Is(Is::Claimed) => entry.claim != Claim::Unclaimed,
+            Term::Is(Is::Unclaimed) => {
+                entry.status.is_human_wait() && entry.claim == Claim::Unclaimed
+            }
         })
     }
 
@@ -474,7 +497,7 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
                     }
                     Key::Text(TextField::Reviewer) => entries
                         .iter()
-                        .filter_map(|entry| entry.reviewer.clone())
+                        .filter_map(|entry| entry.claim.reviewer().map(str::to_owned))
                         .collect(),
                     Key::Text(TextField::Tag) => entries
                         .iter()

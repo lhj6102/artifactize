@@ -28,7 +28,7 @@ pub fn resolve_with(
     variable: impl Fn(&str) -> Option<OsString>,
 ) -> io::Result<PathBuf> {
     resolve_from(
-        program,
+        Path::new(program),
         cwd,
         variable(SEARCH_PATH).as_deref(),
         variable(EXTENSIONS).as_deref(),
@@ -36,12 +36,12 @@ pub fn resolve_with(
 }
 
 fn resolve_from(
-    program: &OsStr,
+    program: &Path,
     cwd: &Path,
     path: Option<&OsStr>,
     pathext: Option<&OsStr>,
 ) -> io::Result<PathBuf> {
-    lookup_paths(Path::new(program), cwd, path, pathext)
+    lookup_paths(program, cwd, path, pathext)
         .into_iter()
         .find(|candidate| platform::is_executable(candidate))
         .ok_or_else(|| {
@@ -49,7 +49,7 @@ fn resolve_from(
                 io::ErrorKind::NotFound,
                 format!(
                     "Program is unavailable: {}",
-                    super::files::path_text(Path::new(program))
+                    super::files::path_text(program)
                 ),
             )
         })

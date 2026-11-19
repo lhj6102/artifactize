@@ -60,7 +60,8 @@ async fn full_refresh_rereads_git_metadata() {
                 "--quiet",
                 "-b",
                 "empty-before",
-                &crate::platform::path_text(&before),
+                // Git receives the path in its native spelling.
+                before.to_str().expect("fixture paths are Unicode"),
             ],
         );
         if saved {
@@ -100,7 +101,11 @@ async fn full_refresh_rereads_git_metadata() {
         crate::test_os::git(&repo, &["branch", "-m", "after-refresh"]);
         crate::test_os::git(
             &repo,
-            &["worktree", "remove", &crate::platform::path_text(&before)],
+            &[
+                "worktree",
+                "remove",
+                before.to_str().expect("fixture paths are Unicode"),
+            ],
         );
         crate::test_os::git(
             &repo,
@@ -110,7 +115,7 @@ async fn full_refresh_rereads_git_metadata() {
                 "--quiet",
                 "-b",
                 "empty-after",
-                &crate::platform::path_text(&after),
+                after.to_str().expect("fixture paths are Unicode"),
             ],
         );
         // Both navigation and ordinary full database refreshes keep Git discovery cached.

@@ -101,8 +101,11 @@ pub async fn prepare<'a>(
 ) -> Result<BTreeMap<&'a ArtifactName, PreparedFingerprint>, String> {
     let artifacts = artifacts.into_iter().collect::<Vec<_>>();
     for id in &artifacts {
-        scope::validate_file_target(&config.root, &config.artifacts[*id])
-            .map_err(|error| error.to_string())?;
+        let artifact = config
+            .artifacts
+            .get(*id)
+            .ok_or_else(|| format!("Unknown Artifact: {id}"))?;
+        scope::validate_file_target(&config.root, artifact).map_err(|error| error.to_string())?;
     }
     let mut prepared = BTreeMap::new();
     prepare_each(

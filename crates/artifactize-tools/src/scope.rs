@@ -281,8 +281,17 @@ impl Scope {
         artifact_id: &ArtifactId,
         path: &str,
     ) -> Result<PathBuf, ScopeError> {
-        self.locate(artifact_id, InputPath::parse(path)?)?
-            .native_path(root)
+        self.resolve_parsed(root, artifact_id, InputPath::parse(path)?)
+    }
+
+    /// [`Self::resolve_input`] for a path already validated at its edge.
+    pub(crate) fn resolve_parsed<T: AsRef<str>>(
+        &self,
+        root: &Path,
+        artifact_id: &ArtifactId,
+        path: InputPath<T>,
+    ) -> Result<PathBuf, ScopeError> {
+        self.locate(artifact_id, path.borrowed())?.native_path(root)
     }
 }
 

@@ -63,13 +63,14 @@ struct ToolContext {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        with = "crate::platform::path_serde::option"
+        serialize_with = "crate::platform::path_serde::native::serialize"
     )]
     output_dir: Option<PathBuf>,
+    // The tool program writes into these folders: they are given in native spelling.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        with = "crate::platform::path_serde::option"
+        serialize_with = "crate::platform::path_serde::native::serialize"
     )]
     tmp_dir: Option<PathBuf>,
 }

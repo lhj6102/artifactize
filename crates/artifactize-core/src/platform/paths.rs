@@ -233,6 +233,13 @@ pub(crate) fn remove_open_file(path: &Path) -> io::Result<()> {
     std::fs::remove_file(path)
 }
 
+/// Move a staged file over `destination` while the staged file, or the old destination, may
+/// still be open. Windows handles opened by this layer share deletion, so the rename works as
+/// it does on Unix.
+pub(crate) fn rename_open_file(staged: &Path, destination: &Path) -> io::Result<()> {
+    std::fs::rename(staged, destination)
+}
+
 /// Publish a file snapshot while a reader may still hold the old file open.
 /// On Windows std's rename supports that case, unlike tempfile's MoveFileEx persistence.
 pub(crate) fn replace_open_file(

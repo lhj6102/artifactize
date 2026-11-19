@@ -115,7 +115,7 @@ impl TypedValueParser for OwnerFieldsParser {
         _arg: Option<&clap::Arg>,
         value: &OsStr,
     ) -> Result<Self::Value, clap::Error> {
-        let text = value.to_str().ok_or_else(|| {
+        let text = artifactize_core::platform::argument_text(value).ok_or_else(|| {
             clap::Error::raw(ErrorKind::InvalidUtf8, "Human fields must be UTF-8.")
                 .with_cmd(command)
         })?;

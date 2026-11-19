@@ -1,5 +1,6 @@
 //! Serde for paths saved or shown as text: written with `/` separators on every system
-//! (`path_text`), read back as native paths, which Windows accepts with `/`.
+//! (`path_text`, with a reversible encoding for names that are not Unicode), read back as the
+//! same native paths (`path_from_text`).
 
 use std::path::{Path, PathBuf};
 
@@ -10,7 +11,8 @@ pub(crate) fn serialize<S: Serializer>(path: &Path, serializer: S) -> Result<S::
 }
 
 pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<PathBuf, D::Error> {
-    PathBuf::deserialize(deserializer)
+    let text = String::deserialize(deserializer)?;
+    artifactize_tools::files::path_from_text(&text).map_err(serde::de::Error::custom)
 }
 
 /// The same for an optional path.
@@ -32,7 +34,28 @@ pub(crate) mod option {
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<PathBuf>, D::Error> {
-        Option::<PathBuf>::deserialize(deserializer)
+        Option::<String>::deserialize(deserializer)?
+            .map(|text| {
+                artifactize_tools::files::path_from_text(&text).map_err(serde::de::Error::custom)
+            })
+            .transpose()
+    }
+}
+
+/// A path a started program uses as given: its native spelling, not `/` text.
+pub(crate) mod native {
+    use std::path::PathBuf;
+
+    use serde::Serializer;
+
+    pub(crate) fn serialize<S: Serializer>(
+        path: &Option<PathBuf>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match path {
+            Some(path) => serializer.serialize_some(&path.to_string_lossy()),
+            None => serializer.serialize_none(),
+        }
     }
 }
 
@@ -53,7 +76,14 @@ pub(crate) mod map {
     pub(crate) fn deserialize<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
         deserializer: D,
     ) -> Result<BTreeMap<PathBuf, T>, D::Error> {
-        BTreeMap::deserialize(deserializer)
+        BTreeMap::<String, T>::deserialize(deserializer)?
+            .into_iter()
+            .map(|(text, value)| {
+                artifactize_tools::files::path_from_text(&text)
+                    .map(|path| (path, value))
+                    .map_err(serde::de::Error::custom)
+            })
+            .collect()
     }
 }
 /// Migration source/destination pairs, rendered identically on every OS.

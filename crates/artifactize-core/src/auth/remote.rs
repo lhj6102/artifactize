@@ -610,7 +610,8 @@ pub async fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<
 /// Forget the stored token and `remote.json`; the server keeps the token until revoked.
 pub fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
     Storage::new(state, repo, Tokens::Remote)?.remove(TOKEN)?;
-    match fs::remove_file(crate::store::state_dir(state)?.join(CONFIG)) {
+    // A concurrent status lookup may still have the file open.
+    match crate::platform::paths::remove_open_file(&crate::store::state_dir(state)?.join(CONFIG)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.to_string()),
         _ => Ok(()),
     }

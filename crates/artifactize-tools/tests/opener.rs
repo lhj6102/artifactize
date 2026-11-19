@@ -20,8 +20,8 @@ fn target_is_one_literal_argument() {
     assert!(
         os::succeeded(&output.status),
         "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        artifactize_tools::text::output(&output.stdout),
+        artifactize_tools::text::output(&output.stderr)
     );
     assert_eq!(
         fs::read_to_string(record).unwrap(),

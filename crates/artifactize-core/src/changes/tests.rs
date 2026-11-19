@@ -453,13 +453,14 @@ async fn database_replacement_and_deletion_force_resync() {
     let outcome = unwound(async {
         assert_eq!(probe.changed().await, probe::Probed::Replaced);
         assert_eq!(probe.changed().await, probe::Probed::Same);
-        std::fs::rename(&database, state.path().join("old.sqlite")).unwrap();
+        crate::platform::paths::rename_open_file(&database, &state.path().join("old.sqlite"))
+            .unwrap();
         rusqlite::Connection::open(&database)
             .unwrap()
             .execute_batch("CREATE TABLE replacement(value);")
             .unwrap();
         assert_eq!(probe.changed().await, probe::Probed::Replaced);
-        std::fs::remove_file(&database).unwrap();
+        crate::platform::paths::remove_open_file(&database).unwrap();
         assert_eq!(probe.changed().await, probe::Probed::Replaced);
         assert_eq!(probe.changed().await, probe::Probed::Same);
     })

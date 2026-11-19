@@ -29,6 +29,10 @@ fn decode(bytes: &[u8]) -> Cow<'_, str> {
 #[cfg(windows)]
 const UTF16_ASCII_MAJORITY_DIVISOR: usize = 2;
 
+/// One UTF-16 code unit is two bytes; output is read in such chunks.
+#[cfg(windows)]
+const UTF16_UNIT_BYTES: usize = 2;
+
 /// The UTF-16 byte-order marks; the one a program writes selects how its output decodes.
 #[cfg(windows)]
 const UTF16_LE_BOM: &[u8] = b"\xff\xfe";
@@ -44,7 +48,7 @@ fn utf16_output(bytes: &[u8]) -> Option<String> {
     } else {
         // cmd's Unicode mode can emit BOM-less UTF-16LE. Recognize the
         // alternating NULs in its ASCII text without guessing on arbitrary bytes.
-        let (units, _) = bytes.as_chunks::<2>();
+        let (units, _) = bytes.as_chunks::<UTF16_UNIT_BYTES>();
         let ascii = units
             .iter()
             .filter(|[low, high]| *low != 0 && low.is_ascii() && *high == 0)
@@ -54,7 +58,7 @@ fn utf16_output(bytes: &[u8]) -> Option<String> {
         }
         (bytes, true)
     };
-    let (units, rest) = bytes.as_chunks::<2>();
+    let (units, rest) = bytes.as_chunks::<UTF16_UNIT_BYTES>();
     let byte_order = if little_endian {
         u16::from_le_bytes
     } else {

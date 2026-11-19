@@ -139,13 +139,11 @@ async fn execute_in(
             let target = if builtin::is_url(&target) {
                 target.into()
             } else {
+                // Validated once at this edge, then resolved as that path.
+                let path = crate::scope::InputPath::from_native(Path::new(&target))
+                    .map_err(|error| error.to_string())?;
                 scope
-                    .resolve_input(
-                        root,
-                        &owner,
-                        &crate::files::relative_text_of(Path::new(&target))
-                            .map_err(|error| error.to_string())?,
-                    )
+                    .resolve_parsed(root, &owner, path)
                     .map_err(|error| error.to_string())?
                     .into_os_string()
             };
@@ -155,7 +153,14 @@ async fn execute_in(
     let result = match invocation {
         Invocation::Fixed(Err(error)) => ToolResult::error(error),
         Invocation::Fixed(Ok(input)) => {
-            builtin::fixed::execute(
+            // An interrupt of the CLI cancels the launch, which stops and reaps its process
+            // group or job before the CLI exits.
+            let interrupt = cancellation.clone();
+            let watch = tokio::spawn(async move {
+                crate::platform::interrupted().await;
+                interrupt.cancel();
+            });
+            let result = builtin::fixed::execute(
                 input,
                 builtin::Context {
                     root,
@@ -165,7 +170,9 @@ async fn execute_in(
                 },
                 &cancellation,
             )
-            .await
+            .await;
+            watch.abort();
+            result
         }
         Invocation::Dynamic(input) => builtin::call(input, root, &scope, &owner, &cancellation),
     };

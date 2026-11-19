@@ -3339,6 +3339,25 @@ pub fn native_text(path: &Path) -> String {
     path.to_str().expect("fixture paths are Unicode").to_owned()
 }
 
+/// A program's captured text with Windows line endings as `\n`, for assertions on lines.
+pub fn output_lines(text: &str) -> String {
+    text.replace("\r\n", "\n")
+}
+
+/// Whether the launch probe's child is detached from its launcher: on Unix it leads its own
+/// group and session; a Windows handoff may stay in the enclosing Job when breakaway is
+/// forbidden, so there the observable guarantee is that it outlives the launch host.
+pub fn is_detached(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        leads_group(pid) && leads_session(pid)
+    }
+    #[cfg(windows)]
+    {
+        running(pid)
+    }
+}
+
 /// Human/model and persisted path spelling, independent of native separators.
 pub fn path_text(path: &Path) -> String {
     let text = path.to_str().expect("fixture paths are Unicode");

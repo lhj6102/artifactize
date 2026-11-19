@@ -1305,7 +1305,7 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     let child = fixture.spawn(&repo, &["--jobs", "3", "--max-executions", "1"]);
     wait_until(|| {
         support::declaration::read_text(repo.join("starts"))
-            .is_ok_and(|contents| contents.replace("\r\n", "\n") == "first\n")
+            .is_ok_and(|contents| support::os::output_lines(&contents) == "first\n")
     });
     wait_until(|| {
         let saved = child.saved();

@@ -388,6 +388,15 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
             })
             .map(|path| (Place::Folder(path.clone()), path.clone())),
     );
+    // The filesystem is read here, at the edge: which newest-Run folders still exist.
+    let present: BTreeSet<PathBuf> = live
+        .iter()
+        .filter_map(|(place, tree)| {
+            let (_, newest) = grouped.get(place)?;
+            let folder = tree.join(&newest.as_ref()?.1);
+            folder.is_dir().then_some(folder)
+        })
+        .collect();
     let mut branches: Vec<Branch> = live
         .into_iter()
         .map(|(place, tree)| {
@@ -397,7 +406,7 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
                 Some((launch, path)) if *launch == place => path.clone(),
                 _ => newest
                     .map(|(_, relative)| tree.join(relative))
-                    .filter(|path| path.is_dir())
+                    .filter(|path| present.contains(path))
                     .unwrap_or(tree),
             };
             let Label { project, branch } = label(&place);

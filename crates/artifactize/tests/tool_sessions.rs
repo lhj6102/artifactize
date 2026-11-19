@@ -803,6 +803,8 @@ fn leader_retirement_io_error_still_cancels_bound_calls_and_runs_stop() {
     });
 }
 
+// Only Unix leaves a crashed run's process group for journal recovery to clean up (see
+// below), so only the Unix cleanup probe reads this root.
 #[cfg(unix)]
 const CLEANUP_PROBE_ROOT: &str = "ARTIFACTIZE_TEST_CLEANUP_PROBE_ROOT";
 

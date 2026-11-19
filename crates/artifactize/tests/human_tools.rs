@@ -650,9 +650,6 @@ async fn detached_fixture_reaps_a_launch_that_never_hands_off_its_pid() {
     assert!(!root.exists());
 }
 
-#[path = "support/launch_platform.rs"]
-mod launch_platform;
-
 #[test]
 fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize_variables() {
     for unwind in [false, true] {
@@ -675,7 +672,7 @@ fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize
         let pid = pid.expect("launcher saved its complete pid marker");
         // The probe that launched it has exited; the detached child outlives it, but may not
         // have finished becoming a tracked job member or process-group leader just yet.
-        support::os::wait_until(Duration::from_secs(5), || launch_platform::is_detached(pid));
+        support::os::wait_until(Duration::from_secs(5), || support::os::is_detached(pid));
         assert!(support::os::running(pid), "detached child is still running");
         assert_eq!(
             support::declaration::read_text(launched.path().join("marker")).unwrap(),
@@ -721,7 +718,7 @@ async fn human_environment_and_launch_probe() {
     let result = call(repo).await;
     assert!(!result.is_error(), "{result:?}");
     assert_eq!(
-        text(&result).replace("\r\n", "\n"),
+        support::os::output_lines(text(&result)),
         format!(
             "reviewer-marker\n{}\n:77\nwayland-test\n{}\n",
             support::os::path_text(&repo.join("real-home")),

@@ -221,7 +221,7 @@ pub(super) fn save_owner(
     file.set_len(0)?;
     std::io::Write::write_all(&mut file, &bytes)?;
     file.sync_all()?;
-    std::fs::rename(path, directory.join("owner.json"))?;
+    platform::paths::rename_open_file(&path, &directory.join("owner.json"))?;
     platform::sync_dir(directory)
 }
 

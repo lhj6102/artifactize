@@ -394,12 +394,15 @@ fn waiting(waiting: &Waiting, now: OffsetDateTime) -> WaitingRow {
         project: waiting.label.project.clone(),
         branch: waiting.label.branch.clone(),
         age: monitor::duration(now - request.created_at.time()),
-        claim: match (&entry.reviewer, entry.mine) {
-            (None, _) => "-".into(),
-            (Some(reviewer), true) => format!("{reviewer} (you)"),
-            (Some(reviewer), false) => reviewer.clone(),
+        claim: match &entry.claim {
+            artifactize_core::review::search::Claim::Unclaimed => "-".into(),
+            artifactize_core::review::search::Claim::Mine(reviewer) => format!("{reviewer} (you)"),
+            artifactize_core::review::search::Claim::Other(reviewer) => reviewer.clone(),
         },
-        mine: entry.mine,
+        mine: matches!(
+            entry.claim,
+            artifactize_core::review::search::Claim::Mine(_)
+        ),
     }
 }
 

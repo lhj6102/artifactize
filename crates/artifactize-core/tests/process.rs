@@ -376,10 +376,12 @@ async fn a_fixture_leases_the_supervisor_before_observing_saved_admission() {
     support::declaration::write(&repo, repo.join("index.artf"),
         "name = 'app'\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Inspect.'\n",
     ).unwrap();
+    // The worker executable is declared before the lease, so the lease (dropped first) stops
+    // the supervisor before the executable it runs is removed.
+    let worker = support::os::library_worker();
     let lease = support::runs::RepoLease::new(root, &state, &repo);
     let gate = state.join("fixture-admission");
     std::fs::create_dir_all(&gate).unwrap();
-    let worker = support::os::library_worker();
     let context = runs::Context::new(&repo, Some(&state), worker.path()).unwrap();
     let accepted =
         support::runs::submit_fixture(&context, &Selection::All, &VerifyOptions::default())
