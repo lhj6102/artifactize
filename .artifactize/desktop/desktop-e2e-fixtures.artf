@@ -1,5 +1,5 @@
 path = "crates/artifactize-desktop/ui/e2e/"
-select = ["portable.ts", "domain-fixtures", "environment.ts", "fixture.ts", "build-fixtures.ts", "catalog-fixtures.ts", "declaration-fixtures.ts", "native-fixtures.ts", "process-fixtures.ts", "rich-fixture.ts", "run-fixtures.ts", "runs.ts"]
+select = ["portable.ts", "domain-fixtures", "environment.ts", "fixture.ts", "build-fixtures.ts", "browser-fixtures.ts", "catalog-fixtures.ts", "declaration-fixtures.ts", "native-fixtures.ts", "process-fixtures.ts", "rich-fixture.ts", "run-fixtures.ts", "runs.ts"]
 # The E2E suite's fixtures: repositories, state, stand-in programs and servers, and their release; a part of desktop-e2e.
 
 [views.agent_tools]

@@ -2,7 +2,8 @@
 import { recordKeys } from "./keys.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { takeSystemFocus, variable } from "./platform.ts";
-import { asNativePath, readJson } from "./portable.ts";
+import { completionMarker } from "./scenario.ts";
+import { asNativePath, nativePath, readJson, writeText } from "./portable.ts";
 import type { Prepared } from "./scenario.ts";
 
 // These globals are injected by the configured WDIO Mocha adapter, not node:test.
@@ -25,10 +26,13 @@ describe(item.title, () => {
         { timeout: 30000, timeoutMsg: "setup failed: the test app did not load its frontend" });
       await takeSystemFocus(browser);
       await recordKeys(browser);
-      if (variable("DESKTOP_TEST_RELAUNCH") === "1") {
+      const relaunch = variable("DESKTOP_TEST_RELAUNCH") === "1";
+      if (relaunch) {
         if (!item.relaunched) throw new Error("this scenario has no relaunch assertion");
         await item.relaunched(browser, input);
       } else await item.run(browser, input);
+      // The runner accepts a batch only when each of its scenarios and phases says it ran to its end.
+      writeText(nativePath(input.fixture.root, completionMarker(relaunch)), "", { exclusive: true });
     } catch (error) {
       // CI keeps no screenshots: a failure carries what the window showed when it failed.
       const shown = await browser.execute(() => document.body.innerText)

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { addWorktrees, artifactize, create, createChain, createOutside, createEvals, createJoined, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
-import { buttonKey, compositionKey, dispatchInput, tab } from "../input.ts";
+import { buttonKey, dispatchInput, tab } from "../input.ts";
 import {
   aside, camera, detail, dockedDetail, fact, FIND, findField, fitButton, focusedElement, focusedNode, graphShown, NO_FAVORITES, nodeAt, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt,
   unfold, ZOOM_IN, ZOOM_OUT,
@@ -653,7 +653,7 @@ export const scenarios: Scenario[] = [
       // preedit. Escape's plain-key control above rules out suppressed delivery.
       for (const [composing, keyCode] of [[true, 0], [false, 229]] as const) {
         for (const key of ["m", "Escape"] as const) {
-          await compositionKey(browser, key, FIND, composing, keyCode);
+          await dispatchInput(browser, { kind: "composing-key", key, composing, keyCode });
           await afterRender(browser);
           assert.deepEqual(await findField(browser).then((field) => [field?.focused, field?.value]), [true, "mㅡ"],
             `${key} during composition (isComposing ${composing}, keyCode ${keyCode}) keeps Find focused and the composition in place`);
@@ -1073,9 +1073,11 @@ export const scenarios: Scenario[] = [
       const log = () => browser.execute(() => { const pre = document.querySelector('aside[aria-label="Detail"] .evidence pre'); return pre ? `${pre.getAttribute("aria-label") ?? ""} ${pre.textContent ?? ""}` : ""; });
       const view = async (at: number) => (await aside(browser).$$('[aria-label="Views"] [role="tab"]'))[at];
       await (await view(1)).click();
+      // Each eval prints its own name: the log shown is beta's saved output, not another eval's.
       await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log())
-        && (await log()).replace(/^Saved runtime stdout \/ stderr/, "").trim() !== "" && (await summary(browser)).instruction === "",
+        && (await log()).includes("checked beta") && (await summary(browser)).instruction === "",
         { timeout: 15000, timeoutMsg: "app/beta's Runtime log shown instead of its Summary" });
+      assert.ok(!/checked (alpha|gamma)/.test(await log()), `only beta's own output: ${await log()}`);
       assert.deepEqual(await views(), [["Summary", "false"], ["Runtime log", "true"]]);
       await (await view(0)).click();
       await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check beta.") && (await log()) === "",

@@ -65,11 +65,14 @@ export const scenarios: Scenario[] = [
       assert.ok(request?.result, "the real CLI saved the completed fine/check result");
       assert.equal(request.status, "GREEN");
       assert.equal(request.result.verdict, "GREEN");
-      await browser.waitUntil(async () => (await summary(browser)).instruction === "Pass.", { timeout: 15000, timeoutMsg: "fine/check's Summary rendered" });
-      const shown = await summary(browser);
+      // A runtime eval's result is its exit, which its status line shows, and its saved output.
+      const exit = `exit ${String((request.result as { exitCode?: number }).exitCode)}`;
+      let shown = await summary(browser);
+      await browser.waitUntil(async () => (shown = await summary(browser)).instruction === "Pass." && shown.status.includes(exit),
+        { timeout: 15000, timeoutMsg: `fine/check's Summary shows its result's ${exit}` })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(shown)}`); });
       assert.match(shown.status, /^GREEN\b/, `its status first: ${shown.status}`);
       assert.equal(shown.mark, "green", "led by its status's mark");
-      assert.ok(shown.blocks.includes("Result"), `its result: ${shown.blocks}`);
       assert.ok(shown.blocks.includes("Fingerprint"), `its fingerprint: ${shown.blocks}`);
       // The rest is folded under Debug: the request, its source and its raw result.
       assert.equal(shown.debug, false, "Debug starts folded");

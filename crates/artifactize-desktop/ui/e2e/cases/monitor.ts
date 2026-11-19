@@ -376,11 +376,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(lines.filter((row) => row.error).map((row) => row.text), ["warning: B is slower"]);
       assert.deepEqual(await runOf("notes"), otherRun, "late talk lines and its end do not replace or join the other tool run");
       assert.equal(await browser.$("#field-comment").getValue(), "chose B", "the form kept what was typed while the log grew");
-      // The log follows its newest line: wait until it has scrolled there.
-      await browser.waitUntil(() => browser.execute(() => {
-        const log = document.querySelector('[role="log"][aria-label="Tool log"]')!;
-        return log.scrollHeight - log.scrollTop - log.clientHeight < 24;
-      }), { timeout: 15000, timeoutMsg: "the Tool log scrolled to show its newest line" });
+      // That an overflowing log follows its newest line is monitor-tool-log-scroll's.
     },
   ),
 
@@ -986,6 +982,18 @@ export const scenarios: Scenario[] = [
           events: (window as unknown as { resizeLog?: string[] }).resizeLog?.slice(0, 20),
         };
       });
+      // The Pane is one column: its search at the top, the branches below it, the waiting
+      // reviews at the bottom.
+      const column = await browser.execute(() => {
+        const pane = document.querySelector<HTMLElement>(".monitor [data-pane]")!.getBoundingClientRect();
+        const parts = ['input[aria-label="Search branches and reviews"]', '[role="tree"][aria-label="Branches"]', 'section[aria-label="Waiting"]']
+          .map((selector) => document.querySelector<HTMLElement>(selector)?.getBoundingClientRect() ?? null);
+        return { pane: [pane.left, pane.right], parts: parts.map((box) => box && [box.left, box.top, box.right, box.bottom, box.width, box.height]) };
+      });
+      const [search, tree, stack] = column.parts;
+      assert.ok(search && tree && stack && [search, tree, stack].every((box) => box[4] > 0 && box[5] > 0
+        && box[0] >= column.pane[0] - 1 && box[2] <= column.pane[1] + 1)
+        && search[3] <= tree[1] + 1 && tree[3] <= stack[1] + 1, `search, branches and waiting reviews stacked in the Pane: ${JSON.stringify(column)}`);
       assert.equal((await browser.$$(".monitor [data-pane-resizer]")).length, 1, "one divider, between the Pane and the Main area");
       const before = await main();
       await watchMouse();

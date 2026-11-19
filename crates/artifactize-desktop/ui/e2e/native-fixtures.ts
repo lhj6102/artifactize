@@ -6,13 +6,13 @@ import { nodeProgram, portablePath, suitePath } from "./platform.ts";
 export const command = portablePath(nodeProgram);
 export const script = portablePath(suitePath("domain-fixtures", "command.ts"));
 
-export type Operation = "pass" | "fail" | "read" | "launch" | "talk" | "slow" | "hold" | "report" | "fingerprint";
+export type Operation = "pass" | "fail" | "read" | "launch" | "talk" | "slow" | "hold" | "report" | "fingerprint" | "say";
 
 /** JSON strings/arrays are also TOML basic strings/arrays, including Windows paths. */
 export function commandFields(operation: Operation, ...args: string[]): string {
   return `command = ${JSON.stringify(command)}, args = ${JSON.stringify([script, operation, ...args])}`;
 }
 
-export function runtimeProfile(operation: Operation = "pass", timeoutMs?: number): string {
-  return `{ kind = "runtime", ${commandFields(operation)}${timeoutMs === undefined ? "" : `, timeout_ms = ${timeoutMs}`} }`;
+export function runtimeProfile(operation: Operation = "pass", timeoutMs?: number, ...args: string[]): string {
+  return `{ kind = "runtime", ${commandFields(operation, ...args)}${timeoutMs === undefined ? "" : `, timeout_ms = ${timeoutMs}`} }`;
 }

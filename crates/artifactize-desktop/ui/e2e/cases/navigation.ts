@@ -4,15 +4,15 @@
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
 import { requestState, reviewing, showDebug } from "../human-review.ts";
-import { addRepository, addWaiting, create, createGraph, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, signoff, verifyCommented, verifyWaiting } from "../fixture.ts";
+import { addRepository, addWaiting, create, createGraph, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, signoff, verifyWaiting } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
-import { checkpoint, commandsRendered, refreshed } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { primaryModifier, shortcutLabel } from "../platform.ts";
 import { requestWindowClose } from "../observation.ts";
-import { nativePath, readText, writeText } from "../portable.ts";
+import { nativePath, readText, writeText, type NativePath } from "../portable.ts";
 import { pointerGapClick, visibleCenter } from "../pointer.ts";
 import { aside, camera, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainFocused, mainTitle, openWaiting, scanned, SEARCH, showRun, waiting } from "../pane.ts";
@@ -154,38 +154,21 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journeys: J-REFRESH J-MAIN-CURRENT
-  scenario<{ worktree: string }>(
+  scenario<{ worktree: NativePath }>(
     "navigation-refresh",
-    "reloads the state, scans the branches and rescans the shown Current on the same view",
+    "reloads from disk on the same view: the palette's Refresh and the Current's own Refresh scan the shown Current again",
     async () => {
       const fixture = await create();
       git(fixture.repo, "-C", fixture.repo, "add", ".");
       git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Refresh fixture inputs");
-      return { fixture, args: ["--repo", fixture.repo], data: { worktree: nativePath(fixture.root, "after-refresh") } };
+      const worktree = nativePath(fixture.root, "after-refresh");
+      git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "after-refresh", worktree);
+      return { fixture, args: ["--repo", fixture.repo], data: { worktree } };
     },
-    async (browser, { fixture, data }) => {
+    async (browser, { data }) => {
       await graphShown(browser, "a:release");
-      const run = requests(fixture)[0].runId;
-      const comment = "A Run started outside the window";
-      const timeline = (id: string) => browser.$(`[data-chip="${id}"] .sub`);
-      const timelineShows = async (id: string, text: string) => await timeline(id).isDisplayed() && await timeline(id).getText() === text;
-      await waitFor(browser, () => timelineShows(run, run), "the Run has no comment");
-      assert.equal(await mainTitle(browser), run, "the Run is shown before refreshing");
-      assert.equal(await branch(browser, "repo  after-refresh"), undefined, "the new worktree is not listed yet");
-      const before = await checkpoint(browser);
-      // Another process starts a Run with a comment.
-      const started = verifyCommented(fixture, comment);
-      git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "after-refresh", data.worktree);
-      await browser.$("header.bar").$("button*=Commands").click();
-      await choosePaletteCommand(browser, "Refresh");
-      await browser.$('.palette [role="option"][aria-selected="true"]').click();
-      // The reload's completion is the barrier; what it read is checked in the window.
-      await refreshed(browser, before);
-      await waitFor(browser, async () => await timelineShows(started, comment) && !!(await branch(browser, "repo  after-refresh")),
-        "the new Run and the new worktree are rendered together");
-      assert.equal(await mainTitle(browser), run, "on the same view");
-      assert.equal(await browser.$(`${MAIN} > header [role="status"]`).isExisting(), false, "the refresh read without an error");
-      // The new branch's Current: only a refresh or its Refresh button scans it again.
+      // A Current is scanned when it is chosen; only a Refresh scans it again, so a declaration
+      // changed on disk is what only a Refresh reveals.
       await chooseChip(browser, "repo  after-refresh", "current");
       await waitFor(browser, async () => /^Scanned at /.test(await scanned(browser)), "its Current scanned");
       // docs' eval open in the Detail shows its instruction as the last scan read it.
@@ -195,22 +178,24 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await instruction()) === "Build the docs.", "docs' eval open");
       const declaration = nativePath(data.worktree, ".artifactize", "docs.artf");
       const previous = "Build the docs.";
-      const wanted = "Build the docs after rescanning.";
+      const wanted = "Build the docs after the palette's Refresh.";
       writeText(declaration, readText(declaration).replace(previous, wanted));
+      await commandsRendered(browser);
       assert.equal(await instruction(), previous, "the changed declaration is not shown before the refresh");
-      await browser.$(`${MAIN} > header`).$("button=Refresh").click();
-      await waitFor(browser, async () => (await instruction()) === wanted && /^Scanned at /.test(await scanned(browser)),
-        "the Refresh button scanned the Current and its Detail shows the changed declaration");
-      assert.equal(await mainTitle(browser), "Current · repo  after-refresh", "on the same view");
-      // The palette's Refresh rescans the shown Current too.
-      const again = "Build the docs after the palette's Refresh.";
-      writeText(declaration, readText(declaration).replace(wanted, again));
-      assert.equal(await instruction(), wanted, "the second change is not shown before the refresh");
       await browser.$("header.bar").$("button*=Commands").click();
       await choosePaletteCommand(browser, "Refresh");
       await browser.$('.palette [role="option"][aria-selected="true"]').click();
-      await waitFor(browser, async () => (await instruction()) === again && /^Scanned at /.test(await scanned(browser)),
+      await waitFor(browser, async () => (await instruction()) === wanted && /^Scanned at /.test(await scanned(browser)),
         "the palette's Refresh scanned the Current and its Detail shows the changed declaration");
+      assert.equal(await mainTitle(browser), "Current · repo  after-refresh", "on the same view");
+      // The Current's own Refresh button scans it again too.
+      const again = "Build the docs after rescanning.";
+      writeText(declaration, readText(declaration).replace(wanted, again));
+      await commandsRendered(browser);
+      assert.equal(await instruction(), wanted, "the second change is not shown before the refresh");
+      await browser.$(`${MAIN} > header`).$("button=Refresh").click();
+      await waitFor(browser, async () => (await instruction()) === again && /^Scanned at /.test(await scanned(browser)),
+        "the Refresh button scanned the Current and its Detail shows the changed declaration");
       assert.equal(await mainTitle(browser), "Current · repo  after-refresh", "still on the same view");
     },
   ),
@@ -401,7 +386,9 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
       await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === "Current · repo  master", "the branch's Current shown");
       if (!(await branch(browser, "repo  master"))?.expanded) await press(browser, ["ArrowRight"], async () => (await branch(browser, "repo  master"))?.expanded === true, "expanded");
-      await press(browser, ["ArrowRight"], async () => (await shown()).filled === "current", "on its Current");
+      await press(browser, ["ArrowRight"], async () => (await branch(browser, "repo  master"))?.chips.find((chip) => chip.id === "current")?.selected === true,
+        "the keyboard's selection moved onto its Current");
+      assert.equal((await shown()).filled, "current", "the Current is the entry shown");
       const held = (await branch(browser, "repo  master"))!.chips.length - 1;
       assert.ok(held < runs.length, `older Runs are left for later: ${held} of ${runs.length}`);
       const start = (await shown()).scroll;

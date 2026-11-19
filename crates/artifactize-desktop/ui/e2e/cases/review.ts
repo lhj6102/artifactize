@@ -83,11 +83,12 @@ export const scenarios: Scenario[] = [
       assert.ok(added, "the other repository created its own sign-off");
       // Explicitly the newer, whatever times the two verifies were saved at.
       orderRuns(fixture, [requests(fixture).find((request) => request.id === original)!.runId, added.runId]);
-      await waitFor(browser, async () => (await waiting(browser)).bar === "Waiting (2)", "the other repository's sign-off counted without a reload");
+      await waitFor(browser, async () => {
+        const shown = await waiting(browser);
+        return shown.bar === "Waiting (2)" && JSON.stringify(shown.rows.map((row) => row.id)) === JSON.stringify([added.id, original]);
+      }, "the other repository's sign-off listed without a reload, newest at the top");
       assert.equal(waitingReviews(fixture), 2);
-      await commandsRendered(browser);
       // The older one by its ID, not the newest at the top of the stack.
-      assert.equal((await waiting(browser)).rows[0].id, added.id);
       await openById(browser, original);
       // Debug, unfolded to read the request's state above, folds and unfolds by t.
       const technical = () => browser.$('[aria-label="Human review"]').$("button.head=Debug").getAttribute("aria-expanded");

@@ -377,6 +377,8 @@ export const scenarios: Scenario[] = [
       await fill(browser, path, "core/");
       await browser.keys("Enter");
       await waitFor(browser, () => file(fixture, "core")?.includes('path = "core/"') ?? false, "core's Path back");
+      await waitFor(browser, async () => (await definition(browser))?.path === "core/" && (await definition(browser))?.missing === "",
+        "the Definition shows core/ again without the missing target");
       // A Path the project would not accept is refused in red under it, writing nothing; it stays
       // typed to be corrected, and Esc puts it back.
       const kept = file(fixture, "core");
@@ -940,7 +942,12 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact core", "Find opens core's Detail");
       const beforeSelected = await browser.$(`${CURRENT} ${nodeAt("a:core")} .artifact`).getAttribute("class");
       assert.match(beforeSelected ?? "", /\bopen\b/, "the moved node is selected with its Detail open");
-      const cameraWithDetail = await camera(browser);
+      // Find has centred core left of the Detail and the camera has come to rest there.
+      await waitFor(browser, async () => {
+        const at = await offCentre(browser, "a:core");
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4;
+      }, "Find centred core left of the Detail");
+      const cameraWithDetail = await stillCamera(browser);
       await graphShown(browser, "a:core");
       const selected = (await box(browser, "a:core"))!;
       const next = await below(browser, selected.x + 40, selected.y);

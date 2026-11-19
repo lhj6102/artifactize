@@ -1,7 +1,8 @@
 // Domain fixture roots are inputs, not candidate leases or native lifecycle owners.
 // The outer runner calls releaseFixtures only after the service/app has exited.
 import { readCandidate, type Candidate } from "./build.ts";
-import { awaitReleased, ProcessTreeNotJoined, releaseRecordedBrowser, removeTree, newDirectory } from "./platform.ts";
+import { awaitReleased, ProcessTreeNotJoined, removeTree, newDirectory } from "./platform.ts";
+import { releaseRecordedBrowser } from "./browser-fixtures.ts";
 import { releaseClaudeLogins } from "./domain-fixtures/claude-code.ts";
 import { childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, parentOf, writeText, type NativePath } from "./portable.ts";
 import { removeFixture, settleFixtureRuns } from "./runs.ts";
@@ -34,10 +35,10 @@ export function prepareFixture<T>(setup: (root: NativePath) => T, root = newRoot
     }
     try { removeFixture(readCandidate().cli, root); }
     catch (cleanup) {
-      // A cleanup that could not confirm a program's end keeps the files from a later sweep.
-      if (unconfirmedEnd(cleanup)) {
-        try { writeText(nativePath(root, RETAINED), ""); } catch (mark) { throw new AggregateError([error, cleanup, mark], "fixture setup and cleanup failed; preserve inputs"); }
-      }
+      // A cleanup that failed could not confirm that every program it settles has ended
+      // (a Run worker's join can simply time out): keep the files from a later sweep.
+      try { if (exists(root)) writeText(nativePath(root, RETAINED), ""); }
+      catch (mark) { throw new AggregateError([error, cleanup, mark], "fixture setup and cleanup failed; preserve inputs"); }
       throw new AggregateError([error, cleanup], "fixture setup and cleanup failed; preserve inputs");
     }
     throw error;

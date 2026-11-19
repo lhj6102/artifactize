@@ -1,6 +1,19 @@
 // A Run's or a Current's graph in the Main area as a person sees it: the Artifact that has the
 // keyboard, and the Detail a click opens over the graph's right side with its tabs. Every reading is read-only; a timeout
 // reports what the window showed instead.
+import { ICONS } from "../src/shell/icons.ts";
+
+/** Each of the app's marks by the shapes its icon sheet draws (a path's outline, and whether it
+ * is filled), so a reader names a mark from what is drawn rather than from what it is labelled. */
+const MARKS = new Map(Object.entries(ICONS).map(([name, shapes]) => [shapes.map((shape) => `${shape.d}|${shape.fill ? "fill" : "line"}`).join(" "), name]));
+
+/** The name of the mark whose shapes `drawn` lists (as the page's paths read: outline and fill),
+ * the text when no SVG mark is drawn, or `?` with the shapes when none of the sheet's matches. */
+function markOf(drawn: { shapes: string[] | null; text: string }): string {
+  if (drawn.shapes === null) return drawn.text;
+  const key = drawn.shapes.join(" ");
+  return MARKS.get(key) ?? `?${key}`;
+}
 
 /** The Artifact node with keyboard focus (`a:<name>`), or null. */
 export function focusedNode(browser: WebdriverIO.Browser): Promise<string | null> {
@@ -74,8 +87,8 @@ export type Detail = {
 };
 
 /** The open Detail, or null while none is open. */
-export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
-  return browser.execute(() => {
+export async function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
+  const shown = await browser.execute(() => {
     const aside = document.querySelector<HTMLElement>('.stage aside[aria-label="Detail"]');
     if (!aside) return null;
     const area = aside.closest<HTMLElement>(".stage")!;
@@ -96,7 +109,8 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
           name,
           label: tab.getAttribute("aria-label") ?? name,
           icon: !!icon && icon.complete && icon.naturalWidth > 0 && !!drawn && drawn.width > 0 && drawn.height > 0,
-          glyph: glyph?.querySelector("svg")?.getAttribute("data-icon") ?? glyph?.textContent?.trim() ?? "",
+          glyph: ((svg) => ({ shapes: svg ? [...svg.querySelectorAll("path")].map((path) => `${path.getAttribute("d")}|${path.getAttribute("fill") === "none" ? "line" : "fill"}`) : null,
+            text: glyph?.textContent?.trim() ?? "" }))(glyph?.querySelector("svg")),
           colour: glyph ? getComputedStyle(glyph).color : "",
           painted: !!glyph && glyph.getBoundingClientRect().width > 0 && glyph.getBoundingClientRect().height > 0
             && getComputedStyle(glyph).visibility === "visible" && Number(getComputedStyle(glyph).opacity) > 0,
@@ -119,6 +133,7 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
       docking: { panel: edges(box), stage: edges(stage), header: edges(header), canvas: graph ? edges(graph) : null },
     };
   });
+  return shown && { ...shown, tabs: shown.tabs.map((tab) => ({ ...tab, glyph: markOf(tab.glyph) })) };
 }
 
 /** Wait for the named Detail and its docking geometry in the same painted view. */
@@ -175,21 +190,23 @@ export const aside = (browser: WebdriverIO.Browser) => browser.$('aside[aria-lab
  * Execution metadata, Fingerprint) each with whether it is unfolded, and whether Debug is
  * unfolded (null when it has none). */
 export type Summary = { status: string; mark: string; instruction: string; blocks: string[]; unfolded: string[]; debug: boolean | null };
-export function summary(browser: WebdriverIO.Browser): Promise<Summary> {
-  return browser.execute(() => {
+export async function summary(browser: WebdriverIO.Browser): Promise<Summary> {
+  const shown = await browser.execute(() => {
     const shown = document.querySelector('aside[aria-label="Detail"] [role="document"]');
     const rows = [...(shown?.querySelectorAll<HTMLElement>(".section > .head") ?? [])];
     const debug = rows.find((row) => row.textContent?.trim() === "Debug");
     const others = rows.filter((row) => row !== debug);
     return {
       status: shown?.querySelector(".summary")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
-      mark: shown?.querySelector(".summary svg")?.getAttribute("data-icon") ?? "",
+      mark: ((svg) => ({ shapes: svg ? [...svg.querySelectorAll("path")].map((path) => `${path.getAttribute("d")}|${path.getAttribute("fill") === "none" ? "line" : "fill"}`) : null,
+        text: "" }))(shown?.querySelector(".summary svg")),
       instruction: shown?.querySelector(".instruction")?.textContent?.trim() ?? "",
       blocks: others.map((row) => row.textContent?.trim() ?? ""),
       unfolded: others.filter((row) => row.getAttribute("aria-expanded") !== "false").map((row) => row.textContent?.trim() ?? ""),
       debug: debug ? debug.getAttribute("aria-expanded") === "true" : null,
     };
   });
+  return { ...shown, mark: markOf(shown.mark) };
 }
 
 /** Unfold the open Detail's section `name` when it is folded, by a click on its header row. */
@@ -216,8 +233,8 @@ export type FoundEntry = { name: string; glyph: string; colour: string; chosen: 
  * what it lists, and its note (how many more match, or that none does). */
 export type FindField = { focused: boolean; value: string; entries: FoundEntry[]; note: string };
 
-export function findField(browser: WebdriverIO.Browser): Promise<FindField | null> {
-  return browser.execute((query) => {
+export async function findField(browser: WebdriverIO.Browser): Promise<FindField | null> {
+  const shown = await browser.execute((query) => {
     const input = document.querySelector<HTMLInputElement>(query);
     const box = input?.closest(".find");
     if (!input || !box) return null;
@@ -228,7 +245,8 @@ export function findField(browser: WebdriverIO.Browser): Promise<FindField | nul
         const glyph = option.querySelector(".glyph");
         return {
           name: option.querySelector(".name")?.textContent?.trim() ?? "",
-          glyph: glyph?.querySelector("svg")?.getAttribute("data-icon") ?? glyph?.textContent?.trim() ?? "",
+          glyph: ((svg) => ({ shapes: svg ? [...svg.querySelectorAll("path")].map((path) => `${path.getAttribute("d")}|${path.getAttribute("fill") === "none" ? "line" : "fill"}`) : null,
+            text: glyph?.textContent?.trim() ?? "" }))(glyph?.querySelector("svg")),
           colour: glyph ? getComputedStyle(glyph).color : "",
           chosen: option.getAttribute("aria-selected") === "true",
         };
@@ -236,6 +254,7 @@ export function findField(browser: WebdriverIO.Browser): Promise<FindField | nul
       note: box.querySelector('[role="status"]')?.textContent?.trim() ?? "",
     };
   }, FIND);
+  return shown && { ...shown, entries: shown.entries.map((entry) => ({ ...entry, glyph: markOf(entry.glyph) })) };
 }
 
 /** Where the Main area's graph shows the Artifact `id`: how far its centre lies from the middle

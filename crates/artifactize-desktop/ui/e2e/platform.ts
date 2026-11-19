@@ -34,9 +34,9 @@ import {
   chmodSync, closeSync, constants as fsConstants, copyFileSync, existsSync, statSync, mkdtempSync, openSync, linkSync, readdirSync, readFileSync, readlinkSync,
   realpathSync, rmSync, writeFileSync,
 } from "node:fs";
-import { constants, homedir, tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve, sep, toNamespacedPath } from "node:path";
-import { type LoopbackServer, type NativePath, appendText, asNativePath, exists, listFiles, makeDirectory, nameOf, nativePath, readJson, readText, readTextIfExists, replaceText, serveLoopback, serveLoopbackHttp, writeText } from "./portable.ts";
+import { type LoopbackServer, type NativePath, asNativePath, claimMachineResource, exists, makeDirectory, nameOf, nativePath, readJson, readTextIfExists, serveLoopback, writeText } from "./portable.ts";
 
 // ---------------------------------------------------------------------------------
 // Operating system values
@@ -167,7 +167,7 @@ function commandLinesNaming(files: readonly NativePath[]): boolean {
 }
 
 /** Wait, bounded, until no fixture opener the app started is still running. */
-async function awaitOpenersEnded(root: NativePath, files: readonly NativePath[]): Promise<void> {
+export async function awaitOpenersEnded(root: NativePath, files: readonly NativePath[]): Promise<void> {
   const deadline = performance.now() + 30000;
   while (commandLinesNaming(files)) {
     if (performance.now() >= deadline) throw new Error(`a fixture browser opener still runs for ${root}`);
@@ -423,10 +423,23 @@ export function executableName(name: string): string {
 export type Completed = { status: number; stdout: string; stderr: string };
 type RunOptions = { env?: Environment; cwd?: NativePath; input?: string; timeout?: number };
 
+/** Windows runs a batch file (the `.cmd` commands this layer writes) only through its command
+ * interpreter, which reads one command line: each argument is quoted for the program's own
+ * parser, then every interpreter metacharacter escaped, twice for a batch file that passes
+ * its arguments on (`%*`). Nothing else changes; no shell parses an ordinary program's line. */
+function launchable(program: string, args: readonly string[]): { program: string; args: string[]; verbatim: boolean } {
+  if (!WINDOWS || !/\.(?:cmd|bat)$/i.test(program)) return { program, args: [...args], verbatim: false };
+  const meta = /([()\][%!^"`<>&|;, *?])/g;
+  const quoted = (arg: string) => `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`.replace(meta, "^$1").replace(meta, "^$1");
+  const line = [program.replace(meta, "^$1"), ...args.map(quoted)].join(" ");
+  return { program: variable("ComSpec") ?? "cmd.exe", args: ["/d", "/s", "/c", `"${line}"`], verbatim: true };
+}
+
 /** Run a program with an argument vector (never a shell string) until it exits.
  * A program that cannot start is an error; its exit status is the caller's to judge. */
 export function runProgram(program: string, args: readonly string[], options: RunOptions = {}): Completed {
-  const result = spawnSync(program, args, { encoding: "utf8", ...options });
+  const command = launchable(program, args);
+  const result = spawnSync(command.program, command.args, { encoding: "utf8", windowsVerbatimArguments: command.verbatim, ...options });
   if (result.error) throw result.error;
   return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
 }
@@ -470,13 +483,11 @@ export async function withBuildInterrupts<T>(build: (signal: AbortSignal) => Pro
 }
 
 /** Run a build step with inherited output; with `capture`, its standard output is
- * returned and its progress on standard error stays visible. */
+ * returned and its progress on standard error stays visible. It runs in an owned process
+ * group (a job on Windows), joined whole when it is interrupted, before the caller may
+ * delete its inputs; without a caller's `signal`, an interrupt of this process stops it. */
 export async function runStep(program: string, args: readonly string[], options: { env: Environment; cwd: NativePath; capture?: boolean; signal?: AbortSignal }): Promise<string> {
-  if (!options.signal) {
-    const code = await runVisible(program, args, options.env, options.cwd);
-    if (code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${code}`);
-    return "";
-  }
+  if (!options.signal) return withBuildInterrupts((signal) => runStep(program, args, { ...options, signal }));
   const built = await fixtureRunner({ program, args: [...args], cwd: options.cwd, env: options.env }, options.signal,
     { stdout: !options.capture, stderr: true });
   if (built.code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${built.code}`);
@@ -535,36 +546,6 @@ export async function runForwardingInterrupts(
     if (failure) throw failure;
     if (signal) throw new Error(`runner terminated by ${signal}`);
     return code ?? 1;
-  } finally {
-    process.off("SIGINT", interrupt);
-    process.off("SIGTERM", terminate);
-  }
-}
-
-/** A person's foreground program: keep its real display/environment and output, forward
- * interrupts, and await its exit before the caller deletes its build inputs. Unix children
- * get an owned group so an interrupted build does not leave its compiler children behind. */
-export async function runVisible(program: string, args: readonly string[], env: Environment, cwd: NativePath): Promise<number> {
-  const child = spawn(program, args, { env, cwd, stdio: "inherit", detached: !WINDOWS });
-  const forward = (signal: NodeJS.Signals) => () => {
-    if (child.pid === undefined) return;
-    if (WINDOWS) {
-      // Node has no Unix signals on Windows; kill requests native termination.
-      child.kill(signal);
-    } else {
-      try { process.kill(-child.pid, signal); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
-    }
-  };
-  const interrupt = forward("SIGINT");
-  const terminate = forward("SIGTERM");
-  process.on("SIGINT", interrupt);
-  process.on("SIGTERM", terminate);
-  try {
-    return await new Promise<number>((done, fail) => {
-      child.once("error", fail);
-      child.once("close", (code, signal) => done(code ?? (signal ? 128 + constants.signals[signal] : 1)));
-    });
   } finally {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);
@@ -698,7 +679,8 @@ async function windowsFixtureRunner(command: ReturnType<typeof runnerCommand> & 
   const starter = nativePath(root, "starter.mjs");
   try {
     // The starter passes these to the child as they are: native spelling, not '/' text.
-    writeText(input, JSON.stringify({ program: command.program, args: command.args, holdDescendants: command.holdDescendants ?? false }));
+    const started = launchable(command.program, command.args);
+    writeText(input, JSON.stringify({ program: started.program, args: started.args, verbatim: started.verbatim, holdDescendants: command.holdDescendants ?? false }));
     // A Store-packaged pwsh starter can launch children outside its assigned job.
     // The same Node executable that runs the suite makes an ordinary Win32 spawn.
     writeText(starter, String.raw`import { spawn } from "node:child_process";
@@ -710,8 +692,8 @@ process.exitCode = 1;
 const gate = createInterface({ input: process.stdin });
 for await (const line of gate) {
   if (line !== "start") break;
-  const { program, args } = JSON.parse(readFileSync(process.argv[2], "utf8"));
-  const child = spawn(program, args, { stdio: ["ignore", "inherit", "inherit"] });
+  const { program, args, verbatim } = JSON.parse(readFileSync(process.argv[2], "utf8"));
+  const child = spawn(program, args, { stdio: ["ignore", "inherit", "inherit"], windowsVerbatimArguments: verbatim });
   const [code] = await once(child, "exit");
   process.exitCode = code ?? 1;
   break;
@@ -1035,23 +1017,6 @@ export function assertHarnessPlatform(): void {
   throw new Error("Linux desktop E2E requires the whole runner inside its own dbus-run-session -- xvfb-run -a, GDK_BACKEND=x11 and no WAYLAND_DISPLAY");
 }
 
-/** Some origins are known at setup, others are announced by the owned launcher. */
-export type BrowserEntry = string | { dynamic: true } | { file: NativePath };
-
-/** A restarted cleanup may delete browser inputs only after every job owner has exited. */
-function browserJobsAlive(root: NativePath): boolean {
-  const owners = nativePath(root, "browser-jobs");
-  return exists(owners) && listFiles(owners).filter((file) => file.endsWith(".pid")).some((file) => {
-    const pid = Number(readText(file));
-    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`invalid browser job record ${file}`);
-    return processRunning(pid);
-  });
-}
-
-export async function releaseRecordedBrowser(root: NativePath): Promise<void> {
-  if (browserJobsAlive(root)) throw new Error(`a native browser job still owns ${root}`);
-}
-
 function programPath(env: Environment): string[] {
   const key = Object.keys(env).find((name) => sameVariable(name, "PATH"));
   return (key === undefined ? "" : env[key] ?? "").split(delimiter).filter(Boolean);
@@ -1060,22 +1025,6 @@ function programPath(env: Environment): string[] {
 /** Add a declared, native test command directory to an app's private PATH. */
 export function commandDirectory(env: Environment, bin: NativePath): Environment {
   return withVariable({ ...env }, "PATH", [bin, ...programPath(env)].join(delimiter));
-}
-
-/** Loopback ports that stand for once-per-machine resources, outside every OS's ephemeral
- * range: while a run holds one, a second run on this machine cannot claim it, and the OS frees
- * it when the holder's process ends, even by a crash. */
-const MACHINE_RESOURCES = { "auth-callback": 3455, clipboard: 3456, "foreground-window": 3457 } as const;
-
-/** Claim a once-per-machine resource for this run (E2E-ISOLATED); the result releases it. A
- * resource another run holds is an explicit failure, not a wait. */
-export async function claimMachineResource(name: keyof typeof MACHINE_RESOURCES): Promise<() => Promise<void>> {
-  try {
-    return (await serveLoopback(undefined, MACHINE_RESOURCES[name])).close;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
-    throw new Error(`another E2E run on this machine holds the ${name}; one app instance uses it at a time`, { cause: error });
-  }
 }
 
 /** On Windows, claim the desktop's one foreground window for this run (see appsAtOnce);
@@ -1106,190 +1055,45 @@ export async function takeSystemFocus(browser: WebdriverIO.Browser): Promise<voi
     { timeout: 15000, timeoutMsg: "setup failed: the app window did not take the system focus" });
 }
 
-const browserHandoffLog = (root: NativePath) => nativePath(root, "browser-handoffs.jsonl");
-
-/** URLs received by this fixture's desktop opener, independently of visits to the site. */
-export function browserHandoffs(root: NativePath): string[] {
-  return (readTextIfExists(browserHandoffLog(root)) ?? "").split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
-}
-
-/** The release fixture records a page after load, or owns the browser's completed download.
- * The Unix browser stand-in instead records each handoff only after consuming its HTTP body. */
-export function browserTransferComplete(root: NativePath, url: string, after: number, transfer:
-  { pageLoaded: NativePath } | { download: string; body: string }): boolean {
-  if (!browserHandoffs(root).slice(after).includes(url)) return false;
-  if (!WINDOWS) return true;
-  if ("pageLoaded" in transfer) return exists(transfer.pageLoaded);
-  return readTextIfExists(nativePath(root, "browser-downloads", transfer.download)) === transfer.body;
-}
-
-/** The system browser of a case that opens `entry`, an address on its private loopback server,
- * or one below it. Unix desktop openers are declared fixture executables performing the real
- * HTTP GET. */
-export async function browserEnvironment(root: NativePath, env: Environment, entry: BrowserEntry): Promise<{
-  env: Environment; release?: () => Promise<void>;
-}> {
-  const file = typeof entry !== "string" && "file" in entry ? entry.file : undefined;
-  // Containment by canonical paths: a link under the fixture cannot make an outside file its own.
-  if (file && !isInside(canonicalPath(root), canonicalPath(file))) throw new Error("desktop handoff file must be owned by the fixture");
-  if (WINDOWS) return ownedWindowsBrowser(root, env, entry, file);
-  const bin = makeDirectory(nativePath(root, "browser-bin"));
-  const program = nativePath(bin, "open-url.mjs");
-  const entries = nativePath(root, "browser-entries.jsonl");
-  const stop = new AbortController();
-  const owners = makeDirectory(nativePath(root, "browser-jobs"), { private: true });
-  const opener = MACOS ? "open" : "xdg-open";
-  const jobs: Promise<void>[] = [];
-  const server = await serveLoopbackHttp((request, response) => {
-    const owner = Number(request.headers["x-opener-pid"]);
-    if (request.method !== "POST" || request.url !== "/open" || stop.signal.aborted || !Number.isSafeInteger(owner) || owner <= 0) {
-      response.writeHead(404).end();
-      return;
-    }
-    const job = (async () => {
-      replaceText(nativePath(owners, `${owner}.pid`), String(owner));
-      let target = "";
-      for await (const chunk of request) {
-        target += String(chunk);
-        if (target.length > 16384) throw new Error("browser request is too long");
-      }
-      let url: URL;
-      if (file) {
-        if (canonicalPath(asNativePath(target)) !== canonicalPath(file)) throw new Error("unexpected desktop handoff file");
-        const redirect = readText(file).match(/content="0;url=(http:\/\/127\.0\.0\.1:[0-9]+\/file-opened)"/i)?.[1];
-        if (!redirect) throw new Error("fixture handoff page has no owned redirect");
-        url = new URL(redirect);
-      } else {
-        url = new URL(target);
-        const agreed = typeof entry === "string" ? new URL(entry).origin === url.origin
-          : (readTextIfExists(entries) ?? "").split("\n").includes(url.href);
-        if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !agreed) {
-          throw new Error("the handoff did not name the owned browser origin");
-        }
-      }
-      const reply = await fetch(url, { signal: AbortSignal.any([stop.signal, AbortSignal.timeout(30000)]) });
-      await reply.arrayBuffer();
-      if (!reply.ok) throw new Error(`browser HTTP ${reply.status}`);
-      if (!file) appendText(browserHandoffLog(root), `${JSON.stringify(target)}\n`);
-      response.writeHead(204).end();
-    })().catch((error: unknown) => {
-      if (!response.headersSent && !response.destroyed) response.writeHead(500).end(String(error));
-      throw error;
-    });
-    jobs.push(job);
-    void job.catch(() => {}); // joined by the owning fixture even if the app ignores opener failure
-  });
-  try {
-    writeText(program, `const reply = await fetch(${JSON.stringify(`${server.url}/open`)}, {
-  method: "POST", headers: { "x-opener-pid": String(process.pid) }, body: process.argv[2],
-  signal: AbortSignal.timeout(30000),
-});
-if (!reply.ok) throw new Error(await reply.text());
-`);
-    writeFileSync(join(bin, opener), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_BROWSER_PROGRAM" "$@"\n', { mode: 0o755 });
-  } catch (error) {
-    await server.close();
-    throw error;
+/** Where the app finds the desktop's browser opener, made to run `client` (a Node program
+ * given the address) instead of the person's browser: on Unix the opener command on its PATH,
+ * on Windows the test-only opener seam the desktop's default association stands behind. The
+ * programs listed are those a teardown waits to end. */
+export function installBrowserOpener(root: NativePath, env: Environment, client: NativePath): { env: Environment; programs: NativePath[] } {
+  if (WINDOWS) {
+    return {
+      env: { ...env, ARTIFACTIZE_E2E_BROWSER_NODE: nodeProgram, ARTIFACTIZE_E2E_BROWSER_PROGRAM: client,
+        // The external auth command receives the author's environment, without ARTIFACTIZE_*.
+        DESKTOP_TEST_BROWSER_NODE: nodeProgram, DESKTOP_TEST_BROWSER_CLIENT: client },
+      programs: [client],
+    };
   }
-  return {
-    env: { ...commandDirectory(env, bin), DESKTOP_TEST_NODE: nodeProgram, DESKTOP_TEST_BROWSER_PROGRAM: program,
-      DESKTOP_TEST_BROWSER_ENTRIES: entries },
-    release: async () => {
-      stop.abort();
-      const outcomes = await Promise.allSettled([server.close(), ...jobs]);
-      const failures = outcomes.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
-      try { await awaitOpenersEnded(root, [program, nativePath(bin, opener)]); } catch (error) { failures.push(error); }
-      const deadline = Date.now() + 30000;
-      while (browserJobsAlive(root)) {
-        if (Date.now() >= deadline) {
-          failures.push(new Error(`fixture browser opener still owns ${root}`));
-          break;
-        }
-        await new Promise((done) => setTimeout(done, 25));
-      }
-      if (failures.length) throw new AggregateError(failures, "owned browser handoffs failed");
-    },
-  };
+  const bin = makeDirectory(nativePath(root, "browser-bin"));
+  const opener = nativePath(bin, unixOpener);
+  writeFileSync(opener, '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_BROWSER_PROGRAM" "$@"\n', { mode: 0o755 });
+  return { env: { ...commandDirectory(env, bin), DESKTOP_TEST_NODE: nodeProgram, DESKTOP_TEST_BROWSER_PROGRAM: client }, programs: [client, opener] };
 }
 
-/** Windows takes the declared external browser program through the test-only
- * opener seam. Supply a real Edge profile and native job; do not use an OS-wide
- * default association or find another user's browser by process-name scans. */
-async function ownedWindowsBrowser(root: NativePath, env: Environment, entry: BrowserEntry, file: NativePath | undefined) {
+/** A disposable real browser for the fixture `root`, where the runner has one: on Windows, Edge
+ * with a profile of its own that saves downloads into `downloads`, each launch in a native job
+ * whose root process `owner` records. Elsewhere there is none (null): the fixture's stand-in
+ * fetches what it is handed itself. It never uses the person's browser or default association. */
+export function nativeBrowser(root: NativePath, env: Environment, downloads: NativePath): {
+  launch: (target: string, owner: NativePath, signal: AbortSignal) => Promise<void>;
+} | null {
+  if (!WINDOWS) return null;
   assertRunnerMachine();
   const edge = [variable("ProgramFiles(x86)"), variable("ProgramFiles")].filter((value): value is string => !!value)
     .map((directory) => nativePath(directory, "Microsoft", "Edge", "Application", "msedge.exe")).find(exists);
   if (!edge) throw new Error("the disposable Windows runner has no declared Edge browser");
   const profile = makeDirectory(nativePath(root, "edge-profile"), { private: true });
-  const downloads = makeDirectory(nativePath(root, "browser-downloads"), { private: true });
-  const defaults = makeDirectory(nativePath(profile, "Default"));
-  writeJson(nativePath(defaults, "Preferences"), { download: { default_directory: downloads, prompt_for_download: false } });
-  const owners = makeDirectory(nativePath(root, "browser-jobs"), { private: true });
-  const program = nativePath(root, "owned-browser.mjs");
-  const entries = nativePath(root, "browser-entries.jsonl");
-  const stop = new AbortController();
-  const released = new Error("fixture browser released");
-  const jobs: Promise<void>[] = [];
-  const requests: Promise<void>[] = [];
-  const server = await serveLoopbackHttp((request, response) => {
-    if (request.method !== "POST" || request.url !== "/open" || stop.signal.aborted) {
-      response.writeHead(404).end(); return;
-    }
-    const admitted = (async () => {
-      let target = "";
-      for await (const chunk of request) {
-        target += String(chunk);
-        if (target.length > 16384) throw new Error("browser request is too long");
-      }
-      // Closing the listener interrupts bodies in flight. No request still
-      // reading its body at the teardown boundary can acquire an Edge job.
-      stop.signal.throwIfAborted();
-      const launch = file ? canonicalPath(asNativePath(target)) : target;
-      if (file) {
-        if (launch !== canonicalPath(file)) throw new Error("the handoff did not name the owned file");
-      } else {
-        const address = new URL(target);
-        const agreed = typeof entry === "string" ? new URL(entry).origin === address.origin :
-          (readTextIfExists(entries) ?? "").split("\n").includes(address.href);
-        if (address.protocol !== "http:" || address.hostname !== "127.0.0.1" || !agreed) throw new Error("the handoff did not name the owned browser origin");
-        appendText(browserHandoffLog(root), `${JSON.stringify(target)}\n`);
-      }
-      const args = [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", launch];
-      const owner = nativePath(owners, `${jobs.length}.pid`);
-      const job = windowsFixtureRunner({ program: edge, args, env, owner, holdDescendants: true }, stop.signal).then((done) => {
-        if (done.code !== 0) throw new Error(`fixture Edge exited ${done.code}: ${done.stderr}`);
-      }).catch((error: unknown) => { if (error !== released) throw error; });
-      jobs.push(job);
-      void job.catch(() => {}); // handled collectively by release
-      response.writeHead(204).end();
-    })().catch((error: unknown) => {
-      if (error === released || (stop.signal.aborted && !request.complete)) return;
-      if (!response.headersSent && !response.destroyed) response.writeHead(500).end(String(error));
-      throw error;
-    });
-    requests.push(admitted);
-    void admitted.catch(() => {}); // joined by the owning fixture
-  });
-  try {
-    writeText(program, `const reply = await fetch(${JSON.stringify(`${server.url}/open`)}, { method: "POST", body: process.argv[2] });
-if (!reply.ok) throw new Error(await reply.text());
-`);
-  } catch (error) {
-    await server.close();
-    throw error;
-  }
+  makeDirectory(downloads, { private: true });
+  writeJson(nativePath(makeDirectory(nativePath(profile, "Default")), "Preferences"), { download: { default_directory: downloads, prompt_for_download: false } });
   return {
-    env: { ...env, ARTIFACTIZE_E2E_BROWSER_NODE: nodeProgram, ARTIFACTIZE_E2E_BROWSER_PROGRAM: program,
-      // The external auth command receives the author's environment, without ARTIFACTIZE_*.
-      DESKTOP_TEST_BROWSER_NODE: nodeProgram, DESKTOP_TEST_BROWSER_CLIENT: program,
-      DESKTOP_TEST_BROWSER_ENTRIES: entries },
-    release: async () => {
-      stop.abort(released);
-      const outcomes = await Promise.allSettled([server.close(), ...requests, ...jobs]);
-      const failures = outcomes.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
-      try { await awaitOpenersEnded(root, [program]); } catch (error) { failures.push(error); }
-      try { await releaseRecordedBrowser(root); } catch (error) { failures.push(error); }
-      if (failures.length) throw new AggregateError(failures, "owned Edge browser jobs failed");
+    launch: async (target, owner, signal) => {
+      const args = [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", target];
+      const done = await windowsFixtureRunner({ program: edge, args, env, owner, holdDescendants: true }, signal);
+      if (done.code !== 0) throw new Error(`fixture Edge exited ${done.code}: ${done.stderr}`);
     },
   };
 }

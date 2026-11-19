@@ -276,16 +276,30 @@ export const scenarios: Scenario[] = [
       }, { timeout: 15000, timeoutMsg: "Find centers w00 left of the Detail with its name drawn, not an outline" });
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       await browser.$(node).waitForExist({ timeout: 15000, timeoutMsg: "w00 drawn as an element" });
-      /** w00's place in the graph: its corner and size in graph units. */
+      /** w00's place in the graph: its corner and size in graph units, and the point of its face
+       * farthest from its outline and from its parts' boxes, as an offset from its corner. */
       const place = await browser.execute((selector) => {
         const element = document.querySelector<HTMLElement>(selector)!;
         const zoom = new DOMMatrixReadOnly(getComputedStyle(document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!).transform).a;
         const at = new DOMMatrixReadOnly(getComputedStyle(element).transform);
         const box = element.getBoundingClientRect();
-        return { x: at.e, y: at.f, width: box.width / zoom, height: box.height / zoom };
+        const parts = [...document.querySelectorAll<HTMLElement>(".monitor .svelte-flow__node")]
+          .filter((part) => part.dataset.id?.startsWith(`${element.dataset.id}/`)).map((part) => part.getBoundingClientRect());
+        const clear = (x: number, y: number) => Math.min(x - box.left, box.right - x, y - box.top, box.bottom - y,
+          ...parts.map((part) => Math.hypot(Math.max(part.left - x, 0, x - part.right), Math.max(part.top - y, 0, y - part.bottom))));
+        let empty = { x: 0, y: 0, clear: -1 };
+        for (let column = 1; column < 40; column += 1) for (let row = 1; row < 40; row += 1) {
+          const x = box.left + (box.width * column) / 40;
+          const y = box.top + (box.height * row) / 40;
+          const room = clear(x, y);
+          if (room > empty.clear) empty = { x, y, clear: room };
+        }
+        return { x: at.e, y: at.f, width: box.width / zoom, height: box.height / zoom, parts: parts.length,
+          empty: { x: (empty.x - box.left) / zoom, y: (empty.y - box.top) / zoom, clear: empty.clear / zoom } };
       }, node);
+      assert.equal(place.parts, 2, "w00 is drawn around its two parts");
       // Zoomed out until names cannot be read, it is painted: its box's outline in GREEN's colour
-      // around a face that is not filled.
+      // where its edges are, around a face left transparent where it has no part.
       const painted = async () => {
         const sample = await browser.execute((at) => {
           const canvas = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint");
@@ -297,18 +311,25 @@ export const scenarios: Scenario[] = [
           const [left, top] = [camera.e + at.x * camera.a, camera.f + at.y * camera.a];
           const [width, height] = [at.width * camera.a, at.height * camera.a];
           const middle = top + height / 2;
+          const empty = { x: left + at.empty.x * camera.a, y: top + at.empty.y * camera.a };
           return {
-            dataUrl: canvas.toDataURL(), ratio, left, width, middle, zoom: camera.a,
+            dataUrl: canvas.toDataURL(), ratio, left, top, width, height, middle, empty, zoom: camera.a,
             centre: { x: Math.round(box.left + left + width / 2), y: Math.round(box.top + middle) },
             token: getComputedStyle(document.documentElement).getPropertyValue("--green").trim(),
           };
         }, place);
         if (!sample) return null;
-        const { dataUrl, ratio, left, width, middle, ...shown } = sample;
+        const { dataUrl, ratio, left, top, width, height, middle, empty, ...shown } = sample;
         const image = canvasSnapshot(dataUrl);
-        const row = Array.from({ length: Math.max(2, Math.round(width) + 4) }, (_, step) =>
-          [...image.at(Math.round((left - 2 + step) * ratio), Math.round(middle * ratio)).subarray(0, 3)]);
-        return { ...shown, row };
+        const pixel = (x: number, y: number) => [...image.at(Math.round(x * ratio), Math.round(y * ratio))];
+        /** The pixels within two of the point (x, y) along one axis, across the outline there. */
+        const across = (x: number, y: number, vertical: boolean) => [-2, -1, 0, 1, 2].map((step) => vertical ? pixel(x, y + step) : pixel(x + step, y));
+        const centre = left + width / 2;
+        return {
+          ...shown,
+          edges: { left: across(left, middle, false), right: across(left + width, middle, false), top: across(centre, top, true), bottom: across(centre, top + height, true) },
+          face: pixel(empty.x, empty.y),
+        };
       };
       const zoomedOut = async () => (await painted())?.zoom ?? Infinity;
       for (let step = 0; step < 12 && await zoomedOut() >= 0.3; step += 1) {
@@ -320,11 +341,9 @@ export const scenarios: Scenario[] = [
         far = await painted();
         if (!far || far.zoom >= 0.3) return false;
         const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(far.token)!.slice(1).map((part) => Number.parseInt(part, 16));
-        const green = (pixel: number[]) => pixel.every((value, channel) => Math.abs(value - hex[channel]) <= 24);
-        const first = far.row.findIndex(green);
-        const last = far.row.findLastIndex(green);
-        return first >= 0 && last > first + 2 && !far.row.slice(first + 2, last - 1).every(green);
-      }, { timeout: 15000, timeoutMsg: "w00 paints both sides of the GREEN outline with an unfilled interior" })
+        const green = (pixel: number[]) => pixel[3] > 0 && hex.every((value, channel) => Math.abs(pixel[channel] - value) <= 24);
+        return Object.values(far.edges).every((line) => line.some(green)) && far.face[3] === 0;
+      }, { timeout: 15000, timeoutMsg: "w00 paints its GREEN outline on all four edges of its box, its face transparent where it has no part" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(far)}`); });
       // A click on it, as painted, opens it.
       await browser.action("pointer").move({ x: far!.centre.x, y: far!.centre.y, origin: "viewport" }).down().up().perform();

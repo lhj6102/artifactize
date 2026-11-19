@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { artifactize, create, signoff } from "../fixture.ts";
 import { fill, press } from "../keys.ts";
-import { composingKey } from "../input.ts";
+import { dispatchInput } from "../input.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { chooseVerdict, requestState, showDebug, reviewing } from "../human-review.ts";
 import { MAIN, mainTitle } from "../pane.ts";
@@ -161,7 +161,7 @@ export const scenarios: Scenario[] = [
         for (const [key, primary] of [["g", false], ["r", false], ["q", false], ["u", false], ["c", false], ["Escape", false], ["g", true], ["r", true], ["s", true],
           ["k", true], ["o", true], [",", true], ["b", true], ["F5", false], ["?", false]] as const) {
           const observed = (await events()).length;
-          await composingKey(browser, { key, primary, modifier: primaryModifier, composing, keyCode });
+          await dispatchInput(browser, { kind: "composing-key", key, ...(primary ? { modifier: primaryModifier } : {}), composing, keyCode });
           const received = (await events()).slice(observed).filter((event) => event.type === "keydown" && !event.trusted);
           assert.deepEqual(received, [{ type: "keydown", trusted: false, target: "field-comment", composing, keyCode, key }],
             "the page's capture listener saw the guard fields on the composing input");

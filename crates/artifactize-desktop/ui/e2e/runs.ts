@@ -2,7 +2,7 @@
 // It never scans processes, signals workers, or controls the application lifecycle.
 import { readCandidate } from "./build.ts";
 import { environment } from "./environment.ts";
-import { removeTree, runProgram, runProgramOk } from "./platform.ts";
+import { ProcessTreeNotJoined, removeTree, runProgram, runProgramOk } from "./platform.ts";
 import { childDirectories, exists, nativePath, parentOf, type NativePath } from "./portable.ts";
 
 export type Identity = { pid: number; start_time: string };
@@ -41,7 +41,7 @@ export function exited(owners: Identity[], bound = EXIT_BOUND, observer = readCa
       throw new Error("Rust process observer returned invalid lifetime observations");
     }
     if (saved.every((alive) => !alive)) return;
-    if (Date.now() >= deadline) throw new Error("fixture Run workers did not exit; preserve their inputs");
+    if (Date.now() >= deadline) throw new ProcessTreeNotJoined("fixture Run workers did not exit; preserve their inputs");
     Atomics.wait(pause, 0, 0, RECONCILE_INTERVAL);
   }
 }

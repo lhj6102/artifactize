@@ -215,6 +215,22 @@ export function updateDatabase(path: NativePath, change: (database: Database) =>
   } finally { database.close(); }
 }
 
+/** Loopback ports that stand for once-per-machine resources, outside every OS's ephemeral
+ * range: while a run holds one, a second run on this machine cannot claim it, and the OS frees
+ * it when the holder's process ends, even by a crash. */
+const MACHINE_RESOURCES = { "auth-callback": 3455, clipboard: 3456, "foreground-window": 3457 } as const;
+
+/** Claim a once-per-machine resource for this run (E2E-ISOLATED); the result releases it. A
+ * resource another run holds is an explicit failure, not a wait. */
+export async function claimMachineResource(name: keyof typeof MACHINE_RESOURCES): Promise<() => Promise<void>> {
+  try {
+    return (await serveLoopback(undefined, MACHINE_RESOURCES[name])).close;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+    throw new Error(`another E2E run on this machine holds the ${name}; one app instance uses it at a time`, { cause: error });
+  }
+}
+
 /** Fail unless the product's fixed loopback `port` can be bound right now. */
 export async function requireFreeLoopbackPort(port: number, why: string): Promise<void> {
   try { await (await serveLoopback(undefined, port)).close(); }

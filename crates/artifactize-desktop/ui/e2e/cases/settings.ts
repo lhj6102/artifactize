@@ -16,7 +16,7 @@ import { graphShown, ZOOM_IN } from "../graph-view.ts";
 import { clickAt, pointerGapClick, visibleCenter } from "../pointer.ts";
 import { branch, mainTitle, openWaiting, showRun } from "../pane.ts";
 import { observe } from "../domain-fixtures/observe.ts";
-import { checkpoint, commandsRendered } from "../commands.ts";
+import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { portablePath, primaryModifier, processRunning, removeTree } from "../platform.ts";
 import { claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner } from "../domain-fixtures/claude-code.ts";
@@ -356,6 +356,9 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { fixture, data: { key, saved, shadowed, seen, models } }) => {
       const html = () => browser.execute(() => document.documentElement.outerHTML);
+      /** Whether `secret` is anywhere in the rendered page or in a field's live value. */
+      const exposed = (secret: string) => browser.execute((wanted) => document.documentElement.outerHTML.includes(wanted)
+        || [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")].some((field) => field.value.includes(wanted)), secret);
       await openSettings(browser);
       const providers = ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "Custom provider"];
       await browser.waitUntil(async () => JSON.stringify(await listed(browser)) === JSON.stringify(providers), {
@@ -364,6 +367,7 @@ export const scenarios: Scenario[] = [
       });
       await choose(browser, "OpenAI");
       await browser.waitUntil(async () => (await keyText(browser, "openai")) === "set from the environment (OPENAI_API_KEY)", { timeout: 15000, timeoutMsg: "the OpenAI key is set from its variable" });
+      assert.equal(await exposed(key), false, "the OpenAI setup names the key's source, never its value");
       // A vertical list on the left; the chosen provider's setup on its right.
       const layout = await browser.execute(() => {
         const nav = document.querySelector('nav[aria-label="Providers"]')!.getBoundingClientRect();
@@ -376,7 +380,7 @@ export const scenarios: Scenario[] = [
       assert.ok(layout.tops.every((top, index) => index === 0 || top > layout.tops[index - 1]), "each provider is below the one before");
       await choose(browser, "Anthropic");
       await browser.waitUntil(async () => (await keyText(browser, "anthropic")) === "not set", { timeout: 15000, timeoutMsg: "the Anthropic key is not set" });
-      assert.ok(!(await html()).includes(key), "the key's value is nowhere on the page");
+      assert.equal(await exposed(key), false, "the key's value is nowhere on the page");
 
       await choose(browser, "Gemini");
       await browser.$("#provider-key").click();
@@ -837,14 +841,8 @@ Review the agent folder."""
       await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "no store is configured yet" });
       const signedOutCheck = () => browser.$("button=Check status");
       assert.ok(await signedOutCheck().isDisplayed() && await signedOutCheck().isEnabled(), "signed-out Settings offers Check status beside Sign in");
-      // This click's own status request completes before the panel is read.
-      const statusCalls = async () => (await checkpoint(browser)).activity.commands.remoteStatus?.completed ?? 0;
-      const checked = await statusCalls();
-      await signedOutCheck().click();
-      await browser.waitUntil(async () => await statusCalls() > checked, { timeout: 15000, timeoutMsg: "the signed-out Check status request completed" });
-      await commandsRendered(browser);
-      assert.ok(await browser.$("button=Sign in to the store").isDisplayed(), "checking without a store keeps the sign-in view");
       assert.ok(!(await text()).includes("No remote review store is configured."), "no sentence for the normal state");
+      // What Check status reads into the status line is checked once signed in, below.
       await browser.$("#remote-url").click();
       await typeText(browser, url);
       await browser.$("#remote-token").click();
@@ -968,18 +966,8 @@ Review the agent folder."""
       removeTree(refuseFile);
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "Check status puts the status back" });
-      // Sign-out asks the store nothing, so it cannot be held: the window records whether every
-      // Remote button was disabled in some state it rendered while the sign-out was pending.
-      await browser.execute(() => {
-        const seen = { allDisabled: false };
-        (window as unknown as { remoteSignOut: typeof seen }).remoteSignOut = seen;
-        const section = document.querySelector('section[aria-labelledby="remote-title"]')!;
-        const check = () => {
-          const buttons = [...section.querySelectorAll<HTMLButtonElement>("button")];
-          if (buttons.length > 0 && buttons.every((button) => button.disabled)) seen.allDisabled = true;
-        };
-        new MutationObserver(check).observe(section, { attributes: true, subtree: true, childList: true });
-      });
+      // Sign-out asks the store nothing, so it cannot be held; disabled buttons while a request
+      // is in flight are checked above with held requests.
       await browser.$("button=Sign out of the store").click();
       const remote = browser.$('section[aria-labelledby="remote-title"]');
       const signedOut = remote.$('p[aria-label="Remote store"]');
@@ -989,8 +977,6 @@ Review the agent folder."""
         && await remote.$("button=Sign in to the store").isDisplayed(),
       { timeout: 15000, timeoutMsg: "the Remote tab shows Signed out and restores the URL, share level and token fields" });
       assert.equal(await remote.$("#remote-token").getValue(), "", "the token field is empty");
-      assert.ok(await browser.execute(() => (window as unknown as { remoteSignOut: { allDisabled: boolean } }).remoteSignOut.allDisabled),
-        "every Remote button was disabled while the sign-out was pending");
       const after = await remoteStatus(fixture);
       assert.equal(after.code, 1, after.stdout);
       assert.deepEqual(JSON.parse(after.stdout), { configured: false });

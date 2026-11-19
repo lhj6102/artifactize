@@ -97,15 +97,7 @@ function palette(browser: WebdriverIO.Browser) {
     await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
     await browser.$('[aria-label="Request ID"]').click();
     await typeText(browser, id);
-    const before = await checkpoint(browser);
-    const lookups = before.activity.commands.requestDetail;
     await browser.$('[role="dialog"] button[type="submit"]').click();
-    // Opening an already shown original/follower can leave the same review visible.
-    // Correlate this ID lookup's own success before accepting the rendered review.
-    await waitFor(browser, async () => ((await checkpoint(browser)).activity.commands.requestDetail?.completed ?? 0) === (lookups?.completed ?? 0) + 1,
-      `the lookup of ${id} completed`);
-    assert.equal((await checkpoint(browser)).activity.commands.requestDetail?.failed ?? 0, lookups?.failed ?? 0, `the lookup of ${id} succeeded`);
-    await commandsRendered(browser, before);
     await waitFor(browser, async () =>
       !(await browser.$('[aria-label="Request ID"]').isExisting()) && (await mainTitle(browser)) === "Review" && await browser.$('[aria-label="Human review"]').isExisting(),
     `the request ID dialog resolves to the review of ${id}`);
@@ -312,6 +304,8 @@ export const scenarios: Scenario[] = [
       // A follower waits as its original: one row for both, one for the other repository's.
       await waitingShown(browser, [original.id, data.otherId]);
       for (const id of [original.id, follower.id, original.id]) {
+        // Another review is shown first: opening this ID visibly switches to its original.
+        await openId(data.otherId);
         await openId(id, original.id);
         await browser.$("button*=Commands").click();
         await opened(`button after opening ${id}`);

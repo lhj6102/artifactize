@@ -1,5 +1,6 @@
 import type { Fixture } from "./fixture.ts";
-import type { BrowserEntry, Environment } from "./platform.ts";
+import type { BrowserEntry } from "./browser-fixtures.ts";
+import type { Environment } from "./platform.ts";
 import type { NativePath } from "./portable.ts";
 
 /** Domain inputs prepared before the service launches a capability's app. */
@@ -43,4 +44,10 @@ export function scenario<T>(
     run: (browser, input) => run(browser, input as Prepared<T>),
     ...(relaunched ? { relaunched: (browser: WebdriverIO.Browser, input: Prepared) => relaunched(browser, input as Prepared<T>) } : {}),
   };
+}
+
+/** The file a scenario's spec writes into its fixture root once its run (or its relaunch) has
+ * passed to its end; a batch without it for every scenario and phase failed. */
+export function completionMarker(relaunch: boolean): string {
+  return relaunch ? "completed-relaunch" : "completed-run";
 }

@@ -3,7 +3,12 @@ import { assertClipboardDesktop } from "./platform.ts";
 // This delivers only input to actual UI targets: no app handlers, commands or state access.
 // The provider's special keys carry no modifier: Shift+Enter arrives as a plain Enter.
 type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "key"; key: "Enter"; shift: true } | { kind: "click" | "text-click"; x: number; y: number; shift?: true }
-  | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number; target?: string };
+  | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number; target?: string }
+  /** A keydown carrying the guard fields an input method sets while it composes (isComposing,
+   * keyCode 229), sent to the focused text field with its native composition. The page's own
+   * logic for ignoring shortcuts during a composition is checked at those fields; this never
+   * stands in for a user's key. */
+  | { kind: "composing-key"; key: string; modifier?: "Control" | "Meta"; composing: boolean; keyCode: number };
 
 /** WebDriver Element Click's option path targets its containing select. The
  * upstream generic click skips these steps, so deliver the option sequence once. */
@@ -45,18 +50,6 @@ export async function clickOption(browser: WebdriverIO.Browser, target: Webdrive
       ...common, detail: 1, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1,
     }));
   }, target as unknown as HTMLOptionElement);
-}
-
-/** Probe only the app's shortcut guard while the native IME is composing. */
-export async function compositionKey(browser: WebdriverIO.Browser, key: "m" | "Escape", context: string,
-  isComposing: boolean, keyCode: number): Promise<void> {
-  await browser.execute(({ key, context, isComposing, keyCode }) => {
-    const target = document.activeElement;
-    if (!target?.closest(context)) throw new Error(`composition shortcut lost focus in ${context}`);
-    target.dispatchEvent(new KeyboardEvent("keydown", {
-      key, code: key === "m" ? "KeyM" : "Escape", bubbles: true, cancelable: true, composed: true, isComposing, keyCode,
-    }));
-  }, { key, context, isComposing, keyCode });
 }
 
 /** Supply only Tab's omitted browser default, after the page has had its keydown. */
@@ -110,7 +103,16 @@ export async function buttonKey(browser: WebdriverIO.Browser, key: "Enter" | "Sp
 
 export async function dispatchInput(browser: WebdriverIO.Browser, input: Input): Promise<void> {
   await browser.execute((input) => {
-    if (input.kind === "key") {
+    if (input.kind === "composing-key") {
+      const target = document.activeElement;
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) throw new Error("the composition field lost focus");
+      const codes: Record<string, string> = { "Escape": "Escape", ",": "Comma", "F5": "F5", "?": "Slash" };
+      target.dispatchEvent(new KeyboardEvent("keydown", {
+        key: input.key, code: codes[input.key] ?? `Key${input.key.toUpperCase()}`,
+        bubbles: true, cancelable: true, composed: true, isComposing: input.composing, keyCode: input.keyCode,
+        ctrlKey: input.modifier === "Control", metaKey: input.modifier === "Meta",
+      }));
+    } else if (input.kind === "key") {
       const target = document.activeElement ?? document.body;
       const keyCode = input.key === "PageUp" ? 33 : input.key === "PageDown" ? 34 : 13;
       const shiftKey = "shift" in input && input.shift;
@@ -189,25 +191,6 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
       while (shared && !shared.contains(released)) shared = shared.parentElement;
       shared?.dispatchEvent(new PointerEvent("click", { ...pointer, buttons: 0, pressure: 0 }));
     }
-  }, input);
-}
-
-/** A keydown carrying the guard fields an input method sets while it composes (isComposing,
- * keyCode 229), sent to the focused text field. The page's own logic for ignoring shortcuts
- * during a composition is checked at those fields (E2E-INPUT); this never stands in for a
- * user's key. */
-export async function composingKey(browser: WebdriverIO.Browser, input: {
-  key: string; primary: boolean; modifier: string; composing: boolean; keyCode: number;
-}): Promise<void> {
-  await browser.execute((input) => {
-    const target = document.activeElement;
-    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) throw new Error("the composition field lost focus");
-    const event = new KeyboardEvent("keydown", {
-      key: input.key, code: ({ "Escape": "Escape", ",": "Comma", "F5": "F5", "?": "Slash" } as Record<string, string>)[input.key] ?? `Key${input.key.toUpperCase()}`,
-      bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode,
-      ctrlKey: input.primary && input.modifier === "Control", metaKey: input.primary && input.modifier === "Meta",
-    });
-    target.dispatchEvent(event);
   }, input);
 }
 

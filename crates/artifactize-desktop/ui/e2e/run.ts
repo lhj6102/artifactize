@@ -50,6 +50,7 @@ async function launchBatch(): Promise<void> {
   try {
     const code = await launcher.run();
     if (code !== 0) failures.push(new Error(`WDIO batch failed with exit code ${code}`));
+    else configuration.assertCompleted(false);
     const { selectedScenarios } = await import("./catalog.ts");
     const ids = JSON.parse(requiredVariable("DESKTOP_TEST_BATCH", "each batch owns its app identities")) as string[];
     const cases = selectedScenarios(ids);
@@ -65,6 +66,7 @@ async function launchBatch(): Promise<void> {
       await next.initialize();
       const again = await next.run();
       if (again !== 0) failures.push(new Error(`relaunched WDIO case failed with exit code ${again}`));
+      else configuration.assertCompleted(true);
     }
   } catch (error) {
     failures.push(configuration.preparationFailure === undefined ? error

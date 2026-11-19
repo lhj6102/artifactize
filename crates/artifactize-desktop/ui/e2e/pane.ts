@@ -17,6 +17,8 @@ export type Chip = {
   subOneLine: boolean;
   subCut: boolean;
   filled: boolean;
+  /** Whether the keyboard's selection in the Pane is on this entry. */
+  selected: boolean;
   dot: number[];
 };
 
@@ -25,13 +27,14 @@ export const leans = (colour: number[], channel: number) =>
   colour.length === 3 && colour.every((value, at) => at === channel || colour[channel] > value);
 /** A branch's entry as read: `project  branch` as the Main area's title names it, its label as
  * drawn (`project / branch`), whether the selection is on it or in its timeline, whether it is
- * expanded, the newest Run's status
+ * on the branch itself, whether it is expanded, the newest Run's status
  * under its name while collapsed (`RED 25m ago`), its star as drawn (`★` filled, `☆` outlined) and
  * whether it is pressed, and its timeline, empty while collapsed. */
 export type Branch = {
   name: string;
   label: string;
   selected: boolean;
+  own: boolean;
   expanded: boolean;
   latest: string;
   latestDot: number[];
@@ -70,6 +73,7 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
         label: words(row.querySelector(".label")),
         // The selection is on the branch itself or on an entry of its timeline.
         selected: row.getAttribute("aria-selected") === "true" || row.querySelector('[role="treeitem"][aria-selected="true"]') !== null,
+        own: row.getAttribute("aria-selected") === "true",
         expanded: row.getAttribute("aria-expanded") === "true",
         latest: words(row.querySelector(".latest")),
         latestDot: latestDot && latestDot.getBoundingClientRect().width > 0 ? channels(getComputedStyle(latestDot).backgroundColor) : [],
@@ -84,6 +88,7 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
             chip.querySelector<HTMLElement>(".sub"), chip.querySelector<HTMLElement>(".status")),
           subCut: ((sub) => !!sub && sub.scrollWidth > sub.clientWidth)(chip.querySelector<HTMLElement>(".sub")),
           filled: chip.getAttribute("aria-pressed") === "true",
+          selected: chip.closest('[role="treeitem"]')?.getAttribute("aria-selected") === "true",
           dot: channels(getComputedStyle(chip.querySelector(".dot")!).backgroundColor),
         })),
       };
@@ -164,14 +169,14 @@ export async function listed(browser: WebdriverIO.Browser, name: string, timeout
     { timeout, timeoutMsg: `${name} is listed in the Branches: ${JSON.stringify(await branches(browser))}` });
 }
 
-/** Click a branch's name and wait until it is selected and expanded. */
+/** Click a branch's name and wait until the branch itself is selected and expanded. */
 export async function selectBranch(browser: WebdriverIO.Browser, name: string): Promise<void> {
   await listed(browser, name);
   await browser.$(`${await row(browser, name)} button.name`).click();
   await browser.waitUntil(async () => {
     const entry = await branch(browser, name);
-    return entry?.selected === true && entry.expanded;
-  }, { timeout: 15000, timeoutMsg: `${name} selected and expanded` });
+    return entry?.own === true && entry.expanded;
+  }, { timeout: 15000, timeoutMsg: `${name} itself selected and expanded` });
 }
 
 /** Click the timeline entry `chip` (a Run's ID, or `current`) of the branch `name`, expanding
@@ -207,9 +212,17 @@ export function scanned(browser: WebdriverIO.Browser): Promise<string> {
   }, MAIN);
 }
 
-/** The instant the Current's header says it was scanned, as the app rendered it; null without one. */
-export function scannedAt(browser: WebdriverIO.Browser): Promise<string | null> {
-  return browser.execute((main) => document.querySelector(`${main} > header .scan time`)?.getAttribute("datetime") ?? null, MAIN);
+/** A Current's completed scan as its header shows it: the visible `Scanned at` time with the
+ * instant it stands for, once no scan is in progress; null while one runs or none ended. */
+export function scanShown(browser: WebdriverIO.Browser): Promise<{ text: string; instant: string } | null> {
+  return browser.execute((main) => {
+    const scan = document.querySelector(`${main} > header .scan`);
+    const time = scan?.querySelector<HTMLElement>("time");
+    if (!scan || !time || scan.querySelector(".checking")) return null;
+    const visible = time.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && time.getBoundingClientRect().width > 0;
+    const instant = time.getAttribute("datetime");
+    return visible && instant ? { text: time.innerText.trim(), instant } : null;
+  }, MAIN);
 }
 
 /** Open the waiting review `id` with a click on its row, and wait for its Review. */

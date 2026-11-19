@@ -8,15 +8,22 @@ const GATE_POLL = 20;
 
 const [operation, argument, record] = process.argv.slice(2);
 
-/** Register before touching any input; if teardown closed admission first, exit. */
-function gated(gate: NativePath): (() => Promise<void>) | null {
-  const root = parentOf(gate);
+/** Register this process with the fixture `root` before touching any input, so its teardown
+ * joins it before deleting the files; false if teardown closed admission first. */
+function registered(root: NativePath): boolean {
   try {
     writeText(nativePath(root, "gated-tools", `${processId()}-${randomUUID()}.pid`), "", { exclusive: true });
+    return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+}
+
+/** Register, then wait for the gate its test opens; null if teardown closed admission first. */
+function gated(gate: NativePath): (() => Promise<void>) | null {
+  const root = parentOf(gate);
+  if (!registered(root)) return null;
   const closed = nativePath(root, "closed-gated-tools");
   return () => new Promise<void>((done) => {
     const poll = setInterval(() => {
@@ -42,8 +49,14 @@ switch (operation) {
   case "read":
     process.stdout.write(readText(absolutePath(argument)));
     break;
-  case "launch":
-    writeText(absolutePath(argument), "launched");
+  case "launch": {
+    // The marker says it ran; teardown still joins this process before deleting the fixture.
+    const marker = absolutePath(argument);
+    if (registered(parentOf(marker))) writeText(marker, "launched");
+    break;
+  }
+  case "say":
+    process.stdout.write(`${argument}\n`);
     break;
   case "talk": {
     // A launched application that tells its reviewer what happened in it: one line at once,

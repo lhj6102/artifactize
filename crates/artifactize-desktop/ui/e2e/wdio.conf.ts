@@ -6,10 +6,11 @@ import { companionPortFree, companionPortWanted, graphToolFailure, observeGraphT
 import { observe } from "./domain-fixtures/observe.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { createdRoots, environment, releaseFixtures } from "./fixture.ts";
-import { appsAtOnce, browserEnvironment, assertHarnessPlatform, claimForegroundWindow, claimMachineResource, reserveEmbeddedPorts, harnessEnvironment, assertClipboardDesktop, commandDirectory, placeApp, programRunning, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, type Environment, writeJson } from "./platform.ts";
+import { browserEnvironment } from "./browser-fixtures.ts";
+import { appsAtOnce, assertHarnessPlatform, claimForegroundWindow, reserveEmbeddedPorts, harnessEnvironment, assertClipboardDesktop, commandDirectory, placeApp, programRunning, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, type Environment, writeJson } from "./platform.ts";
 import { releaseClaudeLogins } from "./domain-fixtures/claude-code.ts";
-import { asNativePath, embeddedReady, exists, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
-import type { Prepared } from "./scenario.ts";
+import { asNativePath, claimMachineResource, embeddedReady, exists, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
+import { completionMarker, type Prepared } from "./scenario.ts";
 
 // Reject an unsafe OS session before any fixture or service is initialized.
 assertHarnessPlatform();
@@ -41,6 +42,16 @@ export const fixedResources = {
 /** The fixture roots of this batch's apps. */
 export function preparedRoots(): NativePath[] {
   return prepared.map((input) => input.fixture.root);
+}
+
+/** Every scenario of this batch ran its phase to the end: a Launcher that found no spec, or
+ * a worker that stopped before its test, returns without failing (E2E-EXPLICIT-FAILURE). */
+export function assertCompleted(relaunch: boolean): void {
+  const missing = selected.filter((_item, index) => {
+    const input = prepared[index];
+    return !input || !exists(nativePath(input.fixture.root, completionMarker(relaunch)));
+  }).map((item) => item.id);
+  if (missing.length) throw new Error(`no completed ${relaunch ? "relaunch" : "run"} for ${missing.join(", ")}`);
 }
 
 /** Called by the runner AFTER Launcher.run returns, never from config onComplete:

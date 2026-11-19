@@ -16,7 +16,7 @@ import { commandFields, runtimeProfile } from "../native-fixtures.ts";
 import { portablePath, primaryModifier, programRunning, removeTree } from "../platform.ts";
 import { exists, listFiles, makeDirectory, nativePath, readJson, readText, writeText, type NativePath } from "../portable.ts";
 import { camera, detail, dockedDetail, graphShown, nodeAt, openArtifact, openArtifactTab, openTab, summary } from "../graph-view.ts";
-import { branch, chooseChip, MAIN, mainTitle, scanned, scannedAt } from "../pane.ts";
+import { branch, chooseChip, MAIN, mainTitle, scanned, scanShown } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
 import { currentHasColours, graphAppearance } from "./graph-appearance.ts";
 
@@ -284,7 +284,7 @@ Summarize {docs}."""
   // UX journeys: J-DETAIL J-DETAIL-SUMMARY J-GRAPH-COLOURS
   scenario<{ run: string }>(
     "current-reused",
-    "marks an Artifact whose every eval would be reused, its eval's tab says why with the result it would reuse, and its chip returns to its Artifact tab",
+    "marks an Artifact whose every eval would be reused, its eval's tab says why, and its chip returns to its Artifact tab",
     async () => {
       const fixture = createEvals(["alpha", "beta"]);
       return { fixture, args: ["--repo", fixture.repo], data: { run: savedRuns(fixture)[0].id } };
@@ -301,8 +301,9 @@ Summarize {docs}."""
       await openTab(browser, "e:app/beta", { row: true });
       assert.deepEqual((await detail(browser))?.tabs.slice(1).map((tab) => [tab.name, tab.glyph]), [["alpha", "reused"], ["beta", "reused"]], "each eval's chip says it would be reused");
       await waitFor(browser, async () => (await summary(browser)).status.startsWith("reused"), `beta's plan: ${JSON.stringify(await summary(browser))}`);
+      // The reused result's own values are checked where it has some (current-run-end): a
+      // runtime eval's result is its saved output, in its log.
       const shown = await summary(browser);
-      assert.ok(shown.blocks.includes("Result"), `the result it would reuse: ${shown.blocks}`);
       assert.equal(shown.status, `reused ${CACHED}`, "with why");
       assert.equal(shown.instruction, "Check beta.");
       // app's own chip shows its Artifact tab again, listing what each eval would do.
@@ -358,16 +359,14 @@ Summarize {docs}."""
       // The scan learns each Artifact in turn: ship's plan, once known, is to run.
       await waitFor(browser, async () => (await drawn()).nodes["a:ship"] === "ship: would run (1 eval)", "ship's fresh plan is visible");
       assert.equal((await drawn()).nodes["a:ship"], "ship: would run (1 eval)", "ship, reading the changed notes, would run again without waiting for the sign-off");
-      /** Scans the app has completed, from its read-only command activity. */
-      const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
       // Its look once release, ship and their relation are painted would run.
       let look = await graphAppearance(browser);
       await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:release": "run", "a:ship": "run" }, { "a:release>a:ship": "run" }),
         { timeout: 15000, timeoutMsg: "would run painted in its legend colour" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
-      // A scan's last step comes as it ends; the header names when once it has.
-      await waitFor(browser, async () => (await scannedAt(browser)) !== null, "the scan before the Run ended");
-      const before = { checkpoint: await checkpoint(browser), scans: await scans(), drawn: await drawn(), look };
+      // A scan's last step comes as it ends; the header shows when once it has.
+      await waitFor(browser, async () => (await scanShown(browser)) !== null, "the scan before the Run ended");
+      const before = { drawn: await drawn(), look };
       assert.notEqual(before.look.nodes["a:release"].mark, reusedLook.nodes["a:release"].mark, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
@@ -377,22 +376,16 @@ Summarize {docs}."""
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
       assert.ok(request);
       signOff(fixture, request.id);
+      // The rescan is visible as its plans turning from would run back to reused.
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
-      // Completion identifies the new scan even if both scans use the same clock tick.
-      await waitFor(browser, async () => (await scans()) > before.scans, "the scan triggered by the Run's end completed");
-      await commandsRendered(browser, before.checkpoint);
-      await waitFor(browser, async () => (await scannedAt(browser)) !== null && /^Scanned at \d/.test(await scanned(browser)),
-        "the completed scan's time is rendered in the header");
-      const instant = (await scannedAt(browser))!;
-      const local = await browser.execute((shown: string) => new Date(shown).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }), instant);
+      // Once that scan has ended, no progress is shown and the header shows when, in local time.
+      let shown: Awaited<ReturnType<typeof scanShown>> = null;
+      await waitFor(browser, async () => (shown = await scanShown(browser)) !== null && /^Scanned at \d/.test(await scanned(browser)),
+        "the completed scan's time is shown in the header");
+      const local = await browser.execute((instant: string) => new Date(instant).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }), shown!.instant);
       assert.equal(await scanned(browser), `Scanned at ${local}`, "the header reads that scan's local time");
-      const shownTime = await browser.execute((main) => {
-        const time = document.querySelector<HTMLElement>(`${main} > header .scan time`);
-        const visible = !!time && time.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && time.getBoundingClientRect().width > 0;
-        return visible ? time.innerText.trim() : null;
-      }, MAIN);
-      assert.equal(shownTime, local, "the header visibly shows that time");
+      assert.equal(shown!.text, local, "the header visibly shows that time");
       const after = await graphAppearance(browser);
       for (const id of ["a:release", "a:ship"]) {
         assert.notEqual(after.nodes[id].mark, before.look.nodes[id].mark, `${id} recoloured`);

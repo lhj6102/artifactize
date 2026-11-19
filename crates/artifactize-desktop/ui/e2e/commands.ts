@@ -1,6 +1,5 @@
 // Native command observations use the app's read-only IPC boundary, never a replacement
 // invoke or a command dispatched by the observer.
-import assert from "node:assert/strict";
 import type { CommandActivity } from "../src/ipc/activity.ts";
 import { afterRender } from "./keys.ts";
 
@@ -16,18 +15,6 @@ export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
       queryFailure: shown ? document.querySelector('[aria-label="Branches"] .empty.error')?.textContent ?? null : null,
     };
   });
-}
-
-/** Correlate a manual refresh (F5, Ctrl+R or the palette's Refresh) with its successful read
- * shown in the window. This is only a completion barrier; callers must also assert what shows. */
-export async function refreshed(browser: WebdriverIO.Browser, before: Checkpoint): Promise<void> {
-  assert.notEqual(before.activity.refresh, undefined, "manual Refresh observation requires an E2E test build");
-  const generation = before.activity.refresh?.generation ?? 0;
-  await browser.waitUntil(async () => {
-    const completed = (await checkpoint(browser)).activity.refresh;
-    assert.notEqual(completed, undefined, "the E2E manual Refresh observation remains available");
-    return completed !== null && completed !== undefined && completed.generation === generation + 1;
-  }, { timeout: 15000, timeoutMsg: "manual Refresh did not complete (failed or pending)" });
 }
 
 /** Query-changing actions need a *new* matching search, not an older A after A → B → A.
