@@ -6,9 +6,9 @@ import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { displayEnvironment, setVariable, variable, type Environment } from "./platform.ts";
-import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, suitePath, writeJson } from "./portable.ts";
-import { COMPLETED, type Context } from "./scenario.ts";
+import { displayEnvironment, setVariable, stopTreeAt, variable, type Environment } from "./platform.ts";
+import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readTextIfExists, suitePath, writeJson } from "./portable.ts";
+import { AGAIN, COMPLETED, type Context } from "./scenario.ts";
 
 const candidate = readCandidate();
 const selected = selectedScenarios(JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[]);
@@ -71,6 +71,11 @@ export const config = {
       for (const [index, item] of selected.entries()) {
         const scope = own(nativePath(candidate.root, "fixtures"));
         owned.push(scope);
+        // An app the scenario started again, should its worker have ended before ending it.
+        scope.defer(() => {
+          const pid = Number(readTextIfExists(nativePath(scope.root, AGAIN)) ?? "");
+          if (pid > 0) stopTreeAt(pid);
+        });
         const input = await item.prepare(scope);
         const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
         for (const [name, value] of Object.entries(env)) if (value === undefined) unset.add(name);

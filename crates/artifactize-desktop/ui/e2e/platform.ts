@@ -182,11 +182,22 @@ export function startTree(program: string, args: readonly string[], options: { c
 /** End the process tree `startTree` started, its root and every descendant. */
 export function stopTree(child: ChildProcess): void {
   if (child.pid === undefined || child.exitCode !== null) return;
-  if (WINDOWS) spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], { windowsHide: true });
+  stopTreeAt(child.pid);
+}
+
+/** End the process tree `startTree` started whose root is `pid`, from any process. */
+export function stopTreeAt(pid: number): void {
+  if (WINDOWS) spawnSync("taskkill", ["/T", "/F", "/PID", String(pid)], { windowsHide: true });
   else {
-    try { process.kill(-child.pid, "SIGKILL"); }
+    try { process.kill(-pid, "SIGKILL"); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
   }
+}
+
+/** The variables that send a build's temporary files into `folder`, as this OS's tools read
+ * them. */
+export function tempEnvironment(folder: NativePath): Environment {
+  return WINDOWS ? { TMP: folder, TEMP: folder } : { TMPDIR: folder };
 }
 
 // ---------------------------------------------------------------------------------

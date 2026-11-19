@@ -80,6 +80,11 @@ export const scenarios: Scenario[] = [
       detail = await app.detail.toggleSection("Neighbours");
       const neighbours = await app.detail.neighbours();
       assert.equal(neighbours.find((node) => node.id === "a:release")?.side, "left", "ship's eval uses release: on its left");
+      // Folded again, the drawing goes and its header stays.
+      detail = await app.detail.toggleSection("Neighbours");
+      await app.until(async () => !(await app.detail.neighboursDrawn()), "the Neighbours drawing gone");
+      assert.ok(detail.sections.some((section) => section.name === "Neighbours"), "its header stays");
+      detail = await app.detail.toggleSection("Neighbours");
       await app.detail.openNeighbour("a:release", "Artifact release");
       // A click on another Artifact shows its Detail instead; an eval's row shows its tab.
       await app.graph.open("a:docs", "Artifact docs");
@@ -169,6 +174,11 @@ export const scenarios: Scenario[] = [
       await app.graph.camera();
       // Zoomed out so far, every Artifact is a painted block: the canvas paints them (#475).
       await app.graph.until(() => app.graph.paints(), "the large graph paints its blocks");
+      // A painted block opens its Artifact's Detail.
+      await app.graph.clickBlock();
+      await app.detail.until((shown) => /^Artifact /.test(shown.title), "a block opened its Artifact's Detail");
+      await app.graph.clickBackground();
+      await app.detail.closed();
       assert.equal(await app.graph.navigatorShown(), false, "the whole graph in view: no Navigator");
       const whole = await app.graph.zoom();
       // Zooming in brings named nodes into view.

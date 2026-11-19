@@ -4,8 +4,8 @@ import { remote } from "webdriverio";
 import { selectedScenarios } from "./catalog.ts";
 import { recordKeys } from "./keys.ts";
 import { startTree, stopTree, takeSystemFocus, variable } from "./platform.ts";
-import { asNativePath, embeddedPorts, embeddedReady, nativePath, readJson, writeText } from "./portable.ts";
-import { COMPLETED, type Context } from "./scenario.ts";
+import { asNativePath, embeddedPorts, embeddedReady, nativePath, readJson, removeTree, writeText } from "./portable.ts";
+import { AGAIN, COMPLETED, type Context } from "./scenario.ts";
 import { App } from "./views/app.ts";
 
 // Globals of the configured WDIO Mocha adapter.
@@ -40,6 +40,8 @@ describe(item.title, () => {
       const [port] = await embeddedPorts(1);
       const env = { ...process.env, ...input.launch.env, TAURI_WEBDRIVER_PORT: String(port), WDIO_EMBEDDED_SERVER: "true" };
       later = { child: startTree(input.launch.app, input.launch.args, { cwd: input.root, env, capture: false }) };
+      // Should this worker end before its teardown, the runner's teardown ends the app by this.
+      writeText(nativePath(input.root, AGAIN), String(later.child.pid));
       const deadline = Date.now() + 60000;
       while (!(await embeddedReady(port))) {
         if (later.child.exitCode !== null) throw new Error(`the app started again exited with ${later.child.exitCode}`);
@@ -63,7 +65,10 @@ describe(item.title, () => {
     if (later) {
       try { await later.session?.deleteSession(); }
       catch (error) { failure ??= error; }
-      finally { stopTree(later.child); }
+      finally {
+        stopTree(later.child);
+        removeTree(nativePath(input.root, AGAIN));
+      }
     }
     if (failure) throw failure;
     // The runner accepts the batch only when every scenario says it ran to its end, its own

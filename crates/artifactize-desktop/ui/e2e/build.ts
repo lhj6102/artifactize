@@ -1,7 +1,7 @@
 // The builds the suite and the desktop's own tools run: the E2E test app with the CLI (a
 // candidate), the production app for a person's launch, and the Rust gates. Each build has
 // its own folder, Cargo output included, removed when its owner is done with it.
-import { executableName, packageCommand, pathNotUrl, setVariable, startTree, stopTree, testWindowOptions, variable, type Environment } from "./platform.ts";
+import { executableName, packageCommand, pathNotUrl, setVariable, startTree, stopTree, tempEnvironment, testWindowOptions, variable, type Environment } from "./platform.ts";
 import { absolutePath, asNativePath, copyFile, exists, makeDirectory, nativePath, newDirectory, readJson, removeTree, scratchDirectory, suitePath, writeJson, type NativePath } from "./portable.ts";
 
 export const workspace = absolutePath(suitePath(), "../../../..");
@@ -38,7 +38,7 @@ function buildFolder(parent = scratchDirectory()): { root: NativePath; env: Envi
   return { root, env: {
     ...process.env,
     CARGO_TARGET_DIR: nativePath(root, "target"), CARGO_BUILD_BUILD_DIR: nativePath(root, "cargo-build"),
-    CARGO_PROFILE_DEV_DEBUG: "0", CARGO_PROFILE_DEV_INCREMENTAL: "false", TMPDIR: makeDirectory(nativePath(root, "tmp")),
+    CARGO_PROFILE_DEV_DEBUG: "0", CARGO_PROFILE_DEV_INCREMENTAL: "false", ...tempEnvironment(makeDirectory(nativePath(root, "tmp"))),
   } };
 }
 

@@ -90,6 +90,11 @@ export class Detail {
     return this.until((shown) => shown.sections.some((section) => section.name === name && section.open !== before.open), `${name} ${before.open ? "folded" : "unfolded"}`);
   }
 
+  /** Whether the Detail draws its Neighbours. */
+  neighboursDrawn(): Promise<boolean> {
+    return this.browser.$(`${DETAIL} [aria-label="Neighbours"] .svelte-flow__node`).isDisplayed();
+  }
+
   /** The text the section `name` shows, its header row left out. */
   section(name: string): Promise<string> {
     return this.browser.execute((detail, section) => {
@@ -220,9 +225,9 @@ export class Detail {
   }
 
   /** Press Esc in the Path field: what was typed is put back. */
-  async discardPath(name: string): Promise<void> {
+  async discardPath(name: string, outcome: (shown: Awaited<ReturnType<Detail["definition"]>>) => boolean, what: string): Promise<void> {
     await this.browser.$(`${DETAIL} input[aria-label="Path of ${name}"]`).click();
-    await press(this.browser, ["Escape"], async () => true, "Esc in the Path field");
+    await press(this.browser, ["Escape"], async () => outcome(await this.definition(name)), what);
   }
 
   /** Type `path` into the Path field without writing it. */

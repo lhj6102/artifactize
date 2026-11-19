@@ -40,3 +40,6 @@ export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
 
 /** The file a scenario's spec writes into its folder once its run has passed to its end. */
 export const COMPLETED = "completed";
+
+/** The file holding the process ID of an app a scenario started again, while it runs. */
+export const AGAIN = "again.pid";

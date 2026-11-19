@@ -28,8 +28,7 @@ export const scenarios: Scenario[] = [
       const kept = definitionText(fixture, "core");
       await app.detail.writePath("core", "../outside/", (each) => each.refusals.length > 0, "the Path refused under it");
       assert.equal(definitionText(fixture, "core"), kept, "a refused Path writes nothing");
-      await app.detail.discardPath("core");
-      await app.detail.definitionUntil("core", (each) => each.path === "gone/" && each.refusals.length === 0, "Esc put the Path back");
+      await app.detail.discardPath("core", (each) => each.path === "gone/" && each.refusals.length === 0, "Esc put the Path back, its refusal gone");
       // A Path being typed is kept when the Detail closes, and not written.
       await app.detail.typePath("core", "kept-draft/");
       await app.detail.close();
@@ -46,6 +45,7 @@ export const scenarios: Scenario[] = [
       await app.detail.sourceAction("Save");
       await app.eventually(() => definitionText(fixture, "core")?.endsWith("# reviewed\n") === true, "Save wrote the Source");
       const saved = definitionText(fixture, "core")!;
+      await app.detail.definitionUntil("core", (each) => each.source === saved && !each.saving, "the saved Source shown, Save gone");
       await app.detail.editSource("core", `${saved}parts = ["nobody"]\n`);
       await app.detail.sourceAction("Save");
       await app.detail.definitionUntil("core", (each) => each.refusals.some((refusal) => /line \d/.test(refusal)), "the refusal names its line");

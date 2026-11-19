@@ -72,6 +72,15 @@ export class Graph {
     await holds(this.browser, check, what, timeout);
   }
 
+  /** A request the main area shows read-only: its status line and instruction. */
+  record(): Promise<{ status: string; instruction: string }> {
+    return this.browser.execute((main) => {
+      const root = document.querySelector(`${main} [role="document"]`);
+      const words = (selector: string) => (root?.querySelector<HTMLElement>(selector)?.innerText ?? "").replace(/\s+/g, " ").trim();
+      return { status: words(".summary .status"), instruction: words(".instruction") };
+    }, MAIN);
+  }
+
   /** The facts under Debug of a request the main area shows read-only, by name, unfolding Debug
    * with a click on its header row when it is folded. */
   async recordDebug(): Promise<Record<string, string>> {
@@ -282,25 +291,42 @@ export class Graph {
   /** Whether the large graph's canvas paints anything in the middle of the graph: some pixels
    * there differ from its background. This is a canvas, which only its pixels show. */
   async paints(): Promise<boolean> {
+    return (await this.painted()).length > 20;
+  }
+
+  /** The points in the middle of the large graph's canvas whose pixels differ from its
+   * background: where it paints blocks. */
+  async painted(): Promise<{ x: number; y: number }[]> {
     const area = await this.browser.execute((graph) => {
       const box = document.querySelector(`${graph} canvas.paint`)?.getBoundingClientRect();
       return box ? { x: box.left, y: box.top, width: box.width, height: box.height, scale: devicePixelRatio } : null;
     }, GRAPH);
-    if (!area) return false;
+    if (!area) return [];
     const image = PNG.sync.read(Buffer.from(await this.browser.takeScreenshot(), "base64"));
     const at = (x: number, y: number) => {
       const offset = (Math.round(y * area.scale) * image.width + Math.round(x * area.scale)) * 4;
       return [image.data[offset], image.data[offset + 1], image.data[offset + 2]];
     };
     const background = at(area.x + 2, area.y + area.height - 2);
-    let differing = 0;
+    const points: { x: number; y: number }[] = [];
     for (let y = area.y + area.height * 0.25; y < area.y + area.height * 0.75; y += 4) {
       for (let x = area.x + area.width * 0.25; x < area.x + area.width * 0.75; x += 4) {
         const pixel = at(x, y);
-        if (pixel.some((value, channel) => Math.abs(value - background[channel]) > 40)) differing += 1;
+        if (pixel.some((value, channel) => Math.abs(value - background[channel]) > 40)) points.push({ x: Math.round(x), y: Math.round(y) });
       }
     }
-    return differing > 20;
+    return points;
+  }
+
+  /** Click a block the large graph paints, inside it: one whose neighbours on every side are
+   * painted too. */
+  async clickBlock(): Promise<void> {
+    const points = await this.painted();
+    const key = (x: number, y: number) => `${x},${y}`;
+    const all = new Set(points.map((point) => key(point.x, point.y)));
+    const inside = points.find((point) => [[-4, 0], [4, 0], [0, -4], [0, 4]].every(([dx, dy]) => all.has(key(point.x + dx, point.y + dy))));
+    if (!inside) throw new Error("the large graph paints no block wide enough to click");
+    await clickAt(this.browser, inside);
   }
 
   // -------------------------------------------------------------------------------
