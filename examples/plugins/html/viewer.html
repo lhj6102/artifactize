@@ -113,7 +113,7 @@
         }
       }, true);
       document.addEventListener('click', (event) => {
-        if (!armed || !event.isTrusted || !(event.target instanceof Element)) return;
+        if (!armed || !(event.target instanceof Element)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         armed = false;
