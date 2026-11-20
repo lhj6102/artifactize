@@ -49,10 +49,18 @@ export class AppState {
   readonly reviewMode = new ReviewModeState();
   /** Chat's sessions and the one shown. */
   readonly chat: ChatModeState = new ChatModeState(this.ipc);
-  /** Quitting asks first while claims are held or a Chat turn runs (the shown session's, the
-   * one whose turn this window reads). */
+  /** Quitting asks first while claims are held or a Chat turn runs in any session, as the
+   * library lists them. */
   readonly leaving = Object.assign(new Leaving(this.ipc), {
-    turns: () => (this.chat.view?.running ? [this.chat.view.session.title || "New chat"] : []),
+    turns: async () => {
+      try {
+        const sessions = await call(this.ipc.chatList(null));
+        return sessions.filter((session) => session.running).map((session) => session.title || "New chat");
+      } catch {
+        // Unread, no turn is named; the claims are still asked about.
+        return [];
+      }
+    },
   });
   /** A newer release and its dialog. */
   readonly release = new Release(this.ipc);
@@ -197,24 +205,32 @@ export class AppState {
     this.mode = "chat";
   }
 
-  /** Show Verify with Run `run` chosen on `branch` and node `node`'s Detail open on `tab`. */
+  /** Show Verify with Run `run` on its branch and node `node`'s Detail open on `tab`. */
   showRun(run: string, node: string | null = null, tab: string | null = null): void {
     const m = this.monitor;
-    const branch = this.browse.view?.branches.find((item) => item.chips.some((chip) => chip.kind === "run" && chip.id === run))?.key ?? null;
     m.settings = false;
     m.finding = false;
     this.mode = "verify";
+    void this.#showRun(run, node, tab);
+  }
+
+  /** The library reads Run `run` by its ID, whatever the Pane lists, and says its live branch. */
+  async #showRun(run: string, node: string | null, tab: string | null): Promise<void> {
+    if (!(await this.browse.open(run))) return;
+    const shown = this.browse.view?.run;
+    if (shown?.kind !== "read" || shown.id !== run) return;
+    const branch = shown.branch;
     if (!branch) {
       // Only a live branch's Runs are drawn: one whose branch is gone is read in its Detail.
       this.browse.error = `Run ${run} is not on a live branch.`;
       return;
     }
+    const m = this.monitor;
     m.expanded.add(keyOf(branch));
     m.selected = { kind: "chip", branch, chip: run };
     m.shown = { kind: "run", branch, run };
     m.opened = node === null ? null : { source: { kind: "run", run }, node, tab };
     this.current.clear();
-    void this.browse.open(run);
   }
 
   /** The backend's launch arrived: remember it; the first snapshot opens what it asks for. */

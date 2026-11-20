@@ -8,7 +8,7 @@ import { afterEach, beforeAll, expect, it } from "vitest";
 import type { ChatSession, ChatTurn, ChatView } from "../ipc/client";
 import { renderHosted } from "../test-host";
 import ChatMode from "./ChatMode.svelte";
-import { branch, browseView, runChip } from "../monitor/fixtures";
+import { branch, branchKey, browseView, runChip } from "../monitor/fixtures";
 
 beforeAll(() => {
   Element.prototype.scrollIntoView ??= () => {};
@@ -53,6 +53,9 @@ function backend() {
         state.running = false;
         state.turns = state.turns.map((turn) => ({ ...turn, state: { kind: "stopped" } }));
         return true;
+      case "browse":
+        // Opened by its ID, run-9 is read with its live branch.
+        return browseView(2, { run: { kind: "read", id: "run-9", origin: null, node: "r:run-9", mark: { status: "RED", glyph: "✗" }, needs: [], branch: branchKey("fix/rounding") } });
       case "providers_list":
         return { builtin: ["claude-agent", "gemini"], keys: [], custom: [] };
       case "models_list":
@@ -105,7 +108,7 @@ it("lists sessions by project, sends a message and shows the turn as the library
   // Open in Verify shows that Run in Verify.
   await fireEvent.click(within(card).getByRole("button", { name: /Open in Verify/ }));
   expect(app.mode).toBe("verify");
-  expect(app.monitor.shown).toMatchObject({ kind: "run", run: "run-9" });
+  await waitFor(() => expect(app.monitor.shown).toMatchObject({ kind: "run", run: "run-9" }));
 });
 
 it("stops a running turn, which ends marked as stopped", async () => {
@@ -147,19 +150,18 @@ function unlisted(models: { slug: string; displayName: string }[]) {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   let answer: () => void = () => {};
   const answered = new Promise<void>((done) => (answer = done));
+  // The library's default: the custom provider `lab`'s first model, once its providers answered.
+  const starting = models[0] ? { backend: "lab", model: models[0].slug } : null;
   mockIPC(async (cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
     switch (cmd) {
       case "chat_list":
         return [];
-      case "providers_list":
+      case "chat_default_model":
         await answered;
-        return { builtin: ["codex"], keys: [], custom: [{ name: "lab", target: { kind: "endpoint" } }] };
-      case "models_list":
-        if ((args as { provider: string }).provider === "codex") throw { kind: "read", message: "Codex is not signed in." };
-        return models;
+        return starting;
       case "chat_create":
-        return { ...session, id: "chat-2", worktree: (args as { worktree: string }).worktree, selection: (args as { selection: ChatSession["selection"] }).selection };
+        return { ...session, id: "chat-2", worktree: (args as { worktree: string }).worktree, selection: starting! };
       case "chat_open":
         return { session: { ...session, id: "chat-2" }, running: false, turns: [] } satisfies ChatView;
       default:
@@ -182,7 +184,7 @@ it("offers Create in New chat only once the model the session starts with is kno
   await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("lab · lab-large"));
   expect(create.hasAttribute("disabled")).toBe(false);
   await fireEvent.click(create);
-  await waitFor(() => expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({ worktree: "/work/app", selection: { backend: "lab", model: "lab-large" } }));
+  await waitFor(() => expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({ worktree: "/work/app", selection: null }));
 });
 
 it("says no provider lists a model once every provider has answered with none", async () => {

@@ -8,7 +8,7 @@ export type Held = { taken: string[]; turns: string[] };
 
 export class Leaving {
   /** The Chat sessions with a turn running, by title: quitting stops them. */
-  turns: () => string[] = () => [];
+  turns: () => Promise<string[]> = async () => [];
 
   constructor(readonly ipc: Commands = commands) {}
 
@@ -19,7 +19,7 @@ export class Leaving {
   async allowed(): Promise<boolean> {
     if (this.held !== null) return false;
     const taken = await this.ipc.humanTaken();
-    const turns = this.turns();
+    const turns = await this.turns();
     if (taken.length === 0 && turns.length === 0) return this.held === null;
     this.held = { taken, turns };
     return false;

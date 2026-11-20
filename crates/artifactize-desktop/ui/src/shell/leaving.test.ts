@@ -25,7 +25,7 @@ describe("Leaving", () => {
   it("asks first while a Chat turn runs, even without claims", async () => {
     mockIPC((cmd) => (cmd === "human_taken" ? [] : null));
     const leaving = new Leaving();
-    leaving.turns = () => ["Fix checkout rounding"];
+    leaving.turns = async () => ["Fix checkout rounding"];
     const request = close();
     await leaving.closeRequested(request.event);
     expect(request.prevented()).toBe(true);

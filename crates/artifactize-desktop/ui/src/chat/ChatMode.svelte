@@ -42,8 +42,10 @@
   const running = $derived(view?.running ?? false);
   const model = $derived(session ? c.model(session) : null);
   const typed = $derived(session ? (c.typed[session.id] ?? "") : "");
-  /** The model New chat's session starts with, once it is known. */
-  const starting = $derived(c.worktree ? c.startingModel(c.worktree) : null);
+  /** The model New chat's session starts with, once the library said it for the chosen branch. */
+  const answer = $derived(c.starting !== null && c.starting.worktree === c.worktree ? c.starting : null);
+  const starting = $derived(answer?.model ?? null);
+  const reading = $derived(answer === null || !answer.known);
 
   /** How long ago `at` (an RFC 3339 time) was, as the Pane says it. */
   function age(at: string): string {
@@ -114,7 +116,7 @@
     const selected = shown.kind === "none" ? undefined : branches.find((branch) => keyOf(branch.key) === keyOf(shown.branch));
     c.worktree = selected?.workspace ?? branches[0]?.workspace ?? null;
     c.creating = true;
-    void c.providersRead();
+    if (c.worktree) void c.readStarting(c.worktree);
   }
 
   async function create(event: SubmitEvent) {
@@ -290,7 +292,7 @@
       <form onsubmit={create}>
         <label class="field">
           <span class="field-name">Branch</span>
-          <select bind:value={c.worktree}>
+          <select bind:value={c.worktree} onchange={() => c.worktree && void c.readStarting(c.worktree)}>
             {#each branches as branch (branch.workspace)}
               <option value={branch.workspace}>{branch.name ? `${branch.project} / ${branch.name}` : branch.project}</option>
             {/each}
@@ -301,7 +303,7 @@
           <p class="starting" class:quiet={!starting} role="status" aria-labelledby="new-chat-model">
             {#if starting}
               {providerName(starting.backend)} · {starting.model}
-            {:else if c.reading}
+            {:else if reading}
               Reading the providers' models…
             {:else}
               No provider lists a model. Connect one in Settings.

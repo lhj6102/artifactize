@@ -96,8 +96,10 @@ export const scenarios: Scenario[] = [
       const frame = await w.frameUntil((shown) => shown !== null, "the plugin's page framed");
       assert.equal(frame?.sandbox, "allow-scripts", "the page runs sandboxed, without the app's origin");
       assert.match(frame?.src ?? "", /viewer/, "served from the viewer's own scheme");
-      const strip = await w.strip();
-      assert.equal(strip.point, false, "the app draws no control over a plugin's page");
+      // The page reached the bridge and says, in the strip, what it shows: its loaded page.
+      const strip = await w.stripUntil((shown) => shown.items.some((item) => item.endsWith("· Checkout")), "the html page's status in the strip");
+      assert.ok(!strip.items.some((item) => item.startsWith("Loading") || item.includes("did not connect")), "connected");
+      assert.equal(strip.point, true, "Point in the strip for the claimed review");
       await w.main();
     },
   }),

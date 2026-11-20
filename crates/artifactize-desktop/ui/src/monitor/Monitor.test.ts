@@ -97,7 +97,14 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
         }
         case "request_detail":
           return { profile: "human", request: (args as { id: string }).id };
-        case "browse":
+        case "browse": {
+          // A Run opened by its ID is read whatever the Pane lists, with its live branch.
+          const step = (args as { navigate?: Navigate }).navigate?.run;
+          const view = snapshot();
+          if (step?.kind !== "open") return view;
+          const live = view.branches.find((each) => each.chips.some((chip) => chip.kind === "run" && chip.id === step.id));
+          return { ...view, run: { kind: "read", id: step.id, origin: null, node: `r:${step.id}`, mark: { status: "GREEN", glyph: "✓" }, needs: [], branch: live?.key ?? null } };
+        }
         case "redraw":
           return snapshot();
         case "current_scan":
