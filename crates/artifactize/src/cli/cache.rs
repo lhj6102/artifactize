@@ -1,10 +1,11 @@
 //! Repository-independent reusable result commands.
 
+use artifactize_core::types::ReuseKey;
+use clap::Subcommand;
+
 use super::{Context, print_json};
 use serde_json::json;
 use std::io::{self, Write};
-
-use super::CacheCommand;
 
 /// Cache show has historically returned 4 for a missing key/history, distinct from usage
 /// or storage errors; keep that public code for scripts that probe reusable records.
@@ -51,12 +52,12 @@ pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u
             }
         }
         CacheCommand::Show { key, history } => {
-            let mut records = artifactize_core::cache::show(&state, &key, history).await?;
+            let records = artifactize_core::cache::show(&state, &key, history).await?;
             let found = !records.is_empty();
             if history {
                 print_json(&records)?;
             } else {
-                print_json(&records.pop())?;
+                print_json(&records.last())?;
             }
             return Ok(if found { 0 } else { MISSING_RECORD_EXIT });
         }
@@ -65,4 +66,23 @@ pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u
         }
     }
     Ok(0)
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CacheCommand {
+    /// List the latest record of each reuse key, the one verify reuses.
+    List {
+        /// List every record of every key, latest first per key.
+        #[arg(long)]
+        history: bool,
+    },
+    /// Read a key's latest record (result, profile, options, provenance) as JSON.
+    Show {
+        key: ReuseKey,
+        /// Print every record of the key as a JSON array, latest first.
+        #[arg(long)]
+        history: bool,
+    },
+    /// Remove every record of an unused key, preserving saved Runs and executions.
+    Rm { key: ReuseKey },
 }

@@ -1,13 +1,18 @@
 //! Shared command-line definition and current-directory tool runner.
 
-use std::{collections::BTreeMap, io::Write, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    ffi::OsString,
+    io::{self, Write},
+    path::{Path, PathBuf},
+};
 
 use crate::{
-    Builtin, Content, builtin,
-    scope::{Artifact, ArtifactId, ArtifactKind, Scope},
+    Content, ToolResult,
+    builtin::{self, fixed::FixedInput},
+    scope::{Artifact, ArtifactId, Scope},
 };
 use clap::{Parser, Subcommand};
-use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser)]
@@ -25,34 +30,35 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Tool {
     /// Print a UTF-8 file (at most 64 KiB).
-    Read { path: String },
+    Read { path: PathBuf },
     /// List a directory, as JSON.
     List {
         #[arg(default_value = ".")]
-        path: String,
+        path: PathBuf,
     },
     /// Find logical file paths, as JSON.
     Glob {
         pattern: String,
         #[arg(default_value = ".")]
-        path: String,
+        path: PathBuf,
     },
     /// Search UTF-8 files, as JSON.
     Grep {
         pattern: String,
         #[arg(default_value = ".")]
-        path: String,
+        path: PathBuf,
         #[arg(long)]
         glob: Option<String>,
         #[arg(long)]
         case_insensitive: bool,
     },
     /// Print a Markdown section, selected by its exact heading.
-    Section { path: String, heading: String },
+    Section { path: PathBuf, heading: String },
     /// Run PROGRAM SUBCOMMAND... --help (10 seconds, 64 KiB).
     Help {
-        #[arg(required = true, num_args = 1.., trailing_var_arg = true)]
-        args: Vec<String>,
+        /// Kept as the OS gave them: an argument need not be valid Unicode.
+        #[arg(required = true, num_args = 1.., trailing_var_arg = true, value_parser = clap::value_parser!(std::ffi::OsString))]
+        args: Vec<std::ffi::OsString>,
     },
     /// Open one scoped path or HTTP(S) URL in its default application.
     Open { target: String },
@@ -70,39 +76,53 @@ pub async fn run(tool: Tool) -> u8 {
     }
 }
 
-fn logical(path: String) -> String {
-    if path == "." { String::new() } else { path }
+/// A command-line path as a validated tool path, through the platform's path layer: its
+/// names validated once, roots and traversal refused, `.` the project root.
+fn logical(path: &Path) -> Result<builtin::LogicalPath, String> {
+    builtin::LogicalPath::from_native(path)
 }
 
 async fn execute(tool: Tool) -> Result<(), String> {
     let root = crate::files::current_directory().map_err(|error| error.to_string())?;
+    execute_in(tool, &root, async |target| {
+        crate::opener::open(&target).await
+    })
+    .await
+}
+
+async fn execute_in(
+    tool: Tool,
+    root: &Path,
+    open: impl AsyncFnOnce(OsString) -> io::Result<()>,
+) -> Result<(), String> {
     let owner = ArtifactId::new("cwd").expect("static identifier");
     let scope = Scope {
         artifacts: BTreeMap::from([(
             owner.clone(),
             Artifact {
-                path: PathBuf::new(),
-                kind: ArtifactKind::Folder,
+                path: PathBuf::new()
+                    .try_into()
+                    .expect("workspace root is relative"),
                 name: "cwd".into(),
+                covering_part: None,
                 nested: BTreeMap::new(),
-                select: Vec::new(),
             },
         )]),
     };
     let cancellation = CancellationToken::new();
     enum Invocation {
-        Fixed(Builtin, Vec<String>),
+        Fixed(Result<FixedInput, String>),
         Dynamic(builtin::Input),
     }
     let invocation = match tool {
-        Tool::Read { path } => Invocation::Fixed(Builtin::Read, vec![logical(path)]),
-        Tool::List { path } => Invocation::Fixed(Builtin::List, vec![logical(path)]),
+        Tool::Read { path } => Invocation::Fixed(FixedInput::read(logical(&path)?)),
+        Tool::List { path } => Invocation::Fixed(FixedInput::list(logical(&path)?)),
         Tool::Section { path, heading } => {
-            Invocation::Fixed(Builtin::Section, vec![logical(path), heading])
+            Invocation::Fixed(FixedInput::section(logical(&path)?, heading))
         }
-        Tool::Help { args } => Invocation::Fixed(Builtin::Help, args),
+        Tool::Help { args } => Invocation::Fixed(FixedInput::native_help(args)),
         Tool::Glob { pattern, path } => {
-            Invocation::Dynamic(builtin::Input::glob(&pattern, logical(path))?)
+            Invocation::Dynamic(builtin::Input::glob(&pattern, logical(&path)?)?)
         }
         Tool::Grep {
             pattern,
@@ -111,7 +131,7 @@ async fn execute(tool: Tool) -> Result<(), String> {
             case_insensitive,
         } => Invocation::Dynamic(builtin::Input::grep(
             &pattern,
-            logical(path),
+            logical(&path)?,
             glob.as_deref(),
             case_insensitive,
         )?),
@@ -119,33 +139,42 @@ async fn execute(tool: Tool) -> Result<(), String> {
             let target = if builtin::is_url(&target) {
                 target.into()
             } else {
+                // Validated once at this edge, then resolved as that path.
+                let path = crate::scope::InputPath::from_native(Path::new(&target))
+                    .map_err(|error| error.to_string())?;
                 scope
-                    .resolve_input(&root, &owner, &logical(target))
+                    .resolve_parsed(root, &owner, path)
                     .map_err(|error| error.to_string())?
                     .into_os_string()
             };
-            return crate::opener::open(&target)
-                .await
-                .map_err(|error| error.to_string());
+            return open(target).await.map_err(|error| error.to_string());
         }
     };
     let result = match invocation {
-        Invocation::Fixed(tool, args) => {
-            builtin::call_fixed(
-                tool,
-                &args,
-                json!({}),
+        Invocation::Fixed(Err(error)) => ToolResult::error(error),
+        Invocation::Fixed(Ok(input)) => {
+            // An interrupt of the CLI cancels the launch, which stops and reaps its process
+            // group or job before the CLI exits.
+            let interrupt = cancellation.clone();
+            let watch = tokio::spawn(async move {
+                crate::platform::interrupted().await;
+                interrupt.cancel();
+            });
+            let result = builtin::fixed::execute(
+                input,
                 builtin::Context {
-                    root: &root,
+                    root,
                     scope: &scope,
                     owner: &owner,
                     launcher: &crate::launch::Standalone,
                 },
                 &cancellation,
             )
-            .await
+            .await;
+            watch.abort();
+            result
         }
-        Invocation::Dynamic(input) => builtin::call(input, &root, &scope, &owner, &cancellation),
+        Invocation::Dynamic(input) => builtin::call(input, root, &scope, &owner, &cancellation),
     };
     let (mut stdout, mut stderr) = (std::io::stdout().lock(), std::io::stderr().lock());
     for content in result.content() {
@@ -165,5 +194,52 @@ async fn execute(tool: Tool) -> Result<(), String> {
         Err("Tool failed.".into())
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn scoped_cli_open_records_exactly_one_absolute_target() {
+        let root = crate::test_os::tempdir();
+        let root = crate::files::canonicalize(root.path()).unwrap();
+        let file = crate::test_os::opener_input(&root);
+        let cli = Cli::try_parse_from([
+            "artifactize-tools",
+            "open",
+            file.file_name().unwrap().to_str().unwrap(),
+        ])
+        .unwrap();
+        let mut targets = Vec::new();
+        // Both platforms execute the real CLI resolution; the native handoff alone is replaced.
+        execute_in(cli.command, &root, async |target| {
+            targets.push(PathBuf::from(target));
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(crate::files::is_absolute(&file));
+        assert_eq!(targets, [file]);
+    }
+
+    #[tokio::test]
+    async fn scoped_cli_open_refuses_links_and_escapes_without_a_handoff() {
+        let fixture = crate::test_os::tempdir();
+        let root = fixture.path().join("scope");
+        std::fs::create_dir(&root).unwrap();
+        let outside = crate::test_os::opener_input(fixture.path());
+        let relative_escape = Path::new("..").join(outside.file_name().unwrap());
+        crate::test_os::symlink_file(&outside, root.join("link.md"));
+        for target in [Path::new("link.md"), &relative_escape, &outside] {
+            let cli = Cli::try_parse_from(["artifactize-tools", "open", target.to_str().unwrap()])
+                .unwrap();
+            let outcome = execute_in(cli.command, &root, async |_| {
+                panic!("rejected path reached the desktop handoff")
+            })
+            .await;
+            assert!(outcome.is_err(), "{target:?} was not rejected");
+        }
     }
 }

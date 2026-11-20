@@ -103,68 +103,86 @@ function fresh(): void {
   ] }));
 }
 
-/** The example project: core feeds cli and release; cli feeds docs. cli's tests fail, so docs
- * is blocked; release's sign-off waits for a person after its own check passed. */
-function project(repo: string, fixtures: typeof import("../../crates/artifactize-desktop/ui/e2e/native-fixtures.ts")) {
-  const { runtimeProfile, commandFields } = fixtures;
-  const artifact = (name: string, text: string) => {
+/** The example project: core feeds cli and release; cli feeds docs. Every check is real: Node's
+ * test runner, syntax check and module loader run on the project's own code. cli's test fails
+ * on a real bug (its parser drops the first argument), so docs is blocked; release's sign-off
+ * waits for a person after its package check passed. Each Artifact is defined in
+ * `.artifactize/{name}.artf` and targets its own folder; cli carries a comment. */
+function project(repo: string) {
+  mkdirSync(join(repo, ".artifactize"), { recursive: true });
+  const artifact = (name: string, text: string, files: Record<string, string>) => {
     mkdirSync(join(repo, name), { recursive: true });
-    writeFileSync(join(repo, name, "index.artf"), `name = "${name}"\n${text}`);
+    for (const [file, content] of Object.entries(files)) writeFileSync(join(repo, name, file), content);
+    writeFileSync(join(repo, ".artifactize", `${name}.artf`), `path = "${name}/"\n${text}`);
   };
+  /** A runtime eval's profile that runs Node itself with `args`. */
+  const node = (...args: string[]) => `{ kind = "runtime", command = ${JSON.stringify(process.execPath)}, args = ${JSON.stringify(args)} }`;
   artifact("core", `
 [evals.tests]
 title = "The core tests pass"
-profile = ${runtimeProfile("pass")}
+profile = ${node("--test", "{core}/sum.test.mjs")}
 payload.instruction = "Run the core tests."
 
 [evals.lint]
-title = "The core code is formatted and linted"
-profile = ${runtimeProfile("pass")}
-payload.instruction = "Lint the core code."
-`);
+title = "The core code parses"
+profile = ${node("--check", "{core}/sum.mjs")}
+payload.instruction = "Check the syntax of the core code."
+`, {
+    "sum.mjs": "export function sum(numbers) {\n  return numbers.reduce((total, each) => total + each, 0);\n}\n",
+    "sum.test.mjs": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { sum } from \"./sum.mjs\";\n\ntest(\"adds every number\", () => assert.equal(sum([2, 3, 4]), 9));\n",
+  });
   artifact("cli", `
+[annotations.comment]
+text = "The parser rewrite lands next."
+
 [evals.tests]
 title = "The command line tests pass against core"
-profile = ${runtimeProfile("fail")}
+profile = ${node("--test", "{cli}/main.test.mjs")}
 payload.instruction = "Run the command line tests with {core}."
 
 [evals.lint]
-title = "The command line code is formatted and linted"
-profile = ${runtimeProfile("pass")}
-payload.instruction = "Lint the command line code."
-`);
+title = "The command line code parses"
+profile = ${node("--check", "{cli}/main.mjs")}
+payload.instruction = "Check the syntax of the command line code."
+`, {
+    "main.mjs": "import { sum } from \"../core/sum.mjs\";\n\n// The parser rewrite fixes this: the first argument is dropped.\nexport function total(args) {\n  return sum(args.slice(1).map(Number));\n}\n",
+    "main.test.mjs": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { total } from \"./main.mjs\";\n\ntest(\"totals every argument\", () => assert.equal(total([\"2\", \"3\", \"4\"]), 9));\n",
+  });
   artifact("docs", `
 [evals.examples]
 title = "Every documented command runs"
-profile = ${runtimeProfile("pass")}
+profile = ${node("{docs}/examples.mjs")}
 payload.instruction = "Run each command the docs show against {cli}."
-`);
+`, {
+    "examples.mjs": "import assert from \"node:assert/strict\";\nimport { total } from \"../cli/main.mjs\";\n\n// The README's example: `total 2 3 4` prints 9.\nassert.equal(total([\"2\", \"3\", \"4\"]), 9);\n",
+  });
   artifact("release", `
 [views.human_tools]
-notes = { description = "Print the release notes.", kind = "output", ${commandFields("read", join(repo, "release", "notes.md"))} }
+notes = { description = "Print the release notes.", builtin = "read", args = ["{artifactPath}/notes.md"] }
 
 [evals.package]
 title = "The release package builds from core"
-profile = ${runtimeProfile("pass")}
+profile = ${node("{release}/package.mjs")}
 payload.instruction = "Build the release package from {core}."
 
 [evals.signoff]
 title = "A person approves the release notes"
 profile = { kind = "human" }
 payload.instruction = "Read the release notes and approve them for publication."
-`);
-  writeFileSync(join(repo, "release", "notes.md"), "# Release notes\n\n- Faster startup.\n- Clearer error messages.\n");
+`, {
+    "package.mjs": "import assert from \"node:assert/strict\";\nimport * as core from \"../core/sum.mjs\";\n\n// The package exports exactly core's public functions.\nassert.deepEqual(Object.keys(core), [\"sum\"]);\n",
+    "notes.md": "# Release notes\n\n- Faster startup.\n- Clearer error messages.\n",
+  });
 }
 
 /** Capture every scene into `output`, building in `work`. */
 async function capture(output: string, work: string): Promise<void> {
   const e2e = "../../crates/artifactize-desktop/ui/e2e";
   const { adopt, cleanup, prepare } = await import(`${e2e}/build.ts`);
-  const fixtures = await import(`${e2e}/native-fixtures.ts`);
-  const { environment, git } = await import(`${e2e}/environment.ts`);
-  const { graphShown, openArtifact } = await import(`${e2e}/graph-view.ts`);
-  const { claimable, reviewing } = await import(`${e2e}/human-review.ts`);
-  const { embeddedPorts } = await import(`${e2e}/platform.ts`);
+  const { environment, git } = await import(`${e2e}/fixtures/repo.ts`);
+  const { Graph } = await import(`${e2e}/views/graph.ts`);
+  const { Review } = await import(`${e2e}/views/review.ts`);
+  const { embeddedPorts } = await import(`${e2e}/portable.ts`);
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
   mkdirSync(output, { recursive: true });
   const candidate = adopt(await prepare(work));
@@ -174,8 +192,8 @@ async function capture(output: string, work: string): Promise<void> {
   let browser: WebdriverIO.Browser | undefined;
   try {
     mkdirSync(fixture.repo, { recursive: true });
-    project(fixture.repo, fixtures);
-    git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+    project(fixture.repo);
+    git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
     // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
     const grace = spawnSync(candidate.cli, ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", "0"],
       { env: environment(fixture), encoding: "utf8" });
@@ -220,7 +238,9 @@ async function capture(output: string, work: string): Promise<void> {
     await app.$(runChip).click();
     await app.waitUntil(() => app.execute((main) => /^run-/.test(document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? ""), MAIN),
       { timeout: WAIT, timeoutMsg: "the Main area shows the Run" });
-    await graphShown(app, "a:release", WAIT);
+    const graph = new Graph(app);
+    const review = new Review(app, "main");
+    await graph.node("a:release");
     await app.$('[aria-label="Waiting reviews"] [role="option"]').waitForExist({ timeout: WAIT, timeoutMsg: "the sign-off waits in the Pane" });
     // core → cli, core → release and cli → docs.
     await app.waitUntil(() => app.execute(() => document.querySelectorAll(".svelte-flow__edge").length === 3),
@@ -240,7 +260,7 @@ async function capture(output: string, work: string): Promise<void> {
 
     // B. cli's Detail on its Artifact tab: its evals with their verdicts, and, unfolded, cli
     // between the core it uses and the docs that use it.
-    await openArtifact(app, "a:cli", "Artifact cli");
+    await graph.open("a:cli", "Artifact cli");
     const neighboursRow = app.$('[aria-label="Detail"]').$("button=Neighbours");
     await neighboursRow.waitForExist({ timeout: WAIT });
     if ((await neighboursRow.getAttribute("aria-expanded")) !== "true") await neighboursRow.click();
@@ -261,13 +281,13 @@ async function capture(output: string, work: string): Promise<void> {
     await app.$('[aria-label="Waiting reviews"] [role="option"]').click();
     await app.waitUntil(() => app.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === "Review", MAIN),
       { timeout: WAIT, timeoutMsg: "the Main area shows the review" });
-    await app.waitUntil(() => claimable(app), { timeout: WAIT, timeoutMsg: "the sign-off can be claimed" });
+    await review.until((shown) => shown.stage === "CLAIM" && !shown.running, "the sign-off can be claimed", WAIT);
     await app.$("button=Claim to review").click();
-    await app.waitUntil(() => reviewing(app), { timeout: WAIT, timeoutMsg: "the sign-off is claimed" });
+    await review.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the sign-off is claimed", WAIT);
     await app.$('[aria-label="Human review"]').$("button=notes").click();
-    await app.waitUntil(() => app.execute(() => document.body.innerText.includes("■ exit 0")),
-      { timeout: WAIT, timeoutMsg: "the notes tool finished" });
-    await app.waitUntil(() => reviewing(app), { timeout: WAIT, timeoutMsg: "the notes run settled" });
+    // The built-in read prints the notes and ends its run with `■ done`.
+    await review.runUntil("notes", (rows) => rows.includes("- Faster startup.") && rows.at(-1) === "■ done", "the notes tool printed the notes and finished");
+    await review.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the notes run settled", WAIT);
     await app.$('[aria-label="Human review"]').$("button=GREEN").click();
     await app.$('[aria-label="Human review"] .form').waitForExist({ timeout: WAIT });
     await shot("review.png");

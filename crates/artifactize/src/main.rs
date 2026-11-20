@@ -1,20 +1,7 @@
 mod cli;
 
 fn main() -> std::process::ExitCode {
-    cli::run(cli::Screens {
-        monitor: |state, repo, cancellation| {
-            Box::pin(artifactize_tui::monitor::run(state, repo, cancellation))
-        },
-        review: |state, repo, reviewer, request, cancellation| {
-            Box::pin(artifactize_tui::review::run(
-                state,
-                repo,
-                reviewer,
-                request,
-                cancellation,
-            ))
-        },
-    })
+    cli::run()
 }
 
 /// Portable OS fixtures shared with the library's tests.

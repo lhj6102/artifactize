@@ -34,7 +34,11 @@ impl Project {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
-        fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("spec/spec.md")),
+            "R1: the spec covers R1.\n",
+        )
+        .unwrap();
         let profile = json!({
             "kind":"agent",
             "backend":"codex",
@@ -43,6 +47,7 @@ impl Project {
             "max_tool_calls":2,
         });
         support::declaration::write(
+            &(repo),
             repo.join("spec/index.artf"),
             json!({"name":"spec","views":{"agent_tools":{"read":{"builtin":"read"}}},
                 "fingerprint":{},
@@ -58,9 +63,10 @@ impl Project {
 
     fn profile(&self, profile: Value) {
         let path = self.repo.join("spec/index.artf");
-        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+        let mut declaration: Value =
+            support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
         declaration["evals"][0]["profile"] = profile;
-        support::declaration::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(&(self.repo), path, declaration.to_string()).unwrap();
     }
 
     fn credentials(&self) -> PathBuf {
@@ -73,7 +79,7 @@ impl Project {
         support::os::create_private_dir_all(&auth);
         let credentials = json!({"access_token":access,"refresh_token":"stored-refresh",
             "account_id":"account-1","expires_at":expires_at,"saved_at":1});
-        let _ = fs::remove_file(self.credentials());
+        let _ = support::declaration::remove_file(self.credentials());
         support::os::write_private_file(&self.credentials(), credentials.to_string());
     }
 
@@ -90,7 +96,7 @@ impl Project {
             },
             "last_refresh":"2026-10-01T00:00:00Z",
         });
-        support::declaration::write(&path, auth.to_string()).unwrap();
+        support::declaration::write(self.root.path(), &path, auth.to_string()).unwrap();
         path
     }
 
@@ -143,7 +149,7 @@ fn reviewer(request: &Request) -> Reply {
     match request.path.as_str() {
         "/backend-api/codex/responses" if replayed(request) => codex::completed(
             request,
-            vec![openai::message(r#"{"verdict":"GREEN","verdictFields":{}}"#)],
+            vec![openai::message(r#"{"findings":[]}"#)],
             openai::usage(40, 8),
         ),
         "/backend-api/codex/responses" => codex::completed(
@@ -225,7 +231,7 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
         assert_eq!(body["text"]["format"]["strict"], true);
         let schema = &body["text"]["format"]["schema"];
         assert_eq!(schema["type"], "object");
-        assert_eq!(schema["required"], json!(["verdict", "verdictFields"]));
+        assert_eq!(schema["required"], json!(["findings"]));
         assert!(schema.get("anyOf").is_none());
         assert!(instructions.contains(
             "If a person later asks a follow-up question about this review, answer that question in plain text instead"
@@ -279,12 +285,15 @@ fn an_expired_sign_in_is_refreshed_and_rotated_before_the_review() {
             ),
         ]
     );
-    let saved: Value = serde_json::from_slice(&fs::read(project.credentials()).unwrap()).unwrap();
+    let saved: Value =
+        serde_json::from_slice(&support::declaration::read_file(project.credentials()).unwrap())
+            .unwrap();
+    let issued = codex::jwt("account-1", codex::VALID_EXPIRY);
     assert_eq!(saved["refresh_token"], "rotated-refresh");
-    assert_eq!(
-        calls[1].headers["authorization"],
-        format!("Bearer {}", saved["access_token"].as_str().unwrap())
-    );
+    assert_eq!(saved["access_token"], issued);
+    for call in &calls[1..] {
+        assert_eq!(call.headers["authorization"], format!("Bearer {issued}"));
+    }
     assert!(support::os::private_file(&project.credentials()));
 }
 
@@ -385,7 +394,7 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
         .to_owned();
     assert!(error.contains("The prompt was rejected."), "{error}");
 
-    fs::remove_file(project.credentials()).unwrap();
+    support::declaration::remove_file(project.credentials()).unwrap();
     let unused = FakeProvider::script(Vec::new());
     let error = failed(&project, &unused)["error"]
         .as_str()
@@ -411,8 +420,11 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     // A file that cannot be written fails any write; one replaced by a rename gets a new
     // identity; one rewritten in place gets new contents.
     let read_only = support::os::read_only(&file);
-    let before = (fs::read(&file).unwrap(), support::os::file_identity(&file));
-    let own = fs::read(project.credentials()).unwrap();
+    let before = (
+        support::declaration::read_file(&file).unwrap(),
+        support::os::file_identity(&file),
+    );
+    let own = support::declaration::read_file(project.credentials()).unwrap();
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
         project
@@ -428,11 +440,17 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
         assert_eq!(call.headers["chatgpt-account-id"], "file-account");
     }
     assert_eq!(
-        (fs::read(&file).unwrap(), support::os::file_identity(&file)),
+        (
+            support::declaration::read_file(&file).unwrap(),
+            support::os::file_identity(&file)
+        ),
         before
     );
     drop(read_only);
-    assert_eq!(fs::read(project.credentials()).unwrap(), own);
+    assert_eq!(
+        support::declaration::read_file(project.credentials()).unwrap(),
+        own
+    );
 
     let expired = project.auth_file(&codex::jwt("claim-account", codex::EXPIRED));
     let provider = FakeProvider::start(reviewer);
@@ -494,13 +512,13 @@ fn models_lists_the_accounts_picker_models_in_server_order() {
     let call = &provider.requests()[0];
     assert_eq!(
         (call.method.as_str(), call.path.as_str()),
-        ("GET", "/backend-api/codex/models?client_version=0.160.0")
+        ("GET", "/backend-api/codex/models?client_version=0.169.0")
     );
     assert_eq!(call.headers["chatgpt-account-id"], "account-1");
     assert_eq!(call.headers["originator"], "artifactize");
     assert!(call.headers["authorization"].starts_with("Bearer "));
 
-    fs::remove_file(project.credentials()).unwrap();
+    support::declaration::remove_file(project.credentials()).unwrap();
     let failure = parsed(
         project
             .against(&provider, &["models", "codex"])
@@ -524,7 +542,7 @@ fn logout_revokes_and_removes_only_artifactizes_tokens() {
         codex::VALID_EXPIRY,
     );
     let file = project.auth_file(&codex::jwt("claim-account", codex::VALID_EXPIRY));
-    let before = fs::read(&file).unwrap();
+    let before = support::declaration::read_file(&file).unwrap();
     let provider = FakeProvider::start(|request| match request.path.as_str() {
         "/oauth/revoke" => Reply::Json(200, json!({})),
         _ => Reply::Json(404, json!({})),
@@ -542,7 +560,7 @@ fn logout_revokes_and_removes_only_artifactizes_tokens() {
         json!({"provider":"codex","signed_in":false,"revoked":true})
     );
     assert!(!project.credentials().exists());
-    assert_eq!(fs::read(&file).unwrap(), before);
+    assert_eq!(support::declaration::read_file(&file).unwrap(), before);
     let calls = provider.requests();
     assert_eq!(calls.len(), 1);
     assert_eq!(
@@ -719,10 +737,10 @@ fn sign_in_endpoints_are_loopback_only_and_guard_the_review_store() {
 fn removed_backend_messages_name_codex_without_a_version() {
     let project = Project::new();
     let path = project.repo.join("spec/index.artf");
-    let declaration = fs::read_to_string(&path)
+    let declaration = support::declaration::read_text(&path)
         .unwrap()
         .replace("\"codex\"", "\"chatgpt\"");
-    support::declaration::write(&path, declaration).unwrap();
+    support::declaration::write(&(project.repo), &path, declaration).unwrap();
     let failure = parsed(
         project
             .command(&["config", "check"])
@@ -748,7 +766,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         codex::VALID_EXPIRY,
     );
     let provider = FakeProvider::start(|request| {
-        let pass = vec![openai::message(r#"{"verdict":"GREEN"}"#)];
+        let pass = vec![openai::message(r#"{"findings":[]}"#)];
         match request.path.as_str() {
             "/backend-api/codex/responses" => codex::completed(request, pass, openai::usage(30, 5)),
             "/v1/responses" => openai::completed(request, pass, openai::usage(20, 4)),

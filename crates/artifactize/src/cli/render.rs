@@ -1,6 +1,11 @@
-//! Text/JSON projections and Run outcome exit codes.
+//! Saved verification reports, Run outcome exit codes and shared output.
 
 use std::io::{self, Write};
+
+use super::FAILURE_EXIT;
+
+/// Public exit 1 reports a RED verdict, not a command or runtime failure.
+const RED_EXIT: u8 = 1;
 
 /// Public exit 3 means the wait deadline elapsed without cancelling a Run; preserve the
 /// established code so existing automation can distinguish waiting from an execution error.
@@ -14,13 +19,13 @@ const YELLOW_EXIT: u8 = 5;
 pub(super) fn verify(
     view: &artifactize_core::store::RunView,
     json_output: bool,
+    observed_at: time::OffsetDateTime,
 ) -> Result<(), String> {
     if json_output {
-        print_json(&artifactize_core::query::run_output(
-            view,
-            time::OffsetDateTime::now_utc(),
-        ))?;
+        print_json(&artifactize_core::query::run_output(view, observed_at))?;
     } else {
+        let (summary, saved) = artifactize_core::query::run_summary(view, observed_at);
+        let stopped = stopped_backend_lines(view);
         let mut stdout = io::stdout().lock();
         writeln!(
             stdout,
@@ -54,28 +59,9 @@ pub(super) fn verify(
         for unreadable in &view.unreadable {
             writeln!(stdout, "  {unreadable}").map_err(|error| error.to_string())?;
         }
-        for stopped in &view.run.stopped_backends {
-            let skipped = view
-                .requests
-                .iter()
-                .filter(|request| {
-                    request.error_code()
-                        == Some(artifactize_core::types::FailureCode::BackendStopped)
-                        && request.options.backend.as_ref() == Some(&stopped.backend)
-                })
-                .count();
-            writeln!(
-                stdout,
-                "Stopped backend {} after {} in {}: {skipped} review{} not started.",
-                stopped.backend,
-                stopped.error_code,
-                stopped.eval_id,
-                if skipped == 1 { "" } else { "s" }
-            )
-            .map_err(|e| e.to_string())?;
+        for line in stopped {
+            writeln!(stdout, "{line}").map_err(|e| e.to_string())?;
         }
-        let (summary, saved) =
-            artifactize_core::query::run_summary(view, time::OffsetDateTime::now_utc());
         writeln!(
             stdout,
             "Summary: executed {}, reused {}{}",
@@ -125,6 +111,32 @@ pub(super) fn verify(
         }
     }
     Ok(())
+}
+
+/// Summarize why work did not start after a backend stopped, in the saved stop order.
+fn stopped_backend_lines(view: &artifactize_core::store::RunView) -> Vec<String> {
+    view.run
+        .stopped_backends
+        .iter()
+        .map(|stopped| {
+            let skipped = view
+                .requests
+                .iter()
+                .filter(|request| {
+                    request.error_code()
+                        == Some(artifactize_core::types::FailureCode::BackendStopped)
+                        && request.options.backend.as_ref() == Some(&stopped.backend)
+                })
+                .count();
+            format!(
+                "Stopped backend {} after {} in {}: {skipped} review{} not started.",
+                stopped.backend,
+                stopped.error_code,
+                stopped.eval_id,
+                if skipped == 1 { "" } else { "s" },
+            )
+        })
+        .collect()
 }
 
 /// Where a reused result came from: its source Run, plus the producer for a remote result,
@@ -182,7 +194,7 @@ fn counters(totals: &std::collections::BTreeMap<String, u64>) -> String {
     }
 }
 
-fn tags(tags: &[String]) -> String {
+pub(super) fn tags(tags: &[String]) -> String {
     if tags.is_empty() {
         String::new()
     } else {
@@ -190,178 +202,16 @@ fn tags(tags: &[String]) -> String {
     }
 }
 
-pub(super) fn status(view: &artifactize_core::project::StatusView) -> io::Result<()> {
-    let mut out = io::stdout().lock();
-    writeln!(
-        out,
-        "Current validation: {}",
-        if view.satisfied {
-            "SATISFIED"
-        } else {
-            "NOT SATISFIED"
-        }
-    )?;
-    for unreadable in &view.unreadable {
-        writeln!(out, "  {unreadable}")?;
-    }
-    for artifact in &view.artifacts {
-        writeln!(
-            out,
-            "  Artifact {}{}{}: {} ({}/{} Evals)",
-            artifact.id,
-            tags(&artifact.tags),
-            if artifact.kind == artifactize_core::config::ArtifactKind::File {
-                format!(
-                    " [file: {}]",
-                    artifactize_core::platform::path_text(&artifact.path)
-                )
-            } else {
-                String::new()
-            },
-            artifact.state,
-            artifact.passed,
-            artifact.total
-        )?;
-    }
-    for eval in &view.evals {
-        writeln!(
-            out,
-            "  {}: {} — {}{}\n    {}",
-            eval.id,
-            eval.state,
-            eval.action,
-            if eval.included {
-                ""
-            } else {
-                " (not included; use --recursive)"
-            },
-            eval.reason
-        )?;
-        if let Some(changes) = &eval.changes {
-            writeln!(
-                out,
-                "    Fingerprint changed since Run {}: {}",
-                changes.since_run_id, changes.summary
-            )?;
-        }
-        if let Some(last) = &eval.last {
-            writeln!(
-                out,
-                "    Last: {} (Run {}; historical, not current evidence)",
-                last.verdict, last.run_id
-            )?;
-        }
-    }
-    for artifact in &view.obligations {
-        writeln!(out, "  Unmet obligation: {artifact}")?;
-    }
-    writeln!(
-        out,
-        "Verify actions: will execute {}, will reuse {}, wait {}, blocked {}",
-        view.counts.execute, view.counts.reuse, view.counts.wait, view.counts.blocked
-    )?;
-    if view.counts.wait > 0 {
-        writeln!(
-            out,
-            "  wait: needs a result verify has not produced yet (a dependency it executes, or a live execution); status cannot predict it."
-        )?;
-    }
-    Ok(())
-}
-
-pub(super) fn graph(view: &artifactize_core::query::GraphView<'_>) -> io::Result<()> {
-    let mut out = io::stdout().lock();
-    writeln!(
-        out,
-        "Graph: {} Artifacts, {} Evals",
-        view.artifacts.len(),
-        view.evals.len()
-    )?;
-    for component in &view.components {
-        writeln!(
-            out,
-            "  Component {}{}: {}",
-            component.id,
-            if component.cyclic { " [cycle]" } else { "" },
-            component
-                .artifacts
-                .iter()
-                .map(|id| id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )?;
-        for id in &component.artifacts {
-            let artifact = view.artifacts[id];
-            writeln!(
-                out,
-                "    Artifact {id}{}{}{} ({})",
-                tags(&artifact.tags),
-                if artifact.kind == artifactize_core::config::ArtifactKind::File {
-                    " [file]"
-                } else {
-                    ""
-                },
-                if artifact.basis == Some(true) {
-                    " [basis]"
-                } else {
-                    ""
-                },
-                if artifact.path.as_os_str().is_empty() {
-                    ".".into()
-                } else {
-                    artifactize_core::platform::path_text(&artifact.path)
-                }
-            )?;
-            for eval in view.evals.iter().filter(|eval| eval.target == **id) {
-                writeln!(
-                    out,
-                    "      {}: {} -> {}",
-                    eval.id,
-                    if eval.deps.is_empty() {
-                        "(no deps)".into()
-                    } else {
-                        eval.deps.join(", ")
-                    },
-                    eval.target
-                )?;
-            }
-        }
-    }
-    for edge in &view.relations {
-        use artifactize_core::scope::RelationKind;
-        let detail = match &edge.relation.kind {
-            RelationKind::Part => "part".into(),
-            RelationKind::Instruction { eval_id, name } => {
-                format!("instruction eval={eval_id} name={name}")
-            }
-            RelationKind::Argument {
-                eval_id,
-                index,
-                name,
-                path,
-            } => format!("argv eval={eval_id} index={index} name={name} path={path}"),
-        };
-        writeln!(
-            out,
-            "  {} -> {} [{detail}]{}",
-            edge.relation.source,
-            edge.relation.target,
-            if edge.cyclic { " [cycle]" } else { "" }
-        )?;
-    }
-    Ok(())
-}
-
 /// Run outcome exit codes shared by `verify` and `run show --wait`.
 pub(super) fn outcome_code(run: &artifactize_core::store::Run) -> u8 {
     match run.status() {
         artifactize_core::types::RunStatus::Green => 0,
-        artifactize_core::types::RunStatus::Red => 1,
+        artifactize_core::types::RunStatus::Red => RED_EXIT,
         artifactize_core::types::RunStatus::Incomplete => INCOMPLETE_EXIT,
         artifactize_core::types::RunStatus::Yellow => YELLOW_EXIT,
         artifactize_core::types::RunStatus::Running
         | artifactize_core::types::RunStatus::WaitingHuman
-        | artifactize_core::types::RunStatus::Error => 2,
+        | artifactize_core::types::RunStatus::Error => FAILURE_EXIT,
     }
 }
 

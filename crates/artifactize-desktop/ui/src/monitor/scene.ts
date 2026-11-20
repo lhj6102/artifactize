@@ -10,6 +10,10 @@ import { BLOCKING, type Point } from "./graph";
 import { NODE } from "./layout";
 import { BOX, partsCount } from "./parts";
 
+/** A comment's gap under its node, its inset inside a box, its line height and its lines, as
+ * its element draws it. */
+const [COMMENT_GAP, COMMENT_INSET, COMMENT_LEADING, COMMENT_LINES] = [4, 10, 1.4, 3];
+
 /** The side of one cell of the index, in graph coordinates: a few Artifacts across. */
 const CELL = 1024;
 /** Cells per row of the index's keys: more than any layout's columns of cells. */
@@ -42,8 +46,6 @@ const WHOLE_FACE = 0.4;
 const ICON_BOX = 12;
 /** The smallest font, in device-independent pixels, at which a name still reads. */
 const LEGIBLE = 5;
-/** The smallest port, in device-independent pixels, whose shape still reads. */
-const PORT_SHOWN = 3;
 /** An edge's stroke in graph pixels, as the graph's elements draw it. */
 const EDGE_WIDTH = 1.25;
 /** How far a picture reaches beyond each side of the canvas, as a share of the canvas: the
@@ -155,6 +157,8 @@ export type Paint = {
   boxes: boolean;
   opened: ReadonlySet<string>;
   minimized: ReadonlyMap<string, number>;
+  /** Each Artifact's comment by name, painted under its node or a box's title row. */
+  comments?: ReadonlyMap<string, string>;
 };
 
 /** The graph's edges by the numbers of their ends in a scene, with their lights. */
@@ -195,6 +199,36 @@ function cut(context: CanvasRenderingContext2D, text: string, width: number): st
     else over = middle;
   }
   return `${text.slice(0, fits)}…`;
+}
+
+/** `text` in at most `most` lines of `width` with `context`'s font, wrapped at spaces and its
+ * own line breaks, the last one cut with an ellipsis when more is left, as a comment's element
+ * clamps it. */
+function wrap(context: CanvasRenderingContext2D, text: string, width: number, most: number): string[] {
+  const found: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    let line = "";
+    for (const word of paragraph.split(" ")) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && context.measureText(next).width > width) {
+        found.push(line);
+        line = word;
+      } else line = next;
+      // A word wider than the line, unbroken text such as Korean included, breaks inside it.
+      while (context.measureText(line).width > width && line.length > 1) {
+        let fits = 1;
+        while (fits < line.length && context.measureText(line.slice(0, fits + 1)).width <= width) fits += 1;
+        found.push(line.slice(0, fits));
+        line = line.slice(fits);
+      }
+    }
+    found.push(line);
+  }
+  if (found.length <= most) return found;
+  const kept = found.slice(0, most);
+  kept[most - 1] = cut(context, `${kept[most - 1]} ${found[most]}`, width);
+  if (!kept[most - 1].endsWith("…")) kept[most - 1] = cut(context, `${kept[most - 1]}…`, width);
+  return kept;
 }
 
 function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
@@ -269,6 +303,8 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const ports = new Path2D();
   const marks: { light: Light; x: number; y: number }[] = [];
   const names: { x: number; y: number; width: number; text: string; count: string; tally: string; whole: boolean }[] = [];
+  /** Each comment in view: under a node, or inside a box under its title row. */
+  const notes: { x: number; y: number; width: number; text: string }[] = [];
   const add = (into: Map<Light, Path2D>, light: Light) => {
     let path = into.get(light);
     if (!path) into.set(light, (path = new Path2D()));
@@ -285,15 +321,16 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
       else add(blocks, light).rect(x, y, w, h);
       continue;
     }
-    // A node's face, or a whole's title row, with the strip in its status's colour below it; a
-    // whole, boxed or minimized, ends its title row with its control.
+    // A node's face with the strip in its status's colour along its bottom, or a whole's box
+    // with the strip along its top edge and its title row under it; a whole, boxed or minimized,
+    // ends its title row with its control.
     const folded = what.minimized.get(at.ids[number]);
     const row = whole ? Math.min(BOX.header * zoom, h) : h;
     if (whole) boxFaces.roundRect(x, y, w, h, radius);
     else faces.roundRect(x, y, w, h, radius);
     if (folded !== undefined) stacked.roundRect(x + STACK * zoom, y + STACK * zoom, w, h, radius);
     neutral.roundRect(x, y, w, h, radius);
-    add(strips, light).rect(x, y + row - strip * zoom, w, strip * zoom);
+    add(strips, light).rect(x, whole ? y : y + row - strip * zoom, w, strip * zoom);
     marks.push({ light, x: x + NODE_PAD * zoom, y: y + row / 2 - (icon * zoom) / 2 });
     const start = (NODE_PAD + icon + NODE_GAP) * zoom;
     let end = NODE_PAD_END * zoom;
@@ -306,7 +343,14 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     const tally = node?.tally ? `${node.tally.passed}/${node.tally.of}` : "";
     const count = folded === undefined ? "" : partsCount(folded);
     if (node) names.push({ x: x + start, y: y + row / 2, width: w - start - end, text: node.name, count, tally, whole });
-    if (port >= PORT_SHOWN && (inward[number] || outward[number])) {
+    const comment = node ? what.comments?.get(node.name) : undefined;
+    if (comment) {
+      notes.push(whole
+        ? { x: x + COMMENT_INSET * zoom, y: y + row + COMMENT_GAP * zoom, width: w - 2 * COMMENT_INSET * zoom, text: comment }
+        : { x, y: y + h + COMMENT_GAP * zoom, width: w, text: comment });
+    }
+    // Wherever names are painted, so are the ports, however small.
+    if (inward[number] || outward[number]) {
       const [middle, half] = [y + h / 2, port / 2];
       if (inward[number]) {
         ports.moveTo(x - half, middle - half);
@@ -408,6 +452,14 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
       context.fillText(cut(context, name.count, room), name.x, lines[1]);
     }
     context.restore();
+  }
+  // Comments in the quieter ink at the small size, at most three lines.
+  const small = pixels("--text-small");
+  context.font = `400 ${small * zoom}px ${face}`;
+  context.fillStyle = token("--ink-2");
+  context.textBaseline = "top";
+  for (const note of notes) {
+    wrap(context, note.text, note.width, COMMENT_LINES).forEach((line, at) => context.fillText(line, note.x, note.y + at * small * COMMENT_LEADING * zoom));
   }
 }
 

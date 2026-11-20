@@ -35,6 +35,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                             "protocol":"json",
                             "command":crate::test_os::echo_program(),
                             "args":["find"],
+                            "executionPaths":["scripts/find"],
                         },
                     },
                     "humanTools":{
@@ -118,8 +119,12 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
     };
     assert_eq!(
         find.input_schema.value(),
-        wire["artifacts"]["page"]["views"]["agentTools"]["find"]["inputSchema"]
+        &wire["artifacts"]["page"]["views"]["agentTools"]["find"]["inputSchema"]
     );
+    let [path] = find.execution_paths.value().unwrap().as_slice() else {
+        panic!("the saved command tool keeps its execution path");
+    };
+    assert_eq!(path.as_str(), "scripts/find");
     let graph = snapshot.graph().unwrap();
     assert_eq!(
         graph.repo_path.value().unwrap(),
@@ -156,6 +161,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
 fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
     let root = crate::test_os::tempdir();
     crate::test_declaration::write(
+        root.path(),
         root.path().join("index.artf"),
         json!({
             "name":"app",
@@ -167,7 +173,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                     "title":"Check",
                     "profile":{"kind":"agent","backend":"openai","model":"fixture"},
                     "payload":{"instruction":"Check.","owner":{"nested":[1,2]}},
-                    "pass_schema":{"type":"object"},
+                    "red_at":"P1",
                 },
             ],
         })
@@ -183,6 +189,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
         "selection":{"kind":"all"},
         "artifacts":{
             "app":{
+                "definition":".artifactize/app.artf",
                 "path":"",
                 "kind":"folder",
                 "name":"app",
@@ -211,7 +218,8 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                     "reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null,
                 },
                 "payload":{"instruction":"Check.","owner":{"nested":[1,2]}},
-                "passSchema":{"type":"object"},
+                "redAt":"P1",
+                "passSchema":null,
                 "failSchema":null,
             },
         }],
@@ -318,4 +326,31 @@ fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
             "{invalid}"
         );
     }
+}
+
+#[test]
+fn saved_uri_targets_keep_old_null_kind_wires_and_restore_typed_live_and_aspect_targets() {
+    let graph: Graph = serde_json::from_value(json!({"artifacts":{
+        "service":{"path":"service:opaque","kind":null,"future":{"keep":true}},
+        "page":{"path":"pages","kind":"aspect","select":["index.md"]}
+    }}))
+    .unwrap();
+    let service = graph.artifact("service").unwrap();
+    assert_eq!(service.kind.value(), Some(&config::ArtifactKind::Live));
+    assert_eq!(
+        service.path.value().unwrap().uri().unwrap().as_str(),
+        "service:opaque"
+    );
+    let page = graph.artifact("page").unwrap().path.value().unwrap();
+    assert_eq!(page.kind(), config::ArtifactKind::Aspect);
+    assert_eq!(page.select()[0].as_str(), "index.md");
+    let wire = serde_json::to_value(&graph).unwrap();
+    assert!(wire["artifacts"]["service"]["kind"].is_null());
+    assert_eq!(wire["artifacts"]["service"]["future"]["keep"], true);
+    assert!(
+        serde_json::from_value::<Graph>(
+            json!({"artifacts":{"bad":{"path":"service:opaque","kind":"folder"}}})
+        )
+        .is_err()
+    );
 }

@@ -1,4 +1,19 @@
-//! Native WebView differences for the test-only text-input and editing device.
+//! Native WebView differences for the test-only text-input and editing device (E2E-INPUT).
+//!
+//! Each engine is driven only through its own text and editing APIs:
+//! - text: WebKit's input-method context on Linux (WebKitGTK), the WKWebView's
+//!   `NSTextInputClient` on macOS, and WebView2's DevTools Protocol `Input` domain on Windows;
+//! - copy and paste: each engine's editing commands, WebKit's Copy/Paste on Linux and the
+//!   WKWebView responder's `copy:`/`paste:` on macOS. WebView2 offers no other editing action,
+//!   so on Windows the device sends `Input.dispatchKeyEvent` with a fixed payload of type
+//!   `keyDown` carrying only the command `Copy` or `Paste`: the engine runs that command and the
+//!   page sees a keyDown with no key, code, modifier or virtual-key code. Any other call of that
+//!   method (with a key, code, modifier or virtual-key code, without such a command, or with a
+//!   payload built at run time) would be a raw key event and is never made.
+//!
+//! Nothing here synthesizes or injects OS-level events (`NSApp sendEvent`, GdkEvents through
+//! `gtk_widget_event`, `SendInput`, `keybd_event`): they behave differently per OS and cannot be
+//! verified on Linux. The integrity checker's `device` mode enforces that ban.
 use super::Input;
 use tauri::{Runtime, WebviewWindow};
 use tokio::sync::oneshot;
@@ -90,12 +105,6 @@ mod windows {
     };
     use windows_core::{HSTRING, PCWSTR};
 
-    /// CDP's Control modifier occupies bit 1 of its modifier mask.
-    const CONTROL_MODIFIER: u8 = 2;
-    /// Windows virtual-key values for the C/V editing shortcuts use their ASCII capitals.
-    const COPY_KEY: u8 = b'C';
-    const PASTE_KEY: u8 = b'V';
-
     type Completion = Rc<RefCell<Option<oneshot::Sender<Result<(), String>>>>>;
     fn finish(sender: &Completion, result: Result<(), String>) {
         if let Some(sender) = sender.borrow_mut().take() {
@@ -110,20 +119,24 @@ mod windows {
         let (method, parameters) = match input {
             Input::Set { text } => (
                 "Input.imeSetComposition",
-                json!({"selectionStart":text.encode_utf16().count(),"selectionEnd":text.encode_utf16().count(),"text":text}),
+                json!({"selectionStart":text.encode_utf16().count(),"selectionEnd":text.encode_utf16().count(),"text":text}).to_string(),
             ),
-            Input::Commit { text } => ("Input.insertText", json!({"text":text})),
+            Input::Commit { text } => ("Input.insertText", json!({"text":text}).to_string()),
             Input::Cancel => (
                 "Input.imeSetComposition",
-                json!({"text":"","selectionStart":0,"selectionEnd":0}),
+                json!({"text":"","selectionStart":0,"selectionEnd":0}).to_string(),
             ),
+            // E2E-INPUT's Windows editing path: WebView2 has no Copy/Paste action of its own, so
+            // the engine runs the editing command a keyless keyDown carries. The payload is a
+            // fixed literal with no key, code, modifier or virtual-key code, so no Ctrl+C or
+            // Ctrl+V reaches the page.
             Input::Copy => (
                 "Input.dispatchKeyEvent",
-                json!({"type":"keyDown","key":"c","code":"KeyC","modifiers":CONTROL_MODIFIER,"windowsVirtualKeyCode":COPY_KEY,"commands":["Copy"]}),
+                r#"{"type":"keyDown","commands":["Copy"]}"#.to_owned(),
             ),
             Input::Paste => (
                 "Input.dispatchKeyEvent",
-                json!({"type":"keyDown","key":"v","code":"KeyV","modifiers":CONTROL_MODIFIER,"windowsVirtualKeyCode":PASTE_KEY,"commands":["Paste"]}),
+                r#"{"type":"keyDown","commands":["Paste"]}"#.to_owned(),
             ),
         };
         let sender = Rc::new(RefCell::new(Some(sender)));
@@ -134,7 +147,7 @@ mod windows {
                 Ok(())
             }));
         let method = HSTRING::from(method);
-        let parameters = HSTRING::from(parameters.to_string());
+        let parameters = HSTRING::from(parameters.as_str());
         // SAFETY: the engine copies these strings and retains the callback. The call
         // and callback both run in this WebView2 controller's UI apartment.
         if let Err(error) = unsafe {

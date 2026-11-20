@@ -1,5 +1,6 @@
 //! Typed schema-5 saved graph snapshots, distinct from strict live declarations.
 //! Unknown saved fields survive round-trips; owner schemas and payload extensions stay JSON.
+mod authored;
 mod extensions;
 #[cfg(test)]
 mod tests;
@@ -28,14 +29,6 @@ impl Definitions {
     pub fn from_view(view: &crate::query::GraphView<'_>) -> Result<Self, serde_json::Error> {
         serde_json::from_value(serde_json::to_value(view)?)
     }
-    /// Whether both are the same decoded graph, not merely equal ones.
-    pub fn shared(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            (Some(one), Some(other)) => Arc::ptr_eq(one, other),
-            (None, None) => true,
-            _ => false,
-        }
-    }
 }
 impl Serialize for Definitions {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -57,7 +50,11 @@ pub struct Graph {
     pub repo_path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
     pub selection: Field<SavedSelection>,
-    #[serde(default, skip_serializing_if = "Field::missing")]
+    #[serde(
+        default,
+        skip_serializing_if = "Field::missing",
+        deserialize_with = "artifact_targets"
+    )]
     pub artifacts: Field<BTreeMap<crate::types::ArtifactName, Artifact>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub evals: Field<Vec<Eval>>,
@@ -103,13 +100,21 @@ impl Graph {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
-    #[serde(default, skip_serializing_if = "missing")]
-    pub kind: Field<config::ArtifactKind>,
     #[serde(default, skip_serializing_if = "missing", with = "path_field")]
-    pub path: Field<PathBuf>,
+    pub definition: Field<PathBuf>,
+    #[serde(
+        default,
+        skip_serializing_if = "missing",
+        serialize_with = "saved_kind"
+    )]
+    pub kind: Field<config::ArtifactKind>,
+    #[serde(default, skip_serializing_if = "missing")]
+    pub path: Field<config::Target>,
+    #[serde(default, skip_serializing_if = "missing")]
+    pub select: Field<Vec<config::LogicalPath>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub nested: Field<BTreeMap<config::ChildPrefix, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -125,7 +130,56 @@ pub struct Artifact {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+// Schema 10's older readers accept a null kind and preserve the URI path. The new reader
+// recovers Live from that typed path, whose spelling is the source of truth for its kind.
+fn saved_kind<S: Serializer>(
+    kind: &Field<config::ArtifactKind>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    if matches!(kind, Field::Value(config::ArtifactKind::Live)) {
+        serializer.serialize_none()
+    } else {
+        kind.serialize(serializer)
+    }
+}
+pub(super) fn artifact_targets<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Field<BTreeMap<crate::types::ArtifactName, Artifact>>, D::Error> {
+    let mut field =
+        Field::<BTreeMap<crate::types::ArtifactName, Artifact>>::deserialize(deserializer)?;
+    if let Field::Value(artifacts) = &mut field {
+        for artifact in artifacts.values_mut() {
+            if let Field::Value(path) = &artifact.path {
+                let kind = if path.uri().is_some() {
+                    if !matches!(
+                        artifact.kind,
+                        Field::Missing | Field::Null | Field::Value(config::ArtifactKind::Live)
+                    ) {
+                        return Err(serde::de::Error::custom(
+                            "Saved Live URI has a filesystem kind",
+                        ));
+                    }
+                    artifact.kind = Field::Value(config::ArtifactKind::Live);
+                    config::ArtifactKind::Live
+                } else {
+                    artifact
+                        .kind
+                        .value()
+                        .copied()
+                        .unwrap_or(config::ArtifactKind::Folder)
+                };
+                let select = artifact.select.value().cloned().unwrap_or_default();
+                artifact.path = Field::Value(
+                    path.clone()
+                        .with_kind(kind, select)
+                        .map_err(serde::de::Error::custom)?,
+                );
+            }
+        }
+    }
+    Ok(field)
+}
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Views {
     #[serde(default, skip_serializing_if = "missing")]
@@ -135,49 +189,38 @@ pub struct Views {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AgentTool {
     Command(CommandTool),
     Builtin(BuiltinTool),
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandTool {
     pub description: String,
     pub input_schema: InputSchema,
     pub protocol: config::ToolProtocol,
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "missing", with = "duration_field")]
     pub timeout_ms: Field<std::time::Duration>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub execution_paths: Field<Vec<String>>,
+    pub execution_paths: Field<Vec<config::LogicalPath>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-/// A command tool's saved input schema, kept as compact JSON text and decoded only when read:
-/// a catalog of Artifacts saves one per tool, and a decoded schema takes about ten times its
-/// text's memory, while only a review that offers the tool reads it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InputSchema(Box<str>);
+/// An owner-authored JSON Schema, decoded at the store boundary and shared across copies.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct InputSchema(Arc<Value>);
 impl InputSchema {
-    pub fn value(&self) -> Value {
-        serde_json::from_str(&self.0).expect("kept as the text of a decoded value")
+    pub fn value(&self) -> &Value {
+        &self.0
     }
 }
-impl Serialize for InputSchema {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.value().serialize(serializer)
-    }
-}
-impl<'de> Deserialize<'de> for InputSchema {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let schema = Value::deserialize(deserializer)?;
-        Ok(Self(schema.to_string().into_boxed_str()))
-    }
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BuiltinTool {
     pub builtin: config::Builtin,
     #[serde(default, skip_serializing_if = "missing")]
@@ -187,23 +230,24 @@ pub struct BuiltinTool {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum HumanTool {
     Command(HumanCommandTool),
     Builtin(HumanBuiltinTool),
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanCommandTool {
     pub description: String,
     pub kind: config::HumanToolKind,
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HumanBuiltinTool {
     pub builtin: config::Builtin,
     pub description: String,
@@ -212,25 +256,26 @@ pub struct HumanBuiltinTool {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fingerprint {
     #[serde(default, skip_serializing_if = "missing")]
     pub script: Field<Script>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub files: Field<Vec<String>>,
+    pub files: Field<Vec<config::LogicalPath>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub ignore: Field<Vec<String>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Script {
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub files: Field<Vec<String>>,
+    pub files: Field<Vec<config::LogicalPath>>,
     #[serde(default, skip_serializing_if = "missing", with = "duration_field")]
     pub timeout_ms: Field<std::time::Duration>,
     #[serde(flatten)]
@@ -249,7 +294,7 @@ pub struct Eval {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Declaration {
     #[serde(default, skip_serializing_if = "missing")]
@@ -264,6 +309,8 @@ pub struct Declaration {
     pub profile_variants: Field<BTreeMap<config::ProfileVariantName, Profile>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub payload: Field<StoredPayload>,
+    #[serde(default, skip_serializing_if = "missing")]
+    pub red_at: Field<config::Priority>,
     #[serde(default, skip_serializing_if = "missing")]
     pub pass_schema: Field<Map<String, Value>>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -372,7 +419,7 @@ pub enum RelationKind {
         eval_id: crate::types::EvalId,
         index: usize,
         name: config::ReferenceName,
-        path: String,
+        path: crate::scope::LogicalTarget,
     },
     #[serde(untagged)]
     Unknown { kind: String },

@@ -3,7 +3,7 @@ use super::*;
 
 fn conversation(fixture: &Fixture) -> (Conversation, Recorder) {
     let state = fixture.state();
-    let path = session::path(&state, SESSION).unwrap();
+    let path = session::path(&state, &SESSION.parse().unwrap());
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(
         &path,
@@ -87,7 +87,7 @@ async fn preparation_failure_records_no_send_answer_or_attempt() {
             ..
         })
     ));
-    assert_eq!(saved.events.len(), 2);
+    assert_eq!(saved.events().len(), 1);
     assert_eq!(saved.sends(), 0);
 }
 
@@ -115,14 +115,14 @@ async fn recorded_send_success_retains_usage_and_event_order() {
     assert!(body.get("output_config").is_none());
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0].usage["inputTokens"], 10);
-    let kinds: Vec<_> = saved.wire_events[2..]
+    let kinds: Vec<_> = saved.wire_events()[2..]
         .iter()
         .filter(|event| event["kind"] != "delivery")
-        .map(|event| event["kind"].as_str().unwrap())
+        .map(|event| event["kind"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(kinds, ["send", "message", "attempt", "message", "answer"]);
     let deliveries = saved
-        .events
+        .events()
         .iter()
         .filter_map(|event| match &event.kind {
             session::Kind::Delivery(delivery) => Some(delivery),
@@ -141,7 +141,7 @@ async fn recorded_send_success_retains_usage_and_event_order() {
     );
     assert_eq!(
         saved
-            .events
+            .events()
             .iter()
             .filter(|event| matches!(event.kind, session::Kind::Answer(_)))
             .count(),
@@ -157,7 +157,7 @@ async fn recorded_send_success_retains_usage_and_event_order() {
         1
     );
     assert_eq!(
-        saved.wire_events.last().unwrap()["text"],
+        saved.wire_events().last().unwrap()["text"],
         "Free-text answer"
     );
 }
@@ -192,10 +192,10 @@ async fn recorded_send_provider_error_and_cancellation_always_record_answer() {
             }
         );
         assert_eq!(attempts.len(), usize::from(!cancel));
-        let kinds: Vec<_> = saved.wire_events[2..]
+        let kinds: Vec<_> = saved.wire_events()[2..]
             .iter()
             .filter(|event| event["kind"] != "delivery")
-            .map(|event| event["kind"].as_str().unwrap())
+            .map(|event| event["kind"].as_str().unwrap().to_owned())
             .collect();
         assert_eq!(
             kinds,
@@ -206,7 +206,7 @@ async fn recorded_send_provider_error_and_cancellation_always_record_answer() {
             }
         );
         assert_eq!(
-            saved.wire_events.last().unwrap()["errorCode"],
+            saved.wire_events().last().unwrap()["errorCode"],
             if cancel {
                 "CANCELLED"
             } else {
@@ -215,7 +215,7 @@ async fn recorded_send_provider_error_and_cancellation_always_record_answer() {
         );
         assert_eq!(http.requests().len(), usize::from(!cancel));
         let deliveries = saved
-            .events
+            .events()
             .iter()
             .filter_map(|event| match &event.kind {
                 session::Kind::Delivery(delivery) => Some(delivery),
@@ -234,7 +234,7 @@ async fn recorded_send_provider_error_and_cancellation_always_record_answer() {
         );
         assert_eq!(
             saved
-                .events
+                .events()
                 .iter()
                 .filter(|event| matches!(event.kind, session::Kind::Answer(_)))
                 .count(),

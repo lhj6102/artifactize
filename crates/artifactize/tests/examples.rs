@@ -11,8 +11,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
-    thread,
-    time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
@@ -49,6 +47,7 @@ impl Session {
             .current_dir(repo)
             .args(args)
             .env("ARTIFACTIZE_STATE_HOME", self.root.path().join("state"))
+            .env("ARTIFACTIZE_REMOTE", "off")
             .env_remove("OPENAI_API_KEY")
             .env_remove("ANTHROPIC_API_KEY");
         command
@@ -66,9 +65,11 @@ impl Session {
         parse(&self.output(repo, args, code))
     }
 
-    /// A private copy for edits that turn an example RED.
+    /// A private copy for one scenario, retained until the session releases its Runs.
     fn copy(&self, name: &str) -> PathBuf {
-        let target = self.root.path().join(name);
+        let target = support::os::tempdir_in(self.root.path(), "example-")
+            .keep()
+            .join(name);
         support::copy_directory(&example(name), &target);
         target
     }
@@ -110,9 +111,10 @@ fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 
 fn append(path: &Path, text: &str) {
-    let mut contents = fs::read_to_string(path).unwrap();
+    let actual = support::declaration::source_path(path);
+    let mut contents = fs::read_to_string(&actual).unwrap();
     contents.push_str(text);
-    fs::write(path, contents).unwrap();
+    fs::write(actual, contents).unwrap();
 }
 
 fn requests(run: &Value) -> BTreeMap<String, Value> {
@@ -158,7 +160,7 @@ fn every_example_passes_static_queries_and_reports_status() {
         ("agent-tools", 2, 2),
         ("posts", 4, 3),
     ] {
-        let repo = example(name);
+        let repo = session.copy(name);
         let before = files(&repo);
         assert_eq!(
             session.json(&repo, &["config", "check", "--json"], 0),
@@ -178,7 +180,7 @@ fn every_example_passes_static_queries_and_reports_status() {
     }
 
     let graph = session.json(
-        &example("runtime-relations"),
+        &session.copy("runtime-relations"),
         &["config", "graph", "--json"],
         0,
     );
@@ -201,7 +203,7 @@ fn every_example_passes_static_queries_and_reports_status() {
 #[test]
 fn runtime_relations_reuses_fingerprints_and_turns_red() {
     let session = Session::new();
-    let repo = example("runtime-relations");
+    let repo = session.copy("runtime-relations");
     let before = files(&repo);
     let first = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(first["executionsStarted"], 3);
@@ -275,7 +277,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
 #[test]
 fn file_posts_reuse_independently_and_track_the_shared_style() {
     let session = Session::new();
-    let repo = example("posts");
+    let repo = session.copy("posts");
     let before = files(&repo);
     let green = map(&[
         ("release-notes/style", "GREEN"),
@@ -458,7 +460,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
 #[test]
 fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let session = Session::new();
-    let repo = example("agent-tools");
+    let repo = session.copy("agent-tools");
     let before = files(&repo);
 
     // Built-in launch tools are checked without launching an application on the host.
@@ -561,7 +563,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         support::openai::completed(
             request,
             vec![support::openai::message(
-                &json!({"verdict":"GREEN","verdictFields":{"covered":["R1","R2","R3","R4"],"diagramMatches":true}}).to_string(),
+                &json!({"findings":[]}).to_string(),
             )],
             support::openai::usage(1, 1),
         )
@@ -583,26 +585,13 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
 
     // README: the Human sign-off through request claim, tool and submit, while verify waits.
     let signoff = ["verify", "--wait", "--eval", "spec/signoff", "--json"];
+    // Give this controlled fixture the maximum grace, so it never has to beat the
+    // user's idle default. The saved WAITING_HUMAN receipt, not elapsed time, orders claim.
+    session.output(&repo, &["limits", "--signoff-idle-grace", "86400"], 0);
     let verify = support::os::start(&mut session.command(&repo, &signoff));
     let verify = RunChild::new(verify, &session.root.path().join("state"), &repo);
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
-    let run_id = loop {
-        let listed = session.json(&repo, &["request", "list", "--json"], 0);
-        // The request is saved QUEUED first, then turns DEFERRED.
-        if let Some(request) = listed
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|request| request["status"] == "DEFERRED")
-        {
-            break request["runId"].as_str().unwrap().to_owned();
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the sign-off request did not start waiting: {listed}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    };
+    let waiting = verify.human_waiting();
+    let run_id = waiting.run.id.to_string();
     let listed = session.json(&repo, &["request", "list", "--run", &run_id, "--json"], 0);
     assert_eq!(listed.as_array().unwrap().len(), 1);
     let request = listed[0]["id"].as_str().unwrap();

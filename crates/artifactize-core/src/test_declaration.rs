@@ -1,6 +1,6 @@
 #[path = "../tests/support/declaration.rs"]
 mod shared;
-pub use shared::{read, to_toml, write};
+pub use shared::{read, read_file, read_text, remove_file, source_path, to_toml, write};
 
 /// Parse the real input shape without semantic validation, for strategy/schema tests.
 pub fn eval(value: serde_json::Value) -> Result<crate::config::EvalDeclaration, String> {

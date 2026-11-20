@@ -129,12 +129,17 @@
 </div>
 
 <style>
+  /* Within the canvas left of an open Detail and above its bottom: the list scrolls inside,
+     and the line after it stays in view. */
   .find {
     position: absolute;
     z-index: 10;
     left: 8px;
     top: 8px;
-    width: min(380px, calc(100% - 16px));
+    display: flex;
+    flex-direction: column;
+    width: min(380px, calc(100% - 16px - var(--detail-cover, 0px)));
+    max-height: calc(100% - 16px);
     padding: 6px;
     background: var(--surface-raised);
     border: 1px solid var(--line-panel);
@@ -156,10 +161,11 @@
     outline-offset: -1px;
   }
   .found {
+    flex: 0 1 auto;
+    min-height: 0;
     margin: 4px 0 0;
     padding: 0;
     list-style: none;
-    max-height: 320px;
     overflow: auto;
   }
   .found li {

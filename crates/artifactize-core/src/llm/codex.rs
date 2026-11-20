@@ -16,10 +16,10 @@
 
 use std::path::{Path, PathBuf};
 
+use reqwest::StatusCode;
 use rig_core::{
     Model,
     completion::CompletionRequest,
-    error::ProviderError,
     http_client::Builder,
     providers::{
         chatgpt,
@@ -29,10 +29,10 @@ use rig_core::{
         },
     },
 };
-mod errors;
 mod output;
 pub(crate) use output::Responses;
 
+use super::error_body::Body;
 use crate::auth::codex::{self as auth, ORIGINATOR};
 
 /// The Codex API root; requests go to `<root>/responses` and `<root>/models`.
@@ -40,7 +40,7 @@ pub const BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 
 /// The Codex backend filters its model catalog by client version. artifactize asks
 /// for the catalog of the Codex release whose Responses protocol it follows.
-pub const CLIENT_VERSION: &str = "0.160.0";
+pub const CLIENT_VERSION: &str = "0.169.0";
 
 static HOOKS: DialectHooks = DialectHooks {
     default_endpoint: None,
@@ -93,14 +93,13 @@ pub struct Codex {
 impl Codex {
     pub(super) fn new(
         model: &crate::config::ModelId,
-        base: &str,
+        base: reqwest::Url,
         state: &Path,
         repo: &Path,
     ) -> Result<Self, String> {
         Ok(Self {
             model: model.clone(),
-            base: reqwest::Url::parse(base)
-                .map_err(|_| format!("Invalid Codex endpoint: {base}"))?,
+            base,
             state: state.into(),
             repo: repo.into(),
             http: super::http_client()?,
@@ -240,13 +239,14 @@ fn picker_models(data: &[u8]) -> Result<Vec<super::models::ListedModel>, String>
 /// The account's Codex models that the Codex picker lists (`visibility: "list"`), in
 /// server order, from `GET <root>/models?client_version=…` as the Codex CLI asks.
 pub(super) async fn models(
-    base: &str,
+    base: &reqwest::Url,
     state: Option<&Path>,
     repo: Option<&Path>,
 ) -> Result<Vec<super::models::ListedModel>, String> {
     let token = auth::access_token(state, repo)
         .await
         .map_err(|error| error.message)?;
+    let base = base.as_str().trim_end_matches('/');
     let response = super::http_client()?
         .get(format!("{base}/models?client_version={CLIENT_VERSION}"))
         .bearer_auth(&token.access_token)
@@ -261,15 +261,16 @@ pub(super) async fn models(
     let data = response.bytes().await.unwrap_or_default();
     if !status.is_success() {
         // Provider error payloads vary by endpoint; the success catalog has a known shape.
-        let body = errors::Error::parse(&data);
+        let body = Body::parse(&data);
+        let now = auth::now().ok();
         // The provider's text answers a request that carried the access token: the whole,
         // unclipped text is checked before anything is cut.
         let text = crate::secret::server_text(
             &describe_text(
-                Some(status.as_u16()),
+                Some(status),
                 body.as_ref(),
-                "Codex model listing failed.",
-                auth::now().ok(),
+                || "Codex model listing failed.".to_owned(),
+                now,
             ),
             &[&token.access_token],
             super::MAX_DIAGNOSTIC_CHARS,
@@ -286,35 +287,18 @@ pub(super) async fn models(
     picker_models(&data)
 }
 
-/// A plan usage limit, which no retry within a review outlasts.
-pub(super) fn usage_limited(error: &ProviderError) -> bool {
-    body(error).is_some_and(|body| body.usage_limit(error.report().http_status))
-}
-/// Responses stream errors put their code at the root or inside response.error;
-/// rig's generic report only extracts error.code, so use the typed wire envelope.
-pub(super) fn overloaded(error: &ProviderError) -> bool {
-    body(error).is_some_and(|body| body.code() == Some("server_is_overloaded"))
-}
-
-fn body(error: &ProviderError) -> Option<errors::Error> {
-    error
-        .provider_response()
-        .and_then(|response| errors::Error::parse(response.body.as_bytes()))
-}
-
 /// A Codex provider error as text, cleaned for a terminal but not clipped: callers decide
 /// what of it may be shown ([`crate::secret::server_text`]) before cutting it.
-pub(super) fn diagnostic_text(error: &ProviderError) -> String {
-    let body = body(error);
+pub(super) fn diagnostic_text(
+    status: Option<StatusCode>,
+    body: Option<&Body>,
+    fallback: impl FnOnce() -> String,
+    now: Option<auth::Timestamp>,
+) -> String {
     if body.is_none() {
-        return super::diagnostic_text(error);
+        return fallback();
     }
-    describe_text(
-        error.report().http_status,
-        body.as_ref(),
-        &super::diagnostic_text(error),
-        auth::now().ok(),
-    )
+    describe_text(status, body, fallback, now)
 }
 
 /// The wait before a usage limit resets is shown in whole minutes, rounded up.
@@ -325,12 +309,12 @@ const SECONDS_PER_MINUTE: u64 = 60;
 /// credentials say how to sign in again.
 #[cfg(test)]
 fn describe(
-    status: Option<u16>,
-    body: Option<&errors::Error>,
+    status: Option<StatusCode>,
+    body: Option<&Body>,
     fallback: &str,
     now: Option<auth::Timestamp>,
 ) -> String {
-    describe_text(status, body, fallback, now)
+    describe_text(status, body, || fallback.to_owned(), now)
         .chars()
         .take(super::MAX_DIAGNOSTIC_CHARS)
         .collect()
@@ -338,19 +322,20 @@ fn describe(
 
 /// [`describe`] before clipping.
 fn describe_text(
-    status: Option<u16>,
-    body: Option<&errors::Error>,
-    fallback: &str,
+    status: Option<StatusCode>,
+    body: Option<&Body>,
+    fallback: impl FnOnce() -> String,
     now: Option<auth::Timestamp>,
 ) -> String {
-    let code = body.and_then(errors::Error::code);
+    let fields = body.map(Body::codex_fields);
+    let code = fields.and_then(super::error_body::Fields::code);
     let mut message = if body.is_some_and(|body| body.usage_limit(status)) {
-        let plan = body
-            .and_then(|body| body.fields.plan_type.0.as_deref())
+        let plan = fields
+            .and_then(|fields| fields.plan_type.0.as_deref())
             .map(|plan| format!(" ({} plan)", plan.to_lowercase()))
             .unwrap_or_default();
-        let reset = body
-            .and_then(|body| body.fields.resets_at.0)
+        let reset = fields
+            .and_then(|fields| fields.resets_at.0)
             .zip(now)
             .map(|(at, now)| {
                 format!(
@@ -363,17 +348,19 @@ fn describe_text(
             .unwrap_or_default();
         format!("You have hit your ChatGPT usage limit{plan}.{reset}")
     } else {
-        body.and_then(|body| body.fields.message.0.as_deref().or(body.detail.as_deref()))
-            .unwrap_or(fallback)
-            .to_owned()
+        body.and_then(Body::codex_message)
+            .map_or_else(fallback, str::to_owned)
     };
     if let Some(code) = code {
         message = format!("{code}: {message}");
     }
     if let Some(status) = status {
-        message.push_str(&format!(" (HTTP {status})"));
+        message.push_str(&format!(" (HTTP {})", status.as_u16()));
     }
-    if matches!(status, Some(401 | 403)) {
+    if matches!(
+        status,
+        Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+    ) {
         message.push_str(
             " Sign in again with `artifactize login codex`, or with Codex when ARTIFACTIZE_CODEX_AUTH_FILE is set.",
         );

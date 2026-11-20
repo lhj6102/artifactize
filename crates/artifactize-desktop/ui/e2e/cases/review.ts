@@ -1,286 +1,209 @@
-// A Human review in the Main area end to end: who claimed a waiting review in its row, opening
-// one by its ID, leaving its form and then the review back to the Pane, quitting with an
-// unsubmitted claim (stay, then release and quit), and the completed result kept open.
+// A Human review, in a graph's Detail and in the main area: its claim, its layout, its tools and
+// their Tool log, its GREEN and RED forms, text in any language, and stepping back out of it.
 import assert from "node:assert/strict";
-import { addRepository, artifactize, create, type Fixture, orderRuns, requests, savedRuns, signoff } from "../fixture.ts";
-import { claimable, requestState, showDebug, reviewing } from "../human-review.ts";
-import { fill, press, typeText } from "../keys.ts";
-import { sessionEndedByApp } from "../observation.ts";
-import { commandsRendered } from "../commands.ts";
+import { artifactize, createRelease, request } from "../fixtures/repo.ts";
+import { processRunning } from "../platform.ts";
+import { nativePath, readTextIfExists, writeText, type NativePath } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { primaryModifier, requestWindowClose } from "../platform.ts";
-import { branch, entriesFocused, expand, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
-import { detail, openArtifact } from "../graph-view.ts";
+import type { App } from "../views/app.ts";
 
-/** How many Human reviews this case's state holds waiting, read through the public CLI. */
-function waitingReviews(fixture: Fixture): number {
-  return requests(fixture).filter((request) => request.status === "DEFERRED").length;
-}
-
-async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
-  await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
-}
-
-/** The app started with `review`: the waiting sign-off opens in the Main area; claim it. */
-async function claimReview(browser: WebdriverIO.Browser, fixture: Fixture) {
-  await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "the waiting review open at launch");
-  await browser.waitUntil(() => claimable(browser), { timeout: 15000, timeoutMsg: "the claim stage" });
-  await browser.$('[aria-label="Human review"]').click();
-  await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "this case's claim");
-}
-
-/** Open `id` with Ctrl+O and wait for its review. */
-async function openById(browser: WebdriverIO.Browser, id: string) {
-  await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
-  await fill(browser, '[aria-label="Request ID"]', id);
-  await browser.$('[role="dialog"] button[type="submit"]').click();
-  await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
-  await showDebug(browser);
-  await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${id} · `), `${id}'s review`);
+/** The process of the release's slow tool at its `run`th start, once it has started: the tool
+ * records each start's process in `pids`. */
+async function slowProcess(app: App, pids: NativePath, run: number): Promise<number> {
+  let pid = 0;
+  await app.until(async () => {
+    pid = Number((readTextIfExists(pids) ?? "").trim().split("\n")[run - 1] ?? 0);
+    return pid > 0;
+  }, `the tool's process ${run} started`);
+  return pid;
 }
 
 export const scenarios: Scenario[] = [
-  // UX journeys: J-WAITING J-LIVE; UX edge: E-MON-LIVE
-  scenario<null>(
-    "review-waiting-claim",
-    "shows in a waiting review's row who claimed it, as another process claims and releases it",
-    async () => ({ fixture: await create(), data: null }),
-    async (browser, { fixture }) => {
-      const id = signoff(fixture).id;
-      const row = async () => (await waiting(browser)).rows.find((entry) => entry.id === id);
-      await waitFor(browser, async () => (await row()) !== undefined, "the waiting row");
-      const shown = (await row())!;
-      assert.deepEqual([shown.eval, shown.where], ["release/signoff", "repo  master"]);
-      assert.doesNotMatch(shown.meta, / · /, "nobody claimed it: only how long it waits");
-      assert.equal(signoff(fixture).claim, null, "listing claims nothing");
-      assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
-      await waitFor(browser, async () => / · bob$/.test((await row())?.meta ?? ""), "bob's claim in the row");
-      assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
-      await waitFor(browser, async () => { const meta = (await row())?.meta; return meta !== undefined && !/ · /.test(meta); }, "bob's release in the row");
-      assert.equal(await mainTitle(browser), "Nothing chosen", "nothing opened by itself");
+  scenario({
+    id: "human-claim",
+    title: "a waiting review opened from its Artifact's Detail reads instruction, Tools, Tool log, Result and Debug; another reviewer's claim shows as taken, and Claim to review and Release claim claim and release it, the draft kept",
+    journeys: ["J-HUMAN-CLAIM", "J-HUMAN-LAYOUT"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["--repo", fixture.repo], data: { id: request(fixture).id } };
     },
-  ),
-
-  // UX journeys: J-OPEN-ID J-WAITING; UX edges: E-REVIEW-OPEN-ID E-WAITING-CHANGE E-HUMAN-CLAIM
-  scenario<null>(
-    "review-open-id",
-    "opens a waiting review by its ID, actionable, and claims it, while another repository's review arrives in the stack",
-    async () => ({ fixture: await create(), data: null }),
-    async (browser, { fixture }) => {
-      const original = signoff(fixture).id;
-      await waitFor(browser, async () => (await waiting(browser)).bar === "Waiting (1)", "the one waiting sign-off counted");
-      const before = new Set(requests(fixture).map((request) => request.id));
-      await addRepository(fixture, "open-by-id");
-      const added = requests(fixture).find((request) => request.evalId === "release/signoff" && !before.has(request.id));
-      assert.ok(added, "the other repository created its own sign-off");
-      // Explicitly the newer, whatever times the two verifies were saved at.
-      orderRuns(fixture, [requests(fixture).find((request) => request.id === original)!.runId, added.runId]);
-      await waitFor(browser, async () => (await waiting(browser)).bar === "Waiting (2)", "the other repository's sign-off counted without a reload");
-      assert.equal(waitingReviews(fixture), 2);
-      await commandsRendered(browser);
-      // The older one by its ID, not the newest at the top of the stack.
-      assert.equal((await waiting(browser)).rows[0].id, added.id);
-      await openById(browser, original);
-      // Debug, unfolded to read the request's state above, folds and unfolds by t.
-      const technical = () => browser.$('[aria-label="Human review"]').$("button.head=Debug").getAttribute("aria-expanded");
-      await browser.$('[aria-label="Human review"]').click();
-      await press(browser, ["t"], async () => (await technical()) === "false", "Debug folded by t");
-      await press(browser, ["t"], async () => (await technical()) === "true", "the opened review's identity");
-      const openedId = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] dt')]
-        .find((field) => field.textContent === "Request")?.nextElementSibling?.textContent ?? "");
-      await waitFor(browser, async () => (await openedId()) === original, "the review is exactly the entered request");
-      await browser.waitUntil(() => claimable(browser), { timeout: 15000, timeoutMsg: "the claim stage" });
-      await press(browser, ["c"], async () =>
-        requests(fixture).find((request) => request.id === original)?.claim?.reviewer === "alice" &&
-        await reviewing(browser, '[aria-label="Human review"][tabindex="0"]'), "the entered request's saved claim and rendered review");
-      assert.equal(requests(fixture).find((request) => request.id === added.id)?.claim, null, "the other review was not claimed");
+    run: async (app, { fixture, data: { id } }) => {
+      const review = app.detailReview;
+      await app.graph.open("a:release", "Artifact release");
+      await app.detail.openEval("release/signoff");
+      const shown = await review.until((each) => each.stage === "CLAIM", "the review opens at its claim stage");
+      assert.deepEqual(shown.sections, ["Instruction", "Tools", "Tool log", "Result", "Debug"], "one order");
+      assert.equal(await review.instruction(), "Read the release notes and approve them.");
+      assert.match(await review.debugState(), new RegExp(`^Request ${id} · DEFERRED · unclaimed`), "its facts under Debug");
+      // Another reviewer's claim shows as taken, the review read-only.
+      assert.equal(artifactize(fixture, ["request", "claim", id, "--reviewer", "bob"]).status, 0);
+      await review.until((each) => each.claimant === "bob" && each.readOnly, "bob's claim shows, read-only");
+      assert.equal(artifactize(fixture, ["request", "unclaim", id, "--reviewer", "bob"]).status, 0);
+      await review.until((each) => each.stage === "CLAIM" && each.claimant === "", "released by bob, it waits for a claim again");
+      await review.claim();
+      assert.equal(request(fixture).claim?.reviewer, "alice");
+      // Released while its form is being edited, the draft stays for the next claim.
+      await review.choose("GREEN");
+      await review.enter("comment", "half-checked");
+      await review.release();
+      assert.equal(request(fixture).claim, null);
+      await review.claim();
+      await review.choose("GREEN");
+      assert.equal(await review.value("comment"), "half-checked", "the draft kept");
+      assert.equal(request(fixture).status, "DEFERRED", "nothing submitted");
     },
-  ),
+  }),
 
-  // UX journey: J-HUMAN-ESC; UX edges: E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL E-REVIEW-OPEN
-  scenario<null>(
-    "review-escape-form-detail",
-    "leaves a field's form with Esc, then the review back to the Pane with the next Esc, and opens it again with Enter, keyboard only",
-    async () => ({ fixture: await create(), args: ["review"], data: null }),
-    async (browser, { fixture }) => {
-      await claimReview(browser, fixture);
-      await browser.keys(["g"]);
-      await browser.waitUntil(() => browser.execute(() => document.activeElement?.id === "field-comment"), { timeout: 15000, timeoutMsg: "focus in the comment field" });
-      await fill(browser, "#field-comment", "kept draft");
-      await browser.keys(["Escape"]);
-      await browser.$("#field-comment").waitForExist({ reverse: true, timeout: 10000 });
-      assert.ok(await browser.$('[aria-label="Human review"]').isExisting(), "the review stays");
-      await press(browser, ["Escape"], () => entriesFocused(browser), "back in the Pane");
-      assert.equal((await waiting(browser)).rows.find((row) => row.selected)?.id, signoff(fixture).id, "its row stays selected");
-      // Enter opens the same review again, its claim and draft kept.
-      // Enter moves the keyboard from the Pane into the review it opens.
-      const inReview = () => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]'));
-      await press(browser, ["Enter"], async () => !(await entriesFocused(browser)) && await inReview() && (await mainTitle(browser)) === "Review" && await reviewing(browser),
-        "the same review again, with the keyboard");
-      assert.equal(signoff(fixture).claim?.reviewer, "alice");
-      await press(browser, ["g"], async () => (await browser.$("#field-comment").isExisting()) && (await browser.$("#field-comment").getValue()) === "kept draft", "the kept draft");
+  scenario({
+    id: "human-tools",
+    title: "the review's tools run once it is claimed, each run logged as it happens: its start, its lines with stderr in red, and its end, red when it failed or could not run; a launched application's lines keep arriving under its run",
+    journeys: ["J-HUMAN-TOOL", "J-HUMAN-LOG"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own, { missing: true });
+      return { fixture, args: ["review"], data: { gate: nativePath(fixture.root, "talk.gate") } };
     },
-  ),
-
-  // UX journey: J-QUIT; UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE
-  scenario<null>(
-    "review-quit-claim",
-    "asks before quitting with the claim: Esc stays, u releases and quits",
-    async () => ({ fixture: await create(), args: ["review"], data: null }),
-    async (browser, { fixture }) => {
-      await claimReview(browser, fixture);
-      const dialog = await browser.$('[role="alertdialog"]');
-      /** The prompt is open and holds focus, so its keys reach it. */
-      const prompted = async () => {
-        await browser.keys(["q"]);
-        await dialog.waitForExist({ timeout: 10000 });
-        await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('[role="alertdialog"]')), { timeout: 15000, timeoutMsg: "focus in the prompt" });
-      };
-      await prompted();
-      const shown = await browser.execute((element) => (element as HTMLElement).innerText, dialog);
-      assert.match(shown, new RegExp(signoff(fixture).id));
-      await browser.keys(["Escape"]);
-      await dialog.waitForExist({ reverse: true, timeout: 10000 });
-      assert.equal(signoff(fixture).claim?.reviewer, "alice", "staying keeps the claim");
-      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]')), { timeout: 15000, timeoutMsg: "focus back in the review" });
-
-      // The window's own close requests, twice in a row: both wait for the prompt's answer.
-      await requestWindowClose(browser);
-      await requestWindowClose(browser);
-      await dialog.waitForExist({ timeout: 10000 });
-      assert.equal(await browser.execute(() => document.title), "Artifactize", "the window stays");
-      assert.equal(signoff(fixture).claim?.reviewer, "alice");
-      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('[role="alertdialog"]')), { timeout: 15000, timeoutMsg: "focus in the prompt" });
-      await browser.keys(["Escape"]);
-      await dialog.waitForExist({ reverse: true, timeout: 10000 });
-
-      await prompted();
-      // A disappearing window may end this keystroke's response, but a generic driver
-      // failure is not closure. The native helper only accepts a terminal window outcome.
-      await sessionEndedByApp(browser, () => browser.keys(["u"]));
-      await browser.waitUntil(() => signoff(fixture).claim === null, { timeout: 15000, timeoutMsg: "released on quit" });
-      assert.equal(signoff(fixture).status, "DEFERRED");
+    run: async (app, { fixture, data: { gate } }) => {
+      const review = app.review;
+      const before = await review.until((each) => each.tools.length > 0, "the review's tools listed");
+      assert.ok(before.tools.every((tool) => !tool.enabled), "no tool runs before the claim");
+      await review.claim();
+      await review.runTool("notes");
+      assert.deepEqual(await review.runUntil("notes", (rows) => rows.at(-1)?.startsWith("■") === true, "notes ended"),
+        ["▶ HH:MM:SS · notes · release", "# Release notes", "- Ready to ship.", "■ exit 0"]);
+      await review.runTool("fail");
+      assert.deepEqual(await review.runUntil("fail", (rows) => rows.at(-1)?.startsWith("■") === true, "fail ended"),
+        ["▶ HH:MM:SS · fail · release", "■ exit 1 [red]"]);
+      assert.equal((await review.read())?.notice, "fail_release failed; a tool error is not a verdict.");
+      await review.runTool("gone");
+      const gone = await review.runUntil("gone", (rows) => rows.at(-1)?.startsWith("■") === true, "the missing tool ended");
+      assert.match(gone.at(-1)!, /^■ error: \S.* \[red\]$/, "a tool that could not run ends with its error, in red");
+      // A launched application keeps logging under its own run after its button returned.
+      await review.runTool("talk");
+      await review.runUntil("talk", (rows) => rows.includes("opened the stand-in"), "the launched application's first line");
+      writeText(gate, "go");
+      const talk = await review.runUntil("talk", (rows) => rows.at(-1)?.startsWith("■") === true, "the launched application ended");
+      assert.deepEqual(talk.filter((row) => !row.endsWith("[red]")), ["▶ HH:MM:SS · talk · release", "opened the stand-in", "chose: B", "■ exit 0"]);
+      assert.deepEqual(talk.filter((row) => row.endsWith("[red]")), ["warning: B is slower [red]"], "its stderr in red");
+      assert.equal(request(fixture).status, "DEFERRED", "tools are no verdict");
     },
-  ),
+  }),
 
-  // UX journeys: J-HUMAN-GREEN J-WAITING; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-SUBMIT E-WAITING-CHANGE
-  scenario<null>(
-    "review-green-completed",
-    "keeps the completed result open until the reviewer leaves it, the Waiting stack and the branch's chip following",
-    async () => ({ fixture: await create(), args: ["review"], data: null }),
-    async (browser, { fixture }) => {
-      assert.equal(waitingReviews(fixture), 1, "this case starts with one waiting sign-off");
-      await claimReview(browser, fixture);
-      assert.equal((await waiting(browser)).bar, "Waiting (1)");
-      await browser.keys(["g"]);
-      const comment = await browser.$("#field-comment");
-      await comment.waitForExist({ timeout: 10000 });
-      await comment.click();
-      await typeText(browser, "looks good");
-      await browser.keys([primaryModifier, "s"]);
-      await browser.waitUntil(async () => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
-      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: "looks good" });
-      assert.equal(waitingReviews(fixture), 0, "the submission left nothing waiting");
-      // Nothing waits any more: the bar reads (0), and the branch's Run ends GREEN.
-      await waitFor(browser, async () => (await waiting(browser)).bar === "Waiting (0)", "the stack empty after the submission");
-      const run = signoff(fixture).runId;
-      await expand(browser, "repo  master");
-      await waitFor(browser, async () => /^GREEN /.test((await branch(browser, "repo  master"))?.chips.find((chip) => chip.id === run)?.text ?? ""),
-        "the app has rendered this Run's terminal GREEN update on its chip");
-      await commandsRendered(browser);
-      const human = browser.$('[aria-label="Human review"]');
-      assert.ok(await human.isExisting(), "the completed review stays open after the terminal update");
-      assert.match(await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? ""), /completed result/i);
-      assert.equal(await mainTitle(browser), "Review · read-only", "completed, the review is read-only");
+  scenario({
+    id: "human-green",
+    title: "after a claim GREEN opens the pass form, its required fields marked and its optional ones saying Optional, takes Korean composed by an input method and typed letters as text, and Submit saves it while a tool of the review runs, the tool stopped first and the completed result staying open",
+    journeys: ["J-HUMAN-GREEN", "J-HUMAN-FORM", "J-HUMAN-TEXT"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own, { scalars: true });
+      return { fixture, args: ["review"], data: { pids: nativePath(fixture.root, "slow.gate.pids") } };
     },
-  ),
-  // UX journey: J-HUMAN-LAYOUT; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN
-  scenario<null>(
-    "review-layout",
-    "lays a review in the Main area out as two panels where it is at least twice the Detail's width, the Tool log the view at the left and the rest a column at the right, and in one column where it is narrower",
-    async () => ({ fixture: await create(), args: ["review"], data: null }),
-    async (browser, { fixture }) => {
-      // The Detail's width as a Run's graph opens it, and the Main area's, at a window size.
-      const run = savedRuns(fixture)[0].id;
-      const measured = async (width: number, height: number) => {
-        await browser.setWindowSize(width, height);
-        await showRun(browser, "repo  master", run);
-        await openArtifact(browser, "a:release", "Artifact release");
-        const sizes = await browser.execute(() => ({
-          detail: Math.round(document.querySelector('.stage aside[aria-label="Detail"]')!.getBoundingClientRect().width),
-          main: Math.round(document.querySelector(".stage")!.getBoundingClientRect().width),
-        }));
-        await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
-        return sizes;
-      };
-      const narrowSizes = await measured(800, 760);
-      const wideSizes = await measured(1920, 1080);
-      assert.ok(wideSizes.main >= 2 * wideSizes.detail && narrowSizes.main < 2 * narrowSizes.detail,
-        `the window sizes fall on both sides of twice the Detail's width: ${JSON.stringify({ wideSizes, narrowSizes })}`);
-      await openWaiting(browser, signoff(fixture).id);
-      await claimReview(browser, fixture);
-      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
-      /** The review's arrangement: its panels' boxes, its Result's and its row of actions' boxes. */
-      const arranged = () => browser.execute(() => {
-        const review = document.querySelector<HTMLElement>('[aria-label="Human review"]')!;
-        const box = (element: Element | null | undefined) => {
-          const rect = element?.getBoundingClientRect();
-          return rect ? { left: Math.round(rect.left), right: Math.round(rect.right), top: Math.round(rect.top), bottom: Math.round(rect.bottom) } : null;
-        };
-        const result = review.querySelector('section[aria-label="Result"]');
-        const sections = [...review.querySelectorAll(".section")].map((section) => section.getAttribute("aria-label"));
-        return {
-          area: box(review),
-          split: review.classList.contains("split"),
-          viewer: box(review.querySelector(".viewer")),
-          log: box(review.querySelector(".viewer [role='log']")),
-          side: box(review.querySelector(".side")),
-          result: box(result),
-          // The row of actions is the Result's last row.
-          actionsLast: !!result && result.querySelector(".body > .result > :last-child")?.classList.contains("actions") === true,
-          sections,
-        };
-      });
-      // Wide: the Tool log fills the left, from below the header row to the bottom; the column at the right.
-      await browser.waitUntil(async () => (await arranged()).split, { timeout: 15000, timeoutMsg: "two panels in a wide Main area" });
-      const wide = await arranged();
-      assert.ok(wide.viewer && wide.side && wide.log && wide.area, JSON.stringify(wide));
-      assert.ok(wide.viewer.right <= wide.side.left + 1 && wide.side.right >= wide.area.right - 1, `the Tool log at the left, the column at the right: ${JSON.stringify(wide)}`);
-      assert.ok(wide.log.bottom >= wide.area.bottom - 2 && wide.viewer.top <= wide.area.top + 2, `the Tool log fills its panel's height: ${JSON.stringify(wide)}`);
-      assert.deepEqual(wide.sections, ["Tools", "Result", "Debug"], "the column holds the Tools, the Result and Debug");
-      assert.ok(Math.abs(wide.side.right - wide.side.left - wideSizes.detail) <= 2,
-        `the column at the right is as wide as the Detail: ${JSON.stringify({ side: wide.side, detail: wideSizes.detail })}`);
-      assert.ok(wide.actionsLast, "the row of actions ends the Result");
-      // While a tool runs, its time and Cancel stand between Release claim and Submit; Cancel
-      // stops it, the review and its draft staying.
-      await fill(browser, "#field-comment", "draft kept through the tool");
-      await browser.$('[aria-label="Human review"]').$("button=slow").click();
-      const row = () => browser.execute(() => {
-        const actions = document.querySelector('[aria-label="Human review"] .actions');
-        const at = (selector: string) => actions?.querySelector(selector)?.getBoundingClientRect().left ?? null;
-        return {
-          release: at('button[aria-label="Release claim (u)"]'),
-          seconds: actions?.querySelector(".busy .seconds")?.textContent?.trim() ?? "",
-          cancel: at('button[aria-label="Cancel (Esc)"]'),
-          submit: at("button.primary"),
-        };
-      });
-      let running = await row();
-      await browser.waitUntil(async () => /^\d+s$/.test((running = await row()).seconds), { timeout: 15000, timeoutMsg: "the running tool's time in the row" })
-        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(running)}`); });
-      assert.ok(running.release !== null && running.cancel !== null && running.submit !== null && running.release < running.cancel && running.cancel < running.submit,
-        `Release claim, then the running tool's time and Cancel, then Submit: ${JSON.stringify(running)}`);
-      await browser.$('[aria-label="Human review"] button[aria-label="Cancel (Esc)"]').click();
-      await browser.waitUntil(async () => (await row()).seconds === "", { timeout: 15000, timeoutMsg: "Cancel stopped the tool" });
-      assert.equal(await browser.$("#field-comment").getValue(), "draft kept through the tool", "the draft stays");
-      // Narrow, a Main area under twice the Detail's width: one column, top to bottom, the Tool
-      // log a box between the Tools and the Result.
-      await browser.setWindowSize(800, 760);
-      await browser.waitUntil(async () => !(await arranged()).split, { timeout: 15000, timeoutMsg: "one column in a narrow Main area" });
-      const narrow = await arranged();
-      assert.deepEqual(narrow.sections, ["Tools", "Tool log", "Result", "Debug"], "one column, the Tool log between the Tools and the Result");
-      assert.ok(narrow.actionsLast, "the row of actions still ends the Result");
-      assert.equal(await browser.$("#field-comment").isExisting(), true, "the form kept through the change");
+    run: async (app, { fixture, data: { pids } }) => {
+      const review = app.review;
+      await review.claim();
+      await review.choose("GREEN");
+      const fields = await review.fields();
+      assert.deepEqual(fields.map((field) => field.label), ["channel", "comment*", "confirmed", "note", "score"], "the pass schema's fields, its constant left out");
+      assert.ok(fields.filter((field) => ["score", "note", "channel"].includes(field.label)).every((field) => field.hint.includes("Optional")),
+        `an empty optional field says Optional: ${JSON.stringify(fields)}`);
+      // Korean composed by an input method, then letters that are shortcuts outside a field.
+      await review.compose("comment", "확이", "확인");
+      await review.typeInto("comment", " gu");
+      assert.equal(await review.value("comment"), "확인 gu", "typed letters are text, not shortcuts");
+      assert.equal(request(fixture).claim?.reviewer, "alice", "u in a field released nothing");
+      await review.enter("score", "4.5");
+      await review.check("confirmed", "true");
+      await review.select("channel", "\"preview\"");
+      // Submit while a tool of the review runs: the submission stops the tool first.
+      await review.runTool("slow");
+      await review.until((each) => each.running !== "", "the tool runs");
+      const tool = await slowProcess(app, pids, 1);
+      const done = await review.submit();
+      await app.until(async () => !processRunning(tool), "the submission stopped the running tool's process");
+      assert.match(done.completed, /확인 gu/, "the completed result stays open");
+      assert.match(done.completed, /comment\s*확인 gu/, "its fields by name");
+      assert.doesNotMatch(done.completed, /approved/, "the form's constant not shown");
+      assert.equal(done.stage, "", "a submitted review shows no stage pill");
+      const saved = request(fixture);
+      assert.equal(saved.status, "GREEN");
+      assert.deepEqual(saved.result, { verdict: "GREEN", approved: true, comment: "확인 gu", score: 4.5, confirmed: true, channel: "preview" });
     },
-  ),
+  }),
+
+  scenario({
+    id: "human-red",
+    title: "RED opens the fail form; a result failing its schema is not submitted and names the failing field, GREEN and RED switch keeping each draft, and lists and groups of fields are added and removed before Submit",
+    journeys: ["J-HUMAN-RED", "J-HUMAN-FORM"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["--repo", fixture.repo], data: null };
+    },
+    run: async (app, { fixture }) => {
+      const review = app.detailReview;
+      await app.graph.open("a:release", "Artifact release");
+      await app.detail.openEval("release/signoff");
+      await review.claim();
+      await review.choose("RED");
+      await review.enter("reason", "no");
+      const refused = await review.submit();
+      assert.match(refused.refusal, /reason/, "the failing field is named");
+      assert.equal(request(fixture).status, "DEFERRED", "nothing submitted");
+      await review.choose("GREEN");
+      await review.enter("comment", "checked");
+      await review.choose("RED");
+      assert.equal(await review.value("reason"), "no", "the RED draft kept");
+      await review.enter("reason", "the notes are wrong");
+      // A list of steps, one text each, and repeated groups of findings.
+      await review.add("steps");
+      await review.enterItem("steps", 0, "open the notes");
+      // One group of findings is always left to type in; another is added and removed.
+      await review.add("findings");
+      await review.enter("findings-0-problem", "a typo");
+      await review.select("findings-0-severity", "\"low\"");
+      await review.remove("findings", 1);
+      await review.submit();
+      const saved = request(fixture);
+      assert.equal(saved.status, "RED");
+      assert.deepEqual(saved.result, { verdict: "RED", reason: "the notes are wrong", steps: ["open the notes"], findings: [{ problem: "a typo", severity: "low" }] });
+    },
+  }),
+
+  scenario({
+    id: "human-esc",
+    title: "Cancel beside running work cancels it; in the Detail, Close first cancels the review's running work, then leaves its form with the draft kept, and only then closes the Detail",
+    journeys: ["J-HUMAN-ESC"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["--repo", fixture.repo], data: { pids: nativePath(fixture.root, "slow.gate.pids") } };
+    },
+    run: async (app, { data: { pids } }) => {
+      const review = app.detailReview;
+      await app.graph.open("a:release", "Artifact release");
+      await app.detail.openEval("release/signoff");
+      await review.claim();
+      await review.choose("GREEN");
+      await review.enter("comment", "kept while stepping back");
+      await review.runTool("slow");
+      await review.until((each) => each.running !== "", "the tool runs");
+      const first = await slowProcess(app, pids, 1);
+      await review.cancel();
+      await review.runUntil("slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Cancel ended the run as cancelled");
+      await app.until(async () => !processRunning(first), "Cancel stopped the tool's process");
+      // Close steps back one thing at a time.
+      await review.runTool("slow");
+      await review.until((each) => each.running !== "", "the tool runs again");
+      const second = await slowProcess(app, pids, 2);
+      await app.detail.close();
+      await review.runUntil("slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Close first cancelled the running tool");
+      await app.until(async () => !processRunning(second), "Close stopped the tool's process");
+      assert.equal(await review.value("comment"), "kept while stepping back", "the form still open");
+      await app.detail.close();
+      await review.until((each) => each.verdict === "", "Close then left the form");
+      assert.ok(await app.detail.read(), "the Detail still open");
+      await app.detail.close();
+      await app.detail.closed();
+      await app.graph.open("a:release", "Artifact release");
+      await app.detail.openEval("release/signoff");
+      await review.choose("GREEN");
+      assert.equal(await review.value("comment"), "kept while stepping back", "the draft kept");
+    },
+  }),
 ];

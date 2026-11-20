@@ -55,6 +55,7 @@ struct Start {
     workspace: std::path::PathBuf,
     state: std::path::PathBuf,
     cancellation: CancellationToken,
+    remove_directory: fn(&Path) -> io::Result<()>,
 }
 
 struct Running {
@@ -87,6 +88,7 @@ impl Start {
                 stop_token,
                 owner.clone(),
                 send,
+                self.remove_directory,
             ));
         Ok(Session::Starting {
             running: Running {
@@ -194,6 +196,16 @@ impl Registry<'_> {
         selected: Option<&str>,
         cancellation: CancellationToken,
     ) -> Sessions {
+        self.sessions_with_removal(state, selected, cancellation, platform::remove_tree)
+    }
+
+    pub(crate) fn sessions_with_removal(
+        &self,
+        state: &Path,
+        selected: Option<&str>,
+        cancellation: CancellationToken,
+        remove_directory: fn(&Path) -> io::Result<()>,
+    ) -> Sessions {
         let mut sessions = Sessions::default();
         for (tool_name, tool) in &self.tools {
             if selected.is_some_and(|selected| tool_name != selected) {
@@ -220,6 +232,7 @@ impl Registry<'_> {
                     workspace: self.config.root.clone(),
                     state: state.to_owned(),
                     cancellation: cancellation.clone(),
+                    remove_directory,
                 })))
             });
         }
@@ -247,6 +260,7 @@ async fn supervise(
     stop_token: CancellationToken,
     owner: std::sync::Arc<Ownership>,
     send: oneshot::Sender<Result<BTreeMap<OsString, OsString>, String>>,
+    remove_directory: fn(&Path) -> io::Result<()>,
 ) -> Result<(), String> {
     // Once a supervisor may admit a process, only confirmed cleanup may delete
     // its journal. Panic or an unexpected return must not invoke TempDir::drop.
@@ -262,11 +276,16 @@ async fn supervise(
         send,
     )
     .await;
-    if cleanup.confirmed()
-        && let Err(error) = std::fs::remove_dir_all(&path)
-        && error.kind() != io::ErrorKind::NotFound
-    {
-        cleanup.merge(Cleanup::error(error));
+    if cleanup.confirmed() {
+        let removed =
+            crate::task::joined(tokio::task::spawn_blocking(move || remove_directory(&path)).await)
+                .map_err(io::Error::other)
+                .and_then(std::convert::identity);
+        if let Err(error) = removed
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            cleanup.merge(Cleanup::error(error));
+        }
     }
     cleanup.result()
 }
@@ -347,7 +366,7 @@ async fn supervise_inner(
         _ = cancellation.cancelled() => Err("start was cancelled".to_owned()),
         _ = stop_token.cancelled() => Err("start was dropped".to_owned()),
         status = child.wait_leader() => Err(match status {
-            Ok(status) => format!("exited before readiness: {}", platform::exit_description(&status)),
+            Ok(status) => format!("exited before readiness: {status}"),
             Err(error) => format!("could not wait for the start command: {error}"),
         }),
         result = ready_receive => match result {

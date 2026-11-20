@@ -19,7 +19,8 @@ fn command(state: &Path) -> Command {
 }
 
 fn result(command: &mut Command, code: i32) -> Value {
-    let output = command.record_output().unwrap();
+    let recorded = command.recorded().unwrap();
+    let output = &recorded.output;
     assert_eq!(
         output.status.code(),
         Some(code),
@@ -27,7 +28,9 @@ fn result(command: &mut Command, code: i32) -> Value {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    recorded
+        .saved_json()
+        .unwrap_or_else(|| serde_json::from_slice(&output.stdout).unwrap())
 }
 
 fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
@@ -39,9 +42,10 @@ fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
         .unwrap()
 }
 
-fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
+fn verify_command(state: &Path, repo: &Path, profile: Value) -> Command {
     fs::create_dir_all(repo).unwrap();
     support::declaration::write(
+        repo,
         repo.join("index.artf"),
         json!({
             "name":"a",
@@ -58,21 +62,20 @@ fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
         .to_string(),
     )
     .unwrap();
-    // A Human request is recorded and observed while the owned Run remains waiting.
-    result(
-        command(state)
-            .arg("--repo")
-            .arg(repo)
-            .args(["verify", "--all"]),
-        code,
-    )
+    let mut command = command(state);
+    command.arg("--repo").arg(repo).args(["verify", "--all"]);
+    command
 }
 
 fn runtime_run(state: &Path, repo: &Path) -> Value {
-    verify(
-        state,
-        repo,
-        json!({"kind":"runtime", "command":true_program(), "args":[]}),
+    // RecordOutput joins the worker after a waiting command reports its terminal Run.
+    result(
+        verify_command(
+            state,
+            repo,
+            json!({"kind":"runtime", "command":true_program(), "args":[]}),
+        )
+        .arg("--wait"),
         0,
     )
 }
@@ -82,15 +85,20 @@ fn run_completion(state: &Path, repo: &Path, run: &Value, at: &str) {
     let id: artifactize_core::types::RunId = run["id"].as_str().unwrap().parse().unwrap();
     support::runs::finished_worker(state, repo, &id, support::os::running);
     let at: artifactize_core::types::Timestamp = at.parse().unwrap();
-    let db = rusqlite::Connection::open(state.join("state.sqlite")).unwrap();
-    let saved: String = db
-        .query_row("SELECT data FROM runs WHERE id=?", [&id], |row| row.get(0))
-        .unwrap();
+    let database = state.join("state.sqlite");
+    let saved: String = rusqlite::Connection::open_with_flags(
+        &database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row("SELECT data FROM runs WHERE id=?", [&id], |row| row.get(0))
+    .unwrap();
     let mut saved: artifactize_core::store::Run = serde_json::from_str(&saved).unwrap();
     assert_eq!(saved.status(), artifactize_core::types::RunStatus::Green);
     // Keep the Run's own chronology valid without depending on the producer's clock.
     saved.created_at = at;
     saved.state = artifactize_core::store::RunState::Green { at };
+    let db = rusqlite::Connection::open(database).unwrap();
     assert_eq!(
         db.execute(
             "UPDATE runs SET data=? WHERE id=?",
@@ -105,14 +113,35 @@ fn doctor(state: &Path, path: &Path) -> Command {
     let mut command = command(state);
     command
         .arg("doctor")
-        .env("PATH", path)
+        .env("PATH", support::os::isolated_path(path))
         .env_remove("OPENAI_API_KEY")
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("GEMINI_API_KEY")
         .env_remove("ARTIFACTIZE_CODEX_AUTH_FILE")
-        .env("HTTPS_PROXY", "http://127.0.0.1:1")
-        .env("HTTP_PROXY", "http://127.0.0.1:1");
+        .env(artifactize_core::release::OFF_VARIABLE, "1");
     command
+}
+
+#[test]
+fn doctor_detects_the_fixture_desktop_beside_its_cli() {
+    let root = support::os::tempdir();
+    let state = root.path().join("state");
+    let candidate = support::os::OwnedExecutable::copy_from(&support::os::cli()).unwrap();
+    let app = support::os::desktop_installation_marker(candidate.path());
+    let mut command = Command::new(candidate.path());
+    command
+        .arg("doctor")
+        .arg("--state-dir")
+        .arg(&state)
+        .arg("--json")
+        .env(artifactize_core::release::OFF_VARIABLE, "1");
+    let report = result(&mut command, 0);
+    let desktop = check(&report, "desktop");
+    assert_eq!(desktop["status"], "PASS");
+    assert_eq!(
+        desktop["details"]["path"],
+        support::os::path_text(&support::os::canonical(&app))
+    );
 }
 
 #[test]
@@ -161,21 +190,8 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "release"
         ]
     );
-    // A test build may sit beside an app build, so the check's form depends on this machine.
-    let desktop = check(&absent, "desktop");
-    match desktop["status"].as_str().unwrap() {
-        "PASS" => assert!(desktop["details"]["path"].is_string()),
-        "WARN" => {
-            assert_eq!(desktop["details"], json!({"path":null}));
-            assert!(
-                desktop["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("https://artifactize.dev/#start")
-            );
-        }
-        status => panic!("desktop check {status}"),
-    }
+    // The CLI fixture below fixes the detected installation independently of the host;
+    // the core detector's isolated location tests cover the no-install branch.
     // A newer release or a failed lookup only warns; this build names its own version.
     assert_ne!(check(&absent, "release")["status"], "FAIL");
     assert_eq!(
@@ -201,9 +217,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 
     root.track(&state, &repo);
-    let run = runtime_run(&state, &repo);
-    let id = run["id"].as_str().unwrap().parse().unwrap();
-    support::runs::finished_worker(&state, &repo, &id, support::os::running);
+    runtime_run(&state, &repo);
     // Terminal evidence can still live in WAL while readers close. Establish the physical
     // byte baseline only after every completed page has reached the main database file.
     {
@@ -220,7 +234,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         assert_eq!(checkpoint, (0, 0, 0), "fixture WAL is fully checkpointed");
         db.close().unwrap();
     }
-    let before = fs::read(state.join("state.sqlite")).unwrap();
+    let before = support::declaration::read_file(state.join("state.sqlite")).unwrap();
     // Leftover 0.4 ChatGPT credentials are neither read nor removed.
     let auth = state.join("auth");
     support::os::create_private_dir_all(&auth);
@@ -252,11 +266,14 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         assert!(!output.contains(secret));
     }
     assert_eq!(
-        fs::read_to_string(auth.join("chatgpt.json")).unwrap(),
+        support::declaration::read_text(auth.join("chatgpt.json")).unwrap(),
         leftover.to_string()
     );
     assert_eq!(fs::read_dir(&auth).unwrap().count(), 1);
-    assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
+    assert_eq!(
+        support::declaration::read_file(state.join("state.sqlite")).unwrap(),
+        before
+    );
 
     // No live fixture remains when schema corruption makes lifecycle reads invalid.
     root.release(&state, &repo).unwrap();
@@ -265,7 +282,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         .unwrap()
         .pragma_update(None, "user_version", 99)
         .unwrap();
-    let before = fs::read(state.join("state.sqlite")).unwrap();
+    let before = support::declaration::read_file(state.join("state.sqlite")).unwrap();
     let newer = result(&mut doctor(&state, &bin), 1);
     assert_eq!(check(&newer, "schema")["status"], "FAIL");
     let supported = artifactize_core::store::STATE_SCHEMA_VERSION;
@@ -273,7 +290,10 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         check(&newer, "schema")["details"],
         json!({"schema":99,"supported":supported})
     );
-    assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
+    assert_eq!(
+        support::declaration::read_file(state.join("state.sqlite")).unwrap(),
+        before
+    );
 
     // An earlier artifactize's database is a hard error too: it is never migrated.
     let older = root.path().join("older");
@@ -284,7 +304,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "CREATE TABLE run_members(run_id TEXT, eval_id TEXT); PRAGMA user_version=4;",
         )
         .unwrap();
-    let before = fs::read(older.join("state.sqlite")).unwrap();
+    let before = support::declaration::read_file(older.join("state.sqlite")).unwrap();
     let report = result(&mut doctor(&older, &bin), 1);
     assert_eq!(check(&report, "schema")["status"], "FAIL");
     assert_eq!(
@@ -293,9 +313,16 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     );
     assert_eq!(
         check(&report, "schema")["message"],
-        artifactize_core::store::EARLIER_STATE
+        concat!(
+            "This state was written by an earlier artifactize. ",
+            "Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). ",
+            "Only schema 6 and later supported versions can be upgraded."
+        )
     );
-    assert_eq!(fs::read(older.join("state.sqlite")).unwrap(), before);
+    assert_eq!(
+        support::declaration::read_file(older.join("state.sqlite")).unwrap(),
+        before
+    );
     assert!(!older.join("state.sqlite-wal").exists());
 }
 
@@ -305,13 +332,13 @@ fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), "invalid").unwrap();
+    support::declaration::write(&(repo), repo.join("index.artf"), "invalid").unwrap();
     let report = result(doctor(&state, root.path()).arg("--repo").arg(&repo), 1);
     assert_eq!(check(&report, "config")["status"], "FAIL");
-    fs::write(&state, "not a directory").unwrap();
+    fs::write(support::declaration::source_path(&state), "not a directory").unwrap();
     let report = result(&mut doctor(&state, root.path()), 1);
     assert_eq!(check(&report, "state")["status"], "FAIL");
-    fs::remove_file(&state).unwrap();
+    support::declaration::remove_file(&state).unwrap();
     let report = result(
         doctor(&repo.join("state"), root.path())
             .arg("--repo")
@@ -339,6 +366,35 @@ fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
     assert!(!state.exists());
 }
 
+#[tokio::test]
+async fn new_receipt_storage_uses_the_current_schema_and_wal() {
+    let root = support::os::tempdir();
+    let state = root.path().join("state");
+    let repo = root.path().join("repo");
+    fs::create_dir(&repo).unwrap();
+    let receipts = artifactize_core::store::OwnedReceipts::open(&state, &repo)
+        .await
+        .unwrap();
+    drop(receipts);
+    let database = rusqlite::Connection::open_with_flags(
+        state.join(artifactize_core::store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(
+        database
+            .pragma_query_value::<u32, _>(None, "user_version", |r| r.get(0))
+            .unwrap(),
+        artifactize_core::store::STATE_SCHEMA_VERSION
+    );
+    assert_eq!(
+        database
+            .pragma_query_value::<String, _>(None, "journal_mode", |r| r.get(0))
+            .unwrap(),
+        "wal"
+    );
+}
+
 #[test]
 fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let root = owned_run::Root::from(support::os::tempdir());
@@ -346,7 +402,12 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let repo = root.path().join("repo");
     root.track(&state, &repo);
     let finished = runtime_run(&state, &repo);
-    let waiting = verify(&state, &repo, json!({"kind":"human"}), 0);
+    owned_run::hold_signoffs(&state);
+    // Submit and observe the saved Human request without closing the Run.
+    let waiting = result(
+        &mut verify_command(&state, &repo, json!({"kind":"human"})),
+        0,
+    );
     let _waiting = owned_run::RunLease::new(
         &state,
         &repo,
@@ -375,7 +436,11 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     ] {
         let path = run.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, "keep audit, prune scratch").unwrap();
+        fs::write(
+            support::declaration::source_path(path),
+            "keep audit, prune scratch",
+        )
+        .unwrap();
     }
     let waiting_output = state.join("runs").join(id(&waiting)).join("output");
     fs::create_dir_all(&waiting_output).unwrap();
@@ -384,8 +449,8 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     const RETAINED_COMPLETION: &str = "2999-01-01T00:00:00Z";
     const EXPIRED_COMPLETION: &str = "2000-01-01T00:00:00Z";
     run_completion(&state, &repo, &finished, RETAINED_COMPLETION);
-    let before = fs::read(state.join("state.sqlite")).unwrap();
-    let repo_before = fs::read(repo.join("index.artf")).unwrap();
+    let before = support::declaration::read_file(state.join("state.sqlite")).unwrap();
+    let repo_before = support::declaration::read_file(repo.join("index.artf")).unwrap();
     let dry = result(command(&state).args(["prune", "--dry-run"]), 0);
     assert_eq!(dry["removed"], json!([]));
     // Assert the operator-visible candidates independently of prune's implementation.
@@ -428,12 +493,15 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
             .unwrap()
             .contains(&json!(id(&finished)))
     );
-    assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
+    assert_eq!(
+        support::declaration::read_file(state.join("state.sqlite")).unwrap(),
+        before
+    );
     // This is a second explicit fixture stimulus, not a write made by prune. Establish
     // a new preservation baseline and saved public audit before exercising deletion.
     run_completion(&state, &repo, &finished, EXPIRED_COMPLETION);
     let finished = result(command(&state).args(["run", "show", &id(&finished)]), 0);
-    let before = fs::read(state.join("state.sqlite")).unwrap();
+    let before = support::declaration::read_file(state.join("state.sqlite")).unwrap();
     let removed = result(command(&state).args(["prune", "--older-than", "0s"]), 0);
     assert_eq!(removed["removed"], dry["wouldRemove"]);
     for path in removed["removed"].as_array().unwrap() {
@@ -452,12 +520,18 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     );
     for path in ["unknown/keep", "runtime-extra/audit.json"] {
         assert_eq!(
-            fs::read_to_string(run.join(path)).unwrap(),
+            support::declaration::read_text(run.join(path)).unwrap(),
             "keep audit, prune scratch"
         );
     }
-    assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
-    assert_eq!(fs::read(repo.join("index.artf")).unwrap(), repo_before);
+    assert_eq!(
+        support::declaration::read_file(state.join("state.sqlite")).unwrap(),
+        before
+    );
+    assert_eq!(
+        support::declaration::read_file(repo.join("index.artf")).unwrap(),
+        repo_before
+    );
     let shown = result(command(&state).args(["run", "show", &id(&finished)]), 0);
     assert_eq!(shown, finished);
 }
@@ -476,7 +550,7 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
         let error = result(command(&state).args(["prune"]), 2);
         assert!(error["error"].as_str().unwrap().contains("symlink"));
         assert!(output.is_dir());
-        assert!(repo.join("index.artf").exists());
+        assert!(repo.join(".artifactize/a.artf").exists());
         remove_link(&link);
     }
     let alias = root.path().join("alias");
@@ -498,7 +572,11 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
     );
     remove_link(&state.join("runs"));
     fs::rename(moved, state.join("runs")).unwrap();
-    fs::write(run.join(".git"), "gitdir: elsewhere").unwrap();
+    fs::write(
+        support::declaration::source_path(run.join(".git")),
+        "gitdir: elsewhere",
+    )
+    .unwrap();
     assert!(
         result(command(&state).arg("prune"), 2)["error"]
             .as_str()
@@ -506,8 +584,8 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
             .contains("repository")
     );
     assert!(output.is_dir());
-    fs::remove_file(run.join(".git")).unwrap();
-    support::declaration::write(output.join("index.artf"), "{}").unwrap();
+    support::declaration::remove_file(run.join(".git")).unwrap();
+    support::declaration::write(&(output), output.join("index.artf"), "{}").unwrap();
     assert!(
         result(command(&state).arg("prune"), 2)["error"]
             .as_str()
@@ -515,9 +593,18 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
             .contains("repository")
     );
     assert!(output.is_dir());
-    fs::remove_file(output.join("index.artf")).unwrap();
-    fs::write(output.join("file.txt"), "input").unwrap();
-    support::declaration::write(output.join("file.txt.artf"), r#"{"name":"file"}"#).unwrap();
+    support::declaration::remove_file(output.join("index.artf")).unwrap();
+    fs::write(
+        support::declaration::source_path(output.join("file.txt")),
+        "input",
+    )
+    .unwrap();
+    support::declaration::write(
+        &(output),
+        output.join("file.txt.artf"),
+        r#"{"name":"file"}"#,
+    )
+    .unwrap();
     assert!(
         result(command(&state).arg("prune"), 2)["error"]
             .as_str()
@@ -535,24 +622,25 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
 #[test]
 fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
     let root = support::os::tempdir();
-    // The behavior exists only where the volume ignores case.
-    if !support::os::case_insensitive(root.path()) {
-        return;
-    }
     let repo = support::os::canonical(root.path()).join("Repo");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), r#"{"name":"a","basis":true}"#).unwrap();
-    for state in [
-        repo.join("state"),
-        support::os::other_case(&repo).join("state"),
-    ] {
+    support::declaration::write(
+        &(repo),
+        repo.join("index.artf"),
+        r#"{"name":"a","basis":true}"#,
+    )
+    .unwrap();
+    let alias = support::os::case_insensitive(root.path())
+        .then(|| support::os::other_case(&repo).join("state"));
+    for state in std::iter::once(repo.join("state")).chain(alias) {
         let error = result(command(&state).arg("prune").arg("--repo").arg(&repo), 2);
         assert!(
             error["error"]
                 .as_str()
                 .unwrap()
                 .contains("outside the reviewed repository"),
-            "{state:?}: {error}"
+            "{}: {error}",
+            support::os::path_text(&state)
         );
     }
 }
@@ -573,8 +661,16 @@ fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
         let copy =
             Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output/copy");
         fs::create_dir_all(&copy).unwrap();
-        fs::write(copy.join(marker), "workspace marker").unwrap();
-        fs::write(copy.join("keep.txt"), "owner content").unwrap();
+        fs::write(
+            support::declaration::source_path(copy.join(marker)),
+            "workspace marker",
+        )
+        .unwrap();
+        fs::write(
+            support::declaration::source_path(copy.join("keep.txt")),
+            "owner content",
+        )
+        .unwrap();
         for args in [vec!["prune", "--dry-run"], vec!["prune"]] {
             let error = result(command(&state).args(args), 2);
             assert!(
@@ -585,11 +681,11 @@ fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
                 "{marker}: {error}"
             );
             assert_eq!(
-                fs::read_to_string(copy.join("keep.txt")).unwrap(),
+                support::declaration::read_text(copy.join("keep.txt")).unwrap(),
                 "owner content"
             );
             assert_eq!(
-                fs::read_to_string(copy.join(marker)).unwrap(),
+                support::declaration::read_text(copy.join(marker)).unwrap(),
                 "workspace marker"
             );
         }
@@ -607,7 +703,11 @@ fn remote_logout_refuses_credential_state_inside_current_and_legacy_workspaces()
         let root = support::os::tempdir();
         let workspace = root.path().join("workspace");
         fs::create_dir(&workspace).unwrap();
-        fs::write(workspace.join(marker), "workspace marker").unwrap();
+        fs::write(
+            support::declaration::source_path(workspace.join(marker)),
+            "workspace marker",
+        )
+        .unwrap();
         let state = workspace.join("state");
         let output = Command::new(support::os::cli())
             .arg("--state-dir")
@@ -639,7 +739,11 @@ fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
         let root = support::os::tempdir();
         let workspace = root.path().join("workspace");
         fs::create_dir(&workspace).unwrap();
-        fs::write(workspace.join(marker), "workspace marker").unwrap();
+        fs::write(
+            support::declaration::source_path(workspace.join(marker)),
+            "workspace marker",
+        )
+        .unwrap();
         let state = workspace.join("state");
         let report = result(&mut doctor(&state, root.path()), 1);
         assert_eq!(
@@ -667,6 +771,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(
+        &(repo),
         repo.join("index.artf"),
         json!({"name":"a","fingerprint":false,"evals":[{
             "id":"check","title":"Check","payload":{"instruction":"Check"},
@@ -725,13 +830,13 @@ fn claude_agent(state: &Path, bin: &Path, args: &[&str], code: &str) -> std::pro
         .env("PATH", support::claude_code::path(bin))
         .env("CLAUDE_CONFIG_DIR", bin.join("config"))
         .stdin(std::process::Stdio::piped());
-    let mut child = support::os::start(&mut command);
+    let mut child = owned_run::Watcher::new(support::os::start(&mut command));
     {
         use std::io::Write;
         let mut input = child.stdin.take().unwrap();
         input.write_all(code.as_bytes()).unwrap();
     }
-    support::os::finish(child, "login claude-agent")
+    child.wait_with_output().unwrap()
 }
 
 #[test]
@@ -792,7 +897,7 @@ fn claude_agent_signs_in_and_out_through_claude_codes_own_commands() {
     let mut missing = command(&state);
     missing
         .args(["login", "claude-agent"])
-        .env("PATH", &empty)
+        .env("PATH", support::os::isolated_path(&empty))
         .stdin(std::process::Stdio::null());
     let missing = missing.record_output().unwrap();
     assert_eq!(missing.status.code(), Some(2));

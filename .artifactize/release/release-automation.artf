@@ -1,0 +1,22 @@
+path = ".github/"
+parts = ["release-observer"]
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.coherent]
+title = "The release packaging, its smoke checks and its notes agree"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.coherent.payload]
+instruction = """
+Read the workflows, scripts and packaging notes of {release-automation}. Check that:
+- every package Binaries builds (archives, MSIX, desktop bundles) is installed and checked by a
+  smoke step on its platform, and Release attaches every package Binaries retains;
+- every desktop bundle places the artifactize command beside the app's own executable;
+- packaging/README.md describes the packages, channels and secrets as the workflows and scripts
+  implement them."""

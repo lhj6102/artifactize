@@ -4,7 +4,6 @@ use std::{
     io::{self, Read, Write},
     net::Shutdown,
     os::{fd::AsRawFd, unix::net::UnixStream},
-    process::ExitStatus,
     sync::{Arc, OnceLock, mpsc},
 };
 
@@ -21,6 +20,8 @@ pub(crate) struct Child {
     group: Option<crate::process::ChildIdentity>,
 }
 
+use crate::platform::ProcessOutcome;
+
 impl Child {
     pub fn stdin(&mut self) -> &mut Option<ChildStdin> {
         self.child.stdin()
@@ -35,17 +36,24 @@ impl Child {
     }
 
     /// Wait for the leader, then reap the rest of its group.
-    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.child.wait().await
+    pub async fn wait(&mut self) -> io::Result<ProcessOutcome> {
+        self.child.wait().await.map(ProcessOutcome::from_native)
     }
 
     /// Session liveness is the leader's, not its descendants'.
-    pub async fn wait_leader(&mut self) -> io::Result<ExitStatus> {
-        self.child.inner_mut().wait().await
+    pub async fn wait_leader(&mut self) -> io::Result<ProcessOutcome> {
+        self.child
+            .inner_mut()
+            .wait()
+            .await
+            .map(ProcessOutcome::from_native)
     }
 
-    pub fn try_wait_leader(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.child.inner_mut().try_wait()
+    pub fn try_wait_leader(&mut self) -> io::Result<Option<ProcessOutcome>> {
+        self.child
+            .inner_mut()
+            .try_wait()
+            .map(|status| status.map(ProcessOutcome::from_native))
     }
 
     /// Ask the group to stop with SIGTERM.
@@ -67,7 +75,7 @@ impl Child {
         Ok(())
     }
 
-    pub async fn cleanup(&mut self) -> io::Result<ExitStatus> {
+    pub async fn cleanup(&mut self) -> io::Result<ProcessOutcome> {
         self.kill()?;
         self.wait().await
     }
@@ -122,7 +130,7 @@ fn process_group_exited(pgid: u32) -> io::Result<bool> {
     for pid in pids.into_iter().take(read as usize) {
         // Include zombies explicitly. ESRCH means the listed member was reaped
         // during inspection; every other lookup error must remain an error.
-        match process_info(pid, 1) {
+        match process_info(pid) {
             Ok(info)
                 if info.pbi_pgid == pgid as u32
                     && info.pbi_status != libc::SZOMB
@@ -267,7 +275,7 @@ pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
 #[cfg(target_os = "macos")]
 pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
     let pid = i32::try_from(pid).map_err(|_| io::ErrorKind::InvalidInput)?;
-    let info = process_info(pid, 1)?;
+    let info = process_info(pid)?;
     if info.pbi_status == libc::SZOMB || info.pbi_flags & PROC_FLAG_INEXIT != 0 {
         Err(io::ErrorKind::NotFound.into())
     } else {
@@ -283,7 +291,7 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     if pid <= 0 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    process_birth_time(process_info(pid, 1)?)
+    process_birth_time(process_info(pid)?)
 }
 
 #[cfg(target_os = "macos")]
@@ -296,7 +304,10 @@ fn process_birth_time(info: libc::proc_bsdinfo) -> io::Result<u64> {
 }
 
 #[cfg(target_os = "macos")]
-fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo> {
+fn process_info(pid: i32) -> io::Result<libc::proc_bsdinfo> {
+    // Retrieve an unreaped process's identity too; liveness callers distinguish a
+    // zombie from an active member by inspecting its status and flags.
+    const INCLUDE_ZOMBIES: u64 = 1;
     let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
     let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
     // SAFETY: a writable buffer of the exact size required by PROC_PIDTBSDINFO. The
@@ -305,7 +316,7 @@ fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo
         libc::proc_pidinfo(
             pid,
             libc::PROC_PIDTBSDINFO,
-            include_zombies,
+            INCLUDE_ZOMBIES,
             info.as_mut_ptr().cast(),
             size,
         )
@@ -344,7 +355,8 @@ pub(crate) struct Gate {
 
 impl Gate {
     pub async fn pid(&self) -> io::Result<u32> {
-        let mut bytes = [0; 4];
+        // The child writes its PID as a native-endian u32.
+        let mut bytes = [0; size_of::<u32>()];
         let mut offset = 0;
         while offset < bytes.len() {
             let mut ready = self.socket.readable().await?;

@@ -2,6 +2,7 @@
   // The shown Run's graph: a click on an Artifact opens its Detail. Its headline is the Main
   // area's header row's (RunHeadline).
   import type { BranchKey, RunPanel } from "../ipc/client";
+  import GraphTools from "./GraphTools.svelte";
 
   let {
     run,
@@ -26,7 +27,7 @@
 <div class="run">
   <!-- Loaded on first use: the graph's libraries stay out of the window's start-up. -->
   {#await import("./SourceGraph.svelte")}
-    <p class="empty">Loading the Run…</p>
+    <div class="pending"><GraphTools /><p class="empty">Loading the Run…</p></div>
   {:then { default: SourceGraph }}
     <SourceGraph source={{ kind: "run", run: run.id }} {branch} {revision} {opened} {onopen} {onclose} />
   {/await}
@@ -38,6 +39,12 @@
     display: grid;
     grid-template-rows: minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  /* Nothing to act on yet: the tool strip in its place, the line below it. */
+  .pending {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
   }
   .empty {

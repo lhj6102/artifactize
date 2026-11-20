@@ -56,36 +56,47 @@ struct RegisteredTool<'a> {
 #[serde(rename_all = "camelCase")]
 struct ToolContext {
     artifact_id: crate::config::ArtifactName,
-    #[serde(with = "crate::platform::path_serde")]
-    artifact_path: PathBuf,
+    artifact_path: ContextTarget,
     scope: BTreeMap<crate::config::ArtifactName, ContextArtifact>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     execution_paths: BTreeMap<crate::config::LogicalPath, ContextPath>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        with = "crate::platform::path_serde::option"
+        serialize_with = "crate::platform::path_serde::native::serialize"
     )]
     output_dir: Option<PathBuf>,
+    // The tool program writes into these folders: they are given in native spelling.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        with = "crate::platform::path_serde::option"
+        serialize_with = "crate::platform::path_serde::native::serialize"
     )]
     tmp_dir: Option<PathBuf>,
 }
 #[derive(Serialize)]
 struct ContextArtifact {
-    #[serde(with = "crate::platform::path_serde")]
-    path: PathBuf,
+    path: ContextTarget,
     kind: crate::config::ArtifactKind,
     nested: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    covering_part: Option<crate::config::ArtifactName>,
     /// An aspect's selected paths below `path`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     select: Vec<crate::config::LogicalPath>,
 }
-#[derive(Serialize)]
-struct ContextPath(#[serde(with = "crate::platform::path_serde")] PathBuf);
+/// Tool context exposes absolute physical paths, not project-relative Artifact targets.
+#[derive(Clone, Serialize)]
+#[serde(untagged)]
+enum ContextTarget {
+    Local(ContextPath),
+    Live(crate::config::Uri),
+}
+#[derive(Clone, Serialize)]
+// The tool program opens these paths: they are given in native spelling.
+struct ContextPath(
+    #[serde(serialize_with = "crate::platform::path_serde::native::serialize_path")] PathBuf,
+);
 
 struct Invocation {
     cwd: PathBuf,
@@ -106,11 +117,11 @@ pub struct Registry<'a> {
 }
 
 impl<'a> Registry<'a> {
-    pub fn new(config: &'a RepoConfig, eval_id: &str) -> Result<Self, String> {
+    pub fn new(config: &'a RepoConfig, eval_id: &crate::types::EvalId) -> Result<Self, String> {
         let eval = config
             .evals
             .iter()
-            .find(|eval| eval.id == eval_id)
+            .find(|eval| &eval.id == eval_id)
             .ok_or_else(|| format!("Unknown eval: {eval_id}"))?;
         if !matches!(eval.declaration.profile(), Profile::Agent { .. }) {
             return Err("Agent tools require an Agent eval.".into());
@@ -121,11 +132,13 @@ impl<'a> Registry<'a> {
         )
     }
 
-    pub fn for_artifact(config: &'a RepoConfig, artifact_id: &str) -> Result<Self, String> {
-        let artifact_id: crate::config::ArtifactName = artifact_id.parse()?;
+    pub fn for_artifact(
+        config: &'a RepoConfig,
+        artifact_id: &crate::config::ArtifactName,
+    ) -> Result<Self, String> {
         Self::with_scope(
             config,
-            scope::artifact_scope(config, &[&artifact_id]).map_err(|e| e.to_string())?,
+            scope::artifact_scope(config, &[artifact_id]).map_err(|e| e.to_string())?,
         )
     }
 
@@ -210,9 +223,11 @@ impl<'a> Registry<'a> {
             .get(name)
             .ok_or("Unknown registered Agent tool.")?;
         let owner = &tool.definition.artifact_id;
-        self.scope
-            .resolve_input(&self.config.root, owner, "")
-            .map_err(|e| e.to_string())?;
+        if self.scope.artifacts[owner].path.local().is_some() {
+            self.scope
+                .resolve_input(&self.config.root, owner, "")
+                .map_err(|e| e.to_string())?;
+        }
         if let AgentTool::Command(command) = tool.declaration {
             preflight_executable(&self.config.root, &self.scope, owner, &command.command)?;
             if let Some(name) = &command.session {
@@ -257,6 +272,24 @@ impl<'a> Registry<'a> {
         args: Value,
         output_root: &Path,
         cancellation: CancellationToken,
+    ) -> ToolResult {
+        self.call_with_cleanup(
+            name,
+            args,
+            output_root,
+            cancellation,
+            crate::platform::PrivateTempDir::close,
+        )
+        .await
+    }
+
+    async fn call_with_cleanup(
+        &self,
+        name: &str,
+        args: Value,
+        output_root: &Path,
+        cancellation: CancellationToken,
+        cleanup: impl FnOnce(crate::platform::PrivateTempDir) -> std::io::Result<()> + Send + 'static,
     ) -> ToolResult {
         let Some(tool) = self.tools.get(name) else {
             return ToolResult::error("Unknown registered Agent tool.");
@@ -360,6 +393,7 @@ impl<'a> Registry<'a> {
                         &output_root,
                         cancellation,
                         environment,
+                        cleanup,
                     )
                     .await
                 })
@@ -428,15 +462,24 @@ impl<'a> Registry<'a> {
             .artifacts
             .values()
             .map(|artifact| {
-                let path = scope::scoped_path(&self.config.root, artifact.referenced_path())
-                    .map_err(|_| ())?;
+                let path = match &artifact.path {
+                    crate::config::Target::Live(uri) => ContextTarget::Live(uri.clone()),
+                    _ => ContextTarget::Local(ContextPath(
+                        scope::scoped_path(
+                            &self.config.root,
+                            artifact.referenced_path().ok_or(())?,
+                        )
+                        .map_err(|_| ())?,
+                    )),
+                };
                 Ok((
                     artifact.name.clone(),
                     ContextArtifact {
                         path,
-                        kind: artifact.kind,
+                        kind: artifact.kind(),
                         nested: artifact.nested.clone(),
-                        select: artifact.select.clone(),
+                        covering_part: artifact.covering_part.clone(),
+                        select: artifact.select().to_vec(),
                     },
                 ))
             })
@@ -489,7 +532,7 @@ fn preflight_executable(
         .map_err(|_| "Tool executable path is unavailable or outside scope.".to_owned())?;
     let cwd = scope::scoped_path(root, scope.artifacts[owner].folder())
         .map_err(|error| error.to_string())?;
-    crate::platform::program::resolve(&program, &cwd)
+    crate::platform::program::resolve(Path::new(&program), &cwd)
         .map(|_| ())
         .map_err(|_| {
             format!(
@@ -506,13 +549,11 @@ async fn invoke(
     output_root: &Path,
     cancellation: CancellationToken,
     environment: Option<sessions::ownership::Call>,
+    cleanup: impl FnOnce(crate::platform::PrivateTempDir) -> std::io::Result<()>,
 ) -> ToolResult {
     let run = || {
         let root = workspace::prepare_directory(output_root, workspace).map_err(|_| ())?;
-        tempfile::Builder::new()
-            .prefix("tool-")
-            .tempdir_in(root)
-            .map_err(|_| ())
+        crate::platform::private_tempdir_in("tool-", &root).map_err(|_| ())
     };
     let Ok(directory) = run() else {
         return ToolResult::error("Agent tool preparation failed.");
@@ -582,7 +623,7 @@ async fn invoke(
         }
     }
     .await;
-    let cleaned = directory.close();
+    let cleaned = cleanup(directory);
     if cancellation.is_cancelled() {
         return ToolResult::error("Agent tool call was cancelled.");
     }

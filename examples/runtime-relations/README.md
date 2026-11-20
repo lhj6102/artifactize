@@ -15,9 +15,10 @@ runtime-relations/
 
 What it demonstrates:
 
-- **Parts.** `guide/intro` and `guide/usage` have their own `index.artf`,
-  so they are separate Artifacts, and because `guide`'s folder holds them they are
-  parts of `guide`: `guide` passes only when they pass too, and
+- **Parts.** `.artifactize/intro.artf` and `.artifactize/usage.artf` target
+  `guide/intro/` and `guide/usage/`. `.artifactize/guide.artf` explicitly lists both
+  names in `parts`: target nesting alone creates no relation. `guide` passes only
+  when they pass too, and
   `artifactize verify guide` runs or reuses all three evals. Being part of `guide`
   makes them no input of its evals, and their folders' files are not `guide`'s.
   `guide/terms` reads both pages, so it names them, and that is why it waits for
@@ -31,11 +32,12 @@ What it demonstrates:
   `{usage}/page.md` are resolved to absolute paths before the command runs.
 - **Runtime evals.** The exit code is the verdict: 0 is GREEN, anything else is RED.
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
-  `python3 check_terms.py`. Each command runs from its owner's folder with only
-  `PATH` and `LANG` inherited.
+  `python3 check_terms.py`. Each command runs from its owner's folder with the
+  author's environment.
 - **Content fingerprint and reuse.** Each Artifact omits `fingerprint`, so it uses the
-  built-in content fingerprint, artifactsum, which hashes the Artifact's own files (nested
-  Artifact folders, file parts, aspect selections, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded). An eval's reuse key adds the
+  built-in content fingerprint, artifactsum, which hashes the Artifact's own files (the targets of declared parts, including folder and file parts and
+  aspect selections, excluded). Built-in ignores and `.gitignore` still apply;
+  `.artf` files are ordinary inputs, with their non-structural annotations removed. An eval's reuse key adds the
   fingerprints of its target's parts (recursively) and the Artifacts it names: `guide/terms` depends on `intro`,
   `usage` and `glossary`. That is
   why the `glossary` basis participates in reuse too. The default fingerprint is

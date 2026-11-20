@@ -114,7 +114,8 @@ pub enum ResultEntry {
     Items { key: String, items: Vec<ResultItem> },
 }
 
-/// A finding: its rule and place as the head (`item · where`), then its other fields.
+/// A finding: its priority, or its rule and place, as the head (`P1`, `item · where`), then
+/// its other fields.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ResultItem {
@@ -129,6 +130,8 @@ pub struct CardView {
     pub instruction: String,
     /// `None` until the eval has a result.
     pub result: Option<Vec<ResultEntry>>,
+    /// The whole result as saved, for Debug.
+    pub raw: Option<String>,
     pub exit_code: Option<i32>,
     pub error: Option<String>,
     pub reused: bool,
@@ -144,6 +147,9 @@ fn text(value: &serde_json::Value) -> String {
     }
 }
 
+/// The fields a finding leads with: an Agent finding's priority, a Human finding's rule and place.
+const HEAD: [&str; 3] = ["priority", "item", "where"];
+
 fn result_item(value: &serde_json::Value) -> ResultItem {
     let Some(object) = value.as_object() else {
         return ResultItem {
@@ -151,7 +157,7 @@ fn result_item(value: &serde_json::Value) -> ResultItem {
             fields: Vec::new(),
         };
     };
-    let head: Vec<_> = ["item", "where"]
+    let head: Vec<_> = HEAD
         .into_iter()
         .filter_map(|key| object.get(key).map(text))
         .collect();
@@ -159,7 +165,7 @@ fn result_item(value: &serde_json::Value) -> ResultItem {
         head: (!head.is_empty()).then(|| head.join(" · ")),
         fields: object
             .iter()
-            .filter(|(key, _)| !matches!(key.as_str(), "item" | "where"))
+            .filter(|(key, _)| !HEAD.contains(&key.as_str()))
             .map(|(key, value)| Field {
                 key: key.clone(),
                 value: text(value),
@@ -168,25 +174,31 @@ fn result_item(value: &serde_json::Value) -> ResultItem {
     }
 }
 
+/// A result's fields as entries, in their order: a list as its items, any other value as text.
+pub fn result_entries<'a>(
+    fields: impl IntoIterator<Item = (&'a String, &'a serde_json::Value)>,
+) -> Vec<ResultEntry> {
+    fields
+        .into_iter()
+        .map(|(key, value)| match value {
+            serde_json::Value::Array(items) => ResultEntry::Items {
+                key: key.clone(),
+                items: items.iter().map(result_item).collect(),
+            },
+            other => ResultEntry::Text {
+                key: key.clone(),
+                text: text(other),
+            },
+        })
+        .collect()
+}
+
 impl From<monitor::Card> for CardView {
     fn from(card: monitor::Card) -> Self {
         Self {
             instruction: card.instruction,
-            result: card.result.map(|entries| {
-                entries
-                    .iter()
-                    .map(|(key, value)| match value {
-                        serde_json::Value::Array(items) => ResultEntry::Items {
-                            key: key.clone(),
-                            items: items.iter().map(result_item).collect(),
-                        },
-                        other => ResultEntry::Text {
-                            key: key.clone(),
-                            text: text(other),
-                        },
-                    })
-                    .collect()
-            }),
+            result: card.result.as_ref().map(result_entries),
+            raw: card.raw,
             exit_code: card.exit_code,
             error: card.error,
             reused: card.reused,
@@ -302,7 +314,7 @@ pub fn view(
                 })
                 .collect(),
             took: progress.elapsed.clone(),
-            finished: progress.finished,
+            finished: progress.finished(),
             comment: progress.comment.clone(),
         }
     });
@@ -312,7 +324,14 @@ pub fn view(
             let fields: Vec<_> = detail
                 .fields
                 .iter()
-                .filter(|(key, _)| Section::of(key) == section)
+                .filter(|(key, _)| {
+                    let group = if outcome.is_some() && *key == "Waiting" {
+                        Section::Waits
+                    } else {
+                        Section::of(key)
+                    };
+                    group == section
+                })
                 .filter(|(key, _)| outcome.is_none() || !OUTCOME.contains(key))
                 .collect();
             if fields.is_empty() {

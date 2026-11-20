@@ -20,12 +20,5 @@ fn fingerprint_parallelism(options: &VerifyOptions) -> Result<crate::cache::Para
     if jobs == 0 {
         return Err("fingerprint jobs must be at least 1.".into());
     }
-    // Tokio's semaphore has a platform-sized permit ceiling; external input must not panic.
-    if jobs > tokio::sync::Semaphore::MAX_PERMITS {
-        return Err(format!(
-            "fingerprint jobs must be at most {}.",
-            tokio::sync::Semaphore::MAX_PERMITS
-        ));
-    }
-    Ok(crate::cache::Parallelism::new(jobs))
+    crate::cache::Parallelism::new(jobs)
 }

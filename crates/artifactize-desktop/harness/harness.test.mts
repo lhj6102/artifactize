@@ -12,7 +12,7 @@ import { PassThrough } from "node:stream";
 import { it, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { commandStream, forwardReadiness } from "./harness.mts";
-import { embeddedPorts } from "../ui/e2e/platform.ts";
+import { embeddedPorts } from "../ui/e2e/portable.ts";
 
 const harness = fileURLToPath(new URL("./harness.mts", import.meta.url));
 

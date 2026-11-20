@@ -91,6 +91,35 @@ describe("Review", () => {
     expect(review.form?.values.comment).toEqual({ kind: "text", value: "x" });
   });
 
+  it("keeps the claim and the open form when a read from before the claim answers after it", async () => {
+    // The first read is held until the test answers it; the claim reads after it.
+    let answer!: () => void;
+    const held = new Promise<void>((done) => (answer = done));
+    let opened = 0;
+    mockIPC(async (cmd, args) => {
+      if (cmd === "human_open") {
+        opened += 1;
+        if (opened === 2) await held;
+        return humanView("claim", { read: opened });
+      }
+      if (cmd === "human_claim") return { notice: { text: "Claimed.", error: false }, view: humanView("review", { read: 3 }) };
+      if (cmd === "human_form") return greenForm;
+      if (cmd === "human_edit_field") return (args as { draft: unknown }).draft;
+      return null;
+    });
+    const review = new Review("run-a-2", new Jobs());
+    await review.load();
+    const late = review.load();
+    await waitFor(() => expect(opened).toBe(2));
+    await review.claim();
+    await review.choose("GREEN");
+    expect(review.owned).toBe(true);
+    answer();
+    await late;
+    expect(review.view?.stage).toBe("review");
+    expect(review.form?.verdict).toBe("GREEN");
+  });
+
   it("runs a tool for its notice; its lines arrive in the Tool log on their own", async () => {
     mockIPC(async (cmd) => {
       if (cmd === "human_open") return humanView("review");

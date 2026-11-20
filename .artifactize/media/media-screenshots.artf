@@ -1,0 +1,36 @@
+path = "assets/screenshots/"
+
+# The review captures the scenes again into its own folder, outside the repository.
+[views.agent_sessions.capture]
+start = { command = "node", args = ["{media-screenshots-script}", "session"] }
+stop = { command = "node", args = ["{media-screenshots-script}", "stop"] }
+
+[views.agent_tools]
+list = { builtin = "list" }
+view_image = { description = "View a screenshot saved in {artifactName}, such as monitor.png.", builtin = "view_image" }
+
+[views.agent_tools.fresh]
+session = "capture"
+description = "View a screenshot just captured from the current app by the screenshots' script: monitor.png, detail.png or review.png."
+command = "node"
+args = ["{media-screenshots-script}", "fresh"]
+protocol = "json"
+
+[views.agent_tools.fresh.input_schema]
+type = "object"
+properties.name = { enum = ["monitor.png", "detail.png", "review.png"] }
+required = ["name"]
+additionalProperties = false
+
+[evals.matches-capture]
+title = "The saved screenshots show what the script captures from the current app"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.matches-capture.payload]
+instruction = """
+{media-screenshots} holds the screenshots {media-screenshots-script} captured from the desktop app, \
+built from {desktop-backend} and {desktop-ui} and driven through {desktop-e2e}. For each of monitor.png, detail.png and \
+review.png, view the saved one with view_image and the one just captured from the current \
+app with fresh, and compare them. Ignore what differs on every capture: Run and request \
+IDs, times, durations, temporary paths and fingerprints. Every pair shows the same screen with the same layout, controls, text and colours; each screenshot that differs is a finding, saying what changed, and the script then runs again to replace the saved screenshots."""

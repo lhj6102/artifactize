@@ -128,6 +128,17 @@ export const commands = {
 	currentScan: (branch: BranchKey, refresh: boolean) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_scan", { branch, refresh })),
 	/**  The newest step of `branch`'s Current, without scanning. */
 	currentView: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_view", { branch })),
+	/**  The definitions of `branch`'s worktree as they are now. */
+	definitions: (branch: BranchKey) => typedError<DefinitionsView, Failure>(__TAURI_INVOKE("definitions", { branch })),
+	/**
+	 *  Apply `operation` to `branch`'s definitions, `shown` holding the text of each file as it was
+	 *  shown, by its path relative to the project. The library says which files the edit writes;
+	 *  each is based on the text shown, a new one on nothing, so a file that changed on disk since,
+	 *  or that was never shown, refuses the edit. Nothing is written when it is refused.
+	 */
+	definitionEdit: (branch: BranchKey, shown: { [key in string]: string }, operation: EditOperation) => typedError<EditOutcome, Failure>(__TAURI_INVOKE("definition_edit", { branch, shown, operation })),
+	/**  Check `operation` on `branch`'s definitions as they are now, writing nothing. */
+	definitionCheck: (branch: BranchKey, operation: EditOperation) => typedError<EditCheck, Failure>(__TAURI_INVOKE("definition_check", { branch, operation })),
 	/**
 	 *  The Human tools Artifact `artifact` declares in `branch`'s worktree as it is now, with
 	 *  what running each does.
@@ -302,10 +313,8 @@ export type BrowseView = {
 	waiting: WaitingRow[],
 	/**  The branch of the folder the app was started for. */
 	launch: BranchKey | null,
-	/**  The shown Run, once read. */
-	run: RunPanel | null,
-	/**  The shown Run no longer exists or cannot be read. */
-	missing: boolean,
+	/**  The Run shown in the Main area: none, read, or no longer there to read. */
+	run: ShownRun,
 	/**  What went wrong: a failed read, Run records that cannot be read. */
 	notice: string | null,
 	/**  False until the first snapshot was read. */
@@ -325,6 +334,8 @@ export type CardView = {
 	instruction: string,
 	/**  `None` until the eval has a result. */
 	result: ResultEntry[] | null,
+	/**  The whole result as saved, for Debug. */
+	raw: string | null,
 	exitCode: number | null,
 	error: string | null,
 	reused: boolean,
@@ -439,6 +450,42 @@ export type CustomProvider = {
 	target: Target,
 };
 
+/**  What an Artifact's PATH names, as the library reads it. */
+export type DefinitionKind = "folder" | "file" | "aspect" | "graph" | 
+/**  An address outside the worktree: a Live Artifact. */
+"live";
+
+/**  One Artifact's definition as its file says now. */
+export type DefinitionNode = {
+	name: string,
+	/**  Its file, relative to the project, with `/`. */
+	definition: string,
+	/**  Its PATH as written: a folder ends in `/`, a Live Artifact is an address. */
+	target: string,
+	kind: DefinitionKind,
+	targetMissing: boolean,
+	/**  Its parts, by name; none while the project does not read. */
+	parts: string[],
+	/**  Its own place at the top level, when the top level is placed by hand. */
+	at: [(number | null), (number | null)] | null,
+	/**  Its parts' places inside its box, by part, when the box is placed by hand. */
+	places: { [key in string]: [(number | null), (number | null)] },
+	comment: string | null,
+	/**  Why its place or its comment cannot be read; drawing ignores them. */
+	styleError: string | null,
+	commentError: string | null,
+};
+
+/**
+ *  A branch's definitions, and the exact text of every definition file, which the next edit
+ *  names as what it was based on.
+ */
+export type DefinitionsView = {
+	nodes: DefinitionNode[],
+	/**  Each definition file's text, by its path relative to the project, with `/`. */
+	files: { [key in string]: string },
+};
+
 /**  What a Detail describes, from the library's [`Target`]. */
 export type DetailTarget = "run" | "artifact" | "eval";
 
@@ -472,6 +519,32 @@ export type Draft = {
 	verdict: Verdict,
 	fields: ([string, FieldValue])[],
 };
+
+/**
+ *  What the library says of an edit before it is made: the definition files it would write, by
+ *  their paths relative to the project, or why it would refuse it.
+ */
+export type EditCheck = { kind: "checked"; files: string[] } | { kind: "refused"; refusal: EditRefusal };
+
+/**  An edit of a branch's definitions, the library's [`edit::Operation`] by name. */
+export type EditOperation = { kind: "create"; name: string; path: string } | { kind: "setPath"; name: string; path: string } | { kind: "addPart"; whole: string; part: string; at: [(number | null), (number | null)] | null } | { kind: "removePart"; whole: string; part: string } | { kind: "movePart"; part: string; from: string | null; to: string | null; at: [(number | null), (number | null)] | null } | { kind: "saveSource"; name: string; source: string } | { kind: "rename"; old: string; new: string } | { kind: "delete"; name: string } | { kind: "savePlaces"; places: { [key in string]: [(number | null), (number | null)] } } | { kind: "resetPlaces"; whole: string | null } | { kind: "setComment"; name: string; text: string } | { kind: "moveComment"; from: string; to: string };
+
+/**
+ *  What an edit did: written, or refused with why. Either way the caller reads the
+ *  definitions again before the next edit.
+ */
+export type EditOutcome = { kind: "written" } | { kind: "refused"; refusal: EditRefusal };
+
+/**  Why an edit wrote nothing. */
+export type EditRefusal = 
+/**  The result would not be a valid project. */
+{ kind: "invalid"; file: string; message: string; line: number | null; column: number | null } | 
+/**  A file the edit writes changed on disk since it was read. */
+{ kind: "changed"; file: string } | 
+/**  The edit is not allowed: a cycle, a name still in use, a comment already there. */
+{ kind: "notAllowed"; reason: string } | 
+/**  Reading or writing failed. */
+{ kind: "io"; message: string };
 
 /**  The API a custom endpoint speaks. */
 export type EndpointApi = "openaiResponses" | "openaiChat" | "anthropic" | "gemini";
@@ -619,8 +692,15 @@ export type HumanView = {
 	recorded: boolean,
 	/**  A completed request's status and result, or its error. */
 	result: string | null,
+	/**  A completed request's verdict and fields by name, the form's constants left out. */
+	completed: ResultEntry[] | null,
 	/**  The state generation it was read from; a newer one means it no longer applies. */
 	generation: number,
+	/**
+	 *  The number of the read it shows: a view of a lower number was read before it, and
+	 *  never replaces it.
+	 */
+	read: number,
 };
 
 /**  A cancellable job of one Human action, numbered by the frontend. */
@@ -781,8 +861,8 @@ session: string } |
 { kind: "unavailable"; text: string };
 
 /**
- *  A path as the frontend holds it: text with `/` on every system, which `PathBuf` reads back
- *  on all of them. Only this type makes or reads one.
+ *  A path as the frontend holds it: text with `/` on every system and a reversible encoding
+ *  for names that are not Unicode, read back into the same native path where it enters.
  */
 export type PathKey = string;
 
@@ -862,7 +942,10 @@ pushes: Push[] };
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };
 
-/**  A finding: its rule and place as the head (`item · where`), then its other fields. */
+/**
+ *  A finding: its priority, or its rule and place, as the head (`P1`, `item · where`), then
+ *  its other fields.
+ */
 export type ResultItem = {
 	head: string | null,
 	fields: Field[],
@@ -969,6 +1052,17 @@ export type Share =
 "summary" | 
 /**  Also the saved execution as is. */
 "full";
+
+/**  The Run the Main area shows. */
+export type ShownRun = 
+/**  No Run is shown. */
+{ kind: "none" } | 
+/**  The shown Run, read. */
+{
+	kind: "read",
+} & RunPanel | 
+/**  The shown Run no longer exists or cannot be read. */
+{ kind: "missing" };
 
 /**  A Codex sign-in in progress. */
 export type SignInId = number;

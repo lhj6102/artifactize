@@ -22,7 +22,7 @@ impl Fixture {
     fn write(&self, path: &str, contents: &str) {
         let path = self.0.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        crate::test_declaration::write(path, contents).unwrap();
+        crate::test_declaration::write(&self.0, path, contents).unwrap();
     }
 
     fn artifact(&self, path: &str, value: Value) {
@@ -70,7 +70,7 @@ fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
     fixture.artifact(
         "outer",
         json!({
-            "name":"parent",
+            "name":"parent","parts":["child","neighbor"],
             "evals":[eval("Inspect {child}.")],
             "views":{
                 "agent_tools":{
@@ -79,7 +79,10 @@ fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
             },
         }),
     );
-    fixture.artifact("outer/unmarked/deep", json!({"name":"child"}));
+    fixture.artifact(
+        "outer/unmarked/deep",
+        json!({"name":"child","parts":["leaf"]}),
+    );
     fixture.artifact(
         "outer/unmarked/deep/leaf",
         json!({"name":"leaf","basis":true}),
@@ -122,7 +125,7 @@ fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
             .unwrap(),
         ScopedPath {
             artifact_id: ArtifactId::new("parent").unwrap(),
-            path: "unmarked/material.txt".into(),
+            path: "unmarked/material.txt".parse().unwrap(),
         }
     );
     assert_eq!(
@@ -131,7 +134,7 @@ fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
             .unwrap(),
         ScopedPath {
             artifact_id: ArtifactId::new("child").unwrap(),
-            path: "input.txt".into(),
+            path: "input.txt".parse().unwrap(),
         }
     );
     assert_eq!(
@@ -164,7 +167,7 @@ fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
 fn parts_join_what_a_folder_holds_and_may_be_shared_but_never_circular() {
     let fixture = Fixture::new();
     // A shared module is a part of both apps; the ui is a part of app1 by its folder alone.
-    fixture.artifact("app1", json!({"name":"app1","parts":["module"]}));
+    fixture.artifact("app1", json!({"name":"app1","parts":["module","ui"]}));
     fixture.artifact("app1/ui", json!({"name":"ui"}));
     fixture.artifact("app2", json!({"name":"app2","parts":["module"]}));
     fixture.artifact("module", json!({"name":"module"}));
@@ -235,7 +238,7 @@ fn references_keep_canonical_ids() {
     );
     let source = &eval.declaration.payload().as_ref().unwrap().instruction;
     assert_eq!(
-        parse_artifact_instruction(source, &scope, &eval.references),
+        artifact_instruction(eval),
         vec![
             InstructionPart::Text("Read ".into()),
             InstructionPart::Artifact("input".parse().unwrap()),
@@ -289,10 +292,11 @@ fn observation_scope_never_follows_other_evals_instructions() {
             .contains("outside this review")
     );
     assert_eq!(
-        parse_artifact_instruction("{hidden} {input}", &scope, &BTreeMap::new()),
+        artifact_instruction(eval),
         vec![
-            InstructionPart::Text("{hidden} ".into()),
+            InstructionPart::Text("Read ".into()),
             InstructionPart::Artifact("input".parse().unwrap()),
+            InstructionPart::Text(".".into()),
         ]
     );
 }
@@ -477,13 +481,13 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     };
     let resolved = resolve_argv(&config, &scope, &"review".parse().unwrap(), args).unwrap();
     let file = fixture.0.join("data").join("sub").join("file");
-    let file = crate::platform::path_text(&file);
+    let file = file.to_str().unwrap();
     assert_eq!(
         &resolved[..3],
         [
-            file.clone(),
+            file.to_owned(),
             format!("--data={file}"),
-            crate::platform::path_text(&fixture.0.join("data"))
+            fixture.0.join("data").to_str().unwrap().to_owned()
         ]
     );
     assert_eq!(&resolved[3..], &args[3..]);
@@ -499,7 +503,7 @@ fn an_argument_path_into_a_nested_artifact_names_that_artifact_instead() {
     declared["profile"] = json!({"kind":"runtime","command":crate::test_os::cat_program(),
         "args":["{input}/nested/file"]});
     fixture.artifact("review", json!({"name":"review","evals":[declared]}));
-    fixture.artifact("data", json!({"name":"input"}));
+    fixture.artifact("data", json!({"name":"input","parts":["child"]}));
     fixture.artifact("data/nested", json!({"name":"child"}));
     let error = read_workspace_config(&fixture.0).unwrap_err().to_string();
     assert!(

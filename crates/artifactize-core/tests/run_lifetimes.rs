@@ -28,20 +28,7 @@ async fn subscribed<T>(
     let _namespace = Namespace(
         artifactize_core::changes::namespace(state).expect("the fixture state's IPC namespace"),
     );
-    let mut changes = Subscription::new(state).await;
-    let observed = std::panic::AssertUnwindSafe(async { observe(&mut changes).await })
-        .catch_unwind()
-        .await;
-    let closed = std::panic::AssertUnwindSafe(changes.close())
-        .catch_unwind()
-        .await;
-    match (observed, closed) {
-        (Err(panic), _) | (_, Err(panic)) => std::panic::resume_unwind(panic),
-        (Ok(value), Ok(closed)) => {
-            closed.expect("join the fixture subscription's shutdown");
-            value
-        }
-    }
+    support::runs::with_subscription(state, observe).await
 }
 
 #[tokio::test]
@@ -58,7 +45,7 @@ async fn terminal_cleanup_waits_for_a_late_supervisor_before_releasing_its_state
         .unwrap();
     let database = state.join(store::DATABASE);
     let start = || {
-        let mut command = std::process::Command::new(support::os::python_program());
+        let mut command = std::process::Command::new(support::os::sqlite_python());
         command.args(["-I", "-c", "import sqlite3,sys\ndb=sqlite3.connect(sys.argv[1])\nprint('holding',flush=True)\nsys.stdin.buffer.read()\ndb.close()"])
             .arg(&database).current_dir(&state);
         support::os::spawn_piped_test(command)
@@ -73,7 +60,7 @@ async fn terminal_cleanup_waits_for_a_late_supervisor_before_releasing_its_state
     }
     let view = store::RunView {
         run: serde_json::from_value(json!({
-            "id":"run-terminal", "repoPath":repo, "stateDir":state, "status":"GREEN",
+            "id":"run-terminal", "repoPath":support::os::path_text(&repo), "stateDir":support::os::path_text(&state), "status":"GREEN",
             "createdAt":"2026-01-01T00:00:00Z", "completedAt":"2026-01-01T00:00:01Z",
             "selection":{"kind":"all"}, "validation":null,
             "control":{"worker":{"state":"admitted","owner":{"pid":executor.id(),"start_time":support::os::start_time(executor.id())}}, "supervisor":{"pid":supervisor.id(),"start_time":support::os::start_time(supervisor.id())}, "activity":"executing"}
@@ -93,20 +80,27 @@ async fn terminal_cleanup_waits_for_a_late_supervisor_before_releasing_its_state
         {
             // Start a fresh observation after the executor exits, so a pending previous wait
             // cannot mask a barrier that forgot the separately held supervisor.
-            let finished = support::runs::terminal_worker_exited(&view, changes, &cancellation);
+            let (tick, mut ticks) = tokio::sync::mpsc::unbounded_channel();
+            let reconciled = std::cell::Cell::new(false);
+            let finished =
+                support::runs::terminal_worker_exited_on(&view, &cancellation, async || {
+                    ticks
+                        .recv()
+                        .await
+                        .expect("the test sends each reconciliation");
+                    reconciled.set(true);
+                });
             tokio::pin!(finished);
-            // The executor no longer exists. Its supervisor still owns an idle SQLite handle
-            // and its cwd, so a saved terminal receipt cannot yet authorize root deletion.
             assert!(futures_util::poll!(&mut finished).is_pending());
+            // Reconcile while the supervisor still owns its SQLite connection and cwd.
+            // A terminal receipt and the executor's exit do not authorize root deletion.
+            tick.send(()).unwrap();
+            assert!(futures_util::poll!(&mut finished).is_pending());
+            assert!(reconciled.get(), "the barrier consumed the reconciliation");
             drop(release_supervisor);
             assert!(supervisor.wait().await.unwrap().success());
-            tokio::time::timeout(
-                support::os::patience(Duration::from_secs(20)),
-                &mut finished,
-            )
-            .await
-            .expect("observe supervisor exit")
-            .unwrap();
+            tick.send(()).unwrap();
+            finished.await.unwrap();
         }
     })
     .await;
@@ -131,15 +125,32 @@ async fn subscription_closes_sqlite_before_propagating_assertion_and_watchdog_pa
         let failed = std::panic::AssertUnwindSafe(subscribed(&state, async |_changes| {
             assert!(!support::os::database_released(&database).unwrap());
             if watchdog {
-                tokio::time::timeout(Duration::ZERO, std::future::pending::<()>())
-                    .await
-                    .expect("fixture observation watchdog");
+                tokio::time::pause();
+                support::runs::worker_exit_watchdog(
+                    Duration::from_millis(1),
+                    std::future::pending::<()>(),
+                )
+                .await;
             }
             panic!("fixture observation assertion");
         }))
         .catch_unwind()
         .await;
-        assert!(failed.is_err());
+        let panic = failed.expect_err("the scripted observation must panic");
+        let message = panic
+            .downcast_ref::<&'static str>()
+            .copied()
+            .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
+        if watchdog {
+            tokio::time::resume();
+            assert!(
+                message.is_some_and(|text| text
+                    .starts_with("terminal fixture worker exits before the byte baseline:")),
+                "unexpected panic: {message:?}"
+            );
+        } else {
+            assert_eq!(message, Some("fixture observation assertion"));
+        }
         assert!(support::os::database_released(&database).unwrap());
         root.close().unwrap();
     }

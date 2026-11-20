@@ -7,8 +7,8 @@ import { emit } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App.svelte";
-import { browseView } from "../monitor/fixtures";
-import type { LaunchView, Navigate } from "../ipc/client";
+import { branch, browseView, runChip } from "../monitor/fixtures";
+import type { BrowseView, LaunchView, Navigate } from "../ipc/client";
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ onCloseRequested: async () => () => {}, destroy: async () => {} }),
@@ -22,7 +22,7 @@ vi.hoisted(() => {
 const launch: LaunchView = { mode: "monitor", state: "/state", reviewer: "alice", request: null };
 
 /** A read the test answers, optionally with a notice that shows once the window took it. */
-type Read = { navigate: Navigate; answer: (notice?: string) => Promise<void>; fail: (message: string) => Promise<void> };
+type Read = { navigate: Navigate; answer: (notice?: string, branches?: BrowseView["branches"]) => Promise<void>; fail: (message: string) => Promise<void> };
 
 /** Every browse read waits until the test answers it, in the order the window asked. */
 function backend(): Read[] {
@@ -37,7 +37,7 @@ function backend(): Read[] {
           return new Promise((resolve, reject) =>
             reads.push({
               navigate: (args as { navigate: Navigate }).navigate,
-              answer: (notice) => completed(() => resolve(browseView(++revision, notice ? { notice } : {}))),
+              answer: (notice, branches = []) => completed(() => resolve(browseView(++revision, { notice: notice ?? null, branches }))),
               fail: (message) => completed(() => reject({ kind: "read", message })),
             }),
           );
@@ -110,15 +110,32 @@ describe("the manual refresh witness", () => {
     // Dispatched but unanswered is not done.
     expect(witnessed()).toBeNull();
     await manual.answer();
-    await vi.waitFor(() => expect(witnessed()).toEqual({ generation: 1 }), WAIT);
+    await vi.waitFor(() => expect(witnessed()).toEqual({ generation: 1, branches: [] }), WAIT);
 
     await fireEvent.click(screen.getByRole("button", { name: /Commands/ }));
     await fireEvent.click(await screen.findByRole("option", { name: /Refresh/ }));
     const palette = await next(reads, true);
     expect(witnessed()?.generation).toBe(1);
     await palette.answer();
-    await vi.waitFor(() => expect(witnessed()).toEqual({ generation: 2 }), WAIT);
+    await vi.waitFor(() => expect(witnessed()).toEqual({ generation: 2, branches: [] }), WAIT);
     expect(Object.isFrozen(witnessed())).toBe(true);
+  });
+
+  it("records the manual reply, not an unrelated refresh already rendered by the background", async () => {
+    const reads = backend();
+    await mounted(reads);
+    await fireEvent.keyDown(window, { key: "F5" });
+    const manual = await next(reads, true);
+    await emit("state-changed", { resync: false });
+    await (await next(reads, false)).answer("background read", [branch("elsewhere", [])]);
+    await vi.waitFor(() => expect(screen.getByText("background read")).toBeTruthy(), WAIT);
+    expect(witnessed()).toBeNull();
+
+    await manual.answer(undefined, [branch("main", [runChip("run-manual", "GREEN", false, "updated note")]), branch("added-worktree", [])]);
+    await vi.waitFor(() => expect(witnessed()).toEqual({ generation: 1, branches: [
+      { project: "app", name: "main", runs: [{ id: "run-manual", comment: "updated note" }] },
+      { project: "app", name: "added-worktree", runs: [] },
+    ] }), WAIT);
   });
 
   it("never advances while its own read failed or is unanswered, whatever other reads answer", async () => {

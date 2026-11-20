@@ -2,6 +2,12 @@
 use globset::GlobMatcher;
 
 use super::{input, output, relative};
+use crate::scope::InputPath;
+
+/// Reserve one byte per serialized JSON array entry for its comma separator.
+const JSON_SEPARATOR_BYTES: usize = 1;
+/// Read one extra byte to detect growth beyond either advertised search bound.
+const GROWTH_PROBE_BYTES: usize = 1;
 
 pub(super) enum ReadEnd {
     Complete,
@@ -29,7 +35,7 @@ impl Read {
             limit,
             lines: Vec::new(),
             line: Vec::new(),
-            current: 1,
+            current: super::FIRST_LINE,
             returned_bytes: 0,
             partial_line: false,
         }
@@ -113,38 +119,38 @@ pub(super) enum Selection {
     Full,
 }
 pub(super) struct Glob<'a> {
-    path: &'a str,
+    path: InputPath<&'a str>,
     matcher: &'a GlobMatcher,
-    files: Vec<String>,
+    files: Vec<InputPath>,
     bytes: usize,
     truncated: bool,
 }
 impl<'a> Glob<'a> {
-    pub fn new(path: &'a str, matcher: &'a GlobMatcher, truncated: bool) -> Self {
+    pub fn new(path: InputPath<&'a str>, matcher: &'a GlobMatcher, truncated: bool) -> Self {
         Self {
             path,
             matcher,
             files: Vec::new(),
             bytes: super::RESULT_ENVELOPE_BYTES
-                + serde_json::to_vec(path).expect("path is JSON").len(),
+                + serde_json::to_vec(&path).expect("path is JSON").len(),
             truncated,
         }
     }
-    pub fn push(&mut self, file: &str) -> Selection {
+    pub fn push(&mut self, file: InputPath<&str>) -> Selection {
         if !self.matcher.is_match(relative(self.path, file)) {
             return Selection::Skip;
         }
-        self.bytes += serde_json::to_vec(file).expect("path is JSON").len() + 1;
+        self.bytes += serde_json::to_vec(&file).expect("path is JSON").len() + JSON_SEPARATOR_BYTES;
         if self.files.len() == super::MAX_RESULTS || self.bytes > super::RESULT_BYTES {
             self.truncated = true;
             return Selection::Full;
         }
-        self.files.push(file.to_owned());
+        self.files.push(file.owned());
         Selection::Added
     }
     pub fn finish(self) -> output::Glob {
         output::Glob {
-            path: self.path.to_owned(),
+            path: self.path.owned(),
             files: self.files,
             truncated: self.truncated,
         }
@@ -162,7 +168,7 @@ pub(super) enum Received {
     Full,
 }
 pub(super) struct Grep<'a> {
-    path: &'a str,
+    path: InputPath<&'a str>,
     input: &'a input::Grep,
     matches: Vec<output::GrepMatch>,
     searched: usize,
@@ -170,18 +176,18 @@ pub(super) struct Grep<'a> {
     truncated: bool,
 }
 impl<'a> Grep<'a> {
-    pub fn new(path: &'a str, input: &'a input::Grep, truncated: bool) -> Self {
+    pub fn new(path: InputPath<&'a str>, input: &'a input::Grep, truncated: bool) -> Self {
         Self {
             path,
             input,
             matches: Vec::new(),
             searched: 0,
             bytes: super::RESULT_ENVELOPE_BYTES
-                + serde_json::to_vec(path).expect("path is JSON").len(),
+                + serde_json::to_vec(&path).expect("path is JSON").len(),
             truncated,
         }
     }
-    pub fn allows(&self, file: &str) -> bool {
+    pub fn allows(&self, file: InputPath<&str>) -> bool {
         self.input
             .glob
             .as_ref()
@@ -196,9 +202,9 @@ impl<'a> Grep<'a> {
             self.truncated = true;
             return FileRead::Full;
         }
-        // One extra byte detects growth beyond either advertised search bound.
         FileRead::Read(
-            (super::SEARCH_FILE_BYTES.min(super::SEARCH_BYTES - self.searched) + 1) as u64,
+            (super::SEARCH_FILE_BYTES.min(super::SEARCH_BYTES - self.searched) + GROWTH_PROBE_BYTES)
+                as u64,
         )
     }
     pub fn received(&mut self, bytes: usize) -> Received {
@@ -213,18 +219,19 @@ impl<'a> Grep<'a> {
             Received::Text
         }
     }
-    pub fn line(&mut self, path: &str, index: usize, line: &str) -> bool {
+    pub fn line(&mut self, path: InputPath<&str>, index: usize, line: &str) -> bool {
         let line = line.strip_suffix('\n').unwrap_or(line);
         let line = line.strip_suffix('\r').unwrap_or(line);
         if !self.input.pattern.is_match(line) {
             return true;
         }
         let entry = output::GrepMatch {
-            path: path.to_owned(),
+            path: path.owned(),
             line: index + 1,
             text: line.to_owned(),
         };
-        self.bytes += serde_json::to_vec(&entry).expect("match is JSON").len() + 1;
+        self.bytes +=
+            serde_json::to_vec(&entry).expect("match is JSON").len() + JSON_SEPARATOR_BYTES;
         if self.matches.len() == self.input.max_results || self.bytes > super::RESULT_BYTES {
             self.truncated = true;
             return false;
@@ -234,7 +241,7 @@ impl<'a> Grep<'a> {
     }
     pub fn finish(self) -> output::Grep {
         output::Grep {
-            path: self.path.to_owned(),
+            path: self.path.owned(),
             matches: self.matches,
             truncated: self.truncated,
         }
@@ -250,20 +257,20 @@ pub(super) fn text(bytes: &[u8]) -> Option<&str> {
 /// Pagination and serialized-size accounting are independent of directory acquisition.
 pub(super) fn list(
     artifact_id: crate::scope::ArtifactId,
-    path: &str,
+    path: InputPath<&str>,
     entries: Vec<output::Entry>,
     offset: usize,
     limit: usize,
 ) -> Result<output::List, String> {
     let total = entries.len();
     let mut bytes =
-        super::RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).expect("path is JSON").len();
+        super::RESULT_ENVELOPE_BYTES + serde_json::to_vec(&path).expect("path is JSON").len();
     let entries: Vec<_> = entries
         .into_iter()
         .skip(offset)
         .take(limit)
         .take_while(|entry| {
-            bytes += serde_json::to_vec(entry).expect("entry is JSON").len() + 1;
+            bytes += serde_json::to_vec(entry).expect("entry is JSON").len() + JSON_SEPARATOR_BYTES;
             bytes <= super::RESULT_BYTES
         })
         .collect();
@@ -273,7 +280,7 @@ pub(super) fn list(
     let next = offset + entries.len();
     Ok(output::List {
         artifact_id,
-        path: path.to_owned(),
+        path: path.owned(),
         entries,
         total_entries: total,
         page: if next < total {

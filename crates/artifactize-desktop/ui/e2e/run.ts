@@ -1,174 +1,252 @@
-// Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
+// The suite's runner. `suite [ids...]` builds a candidate (or, for named scenarios, copies the
+// one DESKTOP_TEST_CANDIDATE names), runs the scenarios in batches of as many apps as this OS
+// runs at once, each batch a runner of its own on a headless display, and removes what it
+// built. `prepare` and `cleanup <manifest>` build and remove a candidate for later runs, and
+// `unit` runs the suite's own unit tests.
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { basename } from "node:path";
 import { inspect } from "node:util";
-import { assertAppsStopped } from "./observation.ts";
-import { checkIntegrity } from "../lint/e2e-integrity.ts";
+import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
-import {
-  absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nativeCrashReports, nodeProgram, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
-} from "./platform.ts";
+import { selectedScenarios } from "./catalog.ts";
+import { appsAtOnce, assertHeadless, desktopResources, nodeProgram, runnerCommand, systemName, variable } from "./platform.ts";
+import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
+import type { Scenario } from "./scenario.ts";
 
-const file = suitePath("run.ts");
-const ui = absolutePath(suitePath(), "..");
-// Embedded service launches every capability during onPrepare. Bounding the number
-// supplied to one Launcher, rather than scheduling app lifetimes ourselves, bounds
-// simultaneous WebViews and workers on ordinary CI machines.
-const CAPABILITIES_PER_INVOCATION = appsAtOnce;
+/** Scenarios in batches of at most `size`, in their order; one that runs alone has a batch of
+ * its own. */
+export function batches(scenarios: readonly Pick<Scenario, "id" | "alone">[], size: number): string[][] {
+  const result: string[][] = [];
+  for (const item of scenarios) {
+    const last = result.at(-1);
+    if (item.alone || !last || last.length >= size || last.some((id) => scenarios.find((other) => other.id === id)?.alone)) result.push([item.id]);
+    else last.push(item.id);
+  }
+  return result;
+}
+
 let interrupted = false;
 
-function execute(program: string, args: string[], env: Environment): Promise<number> {
-  return runForwardingInterrupts(program, args, env, ui, () => { interrupted = true; });
+/** Run `program` with this terminal's output until it exits; its exit code. */
+function child(program: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
+  return new Promise((done, fail) => {
+    const started = spawn(program, args, { env, stdio: "inherit" });
+    started.once("error", fail);
+    started.once("close", (code) => done(code ?? 1));
+  });
+}
+
+/** An interrupt fails the run, whenever it comes, and starts no other batch. One that reaches
+ * the running batch too, as a terminal's Ctrl+C does, stops its scenarios: each keeps its
+ * evidence, and the batch closes its apps and fixtures (launch). One that reaches this process
+ * alone stops no scenario: the running batch runs to its end and is judged as any other, and
+ * the run then fails naming that batch, whose logs it keeps, and the scenarios that did not
+ * run. */
+function interrupt(): void {
+  interrupted = true;
+  process.exitCode = 1;
+}
+
+/** Let the event loop turn once through its timers and its input, where a signal that came
+ * while this thread was busy reaches its handler. */
+function turned(): Promise<void> {
+  return new Promise((done) => setTimeout(() => setImmediate(done), 0));
+}
+
+/** Resolves once what this process has printed is written out: a pipe takes output in its own
+ * time, and `process.exit` drops what still waits. */
+async function printed(): Promise<void> {
+  for (const stream of [process.stdout, process.stderr]) await new Promise((done) => stream.write("", done));
+}
+
+async function suite(ids: string[]): Promise<void> {
+  checkSuite();
+  const { selectedScenarios } = await import("./catalog.ts");
+  const groups = batches(selectedScenarios(ids), appsAtOnce);
+  const declared = variable("ARTIFACTIZE_OUTPUT_DIR");
+  // Logs of this run's batches, in a folder of their own also in a declared output.
+  const output = newDirectory(declared ? asNativePath(declared) : scratchDirectory(), "desktop-e2e-");
+  // A failed run's evidence: one folder per run, in DESKTOP_TEST_EVIDENCE (CI uploads it), else
+  // in the run's declared output or the scratch folder. It stays only when the run failed.
+  const evidence = newDirectory(makeDirectory(asNativePath(variable("DESKTOP_TEST_EVIDENCE") ?? (declared ?? scratchDirectory()))), "desktop-e2e-evidence-");
+  // CI runs the whole suite; elsewhere the run stops at the first failing batch.
+  const whole = variable("CI") === "true";
+  const failed: string[] = [];
+  const failures: unknown[] = [];
+  /** Whether the failures say already that the run was interrupted. */
+  const noted = () => failures.some((failure) => failure instanceof Error && failure.message.startsWith("interrupted"));
+  let candidate: Awaited<ReturnType<typeof prepare>> | undefined;
+  try {
+    candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratchDirectory()) : await prepare();
+    for (const [index, ids] of groups.entries()) {
+      if (interrupted) {
+        const left = groups.slice(index).flat();
+        failures.push(new Error(`interrupted before the batch ${ids.join(", ")} started: ${left.length} scenarios did not run (${left.join(", ")})`));
+        break;
+      }
+      const env = { ...process.env, DESKTOP_TEST_CANDIDATE: candidate.manifest, DESKTOP_TEST_BATCH: JSON.stringify(ids),
+        DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${index + 1}`), DESKTOP_TEST_EVIDENCE_RUN: evidence };
+      const command = runnerCommand([suitePath("run.ts"), "batch"], env);
+      const passed = await child(command.program, command.args, command.env) === 0;
+      const logs = nativePath(output, `batch-${index + 1}`);
+      const left = groups.slice(index + 1).flat();
+      const unrun = left.length ? `${left.length} scenarios did not run (${left.join(", ")})` : "no scenario was left to run";
+      if (!passed) {
+        // A batch that ended before it kept its logs, as an interrupt may end it, has them
+        // printed and kept here.
+        if (!exists(nativePath(evidence, basename(logs)))) for (const log of serviceLogs(logs, evidence)) console.error(log);
+        // The scenarios that kept evidence failed; a batch that failed before any did fails whole.
+        const kept = ids.filter((id) => exists(nativePath(evidence, id)));
+        if (interrupted) {
+          failed.push(...kept);
+          failures.push(new Error(`interrupted while the batch ${ids.join(", ")} ran, which did not pass: each scenario the interrupt stopped keeps the wait it was in as its evidence; ${unrun}`));
+          break;
+        }
+        failed.push(...(kept.length ? kept : ids));
+        if (!whole && left.length) {
+          failures.push(new Error(`stopped at the first failing batch; ${unrun} (CI runs them all)`));
+          break;
+        }
+      } else if (interrupted) {
+        // The interrupt reached this process alone and stopped no scenario: the batch ran to
+        // its end and passed. Its logs are kept as the interrupted run's evidence.
+        serviceLogs(logs, evidence);
+        failures.push(new Error(`interrupted while the batch ${ids.join(", ")} ran, which ran to its end and passed (its logs are kept): ${unrun}`));
+        break;
+      }
+    }
+    if (interrupted && !noted()) failures.push(new Error("interrupted once every batch had run"));
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
+    if (!declared) try { removeTree(output); } catch (error) { failures.push(error); }
+  }
+  if (failed.length) failures.unshift(new Error(`desktop scenarios failed on ${systemName}: ${failed.join(", ")}`));
+  // The evidence folder stays only when scenarios failed or the run was cut short.
+  const kept = failures.length > 0;
+  if (!kept) try { removeTree(evidence); } catch (error) { failures.push(error); }
+  // An interrupt that came during the cleanup, which held this thread, fails the run too: its
+  // handler runs once the event loop has turned.
+  await turned();
+  if (interrupted && !noted()) {
+    failures.push(new Error("interrupted: the suite was stopped while it cleaned up"));
+  }
+  if (!failures.length) return;
+  throw new AggregateError(failures, `desktop E2E failed on ${systemName}${kept ? `; evidence (each failed scenario's failure, screenshot and logs): ${evidence}` : ""}`);
+}
+
+/** The tail of each log the service wrote for a failed batch into `directory`, the app's own
+ * output among them, to print; each is kept in the run's evidence folder `evidence`. */
+function serviceLogs(directory: NativePath, evidence: NativePath | undefined): string[] {
+  if (!exists(directory)) return [];
+  return sourceTree(directory).filter((item) => item.kind === "file" && item.name.endsWith(".log")).map((item) => {
+    const tail = readText(item.path).slice(-65536);
+    if (evidence) writeText(nativePath(makeDirectory(nativePath(evidence, basename(directory))), item.name), tail);
+    return `--- service log ${item.name} ---\n${tail.slice(-16384)}`;
+  });
+}
+
+/** Run `body` holding the machine-wide resources the batch's apps use: this OS's desktop
+ * ones, and for a scenario that runs alone, its own (E2E-ISOLATED), so that another suite run
+ * of this machine waits for them. */
+async function holding(body: () => Promise<void>): Promise<void> {
+  const ids = JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[];
+  const names = [...desktopResources, ...selectedScenarios(ids).filter((item) => item.alone).map((item) => `alone-${item.id}`)];
+  const run = (at: number): Promise<void> => at === names.length ? body() : withMachineLock(names[at], () => run(at + 1));
+  await run(0);
 }
 
 async function batch(): Promise<void> {
+  assertHeadless();
+  await holding(launch);
+}
+
+
+
+/** The batch's configuration once loaded, for an interrupt's teardown. */
+let loaded: typeof import("./wdio.conf.ts") | undefined;
+
+async function launch(): Promise<void> {
+  const output = asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? "");
+  const evidence = variable("DESKTOP_TEST_EVIDENCE_RUN");
+  const logs = () => serviceLogs(output, evidence ? asNativePath(evidence) : undefined);
   const { Launcher } = await import("@wdio/cli");
   const launcher = new Launcher(suitePath("wdio.conf.ts"));
-  // Initialize the public loader before importing its config, so the fixture owner
-  // and WDIO use the same module instance and callbacks never leave this process.
+  // An interrupt goes through WDIO's own exit routine, which ends its workers (each keeps the
+  // evidence of the scenario it was in, journey.spec.ts); this hook, in the same routine, then
+  // stops the apps as the service does at the end, closes the fixtures and prints and keeps the
+  // logs as for any failed batch, before the process exits.
+  const exitHook = createRequire(import.meta.resolve("@wdio/cli"))("async-exit-hook") as (hook: (done: () => void) => void) => void;
+  exitHook((done) => {
+    const internals = launcher as unknown as { runner?: { shutdown(): Promise<unknown> }; _launcher?: { onComplete?(code: number, config: unknown, caps: unknown): Promise<void> }[] };
+    void (async () => {
+      try {
+        await internals.runner?.shutdown();
+        for (const service of internals._launcher ?? []) await service.onComplete?.(1, {}, []);
+        await loaded?.teardown();
+      } catch (error) { console.error(inspect(error)); }
+      try { for (const log of logs()) console.error(log); } catch (error) { console.error(inspect(error)); }
+      await printed();
+      done();
+    })();
+  });
+  // The loader is set up before the configuration is imported, so the runner and WDIO share
+  // one instance of it.
   await launcher.initialize();
   const configuration = await import("./wdio.conf.ts");
+  loaded = configuration;
   const failures: unknown[] = [];
   try {
     const code = await launcher.run();
-    if (code !== 0) failures.push(new Error(`WDIO batch failed with exit code ${code}`));
-    const { selectedScenarios } = await import("./catalog.ts");
-    const ids = JSON.parse(requiredVariable("DESKTOP_TEST_BATCH", "each batch owns its app identities")) as string[];
-    const cases = selectedScenarios(ids);
-    if (code === 0 && cases.some((item) => item.relaunched)) {
-      if (cases.length !== 1) throw new Error("a relaunch case owns its own Launcher batch");
-      const candidate = readCandidate();
-      const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each batch records native owners"));
-      assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
-      // The first birth record attests an exited owner. Retire it only after that
-      // observation; the next native lifetime must create its own fresh birth record.
-      for (const id of ids) removeTree(nativePath(output, `${id}.owner.json`));
-      setVariable("DESKTOP_TEST_RELAUNCH", "1");
-      const next = new Launcher(suitePath("wdio.conf.ts"));
-      await next.initialize();
-      const again = await next.run();
-      if (again !== 0) failures.push(new Error(`relaunched WDIO case failed with exit code ${again}`));
-    }
+    if (code !== 0) failures.push(new Error(`the WDIO batch failed with exit code ${code}`));
+    else configuration.assertCompleted();
   } catch (error) {
-    failures.push(configuration.preparationFailure === undefined ? error
-      : new Error("Desktop scenario preparation failed", { cause: configuration.preparationFailure }));
+    failures.push(configuration.preparationFailure ?? error);
   }
-  try {
-    const candidate = readCandidate();
-    const ids = JSON.parse(requiredVariable("DESKTOP_TEST_BATCH", "each batch owns its app identities")) as string[];
-    const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each batch records native owners"));
-    if (configuration.preparationFailure !== undefined) {
-      // SevereServiceError refused app admission. Release domain workers acquired
-      // during preparation, then attest that no native-app ownership was acquired.
-      await configuration.releasePrepared();
-      writeJson(nativePath(output, "prelaunch-refused.json"), { refused: true });
-    } else {
-      // Only an app confirmed stopped no longer uses its inputs: unconfirmed, none is deleted,
-      // but the fixtures' Runs are still cancelled and joined.
-      try { assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`))); }
-      catch (error) {
-        try { configuration.settlePrepared(); } catch (settlement) { failures.push(settlement); }
-        throw error;
-      }
-      await configuration.releasePrepared();
-    }
-  } catch (error) { failures.push(error); }
+  try { await configuration.teardown(); } catch (error) { failures.push(error); }
   if (failures.length) {
-    try {
-      const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "failed batches retain service diagnostics"));
-      for (const log of serviceFailureLogs(output)) console.error(log);
-    } catch (error) { failures.push(error); }
+    for (const log of logs()) console.error(log);
     throw new AggregateError(failures, "desktop WDIO batch failed");
   }
 }
 
-async function suite(ids: string[]): Promise<void> {
-  const { selectedScenarios } = await import("./catalog.ts");
-  const selected = selectedScenarios(ids);
-  // A relaunch is one complete scenario with two service-owned app lifetimes. Keep it
-  // alone; unrelated cases neither inherit its state nor get run a second time.
-  const batches: typeof selected[] = [];
-  for (const item of selected) {
-    const previous = batches.at(-1);
-    if (item.relaunched || !previous || previous.some((item) => item.relaunched) || previous.length === CAPABILITIES_PER_INVOCATION) batches.push([item]);
-    else previous.push(item);
-  }
-  const scratch = scratchDirectory();
-  const declaredOutput = variable("ARTIFACTIZE_OUTPUT_DIR");
-  const output = newDirectory(declaredOutput === undefined ? scratch : asNativePath(declaredOutput), "desktop-e2e-");
-  // The full suite always builds its own evaluated inputs, even when an Agent-tool
-  // session has a prepared candidate in the environment. Explicit targeted developer
-  // runs may reuse immutable binaries, but still own a private snapshot and fixtures.
-  const candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratch) : await prepare();
-  console.error(`Desktop E2E diagnostics: ${output}`);
-  const failures: unknown[] = [];
-  let confirmed = true;
-  try {
-    for (const [index, batch] of batches.entries()) {
-      const ids = batch.map((item) => item.id);
-      const env = {
-        ...inheritedEnvironment(),
-        DESKTOP_TEST_CANDIDATE: candidate.manifest,
-        DESKTOP_TEST_RESOURCES: candidate.root,
-        DESKTOP_TEST_BATCH: JSON.stringify(ids),
-        DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${index + 1}`),
-      };
-      confirmed = false;
-      try {
-        const code = await execute(nodeProgram, [file, "batch"], env);
-        if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
-      } catch (error) { failures.push(error); }
-      try {
-        const output = asNativePath(env.DESKTOP_TEST_BATCH_OUTPUT);
-        const refused = nativePath(output, "prelaunch-refused.json");
-        if (!exists(refused) || (readJson(refused) as { refused?: boolean }).refused !== true) {
-          assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
-        }
-        confirmed = true;
-      } catch (error) { failures.push(error); }
-      if (!confirmed) break;
-      if (interrupted) {
-        failures.push(new Error("desktop E2E was interrupted; no further batches were started"));
-        break;
-      }
-    }
-  } finally {
-    if (failures.length) {
-      try { for (const report of nativeCrashReports(candidate.app)) console.error(report); }
-      catch (error) { failures.push(error); }
-    }
-    if (confirmed) {
-      try { await cleanup(candidate.root); } catch (error) { failures.push(error); }
-    } else failures.push(new Error(`Native shutdown unconfirmed; retained inputs at ${candidate.root}`));
-  }
-  if (failures.length) throw new AggregateError(failures, "desktop E2E failures");
-}
-
 async function unit(): Promise<void> {
-  const harness = absolutePath(suitePath(), "../../harness");
-  const files = ["input.test.ts", "commands.test.ts", "keys.test.ts", "observation.test.ts", "runner.test.ts"].map((name) => suitePath(name));
-  if (exists(harness)) files.push(...listFiles(harness).filter((path) => path.endsWith(".test.mts")));
-  process.exitCode = await execute(nodeProgram, ["--test", ...files], inheritedEnvironment());
+  const tests = ["input.test.ts", "keys.test.ts", "runner.test.ts"].map((name) => suitePath(name));
+  process.exitCode = await child(nodeProgram, ["--test", ...tests], process.env);
 }
 
-const mode = process.argv[2] ?? "suite";
-try {
-  if (mode === "suite" || mode === "prepare") checkIntegrity();
-  if (mode === "suite" || mode === "batch") assertRunnerMachine();
-  if (mode === "prepare") console.log((await prepare()).manifest);
-  else if (mode === "cleanup") await cleanup(readCandidate(process.argv[3]).root);
-  else if (mode === "unit") await unit();
-  else if (mode === "batch") await batch();
-  else if (mode === "suite") {
-    if (variable("DESKTOP_TEST_WRAPPED") === "1") await suite(process.argv.slice(3));
-    else {
-      const wrapped = runnerCommand([file, "suite", ...process.argv.slice(3)]);
-      process.exitCode = await execute(wrapped.program, wrapped.args, wrapped.env);
+// The runner's entry needs import.meta.main (Node 24.2 and later): an older Node fails here
+// instead of running nothing.
+if (import.meta.main === undefined) throw new Error(`the desktop test runner needs Node 24.2 or later, not ${process.version}`);
+if (import.meta.main) {
+  const mode = process.argv[2] ?? "suite";
+  // The suite waits for its running batch; a batch, like any other mode, ends on an interrupt.
+  if (mode === "suite") {
+    process.on("SIGINT", interrupt);
+    process.on("SIGTERM", interrupt);
+  }
+  try {
+    if (mode === "suite") await suite(process.argv.slice(3));
+    else if (mode === "batch") {
+      // Until it has passed, a batch that ends, by an interrupt too, has failed.
+      process.exitCode = 1;
+      await batch();
+      process.exitCode = 0;
     }
-  } else throw new Error(`unknown desktop test runner mode: ${mode}`);
-} catch (error) {
-  console.error(inspect(error, { depth: null, colors: false }));
-  process.exitCode = 1;
+    else if (mode === "prepare") console.log((await prepare()).manifest);
+    else if (mode === "cleanup") cleanup(readCandidate(process.argv[3]).root);
+    else if (mode === "unit") await unit();
+    else throw new Error(`unknown desktop test runner mode: ${mode}`);
+  } catch (error) {
+    console.error(inspect(error, { depth: null, colors: false }));
+    process.exitCode = 1;
+  }
+  // WDIO's exit hooks would end the batch with status 0: exit with the batch's own, once its
+  // output is written out.
+  if (mode === "batch") {
+    await printed();
+    process.exit(process.exitCode ?? 0);
+  }
 }
-// WDIO's async-exit-hook registers beforeExit with a hard-coded zero. Just like
-// WDIO's CLI, exit explicitly after its service and our fixtures have finished.
-if (mode === "batch") process.exit(process.exitCode ?? 0);

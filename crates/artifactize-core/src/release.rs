@@ -133,10 +133,41 @@ struct Source {
 /// Look up whether a newer release is out for this copy, reusing an answer kept in `state`
 /// for a day. It never fails: a failed lookup is its [`Outcome::Failed`].
 pub async fn check(state: &Path) -> Status {
+    let clock = crate::platform::environment::var("ARTIFACTIZE_E2E_RELEASE_CLOCK")
+        .filter(|_| crate::platform::environment::var(TEST_ENDPOINT_VARIABLE).is_some());
+    let now = match clock {
+        None => SystemTime::now(),
+        Some(file) => match controlled_time(Path::new(&file)) {
+            Ok(now) => now,
+            Err(message) => {
+                return Status {
+                    running: running(),
+                    channel: crate::platform::install::channel(),
+                    outcome: Outcome::Failed(message),
+                };
+            }
+        },
+    };
+    check_at(state, now).await
+}
+
+fn controlled_time(file: &Path) -> Result<SystemTime, String> {
+    let text = std::fs::read_to_string(file).map_err(|error| error.to_string())?;
+    let seconds = text
+        .trim()
+        .parse::<u64>()
+        .map_err(|error| error.to_string())?;
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(seconds))
+        .ok_or_else(|| "release fixture clock is out of range".into())
+}
+
+/// Check the current release and evaluate cache freshness against the supplied time.
+pub async fn check_at(state: &Path, now: SystemTime) -> Status {
     let running = running();
     let channel = crate::platform::install::channel();
     let outcome = match source(&running, channel, crate::platform::environment::var) {
-        Ok(source) => look_up(&running, channel, &source, state, SystemTime::now()).await,
+        Ok(source) => look_up(&running, channel, &source, state, now).await,
         Err(outcome) => outcome,
     };
     Status {
@@ -284,9 +315,7 @@ fn write_cache(state: &Path, cached: &Cached) -> Result<(), String> {
     let mut file = tempfile::NamedTempFile::new_in(state).map_err(|e| e.to_string())?;
     serde_json::to_writer(&mut file, cached).map_err(|e| e.to_string())?;
     file.flush().map_err(|e| e.to_string())?;
-    file.persist(state.join(CACHE))
-        .map_err(|e| e.error.to_string())?;
-    Ok(())
+    crate::platform::paths::replace_open_file(file, &state.join(CACHE)).map_err(|e| e.to_string())
 }
 
 /// Ask `url`, GitHub's latest-release API or its stand-in, for the latest release's version.
@@ -311,6 +340,12 @@ async fn fetch(url: &str) -> Result<Version, String> {
         .await
         .map_err(|e| e.without_url().to_string())?;
     let tag = &latest.tag_name;
-    Version::parse(tag.strip_prefix('v').unwrap_or(tag))
-        .map_err(|e| format!("the latest release's tag {tag:?} is not a version: {e}"))
+    let version = Version::parse(tag.strip_prefix('v').unwrap_or(tag))
+        .map_err(|e| format!("the latest release's tag {tag:?} is not a version: {e}"))?;
+    if !version.pre.is_empty() {
+        return Err(format!(
+            "the latest release's tag {tag:?} is not a stable version"
+        ));
+    }
+    Ok(version)
 }

@@ -81,11 +81,11 @@ impl std::fmt::Debug for RequestDefinition {
 
 #[derive(Default)]
 struct Filter<'a> {
-    run: Option<&'a str>,
-    id: Option<&'a str>,
+    run: Option<crate::types::RunId>,
+    id: Option<crate::types::RequestId>,
     repo: Option<&'a Path>,
     waiting: bool,
-    session: Option<&'a str>,
+    session: Option<crate::types::SessionId>,
     statuses: &'a [crate::types::RequestStatus],
     /// A bounded slice of the ordered requests: offset and count.
     slice: Option<(u64, u32)>,
@@ -104,19 +104,21 @@ pub enum Shown {
 }
 
 pub async fn read_requests(state: &Path, run: Option<&str>) -> Result<Vec<RequestView>, String> {
-    read(
-        state,
-        Filter {
-            run,
-            ..Filter::default()
-        },
-    )
-    .await
+    read_requests_in(state, run, None).await
 }
 
 pub async fn read_requests_in(
     state: &Path,
     run: Option<&str>,
+    repo: Option<&Path>,
+) -> Result<Vec<RequestView>, String> {
+    let run = run.map(str::parse).transpose()?;
+    read_requests_for_run(state, run, repo).await
+}
+
+pub(crate) async fn read_requests_for_run(
+    state: &Path,
+    run: Option<crate::types::RunId>,
     repo: Option<&Path>,
 ) -> Result<Vec<RequestView>, String> {
     read(
@@ -131,15 +133,30 @@ pub async fn read_requests_in(
 }
 
 pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String> {
-    read_request_as(state, id, Shown::Definitions).await
+    read_request_id(state, &id.parse()?).await
+}
+
+pub(crate) async fn read_request_id(
+    state: &Path,
+    id: &crate::types::RequestId,
+) -> Result<RequestView, String> {
+    read_request_by_id(state, id, Shown::Definitions).await
 }
 
 /// Request `id` with what `shown` names besides it.
 pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<RequestView, String> {
+    read_request_by_id(state, &id.parse()?, shown).await
+}
+
+pub(crate) async fn read_request_by_id(
+    state: &Path,
+    id: &crate::types::RequestId,
+    shown: Shown,
+) -> Result<RequestView, String> {
     read(
         state,
         Filter {
-            id: Some(id),
+            id: Some(id.clone()),
             shown,
             ..Filter::default()
         },
@@ -151,10 +168,17 @@ pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<Req
 
 /// The request whose Agent review ran as session `id`, if this state has it.
 pub async fn read_session_request(state: &Path, id: &str) -> Result<Option<RequestView>, String> {
+    read_request_by_session(state, id.parse()?).await
+}
+
+pub(crate) async fn read_request_by_session(
+    state: &Path,
+    session: crate::types::SessionId,
+) -> Result<Option<RequestView>, String> {
     Ok(read(
         state,
         Filter {
-            session: Some(id),
+            session: Some(session),
             ..Filter::default()
         },
     )
@@ -186,7 +210,7 @@ pub async fn read_original_as(
                 .map(|source| &source.request_id)
         });
     match original.filter(|id| *id != &view.request.id) {
-        Some(id) => read_request_as(state, id, shown).await,
+        Some(id) => read_request_by_id(state, id, shown).await,
         None => Ok(view.clone()),
     }
 }
@@ -279,8 +303,14 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
 /// recorded. Only the request's Run row is read, never the Run's record or definitions, so a
 /// Human action finds its receipts at once however large the Run's workspace is.
 pub async fn read_request_repo(state: &Path, id: &str) -> Result<std::path::PathBuf, String> {
+    read_request_repo_by_id(state, id.parse()?).await
+}
+
+pub(crate) async fn read_request_repo_by_id(
+    state: &Path,
+    id: crate::types::RequestId,
+) -> Result<std::path::PathBuf, String> {
     let not_found = || "Review request not found.".to_owned();
-    let id: crate::types::RequestId = id.parse()?;
     let state = canonical_target(state).map_err(|e| e.to_string())?;
     let Some(connection) = open_read(&state).await? else {
         return Err(not_found());
@@ -296,10 +326,9 @@ pub async fn read_request_repo(state: &Path, id: &str) -> Result<std::path::Path
                 .query_row(
                     "SELECT r.repo FROM requests q JOIN runs r ON r.id=q.run_id WHERE q.id=?",
                     [&id],
-                    |row| row.get::<_, String>(0),
+                    |row| super::path_column(row, 0),
                 )
-                .optional()?
-                .map(std::path::PathBuf::from);
+                .optional()?;
             transaction.commit()?;
             if let Some(repo) = &repo {
                 crate::workspace::outside_workspaces(std::iter::once(repo.as_path()), &state)
@@ -346,22 +375,16 @@ async fn read_with_repo(
     if let Some(repo) = &repo {
         outside_workspace(repo, &state).map_err(|e| e.to_string())?;
     }
-    let run = filter
-        .run
-        .map(str::parse::<crate::types::RunId>)
-        .transpose()?;
-    let id = filter
-        .id
-        .map(str::parse::<crate::types::RequestId>)
-        .transpose()?;
-    let repo = repo.map(|repo| crate::platform::path_text(&repo));
-    let waiting = filter.waiting;
-    let statuses = filter.statuses.to_vec();
-    let slice = filter.slice;
-    let session = filter
-        .session
-        .map(str::parse::<crate::types::SessionId>)
-        .transpose()?;
+    let Filter {
+        run,
+        id,
+        waiting,
+        statuses,
+        slice,
+        session,
+        ..
+    } = filter;
+    let statuses = statuses.to_vec();
     let shown = filter.shown;
     let Some(connection) = open_read(&state).await? else {
         return Ok(Vec::new());
@@ -414,7 +437,8 @@ async fn read_with_repo(
                         }
                     }
                 };
-                let repo = std::path::PathBuf::from(repo);
+                let repo = artifactize_tools::files::path_from_text(&repo)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
                 repos.push(repo.clone());
                 indexes.insert(id, (index, repo));
             }
@@ -442,7 +466,7 @@ async fn read_with_repo(
 pub(super) struct Query {
     pub run: Option<crate::types::RunId>,
     pub id: Option<crate::types::RequestId>,
-    pub repo: Option<String>,
+    pub repo: Option<std::path::PathBuf>,
     pub waiting: bool,
     pub session: Option<crate::types::SessionId>,
     pub statuses: Vec<crate::types::RequestStatus>,
@@ -467,22 +491,22 @@ pub(super) struct Row {
 }
 
 pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>, Error> {
-    let mut predicates = Vec::new();
-    let mut values: Vec<rusqlite::types::Value> = Vec::new();
-    for (column, value) in [
+    // The repository is saved as its path text; it becomes text only for the parameter.
+    let (mut predicates, mut values): (Vec<String>, Vec<rusqlite::types::Value>) = [
         ("q.run_id", filter.run.as_ref().map(ToString::to_string)),
         ("q.id", filter.id.as_ref().map(ToString::to_string)),
-        ("r.repo", filter.repo.clone()),
+        (
+            "r.repo",
+            filter.repo.as_deref().map(crate::platform::path_text),
+        ),
         (
             "json_extract(q.data,'$.sessionId')",
             filter.session.as_ref().map(ToString::to_string),
         ),
-    ] {
-        if let Some(value) = value {
-            predicates.push(format!("{column}=?"));
-            values.push(value.into());
-        }
-    }
+    ]
+    .into_iter()
+    .filter_map(|(column, value)| Some((format!("{column}=?"), value?.into())))
+    .unzip();
     if filter.waiting {
         predicates.push("q.status IN ('WAITING_HUMAN','DEFERRED')".into());
     }

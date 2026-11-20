@@ -129,11 +129,13 @@ fn current_neighbours_keep_would_run_and_checking_ahead_of_blocked_and_waiting()
         project::ArtifactCondition,
     };
     let artifact = |text: &str, plan| CurrentArtifact {
+        definition: Default::default(),
+        target_missing: false,
         name: name(text),
         kind: ArtifactKind::Folder,
         plan,
         runs: usize::from(plan == Plan::Run),
-        path: text.into(),
+        path: text.try_into().unwrap(),
         state: match plan {
             Plan::Run => ArtifactCondition::Stale,
             Plan::Check => ArtifactCondition::Unreviewed,

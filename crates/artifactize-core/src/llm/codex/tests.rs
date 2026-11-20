@@ -69,7 +69,7 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
         },
     });
     let message = describe(
-        Some(429),
+        Some(StatusCode::TOO_MANY_REQUESTS),
         parsed(&body).as_ref(),
         "fallback",
         Some(crate::auth::codex::Timestamp::from_seconds(1_800)),
@@ -89,14 +89,18 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
     assert!(
         parsed(&json!({"error":{"resets_at":1}}))
             .unwrap()
-            .usage_limit(Some(429))
+            .usage_limit(Some(StatusCode::TOO_MANY_REQUESTS))
     );
     // A plain 429 is a rate limit, worded by the provider.
     let plain = json!({"error":{"code":"rate_limit_exceeded","message":"Slow down"}});
-    assert!(!parsed(&plain).unwrap().usage_limit(Some(429)));
+    assert!(
+        !parsed(&plain)
+            .unwrap()
+            .usage_limit(Some(StatusCode::TOO_MANY_REQUESTS))
+    );
     assert_eq!(
         describe(
-            Some(429),
+            Some(StatusCode::TOO_MANY_REQUESTS),
             parsed(&plain).as_ref(),
             "fallback",
             Some(crate::auth::codex::Timestamp::from_seconds(1_800))
@@ -106,7 +110,7 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
     assert!(
         !parsed(&json!({"error":{"code":"server_error"}}))
             .unwrap()
-            .usage_limit(Some(500))
+            .usage_limit(Some(StatusCode::INTERNAL_SERVER_ERROR))
     );
 }
 
@@ -114,7 +118,7 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
 fn rejected_credentials_say_how_to_sign_in_again() {
     let body = json!({"detail":"Unauthorized"});
     let message = describe(
-        Some(401),
+        Some(StatusCode::UNAUTHORIZED),
         parsed(&body).as_ref(),
         "fallback",
         Some(crate::auth::codex::Timestamp::from_seconds(1_800)),
@@ -139,7 +143,7 @@ fn rejected_credentials_say_how_to_sign_in_again() {
     );
     assert_eq!(
         describe(
-            Some(502),
+            Some(StatusCode::BAD_GATEWAY),
             None,
             "fallback",
             Some(crate::auth::codex::Timestamp::from_seconds(1_800))
@@ -155,6 +159,6 @@ fn requests_name_artifactize_as_the_caller() {
     assert!(agent.ends_with("; artifactize)"));
 }
 
-fn parsed(value: &serde_json::Value) -> Option<super::errors::Error> {
-    super::errors::Error::parse(&serde_json::to_vec(value).unwrap())
+fn parsed(value: &serde_json::Value) -> Option<Body> {
+    Body::parse(&serde_json::to_vec(value).unwrap())
 }

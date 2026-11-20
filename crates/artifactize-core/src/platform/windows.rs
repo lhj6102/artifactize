@@ -5,10 +5,7 @@ pub(crate) mod ipc;
 mod process;
 mod security;
 
-use std::{
-    fs::File, future::Future, io, os::windows::io::AsRawHandle, path::Path, process::ExitStatus,
-    ptr,
-};
+use std::{fs::File, future::Future, io, os::windows::io::AsRawHandle, path::Path, ptr};
 
 use tokio::signal::windows::{ctrl_break, ctrl_c, ctrl_close};
 use windows_sys::Win32::{
@@ -30,17 +27,18 @@ pub(crate) use process::{
 };
 pub(crate) use security::{
     PrivateTempDir, create_private_dir, create_private_dir_all, is_private_dir, is_private_file,
-    private_options, private_pipe, private_tempdir_in, restrict_file, user_identity,
+    private_named_dir, private_options, private_pipe, private_tempdir_in, restrict_file,
+    user_identity,
 };
 
 /// The Windows heap returns freed memory by itself.
 pub(crate) fn release_free_memory() {}
 
-/// Owner death closes every Job handle, but descendant termination and handle
-/// release are asynchronous. Recovery cannot query those now-closed Jobs, so it
-/// waits briefly for their file sharing dispositions to clear, with a fixed bound.
-pub(crate) fn remove_abandoned_directory(path: &Path) -> io::Result<()> {
+/// Removal never traverses junctions. On Windows a process or a closing Job may
+/// still own handles, so retry transient sharing failures within a fixed bound.
+pub(crate) fn remove_tree(path: &Path) -> io::Result<()> {
     const RECOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    // Closing handles often clears the conflict quickly; a short sleep yields without spinning.
     const SHARING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
     let deadline = std::time::Instant::now() + RECOVERY_TIMEOUT;
     loop {
@@ -101,7 +99,7 @@ pub(crate) fn is_owner_only(file: &File) -> io::Result<bool> {
 pub(crate) const ENV_NAMES_IGNORE_CASE: bool = true;
 
 /// The variable naming the user's home directory, which Unix-style tools read on Windows too.
-pub(crate) const HOME_VARIABLE: &str = "HOME";
+pub(crate) const HOME_VARIABLES: &[&str] = &["HOME", "USERPROFILE"];
 
 /// Variables programs read their temporary directory from.
 pub(crate) const TEMP_VARIABLES: &[&str] = &["TMPDIR", "TMP", "TEMP"];
@@ -116,8 +114,9 @@ pub(crate) const USER_VARIABLES: &[&str] = &["USER", "USERNAME"];
 /// The user's home directory: `HOME` when set, as Unix-style tools set it, else the
 /// profile folder.
 pub(crate) fn home_directory() -> Option<std::path::PathBuf> {
-    [HOME_VARIABLE, "USERPROFILE"]
-        .into_iter()
+    HOME_VARIABLES
+        .iter()
+        .copied()
         .find_map(|name| std::env::var_os(name).filter(|path| !path.is_empty()))
         .map(Into::into)
 }
@@ -134,11 +133,6 @@ pub(crate) const CRLF_LINE_ENDINGS: bool = true;
 /// mintty (Git Bash) hands Windows programs a pipe that only looks like a terminal, with no
 /// console echo to turn off.
 pub const VISIBLE_INPUT_FALLBACK: bool = true;
-
-/// Windows processes end with an exit code, never a signal.
-pub(crate) fn exit_signal(_status: &ExitStatus) -> Option<i32> {
-    None
-}
 
 pub(crate) fn host_name() -> Option<String> {
     let mut size = 0;

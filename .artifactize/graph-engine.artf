@@ -1,0 +1,27 @@
+path = ".artifactize/engine/"
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+graph = { builtin = "graph", args = [] }
+
+[evals.connects]
+title = "The engine definitions give every crate the same checks and name inputs in one direction"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+red_at = "P1"
+payload.instruction = """
+Read every definition in {graph-engine}; use the graph tool for relations that leave the
+folder. The folder defines the workspace crates (engine-core, engine-tools, engine-cli,
+engine-mcp) and the workspace manifest and lockfile. Check that:
+- Same checks: every crate carries the same checks (code checklist, platform checklist,
+  formatting, clippy, tests) with the same criteria apart from the crate's name; a
+  further check is one the crate's role explains, such as the CLI's packaging.
+- Inputs: every eval that builds or tests names the manifest and the lockfile and the
+  crates it builds with; taken together these names run one way, so no two crates' evals
+  name each other.
+- Own code only: a crate's eval asks for a judgment of that crate, not of another
+  crate's code.
+- Checklists are named (rules-code-style, rules-platform), not copied into instructions.
+- Composition: no crate is a part of another."""

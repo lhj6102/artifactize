@@ -1,7 +1,7 @@
 //! Reviews and follow-ups on the `claude-agent` backend. Claude Code runs the conversation
 //! with the user's own login; artifactize runs every tool call through the eval's registry,
 //! enforces the budgets and the deadline, records the conversation and its live text, and
-//! validates the verdict, with the same one format repair as every backend. Claude Code
+//! validates the findings, with the same one format repair as every backend. Claude Code
 //! retries failed requests itself, so nothing here retries.
 
 mod conversation;
@@ -24,10 +24,10 @@ use super::{
     error::{Code, Failure},
     prompt_text,
     session::{self, Recorder},
-    verdict::{self, Structured, ValidatedResult},
+    verdict::{Findings, ValidatedResult},
 };
 use crate::{
-    config::{Eval, Profile, RepoConfig},
+    config::{Eval, ModelId, Profile, RepoConfig},
     llm::{
         self, Api, Attempt, Client,
         claude_agent::{
@@ -108,15 +108,11 @@ async fn run_review(
         max_tool_calls: *max_tool_calls,
     };
     let registry = Registry::new(config, &eval.id)?.with_sessions(tools);
-    let verdict = verdict::VerdictSchema::new(
-        eval.declaration.pass_schema(),
-        eval.declaration.fail_schema(),
-    )?;
-    let structured = Structured::new(&verdict.schema, Api::ClaudeAgent);
-    let Prompt { system, text } = prompt_text(config, eval, &registry)?;
+    let findings = Findings::new(eval.declaration.red_at());
+    let Prompt { system, text } = prompt_text(eval, &registry);
     let effort = reasoning.map(crate::config::Reasoning::as_str);
     let mut parameters = Client::parameters(Api::ClaudeAgent, effort, recorder.id())?;
-    Client::output_format(Api::ClaudeAgent, &mut parameters, structured.schema.clone());
+    Client::output_format(Api::ClaudeAgent, &mut parameters, findings.schema.clone());
     let definitions = definitions(&registry);
     recorder.start(session::Header {
         backend: Some(backend.clone()),
@@ -139,39 +135,38 @@ async fn run_review(
         effort,
         system: Some(&system),
         tools: definitions.iter().map(|tool| tool.name.as_str()).collect(),
-        schema: Some(&structured.schema),
+        schema: Some(&findings.schema),
     };
     let server = Server::new(registry.list());
     let session = Session {
         server: &server,
         registry: &registry,
         output,
-        model: model.as_str(),
+        model,
         limits,
         cancellation,
         recorder,
         attempts,
     };
     let (mut conversation, running) = session.open(&launch).await?;
-    let result = judge(&mut conversation, &text, &verdict, &structured).await;
+    let result = judge(&mut conversation, &text, &findings).await;
     close(conversation, running, result).await
 }
 
-/// Ask for the verdict and validate it, with one format repair: tools are then refused.
+/// Ask for the findings and validate them, with one format repair: tools are then refused.
 async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     conversation: &mut Conversation<'_, '_, R, W>,
     prompt: &str,
-    verdict: &verdict::VerdictSchema,
-    structured: &Structured,
+    findings: &Findings,
 ) -> Result<ValidatedResult, Failure> {
     let answer = conversation.ask(prompt).await?;
-    let error = match verdict.parse_model(&answer, Some(structured)) {
+    let error = match findings.parse_model(&answer) {
         Ok(result) => return Ok(result),
         Err(error) => error,
     };
     let repair = Message::user(format!(
         "Your final response did not match the required schema: {}\nReturn only one JSON object matching the schema.",
-        verdict.repair_detail(&answer, error, Some(structured))
+        Findings::repair_detail(error)
     ));
     conversation
         .session
@@ -179,14 +174,12 @@ async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         .message(conversation.turn + 1, &repair, true);
     conversation.tools_open = false;
     let answer = conversation.ask(&message_text(&repair)).await?;
-    verdict
-        .parse_model(&answer, Some(structured))
-        .map_err(|error| {
-            Failure::new(
-                Code::InvalidResult,
-                format!("Invalid final Agent result after one format repair: {error}."),
-            )
-        })
+    findings.parse_model(&answer).map_err(|error| {
+        Failure::new(
+            Code::InvalidResult,
+            format!("Invalid final Agent result after one format repair: {error}."),
+        )
+    })
 }
 
 fn message_text(message: &Message) -> String {
@@ -218,7 +211,7 @@ pub(super) fn continues(config: &RepoConfig, continuation: &Continuation<'_>) ->
             )
             .ok()
         })
-        .is_some_and(|route| route.api == Api::ClaudeAgent)
+        .is_some_and(|route| matches!(route, llm::Route::ClaudeAgent))
 }
 
 /// Answer a person's question about a review Claude Code ran. Claude Code keeps no session,
@@ -285,13 +278,13 @@ pub(super) async fn follow_up(
                 .collect::<Result<_, String>>()?,
         ),
     }));
-    recorder.event(session::Kind::Message(session::MessageEvent {
-        turn: 1,
-        message: question,
-        question: Some(message.into()),
-        repair: false,
-        is_error: Vec::new(),
-    }));
+    recorder.event(session::Kind::Message(session::MessageEvent::new(
+        1,
+        question,
+        false,
+        Vec::new(),
+        Some(message.into()),
+    )));
     let launch = Launch {
         model: Some(model.as_str()),
         effort: header.reasoning.map(crate::config::Reasoning::as_str),
@@ -305,7 +298,7 @@ pub(super) async fn follow_up(
         server: &server,
         registry: &registry,
         output: continuation.output,
-        model: model.as_str(),
+        model,
         limits: Limits {
             deadline: Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
             max_tokens: budgets.max_tokens,
@@ -335,7 +328,7 @@ struct Session<'a, 'r> {
     server: &'a Server,
     registry: &'a Registry<'r>,
     output: &'a Path,
-    model: &'a str,
+    model: &'a ModelId,
     limits: Limits,
     cancellation: &'a CancellationToken,
     recorder: &'a mut Recorder,

@@ -1,48 +1,120 @@
-// Mechanical E2E input and provider-provenance rules. Filesystem access stays in platform.ts.
+// The mechanical part of E2E-INPUT: no injection API in the suite or the device, and the
+// vendored provider unmodified.
 import { createHash } from "node:crypto";
-import { absolutePath, readBytes, readJson, readText, sourceTree, suitePath } from "../e2e/platform.ts";
+import { absolutePath, readBytes, readJson, readText, sourceTree, suitePath } from "../e2e/portable.ts";
 
-const injection = /\b(?:sendEvent|keyEventWithType|gdk_event_new|gtk_widget_event|gtk_main_do_event|gdk_display_put_event|SendInput|keybd_event|CGEventPost|CGEventCreateKeyboardEvent|XSendEvent|XTestFakeKeyEvent|PostMessage|SendMessage|dispatchKeyEvent)\b/;
+// A trailing underscore is the PyObjC spelling of the same selector (sendEvent_). CDP's key
+// command is matched by its full method name, dotted or split by domain as WebdriverIO's
+// browser.cdp("Input", "dispatchKeyEvent", …) takes it, so a suite helper of that name is not one.
+const injection = /\b(?:sendEvent|keyEventWithType|gdk_event_new|gtk_widget_event|gtk_main_do_event|gdk_display_put_event|SendInput|keybd_event|CGEventPost|CGEventCreateKeyboardEvent|XSendEvent|XTestFakeKeyEvent|XTestFakeButtonEvent|XTestFakeMotionEvent|mouse_event|(?:PostMessage|SendMessage)[AW]?|Input\.dispatchKeyEvent)(?:_|\b)|["'`]Input["'`]\s*,\s*["'`]dispatchKeyEvent["'`]/;
+
+// gtk-rs reaches gtk_widget_event as WidgetExt::event, called as `widget.event(event)`.
+const rustInjection = /\b(?:WidgetExt|Widget)::event\b|\.event\(/;
+
+/** Source files whose line and block comments are prose, not API references. */
+const COMMENTED = /\.(?:ts|tsx|js|mjs|cjs|mts|rs|c|h|m|mm)$/;
+
+/** `source` with its comments blanked out, keeping string literals, line numbers and columns. */
+function withoutComments(source: string, rust: boolean): string {
+  let out = "";
+  let quote = "";
+  for (let at = 0; at < source.length; at++) {
+    const char = source[at];
+    if (quote) {
+      out += char;
+      if (char === "\\") out += source[++at] ?? "";
+      else if (char === quote) quote = "";
+    } else if (char === "/" && source[at + 1] === "/") {
+      const end = source.indexOf("\n", at);
+      const stop = end === -1 ? source.length : end;
+      out += " ".repeat(stop - at);
+      at = stop - 1;
+    } else if (char === "/" && source[at + 1] === "*") {
+      const end = source.indexOf("*/", at + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      out += source.slice(at, stop).replace(/[^\n]/g, " ");
+      at = stop - 1;
+    } else if (char === "'" && rust) {
+      // In Rust an apostrophe opens a char literal only when one closes it ('x', '\n');
+      // otherwise it is a lifetime ('_, 'a) and the code goes on.
+      const literal = /^'(?:\\.[^']*|[^'\\])'/.exec(source.slice(at, at + 12));
+      out += literal ? literal[0] : char;
+      at += literal ? literal[0].length - 1 : 0;
+    } else {
+      if (char === '"' || char === "'" || char === "`") quote = char;
+      out += char;
+    }
+  }
+  return out;
+}
 
 /** Forbidden API names are rejected even in otherwise portable-looking native adapters. */
 export function inputViolations(path: string, source: string): string[] {
-  // CDP carries Copy/Paste as editing commands in the one native engine adapter. Mask
-  // only those literal command calls, preserving line numbers; raw key events stay banned.
-  const checked = path === "src/e2e_input/platform.rs" ? source.replace(
-    /"Input\.dispatchKeyEvent"\s*,\s*json!\(\{[^{}]*"commands"\s*:\s*\[\s*"(?:Copy|Paste)"\s*\][^{}]*\}\)/g,
-    (call) => call.replace(/[^\n]/g, " "),
-  ) : source;
-  return checked.split("\n").flatMap((line, at) => injection.test(line) ? [`${path}:${at + 1}: E2E-INPUT forbids OS/key-event injection APIs`] : []);
+  const code = COMMENTED.test(path) ? withoutComments(source, path.endsWith(".rs")) : source;
+  // CDP carries Copy/Paste as editing commands in the one native engine adapter. Mask only
+  // the method name in the Copy and Paste arms whose complete payload is the fixed literal of
+  // that arm's own command; a key, code or modifier beside the command, a payload built or
+  // extended at run time, or the method anywhere else stays a banned raw key event.
+  const checked = path === "src/e2e_input/platform.rs" ? code.replace(
+    /(?<![\w:])(Input::(Copy|Paste) => \(\s*)"Input\.dispatchKeyEvent"(?=,\s*r#"\{\s*(?:"type"\s*:\s*"keyDown"\s*,\s*"commands"\s*:\s*\[\s*"\2"\s*\]|"commands"\s*:\s*\[\s*"\2"\s*\]\s*,\s*"type"\s*:\s*"keyDown")\s*\}"#\.to_owned\(\),\s*\),)/g,
+    (_call, arm: string) => arm + " ".repeat('"Input.dispatchKeyEvent"'.length),
+  ) : code;
+  const banned = (line: string) => injection.test(line) || (path.endsWith(".rs") && rustInjection.test(line));
+  return checked.split("\n").flatMap((line, at) => banned(line) ? [`${path}:${at + 1}: E2E-INPUT forbids OS/key-event injection APIs`] : []);
 }
+
+/** The one file the provider's build writes into its folder: its permission reference. */
+const GENERATED = "permissions/autogenerated/reference.md";
 
 /** Compare every source byte, and reject additions rather than just checking known files. */
 export function providerViolations(actual: Record<string, string>, expected: Record<string, string>, generated: Record<string, string> = {}): string[] {
   const violations: string[] = [];
   for (const [path, digest] of Object.entries(expected)) {
-    if (actual[path] !== digest) violations.push(`${path}: E2E-PROVIDER-UPSTREAM differs from the recorded release`);
+    if (!Object.hasOwn(actual, path) || actual[path] !== digest) violations.push(`${path}: E2E-INPUT: the provider differs from its recorded upstream release`);
   }
   for (const [path, digest] of Object.entries(actual)) {
-    if (!(path in expected) && generated[path] !== digest) violations.push(`${path}: E2E-PROVIDER-UPSTREAM has unrecorded content`);
+    // Only the provider's own build output may differ from the release, and only as recorded.
+    const built = path === GENERATED && Object.hasOwn(generated, path) && generated[path] === digest;
+    const known = Object.hasOwn(expected, path) || built;
+    if (!known) violations.push(`${path}: E2E-INPUT: the provider has content its upstream release lacks`);
   }
   return violations;
 }
 
-export function checkIntegrity(): void {
+/** Every regular file under `root`, whatever its extension, checked for injection APIs. */
+function treeViolations(root: ReturnType<typeof suitePath>, prefix: string): string[] {
+  return sourceTree(root).flatMap((item) => {
+    if (item.kind !== "file") throw new Error(`E2E source must be a regular file: ${prefix}${item.name}`);
+    return inputViolations(`${prefix}${item.name}`, readText(item.path));
+  });
+}
+
+/** The suite's own sources and the vendored provider (E2E-INPUT). */
+export function checkSuite(): void {
   const desktop = absolutePath(suitePath(), "../..");
-  const failures: string[] = [];
-  const roots = [[suitePath(), "ui/e2e/"], [absolutePath(desktop, "src/e2e_input"), "src/e2e_input/"]] as const;
-  for (const [root, prefix] of roots) {
-    for (const item of sourceTree(root)) {
-      if (item.kind !== "file") throw new Error(`E2E source must be a regular file: ${item.name}`);
-      if (/\.(?:ts|js|mjs|mts|rs|c|h|m)$/.test(item.name)) failures.push(...inputViolations(`${prefix}${item.name}`, readText(item.path)));
-    }
-  }
-  const device = absolutePath(desktop, "src/e2e_input.rs");
-  failures.push(...inputViolations("src/e2e_input.rs", readText(device)));
+  const failures = treeViolations(suitePath(), "ui/e2e/");
   const release = readJson(suitePath("provider-upstream.json")) as { files: Record<string, string>; generated: Record<string, string> };
   const actual = Object.fromEntries(sourceTree(absolutePath(desktop, "vendor/tauri-plugin-wdio-webdriver")).map((item) => [
     item.name, item.kind === "file" ? createHash("sha256").update(readBytes(item.path)).digest("hex") : "not a regular file",
   ]));
   failures.push(...providerViolations(actual, release.files, release.generated));
   if (failures.length) throw new Error(failures.join("\n"));
+}
+
+/** The native text-input device's sources (E2E-INPUT). */
+export function checkDevice(): void {
+  const desktop = absolutePath(suitePath(), "../..");
+  const failures = [
+    ...treeViolations(absolutePath(desktop, "src/e2e_input"), "src/e2e_input/"),
+    ...inputViolations("src/e2e_input.rs", readText(absolutePath(desktop, "src/e2e_input.rs"))),
+  ];
+  if (failures.length) throw new Error(failures.join("\n"));
+}
+
+// Run as a command: `node e2e-integrity.ts suite` or `node e2e-integrity.ts device`.
+if (import.meta.main) {
+  const checks: Record<string, () => void> = { suite: checkSuite, device: checkDevice };
+  const check = checks[process.argv[2] ?? ""];
+  if (!check) throw new Error("usage: e2e-integrity.ts suite | device");
+  check();
 }

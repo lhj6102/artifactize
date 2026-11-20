@@ -72,11 +72,33 @@ struct StoredToken {
 
 /// A resolved remote; its token is private and never serialized.
 pub struct Remote {
-    pub url: Url,
+    url: Url,
     pub share: Share,
-    pub token_source: TokenSource,
-    token: Option<String>,
+    token: Credential,
     client: OnceLock<reqwest::Client>,
+}
+
+enum Credential {
+    None,
+    Environment(BearerToken),
+    File(BearerToken),
+}
+
+impl Credential {
+    fn as_deref(&self) -> Option<&str> {
+        match self {
+            Self::None => None,
+            Self::Environment(token) | Self::File(token) => Some(&token.0),
+        }
+    }
+
+    fn source(&self) -> TokenSource {
+        match self {
+            Self::None => TokenSource::None,
+            Self::Environment(_) => TokenSource::Env,
+            Self::File(_) => TokenSource::File,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,12 +147,33 @@ impl std::fmt::Display for Scope {
 }
 
 #[derive(Debug)]
-pub struct Failure {
-    /// Network errors, timeouts and 5xx, on which callers may fail open.
-    pub unavailable: bool,
-    /// The server sent an HTTP response.
-    pub responded: bool,
-    pub message: String,
+pub enum Failure {
+    Transport(String),
+    HttpRefusal(String),
+    ServerOutage(String),
+    LocalSetup(String),
+}
+
+impl Failure {
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Transport(message)
+            | Self::HttpRefusal(message)
+            | Self::ServerOutage(message)
+            | Self::LocalSetup(message) => message,
+        }
+    }
+}
+
+impl From<Failure> for String {
+    fn from(failure: Failure) -> Self {
+        match failure {
+            Failure::Transport(message)
+            | Failure::HttpRefusal(message)
+            | Failure::ServerOutage(message)
+            | Failure::LocalSetup(message) => message,
+        }
+    }
 }
 
 fn variable(name: &str) -> Option<String> {
@@ -163,13 +206,22 @@ pub fn parse_url(value: &str) -> Result<Url, String> {
     Ok(url)
 }
 
-fn valid_token(token: &str) -> Result<(), String> {
-    if (1..=MAX_TOKEN_BYTES).contains(&token.len())
-        && token.bytes().all(|byte| byte.is_ascii_graphic())
-    {
-        Ok(())
-    } else {
-        Err("A remote token is 1–4096 printable ASCII characters without spaces.".into())
+/// A validated credential; intentionally not printable or serializable.
+pub struct BearerToken(String);
+
+impl TryFrom<String> for BearerToken {
+    type Error = String;
+
+    fn try_from(token: String) -> Result<Self, Self::Error> {
+        if (1..=MAX_TOKEN_BYTES).contains(&token.len())
+            && token.bytes().all(|byte| byte.is_ascii_graphic())
+        {
+            Ok(Self(token))
+        } else {
+            Err(format!(
+                "A remote token is 1–{MAX_TOKEN_BYTES} printable ASCII characters without spaces."
+            ))
+        }
     }
 }
 
@@ -211,16 +263,18 @@ pub fn remote(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Remote
             .map_err(|_| "ARTIFACTIZE_REMOTE_SHARE must be summary or full.".to_owned())?,
         None => config.map(|config| config.share).unwrap_or_default(),
     };
-    let (token, token_source) = if let Some(token) = variable("ARTIFACTIZE_REMOTE_TOKEN") {
-        valid_token(&token).map_err(|e| format!("ARTIFACTIZE_REMOTE_TOKEN: {e}"))?;
-        (Some(token), TokenSource::Env)
+    let token = if let Some(token) = variable("ARTIFACTIZE_REMOTE_TOKEN") {
+        Credential::Environment(
+            token
+                .try_into()
+                .map_err(|e| format!("ARTIFACTIZE_REMOTE_TOKEN: {e}"))?,
+        )
     } else {
         match Storage::inspect(Some(&state_dir), repo, Tokens::Remote)?
             .read::<StoredToken>(TOKEN)?
         {
             Some(stored) if parse_url(&stored.url)?.origin() == url.origin() => {
-                valid_token(&stored.token)?;
-                (Some(stored.token), TokenSource::File)
+                Credential::File(stored.token.try_into()?)
             }
             // A token is bound to the origin it was issued for.
             Some(_) => {
@@ -228,13 +282,12 @@ pub fn remote(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Remote
                     "The stored remote token was issued for another store; {LOGIN}."
                 ));
             }
-            None => (None, TokenSource::None),
+            None => Credential::None,
         }
     };
     Ok(Some(Remote {
         url,
         share,
-        token_source,
         token,
         client: OnceLock::new(),
     }))
@@ -246,11 +299,7 @@ fn client() -> Result<reqwest::Client, Failure> {
         .timeout(REQUEST_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|error| Failure {
-            unavailable: false,
-            responded: false,
-            message: error.to_string(),
-        })
+        .map_err(|error| Failure::LocalSetup(error.to_string()))
 }
 
 /// rustls reports handshake and certificate failures as InvalidData I/O errors, possibly
@@ -273,14 +322,15 @@ fn transport(error: reqwest::Error) -> Failure {
     .last()
     .map(ToString::to_string)
     .unwrap_or_default();
-    Failure {
-        unavailable: !tls && (error.is_connect() || error.is_timeout()),
-        responded: false,
-        message: if tls {
-            format!("TLS with the remote store failed: {cause}")
+    if tls {
+        Failure::LocalSetup(format!("TLS with the remote store failed: {cause}"))
+    } else {
+        let message = format!("Remote store is unreachable: {cause}");
+        if error.is_connect() || error.is_timeout() {
+            Failure::Transport(message)
         } else {
-            format!("Remote store is unreachable: {cause}")
-        },
+            Failure::LocalSetup(message)
+        }
     }
 }
 
@@ -291,6 +341,14 @@ fn diagnostic(text: &str, token: Option<&str>) -> String {
 }
 
 impl Remote {
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
+    pub fn token_source(&self) -> TokenSource {
+        self.token.source()
+    }
+
     fn request(&self, method: Method, route: &str) -> Result<reqwest::RequestBuilder, Failure> {
         // One client per process reuses connections and the loaded trust store.
         let client = match self.client.get() {
@@ -300,8 +358,12 @@ impl Remote {
                 self.client.get_or_init(|| built)
             }
         };
-        let mut request = client.request(method, self.url.join(route).expect("relative route"));
-        if let Some(token) = &self.token {
+        let url = self
+            .url
+            .join(route)
+            .map_err(|_| Failure::LocalSetup("Invalid route for the remote store.".into()))?;
+        let mut request = client.request(method, url);
+        if let Some(token) = self.token.as_deref() {
             request = request.bearer_auth(token);
         }
         Ok(request)
@@ -314,22 +376,19 @@ impl Remote {
         if status.is_success() {
             return Ok(response);
         }
-        let failure = |unavailable, message: String| Failure {
-            unavailable,
-            responded: true,
-            message,
+        let failure = if status.is_server_error() {
+            Failure::ServerOutage
+        } else {
+            Failure::HttpRefusal
         };
         Err(match status {
-            StatusCode::UNAUTHORIZED if self.token.is_none() => {
-                failure(false, format!("No remote token; {LOGIN}."))
+            StatusCode::UNAUTHORIZED if matches!(self.token, Credential::None) => {
+                failure(format!("No remote token; {LOGIN}."))
             }
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => failure(
-                false,
-                format!(
-                    "The remote store rejected the token (HTTP {}).",
-                    status.as_u16()
-                ),
-            ),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => failure(format!(
+                "The remote store rejected the token (HTTP {}).",
+                status.as_u16()
+            )),
             _ => {
                 // A client error explains itself, for example a store of another schema.
                 let detail = if status.is_client_error() {
@@ -341,16 +400,13 @@ impl Remote {
                 } else {
                     None
                 };
-                failure(
-                    status.is_server_error(),
-                    match detail {
-                        Some(detail) => format!(
-                            "The remote store answered HTTP {}: {detail}",
-                            status.as_u16()
-                        ),
-                        None => format!("The remote store answered HTTP {}.", status.as_u16()),
-                    },
-                )
+                failure(match detail {
+                    Some(detail) => format!(
+                        "The remote store answered HTTP {}: {detail}",
+                        status.as_u16()
+                    ),
+                    None => format!("The remote store answered HTTP {}.", status.as_u16()),
+                })
             }
         })
     }
@@ -359,11 +415,10 @@ impl Remote {
         response: Response,
         route: &str,
     ) -> Result<T, Failure> {
-        response.json().await.map_err(|_| Failure {
-            unavailable: false,
-            responded: true,
-            message: format!("Invalid remote {route} response."),
-        })
+        response
+            .json()
+            .await
+            .map_err(|_| Failure::HttpRefusal(format!("Invalid remote {route} response.")))
     }
 
     /// Ask the server who this token is; works without a token to test reachability.
@@ -415,23 +470,22 @@ pub async fn login(
     repo: Option<&Path>,
     url: Url,
     share: Share,
-    token: String,
+    token: BearerToken,
 ) -> Result<(Remote, Principal), String> {
-    valid_token(&token)?;
+    let url = parse_url(url.as_str())?;
     let remote = Remote {
         url,
         share,
-        token_source: TokenSource::File,
-        token: Some(token),
+        token: Credential::File(token),
         client: OnceLock::new(),
     };
-    let principal = remote.whoami().await.map_err(|failure| failure.message)?;
+    let principal = remote.whoami().await.map_err(String::from)?;
     let storage = Storage::new(state, repo, Tokens::Remote)?;
     storage.save(
         TOKEN,
         &StoredToken {
             url: remote.url.to_string(),
-            token: remote.token.clone().expect("login token"),
+            token: remote.token.as_deref().expect("login token").to_owned(),
         },
     )?;
     let state = crate::store::state_dir(state)?;
@@ -445,8 +499,8 @@ pub async fn login(
     )
     .map_err(|e| e.to_string())?;
     file.flush().map_err(|e| e.to_string())?;
-    file.persist(state.join(CONFIG))
-        .map_err(|e| e.error.to_string())?;
+    crate::platform::paths::replace_open_file(file, &state.join(CONFIG))
+        .map_err(|error| error.to_string())?;
     Ok((remote, principal))
 }
 
@@ -538,17 +592,17 @@ pub async fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<
             principal: principal.principal,
             scopes: principal.scopes,
         },
-        Err(failure) if failure.responded => Connection::Refused {
-            error: failure.message,
-        },
+        Err(Failure::HttpRefusal(error) | Failure::ServerOutage(error)) => {
+            Connection::Refused { error }
+        }
         Err(failure) => Connection::Unreachable {
-            error: failure.message,
+            error: failure.into(),
         },
     };
     Ok(Some(Status {
         url: remote.url.to_string(),
         share: remote.share,
-        token_source: remote.token_source,
+        token_source: remote.token_source(),
         connection,
     }))
 }
@@ -556,7 +610,8 @@ pub async fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<
 /// Forget the stored token and `remote.json`; the server keeps the token until revoked.
 pub fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
     Storage::new(state, repo, Tokens::Remote)?.remove(TOKEN)?;
-    match fs::remove_file(crate::store::state_dir(state)?.join(CONFIG)) {
+    // A concurrent status lookup may still have the file open.
+    match crate::platform::paths::remove_open_file(&crate::store::state_dir(state)?.join(CONFIG)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.to_string()),
         _ => Ok(()),
     }

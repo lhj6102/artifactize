@@ -11,9 +11,10 @@ use std::{
 use artifactize_core::{
     human,
     project::{self, VerifyOptions, selection::Selection},
-    store::{self, OwnedReceipts, RunView},
-    types::FailureCode,
+    store::{self, OwnedReceipts, Receipts, RunView},
+    types::{FailureCode, RequestId},
 };
+use futures_util::FutureExt;
 use serde_json::{Value, json};
 use support::os::{cat_program, false_program, true_program};
 use tokio_util::sync::CancellationToken;
@@ -33,7 +34,7 @@ impl Fixture {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
-        write_human(&repo, fingerprint);
+        write_human(&(repo), &repo, fingerprint);
         let state = root.path().join("state");
         root.track(&state, &repo);
         Self {
@@ -48,14 +49,19 @@ impl Fixture {
     fn referencing() -> Self {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
-        write_human(&repo.join("review"), false);
+        write_human(&(repo), &repo.join("review"), false);
         let review = repo.join("review/index.artf");
-        let declaration = fs::read_to_string(&review).unwrap();
+        let declaration = support::declaration::read_text(&review).unwrap();
         assert!(declaration.contains("Review."));
-        fs::write(&review, declaration.replace("Review.", "Review {spec}.")).unwrap();
+        fs::write(
+            support::declaration::source_path(&review),
+            declaration.replace("Review.", "Review {spec}."),
+        )
+        .unwrap();
         for name in ["spec", "other"] {
             fs::create_dir(repo.join(name)).unwrap();
             support::declaration::write(
+                &(repo),
                 repo.join(name).join("index.artf"),
                 json!({"name":name,"basis":true}).to_string(),
             )
@@ -71,8 +77,9 @@ impl Fixture {
     }
 
     async fn verify(&self, options: VerifyOptions) -> RunView {
+        // A hang guard, not a timing assertion: a loaded machine runs the whole file at once.
         tokio::time::timeout(
-            Duration::from_secs(10),
+            support::os::patience(Duration::from_secs(60)),
             support::runs::record(
                 &self.repo,
                 Some(&self.state),
@@ -90,15 +97,41 @@ impl Fixture {
         OwnedReceipts::open(&self.state, &self.repo).await.unwrap()
     }
 
+    /// The separate SQLite worker must be closed before teardown, even on assertion panic.
+    async fn with_human_receipts<T>(
+        &self,
+        id: &RequestId,
+        action: impl AsyncFnOnce(&Receipts, PathBuf) -> T,
+    ) -> T {
+        let (receipts, repo) = human::open(&self.state, id).await.unwrap();
+        let outcome = std::panic::AssertUnwindSafe(async { action(&receipts, repo).await })
+            .catch_unwind()
+            .await;
+        let closed = receipts.close().await;
+        match outcome {
+            Ok(value) => {
+                closed.expect("close the Human action's receipt connection");
+                value
+            }
+            Err(panic) => {
+                if let Err(error) = closed {
+                    eprintln!("Human receipt connection cleanup failed: {error}");
+                }
+                std::panic::resume_unwind(panic)
+            }
+        }
+    }
+
     fn cli_verify(&self) -> Value {
-        let output = Command::new(support::os::cli())
+        let recorded = Command::new(support::os::cli())
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
             .args(["verify", "--all", "--json"])
-            .record_output()
+            .recorded()
             .unwrap();
+        let output = &recorded.output;
         // Submission returns at once; the request stays open for the person.
         assert_eq!(
             output.status.code(),
@@ -106,7 +139,7 @@ impl Fixture {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        serde_json::from_slice(&output.stdout).unwrap()
+        recorded.saved_json().expect("submitted Human Run")
     }
 
     /// End Runs as soon as only unclaimed sign-offs are left, as a YELLOW Run whose
@@ -161,9 +194,13 @@ async fn outcome(state: &Path, id: &str) -> (String, Option<FailureCode>) {
     )
 }
 
-fn write_human(path: &Path, fingerprint: bool) {
+fn write_human(root: &Path, path: &Path, fingerprint: bool) {
     fs::create_dir_all(path).unwrap();
-    support::declaration::write(path.join("fingerprint"), "human-v1\n").unwrap();
+    std::fs::write(
+        support::declaration::source_path(path.join("fingerprint")),
+        "human-v1\n",
+    )
+    .unwrap();
     let mut declaration = json!({
         "name":"review",
         "views":{
@@ -205,7 +242,7 @@ fn write_human(path: &Path, fingerprint: bool) {
     } else {
         declaration["fingerprint"] = json!(false);
     }
-    support::declaration::write(path.join("index.artf"), declaration.to_string()).unwrap();
+    support::declaration::write(root, path.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 /// Options that record Human requests and return at once instead of waiting for them.
@@ -215,8 +252,8 @@ fn returning() -> VerifyOptions {
     }
 }
 
-fn green() -> Value {
-    json!({"verdict":"GREEN","approved":true})
+fn green() -> human::Submission {
+    human::Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap()
 }
 
 /// A request ID parsed once, where a test names one.
@@ -227,15 +264,25 @@ fn rid(id: &str) -> artifactize_core::types::RequestId {
 #[tokio::test]
 async fn a_folder_whole_with_parts_can_be_claimed_inspected_submitted_and_reused() {
     let fixture = Fixture::new(true);
-    fs::write(fixture.repo.join("part.txt"), "file part").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("part.txt")),
+        "file part",
+    )
+    .unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("part.txt.artf"),
         json!({"name":"file-part","basis":true}).to_string(),
     )
     .unwrap();
     fs::create_dir(fixture.repo.join("nested")).unwrap();
-    fs::write(fixture.repo.join("nested/input.txt"), "folder part").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("nested/input.txt")),
+        "folder part",
+    )
+    .unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("nested/index.artf"),
         json!({"name":"folder-part","basis":true}).to_string(),
     )
@@ -405,17 +452,19 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         json!({"verdict":"GREEN","approved":true,"extra":1}),
         json!({"verdict":"RED","reason":"x".repeat(256_000)}),
     ] {
-        assert!(
-            human::submit(
+        let refused = match human::Submission::try_from(result) {
+            Ok(result) => human::submit(
                 &receipts,
                 &rid(id),
                 &"alice".parse().unwrap(),
                 &result,
-                CancellationToken::new()
+                CancellationToken::new(),
             )
             .await
-            .is_err()
-        );
+            .map(|_| ()),
+            Err(error) => Err(error),
+        };
+        assert!(refused.is_err());
         assert_eq!(
             store::read_run(&fixture.state, &run.run.id)
                 .await
@@ -489,7 +538,11 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
         human::claim(&receipts, &rid(id), &"alice".parse().unwrap())
             .await
             .unwrap();
-        fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
+        fs::write(
+            support::declaration::source_path(fixture.repo.join("fingerprint")),
+            "human-v2\n",
+        )
+        .unwrap();
         let error = if tool {
             human::run_human_tool(
                 &receipts,
@@ -584,26 +637,29 @@ async fn changed_declarations_end_the_request_error_and_the_next_verify_asks_aga
             Change::Child => {
                 fs::create_dir(review.join("child")).unwrap();
                 support::declaration::write(
+                    &(fixture.repo),
                     review.join("child/index.artf"),
                     r#"{"name":"child","basis":true}"#,
                 )
                 .unwrap();
             }
             Change::Referenced => support::declaration::write(
+                &(fixture.repo),
                 fixture.repo.join("spec/index.artf"),
                 r#"{"name":"spec","basis":true,"tags":["changed"]}"#,
             )
             .unwrap(),
             Change::Title => {
-                let recorded = fs::read_to_string(review.join("index.artf")).unwrap();
+                let recorded = support::declaration::read_text(review.join("index.artf")).unwrap();
                 assert!(recorded.contains("Human check"));
                 fs::write(
-                    review.join("index.artf"),
+                    support::declaration::source_path(review.join("index.artf")),
                     recorded.replace("Human check", "Another check"),
                 )
                 .unwrap();
             }
             Change::Removed => support::declaration::write(
+                &(fixture.repo),
                 review.join("index.artf"),
                 r#"{"name":"review","basis":true}"#,
             )
@@ -660,13 +716,13 @@ async fn unreadable_declarations_refuse_the_action_and_the_request_keeps_waiting
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &id, &alice).await.unwrap();
     let declaration = fixture.repo.join("index.artf");
-    let recorded = fs::read(&declaration).unwrap();
-    fs::write(&declaration, "name = ").unwrap();
+    let recorded = support::declaration::read_file(&declaration).unwrap();
+    fs::write(support::declaration::source_path(&declaration), "name = ").unwrap();
     human::submit(&receipts, &id, &alice, &green(), CancellationToken::new())
         .await
         .unwrap_err();
     assert_eq!(listed(&fixture.state).await, [id.as_str()]);
-    fs::write(&declaration, recorded).unwrap();
+    fs::write(support::declaration::source_path(&declaration), recorded).unwrap();
     let submitted = human::submit(&receipts, &id, &alice, &green(), CancellationToken::new())
         .await
         .unwrap();
@@ -680,38 +736,75 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
     let id = run.requests[0].id.clone();
     // The Run's saved graph no longer decodes, and the workspace no longer reads as a whole:
     // a reader of either fails.
-    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
-    let saved: String = db
-        .query_row(
-            "SELECT data FROM run_definitions WHERE run_id=?",
-            [&run.run.id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    db.execute(
-        "UPDATE run_definitions SET data='{' WHERE run_id=?",
+    struct SavedDefinition {
+        db: rusqlite::Connection,
+        run_id: artifactize_core::types::RunId,
+        json: String,
+    }
+    impl Drop for SavedDefinition {
+        fn drop(&mut self) {
+            let restored = self.db.execute(
+                "UPDATE run_definitions SET data=? WHERE run_id=?",
+                [&self.json, self.run_id.as_str()],
+            );
+            if !matches!(restored, Ok(1)) {
+                if std::thread::panicking() {
+                    eprintln!("restoring the fixture's saved definition failed: {restored:?}");
+                } else {
+                    panic!("restoring the fixture's saved definition failed: {restored:?}");
+                }
+            }
+        }
+    }
+    let database = fixture.state.join(store::DATABASE);
+    let saved = rusqlite::Connection::open_with_flags(
+        &database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(
+        "SELECT data FROM run_definitions WHERE run_id=?",
         [&run.run.id],
+        |row| row.get(0),
     )
     .unwrap();
-    fs::write(fixture.repo.join("other/index.artf"), "name = ").unwrap();
+    let definition = SavedDefinition {
+        db: rusqlite::Connection::open(&database).unwrap(),
+        run_id: run.run.id.clone(),
+        json: saved,
+    };
+    definition
+        .db
+        .execute(
+            "UPDATE run_definitions SET data='{' WHERE run_id=?",
+            [&run.run.id],
+        )
+        .unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("other/index.artf")),
+        "name = ",
+    )
+    .unwrap();
     assert!(store::read_request(&fixture.state, &id).await.is_err());
     assert!(artifactize_core::config::read_workspace_config(&fixture.repo).is_err());
     let alice = "alice".parse().unwrap();
-    let (receipts, repo) = human::open(&fixture.state, &id).await.unwrap();
-    assert_eq!(repo, support::os::canonical(&fixture.repo));
-    human::claim(&receipts, &id, &alice).await.unwrap();
-    let tool = human::run_human_tool(
-        &receipts,
-        &id,
-        &alice,
-        &"inspect_review".parse().unwrap(),
-        CancellationToken::new(),
-        artifactize_core::review::log::Run::unwatched(),
-    )
-    .await
-    .unwrap();
-    assert!(!tool.is_error());
-    receipts.close().await.unwrap();
+    fixture
+        .with_human_receipts(&id, async |receipts, repo| {
+            assert_eq!(repo, support::os::canonical(&fixture.repo));
+            human::claim(receipts, &id, &alice).await.unwrap();
+            let tool = human::run_human_tool(
+                receipts,
+                &id,
+                &alice,
+                &"inspect_review".parse().unwrap(),
+                CancellationToken::new(),
+                artifactize_core::review::log::Run::unwatched(),
+            )
+            .await
+            .unwrap();
+            assert!(!tool.is_error());
+        })
+        .await;
     let submitted = human::submit_and_publish(
         &fixture.state,
         &id,
@@ -722,19 +815,15 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
     .await
     .unwrap();
     assert_eq!(submitted.status().as_str(), "GREEN");
-    // The fixture's cleanup reads the Run whole.
-    db.execute(
-        "UPDATE run_definitions SET data=? WHERE run_id=?",
-        [&saved, run.run.id.as_str()],
-    )
-    .unwrap();
+    // Restore on either path before the Run-owning fixture cleans up.
+    drop(definition);
 }
 
 #[tokio::test]
 async fn a_submitted_signoff_settles_its_provisional_dependents_in_the_owned_run() {
     let fixture = Fixture::new(false);
-    write_human(&fixture.repo.join("child"), true);
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         json!({
             "name":"parent",
@@ -750,6 +839,7 @@ async fn a_submitted_signoff_settles_its_provisional_dependents_in_the_owned_run
         .to_string(),
     )
     .unwrap();
+    write_human(&(fixture.repo), &fixture.repo.join("child"), true);
     let run = fixture.verify(returning()).await;
     assert_eq!(run.run.status().as_str(), "WAITING_HUMAN");
     let waiting = run
@@ -809,8 +899,8 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
     let fixture = Fixture::new(true);
     let release = fixture._root.path().join("release");
     // The sign-off holds up nothing: the root's machine eval runs on PROVISIONAL meanwhile.
-    write_human(&fixture.repo.join("child"), true);
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         json!({
             "name":"work",
@@ -830,6 +920,7 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
         .to_string(),
     )
     .unwrap();
+    write_human(&(fixture.repo), &fixture.repo.join("child"), true);
     // Started without a barrier: the machine eval runs until the test releases it.
     let context = artifactize_core::runs::Context::new(
         &fixture.repo,
@@ -841,7 +932,6 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
         .await
         .unwrap()
         .run;
-    let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
     let status = |view: &RunView, target: &str| {
         view.requests
             .iter()
@@ -849,19 +939,22 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
             .unwrap()
             .status()
     };
-    let waiting = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
-        loop {
-            let view = store::read_run(&fixture.state, id.as_str()).await.unwrap();
-            if status(&view, "review").is_human_wait()
-                && status(&view, "work") == artifactize_core::types::RequestStatus::Running
-            {
-                return view;
+    let waiting = owned_run::subscribed(&fixture.state, async |changes| {
+        tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+            loop {
+                let view = store::read_run(&fixture.state, id.as_str()).await.unwrap();
+                if status(&view, "review").is_human_wait()
+                    && status(&view, "work") == artifactize_core::types::RequestStatus::Running
+                {
+                    return view;
+                }
+                changes.next_state().await;
             }
-            changes.next_state().await;
-        }
+        })
+        .await
+        .expect("the sign-off waits while the machine eval runs")
     })
-    .await
-    .expect("the sign-off waits while the machine eval runs");
+    .await;
     let shown = |view: &RunView| view.run.status().as_str();
     assert_eq!(shown(&waiting), "WAITING_HUMAN");
     // It follows from the open sign-off; the saved Run stays RUNNING.
@@ -907,7 +1000,7 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
     let catalog = store::read_catalog(&fixture.state).await.unwrap();
     assert_eq!(catalog[0].status.as_str(), "RUNNING");
 
-    fs::write(&release, "").unwrap();
+    fs::write(support::declaration::source_path(&release), "").unwrap();
     let ended = owned_run::terminal(&fixture.state, &id).await;
     assert_eq!(shown(&ended), "GREEN");
 }
@@ -946,7 +1039,11 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
             .await
             .is_err()
     );
-    fs::write(other.repo.join("fingerprint"), "different-repo-input\n").unwrap();
+    fs::write(
+        support::declaration::source_path(other.repo.join("fingerprint")),
+        "different-repo-input\n",
+    )
+    .unwrap();
     let result = human::run_human_tool(
         &receipts,
         follower,
@@ -965,7 +1062,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &receipts,
         &rid(follower),
         &"alice".parse().unwrap(),
-        &json!({"verdict":"RED","reason":"Needs work"}),
+        &human::Submission::try_from(json!({"verdict":"RED","reason":"Needs work"})).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -994,7 +1091,11 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
             .as_str(),
         "RED"
     );
-    fs::write(other.repo.join("fingerprint"), "human-v1\n").unwrap();
+    fs::write(
+        support::declaration::source_path(other.repo.join("fingerprint")),
+        "human-v1\n",
+    )
+    .unwrap();
     let completed = support::runs::record(
         &other.repo,
         Some(&fixture.state),
@@ -1185,7 +1286,11 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
     human::claim(&receipts, &forced.requests[0].id, &"alice".parse().unwrap())
         .await
         .unwrap();
-    fs::write(fixture.repo.join("fingerprint"), "changed\n").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("fingerprint")),
+        "changed\n",
+    )
+    .unwrap();
     assert!(
         human::submit(
             &receipts,
@@ -1214,9 +1319,10 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
 async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() {
     let fixture = Fixture::new(false);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration.as_object_mut().unwrap().remove("fingerprint");
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), &path, declaration.to_string()).unwrap();
     let run = fixture.verify(returning()).await;
     assert!(
         run.requests[0]
@@ -1241,7 +1347,11 @@ async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() 
     let next = fixture.verify(returning()).await;
     assert_eq!(next.requests[0].status().as_str(), "GREEN");
     assert_eq!(next.requests[0].execution_id, run.requests[0].execution_id);
-    fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("fingerprint")),
+        "human-v2\n",
+    )
+    .unwrap();
     let changed = fixture.verify(returning()).await;
     assert_eq!(changed.requests[0].status().as_str(), "DEFERRED");
     assert_ne!(changed.requests[0].key, run.requests[0].key);
@@ -1252,7 +1362,11 @@ async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() 
     )
     .await
     .unwrap();
-    fs::write(fixture.repo.join("fingerprint"), "human-v3\n").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("fingerprint")),
+        "human-v3\n",
+    )
+    .unwrap();
     let error = human::submit(
         &receipts,
         &changed.requests[0].id,
@@ -1294,7 +1408,8 @@ async fn fingerprint_false_results_are_not_reused_by_a_new_verify() {
 async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     let fixture = Fixture::new(true);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     let mut same = declaration["evals"][0].clone();
     same["id"] = json!("same");
     same["title"] = json!("Same criteria");
@@ -1305,7 +1420,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         .as_array_mut()
         .unwrap()
         .extend([same, different]);
-    support::declaration::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
     let run = fixture.verify(returning()).await;
     assert_eq!(run.requests[0].execution_id, run.requests[1].execution_id);
     assert_eq!(run.requests[0].eval_def_hash, run.requests[1].eval_def_hash);
@@ -1353,7 +1468,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         &receipts,
         &run.requests[2].id,
         &"bob".parse().unwrap(),
-        &json!({"verdict":"RED","reason":"Different review"}),
+        &human::Submission::try_from(json!({"verdict":"RED","reason":"Different review"})).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -1394,9 +1509,10 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
 async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     let fixture = Fixture::new(true);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile_variants"] = json!({"lead":{"kind":"human"}});
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), &path, declaration.to_string()).unwrap();
     let run = fixture
         .verify(VerifyOptions {
             profile: Some(project::selection::ProfileSelection::Named(
@@ -1444,11 +1560,14 @@ async fn a_removed_original_leaves_review_and_a_remaining_follower_takes_its_sig
     let owner = original["requests"][0]["id"].as_str().unwrap();
     let follower = joined["requests"][0]["id"].as_str().unwrap();
     assert_eq!(listed(&fixture.state).await, [owner]);
-    let (receipts, _) = human::open(&fixture.state, &rid(owner)).await.unwrap();
-    human::claim(&receipts, &rid(owner), &"alice".parse().unwrap())
-        .await
-        .unwrap();
-    receipts.close().await.unwrap();
+    let owner_id = rid(owner);
+    fixture
+        .with_human_receipts(&owner_id, async |receipts, _| {
+            human::claim(receipts, &owner_id, &"alice".parse().unwrap())
+                .await
+                .unwrap();
+        })
+        .await;
     fixture.remove_repo();
     assert_eq!(listed(&fixture.state).await, [follower]);
     assert_eq!(
@@ -1456,40 +1575,43 @@ async fn a_removed_original_leaves_review_and_a_remaining_follower_takes_its_sig
         ("ERROR".to_owned(), Some(FailureCode::RepositoryRemoved))
     );
     // Its own repository now holds the review: a claim, tools and the submission reach it.
-    let (receipts, _) = human::open(&fixture.state, &rid(follower)).await.unwrap();
-    let bob = "bob".parse().unwrap();
-    assert_eq!(
-        human::claim(&receipts, &rid(follower), &bob)
+    let follower_id = rid(follower);
+    fixture
+        .with_human_receipts(&follower_id, async |receipts, _| {
+            let bob = "bob".parse().unwrap();
+            assert_eq!(
+                human::claim(receipts, &follower_id, &bob)
+                    .await
+                    .unwrap()
+                    .request_id
+                    .as_str(),
+                follower
+            );
+            let inspected = human::run_human_tool(
+                receipts,
+                &follower_id,
+                &bob,
+                &"inspect_review".parse().unwrap(),
+                CancellationToken::new(),
+                artifactize_core::review::log::Run::unwatched(),
+            )
             .await
-            .unwrap()
-            .request_id
-            .as_str(),
-        follower
-    );
-    let inspected = human::run_human_tool(
-        &receipts,
-        &rid(follower),
-        &bob,
-        &"inspect_review".parse().unwrap(),
-        CancellationToken::new(),
-        artifactize_core::review::log::Run::unwatched(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        serde_json::to_value(inspected).unwrap()["content"][0]["text"],
-        "human-v1\n"
-    );
-    human::submit(
-        &receipts,
-        &rid(follower),
-        &bob,
-        &green(),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    receipts.close().await.unwrap();
+            .unwrap();
+            assert_eq!(
+                serde_json::to_value(inspected).unwrap()["content"][0]["text"],
+                "human-v1\n"
+            );
+            human::submit(
+                receipts,
+                &follower_id,
+                &bob,
+                &green(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        })
+        .await;
     assert_eq!(outcome(&fixture.state, follower).await.0, "GREEN");
     assert!(listed(&fixture.state).await.is_empty());
 }

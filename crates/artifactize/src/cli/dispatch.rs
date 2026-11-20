@@ -1,8 +1,8 @@
 //! Route parsed commands to focused workflows; no business logic or rendering here.
 
 use super::{
-    Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, cache, interactive,
-    maintenance, provider, remote, request, run, server, session, workflow,
+    Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, account, cache, config,
+    maintenance, provider, remote, request, run, server, session, status, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -13,16 +13,46 @@ pub(super) struct Context {
     pub json: bool,
 }
 
-pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
-    let context = Context {
-        repo: cli.repo,
-        state_dir: cli.state_dir,
-        json: cli.json,
-    };
-    let executor = matches!(cli.command, Some(Command::VerifyExecution { .. }));
-    match cli.command {
+pub(super) async fn execute(cli: Parsed) -> Result<u8, String> {
+    let Parsed {
+        state_dir,
+        json,
+        invocation,
+    } = cli;
+    match invocation {
+        Invocation::Desktop(launch) => launch.run(state_dir).await,
+        Invocation::ToolCheck { options, repo } => {
+            maintenance::tools(
+                Context {
+                    repo,
+                    state_dir,
+                    json,
+                },
+                options,
+            )
+            .await
+        }
+        Invocation::Tool(tool) => Ok(artifactize_tools::cli::run(tool).await),
+        Invocation::General(command, repo) => {
+            execute_general(
+                command,
+                Context {
+                    repo,
+                    state_dir,
+                    json,
+                },
+            )
+            .await
+        }
+    }
+}
+
+async fn execute_general(command: Option<Command>, context: Context) -> Result<u8, String> {
+    let executor = matches!(command, Some(Command::VerifyExecution { .. }));
+    match command {
         Some(Command::Mcp) => {
-            let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+            let executable =
+                artifactize_core::platform::current_executable().map_err(|e| e.to_string())?;
             // Without --repo each call's `project`, the client's roots or the working
             // directory name the project, as a plugin's server starts in the plugin's folder.
             let repo = context
@@ -40,7 +70,9 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
                 state: context.state_dir,
                 executable,
             };
-            artifactize_mcp::serve(launch).await?;
+            artifactize_mcp::serve(launch)
+                .await
+                .map_err(|error| error.to_string())?;
             Ok(0)
         }
         None => {
@@ -53,7 +85,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             let runs = artifactize_core::runs::Context::new(
                 context.repo.as_deref().unwrap_or(std::path::Path::new(".")),
                 context.state_dir.as_deref(),
-                &std::env::current_exe().map_err(|e| e.to_string())?,
+                &artifactize_core::platform::current_executable().map_err(|e| e.to_string())?,
             )?;
             if executor {
                 artifactize_core::runs::execute(&runs, &run_id).await?;
@@ -68,14 +100,8 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Run {
             command: RunCommand::Cancel { run_id },
         }) => run::cancel(context, run_id).await,
-        Some(Command::Tools {
-            command: ToolsCommand::Check(options),
-        }) => maintenance::tools(context, options.into()).await,
-        Some(Command::Tools {
-            command: ToolsCommand::Builtin(tool),
-        }) => Ok(artifactize_tools::cli::run(tool).await),
-        Some(Command::Login { provider }) => maintenance::login(context, provider).await,
-        Some(Command::Logout { provider }) => maintenance::logout(context, provider).await,
+        Some(Command::Login { provider }) => account::login(context, provider).await,
+        Some(Command::Logout { provider }) => account::logout(context, provider).await,
         Some(Command::Provider { command }) => {
             provider::execute(
                 context.state_dir.as_deref(),
@@ -89,36 +115,32 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Prune {
             older_than,
             dry_run,
-        }) => maintenance::prune(context, older_than, dry_run).await,
+        }) => maintenance::prune(context, older_than, dry_run),
         Some(Command::Limits { signoff_idle_grace }) => {
             maintenance::limits(context, signoff_idle_grace)
         }
-        Some(Command::Models { provider }) => maintenance::models(context, provider).await,
+        Some(Command::Models { provider }) => account::models(context, provider).await,
         Some(Command::Verify {
             selection,
             policy,
             jobs,
             max_executions,
-            wait,
-            watch,
+            follow,
             request_key,
             comment,
             reuse_only,
             speculate,
-            defer_human,
+            defer_human: None,
         }) => {
-            if defer_human {
-                return Err("--defer-human was removed in 0.16.0: every verify lets machine work go on while sign-offs wait; remove the flag.".into());
-            }
             workflow::verify(
                 context,
-                selection,
+                selection.resolve()?,
                 policy,
                 workflow::VerifyLimits {
                     modes: artifactize_core::runs::RunModes { speculate },
                     jobs,
                     max_executions,
-                    follow: workflow::Follow::from_flags(wait, watch),
+                    follow,
                     request_key,
                     comment,
                     reuse_only,
@@ -127,36 +149,32 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             .await
         }
         Some(Command::Status { selection, policy }) => {
-            workflow::status(context, selection, policy).await
+            status::execute(context, selection.resolve()?, policy).await
         }
         Some(Command::Graph { .. }) => Err(r#"graph moved to "artifactize config graph""#.into()),
         Some(Command::Config {
             command: ConfigCommand::Graph { artifact, impact },
-        }) => workflow::graph(context, artifact, impact).await,
+        }) => config::graph(context, artifact, impact),
+        Some(Command::Config {
+            command: ConfigCommand::Rename { old, new },
+        }) => config::rename(context, old, new),
+        Some(Command::Config {
+            command: ConfigCommand::Migrate,
+        }) => config::migrate(context),
         Some(Command::Config {
             command: ConfigCommand::Check,
-        }) => workflow::check(context).await,
-        Some(Command::Run {
-            command: RunCommand::List {
-                all, limit, offset, ..
-            },
-        }) => run::list(context, all, limit, offset).await,
+        }) => config::check(context),
         Some(Command::Run {
             command:
-                RunCommand::Show {
-                    run_id,
-                    wait,
-                    timeout_ms,
+                RunCommand::List {
+                    scope,
+                    limit,
+                    offset,
                 },
-        }) => run::show(context, run_id, wait, timeout_ms).await,
-        Some(Command::Monitor { all, path }) => {
-            interactive::monitor(context, all, path, screens).await
-        }
-        Some(Command::Review {
-            request,
-            all,
-            reviewer,
-        }) => interactive::review(context, request, all, reviewer, screens).await,
+        }) => run::list(context, scope, limit, offset).await,
+        Some(Command::Run {
+            command: RunCommand::Show { run_id, mode },
+        }) => run::show(context, run_id, mode).await,
         Some(Command::Cache { command }) => cache::execute(context, command).await,
         Some(Command::Remote { command }) => {
             remote::execute(

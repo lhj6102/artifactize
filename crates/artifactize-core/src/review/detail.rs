@@ -4,7 +4,7 @@ use crate::{
     monitor::{duration, plain},
     store::{Request, RequestView},
 };
-use serde_json::Value;
+use serde_json::{Map, Value};
 use time::OffsetDateTime;
 
 /// Where a Human request stands for one reviewer.
@@ -73,19 +73,21 @@ pub fn shared(view: &RequestView) -> Option<String> {
     })
 }
 
-fn schema(schema: Option<&Value>) -> String {
-    schema.map_or("none (no owner fields)".into(), |schema| {
-        serde_json::to_string_pretty(schema).unwrap_or_default()
-    })
+fn schema(schema: Option<&crate::config::Field<Map<String, Value>>>) -> String {
+    match schema {
+        None | Some(crate::config::Field::Missing) => "none (no owner fields)".into(),
+        Some(crate::config::Field::Null) => "null".into(),
+        Some(crate::config::Field::Value(schema)) => {
+            serde_json::to_string_pretty(schema).unwrap_or_default()
+        }
+    }
 }
 
 /// The folded Technical section: identifiers, the repository and the raw owner schemas.
 pub fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
     let request = &view.request;
     let definition = request.human_definition.as_ref();
-    let declaration = definition
-        .and_then(|definition| definition.eval.declaration.value())
-        .map(|declaration| serde_json::to_value(declaration).expect("saved declaration is JSON"));
+    let declaration = definition.and_then(|definition| definition.eval.declaration());
     let status = match (&request.error(), &request.error_code()) {
         (Some(error), Some(code)) => format!("{} [{code}] {error}", request.status()),
         (Some(error), None) => format!("{} {error}", request.status()),
@@ -111,7 +113,7 @@ pub fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, Strin
             "Repository",
             definition
                 .and_then(|definition| definition.repo.value())
-                .map(|repo| crate::platform::path_text(repo))
+                .map(crate::platform::path_text)
                 .unwrap_or_else(|| "-".into()),
         ),
         ("Status", status),
@@ -121,23 +123,27 @@ pub fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, Strin
         fields.push(("Shared", shared));
     }
     fields.push(("Created", request.created_at.to_string()));
-    let owner = |key| {
-        schema(
-            declaration
-                .as_ref()
-                .and_then(|declaration| declaration.get(key)),
-        )
-    };
-    fields.push(("GREEN fields", owner("passSchema")));
-    fields.push(("RED fields", owner("failSchema")));
+    fields.push((
+        "GREEN fields",
+        schema(declaration.map(|saved| &saved.pass_schema)),
+    ));
+    fields.push((
+        "RED fields",
+        schema(declaration.map(|saved| &saved.fail_schema)),
+    ));
     fields
 }
 
-/// The stage of a request that is `settled`, or open and claimed by this reviewer (`mine`).
-pub fn stage(settled: bool, mine: bool) -> Stage {
-    if settled {
+/// Where the request of `view` stands for `reviewer`: settled, open and claimed by them, or
+/// open to claim.
+pub fn stage(view: &RequestView, reviewer: &str) -> Stage {
+    if !view.request.status().is_human_wait() {
         Stage::Completed
-    } else if mine {
+    } else if view
+        .claim
+        .as_ref()
+        .is_some_and(|claim| claim.reviewer.as_str() == reviewer)
+    {
         Stage::Review
     } else {
         Stage::Claim

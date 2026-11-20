@@ -1,0 +1,10 @@
+fingerprint = false
+path = "blocked/"
+
+[evals.check]
+title = "Check blocked"
+profile = { kind = "runtime", command = "/bin/sh", args = ["-c", "printf 'must not execute\\n'"] }
+
+[evals.check.payload]
+instruction = """
+Check {red}."""

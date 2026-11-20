@@ -1,9 +1,6 @@
 //! A loopback HTTP server that replays canned provider responses, and the test endpoint rules.
 
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::{cell::RefCell, collections::BTreeMap};
 
 use rig_core::test_utils::MockHttpResponse;
 use serde_json::Value;
@@ -25,104 +22,124 @@ pub(crate) struct Request {
 
 pub(crate) struct Server {
     pub base: String,
-    requests: Arc<Mutex<Vec<Request>>>,
-    task: tokio::task::JoinHandle<()>,
+    requests: RefCell<Vec<Request>>,
 }
 
 impl Server {
-    pub async fn new(responses: Vec<MockHttpResponse>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}/v1", listener.local_addr().unwrap());
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let captured = requests.clone();
-        let task = tokio::spawn(async move {
-            for response in responses {
-                let (mut socket, _) = listener.accept().await.unwrap();
-                let mut bytes = Vec::new();
-                let end = loop {
-                    let mut buffer = [0; READ_CHUNK_BYTES];
-                    let count = socket.read(&mut buffer).await.unwrap();
-                    assert_ne!(count, 0);
-                    bytes.extend_from_slice(&buffer[..count]);
-                    if let Some(end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
-                        break end + 4;
-                    }
-                };
-                let head = String::from_utf8(bytes[..end].to_vec()).unwrap();
-                let mut lines = head.lines();
-                let line = lines.next().unwrap().to_owned();
-                let headers: BTreeMap<String, String> = lines
-                    .filter_map(|line| line.split_once(':'))
-                    .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_owned()))
-                    .collect();
-                let length = headers
-                    .get("content-length")
-                    .map(|value| value.parse().unwrap())
-                    .unwrap_or(0);
-                while bytes.len() < end + length {
-                    let mut buffer = [0; READ_CHUNK_BYTES];
-                    let count = socket.read(&mut buffer).await.unwrap();
-                    assert_ne!(count, 0);
-                    bytes.extend_from_slice(&buffer[..count]);
+    /// Run the fixture and exercise together so open sockets are dropped before `run`
+    /// returns or unwinds, including if an assertion fails or not all responses are used.
+    pub async fn run<T>(
+        responses: Vec<MockHttpResponse>,
+        exercise: impl AsyncFnOnce(&Self) -> T,
+    ) -> T {
+        let listener = crate::test_os::tcp::async_loopback_listener();
+        let server = Self {
+            base: format!("http://{}/v1", listener.local_addr().unwrap()),
+            requests: RefCell::default(),
+        };
+        let mut exercise = std::pin::pin!(exercise(&server));
+        tokio::select! {
+            biased;
+            () = server.serve(listener, responses) => exercise.await,
+            result = &mut exercise => result,
+        }
+    }
+
+    async fn serve(&self, listener: TcpListener, responses: Vec<MockHttpResponse>) {
+        for response in responses {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut bytes = Vec::new();
+            let end = loop {
+                let mut buffer = [0; READ_CHUNK_BYTES];
+                let count = socket.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                bytes.extend_from_slice(&buffer[..count]);
+                if let Some(end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+                    break end + 4;
                 }
-                // A form body is kept as its raw text.
-                let raw = &bytes[end..end + length];
-                let body = if length == 0 {
-                    Value::Null
-                } else {
-                    serde_json::from_slice(raw).unwrap_or_else(|_| {
-                        Value::String(String::from_utf8_lossy(raw).into_owned())
-                    })
-                };
-                captured.lock().unwrap().push(Request {
-                    line,
-                    headers,
-                    body,
-                });
-                let (status, body, content_type) = match response {
-                    MockHttpResponse::Success(body) => (200, body, "application/json".to_owned()),
-                    MockHttpResponse::SuccessWithHeaders(body, headers) => (
-                        200,
-                        body,
-                        headers["content-type"].to_str().unwrap().to_owned(),
-                    ),
-                    MockHttpResponse::ErrorResponse(status, body) => {
-                        (status.as_u16(), body, "application/json".into())
-                    }
-                    MockHttpResponse::ErrorWithHeaders(status, body, _) => {
-                        (status.as_u16(), body.into(), "application/json".into())
-                    }
-                    _ => panic!("unsupported test response"),
-                };
-                // An empty type omits the header.
-                let content_type = match content_type.as_str() {
-                    "" => String::new(),
-                    value => format!("Content-Type: {value}\r\n"),
-                };
-                let header = format!(
-                    "HTTP/1.1 {status} Test\r\n{content_type}Content-Length: {}\r\nConnection: close\r\n\r\n",
-                    body.len()
-                );
-                socket.write_all(header.as_bytes()).await.unwrap();
-                socket.write_all(&body).await.unwrap();
+            };
+            let head = String::from_utf8(bytes[..end].to_vec()).unwrap();
+            let mut lines = head.lines();
+            let line = lines.next().unwrap().to_owned();
+            let headers: BTreeMap<String, String> = lines
+                .filter_map(|line| line.split_once(':'))
+                .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_owned()))
+                .collect();
+            let length = headers
+                .get("content-length")
+                .map(|value| value.parse().unwrap())
+                .unwrap_or(0);
+            while bytes.len() < end + length {
+                let mut buffer = [0; READ_CHUNK_BYTES];
+                let count = socket.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                bytes.extend_from_slice(&buffer[..count]);
             }
-        });
-        Self {
-            base,
-            requests,
-            task,
+            // A form body is kept as its raw text.
+            let raw = &bytes[end..end + length];
+            let body = if length == 0 {
+                Value::Null
+            } else {
+                serde_json::from_slice(raw)
+                    .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(raw).into_owned()))
+            };
+            self.requests.borrow_mut().push(Request {
+                line,
+                headers,
+                body,
+            });
+            let (status, body, content_type) = match response {
+                MockHttpResponse::Success(body) => (200, body, "application/json".to_owned()),
+                MockHttpResponse::SuccessWithHeaders(body, headers) => (
+                    200,
+                    body,
+                    headers["content-type"].to_str().unwrap().to_owned(),
+                ),
+                MockHttpResponse::ErrorResponse(status, body) => {
+                    (status.as_u16(), body, "application/json".into())
+                }
+                MockHttpResponse::ErrorWithHeaders(status, body, _) => {
+                    (status.as_u16(), body.into(), "application/json".into())
+                }
+                _ => panic!("unsupported test response"),
+            };
+            // An empty type omits the header.
+            let content_type = match content_type.as_str() {
+                "" => String::new(),
+                value => format!("Content-Type: {value}\r\n"),
+            };
+            let header = format!(
+                "HTTP/1.1 {status} Test\r\n{content_type}Content-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            socket.write_all(header.as_bytes()).await.unwrap();
+            socket.write_all(&body).await.unwrap();
         }
     }
 
     pub fn requests(&self) -> Vec<Request> {
-        self.requests.lock().unwrap().clone()
+        self.requests.borrow().clone()
     }
 }
 
-impl Drop for Server {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
+#[test]
+fn http_client_rejects_claude_agent_backend() {
+    let root = crate::test_os::tempdir();
+    let result = super::Client::new(
+        &crate::config::Provider::ClaudeAgent.into(),
+        &"test-model".parse().unwrap(),
+        &root.path().join("state"),
+        root.path(),
+    );
+    let Err(error) = result else {
+        panic!("Claude Agent must not get an HTTP client");
+    };
+    assert_eq!(error.code, super::Code::AgentError);
+    assert!(
+        error
+            .message
+            .contains("Unsupported client backend: claude-agent")
+    );
 }
 
 #[test]
@@ -191,4 +208,39 @@ fn retry_after_reads_milliseconds_seconds_and_http_dates() {
         assert_eq!(wait(&[("retry-after", value)]), None, "{value}");
     }
     assert_eq!(wait(&[]), None);
+}
+
+#[test]
+fn codex_errors_classify_usage_and_overload_with_the_same_diagnostic() {
+    use super::{Client, Code, codex};
+    use rig_core::{ProviderResponseError, error::ProviderError};
+
+    let root = crate::test_os::tempdir();
+    let client = Client::Codex(
+        codex::Codex::new(
+            &"test-model".parse().unwrap(),
+            "http://localhost/".parse().unwrap(),
+            &root.path().join("state"),
+            root.path(),
+        )
+        .unwrap(),
+    );
+    let now = time::OffsetDateTime::from_unix_timestamp(1_800).unwrap();
+    let usage = ProviderError::ProviderResponse(ProviderResponseError::new(
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+        r#"{"error":{"type":"usage_limit_reached","plan_type":"PRO","resets_at":1861}}"#,
+    ));
+    let classified = client.classify(&usage, now);
+    assert_eq!(classified.code, Code::Quota);
+    assert_eq!(
+        classified.message,
+        "usage_limit_reached: You have hit your ChatGPT usage limit (pro plan). Try again in ~2 min. (HTTP 429)"
+    );
+
+    let overload = ProviderError::ProviderResponse(ProviderResponseError::without_status(
+        r#"{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"Try later"}}}"#,
+    ));
+    let classified = client.classify(&overload, now);
+    assert_eq!(classified.code, Code::Transient);
+    assert_eq!(classified.message, "server_is_overloaded: Try later");
 }

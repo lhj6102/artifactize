@@ -7,7 +7,7 @@ import { SvelteMap } from "svelte/reactivity";
 const KEY = "detail-sections";
 
 /** The sections a tab is opened for; every other foldable section starts folded. */
-const UNFOLDED = new Set(["Evals", "Tools", "Tool log", "Path", "Result", "Outcome", "Waits for"]);
+const UNFOLDED = new Set(["Evals", "Tools", "Tool log", "Path", "Definition", "Result", "Outcome", "Waits for"]);
 
 export class Sections {
   /** What a person chose, by section name: true for unfolded. */

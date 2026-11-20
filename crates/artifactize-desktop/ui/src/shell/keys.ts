@@ -5,13 +5,14 @@ export function composing(event: KeyboardEvent): boolean {
   return event.isComposing || event.keyCode === 229;
 }
 
-/** The target takes typed letters itself: inputs, text areas, selects and editable content. */
+/** The target is a field: an input of any kind but a button (a true/false field and a choice
+ * included), a text area, a select or editable content. Keys pressed there are the field's. */
 export function editable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
   if (target instanceof HTMLInputElement) {
-    return !["checkbox", "radio", "button", "submit", "reset"].includes(target.type);
+    return !["button", "submit", "reset", "image"].includes(target.type);
   }
   return false;
 }
@@ -22,7 +23,7 @@ export function primary(event: KeyboardEvent): boolean {
 }
 
 /**
- * A plain letter or symbol shortcut such as `c` or `?`: no Ctrl, ⌘ or Alt, not typed into
+ * A plain letter or symbol shortcut such as `c` or `?`: no Ctrl, ⌘ or Alt, not pressed in
  * a field, not part of a composition.
  */
 export function plain(event: KeyboardEvent, key: string): boolean {

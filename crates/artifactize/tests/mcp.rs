@@ -8,12 +8,10 @@ use artifactize_core::{
     runs, store,
     types::{RunId, RunStatus},
 };
+use futures_util::FutureExt;
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf, time::Duration};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{ChildStdin, ChildStdout},
-};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 // Independent public transport limits, not imports from the implementation under test.
 const RESPONSE_BYTES: usize = 64 * 1024;
@@ -33,8 +31,13 @@ impl Project {
         let root = support::os::tempdir();
         let repo = support::os::canonical(root.path()).join("repo");
         fs::create_dir(&repo).unwrap();
-        fs::write(repo.join("content.txt"), "review input").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("content.txt")),
+            "review input",
+        )
+        .unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("index.artf"),
             json!({"name":"app","fingerprint":{"files":["content.txt"]},"evals":evals}).to_string(),
         )
@@ -93,7 +96,7 @@ impl Project {
 }
 async fn marker(path: &std::path::Path, expected: &str) {
     tokio::time::timeout(support::os::patience(FIXTURE_BOUND), async {
-        while fs::read_to_string(path).ok().as_deref() != Some(expected) {
+        while support::declaration::read_text(path).ok().as_deref() != Some(expected) {
             // Poll contents rather than file existence: creation can precede the write.
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -102,10 +105,17 @@ async fn marker(path: &std::path::Path, expected: &str) {
     .expect("controlled runtime saved its ready marker");
 }
 
+/// The spawned server is boxed: the child's pipes and Windows job handles make it much
+/// larger than the in-process stream owner.
+enum ServerOwner {
+    Process(Box<support::os::PipedTestChild>),
+    Stream,
+}
+
 struct Client {
-    child: support::os::PipedTestChild,
-    input: ChildStdin,
-    output: BufReader<ChildStdout>,
+    server: ServerOwner,
+    input: Box<dyn AsyncWrite + Unpin>,
+    output: BufReader<Box<dyn AsyncRead + Unpin>>,
     id: u64,
     modern: bool,
 }
@@ -122,11 +132,61 @@ impl Client {
         command.arg("mcp");
         let mut child = support::os::spawn_piped_test(command);
         let input = child.take_stdin();
-        let output = BufReader::new(child.take_stdout());
-        let mut client = Self {
-            child,
+        let output = child.take_stdout();
+        Self::connect(
+            ServerOwner::Process(Box::new(child)),
             input,
             output,
+            version,
+            capabilities,
+        )
+        .await
+    }
+    async fn local<T>(
+        project: &Project,
+        version: &str,
+        observe: impl AsyncFnOnce(&mut Self) -> T,
+    ) -> T {
+        const BUFFER: usize = 16 * 1024;
+        let (client, server) = tokio::io::duplex(BUFFER);
+        let (reader, writer) = tokio::io::split(server);
+        let launch = artifactize_mcp::Launch {
+            repo: Some(project.context()),
+            state: Some(project.state.clone()),
+            executable: support::os::cli(),
+        };
+        let (output, input) = tokio::io::split(client);
+        let connection = std::panic::AssertUnwindSafe(async {
+            let mut client =
+                Self::connect(ServerOwner::Stream, input, output, version, json!({})).await;
+            observe(&mut client).await
+        })
+        .catch_unwind();
+        // Dropping the client closes its transport even on unwind. Join server IO and all
+        // handlers in this scope before the caller can drop the project's saved state.
+        let (closed, observed) = tokio::join!(
+            artifactize_mcp::serve_io(launch, reader, writer),
+            connection
+        );
+        match observed {
+            Ok(value) => {
+                closed.expect("close scoped MCP server");
+                value
+            }
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
+    async fn connect(
+        server: ServerOwner,
+        input: impl AsyncWrite + Unpin + 'static,
+        output: impl AsyncRead + Unpin + 'static,
+        version: &str,
+        capabilities: Value,
+    ) -> Self {
+        let mut client = Self {
+            server,
+            input: Box::new(input),
+            output: BufReader::new(Box::new(output)),
             id: 0,
             modern: version == "2026-07-28",
         };
@@ -210,6 +270,27 @@ impl Client {
         run: &RunId,
         settle: impl std::future::Future<Output = ()>,
     ) -> Value {
+        assert!(matches!(self.server, ServerOwner::Stream));
+        // Freeze the server's positive wait deadline while crossing real worker barriers.
+        // A blocking task suppresses Tokio's idle auto-advance; dropping the sender
+        // releases it even when an assertion unwinds.
+        let (clock, frozen) = std::sync::mpsc::channel::<()>();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (watchdog, expired) = tokio::sync::oneshot::channel();
+        let blocker = tokio::task::spawn_blocking(move || {
+            let _ = started.send(());
+            if matches!(
+                frozen.recv_timeout(support::os::patience(PROTOCOL_BOUND)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ) {
+                let _ = watchdog.send(());
+                let _ = frozen.recv();
+            }
+        });
+        ready.await.unwrap();
+        tokio::time::pause();
+        let result = tokio::select! {
+            result = async {
         let wait = self
             .request(
                 "tools/call",
@@ -227,7 +308,15 @@ impl Client {
             "fixture settled before the wait barrier: {active}"
         );
         settle.await;
-        let result = Self::tool_result("verify_wait", self.response(wait).await);
+        Self::tool_result("verify_wait", self.response(wait).await)
+
+            } => Ok(result),
+            _ = expired => Err("fixture did not settle before the watchdog"),
+        };
+        tokio::time::resume();
+        drop(clock);
+        blocker.await.unwrap();
+        let result = result.expect("settlement while the virtual clock stays frozen");
         assert!(
             ["green", "cancelled"].contains(&result["state"].as_str().unwrap()),
             "verify_wait returned an active snapshot instead of controlled settlement: {result}"
@@ -268,11 +357,14 @@ impl Client {
     async fn close(mut self) {
         self.input.shutdown().await.unwrap();
         drop(self.input);
-        let status = tokio::time::timeout(support::os::patience(FIXTURE_BOUND), self.child.wait())
-            .await
-            .expect("server exits after stdin closes")
-            .unwrap();
-        assert!(status.success());
+        tokio::time::timeout(support::os::patience(FIXTURE_BOUND), async {
+            match &mut self.server {
+                ServerOwner::Process(child) => assert!(child.wait().await.unwrap().success()),
+                ServerOwner::Stream => unreachable!("local transport is joined by its scope"),
+            }
+        })
+        .await
+        .expect("server exits after stdin closes");
     }
 }
 fn runtime(id: &str, command: impl AsRef<str>, args: Value) -> Value {
@@ -284,7 +376,10 @@ async fn client_fixture_reaps_its_server_on_normal_drop_and_unwind() {
     let project = Project::new(json!([]));
     for unwind in [false, true] {
         let client = Client::new(project.command(), "2026-07-28").await;
-        let pid = client.child.id();
+        let ServerOwner::Process(child) = &client.server else {
+            unreachable!("spawned client")
+        };
+        let pid = child.id();
         let birth = support::os::start_time(pid);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             let _client = client;
@@ -331,48 +426,16 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     evals.push(runtime(
         "controlled",
         support::os::python_program(),
-        json!(["-I", support::os::path_text(&script)]),
+        json!(["-I", support::os::native_text(&script)]),
     ));
     support::declaration::write(
+        &(project.repo),
         project.repo.join("index.artf"),
         json!({"name":"app","fingerprint":{"files":["content.txt"]},"evals":evals}).to_string(),
     )
     .unwrap();
     let mut client = Client::new(project.command(), "2026-07-28").await;
-    let tools = client.rpc("tools/list", json!({})).await;
-    let mut names: Vec<_> = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|tool| tool["name"].as_str().unwrap())
-        .collect();
-    names.sort_unstable();
-    assert_eq!(
-        names,
-        [
-            "cache_show",
-            "config_check",
-            "config_graph",
-            "doctor",
-            "models",
-            "remote_status",
-            "request_list",
-            "request_logs",
-            "request_show",
-            "run_list",
-            "run_show",
-            "session_show",
-            "status",
-            "tools_check",
-            "verify_cancel",
-            "verify_result",
-            "verify_start",
-            "verify_status",
-            "verify_wait",
-            "verify_watch",
-        ],
-        "the public surface exposes no credentials or Human sign-off actions"
-    );
+    let tools = assert_inventory(&mut client).await;
     let start_schema = &tools["result"]["tools"]
         .as_array()
         .unwrap()
@@ -427,7 +490,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         .await;
     marker(&project.repo.join("ready"), "ready").await;
     let bounded = client
-        .call("verify_wait", json!({"run":run,"seconds":1}))
+        .call("verify_wait", json!({"run":run,"seconds":0}))
         .await;
     assert!(!["green", "red", "error", "cancelled"].contains(&bounded["state"].as_str().unwrap()));
     assert_eq!(
@@ -448,15 +511,20 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
             .status()
             .is_open()
     );
-    let mut legacy = Client::new(project.command(), "2024-11-05").await;
-    assert_eq!(
+    let ended = Client::local(&project, "2024-11-05", async |legacy| {
         legacy
             .wait_for_settlement(&run, async {
-                fs::write(project.repo.join("release"), "release").unwrap();
+                fs::write(
+                    support::declaration::source_path(project.repo.join("release")),
+                    "release",
+                )
+                .unwrap();
             })
-            .await["state"],
-        "green"
-    );
+            .await
+    })
+    .await;
+    assert_eq!(ended["state"], "green");
+    let mut legacy = Client::new(project.command(), "2024-11-05").await;
     assert_eq!(project.settled(&run).await.run.status(), RunStatus::Green);
     let first = legacy.call("verify_result", json!({"run":run})).await;
     assert_eq!(first["findings"].as_array().unwrap().len(), PAGE_ENTRIES);
@@ -468,10 +536,11 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         .await;
     assert_eq!(second["findings"].as_array().unwrap().len(), 2);
     assert!(second["next_cursor"].is_null());
-    fs::remove_file(project.repo.join("release")).unwrap();
-    fs::remove_file(project.repo.join("ready")).unwrap();
+    support::declaration::remove_file(project.repo.join("release")).unwrap();
+    support::declaration::remove_file(project.repo.join("ready")).unwrap();
     evals.last_mut().unwrap()["payload"]["instruction"] = json!("A new controlled judgment.");
     support::declaration::write(
+        &(project.repo),
         project.repo.join("index.artf"),
         json!({"name":"app","fingerprint":{"files":["content.txt"]},"evals":evals}).to_string(),
     )
@@ -488,6 +557,17 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         )
         .await;
     marker(&project.repo.join("ready"), "ready").await;
+    use artifactize_core::types::RequestStatus;
+    project
+        .state(&cancelled, "app/check-00", RequestStatus::Green)
+        .await;
+    let before = store::read_run(&project.state, &cancelled).await.unwrap();
+    let green = before
+        .requests
+        .iter()
+        .find(|request| request.eval_id == "app/check-00")
+        .unwrap();
+    assert!(green.result().is_some());
     assert_eq!(
         legacy.call("verify_cancel", json!({"run":cancelled})).await["cancellation_requested"],
         true
@@ -496,13 +576,17 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         project.settled(&cancelled).await.run.status(),
         RunStatus::Error
     );
-    assert!(
-        store::read_run(&project.state, &cancelled)
-            .await
-            .unwrap()
-            .requests
-            .iter()
-            .any(|r| r.status() == artifactize_core::types::RequestStatus::Green)
+    let after = store::read_run(&project.state, &cancelled).await.unwrap();
+    let persisted = after
+        .requests
+        .iter()
+        .find(|request| request.id == green.id)
+        .unwrap();
+    assert_eq!(persisted.status(), RequestStatus::Green);
+    assert_eq!(persisted.execution_id, green.execution_id);
+    assert_eq!(
+        serde_json::to_value(persisted.result()).unwrap(),
+        serde_json::to_value(green.result()).unwrap()
     );
     legacy.close().await;
 }
@@ -520,7 +604,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
                 gate.wait();
                 support::openai::completed(
                     request,
-                    vec![support::openai::message("{\"verdict\":\"GREEN\"}")],
+                    vec![support::openai::message("{\"findings\":[]}")],
                     support::openai::usage(1, 1),
                 )
             }
@@ -533,6 +617,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         let project = Project::new(
             json!([{ "id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review this long active audit.\n".repeat(1000)} }]),
         );
+        let _release_provider = owned_run::ReleaseGate::new(gate.clone());
         let mut command = project.command();
         command
             .env("OPENAI_API_KEY", "fake-key")
@@ -549,7 +634,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         };
         project.state(&run, "app/review", expected).await;
         let observation = client
-            .call("verify_wait", json!({"run":run,"seconds":1}))
+            .call("verify_wait", json!({"run":run,"seconds":0}))
             .await;
         assert!(serde_json::to_vec(&observation).unwrap().len() < COMPACT_BYTES);
         assert_eq!(
@@ -572,17 +657,20 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
                     .id
             )
         );
-        let ended = client
-            .wait_for_settlement(&run, async {
-                if kind == "agent" {
-                    gate.open();
-                } else {
-                    // Fixture cleanup, not a Human claim or judgment. The pending
-                    // MCP observer must follow this explicit core cancellation to end.
-                    runs::cancel(&project.context(), &run).await.unwrap();
-                }
-            })
-            .await;
+        client.close().await;
+        let ended = Client::local(&project, "2026-07-28", async |client| {
+            client
+                .wait_for_settlement(&run, async {
+                    if kind == "agent" {
+                        gate.open();
+                    } else {
+                        // Fixture cleanup: cancellation ends the pending observer.
+                        runs::cancel(&project.context(), &run).await.unwrap();
+                    }
+                })
+                .await
+        })
+        .await;
         assert_eq!(
             ended["state"],
             if kind == "agent" {
@@ -591,7 +679,6 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
                 "cancelled"
             }
         );
-        client.close().await;
     }
     let project = Project::new(
         json!([{ "id":"review", "title":"Person", "profile":{"kind":"human"}, "payload":{"instruction":"The person decides."} }]),
@@ -599,7 +686,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
     // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
     std::fs::create_dir_all(&project.state).unwrap();
     std::fs::write(
-        project.state.join("limits.json"),
+        support::declaration::source_path(project.state.join("limits.json")),
         r#"{"signoffIdleGraceSeconds":0}"#,
     )
     .unwrap();
@@ -641,7 +728,7 @@ async fn b1_read_tools_match_cli_json_table() {
         } else {
             support::openai::completed(
                 request,
-                vec![support::openai::message("{\"verdict\":\"GREEN\"}")],
+                vec![support::openai::message("{\"findings\":[]}")],
                 support::openai::usage(1, 1),
             )
         }
@@ -791,6 +878,96 @@ async fn b1_read_tools_match_cli_json_table() {
     client.close().await;
 }
 
+async fn assert_inventory(client: &mut Client) -> Value {
+    let tools = client.rpc("tools/list", json!({})).await;
+    let mut names: Vec<_> = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "cache_show",
+            "config_check",
+            "config_graph",
+            "doctor",
+            "models",
+            "remote_status",
+            "request_list",
+            "request_logs",
+            "request_show",
+            "run_list",
+            "run_show",
+            "session_show",
+            "status",
+            "tools_check",
+            "verify_cancel",
+            "verify_result",
+            "verify_start",
+            "verify_status",
+            "verify_wait",
+            "verify_watch",
+        ],
+        "the public surface exposes no credentials or Human sign-off actions"
+    );
+
+    tools
+}
+
+async fn plugin_registration(source: &str, version: &str, intended_args: &[&str]) {
+    let project = Project::new(json!([]));
+    let manifest: Value = serde_json::from_str(source).unwrap();
+    let server = &manifest["mcpServers"]["artifactize"];
+    assert_eq!(server["type"], "stdio");
+    assert_eq!(server["command"], "artifactize");
+    assert_eq!(server["args"], json!(intended_args));
+
+    // The fixture host reads the actual registration and resolves its installed command
+    // to Cargo's owned CLI. Both host formats speak MCP over the resulting stdio process.
+    let mut command = std::process::Command::new(support::os::cli());
+    command
+        .current_dir(&project.repo)
+        .arg("--state-dir")
+        .arg(&project.state)
+        .env("ARTIFACTIZE_REMOTE", "off");
+    let args = server["args"].as_array().unwrap();
+    let (last, prefix) = args.split_last().unwrap();
+    assert_eq!(last, "mcp");
+    for arg in prefix {
+        if arg == "${CLAUDE_PROJECT_DIR}" {
+            command.arg(&project.repo);
+        } else {
+            command.arg(arg.as_str().unwrap());
+        }
+    }
+    let mut client = Client::new(command, version).await;
+    assert_inventory(&mut client).await;
+    client.close().await;
+}
+
+#[tokio::test]
+async fn claude_plugin_registration_lists_the_inventory_without_a_host_login() {
+    plugin_registration(
+        include_str!("../../../agent-plugin/.claude-plugin/plugin.json"),
+        "2024-11-05",
+        &["--repo", "${CLAUDE_PROJECT_DIR}", "mcp"],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn portable_plugin_registration_lists_the_inventory_without_an_installed_host() {
+    plugin_registration(
+        include_str!("../../../agent-plugin/mcp.json"),
+        "2026-07-28",
+        &["mcp"],
+    )
+    .await;
+}
+
 fn host_smoke(host: &str) {
     let root = support::os::tempdir();
     let script =
@@ -832,7 +1009,7 @@ async fn runtime_log_queries_retain_tail_and_report_pruned_evidence() {
         &script,
         "import sys\nfor n in range(6000): print(f'line-{n:04d} ' + 'x' * 40)\nprint('final diagnostic', file=sys.stderr)\nsys.exit(7)\n",
     );
-    support::declaration::write(
+    support::declaration::write(&(project.repo),
         project.repo.join("index.artf"),
         json!({
             "name":"app", "evals":[runtime("logs", support::os::python_program(), json!(["-I",support::os::path_text(&script)]))]
@@ -892,6 +1069,11 @@ async fn runtime_log_queries_retain_tail_and_report_pruned_evidence() {
             json!({"id":request.id,"stream":"stdout","start":2,"end":3}),
         )
         .await;
+    let expected = json!([
+        {"number":2,"clipped":false,"text":format!("line-0001 {}", "x".repeat(40))},
+        {"number":3,"clipped":false,"text":format!("line-0002 {}", "x".repeat(40))}
+    ]);
+    assert_eq!(mcp["streams"][0]["lines"], expected);
     assert_eq!(cli, mcp);
     let stderr = client
         .inspect("request_logs", json!({"id":request.id,"stream":"stderr"}))
@@ -942,7 +1124,7 @@ async fn watch_stream_separates_live_eval_and_final_outcome_without_polling() {
         &script,
         "import pathlib,time\npathlib.Path('ready').write_text('ready')\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)\n",
     );
-    support::declaration::write(
+    support::declaration::write(&(project.repo),
         project.repo.join("index.artf"),
         json!({
             "name":"app", "fingerprint":{"files":["content.txt"]},
@@ -995,7 +1177,11 @@ async fn watch_stream_separates_live_eval_and_final_outcome_without_polling() {
         }
         if event["kind"] == "eval_result" && event["data"]["eval"] == "app/fast" {
             assert!(!events.iter().any(|e: &Value| e["kind"] == "outcome"));
-            fs::write(project.repo.join("release"), "release").unwrap();
+            fs::write(
+                support::declaration::source_path(project.repo.join("release")),
+                "release",
+            )
+            .unwrap();
         }
         events.push(event);
     }
@@ -1027,7 +1213,7 @@ async fn watch_stream_separates_live_eval_and_final_outcome_without_polling() {
 #[tokio::test]
 async fn graph_discovery_and_conservative_impact_match_cli() {
     let project = Project::new(json!([]));
-    fs::remove_file(project.repo.join("index.artf")).unwrap();
+    support::declaration::remove_file(project.repo.join("index.artf")).unwrap();
     for (name, declaration) in [
         ("input", json!({"name":"input","basis":true})),
         (
@@ -1039,6 +1225,7 @@ async fn graph_discovery_and_conservative_impact_match_cli() {
     ] {
         fs::create_dir(project.repo.join(name)).unwrap();
         support::declaration::write(
+            &(project.repo),
             project.repo.join(name).join("index.artf"),
             declaration.to_string(),
         )
@@ -1047,6 +1234,7 @@ async fn graph_discovery_and_conservative_impact_match_cli() {
     let mut client = Client::new(project.command(), "2026-07-28").await;
     let arguments = json!({"scope":{"kind":"artifact","artifactId":"input"},"impact":true});
     let mcp = client.inspect("config_graph", arguments).await;
+    assert_eq!(mcp["artifacts"]["consumer"]["name"], "consumer", "{mcp}");
     let cli = support::os::run(
         project
             .command()
@@ -1070,6 +1258,7 @@ async fn without_repo_the_clients_roots_name_the_project_and_a_change_asks_again
     let first = Project::new(json!([]));
     let second = Project::new(json!([]));
     support::declaration::write(
+        &(second.repo),
         second.repo.join("index.artf"),
         json!({"name":"other","fingerprint":{"files":["content.txt"]},"evals":[]}).to_string(),
     )
@@ -1110,8 +1299,16 @@ async fn in_its_plugins_folder_without_roots_the_server_serves_each_calls_projec
     // A host without roots starts the plugin's server in the plugin's folder.
     let project = Project::new(json!([]));
     let plugin = support::os::tempdir();
-    fs::write(plugin.path().join("plugin.json"), "{}").unwrap();
-    fs::write(plugin.path().join("mcp.json"), "{}").unwrap();
+    fs::write(
+        support::declaration::source_path(plugin.path().join("plugin.json")),
+        "{}",
+    )
+    .unwrap();
+    fs::write(
+        support::declaration::source_path(plugin.path().join("mcp.json")),
+        "{}",
+    )
+    .unwrap();
     let mut command = std::process::Command::new(support::os::cli());
     command
         .arg("--state-dir")
@@ -1137,8 +1334,9 @@ async fn in_its_plugins_folder_without_roots_the_server_serves_each_calls_projec
     );
     // With it, the call serves that project, exactly as the CLI there does.
     let mut arguments = graph.clone();
-    arguments["project"] = json!(project.repo);
+    arguments["project"] = json!(support::os::path_text(&project.repo));
     let mcp = client.inspect("config_graph", arguments).await;
+    assert_eq!(mcp["artifacts"]["app"]["name"], "app", "{mcp}");
     let cli = support::os::run(project.command().args(["config", "graph", "app", "--json"]));
     assert_eq!(mcp, serde_json::from_slice::<Value>(&cli.stdout).unwrap());
     // A relative folder would resolve against the plugin's folder: refused.

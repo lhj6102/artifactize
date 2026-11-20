@@ -27,7 +27,11 @@ use crate::{
     types::{RequestStatus, ReviewerId},
 };
 use clap::ValueEnum;
-use std::{collections::BTreeSet, ops::ControlFlow, path::Path};
+use std::{
+    collections::BTreeSet,
+    ops::ControlFlow,
+    path::{Path, PathBuf},
+};
 
 /// The query the review list starts with: the waiting Human sign-offs.
 pub const DEFAULT: &str = "kind:human status:waiting_human";
@@ -38,29 +42,15 @@ const BATCH: u32 = 400;
 pub const PAGE: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Key {
+enum TextField {
     Repo,
     Eval,
     Request,
     Reviewer,
     Tag,
-    Kind,
-    Status,
-    Is,
 }
 
-impl Key {
-    const ALL: [Self; 8] = [
-        Self::Repo,
-        Self::Eval,
-        Self::Request,
-        Self::Reviewer,
-        Self::Tag,
-        Self::Kind,
-        Self::Status,
-        Self::Is,
-    ];
-
+impl TextField {
     fn name(self) -> &'static str {
         match self {
             Self::Repo => "repo",
@@ -68,6 +58,33 @@ impl Key {
             Self::Request => "request",
             Self::Reviewer => "reviewer",
             Self::Tag => "tag",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Key {
+    Text(TextField),
+    Kind,
+    Status,
+    Is,
+}
+
+impl Key {
+    const ALL: [Self; 8] = [
+        Self::Text(TextField::Repo),
+        Self::Text(TextField::Eval),
+        Self::Text(TextField::Request),
+        Self::Text(TextField::Reviewer),
+        Self::Text(TextField::Tag),
+        Self::Kind,
+        Self::Status,
+        Self::Is,
+    ];
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Text(field) => field.name(),
             Self::Kind => "kind",
             Self::Status => "status",
             Self::Is => "is",
@@ -106,7 +123,7 @@ enum Term {
     /// Lowercased text found in any listed column.
     Text(String),
     /// Lowercased text found in one field.
-    Field(Key, String),
+    Field(TextField, String),
     Kind(ProfileKind),
     Status(RequestStatus),
     Is(Is),
@@ -118,14 +135,33 @@ pub struct Query {
     terms: Vec<Term>,
 }
 
+/// Who holds a request's claim, as the current reviewer sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Claim {
+    Unclaimed,
+    /// Claimed by the current reviewer, named.
+    Mine(String),
+    /// Claimed by another reviewer, named.
+    Other(String),
+}
+
+impl Claim {
+    /// The claimant's name, whoever it is.
+    pub fn reviewer(&self) -> Option<&str> {
+        match self {
+            Self::Unclaimed => None,
+            Self::Mine(name) | Self::Other(name) => Some(name),
+        }
+    }
+}
+
 /// The fields of one request that a query matches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
-    pub repository: String,
+    pub repository: PathBuf,
     pub eval: String,
     pub request: String,
-    pub reviewer: Option<String>,
-    pub mine: bool,
+    pub claim: Claim,
     pub kind: ProfileKind,
     pub status: RequestStatus,
     pub tags: Vec<String>,
@@ -146,14 +182,16 @@ impl Entry {
             .cloned()
             .unwrap_or_default();
         Self {
-            repository: crate::platform::path_text(repo),
+            repository: repo.to_owned(),
             eval: request.eval_id.to_string(),
             request: request.id.to_string(),
-            reviewer: view.claim.as_ref().map(|claim| claim.reviewer.to_string()),
-            mine: view
-                .claim
-                .as_ref()
-                .is_some_and(|claim| &claim.reviewer == reviewer),
+            claim: match &view.claim {
+                None => Claim::Unclaimed,
+                Some(claim) if &claim.reviewer == reviewer => {
+                    Claim::Mine(claim.reviewer.to_string())
+                }
+                Some(claim) => Claim::Other(claim.reviewer.to_string()),
+            },
             kind: request.profile.kind(),
             status: request.status(),
             tags,
@@ -260,7 +298,7 @@ impl std::str::FromStr for Query {
                                 list(Is::ALL.iter().map(|is| format!("is:{}", is.name())))
                             )
                         }),
-                    key => Ok(Term::Field(key, lower)),
+                    Key::Text(field) => Ok(Term::Field(field, lower)),
                 }
             })
             .collect::<Result<_, String>>()?;
@@ -317,29 +355,32 @@ impl Query {
     pub fn matches(&self, entry: &Entry) -> bool {
         self.terms.iter().all(|term| match term {
             Term::Text(text) => [
-                Some(entry.repository.as_str()),
+                Some(crate::platform::path_text(&entry.repository).as_str()),
                 Some(entry.eval.as_str()),
                 Some(entry.request.as_str()),
-                entry.reviewer.as_deref(),
+                entry.claim.reviewer(),
             ]
             .into_iter()
             .flatten()
             .any(|field| contains(field, text)),
-            Term::Field(Key::Repo, text) => contains(&entry.repository, text),
-            Term::Field(Key::Eval, text) => contains(&entry.eval, text),
-            Term::Field(Key::Request, text) => contains(&entry.request, text),
-            Term::Field(Key::Reviewer, text) => entry
-                .reviewer
-                .as_deref()
+            Term::Field(TextField::Repo, text) => {
+                contains(&crate::platform::path_text(&entry.repository), text)
+            }
+            Term::Field(TextField::Eval, text) => contains(&entry.eval, text),
+            Term::Field(TextField::Request, text) => contains(&entry.request, text),
+            Term::Field(TextField::Reviewer, text) => entry
+                .claim
+                .reviewer()
                 .is_some_and(|reviewer| contains(reviewer, text)),
-            Term::Field(Key::Tag, text) => entry.tags.iter().any(|tag| contains(tag, text)),
-            Term::Field(_, _) => unreachable!("kind, status and is parse to their own terms"),
+            Term::Field(TextField::Tag, text) => entry.tags.iter().any(|tag| contains(tag, text)),
             Term::Kind(kind) => entry.kind == *kind,
             Term::Status(RequestStatus::WaitingHuman) => entry.status.is_human_wait(),
             Term::Status(status) => entry.status == *status,
-            Term::Is(Is::Mine) => entry.mine,
-            Term::Is(Is::Claimed) => entry.reviewer.is_some(),
-            Term::Is(Is::Unclaimed) => entry.status.is_human_wait() && entry.reviewer.is_none(),
+            Term::Is(Is::Mine) => matches!(entry.claim, Claim::Mine(_)),
+            Term::Is(Is::Claimed) => entry.claim != Claim::Unclaimed,
+            Term::Is(Is::Unclaimed) => {
+                entry.status.is_human_wait() && entry.claim == Claim::Unclaimed
+            }
         })
     }
 
@@ -350,7 +391,7 @@ impl Query {
         if self
             .terms
             .iter()
-            .any(|term| matches!(term, Term::Field(Key::Tag, _)))
+            .any(|term| matches!(term, Term::Field(TextField::Tag, _)))
         {
             store::Shown::Definitions
         } else {
@@ -439,23 +480,26 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
             Some(key) => {
                 let partial = partial.trim_matches('"').to_lowercase();
                 let values: BTreeSet<String> = match key {
-                    Key::Repo => entries
+                    Key::Text(TextField::Repo) => entries
                         .iter()
                         .map(|entry| {
-                            Path::new(&entry.repository)
-                                .file_name()
-                                .map_or(entry.repository.clone(), |name| {
-                                    name.to_string_lossy().into_owned()
-                                })
+                            entry.repository.file_name().map_or_else(
+                                || crate::platform::path_text(&entry.repository),
+                                |name| name.to_string_lossy().into_owned(),
+                            )
                         })
                         .collect(),
-                    Key::Eval => entries.iter().map(|entry| entry.eval.clone()).collect(),
-                    Key::Request => entries.iter().map(|entry| entry.request.clone()).collect(),
-                    Key::Reviewer => entries
+                    Key::Text(TextField::Eval) => {
+                        entries.iter().map(|entry| entry.eval.clone()).collect()
+                    }
+                    Key::Text(TextField::Request) => {
+                        entries.iter().map(|entry| entry.request.clone()).collect()
+                    }
+                    Key::Text(TextField::Reviewer) => entries
                         .iter()
-                        .filter_map(|entry| entry.reviewer.clone())
+                        .filter_map(|entry| entry.claim.reviewer().map(str::to_owned))
                         .collect(),
-                    Key::Tag => entries
+                    Key::Text(TextField::Tag) => entries
                         .iter()
                         .flat_map(|entry| entry.tags.iter().cloned())
                         .collect(),
@@ -489,14 +533,9 @@ pub async fn suggest(
         .split_once(':')
         .filter(|_| !term.starts_with('"'))
         .and_then(|(name, _)| Key::parse(name));
-    let from_requests = key.is_some_and(|key| {
-        matches!(
-            key,
-            Key::Repo | Key::Eval | Key::Request | Key::Reviewer | Key::Tag
-        )
-    });
+    let from_requests = matches!(key, Some(Key::Text(_)));
     let shown = match key {
-        Some(Key::Tag) => store::Shown::Definitions,
+        Some(Key::Text(TextField::Tag)) => store::Shown::Definitions,
         _ => keep
             .parse::<Query>()
             .map_or(store::Shown::Requests, |query| query.shown()),
@@ -627,7 +666,7 @@ async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
         return false;
     };
     // Only the original's status matters, never what its Run's definitions hold.
-    store::read_request_as(state, source, store::Shown::Requests)
+    store::read_request_by_id(state, source, store::Shown::Requests)
         .await
         .is_ok_and(|original| original.request.status().is_human_wait())
 }

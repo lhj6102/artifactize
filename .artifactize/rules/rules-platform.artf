@@ -1,0 +1,51 @@
+path = "project-rules/DEV-PLATFORM.md"
+
+[views.agent_tools]
+
+[views.agent_tools.read_platform]
+description = "Print the platform checklist DEV-PLATFORM.md of {artifactName}."
+builtin = "read"
+args = ["DEV-PLATFORM.md"]
+
+[views.human_tools]
+open = { description = "Open DEV-PLATFORM.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
+
+[evals.approved]
+title = "The owner approves the checklist as the platform standard"
+profile = { kind = "human" }
+
+[evals.approved.payload]
+instruction = """
+Open DEV-PLATFORM.md of {rules-platform} with the open tool. Submit GREEN with approved: true when every item \
+is one the codebase should follow; otherwise submit RED and list the items to change."""
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["change"]
+additionalProperties = false
+
+[evals.serves-purpose]
+title = "Every platform rule serves the checklist's purpose, and none overlap or contradict"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.serves-purpose.payload]
+instruction = """
+Read the platform checklist DEV-PLATFORM.md of {rules-platform}. Its purpose: code that passes its checks on one \
+operating system very likely behaves the same on the others; to that end, everything that differs between operating \
+systems goes through one platform layer, and tests cover every OS. Review the rules themselves, rule by rule (P- \
+items), and report: a rule that does not serve the purpose (for example a style preference with no cross-platform \
+or reliability effect); two rules that overlap or contradict each other; a known way Linux, macOS and Windows differ \
+(files, paths, programs, processes, environment, terminals, IPC, desktop integration, text and time) that no rule \
+governs, but report such a missing rule only when the code shows that difference actually occurring \
+(cite path:line); differences the code never meets are out of scope. Report only what a rule item states or omits against this purpose: each finding names the item (or the \
+pair of items, or the missing difference) and points to the concrete text that does not meet the purpose. A \
+rewording, a further split or an extra example the purpose does not require is not a finding."""

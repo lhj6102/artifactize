@@ -38,9 +38,14 @@ pub(crate) fn validate_directory(path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
+/// Use 96 bits of the full digest in the runtime directory name to fit Unix socket paths.
+/// It is not authentication; ownership and the complete registration identity still apply.
+const NAMESPACE_HEX_CHARS: usize = 24;
+
 /// The private directory for one state namespace, created when missing and then validated.
-pub(crate) fn directory(namespace: &str, _user: &str) -> io::Result<PathBuf> {
-    let directory = std::env::temp_dir().join(format!("artifactize-ipc-{}", namespace));
+pub(crate) fn directory(identity: &crate::config::EndpointId, _user: &str) -> io::Result<PathBuf> {
+    let namespace = &identity[..NAMESPACE_HEX_CHARS];
+    let directory = std::env::temp_dir().join(format!("artifactize-ipc-{namespace}"));
     match platform::create_private_dir(&directory) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}

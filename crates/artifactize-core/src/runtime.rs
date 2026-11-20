@@ -163,9 +163,18 @@ impl std::fmt::Display for Verdict {
 
 #[derive(Debug)]
 pub struct ReviewResult {
-    pub verdict: Verdict,
     pub exit_code: i32,
     pub output: Output,
+}
+
+impl ReviewResult {
+    pub fn verdict(&self) -> Verdict {
+        if self.exit_code == 0 {
+            Verdict::Green
+        } else {
+            Verdict::Red
+        }
+    }
 }
 
 /// Operational errors carry no review verdict.
@@ -189,9 +198,57 @@ pub enum Error {
     AbnormalExit { signal: Option<i32>, output: Output },
 }
 
+/// Owns the supervisor and its process cleanup independently of the result waiter.
+pub struct Execution {
+    cancellation: CancellationToken,
+    supervisor: tokio::task::JoinHandle<Outcome>,
+}
+
+impl Execution {
+    /// Wait for the result and all cleanup. Dropping a pending wait cancels the process;
+    /// the owner can still wait for cleanup. The result may only be taken once.
+    pub async fn wait(&mut self) -> Outcome {
+        let _cancel_on_drop = self.cancellation.clone().drop_guard();
+        crate::task::joined((&mut self.supervisor).await)
+            .unwrap_or_else(|error| Outcome::OperationalError(Error::Process(error.into())))
+    }
+}
+
+impl Drop for Execution {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
+}
+
 /// Execute prepared argv with one deadline covering registration and execution.
 /// Process capture is raw and bounded; only runtime audit text is cleaned.
 pub async fn execute<F, R>(
+    command: Command,
+    cancellation: CancellationToken,
+    register: F,
+) -> Outcome
+where
+    F: FnOnce(ChildIdentity) -> R + Send + 'static,
+    R: Future<Output = io::Result<()>> + Send + 'static,
+{
+    start(command, cancellation, register).wait().await
+}
+
+/// Start an execution whose supervisor can be joined even if its result waiter is dropped.
+pub fn start<F, R>(command: Command, cancellation: CancellationToken, register: F) -> Execution
+where
+    F: FnOnce(ChildIdentity) -> R + Send + 'static,
+    R: Future<Output = io::Result<()>> + Send + 'static,
+{
+    let cancellation = cancellation.child_token();
+    let supervisor = tokio::spawn(supervise(command, cancellation.clone(), register));
+    Execution {
+        cancellation,
+        supervisor,
+    }
+}
+
+async fn supervise<F, R>(
     mut command: Command,
     cancellation: CancellationToken,
     register: F,
@@ -206,22 +263,24 @@ where
     let scratch = command.directory.join("tmp");
     let result =
         process::run_logged(command.command, command.directory, cancellation, register).await;
-    let _ = std::fs::remove_dir_all(scratch);
+    let cleanup = crate::task::joined(
+        tokio::task::spawn_blocking(move || crate::platform::remove_tree(&scratch)).await,
+    )
+    .map_err(io::Error::other)
+    .and_then(std::convert::identity);
+    if let Err(error) = cleanup
+        && error.kind() != io::ErrorKind::NotFound
+        && result.is_ok()
+    {
+        return Outcome::OperationalError(Error::Environment(error));
+    }
     match result {
         Ok(mut output) => {
             output.stdout = clean_output(&output.stdout);
             output.stderr = clean_output(&output.stderr);
-            match crate::platform::process_end(&output.status) {
+            match output.status.end() {
                 crate::platform::ProcessEnd::Exited(exit_code) => {
-                    Outcome::Completed(ReviewResult {
-                        verdict: if exit_code == 0 {
-                            Verdict::Green
-                        } else {
-                            Verdict::Red
-                        },
-                        exit_code,
-                        output,
-                    })
+                    Outcome::Completed(ReviewResult { exit_code, output })
                 }
                 crate::platform::ProcessEnd::Signaled(signal) => {
                     Outcome::OperationalError(Error::AbnormalExit { signal, output })

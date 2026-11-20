@@ -56,24 +56,38 @@
     return { x, y, width: Math.max(0, Math.min(WIDE, right) - x), height: Math.max(0, Math.min(box, bottom) - y) };
   });
 
-  /** Paint each Artifact that is no box as a block of its light's colour. */
+  /** How faint a whole's block is behind its parts' blocks. */
+  const WHOLE_ALPHA = 0.25;
+
+  /** Paint each Artifact as a block of its light's colour; a whole as a fainter block, outlined
+   * in its colour, behind its parts' blocks. */
   const paint: Attachment<HTMLCanvasElement> = (canvas) => {
     const ratio = window.devicePixelRatio || 1;
     [canvas.width, canvas.height] = [Math.round(size.width * ratio), Math.round(size.height * ratio)];
     const context = canvas.getContext("2d");
     if (!context) return;
     const style = getComputedStyle(document.documentElement);
-    const paths: Partial<Record<Light, Path2D>> = {};
+    const blocks: Partial<Record<Light, Path2D>> = {};
+    const wholes: Partial<Record<Light, Path2D>> = {};
     laid.places.forEach((place, number) => {
-      if (laid.wholes.has(number)) return;
       const light = lights.get(laid.nodes[number]) ?? "waiting";
-      const path = (paths[light] ??= new Path2D());
+      const path = ((laid.wholes.has(number) ? wholes : blocks)[light] ??= new Path2D());
       path.rect((place.x - bounds.x) / scale, (place.y - bounds.y) / scale, Math.max(place.width / scale, 1), Math.max(place.height / scale, 1));
     });
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, size.width, size.height);
-    for (const [light, path] of Object.entries(paths) as [Light, Path2D][]) {
-      context.fillStyle = style.getPropertyValue(LIGHTS[light].colour).trim();
+    const colour = (light: Light) => style.getPropertyValue(LIGHTS[light].colour).trim();
+    context.lineWidth = 1;
+    for (const [light, path] of Object.entries(wholes) as [Light, Path2D][]) {
+      context.globalAlpha = WHOLE_ALPHA;
+      context.fillStyle = colour(light);
+      context.fill(path);
+      context.globalAlpha = 1;
+      context.strokeStyle = colour(light);
+      context.stroke(path);
+    }
+    for (const [light, path] of Object.entries(blocks) as [Light, Path2D][]) {
+      context.fillStyle = colour(light);
       context.fill(path);
     }
   };

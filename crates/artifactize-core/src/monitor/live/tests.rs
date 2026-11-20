@@ -172,11 +172,68 @@ fn a_branch_has_its_projects_runs_on_that_branch_from_whichever_folder_they_ran_
 }
 
 #[test]
+fn saved_git_common_directory_aliases_share_one_live_branch() {
+    let root = crate::test_os::tempdir();
+    let workspace = repository(root.path());
+    let identity = repository::identify(&workspace);
+    let alias = root.path().join("metadata-alias");
+    crate::test_os::link_dir(identity.common_dir.as_deref().unwrap(), &alias);
+    let runs = [
+        run(
+            "run-1",
+            &workspace,
+            Identity {
+                common_dir: Some(alias),
+                ..identity.clone()
+            },
+            0,
+            RunStatus::Green,
+        ),
+        run("run-2", &workspace, identity, 1, RunStatus::Green),
+    ];
+    let listing = branches(&runs, Some(&workspace), &mut Discovery::default());
+    let [branch] = listing.branches.as_slice() else {
+        panic!("expected one live branch: {:?}", listing.branches);
+    };
+    assert_eq!(listing.launch.as_ref(), Some(&branch.place));
+    assert_eq!(
+        branch
+            .runs
+            .iter()
+            .map(|chip| chip.id.as_str())
+            .collect::<Vec<_>>(),
+        ["run-1", "run-2"]
+    );
+    assert_eq!(listing.labels["run-1"], listing.labels["run-2"]);
+}
+
+#[test]
+fn a_run_below_a_worktree_alias_restores_the_nested_workspace() {
+    let root = crate::test_os::tempdir();
+    let worktree = repository(root.path());
+    let workspace = worktree.join("nested");
+    std::fs::create_dir(&workspace).unwrap();
+    let alias = root.path().join("worktree-alias");
+    crate::test_os::link_dir(&worktree, &alias);
+    let identity = Identity {
+        worktree_path: Some(alias),
+        ..repository::identify(&workspace)
+    };
+    let runs = [run("run-1", &workspace, identity, 0, RunStatus::Green)];
+    let listing = branches(&runs, None, &mut Discovery::default());
+    let [branch] = listing.branches.as_slice() else {
+        panic!("expected one branch: {:?}", listing.branches);
+    };
+    assert_eq!(branch.workspace, workspace);
+}
+
+#[test]
 fn a_folder_outside_git_lives_while_it_exists_and_holds_declarations() {
     let root = crate::test_os::tempdir();
     let folder = root.path().join("plain");
     std::fs::create_dir(&folder).unwrap();
-    std::fs::write(folder.join("index.artf"), "name = \"plain\"\n").unwrap();
+    crate::test_declaration::write(&folder, folder.join("index.artf"), "name = \"plain\"\n")
+        .unwrap();
     let empty = root.path().join("empty");
     std::fs::create_dir(&empty).unwrap();
     let removed = root.path().join("removed");
@@ -188,6 +245,32 @@ fn a_folder_outside_git_lives_while_it_exists_and_holds_declarations() {
     let listing = branches(&runs, None, &mut Discovery::default());
     assert_eq!(names(&listing), [("plain".into(), String::new())]);
     assert_eq!(listing.branches[0].place, Place::Folder(folder.clone()));
+}
+
+#[test]
+fn a_folder_and_its_alias_share_one_monitor_workspace() {
+    let root = crate::test_os::tempdir();
+    let real = root.path().join("plain");
+    std::fs::create_dir(&real).unwrap();
+    let alias = root.path().join("alias");
+    crate::test_os::link_dir(&real, &alias);
+    let runs = [
+        run("run-1", &real, Identity::default(), 0, RunStatus::Green),
+        run("run-2", &alias, Identity::default(), 1, RunStatus::Green),
+    ];
+    let listing = branches(&runs, Some(&alias), &mut Discovery::default());
+    let [branch] = listing.branches.as_slice() else {
+        panic!("aliases share one branch: {:?}", listing.branches);
+    };
+    assert_eq!(listing.launch.as_ref(), Some(&branch.place));
+    assert_eq!(
+        branch
+            .runs
+            .iter()
+            .map(|run| run.id.as_str())
+            .collect::<Vec<_>>(),
+        ["run-1", "run-2"]
+    );
 }
 
 #[test]
@@ -211,7 +294,11 @@ fn the_launch_folder_outside_git_is_listed_with_its_artifacts_only_in_subfolders
     let root = crate::test_os::tempdir();
     let plain = root.path().join("plain");
     std::fs::create_dir_all(plain.join("docs")).unwrap();
-    std::fs::write(plain.join("docs").join("index.artf"), "name = \"docs\"\n").unwrap();
+    std::fs::write(
+        crate::test_declaration::source_path(plain.join("docs").join("index.artf")),
+        "name = \"docs\"\n",
+    )
+    .unwrap();
     let plain = crate::test_os::canonical(&plain);
     let listing = branches(&[], Some(&plain), &mut Discovery::default());
     assert_eq!(names(&listing), [("plain".into(), String::new())]);
@@ -221,15 +308,15 @@ fn the_launch_folder_outside_git_is_listed_with_its_artifacts_only_in_subfolders
 
 fn branch(project: &str, name: &str, latest: Option<i64>) -> Branch {
     Branch {
-        place: Place::Folder(format!("/{project}/{name}").into()),
+        place: Place::Folder(format!("{project}/{name}").into()),
         project: project.into(),
         name: name.into(),
-        workspace: "/".into(),
+        workspace: ".".into(),
         runs: latest
             .map(|day| {
                 let chip = run(
                     "run-1",
-                    Path::new("/"),
+                    Path::new("."),
                     Identity::default(),
                     day,
                     RunStatus::Green,
@@ -308,6 +395,37 @@ fn the_search_narrows_by_project_and_branch_and_sorts_by_recency_or_name() {
 }
 
 #[test]
+fn concurrent_stars_for_the_same_project_are_all_kept() {
+    let state = crate::test_os::tempdir();
+    let branches: Vec<_> = (0..8)
+        .map(|index| branch("project", &format!("branch-{index}"), None).place)
+        .collect();
+    let names: Vec<crate::types::ArtifactName> = (0..branches.len())
+        .map(|index| format!("artifact-{index}").parse().unwrap())
+        .collect();
+    let project = branches[0].project();
+    let start = std::sync::Barrier::new(branches.len());
+    std::thread::scope(|threads| {
+        for (place, name) in branches.iter().zip(&names) {
+            let (state, project, start) = (state.path(), &project, &start);
+            threads.spawn(move || {
+                start.wait();
+                star(Some(state), place, true).unwrap();
+                star_artifact(Some(state), project, name, true).unwrap();
+            });
+        }
+    });
+    assert_eq!(
+        starred(Some(state.path())).unwrap(),
+        branches.into_iter().collect()
+    );
+    assert_eq!(
+        starred_artifacts(Some(state.path()), &project).unwrap(),
+        names.into_iter().collect()
+    );
+}
+
+#[test]
 fn starred_branches_come_first_in_the_search_order_and_stay_starred() {
     let branches = [
         branch("beta", "main", Some(1)),
@@ -364,14 +482,14 @@ fn starred_branches_come_first_in_the_search_order_and_stay_starred() {
 #[test]
 fn starred_artifacts_are_kept_per_project_for_every_branch_of_it() {
     let main = Place::Git {
-        common: "/repo/.git".into(),
+        common: "repo/.git".into(),
         head: Head::Branch(BranchName::try_from("main".to_owned()).unwrap()),
     };
     let feature = Place::Git {
-        common: "/repo/.git".into(),
+        common: "repo/.git".into(),
         head: Head::Branch(BranchName::try_from("feat/x".to_owned()).unwrap()),
     };
-    let other = Place::Folder("/notes".into());
+    let other = Place::Folder("notes".into());
     let name = |text: &str| text.parse::<ArtifactName>().unwrap();
     let state = crate::test_os::tempdir();
     assert_eq!(
@@ -405,8 +523,8 @@ fn starred_artifacts_are_kept_per_project_for_every_branch_of_it() {
     );
     // A stored star whose Artifact is no Artifact name is refused when read back.
     std::fs::write(
-        state.path().join("starred-artifacts.json"),
-        r#"[{"project":{"folder":"/notes"},"artifacts":["no name"]}]"#,
+        crate::test_declaration::source_path(state.path().join("starred-artifacts.json")),
+        r#"[{"project":{"folder":"notes"},"artifacts":["no name"]}]"#,
     )
     .unwrap();
     assert!(starred_artifacts(Some(state.path()), &other.project()).is_err());
@@ -469,8 +587,8 @@ fn a_branch_name_is_a_valid_ref_and_a_stored_star_with_another_is_refused() {
     let state = crate::test_os::tempdir();
     for bad in ["", "topic.lock/child"] {
         std::fs::write(
-            state.path().join("starred-branches.json"),
-            format!(r#"[{{"git":{{"common":"/repo/.git","head":{{"branch":"{bad}"}}}}}}]"#),
+            crate::test_declaration::source_path(state.path().join("starred-branches.json")),
+            format!(r#"[{{"git":{{"common":"repo/.git","head":{{"branch":"{bad}"}}}}}}]"#),
         )
         .unwrap();
         assert!(starred(Some(state.path())).is_err(), "{bad:?}");

@@ -262,13 +262,23 @@ fn waits(states: &States, prefix: &str, waits: &Waits) -> Vec<Segment> {
 
 /// The top-level Result keys behind a RED verdict, such as `violations 3`.
 fn findings(result: Option<&crate::store::ExecutionResult>) -> String {
-    let result = result.map(crate::store::ExecutionResult::to_json);
-    let fields = result
-        .as_ref()
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten();
-    let fields = fields.filter(|(key, _)| {
+    use crate::store::{ExecutionResult, ResultField};
+    let Some(result) = result else {
+        return String::new();
+    };
+    let mut fields = result.owner_fields().clone();
+    if let ExecutionResult::Runtime(runtime) = result {
+        match runtime.exit_code {
+            ResultField::Missing => {}
+            ResultField::Null => {
+                fields.insert("exitCode".into(), Value::Null);
+            }
+            ResultField::Value(code) => {
+                fields.insert("exitCode".into(), Value::from(code));
+            }
+        }
+    }
+    let fields = fields.iter().filter(|(key, _)| {
         !matches!(
             key.as_str(),
             "verdict" | "stdout" | "stderr" | "truncated" | "durationMs"
@@ -303,7 +313,9 @@ fn short_profile(profile: &crate::config::StoredProfile) -> String {
                 .and_then(|value| value.as_str().map(str::to_owned))
                 .unwrap_or_default()
         ),
-        StoredProfile::Runtime { command, .. } => format!("runtime {command}"),
+        StoredProfile::Runtime { command, .. } => {
+            format!("runtime {}", crate::platform::program_text(command))
+        }
         StoredProfile::Human {} => "human".into(),
     }
 }
@@ -740,13 +752,11 @@ fn state(node: &Node) -> (Kind, &'static str, String) {
 
 /// Mark the rows whose derived state differs from the Run-end derivation.
 fn mark(nodes: &mut [Node], ended: &[Node]) {
-    let mut before = std::collections::HashMap::new();
-    for node in ended {
-        before.insert(&node.id, state(node));
-        for child in &node.children {
-            before.insert(&child.id, state(child));
-        }
-    }
+    let before: std::collections::HashMap<_, _> = ended
+        .iter()
+        .flat_map(|node| std::iter::once(node).chain(&node.children))
+        .map(|node| (&node.id, state(node)))
+        .collect();
     for node in nodes {
         node.changed = before.get(&node.id) != Some(&state(node));
         for child in &mut node.children {

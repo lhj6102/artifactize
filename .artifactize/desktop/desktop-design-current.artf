@@ -1,0 +1,13 @@
+path = "crates/artifactize-desktop/design/current.html"
+# Current: a branch's worktree as it is now
+
+[views.agent_tools]
+read = { builtin = "read", args = ["current.html"] }
+
+[evals.well-formed]
+title = "The current page has the form every screen page shares"
+profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}", "page", "current.html"], timeout_ms = 30000 }
+
+[evals.well-formed.payload]
+instruction = """
+Check {desktop-design-current} against the page form of {desktop-design-check}, which every screen page shares."""

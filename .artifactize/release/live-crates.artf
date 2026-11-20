@@ -1,0 +1,11 @@
+path = "https://crates.io/crates/artifactize"
+
+[evals.configuration]
+title = "Each newest non-yanked crate matches the latest stable origin tag"
+profile = { kind = "runtime", command = "node", args = ["{release-observer}", "crates-config", "{live-crates}"], timeout_ms = 30000 }
+payload.instruction = "Observe {live-crates} read-only using {release-observer}; compare published state with origin, never with this worktree."
+
+[evals.behavior]
+title = "Each newest non-yanked crate archive answers HTTP 200"
+profile = { kind = "runtime", command = "node", args = ["{release-observer}", "crates-behavior", "{live-crates}"], timeout_ms = 30000 }
+payload.instruction = "Observe {live-crates} read-only using {release-observer}; compare published state with origin, never with this worktree."

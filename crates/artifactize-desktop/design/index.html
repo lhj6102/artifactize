@@ -20,15 +20,14 @@
     <a href="review.html">Review</a>
     <a href="settings.html">Settings</a>
     <a href="overlays.html">Overlays</a>
-    <a href="ux-graph-doc.html">UX graph</a>
   </nav>
 </header>
 <main data-screen="index">
 <h1>The desktop app, designed as a workbench</h1>
 <p class="lead">
   This Artifact plans the desktop app's UI and UX: one page per screen, drawn with the same
-  anatomy the app must have, and <a href="ux-graph-doc.html">ux-graph-doc.html</a>, the
-  relations between the screens. Each page ends in rules with ids (<code>D-…</code>); Agent
+  anatomy the app must have, for the journeys of <code>rules/UX-FEATURES.md</code>
+  (<code>J-…</code>). Each page ends in rules with ids (<code>D-…</code>); Agent
   evals judge the app's UI against them. The style applies what a professional workbench
   does well: the screen is divided by the work, the selection drives an inspector, surfaces
   are few and neutral, boundaries are lines rather than gaps, and colour means something only
@@ -39,23 +38,24 @@
 <h2>Layout by workflow</h2>
 <p>
   The window is one screen. A global bar carries what belongs to the window (brand, the
-  Pane switch, the reviewer, an update notice, Settings, the command palette). Below it, the work reads left
+  Pane switch, the reviewer, the release notice while a newer release is out, Settings, the command palette). Below it, the work reads left
   to right: <b>find</b> (the Pane: a search, the live branches with their Runs, the reviews
   waiting for a person), <b>look</b> (the Main area: one header row, then a Run's or a Current's graph under its
   tool strip, or a Human review) and <b>inspect</b> (the Detail, a panel docked at the graph's right edge, showing the
   selected Artifact or eval). Each view keeps the bar and the Pane and changes only what the
-  Main area gives its main representation: a graph, a review, a read-only request.
+  Main area gives its main representation: a graph, a review, a read-only request. On a
+  branch's Current the graph and the Detail are also where its Artifacts are defined: they are
+  moved, made parts and edited in place, and a Run's graph stays a record.
 </p>
 
 <h2>Screens</h2>
 <ul class="screens">
   <li><a href="monitor.html">Monitor</a><span>The one screen with a Run shown: bar, Pane, the Main area's header row, the graph's tool strip and the Run graph, with its nodes, its Navigator and a large graph zoomed out.</span></li>
-  <li><a href="current.html">Current</a><span>The Main area as a branch's Current: the scan's state in the header row, the tool strip and the Current graph.</span></li>
-  <li><a href="detail.html">Detail</a><span>The inspector, a panel docked at the graph's right edge: an Artifact's tab and an eval's Summary.</span></li>
+  <li><a href="current.html">Current</a><span>The Main area as a branch's Current: the scan's state in the header row, the tool strip and the Current graph, where Artifacts are dragged into place and into or out of a whole and comments are written and moved.</span></li>
+  <li><a href="detail.html">Detail</a><span>The inspector, a panel docked at the graph's right edge: an Artifact's tab, an eval's Summary and, on a Current, an Artifact's Definition and Source.</span></li>
   <li><a href="review.html">Review</a><span>A Human review: with room, the Tool log as the view and the instruction, Tools and Result form in a column at the right; in the Detail, one column.</span></li>
   <li><a href="settings.html">Settings</a><span>The modal over the screen: Providers, Remote and Limits.</span></li>
-  <li><a href="overlays.html">Overlays</a><span>The command palette, Help, Open by ID, the Leave and Update dialogs and the graph's find field.</span></li>
-  <li><a href="ux-graph-doc.html">UX graph</a><span>How one screen leads to another: every transition of UX-GRAPH.md, read by screen.</span></li>
+  <li><a href="overlays.html">Overlays</a><span>The command palette, Help, Open by ID, the Leave and Update dialogs, the graph's find field and the New Artifact, Rename and Delete dialogs.</span></li>
 </ul>
 
 <h2>Tokens</h2>
@@ -74,7 +74,7 @@
     <tr><td><span class="swatch" style="--token: var(--surface-panel)"></span><code>--surface-panel</code></td><td>A panel: the Pane, the Main area, the Detail, Settings</td><td>0</td></tr>
     <tr><td><span class="swatch" style="--token: var(--surface-group)"></span><code>--surface-group</code></td><td>A group inside a panel: the shown entry's pill, a hovered row, a key cap, a quiet button</td><td>+1</td></tr>
     <tr><td><span class="swatch" style="--token: var(--surface-input)"></span><code>--surface-input</code></td><td>A field, a log box, saved output: one step below its panel</td><td>−1 from the panel</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--surface-raised)"></span><code>--surface-raised</code></td><td>What floats: dialogs, menus, the find field, a graph's Navigator</td><td>+1 from the panel</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--surface-raised)"></span><code>--surface-raised</code></td><td>What floats: dialogs, menus, the find field, a graph's Navigator, a dragged Artifact</td><td>+1 from the panel</td></tr>
     <tr><td><span class="swatch" style="--token: var(--line-panel)"></span><code>--line-panel</code></td><td>Panel beside panel: the bar's bottom, the Pane/Main divider, the Detail's and a dialog's edge, a review's two panels and the header row above them</td><td>strongest</td></tr>
     <tr><td><span class="swatch" style="--token: var(--line-node)"></span><code>--line-node</code></td><td>A graph node's and a whole's outline on the canvas: neutral, whatever the node's status</td><td>strongest</td></tr>
     <tr><td><span class="swatch" style="--token: var(--line-group)"></span><code>--line-group</code></td><td>Groups inside a panel: section tops, branch rows, the chip row's bottom, a quiet button's edge</td><td>weaker</td></tr>
@@ -87,10 +87,10 @@
   <thead><tr><th>Token</th><th>Role</th></tr></thead>
   <tbody>
     <tr><td><span class="swatch" style="--token: var(--ink)"></span><code>--ink</code></td><td>Text, names, values</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--ink-2)"></span><code>--ink-2</code></td><td>Secondary text: labels, ages, projects, costs, group labels, a fold icon</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--ink-2)"></span><code>--ink-2</code></td><td>Secondary text: labels, ages, projects, costs, group labels, a fold icon, an Artifact's comment on a graph</td></tr>
     <tr><td><span class="swatch" style="--token: var(--ink-3)"></span><code>--ink-3</code></td><td>Faint text: placeholders, separators, an off star</td></tr>
     <tr><td><span class="swatch" style="--token: var(--ink-on-accent)"></span><code>--ink-on-accent</code></td><td>Text on the accent</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--accent)"></span><code>--accent</code></td><td>What is interactive and emphasised: links, the primary button, the focused panel's top line, the active tab's line, the line under a bar switch that is on</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--accent)"></span><code>--accent</code></td><td>What is interactive and emphasised: links, the primary button, the focused panel's top line, the active tab's line, the line under a bar switch that is on, a drop target's outline</td></tr>
     <tr><td><span class="swatch" style="--token: var(--accent-soft)"></span><code>--accent-soft</code></td><td>A soft accent fill: the "yours" stage pill</td></tr>
     <tr><td><span class="swatch" style="--token: var(--selection)"></span><code>--selection</code></td><td>The selected row of a list</td></tr>
     <tr><td><span class="swatch" style="--token: var(--focus)"></span><code>--focus</code></td><td>The keyboard focus ring, 2px, on every control</td></tr>
@@ -130,7 +130,7 @@
     <tr><td><code>--gap</code></td><td>The gap between controls in a row (8)</td></tr>
     <tr><td><code>--measure</code></td><td>The widest a column of reading and form gets: a Human review's column</td></tr>
     <tr><td><code>--icon</code></td><td>An icon's box (12): a status's, an action's</td></tr>
-    <tr><td><code>--strip</code></td><td>The strip in its status's colour along a node's bottom and under a whole's title row (2)</td></tr>
+    <tr><td><code>--strip</code></td><td>The strip in its status's colour along a node's bottom and along the top of a whole's box (2)</td></tr>
     <tr><td><code>--grid</code></td><td>The canvas grid's cell (24)</td></tr>
     <tr><td><code>--port</code></td><td>A graph node's port: the triangle where edges reach it, the square where they leave it</td></tr>
     <tr><td><code>--font</code>, <code>--mono</code></td><td>The UI face with Korean fallbacks; the monospace face for logs, IDs and queries</td></tr>
@@ -174,11 +174,12 @@
     <tr><td><span class="m-icon i-fold tone-muted"></span></td><td><span class="m-icon i-fold tone-muted big"></span></td><td><code>i-fold</code></td><td>Folded: a branch, a section, Debug</td></tr>
     <tr><td><span class="m-icon i-unfold tone-muted"></span></td><td><span class="m-icon i-unfold tone-muted big"></span></td><td><code>i-unfold</code></td><td>Unfolded</td></tr>
     <tr><td><span class="m-icon i-remove"></span></td><td><span class="m-icon i-remove big"></span></td><td><code>i-remove</code></td><td>Remove an item, clear a field</td></tr>
-    <tr><td><span class="m-icon i-add"></span></td><td><span class="m-icon i-add big"></span></td><td><code>i-add</code></td><td>Add an item; expand a whole; zoom in</td></tr>
+    <tr><td><span class="m-icon i-add"></span></td><td><span class="m-icon i-add big"></span></td><td><code>i-add</code></td><td>Add an item, a part or an Artifact; expand a whole; zoom in</td></tr>
     <tr><td><span class="m-icon i-minus"></span></td><td><span class="m-icon i-minus big"></span></td><td><code>i-minus</code></td><td>Minimize a whole; zoom out</td></tr>
     <tr><td><span class="m-icon i-fit"></span></td><td><span class="m-icon i-fit big"></span></td><td><code>i-fit</code></td><td>Fit View</td></tr>
     <tr><td><span class="m-icon i-find"></span></td><td><span class="m-icon i-find big"></span></td><td><code>i-find</code></td><td>Find in the graph</td></tr>
     <tr><td><span class="m-icon i-pane"></span></td><td><span class="m-icon i-pane big"></span></td><td><code>i-pane</code></td><td>Show or hide the Pane</td></tr>
+    <tr><td><span class="m-icon i-reset"></span></td><td><span class="m-icon i-reset big"></span></td><td><code>i-reset</code></td><td>Reset layout: a box placed by hand laid out automatically again</td></tr>
   </tbody>
 </table>
 
@@ -196,19 +197,19 @@
   <dt id="D-SYS-5">D-SYS-5</dt>
   <dd>Type: body 13px, secondary 12px. A section of the inspector, of a review or of Settings stands under a header row: its name at 12px semibold in <code>--ink</code>, in sentence case (D-INS-9). A group label inside a list (the Pane's Waiting, a palette group, a Help group, a table's head) is 11px uppercase and letter-spaced in <code>--ink-2</code>. Neither is ever the accent. Numbers that align or change (ages, times, counts, tokens, IDs) use tabular figures. Names may be semibold; nothing else is bold but a status word, a chosen choice and a title. <span class="avoid">accent-coloured headings; uppercase letter-spaced labels as section headings; proportional figures in an age column.</span></dd>
   <dt id="D-SYS-6">D-SYS-6</dt>
-  <dd>Colour carries meaning only on the element that has it: a status dot, icon or word, a node's icon and strip, an edge that leaves a RED, ERROR or blocked Artifact, a verdict button, stderr lines. A graph's own lines, a node's outline and every other edge, are neutral. A meaning has one colour: a status takes the same token in the Pane, a chip, a row and a graph's node, and a graph has no palette of its own (in progress is <code>--running</code> on a node as in a list, waiting <code>--queued</code>, blocked <code>--blocked</code>, ERROR <code>--error</code>). The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line, the line under a bar switch that is on). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, outline, a row or a panel by status; a second colour for a status on a graph; a star or a selection in a status colour.</span></dd>
+  <dd>Colour carries meaning only on the element that has it: a status dot, icon or word, a node's icon and strip, an edge that leaves a RED, ERROR or blocked Artifact, a verdict button, stderr lines. A graph's own lines, a node's outline and every other edge, are neutral. Two places of a graph show a status by colour alone, as the journeys ask: a large graph zoomed out until names do not read, where each Artifact is a block filled with its status's colour and a whole is its box's outline in its colour (D-GRAPH-2), and the Navigator's blocks (D-GRAPH-5); they are exempt from the neutral outline and from the icon or word, and a click on a block of the zoomed-out graph's canvas opens its Detail, which names the status, while a click or a drag in the Navigator only moves the camera there, its zoom kept, and opens nothing (J-GRAPH-NAVIGATOR). A meaning has one colour: a status takes the same token in the Pane, a chip, a row and a graph's node, and a graph has no palette of its own (in progress is <code>--running</code> on a node as in a list, waiting <code>--queued</code>, blocked <code>--blocked</code>, ERROR <code>--error</code>). The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line, the line under a bar switch that is on, the outline of a drop target, D-CUR-5). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, outline, a row or a panel by status; a second colour for a status on a graph; a star or a selection in a status colour.</span></dd>
   <dt id="D-SYS-7">D-SYS-7</dt>
-  <dd>States are told apart without colour: every status shows its icon or word with its colour, each status's icon a silhouette of its own, a graph's node included; the selected row has the <code>--selection</code> background and, while the keyboard is in its list, a 2px inset bar; keyboard focus is a 2px <code>--focus</code> ring on every control; hover only highlights and opens nothing: a row or a borderless control takes <code>--surface-group</code>, and a button, whose face already is that surface, keeps its face while its edge steps up to <code>--line-input</code> (the primary button's to <code>--ink-on-accent</code>); the one exception the journeys ask for is the whole's Minimize/Expand button, whose native title names its key <kbd>m</kbd>, and no other control has a tooltip. <span class="avoid">a selection shown by colour alone; a focus ring removed; a popup, summary or menu on hover.</span></dd>
+  <dd>States are told apart without colour: every status shows its icon or word with its colour, each status's icon a silhouette of its own, a graph's node included, except the colour blocks and whole outlines of a zoomed-out graph and of the Navigator (D-SYS-6); the selected row has the <code>--selection</code> background and, while the keyboard is in its list, a 2px inset bar; keyboard focus is a 2px <code>--focus</code> ring on every control; hover only highlights and opens nothing: a row or a borderless control takes <code>--surface-group</code>, and a button, whose face already is that surface, keeps its face while its edge steps up to <code>--line-input</code> (the primary button's to <code>--ink-on-accent</code>); the two resize edges, the Pane/Main divider and the Detail's left edge, take no highlight at all on hover: they show the resize cursor alone, their line unchanged; the one exception the journeys ask for is the whole's Minimize/Expand button, whose native title names what it does, and no other control has a tooltip. <span class="avoid">a selection shown by colour alone; a focus ring removed; a popup, summary or menu on hover; a divider or a Detail edge that thickens, recolours or highlights under the pointer.</span></dd>
   <dt id="D-SYS-8">D-SYS-8</dt>
-  <dd>Marks are the app's own icon set (the sheet above), never characters of whatever font the system falls back to: each is drawn on a <code>--icon</code> box with a 1.5 stroke, round caps and joins, solid only where the shape is a solid, and takes the colour of the text around it. The same meaning has the same icon everywhere: each status its own (a node, a chip, a row, the Run's headline and tally, the find field); the run icon starts a tool, the star and the filled star mark a favorite, the fold and unfold icons fold a branch, a section and Debug, the remove icon removes, the add icon adds, minus and add minimize and expand a whole and zoom, the fit icon fits the view; the Artifact mark precedes an Artifact's name. Where the journeys write a mark as a character (<code>▶</code>, <code>☆</code>/<code>★</code>, <code>✕</code>, <code>+ Add</code>, a verdict's glyph), the app draws that mark's icon, read aloud as what it means. A Tool log's lines are text and keep their characters (<code>▶ HH:MM:SS</code>, <code>■ exit 0</code>); the two rare marks without an icon (a budget's <code>$</code>, an absent eval's <code>-</code>) stay characters in <code>--mono</code>. An action's icon stands with its word, or carries an accessible name; where a key does the same as a control, that name carries the key, and a key cap shows only where D-SYS-12 puts one. <span class="avoid">two icons for one meaning; a font's dingbat where an icon exists; an icon in a colour its meaning does not have; an icon without a label or an accessible name.</span></dd>
+  <dd>Marks are the app's own icon set (the sheet above), never characters of whatever font the system falls back to: each is drawn on a <code>--icon</code> box with a 1.5 stroke, round caps and joins, solid only where the shape is a solid, and takes the colour of the text around it. The same meaning has the same icon everywhere: each status its own (a node, a chip, a row, the Run's headline and tally, the find field); the run icon starts a tool, the star and the filled star mark a favorite, the fold and unfold icons fold a branch, a section and Debug, the remove icon removes, the add icon adds, minus and add minimize and expand a whole and zoom, the fit icon fits the view, the reset icon resets a layout; the Artifact mark precedes an Artifact's name. Where the journeys write a mark as a character (<code>▶</code>, <code>☆</code>/<code>★</code>, <code>✕</code>, <code>+ Add</code>, a verdict's glyph), the app draws that mark's icon, read aloud as what it means. A Tool log's lines are text and keep their characters (<code>▶ HH:MM:SS</code>, <code>■ exit 0</code>); the two rare marks without an icon (a budget's <code>$</code>, an absent eval's <code>-</code>) stay characters in <code>--mono</code>. An action's icon stands with its word, or carries an accessible name; a key cap shows only where D-SYS-12 allows one. <span class="avoid">two icons for one meaning; a font's dingbat where an icon exists; an icon in a colour its meaning does not have; an icon without a label or an accessible name.</span></dd>
   <dt id="D-SYS-9">D-SYS-9</dt>
   <dd>Long and Korean labels keep the layout: a name wraps or is cut with an ellipsis inside its own box; nothing a panel shows widens the panel; logs and transcripts wrap within their width. <span class="avoid">a pane sized by its content; a title that pushes its actions out of the header.</span></dd>
   <dt id="D-SYS-10">D-SYS-10</dt>
   <dd>The core task works with the side panels out of the way: a graph can be read and an Artifact opened with the Pane hidden by the bar's switch, or at its minimum width, and the Detail closed; a Human review can be claimed, its tools run and its result submitted inside the Detail alone. <span class="avoid">a control that exists only in the Pane for a task of the Main area.</span></dd>
   <dt id="D-SYS-11">D-SYS-11</dt>
-  <dd>A working screen shows what the task at hand needs and says it once. A fact has one home on a screen (an Artifact's name: its node and the Detail's title; a review's title: the header above it; a Run's tally, duration and comment: the Run's Detail), and other places point to it with an icon or a count rather than repeat it. The app's own words are names, values and numbers. What goes well, runs or is the default is not put in a sentence: progress is an icon with a count, an end is a time, a success is the result itself. Four things get a sentence: what went wrong, why a control is disabled, a place that would otherwise be empty (D-MAIN-3), and a decision that cannot be undone. What is read now and then starts folded to a row that is its name alone (D-INS-9), and what does not exist (no claimant, no run yet, a single group) is not said. What an author wrote (an instruction, a tool's description, a log, a result) is content and is shown whole. <span class="avoid">a sentence that describes a normal state; the same fact twice in view; a line that explains a control or a dialog; a legend, a hint or a count standing beside the thing it describes.</span></dd>
+  <dd>A working screen shows what the task at hand needs and says it once. A fact has one home on a screen (an Artifact's name: its node and the Detail's title; a review's title: the header above it; a Run's tally, duration and comment: the Run's Detail), and other places point to it with an icon or a count rather than repeat it without need. Where the journeys give a fact two places for two tasks, both show it: the Run's headline says its verdict and what needs attention for the glance, and the Run's Detail, opened from that headline, says its outcome with the evals that failed in full. The app's own words are names, values and numbers. What goes well, runs or is the default is not put in a sentence: progress is an icon with a count, an end is a time, a success is the result itself. Five things get a sentence: what went wrong, why a control is disabled, a place that would otherwise be empty (D-MAIN-3), a decision that cannot be undone, and what a setting is when its name cannot say it (the sign-off idle grace, D-SET-8). What is read now and then starts folded to a row that is its name alone (D-INS-9), and what does not exist (no claimant, no run yet, a single group) is not said. What an author wrote (an instruction, a tool's description, a log, a result) is content and is shown whole where it is read, with two places the journeys cut it short: a Run's comment is one line in a branch's timeline (whole in the Run's Detail), and an Artifact's comment on a graph is its first three lines and then an ellipsis (whole in the field that edits it on a Current). <span class="avoid">a sentence that describes a normal state; the same fact twice in view for one task; a line that explains a control or a dialog; a legend, a hint or a count standing beside the thing it describes.</span></dd>
   <dt id="D-SYS-12">D-SYS-12</dt>
-  <dd>Keys are named where they are looked up, not where the work is. The palette lists every command with its key and Help lists the keys of what has focus (D-OVL-2, D-OVL-5); the bar's Commands button, which opens the palette, carries its <kbd>Ctrl+K</kbd> key cap, the one key cap of a working screen. A dialog's button carries one only for a key nobody could guess (the Leave dialog's <kbd>u</kbd>); Esc and Enter never show. Every control keeps its key and carries it in its accessible name, so a screen reader says what Help says; the whole's Minimize/Expand button keeps its native title (D-SYS-7). <span class="avoid">a key cap on a button of a tool strip, a panel's header or a form; a line that teaches a key; a key that only an inline cap names.</span></dd>
+  <dd>Keyboard shortcuts are optional: every action has a visible way (a button, a menu, the palette, a click), and the screens are drawn for that way. Where the app offers keys, they are named where keys are looked up, not where the work is: in the palette, beside each command, and in Help (D-OVL-2, D-OVL-5). A key cap shows on at most two places of the app: the bar's Commands button, which opens the palette, and, as hints, the Leave dialog's two buttons (D-OVL-1); no other control shows one. <span class="avoid">a key cap on a button of a tool strip, a panel's header, a form or any other dialog; a line that teaches a key; a key that only an inline cap names.</span></dd>
 </dl>
 
 <h2>Before handing over a screen</h2>
@@ -221,7 +222,7 @@
   <li>Keyboard focus is visible on every control.</li>
   <li>The core task works with the Pane hidden and the Detail closed.</li>
   <li>Nothing in view is said twice, and no sentence describes a normal state.</li>
-  <li>The one key cap of a working screen is Commands'; every other key is in the palette and in Help.</li>
+  <li>Every action has a visible way; a key cap shows at most on Commands and on the Leave dialog's two buttons.</li>
   <li>Contrast and click targets are checked in our own environment.</li>
   <li>No value is copied from another product's screenshot; every value is a role token.</li>
 </ul>

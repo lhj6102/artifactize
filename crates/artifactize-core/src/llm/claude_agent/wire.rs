@@ -145,8 +145,8 @@ pub struct Account {
 pub enum System {
     /// The session started, with the model it runs.
     Init {
-        #[serde(default)]
-        model: Option<String>,
+        #[serde(default, deserialize_with = "reported_model")]
+        model: Option<crate::config::ModelId>,
     },
     #[serde(other)]
     Other,
@@ -158,7 +158,7 @@ pub struct Assistant {
     #[serde(default)]
     pub error: Option<AssistantError>,
     #[serde(default)]
-    pub parent_tool_use_id: Option<String>,
+    pub parent_tool_use_id: Option<ClaudeToolUseId>,
 }
 
 /// Why Claude Code could not answer: it writes the reason as a synthetic assistant message.
@@ -179,8 +179,8 @@ pub struct AssistantMessage {
     /// Absent, or empty, on the synthetic message of an error.
     #[serde(default, deserialize_with = "nonempty")]
     pub id: Option<ClaudeMessageId>,
-    #[serde(default)]
-    pub model: String,
+    #[serde(default, deserialize_with = "reported_model")]
+    pub model: Option<crate::config::ModelId>,
     #[serde(default)]
     pub content: Vec<Block>,
     #[serde(default)]
@@ -213,7 +213,7 @@ pub enum Block {
 pub struct User {
     pub message: UserMessage,
     #[serde(default)]
-    pub parent_tool_use_id: Option<String>,
+    pub parent_tool_use_id: Option<ClaudeToolUseId>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -301,11 +301,20 @@ pub enum StreamEvent {
     Other,
 }
 
+fn reported_model<'de, D: serde::Deserializer<'de>>(
+    de: D,
+) -> Result<Option<crate::config::ModelId>, D::Error> {
+    Option::<String>::deserialize(de)?
+        .filter(|name| !name.is_empty())
+        .map(|name| name.parse().map_err(serde::de::Error::custom))
+        .transpose()
+}
+
 #[derive(Debug, Deserialize)]
 pub struct StartedMessage {
     pub id: ClaudeMessageId,
-    #[serde(default)]
-    pub model: String,
+    #[serde(default, deserialize_with = "reported_model")]
+    pub model: Option<crate::config::ModelId>,
     #[serde(default)]
     pub usage: Option<Usage>,
 }

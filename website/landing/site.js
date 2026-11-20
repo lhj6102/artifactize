@@ -16,7 +16,7 @@ var WORDS = {
     useDark: '다크 테마 사용',
     useLight: '라이트 테마 사용',
     copy: '복사',
-    copied: '복사됨',
+    copied: '명령을 복사했습니다',
     pressToCopy: function (keys) { return keys + '를 눌러 복사하세요'; },
   },
 };

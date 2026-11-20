@@ -60,7 +60,8 @@ async fn full_refresh_rereads_git_metadata() {
                 "--quiet",
                 "-b",
                 "empty-before",
-                &crate::platform::path_text(&before),
+                // Git receives the path in its native spelling.
+                before.to_str().expect("fixture paths are Unicode"),
             ],
         );
         if saved {
@@ -100,7 +101,11 @@ async fn full_refresh_rereads_git_metadata() {
         crate::test_os::git(&repo, &["branch", "-m", "after-refresh"]);
         crate::test_os::git(
             &repo,
-            &["worktree", "remove", &crate::platform::path_text(&before)],
+            &[
+                "worktree",
+                "remove",
+                before.to_str().expect("fixture paths are Unicode"),
+            ],
         );
         crate::test_os::git(
             &repo,
@@ -110,7 +115,7 @@ async fn full_refresh_rereads_git_metadata() {
                 "--quiet",
                 "-b",
                 "empty-after",
-                &crate::platform::path_text(&after),
+                after.to_str().expect("fixture paths are Unicode"),
             ],
         );
         // Both navigation and ordinary full database refreshes keep Git discovery cached.
@@ -201,6 +206,35 @@ fn run(path: &Path) -> CatalogRun {
         waiting: Vec::new(),
     }
 }
+#[test]
+fn discovered_worktrees_share_the_saved_scope_across_directory_aliases() {
+    let root = crate::test_os::tempdir();
+    let repo = crate::test_os::canonical(root.path()).join("repo");
+    let alias = repo.with_file_name("alias");
+    std::fs::create_dir(&repo).unwrap();
+    crate::test_os::git(&repo, &["init", "--quiet", "-b", "main"]);
+    crate::test_os::link_dir(&repo, &alias);
+    let mut saved = run(&alias);
+    saved.repository = Identity {
+        common_dir: Some(alias.join(".git")),
+        worktree_path: Some(alias.clone()),
+        branch: Some("main".into()),
+    };
+    let repository = Repository::Git(repo.join(".git"));
+    let scope = Scope::Worktree(repository.clone(), repo);
+    let mut catalog = Catalog::default();
+    catalog.toggle(&repository);
+    catalog.update(&[saved], None);
+    let worktrees = catalog
+        .rows
+        .iter()
+        .filter(|row| matches!(row.scope, Scope::Worktree(..)))
+        .map(|row| &row.scope)
+        .collect::<Vec<_>>();
+    assert_eq!(worktrees, [&scope]);
+    assert_eq!(catalog.paths(&scope), Some(vec![alias]));
+}
+
 fn workspace(path: &Path) -> Scope {
     Scope::Worktree(
         Repository::Workspace(path.to_path_buf()),

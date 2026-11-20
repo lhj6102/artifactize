@@ -1,0 +1,44 @@
+path = "website/landing/board/"
+# The development board at artifactize.dev/board/: reads GitHub's public API in the browser.
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.reads-the-record]
+title = "The board reads the record the development skills write"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.reads-the-record.payload]
+instruction = """
+Read index.html, model.js and main.js of {docs-landing-board}, and dev-master/SKILL.md and
+dev-worker/SKILL.md of {dev-skills}. Check that:
+- the board parses exactly the pull request note the skills tell agents to write: its
+  marker, every field name, the value forms (Run IDs, outcomes, commit SHAs, times) and
+  where dev-master adds `green:` lines; a note the skills describe is never dropped, and a
+  malformed note never breaks the page;
+- what the board derives agrees with the skills' branch model: `main`, `dev`, the
+  `dev-green` tag, pull requests into `dev`, releases as `dev` into `main` plus `v*` tags,
+  the roles dev-master and dev-worker, verify outcomes and CI;
+- the page's description of the flow and the roles says the same as the skills;
+- it uses only GitHub's public REST API without credentials, and stays usable when GitHub
+  fails or its rate limit is used up."""
+
+[evals.follows-rules]
+title = "The board's text is plain for a first-time visitor"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.follows-rules.payload]
+instruction = """
+Read {rules-writer-introduction}. Read index.html of {docs-landing-board} and the visible text that main.js
+writes into it. Check the page's visible text against W-INTRO-FIRST-READER,
+W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING; the other W- items are for the landing
+page's introduction and do not apply here. Because the board is for first-time visitors
+observing the repository's live GitHub activity, its brief definitions of commit/branch/pull
+request, its `dev-green`/`GREEN`/`YELLOW` status labels, its `verify run-...` and `CI ...`
+shorthand in activity lines and tooltips, and its short note on GitHub's public API request
+limits are helpful visitor context and are not violations."""

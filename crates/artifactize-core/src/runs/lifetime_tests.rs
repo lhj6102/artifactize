@@ -8,12 +8,14 @@ async fn reservation_retry_cancel_and_failed_launch_release_their_writer_before_
     let state = root.path().join("state");
     std::fs::create_dir(&repo).unwrap();
     crate::test_declaration::write(
+        &repo,
         repo.join("index.artf"),
         json!({"name":"app", "fingerprint":false, "evals":[{
             "id":"check", "title":"Check", "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
             "payload":{"instruction":"Check."}
         }]}).to_string(),
-    ).unwrap();
+    )
+    .unwrap();
     let options = VerifyOptions::default();
     let key = "retry".parse().unwrap();
     let (id, accepted) =
@@ -37,6 +39,23 @@ async fn reservation_retry_cancel_and_failed_launch_release_their_writer_before_
     assert!(error.contains("handoff failed"), "{error}");
     assert!(crate::test_os::database_released(&database).unwrap());
     root.close().unwrap();
+}
+
+#[test]
+fn old_wire_cancellation_markers_read_as_one_cancelling_state() {
+    for (activity, requested) in [("executing", true), ("cancelling", false)] {
+        let control: Control = serde_json::from_value(json!({
+            "worker": {"state": "legacy"}, "activity": activity, "cancellationRequested": requested,
+        }))
+        .unwrap();
+        assert!(control.is_cancelling());
+        assert_eq!(
+            serde_json::to_value(control).unwrap(),
+            json!({
+                "worker": {"state": "legacy"}, "activity": "cancelling", "cancellationRequested": true,
+            })
+        );
+    }
 }
 
 #[test]

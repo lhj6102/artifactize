@@ -1,5 +1,5 @@
 //! The review conversation against a scripted Claude Code on the other end of the channel:
-//! what artifactize writes to Claude Code, and the verdict, failures, attempts and saved
+//! what artifactize writes to Claude Code, and the findings, verdict, failures, attempts and saved
 //! conversation it makes of what Claude Code writes back.
 
 use std::{path::PathBuf, time::Duration};
@@ -34,6 +34,7 @@ impl Fixture {
         std::fs::create_dir_all(&repo).unwrap();
         std::fs::create_dir_all(&output).unwrap();
         crate::test_declaration::write(
+            &repo,
             repo.join("index.artf"),
             json!({
                 "name": "a",
@@ -42,18 +43,18 @@ impl Fixture {
                     "title": "Review",
                     "profile": {"kind": "agent", "backend": "claude-agent", "model": MODEL, "reasoning": "high"},
                     "payload": {"instruction": "Check {a}"},
-                    "pass_schema": {
-                        "type": "object",
-                        "properties": {"reason": {"type": "string"}},
-                        "required": ["reason"],
-                    },
+                    "red_at": "P1",
                 }],
                 "views": {"agent_tools": {"read": {"builtin": "read"}}},
             })
             .to_string(),
         )
         .unwrap();
-        std::fs::write(repo.join("notes.txt"), "the evidence line\n").unwrap();
+        std::fs::write(
+            crate::test_declaration::source_path(repo.join("notes.txt")),
+            "the evidence line\n",
+        )
+        .unwrap();
         let config = read_workspace_config(&repo).unwrap();
         Self {
             state: directory.path().join("state"),
@@ -240,7 +241,7 @@ struct Outcome {
 
 impl Outcome {
     fn saved(&self) -> session::Conversation {
-        let path = session::path(&self.fixture.state, SESSION).unwrap();
+        let path = session::path(&self.fixture.state, &SESSION.parse().unwrap());
         session::Conversation::load(&path).unwrap().unwrap()
     }
 }
@@ -254,24 +255,20 @@ where
     let fixture = Fixture::new();
     let eval = &fixture.config.evals[0];
     let registry = Registry::new(&fixture.config, &eval.id).unwrap();
-    let verdict = verdict::VerdictSchema::new(
-        eval.declaration.pass_schema(),
-        eval.declaration.fail_schema(),
-    )
-    .unwrap();
-    let structured = Structured::new(&verdict.schema, Api::ClaudeAgent);
+    let findings = Findings::new(eval.declaration.red_at());
     let server = Server::new(registry.list());
     let mut recorder = Recorder::test(&fixture.state, SESSION);
     recorder.start(session::Header::default());
     let mut attempts = Vec::new();
     let cancellation = CancellationToken::new();
     let (ours, theirs) = channel();
+    let model: ModelId = MODEL.parse().unwrap();
     let mut conversation = Conversation::new(
         Session {
             server: &server,
             registry: &registry,
             output: &fixture.output,
-            model: MODEL,
+            model: &model,
             limits,
             cancellation: &cancellation,
             recorder: &mut recorder,
@@ -282,7 +279,7 @@ where
     let (result, ()) = tokio::join!(
         async {
             let result = match conversation.initialize().await {
-                Ok(()) => judge(&mut conversation, "Review a.", &verdict, &structured).await,
+                Ok(()) => judge(&mut conversation, "Review a.", &findings).await,
                 Err(failure) => Err(failure),
             };
             if let Err(failure) = &result {
@@ -302,7 +299,8 @@ where
 }
 
 #[tokio::test]
-async fn a_review_runs_its_tools_in_artifactize_and_returns_the_validated_verdict() {
+async fn a_review_runs_its_tools_in_artifactize_and_returns_the_findings_with_the_derived_verdict()
+{
     let outcome = review(limits(None), |mut claude| async move {
         assert_eq!(claude.start(VERSION).await, ["read_a"]);
         assert!(claude.prompt().await.starts_with("Review a."));
@@ -327,7 +325,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_validated_verdic
         claude
             .verdict(
                 "msg-verdict",
-                json!({"verdict": "GREEN", "verdictFields": {"reason": "Read it."}}),
+                json!({"findings": [{"priority": "P2", "reason": "Read it."}]}),
             )
             .await;
     })
@@ -335,7 +333,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_validated_verdic
     let result = outcome.result.as_ref().unwrap();
     assert_eq!(
         serde_json::to_value(result).unwrap(),
-        json!({"verdict": "GREEN", "reason": "Read it."})
+        json!({"verdict": "GREEN", "findings": [{"priority": "P2", "reason": "Read it."}]})
     );
     // One attempt per response, with the highest usage Claude Code reported for it.
     let turns: Vec<_> = outcome
@@ -356,7 +354,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_validated_verdic
     });
     assert_eq!(call.as_deref(), Some("read_a"));
     let delivered = saved
-        .wire_events
+        .wire_events()
         .iter()
         .any(|event| event["kind"] == "delivery" && event["text"] == "It holds.");
     assert!(delivered, "the text reached the live view");
@@ -430,12 +428,12 @@ async fn an_old_claude_code_is_refused_before_the_review() {
 }
 
 #[tokio::test]
-async fn an_invalid_verdict_gets_one_repair_without_tools() {
+async fn an_invalid_answer_gets_one_repair_without_tools() {
     let outcome = review(limits(None), |mut claude| async move {
         claude.start(VERSION).await;
         claude.prompt().await;
         claude
-            .verdict("msg-1", json!({"verdict": "GREEN", "verdictFields": {}}))
+            .verdict("msg-1", json!({"verdict": "GREEN", "findings": []}))
             .await;
         let repair = claude.prompt().await;
         assert!(
@@ -454,25 +452,25 @@ async fn an_invalid_verdict_gets_one_repair_without_tools() {
 }
 
 #[tokio::test]
-async fn a_repaired_verdict_completes_the_review() {
+async fn a_repaired_answer_completes_the_review() {
     let outcome = review(limits(None), |mut claude| async move {
         claude.start(VERSION).await;
         claude.prompt().await;
         claude
-            .verdict("msg-1", json!({"verdict": "GREEN", "verdictFields": {}}))
+            .verdict("msg-1", json!({"verdict": "GREEN", "findings": []}))
             .await;
         claude.prompt().await;
         claude
             .verdict(
                 "msg-2",
-                json!({"verdict": "GREEN", "verdictFields": {"reason": "Fixed."}}),
+                json!({"findings": [{"priority": "P1", "reason": "Fixed."}]}),
             )
             .await;
     })
     .await;
     assert_eq!(
         serde_json::to_value(outcome.result.unwrap()).unwrap(),
-        json!({"verdict": "GREEN", "reason": "Fixed."})
+        json!({"verdict": "RED", "findings": [{"priority": "P1", "reason": "Fixed."}]})
     );
 }
 

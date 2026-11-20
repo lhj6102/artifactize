@@ -5,7 +5,7 @@ use crate::{
     store::{self, Producer, RequestView},
 };
 pub use send::{Sent, send};
-use serde_json::{Value, json};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 /// What names a saved conversation: its full reference, or a bare id, which is read as a
@@ -14,10 +14,7 @@ use std::path::{Path, PathBuf};
 #[serde(try_from = "String")]
 pub enum Selector {
     Reference(SessionRef),
-    Id {
-        request: crate::types::RequestId,
-        session: crate::types::SessionId,
-    },
+    Id(crate::types::RequestId),
 }
 
 impl std::str::FromStr for Selector {
@@ -27,12 +24,9 @@ impl std::str::FromStr for Selector {
         if let Some(reference) = SessionRef::parse(text) {
             return Ok(Self::Reference(reference));
         }
-        match (text.parse(), text.parse()) {
-            (Ok(request), Ok(session)) => Ok(Self::Id { request, session }),
-            _ => Err(format!(
-                "{text} is not a session reference, a request id or a session id."
-            )),
-        }
+        text.parse().map(Self::Id).map_err(|_| {
+            format!("{text} is not a session reference, a request id or a session id.")
+        })
     }
 }
 
@@ -99,7 +93,7 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
     let mut view = match selector {
         Selector::Reference(reference) => {
             here(state, reference)?;
-            let view = store::read_request(state, &reference.request_id)
+            let view = store::read_request_id(state, &reference.request_id)
                 .await
                 .map_err(|_| format!("Request {} is not in this state.", reference.request_id))?;
             if view.request.session_id.as_ref() != Some(&reference.session_id) {
@@ -110,19 +104,20 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
             }
             view
         }
-        Selector::Id { request, session } => {
-            match store::read_request(state, request.as_str()).await {
-                Ok(view) => view,
-                Err(_) => store::read_session_request(state, session.as_str())
-                    .await?
-                    .ok_or_else(|| {
-                        format!(
-                            "No Agent request or session {session} in this state ({}).",
-                            crate::platform::path_text(state)
-                        )
-                    })?,
-            }
-        }
+        Selector::Id(id) => match store::read_request_id(state, id).await {
+            Ok(view) => view,
+            Err(_) => store::read_request_by_session(
+                state,
+                crate::types::SessionId::from_bare_request(id),
+            )
+            .await?
+            .ok_or_else(|| {
+                format!(
+                    "No Agent request or session {id} in this state ({}).",
+                    crate::platform::path_text(state)
+                )
+            })?,
+        },
     };
     let mut reused_by = None;
     if view.request.session_id.is_none() {
@@ -135,7 +130,7 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
         };
         here(state, &reference)?;
         reused_by = Some(view.request.id.clone());
-        view = store::read_request(state, &reference.request_id)
+        view = store::read_request_id(state, &reference.request_id)
             .await
             .map_err(|_| format!("Request {} is not in this state.", reference.request_id))?;
     }
@@ -145,7 +140,7 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
         .clone()
         .ok_or_else(|| format!("Request {} ran no Agent review.", view.request.id))?;
     Ok(Located {
-        path: session::path(state, &id)?,
+        path: session::path(state, &id),
         reference: view.request.session.clone(),
         reused_by,
         id,
@@ -153,20 +148,42 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
     })
 }
 
+/// The wire shapes of `session show --json`, with the original event bodies untouched.
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum Shown {
+    #[serde(rename_all = "camelCase")]
+    Summary {
+        reference: Option<String>,
+        session_id: crate::types::SessionId,
+        request_id: crate::types::RequestId,
+        #[serde(flatten)]
+        summary: Summary,
+    },
+    Events {
+        reference: Option<String>,
+        #[serde(with = "crate::platform::path_serde")]
+        file: PathBuf,
+        events: Vec<Box<serde_json::value::RawValue>>,
+    },
+}
+
 /// Project the same saved events or summary that `session show --json` prints.
-pub async fn show(state: &Path, selector: &Selector, summary: bool) -> Result<Value, String> {
+pub async fn show(state: &Path, selector: &Selector, summary: bool) -> Result<Shown, String> {
     let located = locate(state, selector).await?;
     let conversation = located.load()?;
     if summary {
-        let mut value = json!(Summary::new(&conversation));
-        value["reference"] = json!(located.reference.as_ref().map(ToString::to_string));
-        value["sessionId"] = json!(located.id);
-        value["requestId"] = json!(located.request.request.id);
-        Ok(value)
+        Ok(Shown::Summary {
+            reference: located.reference.as_ref().map(ToString::to_string),
+            session_id: located.id,
+            request_id: located.request.request.id.clone(),
+            summary: Summary::new(&conversation),
+        })
     } else {
-        Ok(
-            json!({"reference": located.reference.as_ref().map(ToString::to_string),
-            "file": crate::platform::path_text(&conversation.path), "events": conversation.wire_events}),
-        )
+        Ok(Shown::Events {
+            reference: located.reference.as_ref().map(ToString::to_string),
+            file: conversation.path.clone(),
+            events: conversation.into_original(),
+        })
     }
 }

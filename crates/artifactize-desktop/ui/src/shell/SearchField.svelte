@@ -161,11 +161,15 @@
     border-radius: var(--radius-control);
     box-shadow: 0 2px 8px var(--scrim);
   }
+  /* A long name is cut with an ellipsis inside its row. */
   .suggestions li {
     min-height: var(--row-dense);
     padding: 2px 8px;
     font: var(--text-small) var(--mono);
     cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .suggestions li:not(.active):hover {
     background: var(--surface-group);

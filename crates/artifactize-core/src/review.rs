@@ -1,5 +1,4 @@
-//! Human review: the facts and lifecycle jobs every interface shares. The terminal screens
-//! live in `artifactize-tui`.
+//! Human review: the facts and lifecycle jobs every interface shares.
 
 mod detail;
 mod form;
@@ -7,9 +6,9 @@ mod runs;
 pub mod search;
 
 /// The Tool log every review interface shows; see [`log::Sink`].
-pub use crate::tools::human::log;
+pub use crate::{human::Submission, tools::human::log};
 pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
-pub use form::{Field, Form, Input, Key, Row, check as check_schema};
+pub use form::{Field, Form, Input, Key, Row, Specification};
 pub use runs::Runs;
 
 use crate::{
@@ -19,7 +18,6 @@ use crate::{
     tools::human::{CommandLine, Content, ToolResult},
     types::RequestId,
 };
-use serde_json::Value;
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
@@ -72,28 +70,6 @@ pub fn release_refusal(
         Ok((_, false)) => None,
         Ok((_, true)) => Some(NOT_CLAIMED.into()),
         Err(error) => Some(error),
-    }
-}
-
-/// A Human submission has one verdict, parsed with its owner fields at the UI edge.
-/// The private envelope prevents a separate display choice from contradicting the result;
-/// the request's owner schema is still checked by the shared Human submission operation.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Submission(crate::agent::verdict::ValidatedResult);
-impl TryFrom<Value> for Submission {
-    type Error = String;
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        serde_json::from_value(value)
-            .map(Self)
-            .map_err(|error| error.to_string())
-    }
-}
-impl Submission {
-    pub fn verdict(&self) -> crate::runtime::Verdict {
-        self.0.verdict
-    }
-    pub fn to_json(&self) -> Value {
-        self.0.to_json()
     }
 }
 
@@ -224,7 +200,7 @@ impl Tool {
         match (&self.declared, resolved) {
             (Runs::Command(_), Some(Ok(command))) => {
                 let program = crate::platform::path_text(std::path::Path::new(&command.program));
-                let words = std::iter::once(program).chain(command.args.iter().cloned());
+                let words = std::iter::once(program).chain(command.shown_args.iter().cloned());
                 let words: Vec<_> = words.collect();
                 format!("$ {}", shell(words.iter().map(String::as_str)))
             }
@@ -244,7 +220,6 @@ impl Job {
         cancel: CancellationToken,
         log: log::Sink,
     ) -> Outcome {
-        let mut claimed = None;
         match self {
             Job::Claim { id } => {
                 let result = async {
@@ -261,8 +236,9 @@ impl Job {
                 tool,
                 claim: first,
             } => {
+                let mut claimed = None;
                 // The entry names the tool as the saved request declares it.
-                let declared = store::read_request(&state, &id)
+                let declared = store::read_request_id(&state, &id)
                     .await
                     .ok()
                     .and_then(|view| {
@@ -312,6 +288,7 @@ impl Job {
                 result,
                 claim: first,
             } => {
+                let mut claimed = None;
                 let result = async {
                     if first {
                         let (receipts, _) = human::open(&state, &id).await?;
@@ -319,13 +296,13 @@ impl Job {
                         let closed = receipts.close().await;
                         claimed = Some(result.and_then(|claim| closed.map(|()| claim))?);
                     }
-                    human::submit_and_publish(&state, &id, &reviewer, &result.to_json(), cancel)
+                    human::submit_and_publish(&state, &id, &reviewer, &result, cancel)
                         .await
                         .map(Box::new)
                 }
                 .await;
                 if let Err(error) = &result
-                    && let Ok(view) = store::read_request(&state, &id).await
+                    && let Ok(view) = store::read_request_id(&state, &id).await
                     && matches!(
                         view.request.status(),
                         crate::types::RequestStatus::Green | crate::types::RequestStatus::Red
@@ -350,7 +327,7 @@ impl Job {
                 for id in &ids {
                     let release = async {
                         // Settled requests and claims released elsewhere leave nothing to release.
-                        let view = store::read_request(&state, id).await?;
+                        let view = store::read_request_id(&state, id).await?;
                         if view.claim.is_none_or(|claim| claim.reviewer != reviewer) {
                             return Ok(());
                         }
@@ -408,8 +385,7 @@ impl ArtifactDeclarations {
     /// The Human tools the Artifact itself declares, named like the registry, each with the
     /// command line it would run (a builtin has none).
     pub fn tools(&self) -> Result<Vec<(Tool, Option<Resolved>)>, String> {
-        let registry =
-            crate::tools::human::Registry::for_artifact(&self.config, self.artifact.as_str())?;
+        let registry = crate::tools::human::Registry::for_artifact(&self.config, &self.artifact)?;
         let artifact = &self.config.artifacts[&self.artifact];
         let mut tools: Vec<_> = artifact
             .views
@@ -445,14 +421,13 @@ impl ArtifactDeclarations {
         run: log::Run,
     ) -> Result<ToolResult, String> {
         let artifact = &self.artifact;
-        let registry =
-            match crate::tools::human::Registry::for_artifact(&self.config, artifact.as_str()) {
-                Ok(registry) => registry,
-                Err(error) => {
-                    run.end(log::End::Failed(error.clone()));
-                    return Err(error);
-                }
-            };
+        let registry = match crate::tools::human::Registry::for_artifact(&self.config, artifact) {
+            Ok(registry) => registry,
+            Err(error) => {
+                run.end(log::End::Failed(error.clone()));
+                return Err(error);
+            }
+        };
         // Only the Artifact's own tools: one of a child it includes belongs to that child's Detail.
         if !registry
             .list()
@@ -504,22 +479,12 @@ fn declared(
     tools
 }
 
-/// The owner schema of `verdict` recorded with the request: `None` when it declares none.
-/// Without a recorded Human definition the schemas are unknown, not empty: an empty form
-/// would submit a verdict the schema then rejects.
-pub fn schema(
-    request: &Request,
-    verdict: crate::runtime::Verdict,
-) -> Result<Option<Value>, String> {
+/// The typed specification of the saved Human form. A missing definition is not an empty form.
+pub fn form(request: &Request, verdict: crate::runtime::Verdict) -> Result<Form, String> {
     let definition = request.human_definition.as_ref().ok_or(
         "This request records no Human definition; open the original request its actions go to.",
     )?;
-    let declaration = definition.eval.declaration.value();
-    let schema = declaration.and_then(|declaration| match verdict {
-        crate::runtime::Verdict::Green => declaration.pass_schema.value(),
-        crate::runtime::Verdict::Red => declaration.fail_schema.value(),
-    });
-    Ok(schema.map(|schema| Value::Object(schema.clone())))
+    definition.eval.form(verdict)
 }
 
 /// Words joined for an on-screen preview, double-quoted when a word has whitespace or a

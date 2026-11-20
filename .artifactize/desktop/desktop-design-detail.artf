@@ -1,0 +1,13 @@
+path = "crates/artifactize-desktop/design/detail.html"
+# Detail: the inspector of the selected Artifact
+
+[views.agent_tools]
+read = { builtin = "read", args = ["detail.html"] }
+
+[evals.well-formed]
+title = "The detail page has the form every screen page shares"
+profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}", "page", "detail.html"], timeout_ms = 30000 }
+
+[evals.well-formed.payload]
+instruction = """
+Check {desktop-design-detail} against the page form of {desktop-design-check}, which every screen page shares."""

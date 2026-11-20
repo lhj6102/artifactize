@@ -2,12 +2,7 @@
 //! exceed `maxBytes`, the oldest (by last write) are deleted until they take `targetBytes` or
 //! less. A session whose request is still RUNNING, or that a send holds, is never deleted.
 
-use std::{
-    collections::BTreeSet,
-    fs::{self, File},
-    path::Path,
-    time::SystemTime,
-};
+use std::{collections::BTreeSet, fs::File, path::Path, time::SystemTime};
 
 use rusqlite::OpenFlags;
 use serde::Serialize;
@@ -148,14 +143,14 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
         remaining: bytes,
         removed: Vec::new(),
     };
-    if bytes <= bounds.max_bytes {
+    if bytes <= bounds.max_bytes() {
         return Ok(collection);
     }
     let running = running(state)?;
     order(&mut entries);
     let directory = directory(state);
     for entry in entries {
-        if collection.remaining <= bounds.target_bytes {
+        if collection.remaining <= bounds.target_bytes() {
             break;
         }
         if running.contains(&entry.id) {
@@ -176,7 +171,9 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
                 Err(error) => return Err(error.to_string()),
             };
-            match fs::remove_file(directory.join(format!("{}.jsonl", entry.id))) {
+            match crate::platform::paths::remove_open_file(
+                &directory.join(format!("{}.jsonl", entry.id)),
+            ) {
                 Ok(()) => {
                     publisher.notify(crate::changes::Change::SessionInvalidated(entry.id.clone()))
                 }
@@ -186,7 +183,7 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
                 }
             }
             if held.is_some() {
-                let _ = fs::remove_file(&lock);
+                let _ = crate::platform::paths::remove_open_file(&lock);
             }
         }
         collection.remaining = collection.remaining.saturating_sub(entry.bytes);
@@ -197,6 +194,7 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::{
         cell::RefCell,
         collections::BTreeMap,
@@ -287,11 +285,7 @@ mod tests {
     }
 
     fn bounds(max_bytes: u64, target_bytes: u64) -> AgentSessions {
-        AgentSessions {
-            enabled: true,
-            max_bytes,
-            target_bytes,
-        }
+        AgentSessions::new(true, max_bytes, target_bytes).unwrap()
     }
 
     #[test]

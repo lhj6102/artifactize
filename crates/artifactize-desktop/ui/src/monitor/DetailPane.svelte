@@ -18,9 +18,11 @@
   import Icon from "../shell/Icon.svelte";
   import { markIcon } from "../shell/icons";
   import RecordDetail from "./RecordDetail.svelte";
+  import { NeighboursState } from "./neighbours-state.svelte";
   import Neighbours from "./Neighbours.svelte";
   import ArtifactTools from "./ArtifactTools.svelte";
   import ArtifactStar from "./ArtifactStar.svelte";
+  import Definition from "./Definition.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
@@ -69,6 +71,15 @@
     /** The Run no longer has the node: the Detail has nothing left to show. */
     ongone: () => void;
   } = $props();
+
+  /** The opened Artifact's neighbours, read by its Neighbours section. */
+  const neighbours = new NeighboursState();
+  /** A part of several wholes is drawn in each: Debug names them, in graph order. */
+  const drawnIn = $derived.by((): [string, string][] => {
+    const graph = neighbours.graph;
+    if (!graph || graph.copies <= 1 || !graph.shape.nodes.some((item) => item.id === node)) return [];
+    return [["Drawn in", graph.wholes.join(", ")]];
+  });
   const commands = useIpc();
   const { sections } = getAppState();
   const d = new DetailPaneState();
@@ -212,11 +223,14 @@
           </ul>
         </Section>
         {/if}
-        <Section name="Neighbours">
-          <Neighbours {source} {revision} {node} {onopen} />
-        </Section>
+        <Neighbours {source} {revision} {node} {onopen} state={neighbours} />
         {#if branch}
           {#key `${branch.workspace}\n${row.name}`}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
+        {/if}
+        <!-- On a Current the Artifact's definition, which its graph and its Detail edit, stands
+             where a Run's Path does. -->
+        {#if branch && source.kind === "current"}
+          {#key row.name}<Definition branch={branch.key} name={row.name} />{/key}
         {/if}
       {/if}
       {#if d.error}
@@ -229,7 +243,7 @@
           {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
         {/key}
       {:else}
-        <RecordDetail {detail} bind:log={() => log, (value) => (d.log = value ? target : null)} />
+        <RecordDetail {detail} path={source.kind !== "current"} debugFacts={tab === null ? drawnIn : []} bind:log={() => log, (value) => (d.log = value ? target : null)} />
       {/if}
     </div>
   </div>

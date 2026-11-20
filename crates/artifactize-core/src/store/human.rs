@@ -14,7 +14,10 @@ pub struct HumanClaim {
     pub claimed_at: crate::types::Timestamp,
 }
 
-fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), Error> {
+fn waiting(
+    db: &rusqlite::Connection,
+    id: &crate::types::RequestId,
+) -> Result<(Request, Execution), Error> {
     let data: Option<String> = db
         .query_row(
             "SELECT e.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE q.id=? AND q.status IN ('WAITING_HUMAN','DEFERRED') AND e.status='WAITING_HUMAN'",
@@ -44,7 +47,10 @@ fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), 
     Ok((request, execution))
 }
 
-fn claim(db: &rusqlite::Connection, request: &str) -> Result<HumanClaim, Error> {
+fn claim(
+    db: &rusqlite::Connection,
+    request: &crate::types::RequestId,
+) -> Result<HumanClaim, Error> {
     Ok(db.query_row(
         "SELECT id,claimed_by,claimed_at FROM requests WHERE id=? AND claimed_by IS NOT NULL",
         [request],
@@ -59,7 +65,7 @@ fn claim(db: &rusqlite::Connection, request: &str) -> Result<HumanClaim, Error> 
 }
 
 /// Clear a request's Human claim.
-fn unclaim(db: &rusqlite::Connection, request: &str) -> Result<(), Error> {
+fn unclaim(db: &rusqlite::Connection, request: &crate::types::RequestId) -> Result<(), Error> {
     db.execute(
         "UPDATE requests SET claimed_by=NULL,claimed_at=NULL WHERE id=?",
         [request],
@@ -69,7 +75,7 @@ fn unclaim(db: &rusqlite::Connection, request: &str) -> Result<(), Error> {
 
 fn claimant(
     db: &rusqlite::Connection,
-    request: &str,
+    request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
 ) -> Result<(), Error> {
     let owner: Option<crate::types::ReviewerId> = db
@@ -204,7 +210,7 @@ impl Receipts {
                     return Ok(request);
                 };
                 if execution.status() != crate::types::ExecutionStatus::WaitingHuman {
-                    receive(&mut request, &execution);
+                    receive(&mut request, &execution, crate::broker::now());
                 }
                 update_request(&transaction, &request)?;
                 if request.status().is_human_wait() {
@@ -351,7 +357,6 @@ impl Receipts {
                         ));
                     }
                 };
-                request.queue = None;
                 request.blocked_reason = None;
                 execution.state = request.state.clone().try_into().map_err(Error::Invalid)?;
                 execution.reviewer = Some(reviewer.clone());
@@ -370,8 +375,9 @@ impl Receipts {
                         })
                         .collect::<Result<Vec<Request>, Error>>()?
                 };
+                let settled_at = crate::broker::now();
                 for mut follower in followers {
-                    receive(&mut follower, &execution);
+                    receive(&mut follower, &execution, settled_at);
                     update_request(&transaction, &follower)?;
                 }
                 unclaim(&transaction, &request.id)?;
@@ -457,13 +463,13 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
             .collect::<Result<Vec<Request>, Error>>()?
     };
     for mut follower in followers {
-        receive(&mut follower, entry);
+        receive(&mut follower, entry, now);
         update_request(db, &follower)?;
         unclaim(db, &follower.id)?;
     }
     Ok(())
 }
 
-fn receive(request: &mut Request, execution: &Execution) {
-    crate::cache::reuse(request, execution, crate::broker::now());
+fn receive(request: &mut Request, execution: &Execution, now: crate::types::Timestamp) {
+    crate::cache::reuse(request, execution, now);
 }

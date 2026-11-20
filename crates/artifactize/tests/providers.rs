@@ -22,7 +22,7 @@ use support::{FakeProvider, Reply, chat, gemini, openai};
 
 const GEMINI_KEY: &str = "gm-saved-gemini-key-0123";
 const ENDPOINT_KEY: &str = "sk-saved-endpoint-key-0123";
-const VERDICT: &str = r#"{"verdict":"GREEN","covered":["R1"]}"#;
+const VERDICT: &str = r#"{"findings":[{"priority":"P2","reason":"R1 is covered."}]}"#;
 
 struct Project {
     _root: owned_run::Root,
@@ -36,7 +36,11 @@ impl Project {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
-        fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("spec/spec.md")),
+            "R1: the spec covers R1.\n",
+        )
+        .unwrap();
         let state = root.path().join("state");
         root.track(&state, &repo);
         let project = Self {
@@ -50,6 +54,7 @@ impl Project {
 
     fn declare(&self, profile: Value) {
         support::declaration::write(
+            &(self.repo),
             self.repo.join("spec/index.artf"),
             json!({
                 "name":"spec",
@@ -58,11 +63,7 @@ impl Project {
                     "title":"Review",
                     "profile":profile,
                     "payload":{"instruction":"Review {spec}."},
-                    "pass_schema":{
-                        "type":"object",
-                        "properties":{"covered":{"type":"array","items":{"type":"string"}}},
-                        "required":["covered"],
-                    },
+                    "red_at":"P1",
                 }],
             })
             .to_string(),
@@ -312,6 +313,31 @@ fn gemini_reviews_with_a_saved_key_and_its_thinking_level() {
         .find(|key| key["provider"] == "gemini")
         .unwrap();
     assert_eq!(gemini["source"], "absent");
+}
+
+#[test]
+fn provider_add_requires_exactly_one_complete_target() {
+    let project = Project::new(json!({"kind":"agent", "backend":"openai", "model":"fake-model"}));
+    for flags in [
+        &[][..],
+        &["--api", "openai-chat"],
+        &["--url", "https://example.invalid/v1"],
+        &[
+            "--alias",
+            "openai",
+            "--api",
+            "openai-chat",
+            "--url",
+            "https://example.invalid/v1",
+        ],
+    ] {
+        let mut args = vec!["provider", "add", "work"];
+        args.extend_from_slice(flags);
+        let output = support::os::run(&mut project.command(&args));
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+        let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(diagnostic["error"].is_string(), "{args:?}: {diagnostic}");
+    }
 }
 
 #[test]

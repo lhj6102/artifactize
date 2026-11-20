@@ -234,6 +234,6 @@ impl Running {
         }
         let _ = self.child.cleanup().await;
         let stderr = crate::task::joined(self.stderr.await).unwrap_or_default();
-        super::shown(&String::from_utf8_lossy(&stderr))
+        super::shown(&crate::platform::output_text(&stderr))
     }
 }

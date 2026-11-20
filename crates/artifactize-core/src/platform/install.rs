@@ -77,33 +77,75 @@ impl Places {
 /// How the running copy was installed.
 pub(crate) fn channel() -> Channel {
     match std::env::current_exe() {
-        Ok(executable) => classify(&executable, &Places::here()),
+        Ok(executable) => installed_channel(&executable, &Places::here()),
         Err(_) => Channel::Unknown,
     }
 }
 
 /// The channel that puts an executable at `executable`, given this system's `places`.
-pub(crate) fn classify(executable: &Path, places: &Places) -> Channel {
-    let executable = real(executable);
-    let Some(directory) = executable.parent() else {
-        return Channel::Unknown;
-    };
+fn installed_channel(executable: &Path, places: &Places) -> Channel {
+    Evidence::read(executable, places)
+        .as_ref()
+        .map_or(Channel::Unknown, classify)
+}
+
+struct Evidence {
+    directory: PathBuf,
+    receipt: Option<String>,
+    applications: Option<PathBuf>,
+    cask_installed: bool,
+    desktop: Option<PathBuf>,
+    appimage_bin: Option<PathBuf>,
+    appimage: bool,
+    cargo_bin: Option<PathBuf>,
+    listed_by_dpkg: bool,
+}
+
+impl Evidence {
+    fn read(executable: &Path, places: &Places) -> Option<Self> {
+        let executable = real(executable);
+        let directory = executable.parent()?;
+        Some(Self {
+            directory: directory.to_owned(),
+            receipt: std::fs::read_to_string(directory.join(RECEIPT)).ok(),
+            applications: places
+                .home
+                .as_ref()
+                .map(|home| real(&home.join("Applications"))),
+            cask_installed: bundle(directory).is_some()
+                && places
+                    .caskrooms
+                    .iter()
+                    .any(|caskroom| caskroom.join("artifactize").is_dir()),
+            desktop: places
+                .data
+                .as_ref()
+                .map(|data| real(&data.join("artifactize/desktop"))),
+            appimage_bin: places
+                .data
+                .as_ref()
+                .map(|data| real(&data.join("artifactize/bin"))),
+            appimage: places.appimage,
+            cargo_bin: places.cargo_bin.as_deref().map(real),
+            listed_by_dpkg: places
+                .dpkg_info
+                .as_ref()
+                .is_some_and(|info| lists_file(info, &executable)),
+        })
+    }
+}
+
+fn classify(evidence: &Evidence) -> Channel {
+    let directory = &evidence.directory;
     let names: Vec<_> = directory
         .components()
         .filter_map(|component| component.as_os_str().to_str())
         .collect();
     let named = |wanted: &str| names.iter().any(|name| name.eq_ignore_ascii_case(wanted));
-    let within = |place: &Option<PathBuf>, below: &str| {
-        place
-            .as_ref()
-            .is_some_and(|place| directory.starts_with(real(&place.join(below))))
-    };
-    if let Ok(receipt) = std::fs::read_to_string(directory.join(RECEIPT)) {
-        match receipt.trim() {
-            "install.sh" => return Channel::InstallSh,
-            "install.ps1" => return Channel::InstallPs1,
-            _ => {}
-        }
+    match evidence.receipt.as_deref().map(str::trim) {
+        Some("install.sh") => return Channel::InstallSh,
+        Some("install.ps1") => return Channel::InstallPs1,
+        _ => {}
     }
     if named("WindowsApps") {
         return Channel::Store;
@@ -115,40 +157,29 @@ pub(crate) fn classify(executable: &Path, places: &Places) -> Channel {
         return Channel::Homebrew;
     }
     if let Some(bundle) = bundle(directory) {
-        return if places
-            .home
-            .as_ref()
-            .is_some_and(|home| bundle.parent() == Some(real(&home.join("Applications")).as_path()))
+        return if evidence
+            .applications
+            .as_deref()
+            .is_some_and(|path| bundle.parent() == Some(path))
         {
             Channel::InstallSh
-        } else if places
-            .caskrooms
-            .iter()
-            .any(|caskroom| caskroom.join("artifactize").is_dir())
-        {
+        } else if evidence.cask_installed {
             Channel::HomebrewCask
         } else {
             Channel::Dmg
         };
     }
-    if within(&places.data, "artifactize/desktop") {
+    let within = |place: Option<&Path>| place.is_some_and(|path| directory.starts_with(path));
+    if within(evidence.desktop.as_deref()) {
         return Channel::InstallSh;
     }
-    if places.appimage || within(&places.data, "artifactize/bin") {
+    if evidence.appimage || within(evidence.appimage_bin.as_deref()) {
         return Channel::AppImage;
     }
-    if places
-        .cargo_bin
-        .as_ref()
-        .is_some_and(|bin| directory == real(bin))
-    {
+    if evidence.cargo_bin.as_deref() == Some(directory.as_path()) {
         return Channel::Cargo;
     }
-    if places
-        .dpkg_info
-        .as_ref()
-        .is_some_and(|info| lists_file(info, &executable))
-    {
+    if evidence.listed_by_dpkg {
         return Channel::Deb;
     }
     Channel::Unknown

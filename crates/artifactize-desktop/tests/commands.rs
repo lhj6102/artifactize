@@ -77,9 +77,13 @@ fn fixture_with(extra: &[(&str, &str)]) -> Fixture {
             "\"fixture-runtime\"",
             &serde_json::to_string(&os::true_program()).unwrap(),
         );
-        fs::write(repo.join(name).join("index.artf"), text).unwrap();
+        support::declaration::write(&repo, repo.join(name).join("index.artf"), text).unwrap();
     }
-    fs::write(repo.join("release/notes.md"), "# Release notes\n- Ready.\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("release/notes.md")),
+        "# Release notes\n- Ready.\n",
+    )
+    .unwrap();
     // Its own repository, not a worktree of the one the tests build in.
     os::git(&repo, &["init", "-q"]);
     let fixture = Fixture {
@@ -312,7 +316,7 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     assert_eq!(chip["status"], "Waiting for sign-off");
     // A running Run's age is its time so far, not a time ago.
     assert!(!chip["age"].as_str().unwrap().ends_with(" ago"), "{chip}");
-    assert_eq!(view["run"], Value::Null, "nothing chosen yet");
+    assert_eq!(view["run"], json!({"kind": "none"}), "nothing chosen yet");
     // The waiting stack lists the sign-off with its project and branch.
     assert_eq!(view["waiting"][0]["eval"], "release/signoff");
     assert_eq!(view["waiting"][0]["project"], "repo");
@@ -563,6 +567,41 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_review_never_goes_back_to_a_view_read_before_its_newest() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    // The stack is read with the review unclaimed; the review is then opened and claimed.
+    let shown = invoke(&window, "browse", json!({"navigate": STILL()})).unwrap();
+    assert_eq!(shown["waiting"][0]["claim"], "-");
+    let branch = shown["branches"][0]["key"].clone();
+    let open = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
+    let claimed = invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    assert_eq!(claimed["view"]["stage"], "review");
+    // A pane step that does not read the stack again keeps the stack it read before the claim;
+    // the review's redraw still shows the claim, not that older read.
+    invoke(&window, "browse", json!({"navigate": star(&branch, true)})).unwrap();
+    let redrawn = invoke(&window, "human_open", json!({"id": id, "reload": false})).unwrap();
+    assert_eq!(redrawn["stage"], "review");
+    // Each view says which read it is: a later read has a higher number.
+    let read = |view: &Value| view["read"].as_u64().unwrap();
+    assert!(
+        read(&claimed["view"]) > read(&open),
+        "{open} then {claimed}"
+    );
+    assert_eq!(read(&redrawn), read(&claimed["view"]));
+    // A stack read after the claim is newer than the review's last read; its redraw shows it.
+    assert_ne!(waiting(&window)[0]["claim"], "-");
+    let after = invoke(&window, "human_open", json!({"id": id, "reload": false})).unwrap();
+    assert_eq!(after["stage"], "review");
+    assert!(
+        read(&after) > read(&claimed["view"]),
+        "{claimed} then {after}"
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -625,7 +664,7 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
     let server = FakeProvider::start(|_| Reply::Json(403, json!({"error": "forbidden"})));
     let url = format!("{}/", server.url);
     fs::write(
-        fixture.state.join("remote.json"),
+        support::declaration::source_path(fixture.state.join("remote.json")),
         json!({"url": url, "share": "summary"}).to_string(),
     )
     .unwrap();
@@ -678,7 +717,7 @@ fn back_up(state: &Path, backup: &Path) {
 fn restore(backup: &Path, state: &Path) {
     let database = artifactize_core::store::DATABASE;
     for suffix in ["-shm", "-wal"] {
-        let _ = fs::remove_file(state.join(format!("{database}{suffix}")));
+        let _ = support::declaration::remove_file(state.join(format!("{database}{suffix}")));
     }
     for suffix in ["", "-wal"] {
         let name = format!("{database}{suffix}");
@@ -770,7 +809,7 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
     .unwrap();
     receipts.create_run(&run, &[request]).await.unwrap();
     // The recorded conversation: a review header, then one answer per row.
-    let path = artifactize_core::agent::session::path(&fixture.state, session).unwrap();
+    let path = artifactize_core::agent::session::path(&fixture.state, &session.parse().unwrap());
     os::create_private_dir_all(path.parent().unwrap());
     let answer = |text: String| {
         serde_json::to_string(&artifactize_core::agent::session::Event {
@@ -933,6 +972,103 @@ fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
     .unwrap();
     let rows = window_of(&window, &opened["handle"], Value::Null);
     assert!(rows["rows"].to_string().contains("row 2"), "{rows}");
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn the_definitions_are_read_and_edited_on_what_was_shown() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Monitor);
+    let branch = branch(&monitor);
+    let read = invoke(&monitor, "definitions", json!({"branch": branch})).unwrap();
+    let ship = read["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["name"] == "ship")
+        .unwrap();
+    assert_eq!(
+        ship["definition"],
+        json!(".artifactize/ship.artf"),
+        "{read}"
+    );
+    assert_eq!(ship["target"], json!("ship/"));
+    assert_eq!(ship["comment"], Value::Null);
+    let file = fixture.repo.join(".artifactize").join("ship.artf");
+    assert_eq!(
+        read["files"][".artifactize/ship.artf"],
+        json!(fs::read_to_string(&file).unwrap())
+    );
+    // Written on the text that was shown: a comment, nothing else in the file changed.
+    let before = fs::read_to_string(&file).unwrap();
+    let comment = json!({"kind": "setComment", "name": "ship", "text": "Ship after the review."});
+    let written = invoke(
+        &monitor,
+        "definition_edit",
+        json!({"branch": branch, "shown": read["files"], "operation": comment}),
+    )
+    .unwrap();
+    assert_eq!(written, json!({"kind": "written"}));
+    let after = fs::read_to_string(&file).unwrap();
+    assert!(after.starts_with(&before), "{after}");
+    assert!(after.contains("Ship after the review."), "{after}");
+    let again = invoke(&monitor, "definitions", json!({"branch": branch})).unwrap();
+    assert!(
+        again["nodes"].as_array().unwrap().iter().any(
+            |node| node["name"] == "ship" && node["comment"] == json!("Ship after the review.")
+        ),
+        "{again}"
+    );
+    // The same edit on the text shown before is refused, naming the file, and writes nothing.
+    let stale = invoke(
+        &monitor,
+        "definition_edit",
+        json!({"branch": branch, "shown": read["files"], "operation": {"kind": "setComment", "name": "ship", "text": "Other."}}),
+    )
+    .unwrap();
+    assert_eq!(
+        stale,
+        json!({"kind": "refused", "refusal": {"kind": "changed", "file": ".artifactize/ship.artf"}})
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), after);
+    // An edit that is not allowed says why: release is named by ship.
+    let named = invoke(
+        &monitor,
+        "definition_edit",
+        json!({"branch": branch, "shown": again["files"], "operation": {"kind": "delete", "name": "release"}}),
+    )
+    .unwrap();
+    assert_eq!(named["refusal"]["kind"], json!("notAllowed"), "{named}");
+    // Asked first, the library says the same and which files an edit would write, writing none.
+    let check = |operation: Value| {
+        invoke(
+            &monitor,
+            "definition_check",
+            json!({"branch": branch, "operation": operation}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        check(json!({"kind": "delete", "name": "release"}))["refusal"]["kind"],
+        json!("notAllowed")
+    );
+    let rename = check(json!({"kind": "rename", "old": "ship", "new": "deliver"}));
+    assert_eq!(rename["refusal"], Value::Null, "{rename}");
+    assert!(
+        rename["files"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(".artifactize/ship.artf")),
+        "{rename}"
+    );
+    assert!(fixture.repo.join(".artifactize").join("ship.artf").exists());
+    assert!(
+        fixture
+            .repo
+            .join(".artifactize")
+            .join("release.artf")
+            .exists()
+    );
 }
 
 #[test]
@@ -1188,11 +1324,11 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    fs::write(repo.join(".artf"), "name = 'graph'\n[evals.review]\ntitle = 'Review the graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review {app}.' }\n").unwrap();
-    fs::write(repo.join("index.artf"), "name = 'app'\n").unwrap();
+    support::declaration::write(&repo, repo.join(".artf"), "name = 'graph'\n[evals.review]\ntitle = 'Review the graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review {app}.' }\n").unwrap();
+    support::declaration::write(&repo, repo.join("index.artf"), "name = 'app'\n").unwrap();
     // A part of app: its folder holds it.
     fs::create_dir(repo.join("lib")).unwrap();
-    fs::write(repo.join("lib/index.artf"), "name = 'lib'\n").unwrap();
+    support::declaration::write(&repo, repo.join("lib/index.artf"), "name = 'lib'\n").unwrap();
     let launch = Launch::parse([
         "artifactize-desktop".into(),
         "graph".into(),
@@ -1298,7 +1434,8 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     );
 
     // Scanning again reads the changed declaration.
-    fs::write(
+    support::declaration::write(
+        &fixture.repo,
         fixture.repo.join("index.artf"),
         "name = 'app'\nbasis = true\n",
     )
@@ -1402,17 +1539,22 @@ fn an_artifacts_tools_follow_its_declaration_when_it_moves_or_is_renamed() {
         fixture.repo.join("archive/release"),
     )
     .unwrap();
+    let file = fixture.repo.join(".artifactize/release.artf");
+    let moved = fs::read_to_string(&file)
+        .unwrap()
+        .replace("path = \"release/\"", "path = \"archive/release/\"");
+    fs::write(&file, moved).unwrap();
     assert_eq!(
         list("release").unwrap()[0]["action"],
         "prints archive/release/notes.md"
     );
     // Renamed, it declares another Artifact. Only its own declarations are read: ship's
     // reference to the old name, which a whole-workspace read refuses, is not.
-    let file = fixture.repo.join("archive/release/index.artf");
-    let renamed = fs::read_to_string(&file)
-        .unwrap()
-        .replace(r#"name = "release""#, r#"name = "notes""#);
-    fs::write(&file, renamed).unwrap();
+    fs::rename(
+        fixture.repo.join(".artifactize/release.artf"),
+        fixture.repo.join(".artifactize/notes.artf"),
+    )
+    .unwrap();
     assert_eq!(list("release").unwrap_err()["kind"], "missing");
     assert_eq!(list("notes").unwrap()[0]["name"], "notes_notes");
 }

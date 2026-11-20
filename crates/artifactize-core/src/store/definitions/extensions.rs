@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap}
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Profile {
     pub known: StoredProfile,
     pub extra: Map<String, Value>,

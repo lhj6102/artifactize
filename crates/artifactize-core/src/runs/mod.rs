@@ -11,13 +11,16 @@ use crate::{
     store::{self, Receipts},
     types::{FailureCode, RequestKey, RunId},
 };
-pub use observe::{Counts, RunObservation, State, status, view, wait};
-pub use result::{Finding, ResultCursor, ResultState, RunResultPage, RunVerdict, result};
+pub use observe::{Counts, RunObservation, State, status, view, wait, wait_observing};
+pub use result::{
+    Finding, PAGE_SIZE as RESULT_PAGE_SIZE, ResultCursor, ResultState, RunResultPage, RunVerdict,
+    result,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 pub use watch::{RunEvent, watch};
 #[doc(hidden)]
-pub use worker::{execute, supervise};
+pub use worker::{execute, supervise, supervise_observing_launch};
 
 /// Per-Run execution modes. Future modes extend this type, not transport signatures.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,19 +57,60 @@ pub enum Worker {
     Legacy,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(from = "ControlWire", into = "ControlWire")]
 pub struct Control {
     pub worker: Worker,
     /// The supervisor keeps worker files open until its executor has exited and been checked.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supervisor: Option<process::ChildIdentity>,
     pub activity: Activity,
-    #[serde(default)]
-    pub cancellation_requested: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_code: Option<FailureCode>,
 }
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ControlWire {
+    worker: Worker,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    supervisor: Option<process::ChildIdentity>,
+    activity: Activity,
+    #[serde(default)]
+    cancellation_requested: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    failure_code: Option<FailureCode>,
+}
+
+impl From<ControlWire> for Control {
+    fn from(wire: ControlWire) -> Self {
+        Self {
+            worker: wire.worker,
+            supervisor: wire.supervisor,
+            activity: if wire.cancellation_requested {
+                Activity::Cancelling
+            } else {
+                wire.activity
+            },
+            failure_code: wire.failure_code,
+        }
+    }
+}
+
+impl From<Control> for ControlWire {
+    fn from(control: Control) -> Self {
+        Self {
+            worker: control.worker,
+            supervisor: control.supervisor,
+            activity: control.activity,
+            cancellation_requested: control.is_cancelling(),
+            failure_code: control.failure_code,
+        }
+    }
+}
+
 impl Control {
+    pub fn is_cancelling(&self) -> bool {
+        self.activity == Activity::Cancelling
+    }
+
     pub(crate) fn starting() -> Result<Self, String> {
         Ok(Self {
             worker: Worker::Starting {
@@ -74,7 +118,6 @@ impl Control {
             },
             supervisor: None,
             activity: Activity::Preparing,
-            cancellation_requested: false,
             failure_code: None,
         })
     }
@@ -83,7 +126,6 @@ impl Control {
             worker: Worker::Legacy,
             supervisor: None,
             activity: Activity::Executing,
-            cancellation_requested: false,
             failure_code: None,
         }
     }
@@ -128,9 +170,21 @@ pub async fn start(
     options: &VerifyOptions,
     request_key: Option<RequestKey>,
 ) -> Result<RunObservation, String> {
+    start_observing_launch(context, selection, options, request_key, |_, _| {}).await
+}
+
+/// Transfer the supervisor's birth identity at launch, before saving or reading any receipt.
+#[doc(hidden)]
+pub async fn start_observing_launch(
+    context: &Context,
+    selection: &Selection,
+    options: &VerifyOptions,
+    request_key: Option<RequestKey>,
+    launched: impl FnOnce(&RunId, process::ChildIdentity),
+) -> Result<RunObservation, String> {
     // Keys are attempt identity, not checkout identity. Retry before discovering declarations.
     if let Some(key) = &request_key
-        && context.state.join(store::DATABASE).is_file()
+        && crate::platform::paths::target_is_file(&context.state.join(store::DATABASE))
     {
         let receipts = Receipts::open(&context.state, &context.repo).await?;
         let result = receipts.keyed_run(&context.repo, key).await;
@@ -153,7 +207,10 @@ pub async fn start(
             let launch =
                 process::launch_run(&context.executable, &id, &context.repo, &context.state);
             let admitted = match launch {
-                Ok(identity) => receipts.admit(&id, identity).await,
+                Ok(identity) => {
+                    launched(&id, identity);
+                    receipts.admit(&id, identity).await
+                }
                 Err(error) => Err(error.to_string()),
             };
             if let Err(error) = admitted {
@@ -188,9 +245,7 @@ pub async fn cancel(context: &Context, id: &RunId) -> Result<CancelAcknowledgeme
     Ok(CancelAcknowledgement {
         run: id.clone(),
         state: observe::state_for(saved, control.as_ref(), &current.counts),
-        cancellation_requested: control
-            .as_ref()
-            .is_some_and(|control| control.cancellation_requested),
+        cancellation_requested: control.as_ref().is_some_and(Control::is_cancelling),
     })
 }
 

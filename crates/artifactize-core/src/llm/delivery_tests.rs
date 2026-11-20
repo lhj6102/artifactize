@@ -20,14 +20,43 @@ fn frame(mut value: serde_json::Value, sequence: usize) -> String {
 const REQUEST_BYTES: usize = 1024 * 1024;
 /// Read fixture HTTP input in small chunks without putting the full request bound on the stack.
 const READ_BYTES: usize = 4096;
+/// Bound hangs only, not delivery ordering; the product clock is paused throughout.
+const FIXTURE_WATCHDOG: Duration = Duration::from_secs(30);
+
+const LAST_EARLY_TEXT: &str = "visible second";
+
+tokio::task_local! {
+    static TEXT_BUFFERED: std::cell::Cell<Option<oneshot::Sender<()>>>;
+}
+
+/// Signal the paused clock only after the last small delta has reached the buffer, not when
+/// the server wrote it: loopback socket progress need not be synchronous with fixture writes.
+pub(super) fn text_buffered(text: &str) {
+    if text == LAST_EARLY_TEXT {
+        let _ = TEXT_BUFFERED.try_with(|buffered| {
+            if let Some(ready) = buffered.take() {
+                let _ = ready.send(());
+            }
+        });
+    }
+}
+
+/// Keep paused Tokio time from auto-advancing while the loopback socket is not runnable.
+/// Only the outer watchdog uses wall time, to report a broken handshake instead of hanging.
+async fn with_held_clock<F: std::future::Future>(fixture: F) -> F::Output {
+    tokio::pin!(fixture);
+    let watchdog = std::time::Instant::now() + FIXTURE_WATCHDOG;
+    loop {
+        tokio::select! {
+            biased;
+            result = &mut fixture => return result,
+            _ = tokio::task::yield_now() => assert!(std::time::Instant::now() < watchdog, "delivery fixture did not finish"),
+        }
+    }
+}
 
 /// Read the complete fake request before answering; TCP may split both headers and body.
 async fn read_request(socket: &mut tokio::net::TcpStream) {
-    tokio::time::timeout(Duration::from_secs(5), read_request_bytes(socket))
-        .await
-        .expect("fixture request read timed out");
-}
-async fn read_request_bytes(socket: &mut tokio::net::TcpStream) {
     let mut bytes = Vec::new();
     let header_end = loop {
         let mut chunk = [0; READ_BYTES];
@@ -58,9 +87,9 @@ async fn read_request_bytes(socket: &mut tokio::net::TcpStream) {
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_enters_delivery() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = crate::test_os::tcp::async_loopback_listener();
     let address = listener.local_addr().unwrap();
     let (release_tx, release_rx) = oneshot::channel();
     let server = AbortOnDropHandle::new(tokio::spawn(async move {
@@ -121,9 +150,10 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
                 "item_id":"msg_text",
                 "output_index":1,
                 "content_index":0,
-                "delta":"visible second",
+                "delta":LAST_EARLY_TEXT,
             }),
         ];
+        let completed_sequence = early.len();
         for (index, event) in early.into_iter().enumerate() {
             let bytes = frame(event, index).into_bytes();
             let split = bytes.len() / 2;
@@ -162,7 +192,11 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
         });
         socket
             .write_all(
-                frame(json!({"type":"response.completed","response":response}), 7).as_bytes(),
+                frame(
+                    json!({"type":"response.completed","response":response}),
+                    completed_sequence,
+                )
+                .as_bytes(),
             )
             .await
             .unwrap();
@@ -185,54 +219,70 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
     let mut early_observed = false;
     let mut received = Vec::new();
     let request = CompletionRequest::new(Message::user("fixture"));
-    let response = client
-        .turn_observed(
+    let (buffered_tx, buffered_rx) = oneshot::channel();
+    let response = with_held_clock(async {
+        let model = "fixture-model".parse().unwrap();
+        let mut tokens_used = 0;
+        let mut receive = |event: session::Delivery| {
+            received.push(event.clone());
+            recorder.event(Kind::Delivery(event));
+            let summary = received
+                .iter()
+                .filter(|event| event.kind == DeliveryKind::Summary)
+                .map(|event| event.text.as_str())
+                .collect::<String>();
+            let text = received
+                .iter()
+                .filter(|event| event.kind == DeliveryKind::Text)
+                .map(|event| event.text.as_str())
+                .collect::<String>();
+            if summary.contains("Public first public second")
+                && text.contains("Visible first visible second")
+                && release.is_some()
+            {
+                let saved = session::Conversation::load(&session::path(
+                    root.path(),
+                    &"stream-fixture".parse().unwrap(),
+                ))
+                .unwrap()
+                .unwrap();
+                assert!(
+                    saved
+                        .events()
+                        .iter()
+                        .any(|event| matches!(event.kind, Kind::Delivery(_)))
+                );
+                assert!(saved.history().unwrap().is_empty());
+                early_observed = true;
+                release.take().unwrap().send(()).unwrap();
+            }
+        };
+        let turn = client.turn_observed(
             &request,
             Turn {
                 number: 1,
-                model: "fixture-model",
+                model: &model,
                 deadline: Instant::now() + Duration::from_secs(5),
                 cancellation: &cancellation,
                 max_tokens: None,
-                tokens_used: &mut 0,
+                tokens_used: &mut tokens_used,
             },
             &mut attempts,
-            &mut |event| {
-                received.push(event.clone());
-                recorder.event(Kind::Delivery(event));
-                let summary = received
-                    .iter()
-                    .filter(|event| event.kind == DeliveryKind::Summary)
-                    .map(|event| event.text.as_str())
-                    .collect::<String>();
-                let text = received
-                    .iter()
-                    .filter(|event| event.kind == DeliveryKind::Text)
-                    .map(|event| event.text.as_str())
-                    .collect::<String>();
-                if summary.contains("Public first public second")
-                    && text.contains("Visible first visible second")
-                    && release.is_some()
-                {
-                    let saved = session::Conversation::load(
-                        &session::path(root.path(), "stream-fixture").unwrap(),
-                    )
-                    .unwrap()
-                    .unwrap();
-                    assert!(
-                        saved
-                            .events
-                            .iter()
-                            .any(|event| matches!(event.kind, Kind::Delivery(_)))
-                    );
-                    assert!(saved.history().unwrap().is_empty());
-                    early_observed = true;
-                    release.take().unwrap().send(()).unwrap();
-                }
-            },
-        )
-        .await
-        .unwrap();
+            &mut receive,
+        );
+        let clock = async {
+            buffered_rx.await.unwrap();
+            tokio::time::advance(delivery::CADENCE).await;
+        };
+        let (response, ()) = tokio::join!(
+            TEXT_BUFFERED.scope(std::cell::Cell::new(Some(buffered_tx)), turn),
+            clock,
+        );
+        let response = response.unwrap();
+        server.await.unwrap();
+        response
+    })
+    .await;
     assert!(early_observed);
     assert_eq!(
         received[0].kind,
@@ -268,28 +318,27 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
     for patch in transcript.apply(&session::Event {
         at: None,
         send: None,
-        kind: Kind::Message(session::MessageEvent {
-            turn: 1,
-            message: Message::Assistant {
+        kind: Kind::Message(session::MessageEvent::new(
+            1,
+            Message::Assistant {
                 id: response.message_id,
                 content: response.choice,
             },
-            repair: false,
-            is_error: vec![],
-            question: None,
-        }),
+            false,
+            vec![],
+            None,
+        )),
     }) {
         blocks.insert(patch.id, patch.text);
     }
     let shown = blocks.values().cloned().collect::<String>();
     assert_eq!(shown.matches("Visible first visible second").count(), 1);
     assert_eq!(shown.matches("Public first public second").count(), 1);
-    server.await.unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn cancelled_text_keeps_partial_and_does_not_retry() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = crate::test_os::tcp::async_loopback_listener();
     let address = listener.local_addr().unwrap();
     let (stop_tx, stop_rx) = oneshot::channel();
     let server = AbortOnDropHandle::new(tokio::spawn(async move {
@@ -309,7 +358,9 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
                         "item_id":"message",
                         "output_index":0,
                         "content_index":0,
-                        "delta":"partial visible",
+                        // Deliver without the cadence timer: this partial exceeds the pending
+                        // output flush threshold, while its suffix remains incomplete.
+                        "delta": format!("partial visible {}", "sample ".repeat(6000)),
                     }),
                     0,
                 )
@@ -331,27 +382,38 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
     let cancel = CancellationToken::new();
     let mut attempts = Vec::new();
     let mut deliveries = Vec::new();
-    let error = client
-        .turn_observed(
-            &CompletionRequest::new(Message::user("fixture")),
-            Turn {
-                number: 1,
-                model: "fixture-model",
-                deadline: Instant::now() + Duration::from_secs(5),
-                cancellation: &cancel,
-                max_tokens: None,
-                tokens_used: &mut 0,
-            },
-            &mut attempts,
-            &mut |event| {
-                if event.text.contains("partial visible") {
-                    cancel.cancel();
-                }
-                deliveries.push(event);
-            },
-        )
-        .await
-        .unwrap_err();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let request = CompletionRequest::new(Message::user("fixture"));
+    let model = "fixture-model".parse().unwrap();
+    let mut tokens_used = 0;
+    let mut receive = |event: session::Delivery| {
+        if event.text.contains("partial visible") {
+            cancel.cancel();
+        }
+        deliveries.push(event);
+    };
+    let error = with_held_clock(async {
+        let error = client
+            .turn_observed(
+                &request,
+                Turn {
+                    number: 1,
+                    model: &model,
+                    deadline,
+                    cancellation: &cancel,
+                    max_tokens: None,
+                    tokens_used: &mut tokens_used,
+                },
+                &mut attempts,
+                &mut receive,
+            )
+            .await
+            .unwrap_err();
+        let _ = stop_tx.send(());
+        server.await.unwrap();
+        error
+    })
+    .await;
     assert_eq!(error.code, Code::Cancelled);
     assert_eq!(attempts.len(), 1);
     assert!(
@@ -359,6 +421,4 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
             .iter()
             .any(|event| event.state == DeliveryState::Interrupted)
     );
-    let _ = stop_tx.send(());
-    server.await.unwrap();
 }

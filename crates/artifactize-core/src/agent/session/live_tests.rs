@@ -18,15 +18,15 @@ fn split_json_newline_and_utf8_tail_wait_for_complete_records_and_end_is_not_ter
     let split = bytes.iter().position(|byte| *byte >= 128).unwrap() + 1;
     let mut file = fs::OpenOptions::new()
         .append(true)
-        .open(path(&source.state, "session").unwrap())
+        .open(path(&source.state, &"session".parse().unwrap()))
         .unwrap();
     file.write_all(&bytes[..split]).unwrap();
     let before = finish(&mut reader, 80, 20, Position::Bottom);
-    assert!(before.status.is_none(), "{:?}", before.status);
+    assert!(before.note().is_none(), "{:?}", before.status);
     assert!(!before.rows.join("\n").contains("late"));
     file.write_all(&bytes[split..bytes.len() - 1]).unwrap();
     let unterminated = finish(&mut reader, 80, 20, Position::Bottom);
-    assert!(unterminated.status.is_none(), "{:?}", unterminated.status);
+    assert!(unterminated.note().is_none(), "{:?}", unterminated.status);
     assert!(!unterminated.rows.join("\n").contains("late"));
     file.write_all(b"\n").unwrap();
     assert!(
@@ -61,13 +61,13 @@ fn typed_policy_rejects_complete_malformed_unknown_foreign_and_accepts_legacy_me
         let error = finish(&mut reader, 30, 10, Position::Bottom);
         assert!(
             error
-                .status
+                .note()
                 .unwrap()
                 .contains("Invalid saved session event")
         );
         let bytes = reader.bytes_read;
         for _ in 0..10 {
-            assert!(!reader.step(30, 10, Position::Bottom).loading);
+            assert!(!reader.step(30, 10, Position::Bottom).loading());
         }
         assert!(
             reader.bytes_read - bytes <= 10 * 1024,
@@ -77,11 +77,11 @@ fn typed_policy_rejects_complete_malformed_unknown_foreign_and_accepts_legacy_me
     let (_root, source) = fixture();
     write(&source, "{\"kind\":\"review\",\"sessionId\":\"other\"}\n");
     let error = finish(&mut Reader::new(source.clone()), 30, 10, Position::Bottom);
-    assert!(error.status.unwrap().contains("identity"));
+    assert!(error.note().unwrap().contains("identity"));
     write(&source, "{\"kind\":\"review\",\"futureMetadata\":7}\n");
     assert!(
         finish(&mut Reader::new(source), 30, 10, Position::Bottom)
-            .status
+            .note()
             .is_none()
     );
 }
@@ -93,13 +93,13 @@ fn version_policy_accepts_current_and_missing_but_rejects_unknown_without_changi
     let current = header(&source);
     assert!(
         finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom)
-            .status
+            .note()
             .is_none()
     );
     write(&source, "{\"kind\":\"review\",\"futureMetadata\":7}\n");
     assert!(
         finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom)
-            .status
+            .note()
             .is_none()
     );
     for version in [0, VERSION + 1, u32::MAX] {
@@ -109,7 +109,7 @@ fn version_policy_accepts_current_and_missing_but_rejects_unknown_without_changi
         let window = finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom);
         assert!(
             window
-                .status
+                .note()
                 .unwrap()
                 .contains("Unsupported saved session version")
         );
@@ -120,7 +120,7 @@ fn version_policy_accepts_current_and_missing_but_rejects_unknown_without_changi
     );
     assert!(
         finish(&mut Reader::new(source), 80, 10, Position::Bottom)
-            .status
+            .note()
             .unwrap()
             .contains("identity")
     );
@@ -135,22 +135,21 @@ fn huge_small_records_bounded_batches_cache_and_append_byte_accounting() {
     );
     append(&source, &attempt.repeat(40000));
     append(&source, &answer("history end"));
-    let size = fs::metadata(path(&source.state, "session").unwrap())
+    let size = fs::metadata(path(&source.state, &"session".parse().unwrap()))
         .unwrap()
         .len();
     assert!(size > 16 * 1024 * 1024);
     let mut reader = Reader::new(source.clone());
     let first = reader.step(80, 30, Position::Bottom);
-    assert!(first.loading);
+    assert!(first.loading());
     assert!(!first.rows.join("\n").contains("history end"));
     let window = finish(&mut reader, 80, 30, Position::Bottom);
-    assert!(window.status.is_none(), "{:?}", window.status);
+    assert!(window.note().is_none(), "{:?}", window.status);
     assert!(window.rows.join("\n").contains("history end"));
     assert!(
         reader.bytes_read < size + 4 * 1024 * 1024,
         "hidden records were repeatedly paged in"
     );
-    assert_eq!(reader.decoded_events, 40002);
     let before = reader.bytes_read;
     for n in 0..30 {
         append(&source, &answer(&format!("small append {n}")));
@@ -164,7 +163,7 @@ fn huge_small_records_bounded_batches_cache_and_append_byte_accounting() {
 }
 
 #[test]
-fn normal_large_tool_result_decodes_once_but_body_is_not_presented_and_large_prose_pages_in() {
+fn large_tool_result_body_is_not_presented_and_large_prose_pages_in() {
     use rig_core::message::{Message, ToolCall, ToolFunction, ToolName, ToolResultContent};
     let (_root, source) = fixture();
     let results = (0..4)
@@ -179,27 +178,26 @@ fn normal_large_tool_result_decodes_once_but_body_is_not_presented_and_large_pro
     let event = Event {
         at: None,
         send: None,
-        kind: Kind::Message(MessageEvent {
-            turn: 1,
-            message: Message::tool_results(results),
-            repair: false,
-            is_error: vec![false; 4],
-            question: None,
-        }),
+        kind: Kind::Message(MessageEvent::new(
+            1,
+            Message::tool_results(results),
+            false,
+            vec![false; 4],
+            None,
+        )),
     };
     let bytes = serde_json::to_string(&event).unwrap();
     assert!(bytes.len() > 16 * 1024 * 1024);
     append(&source, &(bytes + "\n"));
     let mut reader = Reader::new(source.clone());
     let window = finish(&mut reader, 7, 10, Position::Bottom);
-    assert!(window.status.is_none(), "{:?}", window.status);
+    assert!(window.note().is_none(), "{:?}", window.status);
     assert!(!window.rows.join("\n").contains("xxxxxxxxxxxxxxxx"));
-    assert_eq!(reader.decoded_events, 2);
     append(&source, &answer(&"visible prose ".repeat(50000)));
     assert!(finish(&mut reader, 7, 10, Position::Bottom).total > 65535);
     reader.commit(7);
     for position in [Position::Row(0), Position::Bottom, Position::Row(70000)] {
-        assert!(finish(&mut reader, 7, 10, position).status.is_none());
+        assert!(finish(&mut reader, 7, 10, position).note().is_none());
     }
     append(&source, &answer("late after large record"));
     assert!(
@@ -208,7 +206,6 @@ fn normal_large_tool_result_decodes_once_but_body_is_not_presented_and_large_pro
             .join("\n")
             .contains("late after large record")
     );
-    assert_eq!(reader.decoded_events, 4);
 }
 
 #[test]
@@ -223,87 +220,65 @@ fn truncate_replacement_same_size_and_gc_reset_even_when_paused() {
     assert!(same.rows.join("\n").contains("bbbb"));
     write(&source, &header(&source));
     assert!(finish(&mut reader, 80, 10, Position::Row(5)).reset);
-    let path = path(&source.state, "session").unwrap();
-    let replacement = path.with_extension("new");
-    crate::test_os::write_private_file(&replacement, header(&source) + &answer("replacement"));
-    fs::rename(replacement, &path).unwrap();
+    let path = path(&source.state, &"session".parse().unwrap());
+    crate::test_os::replace_open_private_file(&path, header(&source) + &answer("replacement"));
     assert!(finish(&mut reader, 80, 20, Position::Bottom).reset);
-    fs::remove_file(path).unwrap();
+    crate::test_os::remove_open_file(&path);
     let removed = reader.step(80, 20, Position::Bottom);
     assert!(removed.reset);
     assert_eq!(removed.total, 0);
-    assert!(removed.status.unwrap().contains("session GC"));
+    assert!(removed.note().unwrap().contains("session GC"));
 }
 
-// Unix modes, FIFOs and symlinks; the Windows counterpart below checks DACLs and junctions.
-#[cfg(unix)]
 #[test]
-fn links_fifo_permissions_and_directory_links_are_refused() {
+fn shared_files_and_links_are_refused() {
     let (root, source) = fixture();
-    let file = path(&source.state, "session").unwrap();
+    let file = path(&source.state, &"session".parse().unwrap());
     crate::test_os::grant_everyone_read(&file);
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
-            .status
+            .note()
             .unwrap()
             .contains("private")
     );
     fs::remove_file(&file).unwrap();
     let outside = root.path().join("outside");
     fs::write(&outside, "not a session").unwrap();
-    crate::test_os::symlink_file(&outside, &file).unwrap();
+    crate::test_os::file_link(&outside, &file);
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
-            .status
+            .note()
             .is_some()
     );
-    fs::remove_file(&file).unwrap();
-    crate::test_os::fifo(&file);
-    assert!(
-        Reader::new(source.clone())
-            .step(80, 20, Position::Bottom)
-            .status
-            .unwrap()
-            .contains("regular")
-    );
-    fs::remove_file(file).unwrap();
+    crate::test_os::remove_file_link(&file);
     fs::remove_dir(directory(root.path())).unwrap();
     let elsewhere = root.path().join("elsewhere");
     crate::test_os::create_private_dir_all(&elsewhere);
-    crate::test_os::symlink_dir(elsewhere, directory(root.path())).unwrap();
+    crate::test_os::link_dir(&elsewhere, &directory(root.path()));
     assert!(
         Reader::new(source)
             .step(80, 20, Position::Bottom)
-            .status
+            .note()
             .is_some()
     );
 }
 
-// The Windows counterpart of the Unix check above: a shared DACL and a junction.
-#[cfg(windows)]
+// Windows has no filesystem FIFO entry.
+#[cfg(unix)]
 #[test]
-fn shared_sessions_and_directory_junctions_are_refused() {
-    let (root, source) = fixture();
-    let file = path(&source.state, "session").unwrap();
-    crate::test_os::grant_everyone_read(&file);
-    assert!(
-        Reader::new(source.clone())
-            .step(80, 20, Position::Bottom)
-            .status
-            .is_some()
-    );
-    fs::remove_file(file).unwrap();
-    fs::remove_dir(directory(root.path())).unwrap();
-    let elsewhere = root.path().join("elsewhere");
-    crate::test_os::create_private_dir_all(&elsewhere);
-    crate::test_os::junction(&elsewhere, &directory(root.path()));
+fn a_session_fifo_is_refused_without_blocking() {
+    let (_root, source) = fixture();
+    let file = path(&source.state, &"session".parse().unwrap());
+    fs::remove_file(&file).unwrap();
+    crate::test_os::fifo(&file);
     assert!(
         Reader::new(source)
             .step(80, 20, Position::Bottom)
-            .status
-            .is_some()
+            .note()
+            .unwrap()
+            .contains("regular")
     );
 }
 

@@ -9,24 +9,39 @@ use artifactize_core::{
     },
     types::RunStatus,
 };
-use artifactize_tools::files::path_text;
+use artifactize_tools::files::{path_from_text, path_text};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
 use time::OffsetDateTime;
 
-/// A path as the frontend holds it: text with `/` on every system, which `PathBuf` reads back
-/// on all of them. Only this type makes or reads one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(transparent)]
-pub struct PathKey(String);
+/// A path as the frontend holds it: text with `/` on every system and a reversible encoding
+/// for names that are not Unicode, read back into the same native path where it enters.
+#[derive(Debug, Clone, PartialEq, Eq, Type)]
+#[specta(transparent)]
+pub struct PathKey(#[specta(type = String)] PathBuf);
 
 impl PathKey {
     pub fn new(path: &std::path::Path) -> Self {
-        Self(path_text(path))
+        Self(path.to_owned())
     }
     pub fn to_path(&self) -> PathBuf {
-        PathBuf::from(&self.0)
+        self.0.clone()
+    }
+}
+
+impl Serialize for PathKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&path_text(&self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for PathKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        path_from_text(&text)
+            .map(Self)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -234,6 +249,18 @@ pub struct RunPanel {
     pub needs: Vec<Attention>,
 }
 
+/// The Run the Main area shows.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ShownRun {
+    /// No Run is shown.
+    None,
+    /// The shown Run, read.
+    Read(RunPanel),
+    /// The shown Run no longer exists or cannot be read.
+    Missing,
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowseView {
@@ -244,10 +271,8 @@ pub struct BrowseView {
     pub waiting: Vec<WaitingRow>,
     /// The branch of the folder the app was started for.
     pub launch: Option<BranchKey>,
-    /// The shown Run, once read.
-    pub run: Option<RunPanel>,
-    /// The shown Run no longer exists or cannot be read.
-    pub missing: bool,
+    /// The Run shown in the Main area: none, read, or no longer there to read.
+    pub run: ShownRun,
     /// What went wrong: a failed read, Run records that cannot be read.
     pub notice: Option<String>,
     /// False until the first snapshot was read.
@@ -384,12 +409,15 @@ fn waiting(waiting: &Waiting, now: OffsetDateTime) -> WaitingRow {
         project: waiting.label.project.clone(),
         branch: waiting.label.branch.clone(),
         age: monitor::duration(now - request.created_at.time()),
-        claim: match (&entry.reviewer, entry.mine) {
-            (None, _) => "-".into(),
-            (Some(reviewer), true) => format!("{reviewer} (you)"),
-            (Some(reviewer), false) => reviewer.clone(),
+        claim: match &entry.claim {
+            artifactize_core::review::search::Claim::Unclaimed => "-".into(),
+            artifactize_core::review::search::Claim::Mine(reviewer) => format!("{reviewer} (you)"),
+            artifactize_core::review::search::Claim::Other(reviewer) => reviewer.clone(),
         },
-        mine: entry.mine,
+        mine: matches!(
+            entry.claim,
+            artifactize_core::review::search::Claim::Mine(_)
+        ),
     }
 }
 
@@ -463,11 +491,17 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         branches,
         waiting: waiting_rows,
         launch: shown.launch.as_ref().map(BranchKey::new),
-        run,
-        missing: matches!(shown.opened, Opened::Missing(_)),
+        run: match (run, &shown.opened) {
+            (Some(panel), _) => ShownRun::Read(panel),
+            (None, Opened::Missing(_)) => ShownRun::Missing,
+            (None, _) => ShownRun::None,
+        },
         notice: (!notice.is_empty()).then(|| notice.join("; ")),
         refreshed: shown.refreshed,
         replaced: shown.replaced,
         revision: shown.revision,
     }
 }
+
+#[cfg(test)]
+mod tests;

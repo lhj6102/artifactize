@@ -17,6 +17,7 @@ impl Flow for ClaudeCode {
     const NOT_WAITING: &'static str = "No Claude Code sign-in is waiting for a code.";
     const ENDED: &'static str = "The Claude Code sign-in already ended.";
     const WAITED: &'static str = "The Claude Code sign-in is already being waited for.";
+    const UNASKED: &'static str = "Claude Code signed in without asking anything.";
 }
 
 /// Claude Code's sign-in, as Claude Code reports it.
@@ -93,7 +94,7 @@ pub async fn claude_agent_login_start(
         })
         .await?;
     Ok(ClaudeAgentPrompt {
-        url: prompt.url,
+        url: prompt.url.to_string(),
         sign_in,
     })
 }

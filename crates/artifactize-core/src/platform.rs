@@ -17,8 +17,12 @@
 //! platform module, where those implementations live.
 
 pub(crate) mod desktop_app;
+pub use desktop_app::launch as launch_desktop;
 pub mod desktop_commands;
+mod detached;
 pub mod environment;
+mod executable;
+pub use executable::current_executable;
 mod hidden_input;
 pub(crate) mod install;
 pub(crate) mod net;
@@ -35,17 +39,19 @@ use unix as os;
 #[cfg(windows)]
 use windows as os;
 
+pub(crate) use detached::{DetachedChild, spawn_detached, spawn_run, spawn_watched};
+pub use hidden_input::{SecretInput, secret_input, stdin_is_terminal};
+pub use os::HiddenInput;
+pub use os::stop_requested;
 pub(crate) use os::{
-    CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, HOME_VARIABLE, PrivateTempDir,
-    STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, create_private_dir, create_private_dir_all,
-    exit_signal, file_identity, hide_console_window, home_directory, host_name, ipc, is_owner_only,
-    is_private_dir, is_private_file, kill_saved_group, kill_saved_session, path_from_bytes,
-    private_options, private_tempdir_in, process_start_time, release_free_memory,
-    remove_abandoned_directory, resolve_system_aliases, restrict_file, running_process_start_time,
-    spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched, spawn_windowless, sync_dir,
-    transient_file_access,
+    CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, PrivateTempDir, TEMP_VARIABLES,
+    USER_VARIABLES, create_private_dir, create_private_dir_all, file_identity, hide_console_window,
+    home_directory, host_name, ipc, is_owner_only, is_private_dir, is_private_file,
+    kill_saved_group, kill_saved_session, path_from_bytes, private_named_dir, private_options,
+    private_tempdir_in, process_start_time, release_free_memory, remove_tree,
+    resolve_system_aliases, restrict_file, running_process_start_time, spawn_gated, spawn_now,
+    spawn_windowless, sync_dir, transient_file_access,
 };
-pub use os::{HiddenInput, VISIBLE_INPUT_FALLBACK, stop_requested};
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
 /// A share in a large read's memory, such as an opened Run's: everyone who keeps part of the
@@ -70,53 +76,19 @@ struct Release;
 
 impl Drop for Release {
     fn drop(&mut self) {
-        #[cfg(test)]
-        RELEASES.with(|count| count.set(count.get() + 1));
         release_free_memory();
     }
 }
 
-#[cfg(test)]
-thread_local! {
-    static RELEASES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// How often this thread gave a large read's memory back to the system.
-#[cfg(test)]
-pub(crate) fn releases() -> usize {
-    RELEASES.with(std::cell::Cell::get)
-}
-
 /// A file's identity on its volume. Two open files with equal identities are the same file,
 /// whatever paths reached them; a replaced file gets a new identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct FileIdentity {
     volume: u64,
     index: u64,
 }
 
-/// How a finished process ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ProcessEnd {
-    /// It exited with this code.
-    Exited(i32),
-    /// It was ended without an exit code: on Unix by a signal, when known.
-    Signaled(Option<i32>),
-}
-
-/// How the process whose `status` this is ended.
-pub(crate) fn process_end(status: &std::process::ExitStatus) -> ProcessEnd {
-    match status.code() {
-        Some(code) => ProcessEnd::Exited(code),
-        None => ProcessEnd::Signaled(exit_signal(status)),
-    }
-}
-
-/// How a finished process ended, for a message: its exit code, or on Unix the signal that
-/// ended it, in the system's own wording.
-pub(crate) fn exit_description(status: &std::process::ExitStatus) -> String {
-    status.to_string()
-}
+pub use artifactize_tools::launch::{ProcessEnd, ProcessOutcome};
 
 /// Poll contended process-shared file locks without blocking the async runtime;
 /// 25 ms keeps session sends and credential refreshes responsive without busy-waiting.
@@ -127,7 +99,7 @@ pub(crate) use artifactize_tools::files::{
     EntryName, FileKind, canonicalize, entry_kind, link_target, open_directory, open_entry,
     open_no_follow, read_dir,
 };
-pub use artifactize_tools::files::{open_nonblocking, path_text};
+pub use artifactize_tools::files::{current_directory, open_nonblocking, path_text};
 
 /// The absolute local folder a `file:` URI names, by this OS's path rules (a drive letter
 /// or UNC host on Windows); `None` for another scheme, a remote host or a relative path.
@@ -145,6 +117,19 @@ pub fn absolute_folder(text: &str) -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(text)).filter(|path| path.is_absolute())
 }
 
+/// Whether native lookup reaches a regular file, following links and honoring the volume's
+/// name matching. Missing or inaccessible entries do not count.
+pub fn is_regular_file(path: &std::path::Path) -> bool {
+    path.is_file()
+}
+
+/// Open a caller-selected file, following links but never blocking on a special file.
+/// Returns `None` when the opened handle is not a regular file.
+pub fn open_regular_input(path: &std::path::Path) -> std::io::Result<Option<std::fs::File>> {
+    let file = open_nonblocking(path)?;
+    Ok(file.metadata()?.is_file().then_some(file))
+}
+
 /// Open an existing regular file for reading without following a link in its last
 /// component (on Windows, any reparse point), and check what was opened.
 pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
@@ -157,6 +142,31 @@ pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
             "not a regular file",
         ))
     }
+}
+
+/// A program's textual output, lossy only where its bytes are not UTF-8.
+pub fn output_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+    String::from_utf8_lossy(bytes)
+}
+
+/// A program's textual output as lines ending in `\n`, whichever ending the program wrote.
+pub fn output_lines(bytes: &[u8]) -> String {
+    output_text(bytes).replace("\r\n", "\n")
+}
+
+/// An OS string (an argument, a file name) as Unicode text: `None` when it is not (non-UTF-8
+/// bytes on Unix, an unpaired UTF-16 unit on Windows).
+pub fn os_text(value: &std::ffi::OsStr) -> Option<&str> {
+    value.to_str()
+}
+
+/// A captured output line, accepting either common ending even when the program
+/// (rather than the host) explicitly chose which ending to emit.
+pub(crate) fn output_line(bytes: &[u8]) -> &[u8] {
+    bytes
+        .strip_suffix(b"\r\n")
+        .or_else(|| bytes.strip_suffix(b"\n"))
+        .unwrap_or(bytes)
 }
 
 /// Decode one native tool path line. Unix paths may end in a literal carriage return;
@@ -178,11 +188,20 @@ pub(crate) fn temporary_directory() -> std::path::PathBuf {
     std::env::temp_dir()
 }
 
+const STATE_HOME_OVERRIDE: &str = "ARTIFACTIZE_STATE_HOME";
+
+/// The environment variables consulted for state storage, in precedence order.
+pub(crate) fn state_home_variables() -> impl Iterator<Item = &'static str> {
+    std::iter::once(STATE_HOME_OVERRIDE)
+        .chain(os::STATE_VARIABLES.iter().copied())
+        .chain(os::HOME_VARIABLES.iter().copied())
+}
+
 /// Default state directory policy belongs with the platform's environment names.
 pub(crate) fn state_directory() -> Option<std::path::PathBuf> {
     resolve_state_directory(
-        environment::var("ARTIFACTIZE_STATE_HOME").map(Into::into),
-        STATE_VARIABLES
+        environment::var(STATE_HOME_OVERRIDE).map(Into::into),
+        os::STATE_VARIABLES
             .iter()
             .find_map(|name| environment::var(name).filter(|v| !v.is_empty()))
             .map(Into::into),
@@ -259,13 +278,15 @@ pub(crate) fn serialize_paths<S: serde::Serializer>(
     use serde::Serialize;
     paths
         .iter()
-        .map(|path| path_text(path))
+        .map(path_text)
         .collect::<Vec<_>>()
         .serialize(serializer)
 }
 
 #[cfg(test)]
 mod process_tests;
+#[cfg(test)]
+pub(crate) use process_tests::pipe_grace_armed;
 
 #[cfg(test)]
 mod program_tests {
@@ -273,8 +294,25 @@ mod program_tests {
     fn a_declared_program_is_written_with_forward_slashes() {
         assert_eq!(super::program_text("pnpm"), "pnpm");
         assert_eq!(super::program_text("tools/run.sh"), "tools/run.sh");
+        // Windows interprets backslashes as separators; Unix permits them in filenames.
         #[cfg(windows)]
         assert_eq!(super::program_text(r"tools\run.cmd"), "tools/run.cmd");
+    }
+}
+
+#[cfg(test)]
+mod private_directory_tests {
+    use super::*;
+
+    #[test]
+    fn kept_temporary_directory_transfers_cleanup_responsibility() {
+        let parent = crate::test_os::tempdir();
+        let directory = private_tempdir_in("kept-", parent.path()).unwrap();
+        let path = directory.keep();
+        assert!(path.is_dir());
+        assert!(is_private_dir(&path).unwrap());
+        remove_tree(&path).unwrap();
+        assert!(!path.exists());
     }
 }
 
@@ -321,7 +359,8 @@ mod console;
 pub use console::pause_after_help;
 
 mod interaction;
-pub(crate) use interaction::{is_within, label, paths_equal, private_anonymous_file};
+pub use interaction::paths_equal;
+pub(crate) use interaction::{is_within, label, private_anonymous_file};
 
 /// Whether an entry exists without following links (including dangling links).
 pub(crate) fn entry_exists(path: &std::path::Path) -> std::io::Result<bool> {
@@ -349,4 +388,9 @@ pub(crate) fn entry_exists(path: &std::path::Path) -> std::io::Result<bool> {
 /// search (execute) permission on every ancestor up to it.
 pub(crate) fn marker_metadata(path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
     path.symlink_metadata()
+}
+
+#[cfg(test)]
+pub(crate) fn successful_outcome() -> ProcessOutcome {
+    ProcessOutcome::from_native(std::process::ExitStatus::default())
 }

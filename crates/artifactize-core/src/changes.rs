@@ -31,11 +31,16 @@ const RECONNECT: Duration = Duration::from_millis(500);
 const DELIVERY_TIMEOUT: Duration = Duration::from_millis(300);
 /// Bound hostile frames before allocation (IDs are at most 200 bytes).
 const MAX_FRAME_BYTES: usize = 1024;
-/// Bound per-process publishers, per-hub connections, broadcast backlog and dirty sets.
+/// Share a small number of long-lived per-state publisher tasks; a writer can always
+/// commit without notifications when those are full.
 const MAX_STATES: usize = 32;
+/// Cap per-hub handles and tasks so abandoned or idle clients cannot exhaust them.
 const MAX_CLIENTS: usize = 64;
+/// Absorb a burst of commits without unbounded buffering for a stalled subscriber.
 const MAX_BACKLOG: usize = 64;
+/// Above this many dirty transcripts, one resync is cheaper than tracking every hint.
 const MAX_DIRTY_SESSIONS: usize = 64;
+/// Above this many dirty Runs, reread the state rather than holding an unbounded set.
 const MAX_DIRTY_RUNS: usize = 64;
 /// Version 2 names the Run a write changed ([`Change::RunInvalidated`]). The wire format is
 /// independent of the state database schema and durable session-event format. The Hello
@@ -70,17 +75,39 @@ impl Changed {
     pub fn add(&mut self, change: &Change) {
         match change {
             Change::StateInvalidated | Change::Resync => *self = Self::Everything,
-            Change::RunInvalidated(id) => match self {
-                Self::Nothing => *self = Self::Runs(BTreeSet::from([id.clone()])),
-                Self::Runs(ids) => {
-                    ids.insert(id.clone());
-                    if ids.len() > MAX_DIRTY_RUNS {
-                        *self = Self::Everything;
-                    }
-                }
-                Self::Everything => {}
-            },
+            Change::RunInvalidated(id) if !matches!(self, Self::Everything) => {
+                self.add_run(id.clone());
+            }
+            Change::RunInvalidated(_) => {}
             Change::SessionInvalidated(_) => {}
+        }
+    }
+    fn add_run(&mut self, id: RunId) {
+        match self {
+            Self::Nothing => *self = Self::Runs(BTreeSet::from([id])),
+            Self::Runs(ids) => {
+                ids.insert(id);
+                if ids.len() > MAX_DIRTY_RUNS {
+                    *self = Self::Everything;
+                }
+            }
+            Self::Everything => {}
+        }
+    }
+    fn pop(&mut self) -> Option<Change> {
+        match self {
+            Self::Nothing => None,
+            Self::Runs(ids) => {
+                let change = ids.pop_first().map(Change::RunInvalidated);
+                if ids.is_empty() {
+                    *self = Self::Nothing;
+                }
+                change
+            }
+            Self::Everything => {
+                *self = Self::Nothing;
+                Some(Change::StateInvalidated)
+            }
         }
     }
     /// Keep what `other` says changed as well, as when a read that took it was not used.
@@ -90,7 +117,7 @@ impl Changed {
             Self::Everything => *self = Self::Everything,
             Self::Runs(ids) => {
                 for id in ids {
-                    self.add(&Change::RunInvalidated(id));
+                    self.add_run(id);
                 }
             }
         }
@@ -117,8 +144,7 @@ impl Changed {
 /// replaces pending Run changes.
 enum Dirty {
     Pending {
-        state: bool,
-        runs: BTreeSet<RunId>,
+        state: Changed,
         sessions: BTreeSet<SessionId>,
     },
     Resync,
@@ -126,37 +152,20 @@ enum Dirty {
 impl Default for Dirty {
     fn default() -> Self {
         Self::Pending {
-            state: false,
-            runs: BTreeSet::new(),
+            state: Changed::Nothing,
             sessions: BTreeSet::new(),
         }
     }
 }
 impl Dirty {
     fn add(&mut self, change: Change) {
-        let Self::Pending {
-            state,
-            runs,
-            sessions,
-        } = self
-        else {
+        let Self::Pending { state, sessions } = self else {
             return;
         };
         match change {
             Change::Resync => *self = Self::Resync,
-            Change::StateInvalidated => {
-                *state = true;
-                runs.clear();
-            }
-            Change::RunInvalidated(id) => {
-                if !*state {
-                    runs.insert(id);
-                    if runs.len() > MAX_DIRTY_RUNS {
-                        *state = true;
-                        runs.clear();
-                    }
-                }
-            }
+            Change::StateInvalidated => *state = Changed::Everything,
+            Change::RunInvalidated(id) => state.add_run(id),
             Change::SessionInvalidated(id) => {
                 sessions.insert(id);
                 if sessions.len() > MAX_DIRTY_SESSIONS {
@@ -171,23 +180,13 @@ impl Dirty {
                 *self = Self::default();
                 Some(Change::Resync)
             }
-            Self::Pending {
-                state,
-                runs,
-                sessions,
-            } => {
-                if std::mem::take(state) {
-                    Some(Change::StateInvalidated)
-                } else if let Some(id) = runs.pop_first() {
-                    Some(Change::RunInvalidated(id))
-                } else {
-                    sessions.pop_first().map(Change::SessionInvalidated)
-                }
-            }
+            Self::Pending { state, sessions } => state
+                .pop()
+                .or_else(|| sessions.pop_first().map(Change::SessionInvalidated)),
         }
     }
     fn is_empty(&self) -> bool {
-        matches!(self, Self::Pending { state: false, runs, sessions } if runs.is_empty() && sessions.is_empty())
+        matches!(self, Self::Pending { state: Changed::Nothing, sessions } if sessions.is_empty())
     }
 }
 struct Inbox {
@@ -243,11 +242,24 @@ pub struct Subscription {
 }
 impl Subscription {
     pub async fn new(state: &Path) -> Self {
+        let mut interval =
+            tokio::time::interval_at(tokio::time::Instant::now() + RECONCILE, RECONCILE);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        Self::with_reconciliation(state, Reconciliation::Interval(interval)).await
+    }
+
+    async fn with_reconciliation(state: &Path, reconciliation: Reconciliation) -> Self {
         let inbox = Arc::new(Inbox::default());
         let cancel = CancellationToken::new();
         let (ready, registered) = oneshot::channel();
         let state = state.to_path_buf();
-        let task = tokio::spawn(watch(state, inbox.clone(), cancel.clone(), ready));
+        let task = tokio::spawn(watch(
+            state,
+            inbox.clone(),
+            cancel.clone(),
+            ready,
+            reconciliation,
+        ));
         // Keep cancellation ownership even if the caller abandons registration midway.
         let subscription = Self {
             inbox,
@@ -478,21 +490,39 @@ async fn publish(publisher: Arc<Publishing>) {
     }
 }
 
+enum Reconciliation {
+    Interval(tokio::time::Interval),
+    #[cfg(test)]
+    Controlled(tokio::sync::mpsc::UnboundedReceiver<()>),
+}
+
+impl Reconciliation {
+    async fn tick(&mut self) {
+        match self {
+            Self::Interval(interval) => {
+                interval.tick().await;
+            }
+            #[cfg(test)]
+            Self::Controlled(ticks) => {
+                if ticks.recv().await.is_none() {
+                    std::future::pending::<()>().await;
+                }
+            }
+        }
+    }
+}
+
 async fn watch(
     state: std::path::PathBuf,
     inbox: Arc<Inbox>,
     cancel: CancellationToken,
     ready: oneshot::Sender<()>,
+    mut reconcile: Reconciliation,
 ) -> Result<(), String> {
     let mut ready = Some(ready);
     let endpoint = Endpoint::new(&state).ok();
     let mut hub = None;
     let mut probe = probe::Probe::new(state);
-    // The baseline probe below already covers startup. An immediate interval tick
-    // could obscure a racing publication with a redundant Resync.
-    let mut reconcile =
-        tokio::time::interval_at(tokio::time::Instant::now() + RECONCILE, RECONCILE);
-    reconcile.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Establish the cheap persistent baseline before the caller reads its snapshot.
     let _ = probe.changed().await;
     loop {

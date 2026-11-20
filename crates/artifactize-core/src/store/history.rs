@@ -159,32 +159,35 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
 }
 
 /// The latest locally produced record (never a mirror) of each key after `after`, in key order.
-pub async fn local(
+pub(crate) async fn local(
     state: &Path,
     after: Option<crate::types::ReuseKey>,
     limit: usize,
-) -> Result<Vec<Execution>, String> {
+) -> Result<Vec<(crate::types::ReuseKey, Execution)>, String> {
     let Some(connection) = open(state, false).await? else {
         return Ok(Vec::new());
     };
     let result = connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
-                "SELECT data FROM (SELECT e.key,e.data,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD} AND json_extract(e.data,'$.origin') IS NULL AND e.key>?) WHERE rank=1 ORDER BY key LIMIT ?"
+                "SELECT key,data FROM (SELECT e.key,e.data,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD} AND json_extract(e.data,'$.origin') IS NULL AND e.key>?) WHERE rank=1 ORDER BY key LIMIT ?"
             ))?;
-            statement
-                .query_map(
-                    params![
-                        after.as_ref().map_or("", crate::types::ReuseKey::as_str),
-                        limit as i64
-                    ],
-                    |row| row.get::<_, String>(0),
-                )?
-                .filter_map(|row| match row {
-                    Ok(data) => super::unreadable::evidence("execution", &data).map(Ok),
-                    Err(error) => Some(Err(Error::Sql(error))),
-                })
-                .collect()
+            let mut rows = statement.query(params![
+                after.as_ref().map_or("", crate::types::ReuseKey::as_str),
+                limit as i64
+            ])?;
+            let mut page = Vec::new();
+            while let Some(row) = rows.next()? {
+                let key: crate::types::ReuseKey = row.get(0)?;
+                let data: String = row.get(1)?;
+                let execution: Execution = super::unreadable::decode("execution", key.as_str(), &data)
+                    .map_err(Error::Unreadable)?;
+                if execution.key.as_ref() != Some(&key) {
+                    return Err(Error::Invalid(format!("Cached execution {} does not have its indexed reuse key {key}.", execution.id)));
+                }
+                page.push((key, execution));
+            }
+            Ok(page)
         })
         .await
         .map_err(|e| e.to_string());
@@ -324,17 +327,37 @@ fn collect_within(db: &mut rusqlite::Connection, caps: Caps) -> Result<(), Error
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let present: std::collections::BTreeSet<_> = records
+        .iter()
+        .filter_map(|record| record.checkout.as_deref())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|checkout| checkout.is_dir())
+        .collect();
+    {
+        // Execution and receipt rows stay; only their place in the history goes.
+        let mut evict = transaction.prepare(
+            "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL WHERE id=?",
+        )?;
+        for id in eviction_candidates(&records, &present, caps) {
+            evict.execute([id])?;
+        }
+    }
+    Ok(transaction.commit()?)
+}
+
+fn eviction_candidates<'a>(
+    records: &'a [Record],
+    present: &std::collections::BTreeSet<&Path>,
+    caps: Caps,
+) -> Vec<&'a crate::types::ExecutionId> {
     let mut reused = std::collections::BTreeSet::new();
-    let mut present = std::collections::BTreeMap::new();
     let mut history = Vec::new();
     let mut evicted = Vec::new();
     for record in records {
         let newest = match (&record.checkout, &record.eval) {
             (Some(checkout), Some(eval)) => {
-                reused.insert((checkout.clone(), eval.clone()))
-                    && *present
-                        .entry(checkout.clone())
-                        .or_insert_with(|| checkout.is_dir())
+                reused.insert((checkout, eval)) && present.contains(checkout.as_path())
             }
             _ => false,
         };
@@ -342,7 +365,7 @@ fn collect_within(db: &mut rusqlite::Connection, caps: Caps) -> Result<(), Error
             continue;
         }
         if record.bytes > MAX_ENTRY_BYTES as i64 {
-            evicted.push(record.id);
+            evicted.push(&record.id);
         } else if !newest {
             history.push(record);
         }
@@ -359,19 +382,10 @@ fn collect_within(db: &mut rusqlite::Connection, caps: Caps) -> Result<(), Error
             entries += 1;
             bytes += record.bytes;
         } else {
-            evicted.push(record.id);
+            evicted.push(&record.id);
         }
     }
-    {
-        // Execution and receipt rows stay; only their place in the history goes.
-        let mut evict = transaction.prepare(
-            "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL WHERE id=?",
-        )?;
-        for id in &evicted {
-            evict.execute([id])?;
-        }
-    }
-    Ok(transaction.commit()?)
+    evicted
 }
 
 #[cfg(test)]

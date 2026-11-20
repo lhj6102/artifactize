@@ -23,6 +23,14 @@ use std::{
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
+struct ReleaseOnExit(support::Gate);
+
+impl Drop for ReleaseOnExit {
+    fn drop(&mut self) {
+        self.0.open();
+    }
+}
+
 /// A workspace of Artifacts, each with one Agent eval and its own fingerprint.
 struct Project {
     // Retain inputs if releasing any durable worker fails, including on assertion unwind.
@@ -38,8 +46,13 @@ impl Project {
         for (name, profile) in evals {
             let folder = repo.join(name);
             fs::create_dir_all(&folder).unwrap();
-            fs::write(folder.join("notes.md"), format!("{name}: R1 holds.\n")).unwrap();
+            fs::write(
+                support::declaration::source_path(folder.join("notes.md")),
+                format!("{name}: R1 holds.\n"),
+            )
+            .unwrap();
             support::declaration::write(
+                &(repo),
                 folder.join("index.artf"),
                 json!({"name":name,"fingerprint":{},
                     "views":{"agent_tools":{"read":{"builtin":"read"}}},
@@ -156,7 +169,7 @@ fn replayed(request: &Request) -> bool {
 
 /// Pass after one `read` tool call, in the requested backend's wire format.
 fn pass(request: &Request) -> Reply {
-    let verdict = r#"{"verdict":"GREEN"}"#;
+    let verdict = r#"{"findings":[]}"#;
     match request.path.as_str() {
         "/v1/messages" => anthropic::text(request, verdict, 10, 2),
         path => {
@@ -339,31 +352,6 @@ fn every_backend_retries_and_reports_exhausted_failures_by_code() {
 }
 
 #[test]
-fn a_retry_after_past_the_deadline_fails_at_once() {
-    let mut profile = agent("openai");
-    profile["timeout_ms"] = json!(5000);
-    let project = Project::new(&[("notes", profile)]);
-    let provider = FakeProvider::start(|_| {
-        error(
-            429,
-            vec![("retry-after", "120".into())],
-            json!({"error":{"message":"Rate limit reached","code":"rate_limit_exceeded"}}),
-        )
-    });
-    let run = project.run(&provider, &["--all"], 2);
-    let review = request(&run, "notes/review");
-    assert_eq!(review["errorCode"], "RATE_LIMIT");
-    assert!(
-        review["error"]
-            .as_str()
-            .unwrap()
-            .ends_with("The provider asked to retry after 120.0 s, past the review deadline."),
-        "{review}"
-    );
-    assert_eq!(provider.requests().len(), 1);
-}
-
-#[test]
 fn failures_carry_specific_error_codes() {
     let project = Project::new(&[("notes", agent("openai"))]);
     for (reply, code) in [
@@ -491,7 +479,7 @@ fn capped(request: &Request, deltas: &[String], output: u64) -> Reply {
 /// The saved session's `attempt` events of `review`.
 fn attempt_events(project: &Project, review: &Value) -> Vec<Value> {
     let session = review["sessionId"].as_str().unwrap();
-    fs::read_to_string(
+    support::declaration::read_text(
         project
             .state
             .join("agent-sessions")
@@ -508,7 +496,7 @@ fn attempt_events(project: &Project, review: &Value) -> Vec<Value> {
 fn a_response_rejected_after_delivery_fails_its_billed_attempts_with_their_counters() {
     let project = Project::new(&CAPPED.map(|(name, backend)| (name, agent(backend))));
     let provider =
-        FakeProvider::start(|request| capped(request, &[r#"{"verdict":"GR"#.to_owned()], 128));
+        FakeProvider::start(|request| capped(request, &[r#"{"findings":[{"prio"#.to_owned()], 128));
     let run = project.run(&provider, &["--all"], 2);
     for (name, backend) in CAPPED {
         let review = request(&run, &format!("{name}/review"));
@@ -539,7 +527,7 @@ fn a_response_rejected_after_delivery_fails_its_billed_attempts_with_their_count
 
 /// An unfinished result, then whitespace in deltas that pass the stop point together.
 fn degenerate_deltas() -> Vec<String> {
-    let mut deltas = vec![r#"{"verdict":"GREEN","findings":["#.to_owned()];
+    let mut deltas = vec![r#"{"findings":["#.to_owned()];
     deltas.extend(std::iter::repeat_n(" \n\t ".repeat(256), 5));
     deltas
 }
@@ -586,7 +574,7 @@ fn interrupted(request: &Request) -> Reply {
             "item":{"type":"message","id":"msg_fake","role":"assistant","status":"in_progress",
                 "content":[]}}),
         json!({"type":"response.output_text.delta","item_id":"msg_fake","output_index":0,
-            "content_index":0,"delta":r#"{"verdict":"#}),
+            "content_index":0,"delta":r#"{"findings":"#}),
         json!({"type":"error","code":"server_is_overloaded",
             "message":"Our servers are currently overloaded. Please try again later.",
             "param":null}),
@@ -611,7 +599,7 @@ fn a_failed_provider_output_sends_its_turn_again_from_the_last_tool_results() {
             "DEGENERATE_OUTPUT",
         ),
         (
-            |request| capped(request, &[r#"{"verdict":"GR"#.to_owned()], 128),
+            |request| capped(request, &[r#"{"findings":[{"prio"#.to_owned()], 128),
             "PROVIDER_ERROR",
         ),
         (interrupted, "TRANSIENT"),
@@ -725,10 +713,9 @@ fn an_authentication_failure_stops_new_reviews_on_that_backend_only() {
 /// A private candidate must keep serving later Runs, including their durable self-spawn.
 #[test]
 fn an_owned_cli_keeps_verifying_when_its_published_source_is_replaced() {
-    let root = support::os::tempdir();
-    let source = root.path().join(support::os::cli().file_name().unwrap());
-    fs::copy(support::os::cli(), &source).unwrap();
-    let candidate = support::os::OwnedExecutable::copy_from(&source).unwrap();
+    let published = support::os::OwnedExecutable::copy_from(&support::os::cli()).unwrap();
+    let source = published.path();
+    let candidate = support::os::OwnedExecutable::copy_from(source).unwrap();
     let project = Project::new(&[("notes", agent("openai"))]);
     let release = support::Gate::default();
     let (arrived, admitted) = std::sync::mpsc::sync_channel(1);
@@ -747,18 +734,16 @@ fn an_owned_cli_keeps_verifying_when_its_published_source_is_replaced() {
             scope.spawn(|| project.verify_with_cli(candidate.path(), &provider, &["--all"], true));
         // The provider request proves the real durable worker is alive, not just admitted.
         // Release on assertion unwind as well, before the scoped caller is joined.
-        struct ReleaseOnExit(support::Gate);
-        impl Drop for ReleaseOnExit {
-            fn drop(&mut self) {
-                self.0.open();
-            }
-        }
         let release_on_exit = ReleaseOnExit(release.clone());
         admitted
             .recv_timeout(support::os::patience(Duration::from_secs(20)))
             .expect("the candidate's durable worker reached the provider");
-        fs::remove_file(&source).unwrap();
-        fs::write(&source, "replacement is deliberately not the declared CLI").unwrap();
+        support::declaration::remove_file(source).unwrap();
+        fs::write(
+            support::declaration::source_path(source),
+            "replacement is deliberately not the declared CLI",
+        )
+        .unwrap();
         release.open();
         drop(release_on_exit);
         let output = running.join().unwrap();
@@ -808,7 +793,9 @@ fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
             ],
         );
         command.arg("--ignored");
-        let output = support::os::finish(support::os::start(&mut command), "owned CLI exit");
+        let output = owned_run::Watcher::new(support::os::start(&mut command))
+            .wait_with_output()
+            .unwrap();
         assert_eq!(
             output.status.success(),
             mode != "unwind",
@@ -816,7 +803,7 @@ fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        let directory = PathBuf::from(fs::read_to_string(record).unwrap());
+        let directory = PathBuf::from(support::declaration::read_text(record).unwrap());
         assert!(!directory.exists(), "the process-owned CLI was cleaned up");
     }
 }
@@ -832,7 +819,9 @@ fn owned_cli_exit_probe() {
         "the published private CLI is executable"
     );
     fs::write(
-        support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD").unwrap(),
+        support::declaration::source_path(
+            support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD").unwrap(),
+        ),
         support::os::path_text(executable.parent().unwrap()),
     )
     .unwrap();
@@ -844,7 +833,7 @@ fn owned_cli_exit_probe() {
     {
         "success" => {}
         "unwind" => panic!("scripted test unwind"),
-        "exit" => std::process::exit(0),
+        "exit" => support::os::exit_probe(0),
         mode => panic!("unknown CLI exit mode: {mode}"),
     }
 }
@@ -886,7 +875,7 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
     ]);
     // One openai review at a time on this machine (limits.json).
     fs::write(
-        project.state.join("limits.json"),
+        support::declaration::source_path(project.state.join("limits.json")),
         json!({"backends":{"openai":1}}).to_string(),
     )
     .unwrap();
@@ -920,7 +909,10 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         .env("ANTHROPIC_API_KEY", "fake-anthropic-key")
         .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
         .env("ARTIFACTIZE_ANTHROPIC_BASE_URL", provider.anthropic_base());
-    let child = Child::new(
+    // Drop the gate before the child owner tries to join the Run on unwind.
+    let child;
+    let _release_on_exit = ReleaseOnExit(release.clone());
+    child = Child::new(
         support::os::start(&mut command),
         &project.state,
         &project.repo,
@@ -1009,7 +1001,7 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
                 &CompletionRequest::new(Message::user("literal replay")),
                 Turn {
                     number: 1,
-                    model: "fixture-model",
+                    model: &"fixture-model".parse().unwrap(),
                     deadline: tokio::time::Instant::now() + Duration::from_secs(5),
                     cancellation: &cancellation,
                     max_tokens: None,
@@ -1068,7 +1060,7 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
                 &CompletionRequest::new(Message::user("fixture")),
                 Turn {
                     number: 1,
-                    model: "fixture-model",
+                    model: &"fixture-model".parse().unwrap(),
                     deadline: tokio::time::Instant::now() + Duration::from_secs(5),
                     cancellation: &cancellation,
                     max_tokens: None,
@@ -1082,8 +1074,11 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
         panic!("an impossible retry waited instead of failing immediately");
     };
     let error = result.unwrap_err();
+    assert_eq!(error.code, artifactize_core::agent::error::Code::RateLimit);
     assert!(
-        error.message.contains("past the review deadline"),
+        error
+            .message
+            .ends_with("The provider asked to retry after 120.0 s, past the review deadline."),
         "{error:?}"
     );
     assert_eq!(captured.requests().len(), 1);
@@ -1174,7 +1169,10 @@ fn an_agent_error_echoing_the_credential_withholds_it_everywhere() {
         );
         let saved: String = files(&project.state.join("agent-sessions"))
             .iter()
-            .map(|path| String::from_utf8_lossy(&fs::read(path).unwrap()).into_owned())
+            .map(|path| {
+                String::from_utf8_lossy(&support::declaration::read_file(path).unwrap())
+                    .into_owned()
+            })
             .collect();
         assert!(!saved.is_empty(), "the Agent sessions were saved");
         for (backend, credential) in &credentials {

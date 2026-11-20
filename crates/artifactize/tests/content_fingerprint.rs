@@ -41,7 +41,7 @@ impl Fixture {
     fn file(&self, path: &str, contents: &str) {
         let path = self.repo.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        support::declaration::write(path, contents).unwrap();
+        support::declaration::write(&(self.repo), path, contents).unwrap();
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -265,7 +265,7 @@ fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
     assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
     assert!(fixture.repo.join("py/__pycache__").is_dir());
     assert_eq!(
-        fs::read_to_string(fixture.repo.join("py/out/report.txt")).unwrap(),
+        support::declaration::read_text(fixture.repo.join("py/out/report.txt")).unwrap(),
         "report\n"
     );
     assert_eq!(
@@ -322,7 +322,7 @@ fn status_explains_which_inputs_and_dependencies_changed() {
 
     fixture.file("api/src/a.py", "v2");
     fixture.file("api/docs/new.md", "v1");
-    fs::remove_file(fixture.repo.join("api/old.md")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("api/old.md")).unwrap();
     fixture.file("core/lib.txt", "v2");
     fixture.file("legacy/key", "v2");
     let status = fixture.json(&["status"], 1);
@@ -503,7 +503,7 @@ fn fingerprint_false_disables_end_of_review_checks_and_reports_the_explicit_choi
     assert!(text.contains("Artifact app:"));
     assert!(text.contains("declares fingerprint: false"));
     assert_eq!(
-        fs::read_to_string(fixture.repo.join("app/output.txt")).unwrap(),
+        support::declaration::read_text(fixture.repo.join("app/output.txt")).unwrap(),
         "run\nrun\n"
     );
 }
@@ -548,7 +548,11 @@ fn an_ignore_rule_in_another_case_never_hides_a_change() {
         // alias. The enumerated name, not the caller's spelling, still controls the matcher.
         let directory =
             support::os::case_alias_or_original(&fixture.repo.join("app/Secret"), "secret");
-        fs::write(directory.join("key.txt"), "v2").unwrap();
+        fs::write(
+            support::declaration::source_path(directory.join("key.txt")),
+            "v2",
+        )
+        .unwrap();
         assert_eq!(fixture.fresh_results(0), ["app/check"]);
     }
 }

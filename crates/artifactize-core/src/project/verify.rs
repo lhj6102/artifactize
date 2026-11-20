@@ -168,7 +168,6 @@ pub(crate) async fn reserve(
                 argv: None,
                 child: None,
                 blocked_reason: None,
-                queue: None,
                 blocked_by: Vec::new(),
             })
             .collect();
@@ -271,7 +270,11 @@ pub(crate) async fn execute(
     }
     let fingerprints = cache::prepare(
         &config,
-        cache::fingerprint_targets(&config, &required),
+        cache::fingerprint_targets(&config, &required)
+            .into_iter()
+            .filter(|name| {
+                crate::scope::validate_file_target(&config.root, &config.artifacts[*name]).is_ok()
+            }),
         &runs,
         &parallelism,
         cancellation.clone(),
@@ -310,10 +313,24 @@ pub(crate) async fn execute(
             .get(&request.target)
             .map(|fingerprint| fingerprint.value.clone());
         request.key = keys.get(&request.eval_id).map(|key| key.value.clone());
-        request.fingerprints = keys
-            .get(&request.eval_id)
-            .map(|key| key.fingerprints.clone())
-            .unwrap_or_default();
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id == request.eval_id)
+            .ok_or_else(|| {
+                format!(
+                    "Saved request {} in Run {} refers to Eval {}, which is missing from the workspace configuration.",
+                    request.id, request.run_id, request.eval_id
+                )
+            })?;
+        request.fingerprints = cache::dependencies(&config, eval)
+            .into_iter()
+            .filter_map(|name| {
+                fingerprints
+                    .get(name)
+                    .map(|fingerprint| (name.clone(), fingerprint.value.clone()))
+            })
+            .collect();
         receipts.save_request(request).await?;
     }
     run.control.as_mut().expect("owned Run").activity = crate::runs::Activity::Executing;
@@ -339,17 +356,19 @@ pub(crate) async fn execute(
         }
     };
     let evaluation = graph.evaluate_for_run(&evidence, run.modes.speculate);
+    // Freeze cancellation once at settlement so the Run and its requests agree.
+    let cancelled = cancellation.is_cancelled();
+    let at = now();
     for request in &mut requests {
         // A cancelled Run withdraws its waiting sign-offs too, deferred ones included.
-        let withdrawn = request.status().is_human_wait() && cancellation.is_cancelled();
-        if (evidence.contains_key(request.eval_id.as_str()) && !withdrawn)
-            || (request.status().is_human_wait() && !withdrawn)
+        let withdrawn = request.status().is_human_wait() && cancelled;
+        if !withdrawn
+            && (evidence.contains_key(request.eval_id.as_str()) || request.status().is_human_wait())
         {
             continue;
         }
         let eval = &evaluation.evals[request.eval_id.as_str()];
-        if request.status() == crate::types::RequestStatus::Blocked && !cancellation.is_cancelled()
-        {
+        if request.status() == crate::types::RequestStatus::Blocked && !cancelled {
             // A block saved mid-Run named the causes known then; the settled Run names all.
             if eval.status == EvalStatus::Blocked {
                 request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
@@ -357,11 +376,11 @@ pub(crate) async fn execute(
             }
             continue;
         }
-        if cancellation.is_cancelled() {
+        if cancelled {
             request.state = crate::store::RequestState::failed(
                 "Run was cancelled.".into(),
                 Some(crate::types::FailureCode::Cancelled),
-                now(),
+                at,
             );
             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
         } else if request.status() == crate::types::RequestStatus::BudgetExhausted
@@ -372,7 +391,6 @@ pub(crate) async fn execute(
             request.state =
                 crate::store::RequestState::pending(status(eval.status), request.completed_at())
                     .expect("non-executed request state");
-            request.queue = None;
             request.blocked_reason = Some(gate_reason(eval));
         }
     }
@@ -384,7 +402,7 @@ pub(crate) async fn execute(
         .collect();
     let satisfied = required
         .iter()
-        .all(|id| evaluation.artifacts[id.as_str()].satisfied);
+        .all(|id| evaluation.artifacts[id.as_str()].satisfied());
     let budget_exhausted = requests
         .iter()
         .any(|request| request.status() == crate::types::RequestStatus::BudgetExhausted);
@@ -393,55 +411,22 @@ pub(crate) async fn execute(
         .values()
         .filter(|evidence| matches!(evidence, Evidence::Stale))
         .count();
-    let at = now();
-    run.state = if cancellation.is_cancelled() {
-        crate::store::RunState::Error {
-            at,
-            error: Some("Run was cancelled.".into()),
-        }
-    } else if budget_exhausted {
-        crate::store::RunState::Incomplete {
-            at,
-            error: Some(broker::budget_reason(&run)),
-        }
-    } else if not_reused > 0 {
-        crate::store::RunState::Incomplete {
-            at,
-            error: Some(format!(
-                "{not_reused} eval{} had no result to reuse and {} not executed (--reuse-only).",
-                if not_reused == 1 { "" } else { "s" },
-                if not_reused == 1 { "was" } else { "were" }
-            )),
-        }
-    } else if required_evals
-        .iter()
-        .any(|(_, c)| c.status == EvalStatus::Error)
-    {
-        crate::store::RunState::Error { at, error: None }
-    } else if required_evals
-        .iter()
-        .any(|(_, c)| c.status == EvalStatus::Red)
-    {
-        crate::store::RunState::Red { at }
-    } else if required_evals
-        .iter()
-        .any(|(_, eval)| eval.status == EvalStatus::Deferred)
-        && required_evals
-            .iter()
-            .all(|(_, eval)| eval.status.passes_gate())
-        && required.iter().all(|id| {
-            // A parent without evals of its own is reviewed through its parts.
-            let artifact = &graph.artifacts()[id.as_str()];
-            artifact.basis || !artifact.evals.is_empty() || !artifact.parts.is_empty()
-        })
-    {
-        crate::store::RunState::Yellow { at }
-    } else if satisfied {
-        crate::store::RunState::Green { at }
-    } else {
-        crate::store::RunState::Incomplete { at, error: None }
-    };
-    if cancellation.is_cancelled() {
+    run.state = terminal_state(
+        TerminalFacts {
+            required_evals: &required_evals,
+            satisfied,
+            required_have_review_basis: required.iter().all(|id| {
+                // A parent without evals of its own is reviewed through its parts.
+                let artifact = &graph.artifacts()[id.as_str()];
+                artifact.basis || !artifact.evals.is_empty() || !artifact.parts.is_empty()
+            }),
+            budget_error: budget_exhausted.then(|| broker::budget_reason(&run)),
+            not_reused,
+        },
+        at,
+        cancelled,
+    );
+    if cancelled {
         run.control.as_mut().expect("owned Run").failure_code =
             Some(crate::types::FailureCode::Cancelled);
     }
@@ -457,7 +442,7 @@ pub(crate) async fn execute(
             selected.evals.iter().map(|eval| eval.id.clone()).collect(),
         ),
         included_eval_ids: Field::Value(evals.iter().map(|eval| eval.id.clone()).collect()),
-        satisfied: Field::Value(satisfied && !cancellation.is_cancelled()),
+        satisfied: Field::Value(satisfied && !cancelled),
         obligations: Field::Value(
             evaluation
                 .obligations
@@ -489,7 +474,7 @@ pub(crate) async fn execute(
                         status: Field::Value(artifact.status.into()),
                         passed: Field::Value(artifact.passed as u64),
                         total: Field::Value(artifact.total as u64),
-                        satisfied: Field::Value(artifact.satisfied),
+                        satisfied: Field::Value(artifact.satisfied()),
                         fingerprint_kind,
                         fingerprint,
                         extra: Default::default(),
@@ -512,7 +497,7 @@ pub(crate) async fn execute(
         ),
         extra: Default::default(),
     }));
-    if cancellation.is_cancelled() {
+    if cancelled {
         receipts
             .retire_worker(&run.id, crate::types::FailureCode::Cancelled)
             .await?;
@@ -554,6 +539,75 @@ pub(crate) async fn execute(
         );
     }
     Ok(())
+}
+
+struct TerminalFacts<'a, 'graph> {
+    required_evals: &'a [(
+        &'a crate::types::EvalId,
+        &'a crate::graph::EvalEvaluation<'graph>,
+    )],
+    satisfied: bool,
+    required_have_review_basis: bool,
+    budget_error: Option<String>,
+    not_reused: usize,
+}
+
+fn terminal_state(
+    facts: TerminalFacts<'_, '_>,
+    at: crate::types::Timestamp,
+    cancelled: bool,
+) -> store::RunState {
+    use store::RunState;
+    let TerminalFacts {
+        required_evals,
+        satisfied,
+        required_have_review_basis,
+        budget_error,
+        not_reused,
+    } = facts;
+    if cancelled {
+        RunState::Error {
+            at,
+            error: Some("Run was cancelled.".into()),
+        }
+    } else if let Some(error) = budget_error {
+        RunState::Incomplete {
+            at,
+            error: Some(error),
+        }
+    } else if not_reused > 0 {
+        RunState::Incomplete {
+            at,
+            error: Some(format!(
+                "{not_reused} eval{} had no result to reuse and {} not executed (--reuse-only).",
+                if not_reused == 1 { "" } else { "s" },
+                if not_reused == 1 { "was" } else { "were" }
+            )),
+        }
+    } else if required_evals
+        .iter()
+        .any(|(_, c)| c.status == EvalStatus::Error)
+    {
+        RunState::Error { at, error: None }
+    } else if required_evals
+        .iter()
+        .any(|(_, c)| c.status == EvalStatus::Red)
+    {
+        RunState::Red { at }
+    } else if required_evals
+        .iter()
+        .any(|(_, eval)| eval.status == EvalStatus::Deferred)
+        && required_evals
+            .iter()
+            .all(|(_, eval)| eval.status.passes_gate())
+        && required_have_review_basis
+    {
+        RunState::Yellow { at }
+    } else if satisfied {
+        RunState::Green { at }
+    } else {
+        RunState::Incomplete { at, error: None }
+    }
 }
 
 pub(crate) fn status(status: EvalStatus) -> crate::types::RequestStatus {

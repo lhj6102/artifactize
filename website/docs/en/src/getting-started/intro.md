@@ -2,30 +2,24 @@
 
 Evaluation-driven development for people and AI agents.
 
-Artifactize helps you and your teammates review each part of a project without
-redoing checks on unchanged work. An **Artifact** is a reviewable piece of work:
-a file, a folder, or the graph of connections between those parts. An **eval**
-is a check on an Artifact—a command, an agent's judgment, or a person's sign-off.
+Artifactize lets you declare how each part of a project is verified and reuses reviews whose inputs have not changed.
 
-- Work on your part in your own way. Declare which other parts your check uses
-  so their changes trigger the right reviews, not unrelated work.
-- Reuse reviews when their inputs still match. A **fingerprint** identifies those
-  inputs; `artifactize status` shows what needs another review.
-- Share results with teammates and CI through the team review store. Monitor
-  follows progress, and Review helps people work through their waiting sign-offs.
+- **Artifact**: a reviewable piece of your project—a folder, a single file, selected paths (an **aspect**), or observed external state (a Live URI)—declared in `.artifactize/<name>.artf` with an explicit `path`.
+- **Eval**: one check on an Artifact that returns a `GREEN` or `RED` verdict—a `runtime` command (such as tests or a linter), an `agent` review by an LLM using declared read-only tools, or a `human` sign-off.
+- **Artifact Graph**: the dependency graph formed when evals reference the Artifacts they read as `{name}` and wholes list their `parts`.
+- **Fingerprint and reuse**: each check reuses its earlier verdict while its criteria and covered inputs still match; see [Fingerprints and Reuse](/docs/concepts/reuse.html).
 
-It runs on Linux, macOS and Windows. Start with [Installation](/docs/getting-started/install.html), then
-follow the [Guide](/docs/getting-started/guide.html) to get a first GREEN result and reuse it without a
-model or API key.
+## How a project flows
+
+1. **Declare checks first.** Define each Artifact in `.artifactize/<name>.artf` and specify who evaluates it (`runtime`, `agent`, or `human`) and which other Artifacts it reads.
+2. **Build and iterate.** Run `artifactize verify --all --wait` (or let your coding agent run it through the plugin). Each verification is recorded as a durable **Run**.
+3. **Reuse and sign off.** Unchanged work reuses earlier results locally, across teammates via the team review store, and in CI. Human sign-offs are requested only after an Artifact's machine checks pass.
 
 ## Where to go next
 
-- **[Features](/docs/features/artifact.html):** declare Artifacts and evals, decide
-  what to reuse, run and follow verification, give reviewers tools and share results with
-  a team. They work the same in the CLI, the desktop app and the agent plugin.
-- **[Desktop](/docs/desktop/index.html):** browse Runs and handle Human reviews in a window.
-- **[Agent plugin](/docs/agent-plugin/hey-arti.html):** give Arti the portable skill and
-  connect your coding host through [MCP](/docs/agent-plugin/mcp.html).
-- **[CLI](/docs/cli/index.html):** command syntax, output and exit codes.
-- **[TUI](/docs/tui/index.html):** Monitor and Review in a terminal.
-- **[Source](https://github.com/lhj6102/artifactize):** open source under Apache 2.0.
+- **[Installation](/docs/getting-started/install.html)**: install the desktop app and CLI on Linux, macOS, or Windows, and connect AI backends.
+- **[First Project in 5 Minutes](/docs/getting-started/guide.html)**: create a minimal project, run `verify`, and see result reuse without an AI account.
+- **[Core Concepts](/docs/concepts/artifacts.html)**: learn how Artifacts, evals, fingerprints, and Runs fit together.
+- **[Working with Coding Agents](/docs/agent-plugin/plugin.html)**: add the Claude Code or Codex plugin to use **Hey Arti** and **Focus then sweep**.
+- **[Guides](/docs/guides/tools.html)**: set up review tools, use the Desktop app, and share verdicts across a team and CI.
+- **[Reference](/docs/reference/declarations.html)**: look up `.artf` fields in the [Declarations Reference](/docs/reference/declarations.html) and commands, exit codes, and MCP tools in the [CLI and MCP Reference](/docs/reference/cli-and-mcp.html).

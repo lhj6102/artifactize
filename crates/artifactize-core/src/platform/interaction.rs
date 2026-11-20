@@ -3,7 +3,7 @@ use std::{io, path::Path, sync::OnceLock};
 
 /// Compare opened identities, not spelling: case aliases and system directory aliases
 /// on case-insensitive volumes must name the same repository.
-pub(crate) fn paths_equal(left: &Path, right: &Path) -> bool {
+pub fn paths_equal(left: &Path, right: &Path) -> bool {
     let identity = |path: &Path| {
         super::open_directory(path)
             .or_else(|_| super::open_regular(path))

@@ -20,12 +20,44 @@ async fn advance_lifecycle_clock() {
         .unwrap();
 }
 
+/// Hold the lifecycle executor's clock while it waits on a real child handshake.
+async fn with_paused_lifecycle_clock(observe: impl Future<Output = ()>) {
+    use futures_util::FutureExt;
+    use std::panic::{AssertUnwindSafe, resume_unwind};
+    use tokio::sync::oneshot;
+
+    let (paused, ready) = oneshot::channel();
+    let (advance, observed) = oneshot::channel();
+    let driver = crate::tools::sessions::executor()
+        .unwrap()
+        .spawn(async move {
+            // Tokio does not auto-advance while blocking I/O is pending. The child runs
+            // outside this executor, so keep that inhibition until its acknowledgment.
+            let (release, hold) = std::sync::mpsc::channel::<()>();
+            let keep_time = tokio::task::spawn_blocking(move || hold.recv());
+            tokio::time::pause();
+            let _ = paused.send(());
+            if observed.await.unwrap_or(false) {
+                tokio::time::advance(std::time::Duration::from_secs(60)).await;
+            }
+            tokio::time::resume();
+            drop(release);
+            let _ = keep_time.await.unwrap();
+        });
+    ready.await.unwrap();
+    let observed = AssertUnwindSafe(observe).catch_unwind().await;
+    advance.send(observed.is_ok()).unwrap();
+    driver.await.unwrap();
+    observed.unwrap_or_else(|failure| resume_unwind(failure));
+}
+
 fn fixture(stop: &str) -> OwnedFixture {
     let mut fixture = Fixture::new("openai");
     let log = fixture.directory.path().join("log");
     fs::create_dir(&log).unwrap();
     let path = fixture.config.root.join("index.artf");
-    let mut definition = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut definition =
+        crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap()).unwrap();
     let mut views = harness::views(&log, "start", stop, "hold");
     let mut probe = views["agent_tools"]["act"].clone();
     probe["args"][1] = json!("probe");
@@ -33,8 +65,12 @@ fn fixture(stop: &str) -> OwnedFixture {
     views["agent_tools"]["probe"] = probe;
     views["agent_tools"]["act"]["input_schema"] = json!({"type":"object"});
     definition["views"] = views;
-    crate::test_declaration::write(&path, definition.to_string()).unwrap();
-    fs::write(fixture.config.root.join("harness.py"), harness::script()).unwrap();
+    crate::test_declaration::write(&fixture.config.root, &path, definition.to_string()).unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.config.root.join("harness.py")),
+        harness::script(),
+    )
+    .unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     OwnedFixture::new(fixture)
 }
@@ -90,9 +126,12 @@ async fn cancellation_and_dropped_review_run_stop_even_before_readiness() {
         for cancel in [true, false] {
             let mut fixture = fixture("stop");
             let path = fixture.config.root.join("index.artf");
-            let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+            let mut declaration =
+                crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap())
+                    .unwrap();
             declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!(mode);
-            crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+            crate::test_declaration::write(&fixture.config.root, &path, declaration.to_string())
+                .unwrap();
             fixture.config = read_workspace_config(&fixture.config.root).unwrap();
             let log = fixture.directory.path().join("log");
             let cancellation = CancellationToken::new();
@@ -123,10 +162,11 @@ async fn waiting_for_session_readiness_consumes_the_review_timeout() {
     let _clock = CLOCK.lock().await;
     let mut fixture = fixture("stop");
     let path = fixture.config.root.join("index.artf");
-    let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration =
+        crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap()).unwrap();
     declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!("unready");
     declaration["evals"][0]["profile"]["timeout_ms"] = json!(60_000);
-    crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+    crate::test_declaration::write(&fixture.config.root, &path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let log = fixture.directory.path().join("log");
     let mut future = Box::pin(owned_review(&fixture, CancellationToken::new()));
@@ -173,14 +213,14 @@ async fn hanging_stop_cannot_retain_the_group_or_session_directory() {
         _ = reached(|| !harness::records(&log, "call").is_empty()) => {},
         _ = &mut future => panic!("review completed before tool handshake"),
     }
-    cancellation.cancel();
-    tokio::select! {
-        _ = reached(|| !harness::records(&log, "stop").is_empty()) => {},
-        _ = &mut future => panic!("stop did not hang"),
-    }
-    // Advance only after stop has actually entered. This checks bounded cleanup
-    // without assuming how fast a process starts on any operating system.
-    advance_lifecycle_clock().await;
+    with_paused_lifecycle_clock(async {
+        cancellation.cancel();
+        tokio::select! {
+            _ = reached(|| !harness::records(&log, "stop").is_empty()) => {},
+            _ = &mut future => panic!("stop completed before its acknowledgment"),
+        }
+    })
+    .await;
     assert_eq!(future.await.result.unwrap_err().code, Code::Cancelled);
     harness::assert_cleaned(&fixture.state(), &log, 1);
 }
@@ -191,9 +231,10 @@ async fn an_unready_bound_call_waits_without_a_fixed_bound_until_cancelled() {
     let mut fixture = fixture("stop");
     let log = fixture.directory.path().join("log");
     let path = fixture.config.root.join("index.artf");
-    let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration =
+        crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap()).unwrap();
     declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!("unready");
-    crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+    crate::test_declaration::write(&fixture.config.root, &path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let state = fixture.state();
     let cancellation = CancellationToken::new();
@@ -256,6 +297,39 @@ fn panic_and_caller_runtime_shutdown_still_run_stop_and_cleanup_bound_calls() {
     }
 }
 
+#[tokio::test]
+async fn abandoned_cleanup_is_recovered_with_a_live_owner() {
+    let _clock = CLOCK.lock().await;
+    let fixture = fixture("stop");
+    let log = fixture.directory.path().join("log");
+    let sessions = fixture
+        .ready_sessions_with_removal(CancellationToken::new(), |_| {
+            Err(std::io::Error::other("deliberate removal failure"))
+        })
+        .await
+        .unwrap();
+    assert!(
+        sessions
+            .close()
+            .await
+            .unwrap_err()
+            .contains("deliberate removal failure")
+    );
+    let start = harness::records(&log, "start").pop().unwrap();
+    let abandoned = PathBuf::from(start["directory"].as_str().unwrap());
+    assert!(abandoned.join("owner.json").is_file());
+    for key in ["pid", "child"] {
+        assert!(!os::running(start[key].as_u64().unwrap() as u32));
+    }
+    let next = fixture
+        .ready_sessions(CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(!abandoned.exists());
+    next.close().await.unwrap();
+    harness::assert_cleaned(&fixture.state(), &log, 2);
+}
+
 // This fixture uses Unix directory write permission; Windows directory attributes
 // are not equivalent. Windows pending-delete sharing has its own CLI seam.
 #[cfg(unix)]
@@ -280,9 +354,10 @@ async fn directory_cleanup_failure_is_recovered_after_lease_release_even_with_a_
     // The caller process remains alive, but the failed supervisor's lease is gone.
     os::restore_directory_writes(&directory);
     let path = fixture.config.root.join("index.artf");
-    let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration =
+        crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap()).unwrap();
     declaration["views"]["agent_sessions"]["app"]["stop"]["args"][1] = json!("stop");
-    crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+    crate::test_declaration::write(&fixture.config.root, &path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let next = fixture
         .ready_sessions(CancellationToken::new())

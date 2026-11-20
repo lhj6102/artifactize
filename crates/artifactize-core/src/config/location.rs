@@ -47,7 +47,14 @@ impl<'a, 'i> Location<'a, 'i> {
         child
     }
 
-    /// JSON-backed sum types buffer their fields; validate those fields with TOML first.
+    pub fn table(&self) -> Result<&toml::de::DeTable<'i>, String> {
+        self.value
+            .get_ref()
+            .as_table()
+            .ok_or_else(|| self.error("expected a table"))
+    }
+
+    /// Decode a typed value at its authored span, including errors inside its fields.
     pub fn deserialize<T: serde::de::DeserializeOwned>(&self) -> Result<T, String> {
         T::deserialize(toml::de::ValueDeserializer::from(self.value.clone())).map_err(
             |mut error| {

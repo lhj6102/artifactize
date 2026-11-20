@@ -135,12 +135,14 @@ pub struct CurrentEval {
 /// One Artifact of the scan.
 #[derive(Debug, Clone)]
 pub struct CurrentArtifact {
+    pub definition: PathBuf,
+    pub target_missing: bool,
     pub name: ArtifactName,
     pub kind: ArtifactKind,
     pub plan: Plan,
     /// How many of its evals would run.
     pub runs: usize,
-    pub path: PathBuf,
+    pub path: crate::config::Target,
     pub state: ArtifactCondition,
     pub reason: String,
     pub evals: Vec<CurrentEval>,
@@ -245,6 +247,7 @@ fn card(
     Card {
         instruction: instruction.to_owned(),
         result: result.map(model::entries),
+        raw: result.map(model::raw),
         exit_code: match result {
             Some(ExecutionResult::Runtime(result)) => result.exit_code.value().copied(),
             _ => None,
@@ -364,6 +367,8 @@ fn project(
                     })
                     .collect();
             CurrentArtifact {
+                definition: artifact.definition.clone(),
+                target_missing: artifact.target_missing,
                 name: artifact.id.clone(),
                 kind: artifact.kind,
                 plan: evals

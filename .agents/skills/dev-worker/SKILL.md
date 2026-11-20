@@ -1,6 +1,6 @@
 ---
 name: dev-worker
-description: Implement one development task in the artifactize repository, starting from the latest GREEN dev commit (the dev-green tag), verify it until GREEN and open a pull request into dev. Run only when invoked explicitly with the requirements.
+description: Implement one development task in the artifactize repository, starting from the latest GREEN dev commit (the dev-green tag), verify it until GREEN (or YELLOW while Human sign-offs wait) and open a pull request into dev, which merges once its head verifies GREEN. Run only when invoked explicitly with the requirements.
 disable-model-invocation: true
 ---
 
@@ -22,7 +22,9 @@ anything else.
 - `dev-green` is a tag on the latest `dev` commit whose full verify was GREEN
   and whose CI was green. Only dev-master moves it.
 - Development branches (`feat/…`, `fix/…`, `docs/…`, `chore/…`) start at
-  `dev-green`, reach verify GREEN and open a pull request into `dev`.
+  `dev-green` and open a pull request into `dev` once verify is GREEN, or YELLOW
+  while Human sign-offs wait; dev-master merges it only when its head verifies
+  GREEN.
 
 ## 1. Start from dev-green
 
@@ -57,8 +59,9 @@ you finish.
 
 Rule documents in `project-rules/` and other Artifacts with a Human eval need
 the owner's sign-off. When the task changes one, change only that first,
-verify just that Artifact (the verify command in step 3 with its name in place
-of `--all`), ask the owner to sign it off, and continue with the rest only after
+verify that Artifact (the verify command in step 3 with its name in place of
+`--all`; the Run also runs its cycle peers' evals and waits on the evals it
+depends on), ask the owner to sign it off, and continue with the rest only after
 the approval. Everything downstream of an unapproved rule might have to run
 again.
 
@@ -76,7 +79,8 @@ env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
 `env -u DESKTOP_TEST_CANDIDATE` makes the desktop end-to-end evals build their
 candidate from this tree. The command prints the Run ID, the Run's outcome on
 `Execution:`, and ends with `Validation: SATISFIED` or `Validation: NOT
-SATISFIED`, the latter followed by `Unmet obligation:` lines. The exit code is
+SATISFIED`, the latter followed by `Unmet obligation:` lines when the Run
+reports unmet obligations. The exit code is
 the outcome:
 
 | Exit | Outcome | Next |
@@ -108,15 +112,16 @@ How to resolve a RED:
   documents or CI to get GREEN, do not skip evals, and never submit or
   fabricate a Human sign-off.
 - **A provider "server overloaded" ERROR is not a finding.** Run verify again;
-  finished results are reused.
+  finished results whose reuse key still matches are reused.
 
 Iterate on RED evals with the focus-then-sweep skill of the artifactize plugin
 (`/artifactize:focus-then-sweep` in Claude Code, `$artifactize:focus-then-sweep`
 in Codex): rerun only the evals you are fixing until they are GREEN, then run
 the full verify above once. Only that full verify's outcome goes into the pull
 request; a focus Run normally ends INCOMPLETE. Verify again after every fix
-until the full verify is GREEN or YELLOW. Unchanged results are reused, so a
-rerun costs only what changed.
+until the full verify is GREEN or YELLOW. Cached results whose reuse key still
+matches are reused; work without such a result, an operational error for one,
+runs again even when nothing changed.
 
 ## 4. Open the pull request into dev
 
@@ -139,8 +144,8 @@ verify: <Run ID> <GREEN or YELLOW> <full SHA of the commit you verified>
 -->
 ```
 
-Keep `verify` current: after every later verify of a new head, replace that
-line (`gh pr edit N --body-file …`).
+Keep `verify` current: after a full verify of a new head ends GREEN or YELLOW,
+replace that line (`gh pr edit N --body-file …`).
 
 ## 5. CI
 

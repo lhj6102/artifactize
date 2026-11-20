@@ -1,0 +1,44 @@
+path = "assets/readme/README.kr.md"
+
+[views.agent_tools.read]
+builtin = "read"
+args = ["README.kr.md"]
+
+[evals.translates-readme]
+title = "The Korean README conveys the same content and links as the root README"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.translates-readme.payload]
+instruction = """
+Read the root README {docs-readme} and its Korean translation {docs-readme-kr}, which lives in
+assets/readme/. Check these criteria:
+- K-MEANING: Every section, list item, heading, caption and image description of the root README is
+  conveyed with the same meaning and in the same section order. Splitting a long English sentence into
+  two Korean sentences or reordering clauses within a paragraph for natural Korean flow is ENCOURAGED
+  and is NEVER a violation. The headline, "Artifactize: Evaluation-driven development for people and AI agents.", and product terms
+(Artifact, Artifact Graph, eval, Run, Run ID, fingerprint, artifactsum, GREEN, RED, YELLOW) stay in English per K-TERMS.
+- K-SAME-TARGETS: Badges, commands, code blocks and their order are the same; code-block
+  comments and the example requests to Arti after /artifactize:hey-arti may be translated. Every link
+  and image reaches the same target as in the root README: repository files through paths
+  relative to assets/readme/ (and `../others/graph-example.ko.png` may be used for the example graph), and documentation pages through the same page under
+  https://artifactize.dev/docs/ko/. The language line below the badges names the same
+  languages in the same order; each language links to its README except the current one,
+  which is plain text."""
+
+[evals.follows-write-in-korean]
+title = "The Korean README follows the Korean writing rules"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.follows-write-in-korean.payload]
+instruction = """
+Read {rules-write-in-korean}. Read the Korean README {docs-readme-kr}, README.kr.md in assets/readme/.
+The project sentence "Artifactize: Evaluation-driven development for people and AI agents." stays in English by design, as the
+headline, and "Artifact Graph" is the product's name for the graph. The root README says
+"checks" in plain words where the docs say eval, so the Korean README says 검사 for them.
+The How it works section says "evaluations" in English, so its Korean says 평가 there by the owner's choice, not 검사.
+Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
+output samples and links are not prose and are not judged; whether the Korean says the same as
+the English is reviewed elsewhere. Use the read tool of {docs-readme-kr}.
+Read every Korean sentence. A sentence that is grammatical but reads as translated violates K-NATURAL."""

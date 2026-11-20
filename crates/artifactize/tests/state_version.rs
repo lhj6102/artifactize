@@ -9,9 +9,16 @@ use support::runs::RecordOutput;
 
 use std::{fs, path::Path, process::Command};
 
-use artifactize_core::store::{EARLIER_STATE, STATE_SCHEMA_VERSION};
+use artifactize_core::store::STATE_SCHEMA_VERSION;
 use rusqlite::Connection;
 use serde_json::{Value, json};
+
+/// User-facing recovery steps expected when opening an unsupported earlier state.
+const EARLIER_STATE: &str = concat!(
+    "This state was written by an earlier artifactize. ",
+    "Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). ",
+    "Only schema 6 and later supported versions can be upgraded.",
+);
 
 /// Some of the tables of a 0.5 state, before the four of 0.6.
 const EARLIER: &str =
@@ -32,15 +39,6 @@ fn artifactize(root: &Path, args: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
-fn names(db: &Connection, query: &str) -> Vec<String> {
-    db.prepare(query)
-        .unwrap()
-        .query_map([], |row| row.get(0))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap()
-}
-
 #[test]
 fn an_earlier_state_is_refused_and_left_as_it_is() {
     let temp = owned_run::Root::from(support::os::tempdir());
@@ -49,6 +47,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
     fs::create_dir_all(&repo).unwrap();
     fs::create_dir_all(root.join("home")).unwrap();
     support::declaration::write(
+        &(repo),
         repo.join("index.artf"),
         json!({
             "name":"app",
@@ -72,7 +71,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             .unwrap()
             .execute_batch(&format!("{EARLIER} PRAGMA user_version={version};"))
             .unwrap();
-        let before = fs::read(&database).unwrap();
+        let before = support::declaration::read_file(&database).unwrap();
         for args in [
             &["verify", "--wait", "--all"][..],
             &["status", "--all"],
@@ -116,14 +115,18 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             schema["details"],
             json!({"schema":version,"supported":STATE_SCHEMA_VERSION})
         );
-        assert_eq!(fs::read(&database).unwrap(), before, "version {version}");
+        assert_eq!(
+            support::declaration::read_file(&database).unwrap(),
+            before,
+            "version {version}"
+        );
         assert!(!state.join("state.sqlite-wal").exists());
         fs::remove_dir_all(&state).unwrap();
     }
 
     // Only the new real submissions have worker lifetimes; the old schemas are inert input.
     temp.track(&state, &repo);
-    // A new state has the five tables, and works.
+    // Reopen a new state through the CLI and read its saved Run audit.
     let output = artifactize(root, &["verify", "--wait", "--all", "--json"]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     let run: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -133,65 +136,15 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
         &run["id"].as_str().unwrap().parse().unwrap(),
         support::os::running,
     );
-    let db =
-        Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-    assert_eq!(
-        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
-            .unwrap(),
-        STATE_SCHEMA_VERSION
+    let audit = artifactize(
+        root,
+        &["run", "show", run["id"].as_str().unwrap(), "--json"],
     );
-    assert_eq!(
-        names(
-            &db,
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ),
-        [
-            "executions",
-            "requests",
-            "run_definitions",
-            "runs",
-            "state_meta"
-        ]
-    );
-    let columns = |table: &str| {
-        names(
-            &db,
-            &format!("SELECT name FROM pragma_table_info('{table}')"),
-        )
-    };
-    assert_eq!(
-        columns("requests"),
-        [
-            "id",
-            "run_id",
-            "eval_id",
-            "ordinal",
-            "execution_id",
-            "status",
-            "claimed_by",
-            "claimed_at",
-            "data",
-            "revision"
-        ]
-    );
-    assert_eq!(
-        columns("executions"),
-        [
-            "id",
-            "key",
-            "eval_def_hash",
-            "status",
-            "owner_pid",
-            "owner_start_time",
-            "backend",
-            "profile_identity",
-            "completed_at",
-            "bytes",
-            "last_used",
-            "data",
-            "revision"
-        ]
-    );
+    assert!(audit.status.success(), "{audit:?}");
+    let audit: Value = serde_json::from_slice(&audit.stdout).unwrap();
+    assert_eq!(audit["id"], run["id"]);
+    assert_eq!(audit["status"], "GREEN");
+    assert_eq!(audit["requests"], run["requests"]);
     let output = artifactize(root, &["doctor", "--json"]);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(

@@ -36,31 +36,40 @@ fn cli(state: &Path, args: &[&str]) -> Value {
 
 fn write_repo(repo: &Path, profile: Value) {
     fs::create_dir_all(repo).unwrap();
-    fs::write(repo.join("fingerprint"), "remote-v1\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("fingerprint")),
+        "remote-v1\n",
+    )
+    .unwrap();
     // Declare the exact bytes: text-mode print translates newlines on Windows.
     support::os::write_python_script(
         &repo.join("check.py"),
         "sys.stdout.buffer.write(b'stdout-marker\\n')\nsys.stderr.buffer.write(b'stderr-marker\\n')\n",
     );
+    let mut eval = json!({
+        "id":"check",
+        "title":"Check",
+        "payload":{"instruction":"Review."},
+    });
+    // A Human sign-off declares its form; an Agent eval reports findings.
+    if profile["kind"] == "agent" {
+        eval["red_at"] = json!("P1");
+    } else {
+        eval["pass_schema"] = json!({
+            "type":"object",
+            "properties":{"approved":{"const":true}},
+            "required":["approved"],
+            "additionalProperties":false,
+        });
+    }
+    eval["profile"] = profile;
     support::declaration::write(
+        repo,
         repo.join("index.artf"),
         json!({
             "name":"app",
             "fingerprint":{"script":{"command":cat_program(),"args":["fingerprint"]}},
-            "evals":[
-                {
-                    "id":"check",
-                    "title":"Check",
-                    "profile":profile,
-                    "payload":{"instruction":"Review."},
-                    "pass_schema":{
-                        "type":"object",
-                        "properties":{"approved":{"const":true}},
-                        "required":["approved"],
-                        "additionalProperties":false,
-                    },
-                },
-            ],
+            "evals":[eval],
         })
         .to_string(),
     )
@@ -321,7 +330,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
         &receipts,
         &request.id,
         &"alice".parse().unwrap(),
-        &json!({"verdict":"GREEN","approved":true}),
+        &human::Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -367,9 +376,10 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     });
     write_repo(&repo, declared.clone());
     let path = repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile_variants"] = json!({ "fast": fast });
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(repo), &path, declaration.to_string()).unwrap();
 
     // The record the `fast` variant produced elsewhere, keyed like this repository's eval.
     let config = read_workspace_config(&repo).unwrap();
@@ -379,7 +389,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         &config,
         [&config.artifacts["app"].name],
         &state,
-        &cache::Parallelism::new(2),
+        &cache::Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -399,9 +409,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             start_time: 1,
         }),
         state: artifactize_core::store::ExecutionState::Completed {
-            result: json!({"verdict":"GREEN","approved":true})
-                .try_into()
-                .unwrap(),
+            result: json!({"verdict":"GREEN","findings":[]}).try_into().unwrap(),
             at: completed,
         },
         profile: artifactize_core::config::StoredProfile::from(&variant),
@@ -485,7 +493,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         "max_tool_calls":3,
         "timeout_ms":1000,
     });
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(repo), &path, declaration.to_string()).unwrap();
     let again = verify(&repo, &state).await;
     assert_eq!(again.run.executions_started, 0);
     assert_eq!(again.requests[0].key.as_deref(), Some(key.value.as_str()));

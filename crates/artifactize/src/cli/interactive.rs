@@ -1,59 +1,96 @@
-//! Terminal UI setup and cancellation workflows.
+//! Desktop launch arguments and validation for the CLI shortcuts.
 
-use super::{Context, Screens, cancellation_listener};
-use std::path::PathBuf;
+use artifactize_core::types::{RequestId, ReviewerId};
+use std::{ffi::OsString, path::PathBuf};
 
-pub(super) async fn monitor(
-    context: Context,
-    all: bool,
-    path: Option<PathBuf>,
-    screens: Screens,
-) -> Result<u8, String> {
-    if context.json {
-        return Err("monitor is an interactive terminal UI; --json is not supported.".into());
-    }
-    if path.is_some() && context.repo.is_some() {
-        return Err("monitor accepts PATH or --repo, not both.".into());
-    }
-    if all && (context.repo.is_some() || path.is_some()) {
-        return Err("monitor accepts --repo or --all, not both.".into());
-    }
-    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
-    let repo = path.or(context.repo);
-    let (cancellation, listener) = cancellation_listener()?;
-    let result = (screens.monitor)(state, repo, cancellation).await;
-    listener.abort();
-    result?;
-    Ok(0)
+pub(super) enum Scope {
+    All,
+    Repository(PathBuf),
 }
 
-pub(super) async fn review(
-    context: Context,
-    request: Option<artifactize_core::types::RequestId>,
-    all: bool,
-    reviewer: Option<artifactize_core::types::ReviewerId>,
-    screens: Screens,
-) -> Result<u8, String> {
-    if context.json {
-        return Err("review is an interactive terminal UI; --json is not supported.".into());
+impl Scope {
+    pub(super) fn from_args(
+        all: bool,
+        path: Option<PathBuf>,
+        repo: Option<PathBuf>,
+    ) -> Result<Self, String> {
+        match (all, path, repo) {
+            (_, Some(_), Some(_)) => Err("monitor accepts PATH or --repo, not both.".into()),
+            (true, Some(_), _) | (true, _, Some(_)) => {
+                Err("monitor accepts --repo or --all, not both.".into())
+            }
+            (false, Some(path), None) | (false, None, Some(path)) => Ok(Self::Repository(path)),
+            (_, None, None) => Ok(Self::All),
+        }
     }
-    if all && context.repo.is_some() {
-        return Err("review accepts --repo or --all, not both.".into());
+
+    pub(super) fn for_review(all: bool, repo: Option<PathBuf>) -> Result<Self, String> {
+        match (all, repo) {
+            (true, Some(_)) => Err("review accepts --repo or --all, not both.".into()),
+            (false, Some(path)) => Ok(Self::Repository(path)),
+            (_, None) => Ok(Self::All),
+        }
     }
-    let reviewer = match reviewer {
-        Some(reviewer) => Ok(reviewer),
-        None => artifactize_core::human::default_reviewer(),
-    }?;
-    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
-    if let Some(id) = &request {
-        artifactize_core::store::read_request(&state, id).await?;
+
+    fn repository(self) -> Option<PathBuf> {
+        match self {
+            Self::All => None,
+            Self::Repository(path) => Some(path),
+        }
     }
-    // The list searches every repository; --repo starts it on that repository's term, and
-    // --all (the default) stays accepted.
-    let repo = context.repo;
-    let (cancellation, listener) = cancellation_listener()?;
-    let result = (screens.review)(state, repo, reviewer, request, cancellation).await;
-    listener.abort();
-    result?;
-    Ok(0)
+}
+
+pub(super) enum Screen {
+    Monitor,
+    Review {
+        request: Option<RequestId>,
+        reviewer: Option<ReviewerId>,
+    },
+}
+
+pub(super) struct Launch {
+    pub scope: Scope,
+    pub screen: Screen,
+}
+
+impl Launch {
+    pub(super) async fn run(self, state_dir: Option<PathBuf>) -> Result<u8, String> {
+        if let Screen::Review {
+            request: Some(id), ..
+        } = &self.screen
+        {
+            let state = artifactize_core::store::state_dir(state_dir.as_deref())?;
+            artifactize_core::store::read_request(&state, id).await?;
+        }
+        artifactize_core::platform::launch_desktop(&self.args(state_dir))?;
+        Ok(0)
+    }
+
+    pub(super) fn args(self, state_dir: Option<PathBuf>) -> Vec<OsString> {
+        let mut args = match self.screen {
+            Screen::Monitor => vec!["monitor".into()],
+            Screen::Review { request, reviewer } => {
+                let mut args = vec!["review".into()];
+                args.extend(request.map(|id| OsString::from(id.as_str())));
+                if let Some(id) = reviewer {
+                    args.push(option("--reviewer", id.as_str()));
+                }
+                args
+            }
+        };
+        if let Some(repo) = self.scope.repository() {
+            args.push(option("--repo", repo));
+        }
+        if let Some(state) = state_dir {
+            args.push(option("--state-dir", state));
+        }
+        args
+    }
+}
+
+fn option(flag: &str, value: impl AsRef<std::ffi::OsStr>) -> OsString {
+    let mut argument = OsString::from(flag);
+    argument.push("=");
+    argument.push(value);
+    argument
 }

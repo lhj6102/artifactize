@@ -122,7 +122,7 @@ impl<'a, 'r, R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Conversation<'a, 'r, R
                 request_id,
                 request,
             } => self.control(&request_id, request).await?,
-            Line::System(System::Init { model }) => self.check_model(model.as_deref())?,
+            Line::System(System::Init { model }) => self.check_model(model.as_ref())?,
             Line::StreamEvent { event } => self.stream(event)?,
             Line::Assistant(assistant) if assistant.parent_tool_use_id.is_none() => {
                 if let Some(error) = assistant.error {
@@ -137,7 +137,7 @@ impl<'a, 'r, R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Conversation<'a, 'r, R
                         .collect();
                     return Err(record::assistant_failure(error, &text, self.limit.as_ref()));
                 }
-                self.check_model(Some(&assistant.message.model))?;
+                self.check_model(assistant.message.model.as_ref())?;
                 let message = assistant.message;
                 let id = message.id.ok_or_else(|| {
                     Failure::new(
@@ -274,7 +274,7 @@ impl<'a, 'r, R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Conversation<'a, 'r, R
     fn stream(&mut self, event: StreamEvent) -> Result<(), Failure> {
         match event {
             StreamEvent::MessageStart { message } => {
-                self.check_model(Some(&message.model))?;
+                self.check_model(message.model.as_ref())?;
                 self.begin(&message.id);
                 self.count(&message.id, message.usage.as_ref())?;
             }
@@ -331,13 +331,14 @@ impl<'a, 'r, R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Conversation<'a, 'r, R
         Ok(())
     }
 
-    fn check_model(&self, actual: Option<&str>) -> Result<(), Failure> {
+    fn check_model(&self, actual: Option<&crate::config::ModelId>) -> Result<(), Failure> {
         match actual {
-            Some(actual) if actual != self.session.model => Err(Failure::new(
+            Some(actual) if actual.as_str() != self.session.model.as_str() => Err(Failure::new(
                 Code::ProviderError,
                 format!(
-                    "Provider model mismatch: requested {:?}, received {actual:?}.",
-                    self.session.model
+                    "Provider model mismatch: requested {:?}, received {:?}.",
+                    self.session.model.as_str(),
+                    actual.as_str(),
                 ),
             )),
             _ => Ok(()),

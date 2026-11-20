@@ -54,10 +54,18 @@ async fn fingerprint_bounds_return_input_errors_without_creating_state() {
 }
 
 #[test]
-fn fingerprint_parallelism_accepts_the_permit_ceiling() {
+fn fingerprint_parallelism_guards_the_permit_ceiling() {
     let maximum = tokio::sync::Semaphore::MAX_PERMITS;
     assert_eq!(
-        artifactize_core::cache::Parallelism::new(maximum).limit(),
+        artifactize_core::cache::Parallelism::new(maximum)
+            .unwrap()
+            .limit(),
         maximum
     );
+    for limit in [maximum + 1, usize::MAX] {
+        assert_eq!(
+            artifactize_core::cache::Parallelism::new(limit).unwrap_err(),
+            format!("fingerprint jobs must be at most {maximum}."),
+        );
+    }
 }

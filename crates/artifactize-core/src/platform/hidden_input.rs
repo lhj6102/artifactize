@@ -1,6 +1,35 @@
-//! The echo-only guard's restoration contract across return, error and future cancellation.
-//! Crate choices are documented in the parent platform module. These tests cover guard
-//! ownership, not a claim that remote login catches external signals.
+//! Stdin detection and the platform's echo-only guard for secret prompts.
+
+use std::io::{self, IsTerminal};
+
+use super::os::{HiddenInput, VISIBLE_INPUT_FALLBACK};
+
+/// Whether stdin can be used for an interactive prompt rather than a pipe or file.
+pub fn stdin_is_terminal() -> bool {
+    io::stdin().is_terminal()
+}
+
+/// How to read a secret from stdin without changing how redirected input is handled.
+pub enum SecretInput {
+    /// Read silently, without a terminal prompt.
+    Redirected,
+    /// Echo is disabled until the guard drops.
+    Hidden(HiddenInput),
+    /// Echo could not be disabled and the platform permits a visible read after warning.
+    Visible(io::Error),
+}
+
+/// Choose the stdin mode for a secret, disabling echo before the caller prompts if possible.
+pub fn secret_input() -> io::Result<SecretInput> {
+    if !stdin_is_terminal() {
+        return Ok(SecretInput::Redirected);
+    }
+    match HiddenInput::new() {
+        Ok(guard) => Ok(SecretInput::Hidden(guard)),
+        Err(error) if VISIBLE_INPUT_FALLBACK => Ok(SecretInput::Visible(error)),
+        Err(error) => Err(error),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -51,10 +80,7 @@ mod tests {
             }
             terminal.type_text(format!("{VISIBLE}-{case}\r").as_bytes());
         }
-        assert!(terminal.finish());
-        while let Ok(chunk) = receiver.recv_timeout(wait) {
-            output.extend(chunk);
-        }
+        assert!(terminal.finish_and_drain(receiver, &mut output));
         let output = String::from_utf8_lossy(&output);
         for case in 0..3 {
             assert!(

@@ -31,6 +31,10 @@ impl<'de> Deserialize<'de> for MutexTag {
 }
 
 impl MutexTag {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     /// Equal paths and ancestor/descendant paths conflict; siblings do not.
     pub fn conflicts(&self, other: &Self) -> bool {
         fn ancestor(parent: &str, child: &str) -> bool {

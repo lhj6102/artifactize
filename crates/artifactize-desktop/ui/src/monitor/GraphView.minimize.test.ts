@@ -210,7 +210,10 @@ it("ignores m typed in a field, during a composition, with a modifier or with fo
   const field = document.createElement("input");
   document.body.append(field);
   await fireEvent.keyDown(field, { key: "m" });
+  // The real Detail's non-editable focus cannot host native preedit; exercise
+  // both event representations at the graph shortcut's page-level seam.
   await fireEvent.keyDown(document.body, { key: "m", isComposing: true });
+  await fireEvent.keyDown(document.body, { key: "m", keyCode: 229 });
   await fireEvent.keyDown(document.body, { key: "m", ctrlKey: true });
   field.remove();
   expect(app.monitor.minimizedOn(BRANCH)).toEqual([]);

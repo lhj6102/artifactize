@@ -9,7 +9,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Command,
 };
 
 use serde_json::{Value, json};
@@ -28,7 +28,8 @@ impl Fixture {
         fs::create_dir(root.path().join("home")).unwrap();
         let provider = FakeProvider::start(|request| {
             assert_eq!(request.path, "/v1/responses");
-            let verdict = json!({"verdict":"GREEN","note":"The docs match the API."});
+            let verdict =
+                json!({"findings":[{"priority":"P3","reason":"The docs match the API."}]});
             openai::completed(
                 request,
                 vec![openai::message(&verdict.to_string())],
@@ -67,7 +68,7 @@ impl Fixture {
                 "Sign off {docs} and {style}.",
             ),
         ];
-        write(&repo, json!({"name":"root","basis":true}));
+        write(&(repo), &repo, json!({"name":"root","basis":true}));
         for ((artifact, eval, profile, instruction), version) in artifacts.into_iter().zip(versions)
         {
             let folder = repo.join(artifact);
@@ -78,26 +79,27 @@ impl Fixture {
                 "payload":{"instruction":instruction},
             });
             if artifact == "docs" {
-                declaration["pass_schema"] = json!({
-                    "type":"object",
-                    "properties":{"note":{"type":"string"}},
-                    "required":["note"],
-                });
+                declaration["red_at"] = json!("P1");
             }
             write(
+                &(repo),
                 &folder,
                 json!({"name":artifact,"evals":[declaration],
                     "fingerprint":{"script":{"command":support::os::cat_program(),"args":["version"]}}}),
             );
-            fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
+            fs::write(
+                support::declaration::source_path(folder.join("version")),
+                format!("{artifact}-{version}\n"),
+            )
+            .unwrap();
         }
         repo
     }
 
-    fn run(&self, repo: &Path, args: &[&str], code: i32) -> Output {
+    fn run(&self, repo: &Path, args: &[&str], code: i32) -> support::runs::Recorded {
         self.root.track(&self.root.path().join("state"), repo);
         let root = self.root.path();
-        let output = Command::new(support::os::cli())
+        let recorded = Command::new(support::os::cli())
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
@@ -107,8 +109,9 @@ impl Fixture {
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")
-            .record_output()
+            .recorded()
             .unwrap();
+        let output = &recorded.output;
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -116,16 +119,32 @@ impl Fixture {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        output
+        recorded
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        let output = self.run(repo, &[args, &["--json"]].concat(), code);
-        serde_json::from_slice(&output.stdout).unwrap()
+        let recorded = self.run(repo, &[args, &["--json"]].concat(), code);
+        recorded
+            .saved_json()
+            .unwrap_or_else(|| serde_json::from_slice(&recorded.output.stdout).unwrap())
+    }
+
+    /// The saved Run `id` as `run show --json` prints it, read without reconciling anything.
+    fn saved_run(&self, id: &str) -> Value {
+        let state = self.root.path().join("state");
+        let view = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(artifactize_core::store::read_run_snapshot(&state, id))
+            .unwrap();
+        serde_json::to_value(artifactize_core::query::run_output(
+            &view,
+            time::OffsetDateTime::now_utc(),
+        ))
+        .unwrap()
     }
 
     fn text(&self, repo: &Path, args: &[&str], code: i32) -> String {
-        String::from_utf8(self.run(repo, args, code).stdout).unwrap()
+        String::from_utf8(self.run(repo, args, code).output.stdout).unwrap()
     }
 
     /// Submits the Human signoff that `run` recorded, publishing it for reuse.
@@ -137,9 +156,9 @@ impl Fixture {
     }
 }
 
-fn write(folder: &Path, declaration: Value) {
+fn write(root: &Path, folder: &Path, declaration: Value) {
     fs::create_dir_all(folder).unwrap();
-    support::declaration::write(folder.join("index.artf"), declaration.to_string()).unwrap();
+    support::declaration::write(root, folder.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 fn request<'a>(run: &'a Value, eval: &str) -> &'a Value {
@@ -223,7 +242,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     let review = request(&second, "docs/review");
     assert_eq!(
         review["result"],
-        json!({"verdict":"GREEN","note":"The docs match the API."})
+        json!({"verdict":"GREEN","findings":[{"priority":"P3","reason":"The docs match the API."}]})
     );
     let spent = &second["usage"]["spent"];
     assert_eq!(spent["inputTokens"], 120, "{spent}");
@@ -261,7 +280,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
 
     let text = fixture.text(&merge, &["verify", "--wait", "--all"], 0);
     let id = line(&text, "Run:").strip_prefix("Run: ").unwrap();
-    let run = fixture.json(&merge, &["run", "show", id], 0);
+    let run = fixture.saved_run(id);
     // style waits for web's new result, then reviews again because its key covers web.
     let expected = BTreeMap::from([
         ("api/tests".into(), "reuse".into()),
@@ -384,10 +403,11 @@ fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
 
     // Another backend setting is an execution option, not part of the reuse key.
     let path = repo.join("docs/index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile"] = json!({"kind":"agent","backend":"openai",
         "model":"fake-other-model","reasoning":"low","timeout_ms":60000,"max_tokens":4000});
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(repo), &path, declaration.to_string()).unwrap();
     let status = fixture.json(&repo, &["status"], 1);
     let docs = status["evals"]
         .as_array()

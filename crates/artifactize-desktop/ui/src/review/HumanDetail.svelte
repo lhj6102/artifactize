@@ -15,6 +15,7 @@
   import Tools from "./Tools.svelte";
   import ToolLog from "./ToolLog.svelte";
   import VerdictForm from "./VerdictForm.svelte";
+  import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
@@ -43,7 +44,8 @@
   setHumanDetailState(h);
 
   const view = $derived(review.view);
-  const stage = $derived(view?.stage === "completed" ? "completed" : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM");
+  /** The stage pill's words; a submitted review has none. */
+  const stage = $derived(view?.stage === "completed" ? null : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM");
   /** The default share of the area the Detail takes, as the dock's width says. */
   const DOCK_SHARE = 0.46;
   const DOCK_MOST = 680;
@@ -120,11 +122,9 @@
     }
     // `q` quits only outside a form or work, as in the terminal.
     if ((review.busy || review.editing) && plain(event, "q")) return handled();
-    if (review.busy) return;
-    if (chord(event, "g")) void review.choose("GREEN");
-    else if (chord(event, "r")) void review.choose("RED");
-    else if (chord(event, "s")) void submit();
-    else if (editable(event.target)) return;
+    // Submit is open while a tool runs: it cancels the tool first (Review.submit).
+    if (chord(event, "s") && (review.busy === null || review.busy.tool)) void submit();
+    else if (review.busy || editable(event.target)) return;
     else if (plain(event, "c")) void review.claim();
     else if (plain(event, "g")) void review.choose("GREEN");
     else if (plain(event, "r")) void review.choose("RED");
@@ -142,9 +142,9 @@
       { id: "human.claim", group: "Human review", label: "Claim to review", keys: "c", enabled: () => ready() && review.claimable, run: () => void review.claim() },
       { id: "human.green", group: "Human review", label: "Open the GREEN form", keys: "g", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("GREEN") },
       { id: "human.red", group: "Human review", label: "Open the RED form", keys: "r", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("RED") },
-      { id: "human.to-green", group: "Human review", label: "Choose GREEN", keys: "Ctrl+G", enabled: () => ready() && review.editing, run: () => void review.choose("GREEN") },
-      { id: "human.to-red", group: "Human review", label: "Choose RED", keys: "Ctrl+R", enabled: () => ready() && review.editing, run: () => void review.choose("RED") },
-      { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => ready() && review.editing, run: () => void submit() },
+      { id: "human.to-green", group: "Human review", label: "Choose GREEN", enabled: () => ready() && review.editing, run: () => void review.choose("GREEN") },
+      { id: "human.to-red", group: "Human review", label: "Choose RED", enabled: () => ready() && review.editing, run: () => void review.choose("RED") },
+      { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => review.submittable, run: () => void submit() },
       { id: "human.release", group: "Human review", label: "Release the claim", keys: "u", enabled: () => ready() && review.owned, run: () => void review.release() },
       { id: "human.cancel", group: "Human review", label: "Cancel the running work", keys: "Esc", enabled: () => review.busy !== null, run: () => review.cancel() },
       { id: "human.debug", group: "Human review", label: "Show or hide Debug", keys: "t", run: () => sections.toggle("Debug") },
@@ -156,7 +156,7 @@
   <!-- The stage alone: CLAIM, or REVIEW (yours) once claimed here; the claimant beside it while
        another reviewer holds the claim. -->
   <div class="head">
-    <span class="stage" data-stage={view?.stage}>{stage}</span>
+    {#if stage}<span class="stage" data-stage={view?.stage}>{stage}</span>{/if}
     {#if view?.claim && !view.claim.mine && !review.owned}<span class="claimant">{view.claim.reviewer}</span>{/if}
   </div>
 {/snippet}
@@ -181,15 +181,18 @@
     <Section name="Tools" folds={false}>
       <Tools {review} />
     </Section>
-    {#if !split}
+    {#if !split && !(review.settled && review.log.length === 0)}
       <Section name="Tool log" folds={false}>
         <ToolLog entries={review.log} empty="What the tools print shows here." />
       </Section>
     {/if}
-    <Section name={review.settled ? "Completed result" : "Result"} label="Result" folds={false}>
+    <Section name="Result" folds={false}>
       <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
         {#if review.settled}
-          <pre>{view.result}</pre>
+          <!-- The completed result by field, read-only; a request settled without one, its error. -->
+          <div class="completed">
+            {#if view.completed}<ResultEntries entries={view.completed} />{:else}<pre>{view.result}</pre>{/if}
+          </div>
           <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
           {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
         {:else if review.owned && review.form}
@@ -209,7 +212,7 @@
         {#if !review.settled && (review.owned || review.busy || review.notice?.error)}
           <div class="actions">
             {#if review.owned}
-              <button class="button" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
+              <button class="button small" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
             {/if}
             <span class="said">
               {#if review.busy}
@@ -219,7 +222,7 @@
               {/if}
             </span>
             {#if review.form}
-              <button class="button primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={review.busy !== null} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+              <button class="button small primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
             {/if}
           </div>
         {/if}
@@ -358,21 +361,28 @@
     gap: 6px;
   }
   /* The last row of the Result: Release claim at the left, Submit at the column's right edge. */
+  /* One row, also in the narrowest (320px) Detail: compact buttons at both ends, what the work
+     says between them, each group keeping its own width. */
   .actions {
     display: flex;
     align-items: center;
-    gap: var(--gap);
+    gap: 6px;
+  }
+  .actions > :global(.button) {
+    flex: none;
   }
   .said {
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
     display: flex;
     align-items: center;
+    justify-content: center;
   }
   .actions > .primary {
     margin-left: auto;
   }
   .busy {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 6px;

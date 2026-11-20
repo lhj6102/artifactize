@@ -7,7 +7,8 @@
 //! when the browser did not, and then waits until the browser returns to it or the code that
 //! URL's page shows is written to its input.
 
-use std::{io, process::ExitStatus, time::Duration};
+use crate::platform::ProcessOutcome;
+use std::{io, time::Duration};
 
 use serde::Deserialize;
 use tokio::{
@@ -111,7 +112,7 @@ pub async fn status() -> Status {
 
 /// What `claude auth status --json` printed. It prints its JSON also when signed out, then
 /// with exit status 1.
-fn read_status(stdout: &[u8], stderr: &[u8], ended: &ExitStatus) -> Status {
+fn read_status(stdout: &[u8], stderr: &[u8], ended: &ProcessOutcome) -> Status {
     match serde_json::from_slice::<Reported>(stdout) {
         Ok(reported) if reported.logged_in => Status::SignedIn {
             method: reported
@@ -129,17 +130,14 @@ fn read_status(stdout: &[u8], stderr: &[u8], ended: &ExitStatus) -> Status {
 
 /// Why Claude Code failed to `doing`: what it wrote on stderr, else on stdout, else how it
 /// ended.
-fn failure(doing: &str, stdout: &[u8], stderr: &[u8], ended: &ExitStatus) -> String {
+fn failure(doing: &str, stdout: &[u8], stderr: &[u8], ended: &ProcessOutcome) -> String {
     let said = [stderr, stdout]
         .into_iter()
-        .map(|bytes| shown(&String::from_utf8_lossy(bytes)))
+        .map(|bytes| shown(&crate::platform::output_text(bytes)))
         .find(|text| !text.is_empty());
     match said {
         Some(said) => format!("Claude Code {doing}: {said}"),
-        None => format!(
-            "Claude Code {doing}; it ended with {}.",
-            platform::exit_description(ended)
-        ),
+        None => format!("Claude Code {doing}; it ended with {}.", ended),
     }
 }
 
@@ -162,7 +160,7 @@ pub async fn logout() -> Result<(), String> {
 /// not, and paste the code its page then shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prompt {
-    pub url: String,
+    pub url: url::Url,
 }
 
 /// The code Claude Code's sign-in page shows, as pasted: one line, written to Claude Code's
@@ -177,9 +175,9 @@ fn code(pasted: &str) -> Result<String, String> {
 }
 
 /// The first `http(s)://` URL in `line`.
-fn url_in(line: &str) -> Option<&str> {
+fn url_in(line: &str) -> Option<url::Url> {
     let start = line.find("https://").or_else(|| line.find("http://"))?;
-    line[start..].split_whitespace().next()
+    line[start..].split_whitespace().next()?.parse().ok()
 }
 
 /// Read `reader` to its end, keeping its last [`KEPT_BYTES`].
@@ -222,24 +220,30 @@ pub async fn login_with(
     let stdout = child.stdout().take().expect("stdout is piped");
     let stderr = child.stderr().take();
     let signing_in = async {
-        let mut lines = BufReader::new(stdout).lines();
+        let mut reader = BufReader::new(stdout);
+        let mut bytes = Vec::new();
         let mut said = Vec::new();
         let mut show = Some(show);
         // The URL comes first; what follows is kept for the error Claude Code may end with.
-        while let Ok(Some(line)) = lines.next_line().await {
-            if let Some(url) = url_in(&line)
+        while reader
+            .read_until(b'\n', &mut bytes)
+            .await
+            .is_ok_and(|read| read > 0)
+        {
+            let line = crate::platform::output_line(&bytes);
+            let text = crate::platform::output_text(line);
+            if let Some(url) = url_in(&text)
                 && let Some(show) = show.take()
             {
-                show(&Prompt {
-                    url: url.to_owned(),
-                });
-                continue;
+                show(&Prompt { url });
+            } else {
+                said.extend_from_slice(line);
+                said.push(b'\n');
+                if said.len() > KEPT_BYTES {
+                    said.drain(..said.len() - KEPT_BYTES);
+                }
             }
-            said.extend_from_slice(line.as_bytes());
-            said.push(b'\n');
-            if said.len() > KEPT_BYTES {
-                said.drain(..said.len() - KEPT_BYTES);
-            }
+            bytes.clear();
         }
         said
     };
@@ -314,7 +318,7 @@ mod tests {
     fn a_signed_in_status_names_the_method_and_plan_but_not_the_account() {
         let stdout = br#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"a@example.com","orgName":"A","subscriptionType":"max"}"#;
         assert_eq!(
-            read_status(stdout, b"", &ExitStatus::default()),
+            read_status(stdout, b"", &crate::platform::successful_outcome()),
             Status::SignedIn {
                 method: "claude.ai".into(),
                 plan: Some("max".into())
@@ -326,7 +330,7 @@ mod tests {
     fn a_signed_out_status_is_read_from_its_json() {
         let stdout = br#"{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}"#;
         assert_eq!(
-            read_status(stdout, b"", &ExitStatus::default()),
+            read_status(stdout, b"", &crate::platform::successful_outcome()),
             Status::SignedOut
         );
     }
@@ -337,7 +341,7 @@ mod tests {
             read_status(
                 b"",
                 b"error: unknown command 'auth'\n",
-                &ExitStatus::default()
+                &crate::platform::successful_outcome()
             ),
             Status::Failed {
                 error: "Claude Code could not report its sign-in: error: unknown command 'auth'"
@@ -352,7 +356,11 @@ mod tests {
             url_in(
                 "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&state=s"
             ),
-            Some("https://claude.com/cai/oauth/authorize?code=true&state=s")
+            Some(
+                "https://claude.com/cai/oauth/authorize?code=true&state=s"
+                    .parse()
+                    .unwrap()
+            )
         );
         assert_eq!(url_in("Opening browser to sign in…"), None);
     }

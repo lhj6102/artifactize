@@ -17,7 +17,7 @@ fn record(db: &rusqlite::Connection, n: u32, checkout: &Path, eval: &str, human:
         "id": format!("execution-{n}"), "key": key, "fingerprint": null, "evalDefHash": hash,
         "ownerPid": 0, "ownerStartTime": 0, "status": "GREEN", "result": {"verdict": "GREEN"},
         "error": null, "errorCode": null, "profile": profile, "options": {}, "usage": null,
-        "provenance": {"repoPath": checkout, "runId": "run-1", "requestId": format!("run-1-{n}"),
+        "provenance": {"repoPath": crate::platform::path_text(checkout), "runId": "run-1", "requestId": format!("run-1-{n}"),
             "evalId": eval, "evalDefHash": hash, "completedAt": completed},
         "startedAt": completed, "completedAt": completed,
     })
@@ -97,4 +97,28 @@ async fn a_large_project_evicts_neither_another_checkouts_newest_results_nor_its
         "the replaced records left: {ids:?}"
     );
     assert!(ids.contains("execution-9") && ids.contains("execution-10"));
+}
+
+#[tokio::test]
+async fn local_push_page_refuses_missing_or_mismatched_payload_keys() {
+    let root = crate::test_os::tempdir();
+    let checkout = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&checkout).unwrap();
+    drop(OwnedReceipts::open(&state, &checkout).await.unwrap());
+    let db = rusqlite::Connection::open(state.join(DATABASE)).unwrap();
+    record(&db, 1, &checkout, "app/check", false, 1);
+    assert_eq!(super::local(&state, None, 10).await.unwrap().len(), 1);
+    for payload_key in [None, Some("a".repeat(64))] {
+        db.execute(
+            "UPDATE executions SET data = json_set(data, '$.key', ?)",
+            [payload_key],
+        )
+        .unwrap();
+        let error = super::local(&state, None, 10).await.unwrap_err();
+        assert!(
+            error.contains("Cached execution execution-1 does not have its indexed reuse key"),
+            "{error}"
+        );
+    }
 }

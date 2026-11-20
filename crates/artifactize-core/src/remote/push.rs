@@ -26,10 +26,20 @@ pub async fn push(
     repo: Option<&Path>,
     dry_run: bool,
 ) -> Result<Push, String> {
+    push_with_clock(state, repo, dry_run, crate::types::Timestamp::now).await
+}
+
+/// Push results and use the supplied clock when recording a completed publication.
+pub async fn push_with_clock(
+    state: Option<&Path>,
+    repo: Option<&Path>,
+    dry_run: bool,
+    clock: impl FnOnce() -> crate::types::Timestamp,
+) -> Result<Push, String> {
     let remote = remote::remote(state, repo)?.ok_or(
         "No remote review store is configured; run `artifactize remote login URL` or set ARTIFACTIZE_REMOTE.",
     )?;
-    let principal = remote.whoami().await.map_err(|failure| failure.message)?;
+    let principal = remote.whoami().await.map_err(String::from)?;
     if !has_scope(&principal, &crate::auth::remote::Scope::Publish) {
         return Err(format!(
             "Remote token {} lacks the publish scope.",
@@ -44,12 +54,12 @@ pub async fn push(
     let mut after = None;
     loop {
         let page = history::local(&state, after.take(), PAGE_ENTRIES).await?;
-        let Some(last) = page.last() else {
+        let Some((last_key, _)) = page.last() else {
             break;
         };
-        after = Some(last.key.clone().expect("cached key"));
+        after = Some(last_key.clone());
         let mut records = Vec::new();
-        for execution in &page {
+        for (_, execution) in &page {
             match record(execution, &principal, remote.share) {
                 Ok(record) => records.push(record),
                 Err(reason) => {
@@ -69,7 +79,7 @@ pub async fn push(
             remote
                 .lookup(&keys)
                 .await
-                .map_err(|failure| failure.message)?
+                .map_err(String::from)?
                 .into_iter()
                 .filter_map(Result::ok)
                 .map(|entry| (entry.key, entry.execution_id))
@@ -80,11 +90,7 @@ pub async fn push(
         for record in records {
             // The store keeps each execution once; a resent record answers `created: false`.
             let created = !existing.contains(&(record.key.clone(), record.execution_id.clone()))
-                && (dry_run
-                    || remote
-                        .publish(&record)
-                        .await
-                        .map_err(|failure| failure.message)?);
+                && (dry_run || remote.publish(&record).await.map_err(String::from)?);
             if created {
                 report.pushed += 1;
             } else {
@@ -93,7 +99,7 @@ pub async fn push(
         }
     }
     if !dry_run && report.pushed > 0 {
-        super::pushed::record(&state, report.pushed)?;
+        super::pushed::record_at(&state, report.pushed, clock())?;
     }
     Ok(report)
 }

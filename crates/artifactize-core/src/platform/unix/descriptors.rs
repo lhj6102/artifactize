@@ -10,8 +10,10 @@
 
 use std::{io, os::fd::RawFd};
 
-/// Room for descriptors opened between [`Inherited::reserve`] and the fork, on top of twice
-/// the count open at the reservation: the forked child cannot allocate, and a descriptor it has
+/// Reserve proportional headroom for other evals opening pipes concurrently.
+const DESCRIPTOR_HEADROOM_FACTOR: usize = 2;
+
+/// Fixed room for bursts of descriptors opened between [`Inherited::reserve`] and the fork: the forked child cannot allocate, and a descriptor it has
 /// no room for is only kept open until exec, as without this release.
 const SPARE_DESCRIPTORS: usize = 64;
 
@@ -41,12 +43,18 @@ impl Inherited {
     pub(super) fn reserve() -> Self {
         let capacity = open_descriptors()
             .unwrap_or(0)
-            .saturating_mul(2)
+            .saturating_mul(DESCRIPTOR_HEADROOM_FACTOR)
             .saturating_add(SPARE_DESCRIPTORS);
         Self {
             ends: Vec::with_capacity(capacity),
             #[cfg(target_os = "macos")]
-            listed: Vec::with_capacity(capacity),
+            listed: vec![
+                libc::proc_fdinfo {
+                    proc_fd: 0,
+                    proc_fdtype: 0
+                };
+                capacity
+            ],
         }
     }
 
@@ -70,12 +78,12 @@ impl Inherited {
             }
         }
     }
+}
 
-    fn push(&mut self, end: PipeEnd) {
-        // Pushing past the reserved capacity would allocate in the forked child.
-        if self.ends.len() < self.ends.capacity() {
-            self.ends.push(end);
-        }
+fn push(ends: &mut Vec<PipeEnd>, end: PipeEnd) {
+    // Pushing past the reserved capacity would allocate in the forked child.
+    if ends.len() < ends.capacity() {
+        ends.push(end);
     }
 }
 
@@ -149,7 +157,7 @@ impl Inherited {
                     && inherited(fd, keep)
                     && let Some(end) = pipe_end(fd)
                 {
-                    self.push(end);
+                    push(&mut self.ends, end);
                 }
                 records = rest;
             }
@@ -254,8 +262,7 @@ impl Inherited {
         let Some(pid) = own_pid() else {
             return;
         };
-        self.listed.clear();
-        let room = self.listed.capacity() * std::mem::size_of::<libc::proc_fdinfo>();
+        let room = std::mem::size_of_val(self.listed.as_slice());
         let Ok(room) = libc::c_int::try_from(room) else {
             return;
         };
@@ -272,18 +279,14 @@ impl Inherited {
         let Ok(written) = usize::try_from(written) else {
             return;
         };
-        let count =
-            (written / std::mem::size_of::<libc::proc_fdinfo>()).min(self.listed.capacity());
-        // SAFETY: libproc initialized these `count` records, within the capacity.
-        unsafe { self.listed.set_len(count) };
-        for index in 0..count {
-            let listed = &self.listed[index];
+        let count = written / std::mem::size_of::<libc::proc_fdinfo>();
+        for listed in self.listed.get(..count).unwrap_or_default() {
             let fd = listed.proc_fd;
             if listed.proc_fdtype == libc::PROX_FDTYPE_PIPE as u32
                 && inherited(fd, keep)
                 && let Some(end) = pipe_end(pid, fd)
             {
-                self.push(end);
+                push(&mut self.ends, end);
             }
         }
     }

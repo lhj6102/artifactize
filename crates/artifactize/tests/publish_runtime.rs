@@ -11,14 +11,13 @@ use futures_util::FutureExt;
 use std::{fs, path::PathBuf, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
 };
 use tokio_util::sync::CancellationToken;
 
-const CRATES: [&str; 5] = [
+const CRATES: [&str; 4] = [
     "artifactize-tools",
     "artifactize-core",
-    "artifactize-tui",
     "artifactize-mcp",
     "artifactize",
 ];
@@ -64,7 +63,7 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
             String::new()
         } else {
             format!(
-                "\n[dependencies]\n{} = {{ path = \"../{}\", version = \"0.0.0-dev\" }}\n",
+                "\n[dependencies]\n{} = {{ path = \"../{}\", version = \"0.0.0-dev\", registry = \"fixture\" }}\n",
                 CRATES[index - 1],
                 CRATES[index - 1]
             )
@@ -85,8 +84,8 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
         }
     }
     fs::write(workspace.join("Cargo.lock"), lock).unwrap();
-    // Both Cargo directories must be invocation-owned even when the author's real
-    // configuration names other locations. Do not replace HOME or CARGO_HOME.
+    // Both Cargo directories must be invocation-owned even when the workspace's
+    // explicit Cargo configuration names other locations.
     let author_target = root.path().join("author-target");
     let author_build = root.path().join("author-build");
     fs::create_dir(workspace.join(".cargo")).unwrap();
@@ -102,20 +101,40 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
     let cli = workspace.join("crates/artifactize");
     let helper = cli.join("publish.mjs");
     fs::write(&helper, include_str!("../publish.mjs")).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = support::os::tcp::async_loopback_listener();
     let address = listener.local_addr().unwrap();
     // OUT_DIR proves the real Cargo build script reached the owned staging tree.
-    // A leaked script answers the post-cancellation probe instead of hanging the test.
     fs::write(
         workspace.join("crates/artifactize-tools/build.rs"),
-        format!(
-            "use std::io::{{Read, Write}};\nfn main() {{ let mut s = std::net::TcpStream::connect(\"{address}\").unwrap(); writeln!(s, \"{{}}\\t{{}}\", std::process::id(), std::env::var(\"OUT_DIR\").unwrap()).unwrap(); let mut b = [0]; if s.read_exact(&mut b).is_ok() {{ s.write_all(b\"alive\").unwrap(); }} }}\n"
-        ),
+        support::os::tcp::cargo_build_callback(address),
     )
     .unwrap();
+    let launcher = root.path().join("publication.py");
+    let cargo_home = root.path().join("cargo-home");
+    fs::create_dir(&cargo_home).unwrap();
+    // Publication still talks to a registry, but this private index has no published crates.
+    // Cargo's own dry-run stages and resolves the four local crates against it.
+    let registry = support::FakeProvider::start(|request| {
+        if request.path == "/config.json" {
+            support::Reply::Json(
+                200,
+                serde_json::json!({"dl":"unused/{crate}/{version}","api":format!("http://{}",request.headers["host"])}),
+            )
+        } else {
+            support::Reply::Json(404, serde_json::Value::Null)
+        }
+    });
+    let index = format!("sparse+{}/", registry.url);
+    fs::write(
+        cargo_home.join("config.toml"),
+        format!("[registry]\ndefault = \"fixture\"\n[registries.fixture]\nindex = {index:?}\n"),
+    )
+    .unwrap();
+    let (cargo, rustc) = support::os::cargo_toolchain();
+    let args = support::os::isolated_cargo_node(&launcher, cargo, &rustc, &cargo_home, &helper);
     let mut command = runtime::Command::prepare(
-        support::os::node_program().into(),
-        vec![helper.into_os_string()],
+        support::os::python_program().into(),
+        args,
         &workspace,
         &root.path().join("runs"),
         None,
@@ -139,6 +158,9 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
                 connection = listener.accept() => connection.unwrap(),
                 finished = &mut running => {
                     outcome = Some(finished);
+                    if let Some(runtime::Outcome::Completed(result)) = &outcome {
+                        panic!("publication exited before its build: {}", String::from_utf8_lossy(&result.output.stderr));
+                    }
                     panic!("publication exited before the build script connected: {outcome:?}");
                 },
             };
@@ -198,9 +220,16 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
         // Let an incorrectly surviving script answer and exit, so this negative check
         // owns its fixture even when the runtime's cancellation contract regresses.
         if let Some(socket) = &mut socket {
-            let response = support::os::closed_tcp_probe(socket, b"probe")
-                .await
-                .unwrap();
+            if !survivors.is_empty() {
+                let _ = socket.get_mut().write_all(b"probe").await;
+            }
+            let response = tokio::time::timeout(
+                Duration::from_secs(10),
+                support::os::closed_tcp_probe(socket),
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(
                 response.is_empty(),
                 "the build script survived: {response:?}"
@@ -228,8 +257,9 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
     drop(socket);
     // The fallback guard joins real birth identities even when an observation or
     // teardown assertion failed. Never delete live fixture inputs after a failed join.
-    let joined = std::panic::catch_unwind(|| drop(processes));
-    let closed = match closed.and(joined) {
+    let joined =
+        std::panic::catch_unwind(move || processes.release().expect("join publication processes"));
+    let cleaned = match joined {
         Ok(()) => {
             std::panic::catch_unwind(|| root.close().expect("remove joined publication inputs"))
         }
@@ -242,8 +272,8 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
             Err(panic)
         }
     };
-    *released = closed.is_ok();
-    match (observed, closed) {
+    *released = cleaned.is_ok();
+    match (observed, closed.and(cleaned)) {
         (Err(panic), _) | (_, Err(panic)) => std::panic::resume_unwind(panic),
         (Ok(()), Ok(())) => {}
     }
@@ -251,7 +281,7 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
 
 #[tokio::test]
 async fn publication_closed_probe_preserves_a_live_peers_buffered_reply() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = support::os::tcp::async_loopback_listener();
     let address = listener.local_addr().unwrap();
     let peer = async {
         let (mut socket, _) = listener.accept().await?;
@@ -269,7 +299,8 @@ async fn publication_closed_probe_preserves_a_live_peers_buffered_reply() {
         // Observe at least one real reply byte before letting the peer terminate.
         // This is a protocol barrier, not an assumption about TCP packet grouping.
         let buffered = !socket.fill_buf().await?.is_empty();
-        let response = support::os::closed_tcp_probe(&mut socket, b"probe").await?;
+        socket.get_mut().write_all(b"p").await?;
+        let response = support::os::closed_tcp_probe(&mut socket).await?;
         Ok::<_, std::io::Error>((ready, buffered, response))
     };
     let (probe, (ready, buffered, response)) = tokio::try_join!(peer, observer).unwrap();

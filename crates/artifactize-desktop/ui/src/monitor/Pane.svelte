@@ -155,7 +155,8 @@
       {/each}
     </ul>
     <section class="waiting" aria-label="Waiting">
-      <h2 class="bar">Waiting ({waiting.length})</h2>
+      <!-- With none waiting, the thin bar reads (0) alone. -->
+      <h2 class="bar">{waiting.length > 0 ? "Waiting " : ""}({waiting.length})</h2>
       {#if waiting.length > 0}
         <ul role="listbox" aria-label="Waiting reviews">
           {#each waiting as row (row.id)}
@@ -270,7 +271,7 @@
     color: var(--ink-2);
   }
   .branch-name {
-    font-weight: 600;
+    font-weight: 700;
   }
   .latest {
     display: grid;

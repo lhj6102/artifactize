@@ -1,12 +1,7 @@
 //! Literal process launches, bounded capture, and process-group cleanup.
 
 use std::{
-    collections::BTreeMap,
-    ffi::OsString,
-    future::Future,
-    io,
-    path::PathBuf,
-    process::{ExitStatus, Stdio},
+    collections::BTreeMap, ffi::OsString, future::Future, io, path::PathBuf, process::Stdio,
     time::Duration,
 };
 
@@ -104,7 +99,7 @@ pub struct ChildIdentity {
 
 #[derive(Debug)]
 pub struct Output {
-    pub status: ExitStatus,
+    pub status: platform::ProcessOutcome,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub truncated: bool,
@@ -174,6 +169,8 @@ pub enum Error {
     Cleanup(#[source] io::Error),
     #[error("process supervision task failed: {0}")]
     Task(#[from] tokio::task::JoinError),
+    #[error("process timeout is too large to represent as a deadline")]
+    InvalidTimeout,
     #[error("process timed out")]
     Timeout,
     #[error("process was cancelled")]
@@ -193,6 +190,7 @@ impl Error {
             Self::Spawn(_)
             | Self::Registration(_)
             | Self::Io(_)
+            | Self::InvalidTimeout
             | Self::Timeout
             | Self::Cancelled
             | Self::Capture(_) => true,
@@ -337,7 +335,9 @@ where
     R: Future<Output = io::Result<()>>,
 {
     let started = Instant::now();
-    let deadline = started + command.timeout;
+    let deadline = started
+        .checked_add(command.timeout)
+        .ok_or(Error::InvalidTimeout)?;
     if cancellation.is_cancelled() {
         return Err(Error::Cancelled);
     }
@@ -435,16 +435,8 @@ where
     F: FnOnce(ChildIdentity) -> R,
     R: Future<Output = io::Result<()>>,
 {
-    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
-        environment_value(&command.env, name).map(ToOwned::to_owned)
-    })
-    .map_err(Error::Spawn)?;
-    let mut child = tokio::process::Command::new(&program);
+    let mut child = child_command(command)?;
     child
-        .args(&command.args)
-        .current_dir(&command.cwd)
-        .env_clear()
-        .envs(&command.env)
         .stdin(if input { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -493,20 +485,32 @@ where
     Ok(child)
 }
 
-fn environment_value<'a>(
-    environment: &'a BTreeMap<OsString, OsString>,
-    name: &str,
-) -> Option<&'a std::ffi::OsStr> {
-    crate::platform::environment::lookup(environment, name)
+fn child_command(command: &Command) -> Result<tokio::process::Command, Error> {
+    let environment = platform::environment::for_child(&command.env);
+    let program = platform::program::resolve_with(
+        std::path::Path::new(&command.program),
+        &command.cwd,
+        |name| platform::environment::lookup(&environment, name).map(ToOwned::to_owned),
+    )
+    .map_err(Error::Spawn)?;
+    let mut child = tokio::process::Command::new(program);
+    child
+        .args(&command.args)
+        .current_dir(&command.cwd)
+        .env_clear()
+        .envs(environment.iter());
+    Ok(child)
 }
 
 /// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.
-pub(crate) fn launch_detached(
+fn launch_detached(
     program: &std::ffi::OsStr,
-    args: &[String],
+    args: &[impl AsRef<std::ffi::OsStr>],
     cwd: &std::path::Path,
+    run: &mut Run,
 ) -> Result<(), Error> {
-    let program = platform::program::resolve(program, cwd).map_err(Error::Spawn)?;
+    let program =
+        platform::program::resolve(std::path::Path::new(program), cwd).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
     command
         .args(args)
@@ -517,10 +521,9 @@ pub(crate) fn launch_detached(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(false);
-    let mut child = platform::spawn_detached(command).map_err(Error::Spawn)?;
-    tokio::spawn(async move {
-        let _ = child.wait().await;
-    });
+    let child = platform::spawn_detached(command).map_err(Error::Spawn)?;
+    run.launched(child.pid());
+    child.reap();
     Ok(())
 }
 
@@ -529,16 +532,8 @@ pub(crate) fn launch_detached(
 /// what it starts are stopped when the child drops, also when its owner dies where the
 /// system allows; [`Child::release`] lets what it started go on once it has ended.
 pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
-    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
-        environment_value(&command.env, name).map(ToOwned::to_owned)
-    })
-    .map_err(Error::Spawn)?;
-    let mut child = tokio::process::Command::new(program);
+    let mut child = child_command(command)?;
     child
-        .args(&command.args)
-        .current_dir(&command.cwd)
-        .env_clear()
-        .envs(&command.env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -554,12 +549,12 @@ pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
 /// An unwatched run gets the plain handoff. A failed spawn hands the run back to be ended.
 pub(crate) fn launch_watched(
     program: &std::ffi::OsStr,
-    args: &[String],
+    args: &[impl AsRef<std::ffi::OsStr>],
     cwd: &std::path::Path,
-    run: Run,
+    mut run: Run,
 ) -> Result<(), (Error, Run)> {
     if !run.watched() {
-        return match launch_detached(program, args, cwd) {
+        return match launch_detached(program, args, cwd, &mut run) {
             Ok(()) => {
                 run.end(End::Launched);
                 Ok(())
@@ -567,7 +562,7 @@ pub(crate) fn launch_watched(
             Err(error) => Err((error, run)),
         };
     }
-    let program = match platform::program::resolve(program, cwd) {
+    let program = match platform::program::resolve(std::path::Path::new(program), cwd) {
         Ok(program) => program,
         Err(error) => return Err((Error::Spawn(error), run)),
     };
@@ -585,8 +580,8 @@ pub(crate) fn launch_watched(
         Ok(child) => child,
         Err(error) => return Err((Error::Spawn(error), run)),
     };
-    let stdout = child.stdout.take().expect("stdout is piped");
-    let stderr = child.stderr.take().expect("stderr is piped");
+    run.launched(child.pid());
+    let (stdout, stderr) = child.take_output();
     tokio::spawn(async move {
         // Nothing is retained: the lines go to the log, the rest is discarded. Nobody owns
         // this program's group, so its pipes are read for as long as anything holds them.
@@ -606,25 +601,7 @@ pub(crate) fn launch_watched(
 
 /// Resolve the installed CLI, with sibling build outputs for Rust library consumers/tests.
 pub(crate) fn artifactize_executable() -> Result<std::path::PathBuf, String> {
-    let current = std::env::current_exe().map_err(|e| e.to_string())?;
-    for directory in current
-        .parent()
-        .into_iter()
-        .flat_map(|parent| [Some(parent), parent.parent()])
-        .flatten()
-    {
-        if let Some(candidate) = platform::program::candidates(&directory.join("artifactize"))
-            .into_iter()
-            .find(|path| path.is_file())
-        {
-            return Ok(candidate);
-        }
-    }
-    platform::program::resolve(
-        std::ffi::OsStr::new("artifactize"),
-        &std::env::current_dir().map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    platform::program::resolve_near_current("artifactize".as_ref()).map_err(|e| e.to_string())
 }
 
 /// The internal supervisor and executor have no inherited requester stdio/lifetime.
@@ -639,7 +616,7 @@ pub(crate) fn spawn_run(
     repo: &std::path::Path,
     state: &std::path::Path,
     entry: RunEntry,
-) -> Result<(ChildIdentity, tokio::process::Child), Error> {
+) -> Result<(ChildIdentity, platform::DetachedChild), Error> {
     let mut options = platform::private_options();
     options.write(true);
     match entry {
@@ -654,7 +631,7 @@ pub(crate) fn spawn_run(
     let stderr = options
         .open(directory.join("worker.stderr"))
         .map_err(Error::Spawn)?;
-    let program = platform::program::resolve(program.as_os_str(), repo).map_err(Error::Spawn)?;
+    let program = platform::program::resolve(program, repo).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
     command
         .arg("--repo")
@@ -676,8 +653,7 @@ pub(crate) fn spawn_run(
         .stderr(Stdio::from(stderr))
         .kill_on_drop(false);
     let child = platform::spawn_run(command).map_err(Error::Spawn)?;
-    let identity = child_identity(child.id().expect("spawned worker has a PID"))
-        .map_err(Error::Registration)?;
+    let identity = child_identity(child.pid()).map_err(Error::Registration)?;
     Ok((identity, child))
 }
 pub(crate) fn launch_run(
@@ -686,10 +662,8 @@ pub(crate) fn launch_run(
     repo: &std::path::Path,
     state: &std::path::Path,
 ) -> Result<ChildIdentity, Error> {
-    let (identity, mut child) = spawn_run(program, id, repo, state, RunEntry::Supervisor)?;
-    tokio::spawn(async move {
-        let _ = child.wait().await;
-    });
+    let (identity, child) = spawn_run(program, id, repo, state, RunEntry::Supervisor)?;
+    child.reap();
     Ok(identity)
 }
 
@@ -724,8 +698,9 @@ pub(crate) async fn terminate(child: &mut Child) -> io::Result<()> {
     Ok(())
 }
 
-/// Runtime logs live with their Run and are pruned with it. Protocol callers retain
-/// prefix-only capture: changing protocol bytes to head/tail would corrupt replies.
+/// Runtime logs live with their Run and are pruned with it. The caller owns this
+/// future in a supervisor that survives its result waiter; protocol callers retain
+/// prefix-only capture because changing protocol bytes to head/tail would corrupt replies.
 pub(crate) async fn run_logged<F, R>(
     command: Command,
     directory: PathBuf,
@@ -736,20 +711,16 @@ where
     F: FnOnce(ChildIdentity) -> R + Send + 'static,
     R: Future<Output = io::Result<()>> + Send + 'static,
 {
-    let cancellation = cancellation.child_token();
-    let _cancel_on_drop = cancellation.clone().drop_guard();
-    crate::task::joined(
-        tokio::spawn(run_inner(
-            command,
-            None,
-            OUTPUT_LIMIT,
-            Capture {
-                logs: Some(directory),
-                lines: None,
-            },
-            cancellation,
-            Some(register),
-        ))
-        .await,
-    )?
+    run_inner(
+        command,
+        None,
+        OUTPUT_LIMIT,
+        Capture {
+            logs: Some(directory),
+            lines: None,
+        },
+        cancellation,
+        Some(register),
+    )
+    .await
 }

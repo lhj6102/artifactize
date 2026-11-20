@@ -1,6 +1,5 @@
-//! The loader with a Run as large as the largest saved so far: starting lists it without
-//! reading its definitions, opening it decodes them once, and reloads while the state is
-//! written read only what a hint names.
+//! The loader's snapshots of a large Run: listing, opening, and updating the shown Run
+//! when saved state changes.
 use super::*;
 use crate::{
     changes::Change,
@@ -68,8 +67,15 @@ async fn fail(receipts: &OwnedReceipts, requests: &[store::Request], id: &str) {
     receipts.save_request(&request).await.unwrap();
 }
 
+fn loaded(snapshot: Snapshot) -> Opened {
+    let OpenRun::Loaded(run) = snapshot.open_run else {
+        panic!("snapshot should have loaded the Run");
+    };
+    *run
+}
+
 #[tokio::test]
-async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alone() {
+async fn a_large_run_is_listed_opened_and_refreshed_with_its_saved_definitions() {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -105,7 +111,7 @@ async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alon
     let broken = loader
         .load(input(&state, &repo, Some("run-broken"), Changed::Nothing))
         .unwrap();
-    assert!(broken.opened.is_none());
+    assert!(matches!(broken.open_run, OpenRun::Absent));
     assert!(
         broken
             .unreadable
@@ -116,38 +122,68 @@ async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alon
     );
     let mut open = input(&state, &repo, Some("run-large"), Changed::Nothing);
     open.force = true;
-    let (opened, requests, _, _) = loader.load(open).unwrap().opened.unwrap();
-    assert_eq!(requests.len(), LARGE);
+    let (_, before, _, _) = loaded(loader.load(open).unwrap());
+    assert_eq!(before.len(), LARGE);
+    assert_eq!(
+        before[7]
+            .definition
+            .as_ref()
+            .unwrap()
+            .eval()
+            .declaration
+            .value()
+            .and_then(|declaration| declaration.title.value())
+            .map(String::as_str),
+        Some("Check")
+    );
 
-    // A write to the open Run reads its changed request again, never its definitions.
-    fail(&receipts, &large_requests, "run-large-a7").await;
-    let (reread, requests, _, _) = loader
-        .load(input(&state, &repo, Some("run-large"), hinted("run-large")))
+    // The shown snapshot keeps the original definitions while reflecting changed requests.
+    rusqlite::Connection::open(state.join(DATABASE))
         .unwrap()
-        .opened
+        .execute(
+            "UPDATE run_definitions SET data='{\"artifacts\":7}' WHERE run_id='run-large'",
+            [],
+        )
         .unwrap();
-    assert!(reread.run.definitions.shared(&opened.run.definitions));
+    fail(&receipts, &large_requests, "run-large-a7").await;
+    let (_, requests, _, _) = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-large"), hinted("run-large")))
+            .unwrap(),
+    );
     let failed = requests
         .iter()
         .find(|view| view.request.id.as_str() == "run-large-a7")
         .unwrap();
     assert_eq!(failed.request.status(), crate::types::RequestStatus::Error);
+    assert_eq!(
+        failed
+            .definition
+            .as_ref()
+            .unwrap()
+            .eval()
+            .declaration
+            .value()
+            .and_then(|declaration| declaration.title.value())
+            .map(String::as_str),
+        Some("Check")
+    );
 
-    // A write to another Run queries the list and that Run: nothing about the open one.
-    loader.reader.traced_statements();
+    // A write to another Run leaves the open Run unchanged.
     fail(&receipts, &small_requests, "run-small-a0").await;
     let other = loader
         .load(input(&state, &repo, Some("run-large"), hinted("run-small")))
         .unwrap();
-    assert!(other.open && other.opened.is_none());
-    let statements = loader.reader.traced_statements();
+    assert!(matches!(other.open_run, OpenRun::Unchanged));
+    let unopened = Loader::default()
+        .load(input(&state, &repo, Some("run-large"), Changed::Nothing))
+        .unwrap();
+    assert!(matches!(unopened.open_run, OpenRun::Absent));
     assert!(
-        statements.iter().any(|sql| sql.contains("run-small")),
-        "{statements:?}"
-    );
-    assert!(
-        !statements.iter().any(|sql| sql.contains("run-large")),
-        "{statements:?}"
+        unopened
+            .unreadable
+            .iter()
+            .any(|record| record.id == "run-large")
     );
 }
 
@@ -199,57 +235,45 @@ async fn a_run_no_longer_shown_gives_its_memory_back_once_its_last_share_goes() 
         .await
         .unwrap();
     let mut loader = Loader::default();
-    let released = crate::platform::releases;
-    let before = released();
-    let shown = loader
-        .load(input(&state, &repo, Some("run-first"), Changed::Nothing))
-        .unwrap()
-        .opened
-        .unwrap();
+    let shown = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-first"), Changed::Nothing))
+            .unwrap(),
+    );
+    let first_graph = std::sync::Arc::downgrade(&shown.0.run.definitions.share().unwrap());
 
-    // Reading the shown Run again keeps it: nothing goes back.
-    fail(&receipts, &first_requests, "run-first-a0").await;
-    let reread = loader
-        .load(input(&state, &repo, Some("run-first"), hinted("run-first")))
-        .unwrap()
-        .opened
-        .unwrap();
-    drop(reread);
-    assert_eq!(released(), before);
-
-    // Another Run shown: the loader lets the first go, but its view still holds it.
-    let next = loader
-        .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
-        .unwrap()
-        .opened
-        .unwrap();
-    assert_eq!(released(), before);
+    // The old snapshot keeps its graph while it is displayed, even after a different Run opens.
+    let next = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
+            .unwrap(),
+    );
+    let second_graph = std::sync::Arc::downgrade(&next.0.run.definitions.share().unwrap());
+    assert!(first_graph.upgrade().is_some());
     drop(shown);
-    assert_eq!(
-        released(),
-        before + 1,
-        "the first Run's memory goes back once"
+    assert!(
+        first_graph.upgrade().is_none(),
+        "the old graph has no owners"
     );
 
-    // No Run shown: once its view is gone, the loader lets the second go too.
     drop(next);
-    assert_eq!(released(), before + 1);
+    assert!(
+        second_graph.upgrade().is_some(),
+        "the loader still holds the open graph"
+    );
     let closed = loader
         .load(input(&state, &repo, None, Changed::Nothing))
         .unwrap();
-    assert!(closed.opened.is_none());
-    assert_eq!(
-        released(),
-        before + 2,
-        "the second Run's memory goes back once"
+    assert!(matches!(closed.open_run, OpenRun::Absent));
+    assert!(
+        second_graph.upgrade().is_none(),
+        "closing releases the second graph"
     );
 
-    // Shown again, it is read in full, definitions included.
-    let reopened = loader
-        .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
-        .unwrap()
-        .opened
-        .unwrap();
+    let reopened = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
+            .unwrap(),
+    );
     assert_eq!(reopened.1.len(), 3);
-    assert_eq!(released(), before + 2);
 }

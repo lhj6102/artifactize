@@ -22,7 +22,7 @@ assert os.environ['AUTHOR_VARIABLE'] == 'from-the-terminal'
 assert (home / '.toolchains' / 'stable' / 'version').read_text().strip() == 'cargo 9.9'
 assert 'ARTIFACTIZE_REMOTE_TOKEN' not in os.environ
 assert 'ARTIFACTIZE_REMOTE' not in os.environ
-tmp = pathlib.Path(os.environ['TMPDIR'])
+tmp = pathlib.Path(os.environ['TEMP_NAME'])
 assert tmp.is_dir() and not tmp.is_relative_to(home)
 (home / ('seen-tmp-' + sys.argv[2])).write_text(path_text(tmp))
 if sys.argv[2] == 'tool':
@@ -39,16 +39,25 @@ impl Project {
         let root = owned_run::Root::from(support::os::tempdir());
         let home = root.path().join("home");
         fs::create_dir_all(home.join(".toolchains/stable")).unwrap();
-        fs::write(home.join(".toolchains/stable/version"), "cargo 9.9\n").unwrap();
+        fs::write(
+            support::declaration::source_path(home.join(".toolchains/stable/version")),
+            "cargo 9.9\n",
+        )
+        .unwrap();
         let repo = root.path().join("repo");
         root.track(&root.path().join("state"), &repo);
         fs::create_dir(&repo).unwrap();
         support::os::write_python_script(
             &repo.join("probe.py"),
-            &support::os::portable_path_probe(&PROBE.replace("HOME_NAME", support::os::home_env())),
+            &support::os::portable_path_probe(
+                &PROBE
+                    .replace("HOME_NAME", support::os::home_env())
+                    .replace("TEMP_NAME", support::os::temp_env()),
+            ),
         );
         let home = support::os::path_text(&home);
         support::declaration::write(
+            &(repo),
             repo.join("index.artf"),
             declare(support::os::python_program(), &home).to_string(),
         )
@@ -76,7 +85,7 @@ impl Project {
     }
 
     fn seen_tmp(&self, kind: &str) -> std::path::PathBuf {
-        fs::read_to_string(self.home().join(format!("seen-tmp-{kind}")))
+        support::declaration::read_text(self.home().join(format!("seen-tmp-{kind}")))
             .unwrap()
             .into()
     }

@@ -1,0 +1,71 @@
+path = "crates/artifactize-desktop/design/"
+parts = ["desktop-design-check", "desktop-design-current", "desktop-design-detail", "desktop-design-monitor", "desktop-design-overlays", "desktop-design-review", "desktop-design-settings"]
+# The desktop app's UI/UX plan: one HTML page per screen (its parts), the tokens and the anatomy
+# they share, and the rules of the system on index.html. The desktop UI is evaluated against it (desktop-ui/follows-design).
+
+[views.human_tools]
+preview = { description = "Open the design's overview, index.html of {artifactName}, in the browser; its navigation reaches every screen page.", builtin = "open", args = ["{artifactPath}/index.html"] }
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.well-formed]
+title = "The design's pages, tokens and rules hold together"
+profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}", "whole", "."], timeout_ms = 30000 }
+
+[evals.well-formed.payload]
+instruction = """
+Check {desktop-design} as a whole with {desktop-design-check}: tokens.css declares the one dark scheme (color-scheme: dark, \
+no second scheme); D- rule ids are unique across the pages; every screen page is linked from index.html; index.html names every token and every icon of mock.css; mock.css and design.css hold no colour literal; \
+and index.html, which no page eval covers, is well formed as a page is. Each screen page's own form is judged by that \
+page's well-formed eval."""
+
+[evals.agrees-with-journeys]
+title = "The screens and their rules agree with the journeys"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.agrees-with-journeys.profile_variants]
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "max", timeout_ms = 1800000 }
+
+[evals.agrees-with-journeys.payload]
+instruction = """
+Read the journeys {desktop-ux-features}. Then read the design {desktop-design}: index.html (the system's rules \
+D-SYS-*) and each screen page (monitor.html, current.html, detail.html, review.html, settings.html, overlays.html: \
+a figure, numbered notes and D- rules). Check that: every screen, state and overlay a journey names (the Pane and \
+its parts, the Main area's views, the Detail, the Human review, Settings and its tabs, the Find field, the \
+overlays, and on a Current the Definition and Source, the edit dialogs, a dragged Artifact or comment, the drop \
+target, Reset layout, comments and the comment field) has a place on one of the screen pages; no D- rule or figure \
+contradicts a journey (what a control does, where it sits, what a state shows, what hovering does); the D- rules describe appearance and arrangement without inventing behaviour the journeys do not have. Keyboard shortcuts are optional: a missing, extra or different shortcut is not a finding; the visible way \
+(button, menu, palette, click) is what must agree. A journey's behaviour (what a click, a key or a dismissal \
+does, what an edit writes) need not be restated in the design: every screen, state and overlay a journey names needs \
+a place and its look on a page, and no D- rule or figure may contradict a journey; a behaviour the pages leave to \
+the journeys is not a finding. The \
+pages are design, not the app: judge agreement, not whether the app already looks like them. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
+
+[evals.approved]
+title = "The owner approves the design as the reference for the desktop UI"
+profile = { kind = "human" }
+
+[evals.approved.payload]
+instruction = """
+Open {desktop-design} with the preview tool and read index.html and each screen page. Submit \
+GREEN with approved: true when the layout, the surfaces and lines, the density, the node and inspector anatomy and \
+the D- rules are what the desktop app should look like; otherwise submit RED and list the changes."""
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["change"]
+additionalProperties = false

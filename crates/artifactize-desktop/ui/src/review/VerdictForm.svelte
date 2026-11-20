@@ -7,7 +7,6 @@
   import type { FieldValue, FormField } from "../ipc/client";
   import type { FormDraft, Review } from "./review.svelte";
   import Icon from "../shell/Icon.svelte";
-  import { label } from "../shell/keys";
 
   let { review, form }: { review: Review; form: FormDraft } = $props();
   /** What a person enters: constants are the form's own. */
@@ -62,7 +61,7 @@
       {#if !field.required}
         <label>
           <input type="radio" name={id} checked={chosen === null} onchange={() => onset({ kind: "bool", value: null })} />
-          –
+          <span class="optional">Optional</span>
         </label>
       {/if}
     </div>
@@ -94,6 +93,7 @@
     {@const kind = field.input.kind}
     <input
       {id}
+      class="number"
       placeholder={placeholder(field.required)}
       inputmode={kind === "integer" ? "numeric" : "decimal"}
       value={text(value)}
@@ -109,8 +109,6 @@
         role="radio"
         aria-checked={form.verdict === verdict}
         class="verdict {verdict.toLowerCase()}"
-        aria-label="{verdict} ({label(verdict === 'GREEN' ? 'Ctrl+G' : 'Ctrl+R')})"
-        aria-keyshortcuts={verdict === "GREEN" ? "Control+G" : "Control+R"}
         onclick={() => void review.choose(verdict)}
       >
         {verdict}
@@ -142,6 +140,7 @@
             {/each}
           </ol>
           <button class="button small add" onclick={() => void form.add(field.name)}><Icon name="add" />Add</button>
+          {#if list.length === 0 && !field.required}<span class="optional">Optional</span>{/if}
         {:else if field.input.kind === "groups"}
           {@const subs = entered(field.input.fields)}
           {@const list = groups(value)}
@@ -260,17 +259,36 @@
   ::placeholder {
     color: var(--ink-3);
   }
+  /* A number takes a short one-line field. */
+  .number {
+    width: 120px;
+  }
+  /* A list of text is numbered items, each its field with the remove icon at its right. */
   .items {
     display: grid;
     gap: 6px;
     margin: 0;
-    padding-left: 22px;
+    padding: 0;
+    list-style: none;
+    counter-reset: item;
   }
   .items li {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: start;
     gap: 6px;
+    counter-increment: item;
+  }
+  .items li::before {
+    content: counter(item) ".";
+    min-width: 16px;
+    line-height: var(--control);
+    color: var(--ink-2);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .choices input {
+    accent-color: var(--accent);
   }
   .remove {
     display: inline-grid;
@@ -327,6 +345,12 @@
   .error {
     color: var(--red);
     white-space: pre-wrap;
+    font-size: var(--text-small);
+  }
+  /* An empty optional list says so in grey beside its Add (J-HUMAN-FORM). */
+  .optional {
+    margin-left: var(--gap);
+    color: var(--ink-2);
     font-size: var(--text-small);
   }
 </style>

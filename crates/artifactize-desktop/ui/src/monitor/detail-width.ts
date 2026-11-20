@@ -5,7 +5,7 @@
 /** The narrowest Detail, when the area has room for it. */
 export const MIN = 320;
 /** What of the graph stays visible left of the widest Detail. */
-export const KEEP = 96;
+export const KEEP = 240;
 
 const KEY = "monitor-detail-width";
 

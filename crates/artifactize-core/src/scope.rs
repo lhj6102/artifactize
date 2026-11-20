@@ -16,6 +16,7 @@ pub(crate) use human::{
     builtin_args, human_arguments, resolve_human_argv, validate_human_argument,
 };
 pub use instruction::instruction_references;
+pub(crate) use instruction::references as reference_spans;
 
 pub use artifactize_tools::scope::{ArtifactId, ScopeError, ScopedPath, scoped_path};
 pub(crate) use artifactize_tools::scope::{logical_path, open_child, open_scoped};
@@ -95,17 +96,57 @@ pub(crate) fn tool_id(name: &ArtifactName) -> ArtifactId {
 
 /// Revalidate file targets at every preparation/read boundary, without following links.
 pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(), ScopeError> {
+    if matches!(
+        artifact.kind(),
+        crate::config::ArtifactKind::Folder | crate::config::ArtifactKind::Aspect
+    ) {
+        let directory = scoped_path(root, artifact.folder())?;
+        let opened = crate::platform::open_directory(&directory).map_err(|error| {
+            ScopeError(format!(
+                "Artifact {} target {} must be a folder: {error}",
+                artifact.name, artifact.path
+            ))
+        })?;
+        if !opened
+            .metadata()
+            .map_err(|error| ScopeError(error.to_string()))?
+            .is_dir()
+        {
+            return Err(ScopeError(format!(
+                "Artifact {} target {} must be a folder.",
+                artifact.name, artifact.path
+            )));
+        }
+        for selected in artifact.select() {
+            let file = open_scoped(&directory, selected).map_err(|error| {
+                ScopeError(format!(
+                    "Artifact {} selection {selected} is unavailable: {error}",
+                    artifact.name
+                ))
+            })?;
+            let metadata = file
+                .metadata()
+                .map_err(|error| ScopeError(error.to_string()))?;
+            if !metadata.is_file() && !metadata.is_dir() {
+                return Err(ScopeError(format!(
+                    "Artifact {} selection {selected} must be a file or folder.",
+                    artifact.name
+                )));
+            }
+        }
+    }
     if artifact.file_name().is_some() {
         artifact
             .path
+            .local()
+            .expect("file target")
             .to_str()
             .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-        let target = crate::platform::path_text(&artifact.path);
+        let target = artifact.path.to_string();
         let file = open_scoped(root, &target).map_err(|error| {
             ScopeError(format!(
                 "File Artifact {} target {} is unavailable: {error}",
-                artifact.name,
-                crate::platform::path_text(&artifact.path)
+                artifact.name, artifact.path
             ))
         })?;
         if !file
@@ -115,8 +156,7 @@ pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(
         {
             return Err(ScopeError(format!(
                 "File Artifact {} target {} must remain a regular file.",
-                artifact.name,
-                crate::platform::path_text(&artifact.path)
+                artifact.name, artifact.path
             )));
         }
     }
@@ -139,6 +179,9 @@ fn nested_path(
     source: &ArtifactName,
     path: &str,
 ) -> Result<(), ScopeError> {
+    if everything.artifacts[&tool_id(source)].kind() == crate::config::ArtifactKind::Live {
+        return Ok(());
+    }
     let resolved = everything.resolve_path(&tool_id(source), path)?;
     if resolved.artifact_id.as_str() != source.as_str() {
         return Err(ScopeError(format!(
@@ -180,8 +223,11 @@ pub(crate) fn executable(
 ) -> Result<std::ffi::OsString, String> {
     let artifact = scope.artifacts[owner];
     let cwd = scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
-    let program = if let Some(relative) = crate::platform::program::folder_relative(command) {
-        let physical = if artifact.file_name().is_some() {
+    let relative = crate::platform::program::folder_relative(command)?;
+    let program = if let Some(relative) = relative.as_deref() {
+        let physical = if artifact.file_name().is_some()
+            || artifact.kind() == crate::config::ArtifactKind::Live
+        {
             artifactize_tools::scope::logical_path(relative).map_err(|error| error.to_string())?;
             cwd.join(relative)
         } else {
@@ -193,59 +239,24 @@ pub(crate) fn executable(
         };
         // Even an extensionless declaration must not hide a link behind PATHEXT.
         crate::platform::program::reject_link_ancestors(&physical)?;
-        let mut failure = None;
-        crate::platform::program::candidates(Path::new(relative))
-            .into_iter()
-            .find_map(|candidate| {
-                // A suffix the lookup added is matched to the entry's actual spelling.
-                let candidate = if candidate.as_path() != Path::new(relative) {
-                    executable_spelling(root, scope, owner, &cwd, &candidate)?
-                } else {
-                    candidate
-                };
-                let resolved = if artifact.file_name().is_some() {
-                    scoped_path(&cwd, &candidate)
-                } else {
-                    scope.resolve_input(
-                        root,
-                        owner,
-                        &artifactize_tools::scope::logical_from_native(&candidate)?,
-                    )
-                };
-                match resolved {
-                    Ok(program) if program.is_file() => Some(program),
-                    Ok(_) => None,
-                    Err(error) => {
-                        failure.get_or_insert_with(|| error.to_string());
-                        None
-                    }
-                }
-            })
-            .ok_or_else(|| {
-                failure.unwrap_or_else(|| "Executable path is unavailable or outside scope.".into())
-            })?
+        let resolve = |candidate: &Path| {
+            if artifact.file_name().is_some()
+                || artifact.kind() == crate::config::ArtifactKind::Live
+            {
+                scoped_path(&cwd, candidate).map_err(|error| error.to_string())
+            } else {
+                let logical = artifactize_tools::scope::logical_from_native(candidate)
+                    .ok_or_else(|| "Executable path is not portable text.".to_owned())?;
+                scope
+                    .resolve_input(root, owner, &logical)
+                    .map_err(|error| error.to_string())
+            }
+        };
+        crate::platform::program::resolve_scoped(Path::new(relative), resolve)?
     } else {
         PathBuf::from(command)
     };
     Ok(program.into_os_string())
-}
-
-/// PATHEXT supplies a suffix, not a model-authored name: use its actual directory-entry
-/// spelling before strict scoped validation. Parent components retain their input spelling.
-fn executable_spelling(
-    root: &Path,
-    scope: &Scope<'_>,
-    owner: &ArtifactName,
-    cwd: &Path,
-    candidate: &Path,
-) -> Option<PathBuf> {
-    let parent = candidate.parent().unwrap_or(Path::new(""));
-    let directory = if scope.artifacts[owner].file_name().is_some() {
-        scoped_path(cwd, parent).ok()?
-    } else {
-        scope.resolve_input(root, owner, parent.to_str()?).ok()?
-    };
-    crate::platform::program::suffix_spelling(&directory, candidate)
 }
 
 pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {
@@ -276,28 +287,29 @@ pub enum InstructionPart {
     Artifact(ArtifactName),
 }
 
-/// Presentation tokens only: never expand content or mutate the authored payload.
-/// Artifact tokens carry names already validated by configuration.
-pub fn parse_artifact_instruction(
-    source: &str,
-    scope: &Scope<'_>,
-    references: &BTreeMap<crate::config::ReferenceName, ArtifactName>,
-) -> Vec<InstructionPart> {
+/// A reference resolved while loading the declaration, with its span in the authored text.
+#[derive(Debug)]
+pub(crate) struct InstructionReference {
+    span: std::ops::Range<usize>,
+    artifact: ArtifactName,
+}
+
+/// Present resolved names without expanding content or mutating the authored payload.
+pub(crate) fn artifact_instruction(eval: &Eval) -> Vec<InstructionPart> {
+    let Some(payload) = eval.declaration.payload() else {
+        return Vec::new();
+    };
+    let source = &payload.instruction;
     let mut parts = Vec::new();
     let mut start = 0;
-    for reference in instruction::references(source) {
-        let artifact = match references.get(&reference.name) {
-            Some(id) => scope.artifacts.get(id),
-            None => scope.artifacts.get(reference.name.as_str()),
-        };
-        let Some(artifact) = artifact else {
-            continue;
-        };
-        if start < reference.start {
-            parts.push(InstructionPart::Text(source[start..reference.start].into()));
+    for reference in &eval.instruction_references {
+        if start < reference.span.start {
+            parts.push(InstructionPart::Text(
+                source[start..reference.span.start].into(),
+            ));
         }
-        parts.push(InstructionPart::Artifact(artifact.name.clone()));
-        start = reference.end;
+        parts.push(InstructionPart::Artifact(reference.artifact.clone()));
+        start = reference.span.end;
     }
     if start < source.len() {
         parts.push(InstructionPart::Text(source[start..].into()));
@@ -321,37 +333,96 @@ fn reference_target<'a>(
     })
 }
 
+/// One native argument and its diagnostic spelling. Only resolved path portions are
+/// normalized for display; flags, opaque Live addresses and literal arguments are unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ResolvedArgument {
+    Literal(String),
+    Path { prefix: String, path: PathBuf },
+}
+
+impl ResolvedArgument {
+    pub(crate) fn native(&self) -> String {
+        match self {
+            Self::Literal(text) => text.clone(),
+            Self::Path { prefix, path } => {
+                format!("{prefix}{}", path.to_str().expect("validated UTF-8 path"))
+            }
+        }
+    }
+
+    pub(crate) fn shown(&self) -> String {
+        match self {
+            Self::Literal(text) => text.clone(),
+            Self::Path { prefix, path } => format!("{prefix}{}", crate::platform::path_text(path)),
+        }
+    }
+}
+
 /// Resolve `{name}[/path]` and `--flag={name}[/path]` operands to existing scoped inputs.
 /// Other arguments, including escaped braces, stay literal. Never interpolate the command.
-/// Call at execution preparation, after static config validation; it opens input metadata.
 pub fn resolve_argv(
     config: &RepoConfig,
     scope: &Scope<'_>,
     owner: &ArtifactName,
     args: &[Argument],
 ) -> Result<Vec<String>, ScopeError> {
+    resolved_argv(config, scope, owner, args)
+        .map(|args| args.iter().map(ResolvedArgument::native).collect())
+}
+
+pub(crate) fn resolved_argv(
+    config: &RepoConfig,
+    scope: &Scope<'_>,
+    owner: &ArtifactName,
+    args: &[Argument],
+) -> Result<Vec<ResolvedArgument>, ScopeError> {
     args.iter()
         .map(|argument| {
             let Argument::Reference { prefix, name, path } = argument else {
-                return Ok(argument.to_string());
+                return Ok(ResolvedArgument::Literal(argument.to_string()));
             };
             let id = reference_target(config, owner, name)?;
             reference_path(config, id, path)?;
-            let resolved = scope.resolve_input(&config.root, id, path)?;
-            resolved
-                .to_str()
-                .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-            let resolved = crate::platform::path_text(&resolved);
-            Ok(format!("{prefix}{resolved}"))
+            argument_value(config, scope, id, path, prefix)
         })
         .collect()
+}
+
+/// Resolve a scoped argument once. Live addresses are opaque and never normalized as paths.
+pub(crate) fn argument_value(
+    config: &RepoConfig,
+    scope: &Scope<'_>,
+    id: &ArtifactName,
+    path: &str,
+    prefix: &str,
+) -> Result<ResolvedArgument, ScopeError> {
+    let artifact = scope
+        .artifacts
+        .get(id)
+        .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {id}")))?;
+    if let Some(uri) = artifact.path.uri() {
+        return Ok(ResolvedArgument::Literal(if path.is_empty() {
+            format!("{prefix}{uri}")
+        } else {
+            format!("{prefix}{uri}/{path}")
+        }));
+    }
+    let resolved = scope.resolve_input(&config.root, id, path)?;
+    if resolved.to_str().is_none() {
+        return Err(ScopeError("Artifact paths must be UTF-8.".into()));
+    }
+    Ok(ResolvedArgument::Path {
+        prefix: prefix.into(),
+        path: resolved,
+    })
 }
 
 /// Every path an aspect selects exists below its folder, without symlink traversal.
 pub(crate) fn validate_selections(config: &RepoConfig) -> Result<(), ConfigError> {
     for (id, artifact) in &config.artifacts {
         let scope = artifact_scope(config, &[id]).expect("a configured Artifact");
-        for selected in &artifact.select {
+        for selected in artifact.select() {
             scope
                 .resolve_input(&config.root, id, selected)
                 .map_err(|failure| {
@@ -453,17 +524,12 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 format!("fingerprint.files: {message}"),
             )
         };
+        // A covering folder part subtracts every input, including a file/aspect's defaults.
+        if artifact.covering_part.is_some() {
+            continue;
+        }
         let scope = artifact_scope(config, &[id]).map_err(|failure| error(failure.0))?;
         for input in inputs.iter().filter(|input| *input != ".") {
-            if input.ends_with(".artf")
-                && !crate::platform::path_kind(&config.root.join(artifact.folder()).join(input))
-                    .is_ok_and(|kind| kind == crate::platform::FileKind::Directory)
-            {
-                return Err(error(
-                    "Artifact declarations (*.artf) cannot be explicit artifactsum inputs; declarations are excluded from artifactsum."
-                        .into(),
-                ));
-            }
             let location = scope
                 .resolve_path(id, input)
                 .map_err(|failure| error(failure.0))?;
@@ -484,6 +550,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     }
     for (eval, found) in config.evals.iter_mut().zip(resolved) {
         eval.references = found.references;
+        eval.instruction_references = found.instruction_references;
         eval.deps = found.deps;
     }
     for artifact in config.artifacts.values() {
@@ -497,7 +564,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             };
             match config.artifacts.get(part) {
                 None => return Err(error(format!("Unknown Artifact {part}."))),
-                Some(part) if part.kind == crate::config::ArtifactKind::Graph => {
+                Some(part) if part.kind() == crate::config::ArtifactKind::Graph => {
                     return Err(error(format!(
                         "The graph Artifact {} is a part of nothing.",
                         part.name
@@ -530,24 +597,9 @@ fn everything(config: &RepoConfig) -> artifactize_tools::scope::Scope {
     .tool_scope()
 }
 
-/// Resolve the evals' references against the Artifacts `config` holds, and nothing else: a
-/// read of part of the workspace, whose checks across the workspace stay with a full read.
-pub(crate) fn resolve_evals(config: &mut RepoConfig) -> Result<(), ConfigError> {
-    let everything = everything(config);
-    let resolved = config
-        .evals
-        .iter()
-        .map(|eval| eval_references(config, &everything, eval))
-        .collect::<Result<Vec<_>, _>>()?;
-    for (eval, found) in config.evals.iter_mut().zip(resolved) {
-        eval.references = found.references;
-        eval.deps = found.deps;
-    }
-    Ok(())
-}
-
 /// What an eval's instruction and runtime arguments reference.
 struct EvalReferences {
+    instruction_references: Vec<InstructionReference>,
     references: BTreeMap<crate::config::ReferenceName, ArtifactName>,
     /// The referenced Artifacts other than the eval's target.
     deps: Vec<ArtifactName>,
@@ -573,6 +625,7 @@ fn eval_references(
         )
     };
     let mut references = BTreeMap::new();
+    let mut instruction_references = Vec::new();
     let mut deps = BTreeSet::new();
     let instruction = eval
         .declaration
@@ -586,6 +639,10 @@ fn eval_references(
             reference_path(config, source, "/")
                 .map_err(|failure| error(&["payload", "instruction"], failure))?;
         }
+        instruction_references.push(InstructionReference {
+            span: reference.start..reference.end,
+            artifact: source.clone(),
+        });
         if references.insert(name.clone(), source.clone()).is_some() {
             continue;
         }
@@ -633,6 +690,7 @@ fn eval_references(
         }
     }
     Ok(EvalReferences {
+        instruction_references,
         references,
         deps: deps.into_iter().collect(),
         relations,

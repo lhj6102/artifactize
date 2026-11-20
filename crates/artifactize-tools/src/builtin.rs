@@ -1,10 +1,13 @@
 //! Scoped read-only Agent tools.
-mod fixed;
+pub(crate) mod fixed;
 mod input;
+mod metadata;
 pub use fixed::{
     Context, call_fixed, fixed_description, fixed_schema, is_url, validate_args, validate_target,
 };
 pub use input::Input;
+pub(crate) use input::LogicalPath;
+pub use metadata::{description, input_schema};
 
 mod output;
 mod scan;
@@ -21,13 +24,11 @@ use std::{
 };
 
 use globset::{GlobBuilder, GlobMatcher};
-use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    Builtin,
     files::{self as platform, FileKind},
-    scope::{self, ArtifactId, OpenError, Scope, ScopedPath},
+    scope::{self, ArtifactId, InputPath, Location, OpenError, Scope},
 };
 
 use crate::{Content, ToolResult, image};
@@ -49,86 +50,14 @@ pub const SEARCH_FILE_BYTES: usize = 8 * 1024 * 1024;
 const SEARCH_BYTES: usize = 64 * 1024 * 1024;
 /// Patterns are user input rather than paths, but share their bounded schema size.
 const MAX_PATTERN_UNITS: usize = scope::MAX_PATH_UNITS;
+/// Read offsets and returned line numbers are one-based.
+const FIRST_LINE: usize = 1;
+/// A page or search request must allow at least one result to make progress.
+const MIN_RESULTS: u64 = 1;
 /// An ordinary read starts with eighty lines; owners can page further or request
 /// up to five hundred without scanning an unbounded number of lines in one call.
 const DEFAULT_READ_LINES: usize = 80;
 const MAX_READ_LINES: usize = 500;
-
-pub fn description(builtin: Builtin) -> &'static str {
-    match builtin {
-        Builtin::Graph => {
-            "Show the current project Artifact graph, including evals and input-to-consumer relations."
-        }
-        Builtin::Section => "Read a Markdown section in {artifactName} by its exact heading.",
-        Builtin::Help => "Read a program's --help output.",
-        Builtin::Open => "Open a scoped file or URL in its default application.",
-        Builtin::Read => {
-            "Read UTF-8 complete lines in {artifactName}. path is a relative logical file path, including child paths. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". offset is 1-based (default 1); limit defaults to 80, maximum 500. Returns numbered lines preserving LF/CRLF/BOM, up to 64 KiB, startLine/endLine/lineCount, totalLines when known, truncated and nextOffset. No symlinks or binary text."
-        }
-        Builtin::List => {
-            "List {artifactName} at a relative logical path (default root). Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Sorted entries include name, path and kind. offset is 0-based; limit defaults to and cannot exceed 200. Returns totalEntries, truncated and nextOffset. Symlinks and special files are listed but never followed. Directories are limited to 10,000 entries."
-        }
-        Builtin::Glob => {
-            "Find files in {artifactName} with a relative glob pattern (* within a path component, ** across directories). path is a relative logical directory, default root; patterns are relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Returns up to 200 sorted logical paths and truncated. Includes hidden files; ignores no files by git rules. Symlinks/special files are skipped, and traversal is limited to 10,000 entries."
-        }
-        Builtin::Grep => {
-            "Search UTF-8 files in {artifactName} with a Rust regex, one match per matching line. path is a relative logical file or directory (default root); glob filters paths relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". caseInsensitive defaults to false; maxResults defaults to and cannot exceed 200. Returns matches with path, line and text, plus truncated. Skips binary/invalid UTF-8 and symlinks; includes hidden files. Caps: 10,000 traversed entries, 8 MiB per file, 64 MiB searched, 512 KiB result. Skipped oversized files or bounded results set truncated."
-        }
-        Builtin::ViewImage => {
-            "View one image in {artifactName} at a relative logical file path, including child paths. Paths are relative to {artifactName} itself: use \"image.png\", not \"{artifactName}/image.png\". Detects PNG, JPEG or WebP by bytes, not extension; returns an embedded image block. Requires a nonempty regular file up to 4 MiB; no symlinks, GIF, BMP or animated PNG."
-        }
-    }
-}
-
-pub fn input_schema(builtin: Builtin) -> Value {
-    let path = json!({
-        "type":"string",
-        "maxLength":scope::MAX_PATH_UNITS,
-        "description":"Logical path relative to the tool's Artifact, without the Artifact's name; no absolute paths, dot components, backslashes or symlinks. Empty means the root.",
-    });
-    let pattern = json!({"type":"string","minLength":1,"maxLength":MAX_PATTERN_UNITS});
-    let integer =
-        |min, max, default| json!({"type":"integer","minimum":min,"maximum":max,"default":default});
-    let (properties, required) = match builtin {
-        Builtin::Read => (
-            json!({
-                "path":path,
-                "offset":integer(1, crate::MAX_SAFE_JSON_INTEGER, 1),
-                "limit":integer(1, MAX_READ_LINES as u64, DEFAULT_READ_LINES as u64),
-            }),
-            vec!["path"],
-        ),
-        Builtin::List => (
-            json!({
-                "path":path,
-                "offset":integer(0, crate::MAX_SAFE_JSON_INTEGER, 0),
-                "limit":integer(1, MAX_RESULTS as u64, MAX_RESULTS as u64),
-            }),
-            vec![],
-        ),
-        Builtin::Graph => (json!({}), vec![]),
-        Builtin::Glob => (json!({"pattern":pattern,"path":path}), vec!["pattern"]),
-        Builtin::Grep => (
-            json!({
-                "pattern":pattern,
-                "path":path,
-                "glob":pattern,
-                "caseInsensitive":{"type":"boolean","default":false},
-                "maxResults":integer(1, MAX_RESULTS as u64, MAX_RESULTS as u64),
-            }),
-            vec!["pattern"],
-        ),
-        Builtin::ViewImage => (json!({"path":path}), vec!["path"]),
-        Builtin::Section => (json!({"heading":pattern}), vec!["heading"]),
-        Builtin::Help | Builtin::Open => (json!({}), vec![]),
-    };
-    json!({
-        "type":"object",
-        "properties":properties,
-        "required":required,
-        "additionalProperties":false,
-    })
-}
 
 pub fn call(
     input: Input,
@@ -146,13 +75,15 @@ pub fn call(
     let result = (|| {
         reader.check_cancelled()?;
         let data = match input {
-            Input::Read(input) => reader.read(&input.path, input.offset, input.limit),
-            Input::List(input) => {
-                reader.list(reader.root_path(&input.path), input.offset, input.limit)
+            Input::Read(input) => {
+                reader.read(reader.path(&input.path, false)?, input.offset, input.limit)
             }
-            Input::Glob(input) => reader.glob(reader.root_path(&input.path), &input.pattern),
-            Input::Grep(input) => reader.grep(reader.root_path(&input.path), &input),
-            Input::ViewImage(input) => return reader.view_image(&input.path),
+            Input::List(input) => {
+                reader.list(reader.path(&input.path, true)?, input.offset, input.limit)
+            }
+            Input::Glob(input) => reader.glob(reader.path(&input.path, true)?, &input.pattern),
+            Input::Grep(input) => reader.grep(reader.path(&input.path, true)?, &input),
+            Input::ViewImage(input) => return reader.view_image(reader.path(&input.path, false)?),
         }?;
         if serde_json::to_vec(&data).unwrap().len() > RESULT_BYTES {
             return Err("Built-in result exceeds 512 KiB; narrow the path or range.".into());
@@ -175,12 +106,12 @@ struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    fn root_path<'a>(&self, path: &'a str) -> &'a str {
-        if path == "." && self.scope.artifacts[self.owner].selective() {
-            ""
-        } else {
-            path
-        }
+    fn path<'p>(
+        &self,
+        path: &'p input::LogicalPath,
+        allow_dot: bool,
+    ) -> Result<InputPath<&'p str>, String> {
+        path.resolve(self.scope, self.owner, allow_dot)
     }
 
     fn check_cancelled(&self) -> Result<(), String> {
@@ -191,34 +122,38 @@ impl Reader<'_> {
         }
     }
 
-    fn location(&self, path: &str) -> Result<ScopedPath, String> {
+    fn location<'a, 'p>(&'a self, path: InputPath<&'p str>) -> Result<Location<'a, 'p>, String> {
         self.scope
-            .resolve_path(self.owner, path)
-            .map_err(|e| e.to_string())
+            .locate(self.owner, path)
+            .map_err(|error| error.to_string())
     }
 
-    /// Open the resolved `location` of the logical `path`, which a missing entry names.
-    fn open(&self, path: &str, location: &ScopedPath) -> Result<File, String> {
-        let artifact = &self.scope.artifacts[&location.artifact_id];
-        scope::open_input(self.root, artifact, &location.path).map_err(|error| match error {
-            OpenError::NotFound => missing(self.owner, path),
+    /// Open the resolved location, naming the original logical path if the entry is absent.
+    fn open(&self, path: InputPath<&str>, location: &Location<'_, '_>) -> Result<File, String> {
+        location.open(self.root).map_err(|error| match error {
+            OpenError::NotFound => missing(self.owner, path.as_str()),
             error => error.to_string(),
         })
     }
 
-    fn view_image(&self, path: &str) -> Result<Content, String> {
+    fn view_image(&self, path: InputPath<&str>) -> Result<Content, String> {
         let location = self.location(path)?;
         let bytes = image::read(self.open(path, &location)?)?;
         self.check_cancelled()?;
         image::normalize(&bytes, None)
     }
 
-    fn read(&self, path: &str, offset: usize, limit: usize) -> Result<Output, String> {
+    fn read(&self, path: InputPath<&str>, offset: usize, limit: usize) -> Result<Output, String> {
         let location = self.location(path)?;
         let file = self.open(path, &location)?;
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
             return Err("Reading requires a regular file; list the directory first.".into());
         }
+        let viewed_path = location
+            .artifact
+            .file_name()
+            .map_or_else(|| location.path.as_ref(), Path::new);
+        let file = crate::artf::reader(file, viewed_path).map_err(|error| error.to_string())?;
         let mut reader = BufReader::new(file);
         let mut scan = scan::Read::new(offset, limit);
         let end = loop {
@@ -246,20 +181,20 @@ impl Reader<'_> {
         };
         Ok(Output::Read(output::Read {
             artifact_id: self.owner.clone(),
-            resolved_artifact_id: location.artifact_id,
-            path: path.to_owned(),
+            resolved_artifact_id: location.artifact_id.clone(),
+            path: path.owned(),
             rows: scan.finish(end)?,
         }))
     }
 
-    fn entries(&self, path: &str) -> Result<Vec<Entry>, String> {
+    fn entries(&self, path: InputPath<&str>) -> Result<Vec<Entry>, String> {
         self.check_cancelled()?;
         let location = self.location(path)?;
         let file = self.open(path, &location)?;
         if !file.metadata().map_err(|e| e.to_string())?.is_dir() {
             return Err("Listing requires a directory.".into());
         }
-        let owner = &self.scope.artifacts[&location.artifact_id];
+        let owner = location.artifact;
         let mut entries = BTreeMap::new();
         if let Some(name) = owner.file_name() {
             let target = scope::open_child(&file, std::ffi::OsStr::new(name))
@@ -282,12 +217,16 @@ impl Reader<'_> {
                     );
                 }
                 let entry = entry.map_err(|_| "Cannot list Artifact entry.")?;
-                let name = entry
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| "Artifact paths must be UTF-8.")?;
-                let entry_path = join(&location.path, &name);
-                if !owner.admits(&entry_path) || self.excludes(owner, &entry_path) {
+                let native = entry.file_name();
+                let Some(name) = platform::logical_entry_name(&native) else {
+                    continue;
+                };
+                let Some(entry_path) = location.path.child(name) else {
+                    continue;
+                };
+                if !owner.admits(entry_path.borrowed())
+                    || self.excludes(owner, entry_path.borrowed())
+                {
                     continue;
                 }
                 let kind = entry
@@ -299,34 +238,31 @@ impl Reader<'_> {
                     FileKind::Symlink => EntryKind::Symlink,
                     FileKind::Other => EntryKind::Other,
                 };
-                entries.insert(name, kind);
+                entries.insert(name.to_owned(), kind);
             }
         }
         Ok(entries
             .into_iter()
-            .map(|(name, kind)| Entry {
-                kind,
-                path: join(path, &name),
-                name,
+            .filter_map(|(name, kind)| {
+                let path = path.child(&name)?;
+                Some(Entry { kind, name, path })
             })
             .collect())
     }
 
     /// A folder Artifact nested in `owner` at `path` that this review does not admit: its
     /// files belong to neither, so listings and searches pass over it.
-    fn excludes(&self, owner: &scope::Artifact, path: &str) -> bool {
-        owner
-            .nested
-            .iter()
-            .any(|(prefix, id)| prefix.as_str() == path && !self.scope.artifacts.contains_key(id))
+    fn excludes(&self, owner: &scope::Artifact, path: InputPath<&str>) -> bool {
+        owner.nested.iter().any(|(prefix, id)| {
+            prefix.as_str() == path.as_str() && !self.scope.artifacts.contains_key(id)
+        })
     }
 
-    fn list(&self, path: &str, offset: usize, limit: usize) -> Result<Output, String> {
-        let entries = self.entries(path)?;
-        scan::list(self.owner.clone(), path, entries, offset, limit).map(Output::List)
+    fn list(&self, path: InputPath<&str>, offset: usize, limit: usize) -> Result<Output, String> {
+        scan::list(self.owner.clone(), path, self.entries(path)?, offset, limit).map(Output::List)
     }
 
-    fn files(&self, path: &str) -> Result<(BTreeSet<String>, bool), String> {
+    fn files(&self, path: InputPath<&str>) -> Result<(BTreeSet<InputPath<String>>, bool), String> {
         let location = self.location(path)?;
         if self
             .open(path, &location)?
@@ -334,18 +270,19 @@ impl Reader<'_> {
             .map_err(|e| e.to_string())?
             .is_file()
         {
-            return Ok((BTreeSet::from([path.into()]), false));
+            return Ok((BTreeSet::from([path.owned()]), false));
         }
-        let mut pending = vec![path.to_owned()];
+        let mut pending = vec![path.owned()];
         let mut files = BTreeSet::new();
         let mut seen = 0;
-        let mut truncated = false;
-        while let Some(path) = pending.pop() {
+        let truncated = 'walk: loop {
+            let Some(path) = pending.pop() else {
+                break false;
+            };
             self.check_cancelled()?;
-            for entry in self.entries(&path)? {
+            for entry in self.entries(path.borrowed())? {
                 if seen == MAX_ENTRIES {
-                    truncated = true;
-                    break;
+                    break 'walk true;
                 }
                 seen += 1;
                 match entry.kind {
@@ -356,14 +293,11 @@ impl Reader<'_> {
                     EntryKind::Symlink | EntryKind::Other => {}
                 }
             }
-            if truncated {
-                break;
-            }
-        }
+        };
         Ok((files, truncated))
     }
 
-    fn glob(&self, path: &str, matcher: &GlobMatcher) -> Result<Output, String> {
+    fn glob(&self, path: InputPath<&str>, matcher: &GlobMatcher) -> Result<Output, String> {
         let location = self.location(path)?;
         if !self
             .open(path, &location)?
@@ -377,14 +311,14 @@ impl Reader<'_> {
         let mut scan = scan::Glob::new(path, matcher, truncated);
         for file in files {
             self.check_cancelled()?;
-            match scan.push(&file) {
+            match scan.push(file.borrowed()) {
                 scan::Selection::Skip => continue,
                 scan::Selection::Full => break,
                 scan::Selection::Added => {}
             }
             // The selected file can have changed since directory enumeration.
             if !self
-                .open(&file, &self.location(&file)?)?
+                .open(file.borrowed(), &self.location(file.borrowed())?)?
                 .metadata()
                 .map_err(|error| error.to_string())?
                 .is_file()
@@ -395,15 +329,15 @@ impl Reader<'_> {
         Ok(Output::Glob(scan.finish()))
     }
 
-    fn grep(&self, path: &str, input: &input::Grep) -> Result<Output, String> {
+    fn grep(&self, path: InputPath<&str>, input: &input::Grep) -> Result<Output, String> {
         let (files, truncated) = self.files(path)?;
         let mut scan = scan::Grep::new(path, input, truncated);
         'files: for file in files {
             self.check_cancelled()?;
-            if !scan.allows(&file) {
+            if !scan.allows(file.borrowed()) {
                 continue;
             }
-            let input = self.open(&file, &self.location(&file)?)?;
+            let input = self.open(file.borrowed(), &self.location(file.borrowed())?)?;
             let metadata = input.metadata().map_err(|error| error.to_string())?;
             if !metadata.is_file() {
                 return Err("Grep requires regular files.".into());
@@ -423,12 +357,17 @@ impl Reader<'_> {
                 scan::Received::Full => break,
                 scan::Received::Text => {}
             }
+            let contents = if file.as_str().ends_with(".artf") {
+                crate::artf::definition(&contents)
+            } else {
+                std::borrow::Cow::Borrowed(contents.as_slice())
+            };
             let Some(text) = scan::text(&contents) else {
                 continue;
             };
             for (index, line) in text.split_inclusive('\n').enumerate() {
                 self.check_cancelled()?;
-                if !scan.line(&file, index, line) {
+                if !scan.line(file.borrowed(), index, line) {
                     break 'files;
                 }
             }
@@ -451,15 +390,8 @@ fn missing(owner: &ArtifactId, path: &str) -> String {
     }
 }
 
-fn join(base: &str, name: &str) -> String {
-    if base.is_empty() {
-        name.into()
-    } else {
-        format!("{base}/{name}")
-    }
-}
-
-fn relative<'a>(base: &str, file: &'a str) -> &'a str {
+fn relative<'a>(base: InputPath<&str>, file: InputPath<&'a str>) -> &'a str {
+    let (base, file) = (base.as_str(), file.into_str());
     if file == base {
         file.rsplit('/').next().unwrap()
     } else if base.is_empty() {

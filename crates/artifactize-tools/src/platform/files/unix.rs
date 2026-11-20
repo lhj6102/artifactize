@@ -83,6 +83,14 @@ pub fn is_link_refusal(error: &io::Error) -> bool {
 /// The entries of a pinned directory, listed through its descriptor rather than a path
 /// that could have been replaced by a link.
 pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<DirEntry<'_>>>> {
+    Ok(ReadDir {
+        stream: open_scan(directory)?,
+        directory,
+        state: Scan::Reading,
+    })
+}
+
+fn open_scan(directory: &File) -> io::Result<Dir> {
     // Open a new description, not dup: directory offsets must be independent across scans.
     let fd = openat(
         directory,
@@ -90,11 +98,7 @@ pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
         Mode::empty(),
     )?;
-    Ok(ReadDir {
-        stream: Dir::new(fd)?,
-        directory,
-        state: Scan::Reading,
-    })
+    Ok(Dir::new(fd)?)
 }
 
 /// A failed or exhausted stream never reads the directory again.
@@ -167,13 +171,29 @@ pub fn entry_kind(directory: &File, name: &OsStr) -> io::Result<FileKind> {
     })
 }
 
-/// Other Unix platforms keep their existing case-sensitive open behavior.
+/// Verify the spelling the filesystem enumerates and that it names the opened file.
+/// The descriptor path is not enough: case-folded filesystems can cache lookup spellings.
 #[cfg(not(target_os = "macos"))]
-pub fn exact_name(_file: &File, _name: &OsStr) -> io::Result<bool> {
-    Ok(true)
+pub fn exact_name(directory: &File, file: &File, name: &OsStr) -> io::Result<bool> {
+    let name = EntryName::new(name).ok_or(io::ErrorKind::InvalidInput)?;
+    let scan = open_scan(directory)?;
+    for entry in scan {
+        if entry?.file_name() == name.0.as_c_str() {
+            let opened = rustix::fs::fstat(file)?;
+            let listed = statat(directory, &name.0, AtFlags::SYMLINK_NOFOLLOW)?;
+            return Ok((listed.st_dev, listed.st_ino) == (opened.st_dev, opened.st_ino));
+        }
+    }
+    Ok(false)
 }
 
-/// Preserve the existing case-sensitive logical namespace on other Unix systems.
+pub fn verified_path(_file: &File, root: &Path, names: &[&OsStr]) -> io::Result<PathBuf> {
+    let mut path = root.to_owned();
+    path.extend(names);
+    Ok(path)
+}
+
+/// Other callers use this volume hint only where the host exposes a case-policy query.
 #[cfg(not(target_os = "macos"))]
 pub fn case_sensitive(_directory: &File) -> io::Result<bool> {
     Ok(true)

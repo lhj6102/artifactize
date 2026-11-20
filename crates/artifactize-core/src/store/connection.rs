@@ -30,34 +30,21 @@ pub(super) async fn finish<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{process::Stdio, time::Duration};
-    use tokio::io::AsyncReadExt;
+    use std::process::Stdio;
 
     #[tokio::test]
     async fn cancelling_close_and_shutting_down_the_runtime_releases_sqlite_without_panicking() {
         // The test owns the probe's files and the probe: they go only after it has exited.
         let root = crate::test_os::tempdir();
-        let mut probe =
-            crate::test_os::self_test("store::connection::tests::close_cancellation_fixture")
-                .env("ARTIFACTIZE_SQLITE_CLOSE_FIXTURE", root.path())
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .spawn()
-                .expect("the SQLite shutdown probe starts");
-        let mut stderr = probe.stderr.take().unwrap();
-        let ran = tokio::time::timeout(crate::test_os::patience(Duration::from_secs(20)), async {
-            let mut text = Vec::new();
-            let (status, read) = tokio::join!(probe.wait(), stderr.read_to_end(&mut text));
-            read.unwrap();
-            (status.unwrap(), text)
-        })
-        .await;
-        let Ok((status, stderr)) = ran else {
-            // The watchdog expired: end the probe and reap it before its files go.
-            probe.kill().await.unwrap();
-            panic!("the SQLite shutdown probe did not exit");
-        };
+        let mut command =
+            crate::test_os::self_test("store::connection::tests::close_cancellation_fixture");
+        command
+            .env("ARTIFACTIZE_SQLITE_CLOSE_FIXTURE", root.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        let mut probe = crate::test_os::spawn_test(&mut command);
+        let (status, stderr) = probe.stderr_output().await;
         assert!(
             status.success(),
             "{status:?}: {}",

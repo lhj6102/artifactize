@@ -1,5 +1,6 @@
 //! Clap parses identities at the public boundary; existing segment and mirror types stay unchanged.
-use super::*;
+use super::{run::ShowMode, selection::selection_file, *};
+use clap::error::ErrorKind;
 
 #[test]
 fn all_run_request_and_reuse_key_arguments_retain_valid_wire_strings() {
@@ -21,18 +22,19 @@ fn all_run_request_and_reuse_key_arguments_retain_valid_wire_strings() {
     for command in commands {
         Cli::try_parse_from(std::iter::once("artifactize").chain(command)).unwrap();
     }
-    let Some(Command::Run {
-        command: RunCommand::Show { run_id, .. },
-    }) = Cli::try_parse_from(["artifactize", "run", "show", id])
+    let Some(CommandArgs::General(Command::Run {
+        command: RunCommand::Show { run_id, mode },
+    })) = Cli::try_parse_from(["artifactize", "run", "show", id])
         .unwrap()
         .command
     else {
         panic!("Run show");
     };
     assert_eq!(run_id.as_str(), id);
-    let Some(Command::Cache {
+    assert_eq!(mode, ShowMode::Snapshot);
+    let Some(CommandArgs::General(Command::Cache {
         command: CacheCommand::Show { key: parsed, .. },
-    }) = Cli::try_parse_from(["artifactize", "cache", "show", key.as_str()])
+    })) = Cli::try_parse_from(["artifactize", "cache", "show", key.as_str()])
         .unwrap()
         .command
     else {
@@ -126,13 +128,53 @@ fn selection_duration_and_verdict_are_parsed_at_the_command_boundary() {
         "GREEN",
     ])
     .unwrap();
-    let Some(Command::Request {
+    let Some(CommandArgs::General(Command::Request {
         command: RequestCommand::Submit { verdict, .. },
-    }) = cli.command
+    })) = cli.command
     else {
         panic!("submit")
     };
     assert_eq!(verdict, artifactize_core::runtime::Verdict::Green);
+}
+
+#[test]
+fn verify_and_status_parse_exclusive_selectors() {
+    let selected = |args: &[&str]| {
+        let cli = Cli::try_parse_from(["artifactize"].into_iter().chain(args.iter().copied()))?;
+        match cli.command {
+            Some(CommandArgs::General(
+                Command::Verify { selection, .. } | Command::Status { selection, .. },
+            )) => Ok::<_, clap::Error>(selection),
+            _ => panic!("expected verify or status"),
+        }
+    };
+    assert!(matches!(selected(&["status"]).unwrap(), SelectionArgs::All));
+    assert!(matches!(
+        selected(&["verify", "--all"]).unwrap(),
+        SelectionArgs::All
+    ));
+    assert!(
+        matches!(selected(&["verify", "app"]).unwrap(), SelectionArgs::Artifact(name) if name.as_str() == "app")
+    );
+    for args in [
+        &["verify", "app/check"][..],
+        &["verify", "--eval", "app/check"],
+    ] {
+        assert!(
+            matches!(selected(args).unwrap(), SelectionArgs::Eval(id) if id.as_str() == "app/check")
+        );
+    }
+    assert!(
+        matches!(selected(&["verify", "--evals-file", "evals.txt"]).unwrap(), SelectionArgs::EvalsFile(path) if path == std::path::Path::new("evals.txt"))
+    );
+    assert_eq!(
+        selected(&["verify"]).unwrap_err().kind(),
+        ErrorKind::MissingRequiredArgument
+    );
+    assert_eq!(
+        selected(&["status", "app", "--all"]).unwrap_err().kind(),
+        ErrorKind::ArgumentConflict
+    );
 }
 
 #[test]
@@ -155,13 +197,18 @@ fn run_wait_duration_validates_milliseconds_on_the_command_that_accepts_it() {
         );
     }
     for (millis, expected) in [("1", 1), ("2147483647", 2_147_483_647)] {
-        let Some(Command::Run {
-            command: RunCommand::Show { timeout_ms, .. },
-        }) = parse(millis).unwrap().command
+        let Some(CommandArgs::General(Command::Run {
+            command: RunCommand::Show { mode, .. },
+        })) = parse(millis).unwrap().command
         else {
             panic!("run show command");
         };
-        assert_eq!(timeout_ms, Some(std::time::Duration::from_millis(expected)));
+        assert_eq!(
+            mode,
+            ShowMode::Wait {
+                timeout: std::time::Duration::from_millis(expected)
+            }
+        );
     }
 }
 
@@ -185,9 +232,9 @@ fn human_tool_names_validate_at_the_cli_boundary() {
             .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::ValueValidation);
     }
-    let Some(Command::Request {
+    let Some(CommandArgs::General(Command::Request {
         command: RequestCommand::Tool { tool, .. },
-    }) = Cli::try_parse_from([
+    })) = Cli::try_parse_from([
         "artifactize",
         "request",
         "tool",

@@ -18,14 +18,13 @@ fn database_and_sidecars_require_regular_entries_even_for_dangling_links() {
         );
         std::fs::remove_dir(&path).unwrap();
         for target in [&target, &root.path().join("missing")] {
-            if crate::test_os::symlink_file(target, &path).is_some() {
-                assert!(
-                    receipts::regular_files(&state)
-                        .unwrap_err()
-                        .contains("regular files")
-                );
-                std::fs::remove_file(&path).unwrap();
-            }
+            crate::test_os::file_link(target, &path);
+            assert!(
+                receipts::regular_files(&state)
+                    .unwrap_err()
+                    .contains("regular files")
+            );
+            crate::test_os::remove_file_link(&path);
         }
         std::fs::write(&path, "regular").unwrap();
         receipts::regular_files(&state).unwrap();
@@ -50,7 +49,7 @@ fn regular_files_retries_past_a_windows_pending_delete_sidecar() {
     let direct = platform::path_kind(&wal).unwrap_err();
     assert!(platform::transient_file_access(&direct), "{direct}");
     let mut holder = Some(holder);
-    receipts::regular_files_with_retry(&state, || {
+    receipts::connection::regular_files_with_retry(&state, || {
         // This hook runs only after a failed transient probe and before its next attempt.
         // Closing synchronously makes progress independent of clocks and thread scheduling.
         drop(

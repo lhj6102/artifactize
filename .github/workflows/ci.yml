@@ -93,5 +93,15 @@ jobs:
           cache-dependency-path: crates/artifactize-desktop/ui/pnpm-lock.yaml
       - run: pnpm -C crates/artifactize-desktop/ui install --frozen-lockfile
       # The runner builds the E2E app and CLI, owns Linux D-Bus/Xvfb, and uses embedded WDIO.
-      # Windows and macOS use the runner desktop; no external WebDriver is installed.
+      # Windows and macOS use the runner desktop; no external WebDriver is installed. In CI it
+      # runs the whole suite, keeping each failed scenario's evidence for the upload below.
       - run: pnpm -C crates/artifactize-desktop/ui e2e
+        env:
+          DESKTOP_TEST_EVIDENCE: ${{ runner.temp }}/desktop-e2e-evidence
+      - name: Upload the failed run's evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-e2e-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/desktop-e2e-evidence
+          if-no-files-found: ignore

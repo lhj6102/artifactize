@@ -93,8 +93,9 @@ try {
     $childName = 'artifactize-msix-child-' + [Guid]::NewGuid().ToString('N') + '.txt'
     $writer = '[IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA ''@NAME@''), ''MSIX runtime child'')'
     [IO.File]::WriteAllText((Join-Path $probe 'write-appdata.ps1'), $writer.Replace('@NAME@', $childName))
-    [IO.File]::WriteAllText((Join-Path $probe 'index.artf'), @'
-name = "virtualization-probe"
+    New-Item -ItemType Directory -Path (Join-Path $probe '.artifactize') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $probe '.artifactize/virtualization-probe.artf'), @'
+path = "./"
 [evals.appdata]
 title = "Measure packaged child AppData writes"
 profile = { kind = "runtime", command = "powershell.exe", args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "write-appdata.ps1"] }

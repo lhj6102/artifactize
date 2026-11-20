@@ -26,11 +26,10 @@ use windows_sys::{
             STATUS_INVALID_PARAMETER, UNICODE_STRING,
         },
         Storage::FileSystem::{
-            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
-            FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
+            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_NAME_NORMALIZED,
             FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-            FileAttributeTagInfo, GetFileInformationByHandleEx, GetFinalPathNameByHandleW,
-            SYNCHRONIZE,
+            GetFinalPathNameByHandleW, SYNCHRONIZE, VOLUME_NAME_DOS,
         },
         System::IO::IO_STATUS_BLOCK,
     },
@@ -42,6 +41,7 @@ mod directory;
 mod path;
 pub use directory::read_dir;
 pub use path::canonicalize;
+pub(super) use path::plain;
 
 /// Reparse tags with this bit name another file: symbolic links, junctions and mount points.
 const NAME_SURROGATE: u32 = 0x2000_0000;
@@ -53,6 +53,10 @@ pub fn open_no_follow(options: &mut OpenOptions, path: &Path) -> io::Result<File
     let file = options
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)?;
+    reject_reparse(file)
+}
+
+fn reject_reparse(file: File) -> io::Result<File> {
     if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(reparse_point());
     }
@@ -98,19 +102,24 @@ impl EntryName {
 
 /// Open one entry of a pinned directory read-only, refusing any reparse point.
 pub fn open_entry(directory: &File, name: &EntryName) -> io::Result<File> {
-    let file = open_relative(directory, &name.0, FILE_GENERIC_READ)?;
-    if attribute_tag(&file)?.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(reparse_point());
-    }
-    Ok(file)
+    reject_reparse(open_relative(directory, &name.0, FILE_GENERIC_READ)?)
 }
 
 /// The type of one entry of a pinned directory, without following it.
 pub fn entry_kind(directory: &File, name: &OsStr) -> io::Result<FileKind> {
     let name = EntryName::new(name).ok_or(io::ErrorKind::InvalidInput)?;
     let file = open_relative(directory, &name.0, FILE_READ_ATTRIBUTES | SYNCHRONIZE)?;
-    let info = attribute_tag(&file)?;
-    Ok(kind(info.FileAttributes, info.ReparseTag))
+    let metadata = file.metadata()?;
+    let kind = metadata.file_type();
+    Ok(if kind.is_symlink() {
+        FileKind::Symlink
+    } else if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        FileKind::Other
+    } else if kind.is_dir() {
+        FileKind::Directory
+    } else {
+        FileKind::File
+    })
 }
 
 /// `NtCreateFile` relative to a pinned directory handle: the Windows `openat`. The name is a
@@ -168,23 +177,6 @@ fn open_relative(directory: &File, name: &[u16], access: u32) -> io::Result<File
     Ok(unsafe { File::from_raw_handle(handle) })
 }
 
-fn attribute_tag(file: &File) -> io::Result<FILE_ATTRIBUTE_TAG_INFO> {
-    let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
-    // SAFETY: the buffer is a FILE_ATTRIBUTE_TAG_INFO of the size passed.
-    let ok = unsafe {
-        GetFileInformationByHandleEx(
-            file.as_raw_handle(),
-            FileAttributeTagInfo,
-            (&raw mut info).cast(),
-            mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
-        )
-    };
-    if ok == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(info)
-}
-
 fn kind(attributes: u32, reparse_tag: u32) -> FileKind {
     if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         if reparse_tag & NAME_SURROGATE != 0 {
@@ -227,19 +219,33 @@ const WIDE_UNIT_BYTES: usize = mem::size_of::<u16>();
 
 /// Require the opened handle's normalized, long entry name. Case and 8.3 aliases must not
 /// bypass case-sensitive logical ownership; per-directory case-sensitive names still work.
-pub fn exact_name(file: &File, name: &OsStr) -> io::Result<bool> {
+pub fn exact_name(_directory: &File, file: &File, name: &OsStr) -> io::Result<bool> {
+    Ok(final_path(file)?.file_name() == Some(name))
+}
+
+/// A checked NT entry may not be addressable via an ordinary Win32 path (for example,
+/// a trailing dot or a device name). Never return a path the desktop could reinterpret.
+pub fn verified_path(file: &File, _root: &Path, _names: &[&OsStr]) -> io::Result<PathBuf> {
+    path::plain(&final_path(file)?).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Artifact input cannot be represented by an ordinary Windows path.",
+        )
+    })
+}
+
+fn final_path(file: &File) -> io::Result<PathBuf> {
     // Windows' extended path limit includes the NUL. A bounded buffer avoids trusting an
     // unbounded allocation size returned by a concurrently renamed entry.
     const MAX_PATH_UNITS: usize = 32_768;
     let mut path = vec![0; MAX_PATH_UNITS];
-    // SAFETY: a live handle and a writable buffer of the stated size. Flags 0 requests the
-    // normalized path, not the spelling used to open the handle.
+    // SAFETY: a live handle and a writable buffer of the stated size.
     let length = unsafe {
         GetFinalPathNameByHandleW(
             file.as_raw_handle(),
             path.as_mut_ptr(),
             path.len() as u32,
-            0,
+            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
         )
     } as usize;
     if length == 0 {
@@ -248,8 +254,7 @@ pub fn exact_name(file: &File, name: &OsStr) -> io::Result<bool> {
     if length >= path.len() {
         return Err(io::ErrorKind::InvalidData.into());
     }
-    let path = PathBuf::from(OsString::from_wide(&path[..length]));
-    Ok(path.file_name() == Some(name))
+    Ok(PathBuf::from(OsString::from_wide(&path[..length])))
 }
 
 /// Windows logical names remain conservative even if per-directory case sensitivity is

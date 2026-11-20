@@ -21,6 +21,14 @@
   // Artifact too while it hides it, and its Expand button draws its box again; both keep the
   // whole's top left corner where it was on the screen. `m` does what the button does, for the
   // whole focused on the graph or else the whole whose Detail is open.
+  //
+  // A Current is where the branch's Artifacts are defined. There a node, a minimized whole or a
+  // whole's title row is dragged: released in the box it was in it is placed, and the places of
+  // that box (or the top level) are saved in the definitions as shown; over another Artifact,
+  // highlighted while the library would accept it, it becomes its part; out of every box it
+  // leaves its whole. Esc during a drag puts it back. A comment is dragged by its text onto an
+  // Artifact without one; a click on it opens its field. A drag on a whole's face pans, as one on
+  // the background does. A Run's graph is a record: nothing on it moves.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { tick } from "svelte";
   import { SvelteFlow, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
@@ -28,24 +36,31 @@
   import { PRECEDENCE, type Found, type Light, type Shape, type Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
+  import GraphTools from "./GraphTools.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
   import Navigator from "./Navigator.svelte";
   import WholeNode from "./WholeNode.svelte";
-  import { boxes, copies, copyEdges, drawings, partsCount } from "./parts";
-  import { BLOCKING, WORDS, tallyWords, type Point } from "./graph";
+  import { boxes, copies, copyEdges, drawings, partsCount, type Copy } from "./parts";
+  import { BLOCKING, NODE, WORDS, tallyWords, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, legible, scene, view, within } from "./scene";
-  import { label, plain } from "../shell/keys";
+  import { plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
+  import { NO_ANNOTATIONS, roomOf, type Annotations } from "./annotations";
+  import { anchor, boxPlaces, dropAt, inside, placesOf, topLevel, under, type Drop } from "./placing";
+  import type { BranchKey, EditOperation } from "../ipc/client";
 
   let {
     source,
     graph,
     minimized,
     positions,
+    annotations = NO_ANNOTATIONS,
+    branch: owner = null,
     opened = null,
     current = false,
+    empty = "",
     onopen,
     onclose,
     onminimize,
@@ -55,10 +70,16 @@
     graph: Shape;
     /** A Current: lit by what verify would do. */
     current?: boolean;
+    /** Said under the tool strip when the graph has no Artifacts. */
+    empty?: string;
     /** The wholes drawn as nodes, by tree id: those `positions` was laid out for. */
     minimized: readonly string[];
     /** Where the layout put each copy that is no box, by key. */
     positions: Map<string, Point>;
+    /** The places and comments `positions` was laid out with. */
+    annotations?: Annotations;
+    /** The branch the graph is of: a Current's edits write its definitions. */
+    branch?: BranchKey | null;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
     /** Open the Detail of the Artifact `id`, on the tab of its eval `tab` or its own. */
@@ -82,13 +103,11 @@
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
   const MAX_ZOOM = 2;
-  /** What one press of a zoom button multiplies or divides the zoom by, as Svelte Flow's own do. */
-  const ZOOM_STEP = 1.2;
   /** The zoom from which an Artifact's name reads: bringing a found one into view zooms in to
    * it, never out. */
   const READABLE = 0.75;
-  /** The most Artifacts kept as elements: the window stays quick to pan and zoom with this
-   * many. */
+  /** A graph of more drawings than this keeps as elements only those in view: the window stays
+   * quick to pan and zoom. */
   const DRAWN = 500;
   /** How the whole graph fits, its first view and Fit View: never enlarged beyond its nodes'
    * own size, only the person's own zooming goes further. */
@@ -106,8 +125,11 @@
   const keys = $derived(drawings(drawn));
   /** The copies that show the opened Artifact: its own, and the minimized wholes hiding it. */
   const showing = $derived(new Set(opened === null ? [] : (keys.get(opened) ?? [])));
-  /** Where every copy is, wholes around their parts. */
-  const rects = $derived(boxes(drawn, positions));
+  /** Where every copy is, wholes around their parts and their comments. */
+  const rects = $derived(boxes(drawn, positions, roomOf(annotations)));
+  const defs = app.definitions;
+  /** A Current of a branch whose definitions are read: what is on it can be edited. */
+  const editable = $derived(current && owner !== null && defs.of(owner));
   /** The graph's edges between copies, lit as their edges. */
   const lines = $derived(copyEdges(graph, drawn, current ? PRECEDENCE.current : PRECEDENCE.run).map(({ source, target, edge }) => ({ ...edge, source, target })));
   /** The copies edges reach, and those they leave: each shows its port on that side. */
@@ -120,23 +142,37 @@
       new Map(drawn.map((copy) => [copy.key, copy.node.id])),
     ),
   );
+  /** What the canvas paints from: the layout, with a dragged node and the parts inside it where
+   * the drag has taken them. */
+  const paintedAt = $derived.by(() => {
+    const moved = v.moved;
+    if (!moved || !canvased) return laid;
+    const inside = (copy: Copy | undefined): boolean => !!copy && (copy.key === moved.key || inside(copy.parent === null ? undefined : byKey.get(copy.parent)));
+    const shifted = new Map([...rects].map(([key, rect]) => [key, inside(byKey.get(key)) ? { ...rect, x: rect.x + moved.x, y: rect.y + moved.y } : rect]));
+    return scene(shifted, new Set(drawn.filter((copy) => copy.parts.length > 0).map((copy) => copy.key)), new Map(drawn.map((copy) => [copy.key, copy.node.id])));
+  });
   /** The whole graph, as Fit View fits it. */
   const bounds = $derived(laid.bounds);
   /** More Artifacts than the window keeps as elements: the canvas draws what they do not. */
   const large = $derived(drawn.length > DRAWN);
-  /** In a large graph, the Artifacts in view by number while at most `DRAWN` are, else `null`;
-   * none before the canvas has a size. */
-  const inView = $derived(large && v.area ? within(laid, view(camera.current, v.area.width, v.area.height), DRAWN) : []);
-  /** The Artifacts in view are painted as boxes, while too many are in view to keep as elements
-   * or the zoom makes their names too small to read: a smaller canvas holds fewer at a zoom. */
-  const painted = $derived(inView === null || (large && !legible(v.font, camera.current.zoom)));
-  /** The copies kept as elements: every one of a small graph (`null`); of a large one, those
-   * in view while they are not painted. A text key, so that panning over the same ones keeps
-   * the same elements. */
-  const kept = $derived(large ? (painted ? "" : (inView?.join() ?? "")) : null);
+  /** The Artifacts in view are painted as blocks while the zoom alone makes their names too
+   * small to read (D-GRAPH-2), never for how many are in view. A zoom of 0 shows nothing yet: the
+   * canvas has no size its first fit could use. */
+  const painted = $derived(v.area !== null && camera.current.zoom > 0 && !legible(v.font, camera.current.zoom));
+  /** In a large graph whose names read, the Artifacts in view by number; none before the canvas
+   * has a size. */
+  const inView = $derived(large && v.area && !painted ? (within(laid, view(camera.current, v.area.width, v.area.height)) ?? []) : []);
+  /** The canvas paints: every edge of a large graph, and whatever is painted as blocks. */
+  const canvased = $derived(large || painted);
+  /** The copies kept as elements: none while painted; every one of a small graph (`null`); of a
+   * large one, those in view. A text key, so that panning over the same ones keeps the same
+   * elements. */
+  const kept = $derived(painted ? "" : large ? inView.join() : null);
 
-  // Lights change in place; positions only come with a new layout.
+  // Lights change in place; positions only come with a new layout, or, after a drag that wrote
+  // nothing, as they were.
   let nodes = $derived.by<Node[]>(() => {
+    void v.epoch;
     // A part kept as an element keeps the wholes around it, which hold it.
     const holding = (key: string): string[] => {
       const parent = byKey.get(key)?.parent ?? null;
@@ -147,9 +183,12 @@
       .filter((copy) => rects.has(copy.key) && (keep === null || keep.has(copy.key)))
       .map(({ key, node, parent, parts, minimized: folded, count }) => {
         const [at, around] = [rects.get(key)!, parent === null ? null : rects.get(parent)!];
+        const box = parts.length > 0 && !folded;
         return {
           id: key,
-          type: folded ? "minimized" : parts.length > 0 ? "whole" : "artifact",
+          type: folded ? "minimized" : box ? "whole" : "artifact",
+          // A whole's box is dragged by its title row; its face pans.
+          dragHandle: box ? ".title" : undefined,
           // A part's place is from its whole's corner.
           position: around ? { x: at.x - around.x, y: at.y - around.y } : { x: at.x, y: at.y },
           parentId: parent ?? undefined,
@@ -170,17 +209,24 @@
             artifact: node.id,
             count,
             onminimize: () => void minimize(key, !folded),
+            comment: annotations.comments.get(node.name) ?? null,
+            editing: editable && defs.field?.name === node.name && keys.get(node.id)?.[0] === key,
+            reset: editable && box && annotations.places.has(node.name),
+            onreset: () => void edit({ kind: "resetPlaces", whole: node.name }),
+            oncomment: editable ? (event: PointerEvent) => grabComment(event, key) : undefined,
+            onfield: (written: string | null) => void closeField(written),
+            onpan: editable ? (event: PointerEvent) => pan(event) : undefined,
           },
-          draggable: false,
+          draggable: editable && !painted,
           connectable: false,
           ariaLabel: `${node.name}: ${node.note ?? `${WORDS[node.light]}${tallyWords(node.tally)}`}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
           domAttributes: { "data-light": node.light, "data-artifact": node.id },
         };
       });
   });
-  // A large graph's edges are all on the canvas.
+  // A large graph's edges, and a painted one's, are all on the canvas.
   let edges = $derived.by<Edge[]>(() =>
-    large
+    canvased
       ? []
       : lines.map((edge) => ({
           id: `${edge.source}>${edge.target}`,
@@ -192,6 +238,19 @@
           domAttributes: { "data-light": edge.light },
         })),
   );
+
+  /** How much of the canvas the docked Detail covers, measured as the Detail opens, closes or
+   * changes width: the Navigator shows for, and frames, only what shows. */
+  const docked: Attachment<HTMLElement> = () => {
+    const pane = opened !== null ? m.panes.detail : undefined;
+    if (!pane) {
+      v.covered = 0;
+      return;
+    }
+    const sized = new ResizeObserver(() => (v.covered = pane.getBoundingClientRect().width));
+    sized.observe(pane);
+    return () => sized.disconnect();
+  };
 
   /** The canvas, measured whenever it changes size. */
   const measure: Attachment<HTMLElement> = (canvas) => {
@@ -235,12 +294,14 @@
 
   /** Each Artifact's light by its tree id, for the Navigator. */
   const lights = $derived(new Map<string, Light>(graph.nodes.map((node) => [node.id, node.light])));
-  /** The whole graph is in view: no Navigator. */
+  /** How wide the canvas shows left of a docked Detail. */
+  const visible = $derived(v.area ? Math.max(0, v.area.width - v.covered) : 0);
+  /** The whole graph is in view, left of a docked Detail: no Navigator. */
   const allInView = $derived.by(() => {
     if (!v.area) return true;
     const { x, y, zoom } = camera.current;
     const [left, top] = [-x / zoom, -y / zoom];
-    const [right, bottom] = [left + v.area.width / zoom, top + v.area.height / zoom];
+    const [right, bottom] = [left + visible / zoom, top + v.area.height / zoom];
     // Half a pixel of slack: a fit view's rounding never shows the Navigator.
     const slack = 0.5 / zoom;
     return bounds.x >= left - slack && bounds.y >= top - slack && bounds.x + bounds.width <= right + slack && bounds.y + bounds.height <= bottom + slack;
@@ -290,8 +351,9 @@
       boxes: painted,
       opened: showing,
       minimized: hidden,
+      comments: annotations.comments,
     };
-    const where = laid;
+    const where = paintedAt;
     let settle: ReturnType<typeof setTimeout> | undefined;
     const show = (sharp: boolean) => {
       const [width, height] = [Math.round(what.width * what.ratio), Math.round(what.height * what.ratio)];
@@ -305,6 +367,9 @@
       clearTimeout(settle);
     };
   };
+
+  /** How far the pointer moves before a press is a drag rather than a click, in screen pixels. */
+  const DRAG = 4;
 
   /** A click on the background: an Artifact painted there opens, as a click on an element
    * does; anywhere else closes the Detail. */
@@ -383,15 +448,282 @@
   /** The whole `m` would minimize or expand now: the focused one, else the one whose Detail is
    * open (its first copy). */
   function wholeAtHand(): string | undefined {
-    const held = document.activeElement?.closest<HTMLElement>(".svelte-flow__node");
-    const focused = held && v.canvas?.contains(held) ? held.dataset.id : undefined;
+    const focused = v.focused ?? undefined;
     const open = opened === null ? undefined : keys.get(opened)?.find((key) => byKey.get(key)?.node.id === opened);
     return isWhole(focused) ? focused : isWhole(open) ? open : undefined;
   }
 
+  /** The tree id the graph gives the Artifact `name`. */
+  const idOf = (name: string) => graph.nodes.find((node) => node.name === name)?.id;
+
+  /** The drawn copy focus is on, kept as focus moves in and out of the canvas. */
+  function focusIn(event: FocusEvent) {
+    const held = event.target instanceof Element ? event.target.closest<HTMLElement>(".svelte-flow__node") : null;
+    v.focused = held?.dataset.id ?? null;
+  }
+
+
+  /** Write `operation` to the branch's definitions, made on the graph: refused, what was moved
+   * goes back where it was and the Main area's notice says why. Answers whether it was written. */
+  async function edit(operation: EditOperation): Promise<boolean> {
+    if (!owner) return false;
+    const refused = await defs.edit(owner, operation, "graph");
+    // What was dragged goes back where it was drawn.
+    if (refused !== null) v.epoch += 1;
+    return refused === null;
+  }
+
+  /** The point of the graph under the pointer of `event`. */
+  function pointOf(event: MouseEvent | TouchEvent | PointerEvent): Point | null {
+    const at = "clientX" in event ? event : (event.changedTouches[0] ?? null);
+    return at ? flow.screenToFlowPosition({ x: at.clientX, y: at.clientY }) : null;
+  }
+
+
+
+  function dropOf(key: string, event: MouseEvent | TouchEvent): Drop | null {
+    const [copy, at] = [byKey.get(key), pointOf(event)];
+    return copy && at ? dropAt(graph, drawn, rects, copy, at) : null;
+  }
+
+  function dragStart(key: string) {
+    v.dragging = { key, cancelled: false };
+    v.target = null;
+  }
+
+  /** While a node is dragged, the Artifact a release would make its whole is highlighted, but
+   * only while the library would accept it. */
+  function dragMove(key: string, event: MouseEvent | TouchEvent) {
+    if (!v.dragging || v.dragging.cancelled) return;
+    const [from, now] = [v.pressed, pointOf(event)];
+    if (canvased && from && now) v.moved = { key, x: now.x - from.x, y: now.y - from.y };
+    const [copy, drop] = [byKey.get(key), dropOf(key, event)];
+    if (!copy || drop?.kind !== "join") {
+      // No destination here: a check still pending for the last one lights nothing.
+      [v.aim, v.target] = [null, null];
+      return;
+    }
+    const whole = copy.parent === null ? null : byKey.get(copy.parent)!.node.name;
+    light(drop.key, { kind: "movePart", part: copy.node.name, from: whole, to: drop.to, at: null });
+  }
+
+  /** Highlight `key` as the drop target once the library says it would accept `operation`, while
+   * the pointer is still over it. */
+  function light(key: string, operation: EditOperation) {
+    v.aim = key;
+    if (v.target !== key) v.target = null;
+    if (!owner) return;
+    void defs.accepts(owner, operation).then((accepted) => {
+      if (v.aim === key && (v.dragging !== null || v.comment !== null)) v.target = accepted ? key : null;
+    });
+  }
+
+  /** A released node: placed, made a part of the Artifact under it, or out of its whole. It is
+   * drawn where it was let go until what was written is laid out, or back where it was when the
+   * edit is refused. */
+  async function dragStop(node: Node, event: MouseEvent | TouchEvent) {
+    try {
+      await release(node, event);
+    } finally {
+      v.moved = null;
+    }
+  }
+
+  async function release(node: Node, event: MouseEvent | TouchEvent) {
+    const held = v.dragging;
+    v.dragging = null;
+    v.target = null;
+    const copy = byKey.get(node.id);
+    const drop = held && !held.cancelled ? dropOf(node.id, event) : null;
+    if (!copy || !drop) {
+      v.epoch += 1;
+      return;
+    }
+    const [from, now] = [v.pressed, pointOf(event)];
+    const was = rects.get(copy.key)!;
+    const around = copy.parent === null ? null : rects.get(copy.parent)!;
+    const rect = from && now
+      ? { ...was, x: was.x + now.x - from.x, y: was.y + now.y - from.y }
+      : { ...was, x: node.position.x + (around?.x ?? 0), y: node.position.y + (around?.y ?? 0) };
+    const to = anchor(copy, rect, annotations);
+    const whole = copy.parent === null ? null : byKey.get(copy.parent)!.node.name;
+    if (drop.kind === "place") {
+      await edit({ kind: "savePlaces", places: placesOf(drawn, rects, annotations, copy, to) });
+      return;
+    }
+    if (drop.kind === "leave") {
+      // A top level laid out automatically is placed as shown, with the Artifact where it was dropped.
+      const shown = annotations.at.size === 0 ? topLevel(drawn, rects, annotations, copy.node.name) : {};
+      if (await edit({ kind: "movePart", part: copy.node.name, from: whole, to: null, at: [Math.round(to.x), Math.round(to.y)] })) {
+        if (Object.keys(shown).length > 0) await edit({ kind: "savePlaces", places: shown });
+      }
+      return;
+    }
+    const target = byKey.get(drop.key)!;
+    const box = target.parts.length > 0 && !target.minimized;
+    const at = box ? freeIn(target, inside(to, target, rects.get(target.key)!, annotations), was) : ([0, 0] as [number, number]);
+    // A box laid out automatically is placed as shown, with the new part where it was dropped.
+    const shown = box && !annotations.places.has(target.node.name) ? boxPlaces(drawn, rects, annotations, target, copy.node.name) : {};
+    if (await edit({ kind: "movePart", part: copy.node.name, from: whole, to: target.node.name, at })) {
+      if (Object.keys(shown).length > 0) await edit({ kind: "savePlaces", places: shown });
+    }
+  }
+
+  /** `at` in the box of `whole` for a dragged Artifact of `size`, or, where it would cover one of
+   * its parts, under them all. */
+  function freeIn(whole: Copy, at: [number, number], size: { width: number; height: number } = NODE): [number, number] {
+    const box = rects.get(whole.key)!;
+    const parts = whole.parts.flatMap((key) => {
+      const rect = rects.get(key);
+      const copy = byKey.get(key);
+      return rect && copy ? [{ at: inside(anchor(copy, rect, annotations), whole, box, annotations), rect }] : [];
+    });
+    const covers = parts.some(({ at: [x, y], rect }) => at[0] < x + rect.width && x < at[0] + size.width && at[1] < y + rect.height && y < at[1] + size.height);
+    if (!covers) return at;
+    return [at[0], Math.max(...parts.map(({ at: [, y], rect }) => y + rect.height)) + 20];
+  }
+
+  /** A press on a comment: moved, the comment is dragged onto an Artifact without one; released
+   * without moving, its field opens (on a Run, its node's Detail does). Esc puts it back. */
+  function grabComment(event: PointerEvent, key: string) {
+    const copy = byKey.get(key);
+    if (event.button !== 0 || !copy) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const start = { x: event.clientX, y: event.clientY };
+    // The text as it is drawn under its node, so it keeps its width and lines while dragged.
+    const zoom = flow.getViewport().zoom;
+    const grabbed = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const shape = {
+      width: (grabbed?.getBoundingClientRect().width ?? NODE.width * zoom) / zoom,
+      padding: grabbed ? getComputedStyle(grabbed).padding : "0px",
+      zoom,
+    };
+    let [moved, cancelled] = [false, false];
+    const move = (next: PointerEvent) => {
+      if (cancelled || (!moved && Math.hypot(next.clientX - start.x, next.clientY - start.y) < DRAG)) return;
+      moved = true;
+      const box = v.canvas?.getBoundingClientRect();
+      if (box) v.comment = { key, x: next.clientX - box.left, y: next.clientY - box.top, shape };
+      const at = pointOf(next);
+      const target = at ? under(drawn, rects, at) : null;
+      // The library says which Artifacts take the comment.
+      if (target && target.node.name !== copy.node.name) light(target.key, { kind: "moveComment", from: copy.node.name, to: target.node.name });
+      else [v.aim, v.target] = [null, null];
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("keydown", escape, true);
+    };
+    const up = () => {
+      stop();
+      const target = cancelled || v.target === null ? null : byKey.get(v.target);
+      [v.comment, v.target] = [null, null];
+      if (cancelled) return;
+      if (!moved) defs.openField(copy.node.name, "graph");
+      else if (target) void edit({ kind: "moveComment", from: copy.node.name, to: target.node.name });
+    };
+    const escape = (next: KeyboardEvent) => {
+      if (!plain(next, "Escape")) return;
+      next.preventDefault();
+      next.stopPropagation();
+      cancelled = true;
+      [v.comment, v.target] = [null, null];
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("keydown", escape, true);
+  }
+
+  /** A drag on a whole's face pans the camera, as one on the background does. */
+  function pan(event: PointerEvent) {
+    if (event.button !== 0) return;
+    const start = { x: event.clientX, y: event.clientY };
+    const from = flow.getViewport();
+    let moved = false;
+    const move = (next: PointerEvent) => {
+      const [dx, dy] = [next.clientX - start.x, next.clientY - start.y];
+      if (!moved && Math.hypot(dx, dy) < DRAG) return;
+      moved = true;
+      void flow.setViewport({ x: from.x + dx, y: from.y + dy, zoom: from.zoom }, { duration: 0 });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      // The click that follows a pan opens nothing.
+      if (moved) v.panned = true;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  /** The comment's font measured as the canvas draws it, for the room comments take. */
+  const measuring: Attachment<HTMLElement> = (element) => {
+    if (defs.measure) return;
+    const context = document.createElement("canvas").getContext("2d");
+    if (!context) return;
+    const style = getComputedStyle(element);
+    context.font = `400 ${style.getPropertyValue("--text-small").trim()} ${style.getPropertyValue("--font").trim()}`;
+    defs.measure = (text) => context.measureText(text).width;
+  };
+
+  /** Esc reaches a drag before anything else that takes it, the Detail's close included. */
+  const escaping: Attachment<HTMLElement> = () => {
+    window.addEventListener("keydown", cancelDrag, true);
+    return () => window.removeEventListener("keydown", cancelDrag, true);
+  };
+
+  /** Esc during a node's drag puts it back: the drag ends where it is, writing nothing. */
+  function cancelDrag(event: KeyboardEvent) {
+    if (!v.dragging || !plain(event, "Escape")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    v.dragging = { ...v.dragging, cancelled: true };
+    v.moved = null;
+    v.target = null;
+    v.epoch += 1;
+    // Svelte Flow's drag ends on the button's release; this release ends it now.
+    window.dispatchEvent(new MouseEvent("mouseup"));
+  }
+
+  /** The comment field of `name`'s first copy closes: written, removed or put back. Focus goes
+   * back where it was opened from. */
+  async function closeField(text: string | null) {
+    const field = defs.field;
+    if (!field) return;
+    if (text !== null && text !== (annotations.comments.get(field.name) ?? "")) {
+      if (!(await edit({ kind: "setComment", name: field.name, text }))) return;
+    }
+    defs.field = null;
+    await tick();
+    if (field.from === "button") m.panes.detail?.querySelector<HTMLElement>("[data-comment-button]")?.focus();
+    else {
+      const first = keys.get(idOf(field.name) ?? "")?.[0];
+      v.canvas?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${CSS.escape(first ?? "")}"]`)?.focus({ preventScroll: true });
+    }
+  }
+
+  /** An Artifact just created or renamed: once the scan draws it, its Detail opens; a created
+   * one is brought to the middle of the graph left of the Detail, as a found Artifact is. */
+  const created: Attachment<HTMLElement> = () => {
+    const made = defs.created;
+    const id = made === null ? undefined : idOf(made.name);
+    if (made === null || id === undefined || !keys.has(id)) return;
+    defs.created = null;
+    if (made.centre) void choose({ node: id, tab: null } as Found);
+    else onopen(id);
+  };
+
+  const newArtifact = () => (defs.dialog = { kind: "new" });
+  const resetTop = () => void edit({ kind: "resetPlaces", whole: null });
+  const canResetTop = $derived(editable && annotations.at.size > 0);
+
   useCommands(() => [
     { id: "graph.find", group: "Graph", label: "Find", keys: "Ctrl+F", run: () => (m.finding = true) },
     { id: "graph.fit", group: "Graph", label: "Fit", run: fitAll },
+    { id: "graph.new", group: "Graph", label: "New Artifact", enabled: () => editable, run: newArtifact },
+    { id: "graph.reset-layout", group: "Graph", label: "Reset layout", enabled: () => canResetTop, run: resetTop },
     {
       id: "graph.minimize",
       group: "Graph",
@@ -422,15 +754,14 @@
 
 <div class="graph">
   <!-- What acts on the graph, in one row above the canvas, and nothing else. -->
-  <div class="tools" role="toolbar" aria-label="Graph tools">
-    <button class="button small" aria-label="Find ({label('Ctrl+F')})" aria-keyshortcuts="Control+F" onclick={() => (m.finding = true)}><Icon name="find" />Find</button>
-    <span class="zoom">
-      <button aria-label="Zoom out" onclick={() => zoomBy(1 / ZOOM_STEP)}><Icon name="minus" /></button>
-      <span class="percent" aria-label="Zoom">{Math.round(camera.current.zoom * 100)}%</span>
-      <button aria-label="Zoom in" onclick={() => zoomBy(ZOOM_STEP)}><Icon name="add" /></button>
-    </span>
-    <button class="button small" onclick={fitAll}><Icon name="fit" />Fit</button>
-  </div>
+  <GraphTools zoom={camera.current.zoom} act={{ find: () => (m.finding = true), zoomBy, fit: fitAll }}>
+    {#if editable}
+      <button class="button small" onclick={newArtifact}><Icon name="add" />New Artifact</button>
+      {#if canResetTop}
+        <button class="button small" onclick={resetTop}><Icon name="reset" />Reset layout</button>
+      {/if}
+    {/if}
+  </GraphTools>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="canvas"
@@ -439,11 +770,19 @@
     style:background-size="{gridSize}px {gridSize}px"
     style:background-position="{camera.current.x}px {camera.current.y}px"
     {@attach measure}
+    {@attach docked}
     {@attach grid}
+    {@attach created}
+    {@attach escaping}
+    {@attach measuring}
     onkeydown={keydown}
+    onpointerdowncapture={(event) => (v.pressed = pointOf(event))}
+    onfocusin={focusIn}
+    onfocusout={() => (v.focused = null)}
     tabindex="-1"
   >
-    {#if large}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
+    {#if graph.nodes.length === 0}<p class="empty">{empty}</p>{/if}
+    {#if canvased}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
     <SvelteFlow
       bind:nodes
       bind:edges
@@ -452,10 +791,15 @@
       {fitViewOptions}
       minZoom={MIN_ZOOM}
       maxZoom={MAX_ZOOM}
-      nodesDraggable={false}
+      nodesDraggable={editable && !painted}
+      nodeDragThreshold={DRAG}
+      onnodedragstart={({ targetNode }) => targetNode && dragStart(targetNode.id)}
+      onnodedrag={({ targetNode, event }) => targetNode && dragMove(targetNode.id, event)}
+      onnodedragstop={({ targetNode, event }) => targetNode && void dragStop(targetNode, event)}
       nodesConnectable={false}
       elementsSelectable={false}
       autoPanOnNodeFocus={false}
+      autoPanOnNodeDrag={false}
       elevateNodesOnSelect={false}
       onlyRenderVisibleElements={drawn.length > 80}
       oninit={() => {
@@ -465,17 +809,35 @@
         first();
       }}
       proOptions={{ hideAttribution: true }}
-      onnodeclick={({ node }) => onopen(byKey.get(node.id)?.node.id ?? node.id)}
+      onnodeclick={({ node }) => {
+        if (v.panned) v.panned = false;
+        else onopen(byKey.get(node.id)?.node.id ?? node.id);
+      }}
       onpaneclick={({ event }) => background(event)}
     />
+    {#if v.comment}
+      {@const text = annotations.comments.get(byKey.get(v.comment.key)?.node.name ?? "")}
+      <p class="lifted" aria-hidden="true" style:left="{v.comment.x}px" style:top="{v.comment.y}px" style:width="{v.comment.shape.width}px" style:padding={v.comment.shape.padding} style:transform="scale({v.comment.shape.zoom})">{text}</p>
+    {/if}
     {#if m.finding}<GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
     {#if !allInView && v.area}
-      <Navigator {laid} {lights} viewport={camera.current} width={v.area.width} height={v.area.height} onmove={navigate} />
+      <Navigator {laid} {lights} viewport={camera.current} width={visible} height={v.area.height} onmove={navigate} />
     {/if}
   </div>
 </div>
 
 <style>
+  /* No Artifacts: the sentence stands at the top of the canvas, under the tool strip, which
+     acts on the empty canvas as on any. */
+  .empty {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 1;
+    margin: 0;
+    padding: 6px var(--pad);
+    color: var(--ink-2);
+    pointer-events: none;
+  }
   .graph {
     position: relative;
     height: 100%;
@@ -483,63 +845,6 @@
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
-  }
-  /* The tool strip: one row on the panel, opened above by a group line. */
-  .tools {
-    display: flex;
-    align-items: center;
-    gap: var(--gap);
-    height: var(--row-head);
-    padding: 0 var(--pad);
-    border-top: 1px solid var(--line-group);
-    background: var(--surface-panel);
-    font-size: var(--text-small);
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .tools :global(.button) {
-    flex: none;
-  }
-  /* One bordered group: Zoom out, the zoom in percent, Zoom in. */
-  .zoom {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    height: 22px;
-    border: 1px solid var(--line-group);
-    border-radius: var(--radius-control);
-    background: var(--surface-group);
-    overflow: hidden;
-  }
-  .zoom button {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 20px;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--ink-2);
-    cursor: pointer;
-  }
-  /* The pointer steps the icon's ink up; the face stays the group's. */
-  .zoom button:hover {
-    color: var(--ink);
-  }
-  .zoom button:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: -2px;
-  }
-  .percent {
-    width: 44px;
-    height: 20px;
-    line-height: 20px;
-    text-align: center;
-    border-left: 1px solid var(--line-group);
-    border-right: 1px solid var(--line-group);
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
   }
   /* The working surface, opened by a group line under the strip, with a faint grid that moves
      and scales with the camera, left out where its cells grow too small. */
@@ -579,6 +884,63 @@
   }
   .canvas :global(.svelte-flow__node) {
     cursor: pointer;
+  }
+  /* A node being dragged floats: raised one step with the faint shadow, its face and strip as
+     they were; a whole's box keeps its face and takes the shadow. */
+  .canvas :global(.svelte-flow__node.dragging .artifact),
+  .canvas :global(.svelte-flow__node.dragging .whole.minimized) {
+    background: var(--surface-raised);
+    box-shadow: 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  }
+  /* Opened, it keeps its selected outline; minimized, its second outline too. */
+  .canvas :global(.svelte-flow__node.dragging .artifact.open),
+  .canvas :global(.svelte-flow__node.dragging .artifact.selected) {
+    box-shadow: 0 0 0 1px var(--outline-selected), 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  }
+  .canvas :global(.svelte-flow__node.dragging .whole.minimized) {
+    box-shadow:
+      0 2px 8px var(--scrim),
+      3px 3px 0 -1px var(--surface-app),
+      3px 3px 0 0 var(--line-node),
+      inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  }
+  .canvas :global(.svelte-flow__node.dragging .whole.minimized.open),
+  .canvas :global(.svelte-flow__node.dragging .whole.minimized.selected) {
+    box-shadow:
+      0 0 0 1px var(--outline-selected),
+      0 2px 8px var(--scrim),
+      3px 3px 0 -1px var(--surface-app),
+      3px 3px 0 0 var(--line-node),
+      inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  }
+  .canvas :global(.svelte-flow__node.dragging .whole.open:not(.minimized)),
+  .canvas :global(.svelte-flow__node.dragging .whole.selected:not(.minimized)) {
+    box-shadow: 0 0 0 1px var(--outline-selected), 0 2px 8px var(--scrim);
+  }
+  .canvas :global(.svelte-flow__node.dragging .whole:not(.minimized)) {
+    background: var(--surface-raised);
+    box-shadow: 0 2px 8px var(--scrim);
+  }
+  /* A comment being dragged: its text alone follows the pointer, in the ink, width and lines it
+     has under its node, lifted by a faint shadow on its letters, with no surface or box. */
+  .lifted {
+    position: absolute;
+    z-index: 5;
+    box-sizing: border-box;
+    margin: 0;
+    transform-origin: 0 0;
+    color: var(--ink-2);
+    font-size: var(--text-small);
+    line-height: 1.4;
+    text-shadow: 0 1px 3px var(--scrim);
+    pointer-events: none;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
   }
   .canvas :global(.svelte-flow__node:focus-visible) {
     outline: 2px solid var(--focus);
