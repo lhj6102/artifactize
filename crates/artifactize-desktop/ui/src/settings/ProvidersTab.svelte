@@ -7,16 +7,11 @@
   import ClaudeAgentAccount from "./ClaudeAgentAccount.svelte";
   import CodexAccount from "./CodexAccount.svelte";
   import { getSettingsState, type Choice } from "./settings-state.svelte";
+  import { PROVIDER_NAMES } from "./provider-names";
 
   const s = getSettingsState();
 
-  const NAMES: Record<Provider, string> = {
-    codex: "Codex",
-    "claude-agent": "Claude Agent",
-    openai: "OpenAI",
-    anthropic: "Anthropic",
-    gemini: "Gemini",
-  };
+  const NAMES = PROVIDER_NAMES;
   /** The built-in providers, in the order the library lists them. */
   const builtin = $derived(s.providers?.builtin ?? []);
   const APIS: Record<EndpointApi, string> = {

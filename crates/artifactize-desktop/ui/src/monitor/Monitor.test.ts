@@ -82,6 +82,8 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
             })),
             next: null,
           };
+        case "chat_list":
+          return [];
         case "human_waiting_count":
           return snapshot().waiting.length;
         case "human_open_reference":

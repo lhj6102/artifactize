@@ -48,7 +48,7 @@ export class AppState {
   /** Review's chosen review and what its main area shows. */
   readonly reviewMode = new ReviewModeState();
   /** Chat's sessions and the one shown. */
-  readonly chat = new ChatModeState();
+  readonly chat: ChatModeState = new ChatModeState(this.ipc);
   readonly leaving = new Leaving(this.ipc);
   /** A newer release and its dialog. */
   readonly release = new Release(this.ipc);
@@ -157,7 +157,7 @@ export class AppState {
   /** Show Chat with session `id`, brought to Run `run`'s reference when one is named. */
   showChat(id: string, run: string | null = null): void {
     this.monitor.settings = false;
-    this.chat.selected = id;
+    void this.chat.open(id);
     this.chat.reveal = run;
     this.mode = "chat";
   }
