@@ -14,9 +14,11 @@
 //      contains BUG; between Runs this script removes the BUG it just saw, as an AI would fix
 //      the code. Try 1 fails mcp and site; try 2 reuses the rest at once and fails docs partway;
 //      try 3 fails release near the end; try 4 passes to the end and is SATISFIED. An overlay
-//      names the try and the speed.
+//      names the try, the speed and how many of the Run's evals reused their saved result, as
+//      the Run's records say; the script checks each try reused exactly the unchanged evals.
 //   B. graph-growth.gif — this repository's own Artifact graph, release by release from the
-//      history of main, in the app opened by `graph --repo` on the branch's Current, with the
+//      history of main (or of origin/main when it is ahead), each committed in turn to a Git
+//      checkout, in the app opened by `graph --repo` on that branch's Current, with the
 //      release in the graph's top-left corner. One blank
 //      step says 0.1.0–0.6.0 had no Artifacts yet; the graph starts at 0.7.0 and ends at the
 //      current main. examples/ is left out. Declarations the current app no longer reads
@@ -171,7 +173,8 @@ async function corner(browser: WebdriverIO.Browser, selector: string): Promise<{
 async function record(browser: WebdriverIO.Browser, directory: string, done: Promise<unknown>, final: () => Promise<boolean>, live: () => Promise<boolean>): Promise<Frame[]> {
   const frames: Frame[] = [];
   let finished = false;
-  void done.finally(() => { finished = true; });
+  // Ended either way: a failed Run watch fails the recording below, where it is awaited.
+  done.then(() => { finished = true; }, () => { finished = true; });
   const take = async () => {
     const file = join(directory, `${String(frames.length).padStart(5, "0")}.png`);
     writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
@@ -215,15 +218,27 @@ function drawn(text: string): string {
 function encode(segments: Segment[], gif: string, work: string, at: { x: number; y: number }): void {
   const list: string[] = [];
   const captions: string[] = [];
+  /** A moment of the GIF to the millisecond, the concat list's resolution. */
+  const ms = (seconds: number) => Math.round(seconds * 1000) / 1000;
   let clock = 0;
   for (const segment of segments) {
     const start = clock;
-    segment.frames.forEach((frame, index) => {
-      const next = segment.frames[index + 1];
-      const duration = next ? Math.max((next.at - frame.at) / segment.speed, 0.01) : segment.hold;
-      list.push(`file '${frame.file}'`, `duration ${duration.toFixed(3)}`);
-      clock += duration;
+    // Each frame starts where its recorded moment falls at the segment's speed, counted from the
+    // segment's first frame, so the whole plays exactly that much faster: rounding to the
+    // millisecond never adds up. Frames that fall in the same millisecond keep the later one.
+    const first = segment.frames[0].at;
+    const placed: { file: string; at: number }[] = [];
+    for (const frame of segment.frames) {
+      const moment = ms(start + (frame.at - first) / segment.speed);
+      if (placed.at(-1)?.at === moment) placed.pop();
+      placed.push({ file: frame.file, at: moment });
+    }
+    const end = ms(placed.at(-1)!.at + segment.hold);
+    placed.forEach((frame, index) => {
+      const next = placed[index + 1]?.at ?? end;
+      list.push(`file '${frame.file}'`, `duration ${(next - frame.at).toFixed(3)}`);
     });
+    clock = end;
     captions.push(`drawtext=font=DejaVu Sans:fontsize=40:fontcolor=white:box=1:boxcolor=0x262E3BE6:boxborderw=18:x=${at.x}:y=${at.y}:text='${drawn(segment.caption)}':enable='gte(t,${start.toFixed(3)})*lt(t,${clock.toFixed(3)})'`);
   }
   // The concat demuxer takes the last entry's duration only when its file is listed again.
@@ -233,12 +248,13 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   // Drawn after fps and scaling, so it advances on every GIF frame and stays a crisp thin line;
   // laid over in RGB, since a subsampled overlay would wash out a status's thin strips.
   const { height, colour, track } = PROGRESS;
-  // The last GIF frame starts one frame before the end; the bar is full there.
-  const end = clock - 1 / GIF.fps;
+  // The GIF's frames on the frame rate's grid: as many as fit in the planned length.
+  const count = Math.max(Math.floor(clock * GIF.fps), 1);
+  // The bar grows with the frame's number, so it is full on the last frame whatever its time.
   const progress = `drawbox=x=0:y=ih-${height}:w=iw:h=${height}:color=${track}:t=fill[track];` +
-    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min(t/${end.toFixed(3)},1)':y=H-h:shortest=1:format=rgb`;
+    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min(n/${Math.max(count - 1, 1)},1)':y=H-h:shortest=1:format=rgb`;
   // The repeated last entry would otherwise play its hold a second time: end at the planned length.
-  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=duration=${clock.toFixed(3)},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
+  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=end_frame=${count},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
   // The bar's few pixels would not earn its colours a palette entry, nor would the statuses'
   // thin strips, icons and words always: generate the palette with entries to spare, then set
   // the last ones to the bar, its track and each status's colour exactly.
@@ -282,6 +298,9 @@ async function launch(service: any, app: string, args: string[], env: NodeJS.Pro
   return browser;
 }
 
+/** How long one try's Run may take: its longest chain of checks takes 16 s. */
+const TRY_DEADLINE = 120000;
+
 /** Demo A's input → consumer edges, one per Artifact a declaration uses. */
 const EDGES = (): number => LOOP.reduce((count, artifact) => count + artifact.uses.length, 0);
 
@@ -322,14 +341,25 @@ payload.instruction = "Run the ${id} of {${artifact.name}}${uses ? ` with ${uses
   }
 }
 
+/** Stop `child` if it still runs, and wait until it has exited. */
+async function stopped(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise((done) => child.once("close", done));
+  child.kill();
+  await exited;
+}
+
 async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
   const root = join(candidate.root, "fixtures", "fixture-review-loop");
-  // The build's cleanup settles the Runs of fixture roots laid out as root/repo and root/state.
+  // Laid out as the suite's fixtures, so its teardown cancels the Runs left open and waits
+  // until they have ended before the build is removed.
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
   mkdirSync(fixture.repo, { recursive: true });
   loopProject(root, fixture.repo);
   e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
   const env = e2e.environment(fixture);
+  /** The `run show --wait` watchers still running. */
+  const watchers = new Set<ChildProcess>();
   // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
   const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
   const segments: Segment[] = [];
@@ -369,6 +399,9 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         && lights.every(([, light]) => light !== "waiting" && light !== "active")
         && lights.filter(([, light]) => light === "red").map(([node]) => node.slice(2)).sort().join() === [...fails].sort().join();
     }, id, MAIN, fails, LOOP.length, EDGES());
+    /** The evals whose saved GREEN result the next try reuses: those GREEN so far whose
+     * Artifact, and every Artifact they use, the fixes left as they were. */
+    const reusable = new Set<string>();
     for (const [index, fails] of FAILS.entries()) {
       const frames = join(work, `loop-${index + 1}`);
       mkdirSync(frames);
@@ -384,13 +417,26 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       }, MAIN);
       await browser.$(chip(id)).click();
       await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Main area draws ${id}'s graph` });
-      // `run show --wait` exits with the Run's outcome: 0 when it is satisfied.
+      // `run show --wait` exits with the Run's outcome: 0 when it is satisfied. A Run that has
+      // not ended by the deadline fails the recording; teardown stops a watcher still running.
       const settled = new Promise<{ code: number | null; text: string }>((done, failed) => {
         const watcher = spawn(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", id, "--wait", "--json"], { env });
+        watchers.add(watcher);
+        const deadline = setTimeout(() => {
+          failed(new Error(`${id} did not end within ${TRY_DEADLINE / 1000} s`));
+          watcher.kill();
+        }, TRY_DEADLINE);
         let text = "";
         watcher.stdout.on("data", (chunk) => { text += chunk; });
-        watcher.once("error", failed);
-        watcher.once("close", (code) => done({ code, text }));
+        watcher.once("error", (error) => {
+          clearTimeout(deadline);
+          failed(error);
+        });
+        watcher.once("close", (code) => {
+          clearTimeout(deadline);
+          watchers.delete(watcher);
+          done({ code, text });
+        });
       });
       /** The Run `id` is shown in progress: an Artifact of its graph still waits or runs. */
       const live = () => browser.execute((id, main) => {
@@ -398,11 +444,18 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
         return [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].some((node) => node.dataset.light === "waiting" || node.dataset.light === "active");
       }, id, MAIN);
-      segments.push({ frames: await record(browser, frames, settled, () => ended(id, fails), live), speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED}`, hold: GIF.hold });
+      const recorded = await record(browser, frames, settled, () => ended(id, fails), live);
       const area = await corner(browser, `${MAIN} .run .canvas`);
       at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
       const { code, text } = await settled;
-      const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string }[] };
+      const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string; source: { kind: string } | null }[] };
+      // Unchanged work is reused, as the Run's records say: exactly the evals it could reuse
+      // took their saved result, and every other one ran or was blocked.
+      const reused = view.requests.filter((request) => request.source?.kind === "cache").map((request) => request.evalId).sort();
+      if (reused.join() !== [...reusable].sort().join()) {
+        throw new Error(`try ${index + 1} reused ${reused.join(", ") || "nothing"}; planned ${[...reusable].sort().join(", ") || "nothing"}`);
+      }
+      segments.push({ frames: recorded, speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED} · ${reused.length} of ${view.requests.length} evals reused`, hold: GIF.hold });
       const red = [...new Set(view.requests.filter((request) => request.status === "RED").map((request) => request.evalId.split("/")[0]))].sort();
       const last = fails.length === 0;
       // Every request settled as planned: GREEN, RED where the BUG still is, BLOCKED below it.
@@ -411,13 +464,36 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         || view.validation?.satisfied !== last || (code === 0) !== last) {
         throw new Error(`try ${index + 1} ended ${view.status} (exit ${code}) with RED ${red.join(", ") || "nothing"} and ${unexpected.map((request) => `${request.evalId} ${request.status}`).join(", ") || "no other states"}; planned RED ${fails.join(", ") || "nothing"}`);
       }
-      // The fix: remove the BUG from what just failed, as an AI would fix the code.
-      for (const name of fails) writeFileSync(join(fixture.repo, name, "code.txt"), "done\n");
+      // The fix: remove the BUG from what just failed, as an AI would fix the code. What it
+      // changes, and what uses it, is evaluated again; the rest of what passed is reused.
+      for (const request of view.requests) if (request.status === "GREEN") reusable.add(request.evalId);
+      for (const name of fails) {
+        writeFileSync(join(fixture.repo, name, "code.txt"), "done\n");
+        for (const artifact of LOOP.filter((each) => each.name === name || each.uses.includes(name))) {
+          for (const [check] of artifact.evals) reusable.delete(`${artifact.name}/${check}`);
+        }
+      }
     }
   } finally {
-    await service.cleanupWdioSession(browser);
+    try {
+      for (const watcher of watchers) await stopped(watcher);
+      await service.cleanupWdioSession(browser);
+    } finally {
+      // The Runs this demo started end before its project, its state and the build go.
+      e2e.cancelRuns(fixture);
+    }
   }
   return { segments, at };
+}
+
+/** The newer of this checkout's main and the remote's: a local main is often behind the
+ * remote's, and sometimes ahead of it. Diverged, the remote's is the published history. */
+function newestMain(): string {
+  const exists = (ref: string) => spawnSync("git", ["rev-parse", "--verify", "--quiet", ref], { cwd: repository }).status === 0;
+  if (!exists("origin/main")) return "main";
+  if (!exists("main")) return "origin/main";
+  const contains = (newer: string, older: string) => spawnSync("git", ["merge-base", "--is-ancestor", older, newer], { cwd: repository }).status === 0;
+  return contains("main", "origin/main") ? "main" : "origin/main";
 }
 
 /** The release tags of `main`, oldest first: vX.Y.Z without a pre-release part. */
@@ -455,12 +531,11 @@ function files(directory: string, match: (name: string) => boolean): string[] {
     .map((entry) => join(entry.parentPath, entry.name));
 }
 
-/** Put `ref`'s tree, without examples/, in `tree`, in the format the current app reads: older
- * forms converted here, then a tree that declares its Artifacts where they live migrated by
- * the built CLI `cli`. */
+/** Put `ref`'s tree, without examples/, in `tree`, a Git checkout, in the format the current
+ * app reads: older forms converted here, then a tree that declares its Artifacts where they
+ * live migrated by the built CLI `cli`. The checkout's own Git folder stays. */
 function checkout(ref: string, tree: string, cli: string): void {
-  rmSync(tree, { recursive: true, force: true });
-  mkdirSync(tree, { recursive: true });
+  for (const entry of readdirSync(tree)) if (entry !== ".git") rmSync(join(tree, entry), { recursive: true, force: true });
   run("sh", ["-c", `git -C "$1" archive "$2" | tar -x -C "$3" --exclude=examples`, "sh", repository, ref, tree]);
   // 0.7–0.8 named the ignore file differently; the folders it lists are not part of the graph.
   const oldIgnore = join(tree, ".artifactizeignore");
@@ -521,8 +596,7 @@ function checkout(ref: string, tree: string, cli: string): void {
 async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
   const root = join(candidate.root, "fixtures", "fixture-graph-growth");
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
-  // The remote's main when this checkout has one: a local main is often behind it.
-  const main = spawnSync("git", ["rev-parse", "--verify", "--quiet", "origin/main"], { cwd: repository }).status === 0 ? "origin/main" : "main";
+  const main = newestMain();
   const tags = releases(main);
   const first = tags.findIndex((tag) => tag === "v0.7.0");
   if (first < 0) throw new Error("main has no v0.7.0 release");
@@ -535,7 +609,15 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   const blank = join(frames, "before.png");
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-frames:v", "1", blank]);
   segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: `${tags[0].slice(1)}–${tags[first - 1].slice(1)} · no Artifacts yet`, hold: GIF.step });
-  checkout(steps[0].ref, fixture.repo, candidate.cli);
+  // Each step is committed to the checkout's main branch, whose Current the app shows.
+  mkdirSync(fixture.repo, { recursive: true });
+  e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+  const commit = (step: { ref: string; caption: string }) => {
+    checkout(step.ref, fixture.repo, candidate.cli);
+    e2e.git(fixture, fixture.repo, "add", "-A");
+    e2e.git(fixture, fixture.repo, "commit", "-q", "--allow-empty", "-m", step.caption);
+  };
+  commit(steps[0]);
   const browser = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
   let at = { x: 0, y: 0 };
   try {
@@ -548,7 +630,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       // A scan that ended after this step's checkout: the one Refresh starts, or the first.
       const before = index > 0 ? await scannedAt() : "";
       if (index > 0) {
-        checkout(step.ref, fixture.repo, candidate.cli);
+        commit(step);
         await browser.$("button=Refresh").click();
       }
       await browser.waitUntil(async () => {
@@ -647,7 +729,12 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       segments.push({ frames: [{ file, at: 0 }], speed: 1, caption: step.caption, hold: GIF.step });
     }
   } finally {
-    await service.cleanupWdioSession(browser);
+    try {
+      await service.cleanupWdioSession(browser);
+    } finally {
+      // Nothing of its state keeps running once its project and the build go.
+      e2e.cancelRuns(fixture);
+    }
   }
   return { segments, at };
 }
@@ -655,12 +742,14 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
 /** Record every demo into `output`, building and keeping frames in `work`. */
 async function capture(output: string, work: string): Promise<void> {
   const base = "../../crates/artifactize-desktop/ui/e2e";
-  const { adopt, cleanup, prepare } = await import(`${base}/build.ts`);
-  const e2e = await import(`${base}/fixtures/repo.ts`);
-  const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
-  mkdirSync(work, { recursive: true });
-  const candidate = adopt(await prepare(join(work, "build")));
+  let candidate: { root: string } | undefined;
+  // The work folder goes whatever fails, the build and its setup included.
   try {
+    const { adopt, prepare } = await import(`${base}/build.ts`);
+    const e2e = await import(`${base}/fixtures/repo.ts`);
+    const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
+    mkdirSync(work, { recursive: true });
+    candidate = adopt(await prepare(join(work, "build")));
     const frames = join(work, "frames");
     mkdirSync(frames);
     const loop = await reviewLoop(service, e2e, candidate, frames);
@@ -676,7 +765,10 @@ async function capture(output: string, work: string): Promise<void> {
     }
   } finally {
     try {
-      await cleanup(candidate.root);
+      if (candidate) {
+        const { cleanup } = await import(`${base}/build.ts`);
+        await cleanup(candidate.root);
+      }
     } finally {
       rmSync(work, { recursive: true, force: true });
     }
