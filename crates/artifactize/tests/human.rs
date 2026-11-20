@@ -60,26 +60,43 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
     let state = &fixture.state;
     human::claim(&receipts, id, &alice).await.unwrap();
 
-    let mut changes = artifactize_core::changes::Subscription::new(state).await;
-    let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+    use artifactize_core::changes::{Change, Subscription};
+    let mut changes = Subscription::new(state).await;
+    let notification = async {
+        // A reconciliation can supersede an exact notification, but it still tells every
+        // subscribed window to reload the draft. Don't treat the registration's baseline as
+        // proof that the other process has written anything.
+        assert_eq!(changes.next().await, Change::Resync);
+        loop {
+            match changes.next().await {
+                Change::DraftInvalidated(changed) if &changed == id => break,
+                Change::StateInvalidated | Change::Resync
+                    if read_draft(state, id, &alice).await.unwrap().is_some() =>
+                {
+                    break;
+                }
+                _ => {}
+            }
+        }
+    };
+    let mut writer = tokio::process::Command::new(std::env::current_exe().unwrap());
+    writer
         .args(["--exact", "draft_fixture_writer"])
         .env(DRAFT_FIXTURE, state)
         .env(DRAFT_REQUEST, id.as_str())
-        .output()
-        .await
-        .unwrap();
+        .kill_on_drop(true);
+    let (output, noticed) = tokio::join!(
+        writer.output(),
+        tokio::time::timeout(support::os::patience(Duration::from_secs(30)), notification),
+    );
+    let output = output.unwrap();
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stdout)
     );
-    tokio::time::timeout(support::os::patience(Duration::from_secs(5)), async {
-        while changes.next().await
-            != artifactize_core::changes::Change::DraftInvalidated(id.clone())
-        {}
-    })
-    .await
-    .expect("draft invalidation from the separate writer");
+    noticed.expect("a subscribed window is told to reload the separate writer's draft");
+    changes.close().await.unwrap();
     let initial = read_draft(state, id, &alice).await.unwrap().unwrap();
     assert_eq!(initial.notes, "Initial response");
     assert_eq!(read_draft(state, id, &bob).await.unwrap(), None);
@@ -381,9 +398,9 @@ impl Fixture {
     }
 }
 
-/// The sign-offs the review list starts with, by request.
+/// Every waiting sign-off by request, including one held by a reviewer.
 async fn listed(state: &Path) -> Vec<String> {
-    let query = artifactize_core::review::search::DEFAULT.parse().unwrap();
+    let query = "kind:human status:waiting_human".parse().unwrap();
     artifactize_core::review::search::search(state, &query, &"reviewer".parse().unwrap(), 0)
         .await
         .unwrap()

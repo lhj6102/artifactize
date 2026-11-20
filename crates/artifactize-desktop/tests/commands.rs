@@ -402,7 +402,7 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
-fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes() {
+fn verify_browse_and_review_search_are_independent() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
     let shown = |query: &str| {
@@ -420,13 +420,14 @@ fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes(
         json!({"text": "sort:recent", "error": null, "start": "sort:recent"})
     );
     assert_eq!(shown("repo:rep").0, 1);
-    // Free text also finds a waiting review by its eval; the branch stays only by its own name.
+    // Neither a free-text branch query nor a scoped one changes the waiting review count.
     let (branches, waiting, _) = shown("signoff");
     assert_eq!((branches, waiting), (0, 1));
-    assert_eq!(shown("repo:elsewhere").0 + shown("repo:elsewhere").1, 0);
-    // An invalid search lists nothing and says why.
+    let (branches, waiting, _) = shown("repo:elsewhere");
+    assert_eq!((branches, waiting), (0, 1));
+    // An invalid Verify search lists no branches and says why, but does not filter Review.
     let (branches, waiting, query) = shown("sort:size");
-    assert_eq!((branches, waiting), (0, 0));
+    assert_eq!((branches, waiting), (0, 1));
     assert!(
         query["error"].as_str().unwrap().contains("sort:size"),
         "{query}"
@@ -441,6 +442,35 @@ fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes(
         completion,
         json!({"keep": "sort:recent ", "candidates": ["repo:repo"]})
     );
+    assert_eq!(
+        invoke(&window, "human_waiting_count", json!({})).unwrap(),
+        1
+    );
+    let page = invoke(
+        &window,
+        "human_search",
+        json!({"query": "type:human waiting", "start": null}),
+    )
+    .unwrap();
+    let review = &page["reviews"][0];
+    assert_eq!(page["reviews"].as_array().unwrap().len(), 1);
+    assert_eq!(review["eval"], "release/signoff");
+    let id = review["id"].as_str().unwrap();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    assert_eq!(
+        invoke(&window, "human_waiting_count", json!({})).unwrap(),
+        0
+    );
+    let exact = invoke(
+        &window,
+        "human_open_reference",
+        json!({"id": id, "query": "type:human waiting"}),
+    )
+    .unwrap();
+    assert_eq!(exact["view"]["id"], id);
+    assert_eq!(exact["view"]["target"], review["target"]);
+    assert_eq!(exact["outsideFilter"], true);
+    assert_eq!(exact["outsideReason"], "Claimed by you.");
 }
 
 #[test]
