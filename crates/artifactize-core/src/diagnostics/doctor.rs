@@ -1,10 +1,7 @@
 #[cfg(test)]
 mod tests;
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -195,7 +192,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         } else {
             workspace::outside_artifact_workspaces(&state)?;
         }
-        probe_writable(&state)
+        crate::platform::paths::probe_writable(&state)
     })();
     match writable {
         Ok(()) => report.add(
@@ -280,7 +277,8 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         Err(_) => Vec::new(),
     };
     for status in keys {
-        let (name, variable, source) = (status.provider.as_str(), status.variable, status.source);
+        let backend = status.provider();
+        let (name, variable, source) = (backend.as_str(), status.variable(), status.source());
         let present = source != auth::providers::KeySource::Absent;
         let key = match source {
             auth::providers::KeySource::Saved => format!(
@@ -291,7 +289,6 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                 if present { "present" } else { "absent" }
             ),
         };
-        let backend = status.provider;
         match llm::test_endpoint(backend) {
             Ok(None) => report.add(
                 name,
@@ -313,7 +310,15 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                 ),
                 Details::ApiKey { present, test_endpoint: Some(endpoint) },
             ),
-            Err(error) => report.add(name, CheckStatus::Fail, &error, Details::ApiKey { present, test_endpoint: None }),
+            Err(error) => report.add(
+                name,
+                CheckStatus::Fail,
+                &error,
+                Details::ApiKey {
+                    present,
+                    test_endpoint: None,
+                },
+            ),
         }
     }
     match providers {
@@ -366,7 +371,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
     // Offline: only where `claude` is; its login and version are checked when a review or a
     // model listing starts it.
     match crate::platform::program::resolve(
-        std::ffi::OsStr::new(llm::claude_agent::command::PROGRAM),
+        std::path::Path::new(llm::claude_agent::command::PROGRAM),
         &crate::platform::temporary_directory(),
     ) {
         Ok(program) => report.add(
@@ -398,11 +403,11 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         Ok(Some(remote)) => {
             let details = Details::Remote {
                 configured: true,
-                url: remote.url,
+                url: remote.url().clone(),
                 share: remote.share,
-                token_source: remote.token_source,
+                token_source: remote.token_source(),
             };
-            if remote.token_source == auth::remote::TokenSource::None {
+            if remote.token_source() == auth::remote::TokenSource::None {
                 report.add(
                     "remote",
                     CheckStatus::Warn,
@@ -543,20 +548,20 @@ fn sessions(state: &Path) -> (CheckStatus, String, Details) {
         usage.sessions,
         if usage.sessions == 1 { "" } else { "s" },
         mib(usage.bytes),
-        mib(bounds.max_bytes),
-        mib(bounds.target_bytes),
-        if bounds.enabled {
+        mib(bounds.max_bytes()),
+        mib(bounds.target_bytes()),
+        if bounds.enabled() {
             ""
         } else {
             " Saving is off (limits.json agentSessions.enabled)."
         }
     );
     let details = Details::Sessions {
-        enabled: bounds.enabled,
+        enabled: bounds.enabled(),
         sessions: usage.sessions,
         bytes: usage.bytes,
-        max_bytes: bounds.max_bytes,
-        target_bytes: bounds.target_bytes,
+        max_bytes: bounds.max_bytes(),
+        target_bytes: bounds.target_bytes(),
         directory: crate::agent::session::directory(state),
         state_id,
     };
@@ -638,22 +643,4 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Details) {
         test_auth_endpoint: sign_in,
     };
     (level, message, details)
-}
-
-fn probe_writable(state: &Path) -> std::io::Result<()> {
-    let mut parent = state;
-    while !parent.try_exists()? {
-        parent = parent
-            .parent()
-            .ok_or_else(|| std::io::Error::other("No existing state directory ancestor."))?;
-    }
-    if !fs::metadata(parent)?.is_dir() {
-        return Err(std::io::Error::other(
-            "State directory or its ancestor is not a directory.",
-        ));
-    }
-    let probe = tempfile::Builder::new()
-        .prefix(".artifactize-doctor-")
-        .tempdir_in(parent)?;
-    probe.close()
 }

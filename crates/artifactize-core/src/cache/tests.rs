@@ -1,15 +1,15 @@
 #[path = "artifactsum_tests.rs"]
 mod artifactsum_tests;
 
-use std::{fs, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::config::{CONFIG_FILE, read_workspace_config};
-use crate::test_os::symlink_file;
+use crate::config::{ArtifactName, CONFIG_FILE, EvalDeclaration, read_workspace_config};
+use crate::test_os::{file_link, remove_file_link};
 
 struct Repo {
     root: TempDir,
@@ -27,7 +27,7 @@ impl Repo {
     fn write(&self, path: &str, contents: &str) {
         let path = self.root.path().join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        crate::test_declaration::write(path, contents).unwrap();
+        crate::test_declaration::write(self.root.path(), path, contents).unwrap();
     }
 
     fn artifact(&self, folder: &str, value: Value) {
@@ -42,7 +42,7 @@ impl Repo {
             &config,
             [id],
             self.output.path(),
-            &Parallelism::new(2),
+            &Parallelism::new(2).unwrap(),
             CancellationToken::new(),
         )
         .await?;
@@ -57,6 +57,7 @@ impl Repo {
             .files
             .unwrap()
             .into_keys()
+            .map(|path| path.to_string())
             .collect()
     }
 }
@@ -64,11 +65,14 @@ impl Repo {
 #[tokio::test]
 async fn manifest_digest_prefix_remains_first_sixteen_hex_characters_not_full_identity() {
     let repo = Repo::new();
-    repo.artifact("", json!({"name":"root"}));
-    repo.write("a.txt", "abc");
+    repo.artifact("content", json!({"name":"root"}));
+    repo.write("content/a.txt", "abc");
     let fingerprint = repo.fingerprint("root").await.unwrap();
     let manifest = fingerprint.manifest.unwrap();
-    assert_eq!(manifest.files.unwrap()["a.txt"], "ba7816bf8f01cfea");
+    assert_eq!(
+        manifest.files.unwrap()[&"a.txt".parse().unwrap()],
+        "ba7816bf8f01cfea"
+    );
     assert_eq!(
         manifest.inputs,
         "e4f6b6f577a7a9d1317c8277472a2cf20ab370750350f87150dc6169e62a7506"
@@ -84,7 +88,7 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
     let repo = Repo::new();
     repo.artifact(
         "",
-        json!({"name":"root","fingerprint":{"ignore":["*.log","/data/raw"]}}),
+        json!({"name":"root","parts":["child","image","nested"],"fingerprint":{"ignore":["*.log","/data/raw",".artifactize/"]}}),
     );
     for path in [
         "a.txt",
@@ -153,18 +157,16 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
 }
 
 #[tokio::test]
-async fn explicit_declaration_inputs_are_rejected() {
+async fn explicit_definition_inputs_are_ordinary_bytes() {
     let repo = Repo::new();
-    for input in ["index.artf", "file.png.artf", "missing.artf"] {
-        repo.artifact("", json!({"name":"root","fingerprint":{"files":[input]}}));
-        let error = read_workspace_config(repo.root.path())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            error.contains("cannot be explicit artifactsum inputs"),
-            "{error}"
-        );
-    }
+    repo.artifact(
+        "",
+        json!({"name":"root","fingerprint":{"files":[".artifactize/root.artf"]}}),
+    );
+    let before = repo.fingerprint("root").await.unwrap().value;
+    assert_eq!(repo.files("root").await, [".artifactize/root.artf"]);
+    repo.artifact("", json!({"name":"root","tags":["changed"],"fingerprint":{"files":[".artifactize/root.artf"]}}));
+    assert_ne!(repo.fingerprint("root").await.unwrap().value, before);
 }
 
 #[tokio::test]
@@ -218,10 +220,9 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
         );
         assert!(error.contains("fingerprint.ignore"), "{error}");
     };
-    if symlink_file("a.txt", &link).is_some() {
-        check(repo.fingerprint("owner").await.unwrap_err());
-        fs::remove_file(&link).unwrap();
-    }
+    file_link(&repo.root.path().join("owner/a.txt"), &link);
+    check(repo.fingerprint("owner").await.unwrap_err());
+    remove_file_link(&link);
     repo.write("elsewhere/b.txt", "b");
     crate::test_os::link_dir(&repo.root.path().join("elsewhere"), &link);
     check(repo.fingerprint("owner").await.unwrap_err());
@@ -242,7 +243,7 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     ] {
         repo.artifact(
             "owner",
-            json!({"name":"owner","fingerprint":{"files":inputs}}),
+            json!({"name":"owner","parts":["nested"],"fingerprint":{"files":inputs}}),
         );
         assert!(read_workspace_config(repo.root.path()).is_err(), "{inputs}");
     }
@@ -266,6 +267,7 @@ fn an_eval_keys_its_target_composition_and_one_hop_references() {
         "a",
         json!({
             "name":"a",
+            "parts":["child"],
             "evals":[
                 {
                     "id":"plain",
@@ -341,17 +343,31 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
             agent("a", json!({})),
             json!({"payload":{"instruction":"Other."}}),
         ),
-        eval(
-            agent("a", json!({})),
-            json!({"pass_schema":{"type":"object"}}),
-        ),
-        eval(
-            agent("a", json!({})),
-            json!({"fail_schema":{"type":"object"}}),
-        ),
         eval(json!({"kind":"human"}), json!({})),
     ] {
         assert_ne!(eval_definition_hash(&changed), base);
+    }
+    // The priority that makes an Agent eval RED is part of what is asked.
+    let red_at = |priority: &str| {
+        eval_definition_hash(&eval(agent("a", json!({})), json!({"red_at":priority})))
+    };
+    assert_ne!(red_at("P1"), base);
+    assert_ne!(red_at("P1"), red_at("P2"));
+    assert_eq!(red_at("P1"), red_at("P1"));
+    for changed in [
+        eval(
+            json!({"kind":"human"}),
+            json!({"pass_schema":{"type":"object"}}),
+        ),
+        eval(
+            json!({"kind":"human"}),
+            json!({"fail_schema":{"type":"object"}}),
+        ),
+    ] {
+        assert_ne!(
+            eval_definition_hash(&changed),
+            eval_definition_hash(&eval(json!({"kind":"human"}), json!({})))
+        );
     }
     let runtime = |args: Value, timeout: Value| {
         let mut profile = json!({"kind":"runtime","command":"check","args":args});
@@ -397,7 +413,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
         files: Some(
             files
                 .iter()
-                .map(|(path, digest)| (path.to_string(), digest.repeat(16).parse().unwrap()))
+                .map(|(path, digest)| (path.parse().unwrap(), digest.repeat(16).parse().unwrap()))
                 .collect(),
         ),
     };
@@ -524,16 +540,7 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
             "instruction":"Check that {spec} covers every requirement.",
             "focus":["errors","limits"],
         },
-        "pass_schema":{
-            "type":"object",
-            "properties":{"summary":{"type":"string"}},
-            "required":["summary"],
-        },
-        "fail_schema":{
-            "type":"object",
-            "properties":{"missing":{"type":"array","items":{"type":"string"}}},
-            "required":["missing"],
-        },
+        "red_at":"P1",
     }))
     .unwrap();
     let runtime: EvalDeclaration = crate::test_declaration::eval(json!({
@@ -556,7 +563,7 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
     for (eval, hash, pinned) in [
         (
             &agent,
-            "65116b8f0d4f8bcb1d8a197706fa57d4a1881216edb6e8533086a6deb2b7abb4",
+            "a3d91e804a2fbea857476c0f37b68f8a900a947102fe8b6a04aa897185026f16",
             "f79bfb7fa26e3393235264152e0310e95ce48fb5de0842d8b58ebd3dd431fc13",
         ),
         (
@@ -622,7 +629,7 @@ async fn missing_dependency_keeps_its_validated_artifact_name_and_omits_eval_key
         &config,
         dependencies(&config, &config.evals[0]),
         repo.output.path(),
-        &Parallelism::new(2),
+        &Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await

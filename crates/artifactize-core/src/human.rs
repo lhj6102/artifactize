@@ -2,11 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    agent::verdict::validate_result,
+    agent::verdict::{ValidatedResult, check_result},
     cache,
     config::{Eval, RepoConfig, read_workspace_config},
     remote::Session,
@@ -22,9 +22,7 @@ pub const MAX_RESULT_BYTES: usize = 256_000;
 pub const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
 
 pub fn default_reviewer() -> Result<crate::types::ReviewerId, String> {
-    crate::platform::USER_VARIABLES
-        .iter()
-        .find_map(|name| crate::platform::environment::var_text(name))
+    crate::platform::user_name()
         .ok_or("Provide an explicit reviewer id; no default reviewer is available.")?
         .parse()
 }
@@ -34,7 +32,7 @@ pub async fn open(
     state: &Path,
     request: &crate::types::RequestId,
 ) -> Result<(Receipts, PathBuf), String> {
-    let repo = store::read_request_repo(state, request).await?;
+    let repo = store::read_request_repo_by_id(state, request.clone()).await?;
     Ok((Receipts::open(state, &repo).await?, repo))
 }
 
@@ -112,13 +110,62 @@ pub async fn tool_commands(
         .collect())
 }
 
+/// A Human answer parsed at the caller's input boundary. The request's owner schema is
+/// checked against these fields only once the saved request has been loaded.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Submission {
+    verdict: crate::runtime::Verdict,
+    #[serde(flatten)]
+    fields: Map<String, Value>,
+}
+
+impl TryFrom<Value> for Submission {
+    type Error = String;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        serde_json::from_value(value).map_err(|error| error.to_string())
+    }
+}
+
+impl Submission {
+    pub fn new(
+        verdict: crate::runtime::Verdict,
+        fields: Map<String, Value>,
+    ) -> Result<Self, String> {
+        if fields.contains_key("verdict") {
+            return Err("Owner fields must not contain a verdict.".into());
+        }
+        Ok(Self { verdict, fields })
+    }
+
+    pub fn verdict(&self) -> crate::runtime::Verdict {
+        self.verdict
+    }
+
+    pub fn to_json(&self) -> Value {
+        serde_json::to_value(self).expect("Human submission is JSON")
+    }
+
+    fn validate(&self, eval: &crate::config::EvalDeclaration) -> Result<ValidatedResult, String> {
+        let value = self.to_json();
+        if serde_json::to_vec(&value).map_err(|e| e.to_string())?.len() > MAX_RESULT_BYTES {
+            return Err(format!("Human result exceeds {MAX_RESULT_BYTES} bytes."));
+        }
+        check_result(eval, &value)?;
+        Ok(ValidatedResult {
+            verdict: self.verdict,
+            fields: self.fields.clone(),
+        })
+    }
+}
+
 /// Invalid results remain correctable; only a valid submission performs the final fingerprint
 /// check.
 pub async fn submit(
     receipts: &Receipts,
     request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
-    result: &Value,
+    submission: &Submission,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     let (mut request, _) = receipts.human_request(request, reviewer).await?;
@@ -128,10 +175,7 @@ pub async fn submit(
         .iter()
         .find(|eval| eval.id == request.eval_id)
         .expect("reconnected eval");
-    if serde_json::to_vec(result).map_err(|e| e.to_string())?.len() > MAX_RESULT_BYTES {
-        return Err(format!("Human result exceeds {MAX_RESULT_BYTES} bytes."));
-    }
-    let result = validate_result(&eval.declaration, result)?;
+    let result = submission.validate(&eval.declaration)?;
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;
     request.state = crate::store::RequestState::completed(result.into(), crate::broker::now());
     receipts.settle_human(&request, reviewer).await
@@ -142,13 +186,13 @@ pub async fn submit_and_publish(
     state: &Path,
     request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
-    result: &Value,
+    submission: &Submission,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     let (receipts, repo) = open(state, request).await?;
     let result = async {
         let remote = Session::open(Some(state), Some(&repo))?;
-        let request = submit(&receipts, request, reviewer, result, cancellation).await?;
+        let request = submit(&receipts, request, reviewer, submission, cancellation).await?;
         if let Some(remote) = remote {
             remote
                 .publish_request(&receipts, &request)
@@ -169,7 +213,11 @@ pub(crate) fn definition(
     eval: &Eval,
 ) -> Result<crate::store::HumanDefinition, String> {
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
-    serde_json::from_value(json!({"repo":crate::platform::path_text(&config.root),"eval":eval,"artifacts":scope.artifacts})).map_err(|e| e.to_string())
+    Ok(crate::store::HumanDefinition::authored(
+        &config.root,
+        eval,
+        &scope,
+    ))
 }
 
 /// Why the live declarations cannot serve a waiting request.
@@ -216,8 +264,8 @@ fn declarations(request: &Request) -> Result<RepoConfig, Mismatch> {
                     Some((
                         name.clone(),
                         crate::config::Site {
-                            kind: *artifact.kind.value()?,
                             path: artifact.path.value()?.clone(),
+                            definition: artifact.definition.value()?.clone(),
                         },
                     ))
                 })
@@ -255,29 +303,41 @@ async fn recheck(
     if cancellation.is_cancelled() {
         return Err("Human action was cancelled.".into());
     }
-    let Some(expected) = &request.key else {
-        return Ok(());
-    };
-    let output = request
-        .run_dir
-        .as_deref()
-        .ok_or("Human request has no output directory.")?;
     let eval = config
         .evals
         .iter()
         .find(|eval| eval.id == request.eval_id)
         .ok_or("Recorded Human eval no longer exists.")?;
-    let parallelism = cache::Parallelism::new(cache::Parallelism::available());
-    let (code, error) =
-        match cache::recheck(config, eval, output, &parallelism, cancellation.clone()).await {
-            Ok(Some(actual)) if &actual == expected => return Ok(()),
-            Ok(_) => (
-                crate::types::FailureCode::InputChanged,
-                "Fingerprint changed during review.".into(),
-            ),
-            Err(error) if cancellation.is_cancelled() => return Err(error),
-            Err(error) => (crate::types::FailureCode::FingerprintRecheckFailed, error),
-        };
+    if request.key.is_none() && cache::live_input(config, eval).is_none() {
+        return Ok(());
+    }
+    let output = request
+        .run_dir
+        .as_deref()
+        .ok_or("Human request has no output directory.")?;
+    let parallelism = cache::Parallelism::new(cache::Parallelism::available())?;
+    let (code, error) = match if let Some(expected) = &request.key {
+        cache::recheck(config, eval, output, &parallelism, cancellation.clone())
+            .await
+            .map(|actual| actual.as_ref() == Some(expected))
+    } else {
+        cache::recheck_observations(
+            config,
+            &request.fingerprints,
+            output,
+            &parallelism,
+            cancellation.clone(),
+        )
+        .await
+    } {
+        Ok(true) => return Ok(()),
+        Ok(false) => (
+            crate::types::FailureCode::InputChanged,
+            "Fingerprint changed during review.".into(),
+        ),
+        Err(error) if cancellation.is_cancelled() => return Err(error),
+        Err(error) => (crate::types::FailureCode::FingerprintRecheckFailed, error),
+    };
     request.state =
         crate::store::RequestState::failed(error.clone(), Some(code), crate::broker::now());
     receipts.settle_human(request, reviewer).await?;

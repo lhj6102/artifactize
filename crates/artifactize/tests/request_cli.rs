@@ -34,6 +34,7 @@ impl Fixture {
         // Beside the child rather than around it, so that the child is no part of it.
         fs::create_dir_all(repo.join("parent")).unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("parent/index.artf"),
             json!({
                 "name":"parent","fingerprint":false,"evals":[{"id":"check","title":"Dependent",
@@ -83,8 +84,13 @@ impl Fixture {
         } else {
             declaration["fingerprint"] = json!(false);
         }
-        fs::write(child.join("fingerprint"), "review-v1\n").unwrap();
-        support::declaration::write(child.join("index.artf"), declaration.to_string()).unwrap();
+        fs::write(
+            support::declaration::source_path(child.join("fingerprint")),
+            "review-v1\n",
+        )
+        .unwrap();
+        support::declaration::write(&(repo), child.join("index.artf"), declaration.to_string())
+            .unwrap();
         let state = root.path().join("state");
         root.track(&state, &repo);
         Self { repo, state, root }
@@ -106,12 +112,8 @@ impl Fixture {
     }
 
     fn json(&self, args: &[&str], code: i32) -> Value {
-        let output = self
-            .command()
-            .args(args)
-            .arg("--json")
-            .record_output()
-            .unwrap();
+        let recorded = self.command().args(args).arg("--json").recorded().unwrap();
+        let output = &recorded.output;
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -119,7 +121,7 @@ impl Fixture {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        parse(&output)
+        recorded.saved_json().unwrap_or_else(|| parse(output))
     }
 
     fn start(&self) -> Child {
@@ -129,6 +131,18 @@ impl Fixture {
     }
 
     fn request_state(&self, run: &str, eval: &str, expected: &str) {
+        self.saved_until(run, |view| {
+            view.requests
+                .iter()
+                .any(|request| request.eval_id == eval && request.status().as_str() == expected)
+        });
+    }
+
+    fn saved_until(
+        &self,
+        run: &str,
+        ready: impl Fn(&artifactize_core::store::RunView) -> bool + Sync,
+    ) {
         let run: artifactize_core::types::RunId = run.parse().unwrap();
         thread::scope(|scope| {
             scope
@@ -147,10 +161,7 @@ impl Fixture {
                                             artifactize_core::store::read_run(&self.state, &run)
                                                 .await
                                                 .unwrap();
-                                        if view.requests.iter().any(|request| {
-                                            request.eval_id == eval
-                                                && request.status().as_str() == expected
-                                        }) {
+                                        if ready(&view) {
                                             return;
                                         }
                                         assert!(view.run.status().is_open(), "{view:?}");
@@ -159,7 +170,7 @@ impl Fixture {
                                 },
                             )
                             .await
-                            .expect("saved request reaches the asserted state");
+                            .expect("saved Run reaches the asserted state");
                         })
                         .await;
                     });
@@ -214,8 +225,7 @@ fn parse(output: &Output) -> Value {
     })
 }
 
-fn finish(mut child: Child, code: i32) -> Value {
-    support::os::wait_child(&mut child, "verify");
+fn finish(child: Child, code: i32) -> Value {
     let output = child.wait_with_output().unwrap();
     assert_eq!(
         output.status.code(),
@@ -295,13 +305,13 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         .unwrap();
     assert!(launch.status.success());
     assert!(String::from_utf8_lossy(&launch.stdout).contains("launched"));
-    for fields in [
-        "{}",
-        "[]",
-        "invalid",
-        r#"{"verdict":"RED","approved":true}"#,
+    for (fields, expected) in [
+        ("{}", "approved"),
+        ("[]", "Human fields must be a JSON object."),
+        ("invalid", "expected value"),
+        (r#"{"verdict":"RED","approved":true}"#, "Use --verdict"),
     ] {
-        fixture.json(
+        let error = fixture.json(
             &[
                 "request",
                 "submit",
@@ -313,13 +323,20 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
             ],
             2,
         );
+        let message = error["error"].as_str().unwrap();
+        assert!(message.contains(expected), "{message}");
+        assert!(!message.contains(fields), "{message}");
         assert_eq!(
             fixture.json(&["request", "show", id], 0)["status"],
             "DEFERRED"
         );
     }
     let fields = fixture.root.path().join("fields.json");
-    fs::write(&fields, " ".repeat(FIELDS_BYTES + 1)).unwrap();
+    fs::write(
+        support::declaration::source_path(&fields),
+        " ".repeat(FIELDS_BYTES + 1),
+    )
+    .unwrap();
     fixture.json(
         &[
             "request",
@@ -332,7 +349,30 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         ],
         2,
     );
-    fs::write(&fields, r#"{"approved":true}"#).unwrap();
+    fs::write(
+        support::declaration::source_path(&fields),
+        r#"{"approved":true}"#,
+    )
+    .unwrap();
+    let error = fixture.json(
+        &[
+            "request",
+            "submit",
+            id,
+            "--verdict",
+            "GREEN",
+            "--fields",
+            r#"{"approved":true}"#,
+            "--fields-file",
+            fields.to_str().unwrap(),
+        ],
+        2,
+    );
+    let message = error["error"].as_str().unwrap();
+    assert!(
+        message.contains("--fields ") && message.contains("--fields-file"),
+        "{message}"
+    );
     let submitted = fixture.json(
         &[
             "request",
@@ -443,11 +483,13 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let fixture = Fixture::new(false);
     let sibling = fixture.repo.join("sibling");
     fs::create_dir(&sibling).unwrap();
+    let gate = owned_run::FileGate::new(sibling.join("release"));
     support::declaration::write(
+        &fixture.repo,
         sibling.join("index.artf"),
         json!({
             "name":"sibling","fingerprint":false,"evals":[{"id":"check","title":"Once",
-            "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
+            "profile":{"kind":"runtime","command":support::os::steps(),"args":["wait","release"]},
             "payload":{"instruction":"Run before the Human finishes."}}]
         })
         .to_string(),
@@ -465,13 +507,16 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
     let run_id = waiting["runId"].as_str().unwrap();
-    assert_eq!(
-        fixture.json(&["run", "show", run_id], 0)["status"],
-        "WAITING_HUMAN"
-    );
-    // The sibling's saved result, not merely Human admission, orders the submission.
-    fixture.request_state(run_id, "sibling/check", "GREEN");
+    fixture.saved_until(run_id, |view| {
+        use artifactize_core::types::{RequestStatus, RunStatus};
+        view.run.status() == RunStatus::WaitingHuman
+            && view.requests.iter().any(|request| {
+                request.eval_id == "sibling/check" && request.status() == RequestStatus::Running
+            })
+    });
     fixture.json(&["request", "claim", id, "--reviewer", "custom"], 0);
+    gate.release().unwrap();
+    fixture.request_state(run_id, "sibling/check", "GREEN");
     fixture.json(
         &[
             "request",
@@ -612,7 +657,11 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
         "PROVISIONAL",
     );
     fixture.json(&["request", "claim", id], 0);
-    fs::write(fixture.repo.join("child/fingerprint"), "changed\n").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("child/fingerprint")),
+        "changed\n",
+    )
+    .unwrap();
     fixture.json(
         &[
             "request",

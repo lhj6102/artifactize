@@ -1,141 +1,98 @@
 //! Parse MCP arguments once at the transport boundary.
-use artifactize_core::{project::selection::Selection, runs::ResultCursor, types::*};
-use serde::Deserialize;
+mod inspect;
+mod verify;
 
-/// Bound model-driven array envelopes, without changing core selection expansion.
+pub(super) use inspect::{Inspection, RUN_LIST_LIMIT, Read};
+pub(super) use verify::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, Verify};
+
+use super::{error::ArgumentsError, tool::ToolId};
+use artifactize_core::{platform, project::selection::Selection, types::RunId};
+use serde::{Deserialize, de::DeserializeOwned};
+use serde_json::{Map, Value};
+use std::path::PathBuf;
+use time::OffsetDateTime;
+
+/// Require at least one ID so a list selector always names a target.
+pub(super) const MIN_SCOPE_IDS: usize = 1;
+/// Bound model-driven array envelopes without changing core selection expansion.
 pub(super) const SCOPE_IDS: usize = 64;
-pub(super) struct Scope(pub Selection);
-impl<'de> Deserialize<'de> for Scope {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let selection = Selection::deserialize(deserializer)?;
+
+pub(super) struct Call {
+    pub project: Option<PathBuf>,
+    pub command: Command,
+}
+
+pub(super) enum Command {
+    Verify(Verify),
+    Inspect(Inspection),
+}
+
+impl Call {
+    pub(super) fn parse(
+        name: &str,
+        mut arguments: Map<String, Value>,
+        as_of: OffsetDateTime,
+    ) -> Result<Self, ArgumentsError> {
+        let project = match arguments.remove("project") {
+            None => None,
+            Some(Value::String(folder)) => {
+                Some(platform::absolute_folder(&folder).ok_or(ArgumentsError::ProjectRelative)?)
+            }
+            Some(_) => return Err(ArgumentsError::ProjectType),
+        };
+        let id = ToolId::parse(name).ok_or_else(|| ArgumentsError::UnknownTool(name.to_owned()))?;
+        let command = match id {
+            ToolId::Verify(tool) => Command::Verify(Verify::parse(tool, arguments)?),
+            ToolId::Read(tool) => Command::Inspect(Inspection::parse(tool, arguments, as_of)?),
+        };
+        Ok(Self { project, command })
+    }
+}
+
+fn decode<T: DeserializeOwned>(arguments: Map<String, Value>) -> Result<T, ArgumentsError> {
+    serde_json::from_value(Value::Object(arguments)).map_err(ArgumentsError::Decode)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Run {
+    run: RunId,
+}
+
+#[derive(Deserialize)]
+#[serde(try_from = "Selection")]
+pub(super) struct Scope(Selection);
+
+impl Scope {
+    fn new(selection: Selection) -> Result<Self, String> {
         let count = match &selection {
             Selection::Artifacts { artifact_ids } => Some(artifact_ids.len()),
             Selection::Evals { eval_ids } => Some(eval_ids.len()),
             _ => None,
         };
-        if count.is_some_and(|count| count == 0 || count > SCOPE_IDS) {
-            return Err(serde::de::Error::custom(
-                "scope arrays must contain 1–64 IDs",
+        if count.is_some_and(|count| !(MIN_SCOPE_IDS..=SCOPE_IDS).contains(&count)) {
+            return Err(format!(
+                "scope arrays must contain {MIN_SCOPE_IDS}–{SCOPE_IDS} IDs"
             ));
         }
         Ok(Self(selection))
     }
-}
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Start {
-    pub scope: Scope,
-    pub request_key: Option<RequestKey>,
-    pub comment: Option<RunComment>,
-    pub jobs: Option<u32>,
-    #[serde(default)]
-    pub speculate: bool,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Run {
-    pub run: RunId,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Wait {
-    pub run: RunId,
-    pub seconds: Option<u64>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct ResultInput {
-    pub run: RunId,
-    pub cursor: Option<ResultCursor>,
-}
-// Cursors are consumed by the shared transport projection, not core operations.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Empty {}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Status {
-    #[serde(default = "all")]
-    pub scope: Scope,
-}
-fn all() -> Scope {
-    Scope(Selection::All)
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Runs {
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct RunDetails {
-    pub run: RunId,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Requests {
-    pub run: Option<RunId>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Request {
-    pub id: RequestId,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Session {
-    pub reference: artifactize_core::inspect::session::Selector,
-    #[serde(default)]
-    pub summary: bool,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Tools {
-    pub eval: Option<EvalId>,
-    pub artifact: Option<ArtifactName>,
-    pub tool: Option<artifactize_core::config::ToolName>,
-    pub audience: Option<Audience>,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(super) enum Audience {
-    Agent,
-    Human,
-}
-impl From<Audience> for artifactize_core::diagnostics::Audience {
-    fn from(value: Audience) -> Self {
-        match value {
-            Audience::Agent => Self::Agent,
-            Audience::Human => Self::Human,
-        }
+    pub(super) fn selection(&self) -> &Selection {
+        &self.0
     }
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Models {
-    pub provider: artifactize_core::config::Backend,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Cache {
-    pub key: ReuseKey,
-    #[serde(default)]
-    pub history: bool,
+
+impl TryFrom<Selection> for Scope {
+    type Error = String;
+
+    fn try_from(selection: Selection) -> Result<Self, Self::Error> {
+        Self::new(selection)
+    }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct GraphInput {
-    #[serde(default = "all")]
-    pub scope: Scope,
-    #[serde(default)]
-    pub impact: bool,
-}
-#[derive(Deserialize)]
-pub(super) struct LogInput {
-    pub id: RequestId,
-    #[serde(flatten)]
-    pub query: artifactize_core::inspect::LogQuery,
+impl Default for Scope {
+    fn default() -> Self {
+        Self(Selection::All)
+    }
 }

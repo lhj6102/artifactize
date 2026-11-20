@@ -1,7 +1,7 @@
 //! Typed builtin results. Only the content boundary converts them to dynamic JSON.
 use serde::Serialize;
 
-use crate::scope::ArtifactId;
+use crate::scope::{ArtifactId, InputPath};
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -18,7 +18,7 @@ pub(super) struct Entry {
     #[serde(flatten)]
     pub kind: EntryKind,
     pub name: String,
-    pub path: String,
+    pub path: InputPath,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,7 +35,7 @@ pub(super) enum EntryKind {
 pub(super) struct Read {
     pub artifact_id: ArtifactId,
     pub resolved_artifact_id: ArtifactId,
-    pub path: String,
+    pub path: InputPath,
     #[serde(flatten)]
     pub rows: ReadRows,
 }
@@ -92,7 +92,7 @@ pub(super) struct Line {
 #[serde(rename_all = "camelCase")]
 pub(super) struct List {
     pub artifact_id: ArtifactId,
-    pub path: String,
+    pub path: InputPath,
     pub entries: Vec<Entry>,
     pub total_entries: usize,
     #[serde(flatten)]
@@ -120,21 +120,21 @@ impl Serialize for Page {
 
 #[derive(Debug, Serialize)]
 pub(super) struct Glob {
-    pub path: String,
-    pub files: Vec<String>,
+    pub path: InputPath,
+    pub files: Vec<InputPath>,
     pub truncated: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub(super) struct Grep {
-    pub path: String,
+    pub path: InputPath,
     pub matches: Vec<GrepMatch>,
     pub truncated: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub(super) struct GrepMatch {
-    pub path: String,
+    pub path: InputPath,
     pub line: usize,
     pub text: String,
 }

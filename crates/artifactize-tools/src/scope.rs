@@ -4,15 +4,19 @@ use std::{
     borrow::Borrow,
     collections::BTreeMap,
     fmt,
-    fs::File,
-    io,
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
-use crate::files as platform;
+mod open;
+pub(crate) use open::open_native_scoped;
+pub use open::{OpenError, open_child, open_input, open_scoped, scoped_path};
+mod logical;
+pub use logical::LogicalPath;
+mod target;
+pub use target::{FileTarget, LocalTarget, Target, Uri};
 
 /// Bound logical tool paths in UTF-16 units, matching JSON Schema string limits
 /// across supported clients without tying scoped paths to an OS-specific PATH_MAX.
@@ -144,46 +148,49 @@ pub enum ArtifactKind {
     /// Selected paths below the folder of its declaration.
     Aspect,
     Graph,
+    Live,
 }
 
 /// Access data computed by the caller, without declarations, evals, or owner commands.
 #[derive(Debug, Clone)]
 pub struct Artifact {
-    pub path: PathBuf,
-    pub kind: ArtifactKind,
+    pub path: Target,
     pub name: String,
     /// Logical path prefix to the nested folder Artifact that owns it.
     pub nested: BTreeMap<ChildPrefix, ArtifactId>,
-    /// An aspect's selected paths, relative to its folder; empty for other kinds.
-    pub select: Vec<String>,
+    /// A folder part whose target contains this entire target's containing folder.
+    pub covering_part: Option<ArtifactId>,
 }
 
 impl Artifact {
+    pub fn kind(&self) -> ArtifactKind {
+        self.path.kind()
+    }
+    pub fn select(&self) -> &[LogicalPath] {
+        self.path.select()
+    }
     pub fn folder(&self) -> &Path {
-        match self.kind {
-            ArtifactKind::Folder | ArtifactKind::Graph => &self.path,
-            ArtifactKind::File | ArtifactKind::Aspect => {
-                self.path.parent().unwrap_or(Path::new(""))
-            }
-        }
+        self.path.folder()
     }
 
     /// Whether only some paths below its folder are the Artifact's: a file Artifact's
     /// target or an aspect's selection, under a virtual root.
     pub fn selective(&self) -> bool {
-        matches!(self.kind, ArtifactKind::File | ArtifactKind::Aspect)
+        matches!(self.kind(), ArtifactKind::File | ArtifactKind::Aspect)
     }
 
     /// Whether the logical `path` below its folder is the Artifact's: always for a folder,
     /// and for an aspect a selected path, a path below one, or a folder leading to one.
-    pub fn admits(&self, path: &str) -> bool {
+    pub fn admits(&self, path: InputPath<&str>) -> bool {
+        let path = path.as_str();
         if path.is_empty() {
             return true;
         }
-        match self.kind {
+        match self.kind() {
             ArtifactKind::Folder | ArtifactKind::Graph => true,
+            ArtifactKind::Live => false,
             ArtifactKind::File => self.file_name() == Some(path),
-            ArtifactKind::Aspect => self.select.iter().any(|selected| {
+            ArtifactKind::Aspect => self.select().iter().any(|selected| {
                 let within = |outer: &str, inner: &str| {
                     inner
                         .strip_prefix(outer)
@@ -195,16 +202,14 @@ impl Artifact {
     }
 
     pub fn file_name(&self) -> Option<&str> {
-        (self.kind == ArtifactKind::File)
-            .then(|| self.path.file_name().and_then(|name| name.to_str()))
-            .flatten()
+        self.path.file_name()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopedPath {
     pub artifact_id: ArtifactId,
-    pub path: String,
+    pub path: InputPath,
 }
 
 #[derive(Debug)]
@@ -213,41 +218,60 @@ pub struct Scope {
 }
 
 impl Scope {
+    pub(crate) fn artifact(&self, id: &ArtifactId) -> Result<&Artifact, ScopeError> {
+        self.artifacts
+            .get(id)
+            .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {id}")))
+    }
+
     /// Pure logical resolution. Each child hop consumes path components.
     pub fn resolve_path(
         &self,
         artifact_id: &ArtifactId,
         path: &str,
     ) -> Result<ScopedPath, ScopeError> {
-        logical_path(path)?;
+        let location = self.locate(artifact_id, InputPath::parse(path)?)?;
+        Ok(ScopedPath {
+            artifact_id: location.artifact_id.clone(),
+            path: location.path.owned(),
+        })
+    }
+
+    pub(crate) fn locate<'a, 'p>(
+        &'a self,
+        artifact_id: &'a ArtifactId,
+        path: InputPath<&'p str>,
+    ) -> Result<Location<'a, 'p>, ScopeError> {
         let mut current = artifact_id;
         let mut remaining = path;
         loop {
-            let artifact = self
-                .artifacts
-                .get(current)
-                .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {current}")))?;
-            if remaining.is_empty() {
-                break;
+            let artifact = self.artifact(current)?;
+            if artifact.kind() == ArtifactKind::Live {
+                return Err(ScopeError(
+                    "Live Artifacts have no filesystem inputs.".into(),
+                ));
             }
-            if let Some((prefix, target)) = artifact.nested.iter().find(|(prefix, _)| {
-                remaining == prefix.as_str()
-                    || remaining
-                        .strip_prefix(prefix.as_str())
-                        .is_some_and(|rest| rest.starts_with('/'))
+            if let Some(part) = &artifact.covering_part
+                && !self.artifacts.contains_key(part)
+            {
+                return Err(ScopeError(format!(
+                    "Artifact {current} is covered by folder part {part}; reference {{{part}}} to read its files."
+                )));
+            }
+            if let Some((target, rest)) = artifact.nested.iter().find_map(|(prefix, target)| {
+                remaining.after(prefix.as_str()).map(|rest| (target, rest))
             }) {
                 current = target;
-                remaining = remaining[prefix.len()..].strip_prefix('/').unwrap_or("");
+                remaining = rest;
                 continue;
             }
-            break;
+            file_input(artifact, remaining)?;
+            return Ok(Location {
+                artifact_id: current,
+                artifact,
+                path: remaining,
+            });
         }
-        let artifact = &self.artifacts[current];
-        file_input(artifact, remaining)?;
-        Ok(ScopedPath {
-            artifact_id: current.clone(),
-            path: remaining.to_owned(),
-        })
     }
 
     /// Existing file or directory, without traversing links even inside the owner.
@@ -257,90 +281,125 @@ impl Scope {
         artifact_id: &ArtifactId,
         path: &str,
     ) -> Result<PathBuf, ScopeError> {
-        let location = self.resolve_path(artifact_id, path)?;
-        let artifact = &self.artifacts[&location.artifact_id];
-        let owner = scoped_path(root, artifact.folder())?;
-        let path = if location.path.is_empty() {
-            artifact.file_name().unwrap_or("")
-        } else {
-            &location.path
-        };
-        let resolved = scoped_path(&owner, Path::new(path))?;
-        let file =
-            open_input(root, artifact, path).map_err(|error| ScopeError(error.to_string()))?;
-        let regular = file
-            .metadata()
-            .map_err(|error| ScopeError(error.to_string()))?
-            .is_file();
-        if artifact.file_name().is_some() && !regular {
+        self.resolve_parsed(root, artifact_id, InputPath::parse(path)?)
+    }
+
+    /// [`Self::resolve_input`] for a path already validated at its edge.
+    pub(crate) fn resolve_parsed<T: AsRef<str>>(
+        &self,
+        root: &Path,
+        artifact_id: &ArtifactId,
+        path: InputPath<T>,
+    ) -> Result<PathBuf, ScopeError> {
+        self.locate(artifact_id, path.borrowed())?.native_path(root)
+    }
+}
+
+pub(crate) struct Location<'a, 'p> {
+    pub artifact_id: &'a ArtifactId,
+    pub artifact: &'a Artifact,
+    pub path: InputPath<&'p str>,
+}
+
+/// A validated tool path, distinct from declaration selections. Empty denotes the root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct InputPath<T = String>(T);
+
+impl InputPath<String> {
+    /// A native command-line path, its names validated once by the platform layer.
+    pub(crate) fn from_native(path: &Path) -> Result<Self, ScopeError> {
+        let text =
+            crate::files::relative_text_of(path).map_err(|error| ScopeError(error.to_string()))?;
+        if text.encode_utf16().count() > MAX_PATH_UNITS {
             return Err(ScopeError(
-                "File Artifact target must remain a regular file.".into(),
+                "Artifact path must be a safe relative logical path.".into(),
             ));
         }
-        Ok(resolved)
+        Ok(Self(text))
     }
 }
 
-/// Why a scoped open failed. A missing entry stays distinct, so a caller that knows the
-/// logical path the user asked for can name it.
-#[derive(Debug, Error)]
-pub enum OpenError {
-    #[error("No such file or directory.")]
-    NotFound,
-    /// A component is a link, which scoped access never follows.
-    #[error("Cannot open Artifact input without symlink traversal.")]
-    Link,
-    #[error(transparent)]
-    Refused(#[from] ScopeError),
+impl<T: AsRef<str>> InputPath<T> {
+    pub(crate) fn parse(path: T) -> Result<Self, ScopeError> {
+        logical_path(path.as_ref())?;
+        Ok(Self(path))
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_ref()
+    }
+
+    pub(crate) fn borrowed(&self) -> InputPath<&str> {
+        InputPath(self.as_str())
+    }
+
+    /// A native entry has already been checked as a single logical name by the platform.
+    pub(crate) fn child(&self, name: &str) -> Option<InputPath<String>> {
+        let path = if self.as_str().is_empty() {
+            name.to_owned()
+        } else {
+            format!("{}/{name}", self.as_str())
+        };
+        (path.encode_utf16().count() <= MAX_PATH_UNITS).then_some(InputPath(path))
+    }
 }
 
-/// Open each component relative to its pinned parent, so replacement cannot redirect a read
-/// through a link.
-pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, OpenError> {
-    if !platform::is_absolute(root) || platform::is_absolute(&artifact.path) {
-        return Err(
-            ScopeError("Artifact roots must be absolute and owner paths relative.".into()).into(),
-        );
+impl std::str::FromStr for InputPath<String> {
+    type Err = ScopeError;
+
+    fn from_str(path: &str) -> Result<Self, Self::Err> {
+        InputPath::parse(path).map(InputPath::owned)
     }
-    logical_path(path)?;
-    file_input(artifact, path)?;
-    let owner = open_scoped(&root.join(artifact.folder()), "")?;
-    // Keep the owner pinned between checking its namespace and opening each component.
-    // Check the parent of each reserved component: a nested APFS mount can have a different
-    // case policy from its owner volume. Exact-name checks additionally reject OS aliases.
-    let components: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
-    let mut file = owner;
-    for (depth, component) in components.iter().enumerate() {
-        let child = artifact.nested.keys().any(|prefix| {
-            let prefix: Vec<_> = prefix.split('/').collect();
-            prefix.len() == depth + 1
-                && prefix
-                    .iter()
-                    .zip(&components)
-                    .all(|(left, right)| left.eq_ignore_ascii_case(right))
-        });
-        if child
-            && !platform::case_sensitive(&file).map_err(|error| ScopeError(error.to_string()))?
-        {
-            return Err(ScopeError("Physical input conflicts with a child name.".into()).into());
+}
+
+impl<T: AsRef<str>> fmt::Display for InputPath<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl<T: AsRef<str>> Serialize for InputPath<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<T: AsRef<str>> AsRef<Path> for InputPath<T> {
+    fn as_ref(&self) -> &Path {
+        Path::new(self.as_str())
+    }
+}
+
+impl<'a> InputPath<&'a str> {
+    pub(crate) fn into_str(self) -> &'a str {
+        self.0
+    }
+
+    pub(crate) fn root() -> Self {
+        Self("")
+    }
+
+    fn after(self, prefix: &str) -> Option<Self> {
+        let suffix = self.0.strip_prefix(prefix)?;
+        if suffix.is_empty() {
+            Some(Self::root())
+        } else {
+            suffix.strip_prefix('/').map(Self)
         }
-        file = open_child(&file, std::ffi::OsStr::new(component))?;
     }
-    if artifact.file_name().is_some()
-        && !path.is_empty()
-        && !file
-            .metadata()
-            .map_err(|e| ScopeError(e.to_string()))?
-            .is_file()
-    {
-        return Err(ScopeError("File Artifact target must remain a regular file.".into()).into());
+
+    fn names(self) -> impl Iterator<Item = &'a str> {
+        self.0.split('/').filter(|name| !name.is_empty())
     }
-    Ok(file)
+
+    pub(crate) fn owned(self) -> InputPath<String> {
+        InputPath(self.0.to_owned())
+    }
 }
 
 /// A file Artifact exposes a virtual root containing only its target, and an aspect one
 /// containing only its selected paths.
-fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
+fn file_input(artifact: &Artifact, path: InputPath<&str>) -> Result<(), ScopeError> {
     if artifact.admits(path) {
         return Ok(());
     }
@@ -352,72 +411,9 @@ fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
         None => format!(
             "Aspect {} exposes only its selected paths: {}.",
             artifact.name,
-            artifact.select.join(", ")
+            artifact.select().join(", ")
         ),
     }))
-}
-
-/// Open a relative path below an absolute root without following any symlink components.
-pub fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
-    logical_path(path)?;
-    if !platform::is_absolute(root) {
-        return Err(ScopeError("Scoped roots must be absolute.".into()).into());
-    }
-    let (filesystem_root, names) = platform::split_root(root)
-        .ok_or_else(|| ScopeError("Artifact path must not traverse parent directories.".into()))?;
-    let mut directory =
-        platform::open_directory(filesystem_root).map_err(|e| ScopeError(e.to_string()))?;
-    // Host-selected roots may use system aliases, such as short names. Logical components
-    // below that trusted root must use exact entry spellings. Both walks stay
-    // descriptor-relative and refuse links in every component.
-    let components = names.into_iter().map(|name| (name, false)).chain(
-        path.split('/')
-            .filter(|part| !part.is_empty())
-            .map(|part| (std::ffi::OsStr::new(part), true)),
-    );
-    for (name, exact) in components {
-        directory = match name {
-            name if name != ".." && name != "." => open_named(&directory, name, exact)?,
-            _ => {
-                return Err(ScopeError(
-                    "Artifact path must not traverse parent directories.".into(),
-                )
-                .into());
-            }
-        };
-    }
-    Ok(directory)
-}
-
-/// Open one entry of a pinned directory without following a symlink.
-pub fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, OpenError> {
-    open_named(directory, name, true)
-}
-
-fn open_named(directory: &File, name: &std::ffi::OsStr, exact: bool) -> Result<File, OpenError> {
-    let entry_name = platform::EntryName::new(name)
-        .ok_or_else(|| ScopeError("Invalid Artifact path.".into()))?;
-    let file = platform::open_entry(directory, &entry_name).map_err(|error| {
-        if error.kind() == io::ErrorKind::NotFound {
-            OpenError::NotFound
-        } else if platform::is_link_refusal(&error) {
-            OpenError::Link
-        } else {
-            ScopeError(format!("Cannot open Artifact input: {error}")).into()
-        }
-    })?;
-    if exact && !platform::exact_name(&file, name).map_err(|error| ScopeError(error.to_string()))? {
-        return Err(
-            ScopeError("Artifact path must use the exact directory entry name.".into()).into(),
-        );
-    }
-    let metadata = file.metadata().map_err(|e| ScopeError(e.to_string()))?;
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Err(
-            ScopeError("Artifact input must be a regular file or directory.".into()).into(),
-        );
-    }
-    Ok(file)
 }
 
 pub fn logical_path(path: &str) -> Result<(), ScopeError> {
@@ -440,24 +436,5 @@ pub fn logical_path(path: &str) -> Result<(), ScopeError> {
 /// The logical form of a native relative path: its components joined with `/`, whatever
 /// separator the platform uses. `None` when a component is not UTF-8 or not a plain name.
 pub fn logical_from_native(path: &Path) -> Option<String> {
-    platform::logical_from_native(path)
-}
-
-/// Resolve a physical input below a canonical root. No component may be a symlink.
-pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
-    let relative =
-        platform::scoped_relative(path).map_err(|error| ScopeError(error.to_string()))?;
-    // The pinned, no-follow walk decides: it refuses links, special files and spellings
-    // other than the directory entry's own, so the returned path names what it opened.
-    match open_scoped(root, &relative) {
-        Ok(_) => Ok(relative
-            .split('/')
-            .filter(|part| !part.is_empty())
-            .fold(root.to_owned(), |path, part| path.join(part))),
-        Err(OpenError::NotFound) => Err(ScopeError(format!(
-            "Artifact input does not exist: {relative}"
-        ))),
-        Err(OpenError::Link) => Err(ScopeError("Artifact symlinks are not supported.".into())),
-        Err(OpenError::Refused(error)) => Err(error),
-    }
+    crate::files::logical_from_native(path)
 }

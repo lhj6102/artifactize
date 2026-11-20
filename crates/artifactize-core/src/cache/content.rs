@@ -170,16 +170,28 @@ impl Walk {
             .into_iter()
             .flat_map(|name| {
                 let part = &config.artifacts[name];
-                if part.kind == crate::config::ArtifactKind::Aspect {
-                    part.select
+                if part.kind() == crate::config::ArtifactKind::Live {
+                    return Vec::new();
+                }
+                if part.kind() == crate::config::ArtifactKind::Aspect {
+                    part.select()
                         .iter()
                         .map(|path| part.folder().join(path))
                         .collect()
                 } else {
-                    vec![part.referenced_path().to_owned()]
+                    part.referenced_path()
+                        .map(std::path::Path::to_path_buf)
+                        .into_iter()
+                        .collect()
                 }
             })
-            .filter_map(|path| path.strip_prefix(artifact.folder()).ok().map(PathBuf::from))
+            .filter_map(|path| {
+                if artifact.folder().starts_with(&path) {
+                    Some(PathBuf::new())
+                } else {
+                    path.strip_prefix(artifact.folder()).ok().map(PathBuf::from)
+                }
+            })
             .chain(
                 artifact
                     .nested
@@ -232,20 +244,12 @@ impl Walk {
             if file.metadata().map_err(|e| e.to_string())?.is_dir() {
                 let mut gitignores = self.ancestors(input)?;
                 self.directory(&file, input, &mut gitignores, &mut state, cancellation)?;
-            } else if !input.ends_with(".artf") {
+            } else {
                 hash_file(file, input, &mut state)?;
             }
         }
-        let mut digest = Sha256::new();
-        for (path, file) in &state.files {
-            digest.update(path.as_bytes());
-            digest.update([0]);
-            digest.update(file.as_bytes());
-        }
         Ok(Files {
-            digest: hex(&digest.finalize())
-                .parse()
-                .expect("SHA-256 input digest"),
+            digest: aggregate(&state.files),
             files: state.files,
         })
     }
@@ -266,16 +270,17 @@ impl Walk {
     ) -> Result<(), String> {
         let label = if path.is_empty() { "." } else { path.as_str() };
         // Enumerate the pinned directory, not a path that could have been replaced by a link.
-        let mut entries = Vec::new();
-        for entry in platform::read_dir(directory).map_err(|e| format!("{label}: {e}"))? {
-            let entry = entry.map_err(|e| format!("{label}: {e}"))?;
-            let kind = entry.file_type().map_err(|e| format!("{label}: {e}"))?;
-            let name = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| "Artifact paths must be UTF-8.")?;
-            entries.push((name, kind == FileKind::Directory));
-        }
+        let mut entries = platform::read_dir(directory)
+            .map_err(|e| format!("{label}: {e}"))?
+            .map(|entry| {
+                let entry = entry.map_err(|e| format!("{label}: {e}"))?;
+                let kind = entry.file_type().map_err(|e| format!("{label}: {e}"))?;
+                let name = platform::os_text(&entry.file_name())
+                    .map(str::to_owned)
+                    .ok_or("Artifact paths must be UTF-8.")?;
+                Ok((name, kind == FileKind::Directory))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         entries.sort();
         let gitignore =
             read_gitignore(directory).map_err(|e| format!("{}: {e}", gitignore_name(path)))?;
@@ -288,10 +293,7 @@ impl Walk {
                 return Err(process::Error::Cancelled.to_string());
             }
             let child = join(path, &name)?;
-            if (!is_dir && name.ends_with(".artf"))
-                || self.excluded(&child)
-                || self.ignored(&child, is_dir, gitignores)?
-            {
+            if self.excluded(&child) || self.ignored(&child, is_dir, gitignores)? {
                 continue;
             }
             state.entries += 1;
@@ -390,11 +392,46 @@ fn read_gitignore(directory: &File) -> Result<Option<Gitignore>, String> {
     builder.build().map(Some).map_err(|e| e.to_string())
 }
 
+/// Hash the ordered owner-relative paths and their file digests, without filesystem access.
+fn aggregate(
+    files: &BTreeMap<LogicalTarget, crate::types::Sha256Bytes>,
+) -> crate::types::Sha256Digest {
+    let mut digest = Sha256::new();
+    for (path, file) in files {
+        digest.update(path.as_bytes());
+        digest.update([0]);
+        digest.update(file.as_bytes());
+    }
+    hex(&digest.finalize())
+        .parse()
+        .expect("SHA-256 input digest")
+}
+
 fn hash_file(mut file: File, path: &LogicalTarget, state: &mut State) -> Result<(), String> {
     if !file.metadata().map_err(|e| e.to_string())?.is_file() {
         return Err(format!("{path}: Content input must be a regular file."));
     }
     let mut digest = Sha256::new();
+    if path.ends_with(".artf") {
+        let remaining = MAX_BYTES.saturating_sub(state.bytes);
+        let mut bytes = Vec::new();
+        file.take(remaining + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("{path}: {error}"))?;
+        state.bytes += bytes.len() as u64;
+        if state.bytes > MAX_BYTES {
+            return Err(
+                "Content inputs exceed 1 GiB; narrow fingerprint.files or add fingerprint.ignore."
+                    .into(),
+            );
+        }
+        digest.update(artifactize_tools::artf::definition(&bytes));
+        state.files.insert(
+            path.clone(),
+            crate::types::Sha256Bytes::from_digest(digest.finalize().into()),
+        );
+        return Ok(());
+    }
     let mut buffer = vec![0; HASH_BUFFER_BYTES];
     loop {
         let read = file.read(&mut buffer).map_err(|e| format!("{path}: {e}"))?;

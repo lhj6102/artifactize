@@ -4,122 +4,377 @@ Source fixtures never contain declarations. Live builders run manually outside C
 """
 
 import argparse
+import atexit
+from contextlib import contextmanager
+import json
 import os
 from pathlib import Path, PurePosixPath
 import runpy
-import selectors
 import shutil
 import signal
+import socket
 import subprocess
 import sys
+import threading
+import time
 import tomllib
+import weakref
 
 ROOT = Path(__file__).resolve().parent
-# Cleanup watchdog only; no caller or suite timeout determines an owned lifetime.
-EXIT_BOUND = 30
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT))
+import process_owner
+
+EXIT_BOUND = process_owner.EXIT_BOUND
+process_descriptor = process_owner.process_descriptor
+exit_ready = process_owner.exit_ready
 
 
-def process_descriptor(owner):
-    """Pin a saved Linux process identity, not an unrelated reused PID."""
-    if not hasattr(os, "pidfd_open"):
-        raise RuntimeError("Owned worker exit observation requires Linux pidfd support")
+class Terminated(KeyboardInterrupt):
+    """SIGTERM delivered as an interruption so finally blocks can join fixtures."""
+
+    exit_code = 128 + signal.SIGTERM
+
+
+@contextmanager
+def term_as_interrupt():
+    def interrupted(number, frame):
+        raise Terminated("SIGTERM")
+
+    previous = signal.signal(signal.SIGTERM, interrupted)
     try:
-        descriptor = os.pidfd_open(owner["pid"])
-    except ProcessLookupError:
-        return None
-    try:
-        fields = Path(f"/proc/{owner['pid']}/stat").read_text().rsplit(")", 1)[1].split()
-        # procfs starttime is field 22; the tail after the name starts at field 3.
-        same_process = int(fields[19]) == owner["start_time"]
-        if same_process and fields[0] not in {"Z", "X", "x"}:
-            return descriptor
-    except FileNotFoundError:
-        pass
-    except BaseException:
-        os.close(descriptor)
-        raise
-    os.close(descriptor)
-    return None
-
-
-def wait_for_exit(owner):
-    descriptor = process_descriptor(owner)
-    if descriptor is None:
-        return
-    try:
-        with selectors.DefaultSelector() as observation:
-            observation.register(descriptor, selectors.EVENT_READ)
-            if not observation.select(EXIT_BOUND):
-                raise RuntimeError(f"Owned process {owner['pid']} did not exit; preserve its working files")
+        yield
     finally:
-        os.close(descriptor)
+        signal.signal(signal.SIGTERM, previous)
 
 
-def spawn(command, **options):
-    """Each harness subprocess owns a fresh process group, including its children.
+@contextmanager
+def defer_interrupts():
+    """Delay handled signals while publishing ownership or joining a fixture."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    pending = []
+    previous = {}
+    completed = False
+    try:
+        for number in (signal.SIGINT, signal.SIGTERM):
+            handler = signal.getsignal(number)
+            if callable(handler):
+                previous[number] = signal.signal(number, lambda signum, frame: pending.append((signum, frame)))
+        yield
+        completed = True
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+        # A pending interrupt must never mask an unconfirmed-exit failure.
+        if pending and completed:
+            signum, frame = pending[0]
+            previous[signum](signum, frame)
 
-    Only Linux is supported: descendants are observed through /proc, so elsewhere
-    nothing here would still own them once the leader exits, and their working
-    files could not be released safely."""
+
+def wait_for_exit(owner, *, timeout=EXIT_BOUND):
+    descriptor = None
+    try:
+        with defer_interrupts():
+            descriptor = process_descriptor(owner)
+        if descriptor is not None and not exit_ready(descriptor, timeout):
+            raise RuntimeError(f"Owned process {owner['pid']} did not exit; preserve its working files")
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+class CommandPipes(subprocess.Popen):
+    """Use Popen's existing pipe I/O, but wait for the command, not its reaper."""
+
+    def _wait(self, timeout):
+        return self.command.wait(timeout=timeout)
+
+    def join_reaper(self):
+        if super()._wait(EXIT_BOUND) != 0:
+            raise RuntimeError("Fixture subreaper exited without confirming cleanup")
+
+
+class OwnedChild:
+    """The command's per-launch subreaper guarantees ownership across fork and exit."""
+
+    def __init__(self, command, *, detached=None, **options):
+        self.args = command
+        self.returncode = None
+        self.pid = None
+        self.descriptor = None
+        self.channel = None
+        self.pending = None
+        self.deferred = detached is not None
+        # Bound control I/O independently of the application's timeout.
+        inherited = options.pop("pass_fds", ())
+        parent, child = socket.socketpair(type=socket.SOCK_SEQPACKET)
+        with parent as channel, child:
+            channel.settimeout(EXIT_BOUND)
+            self.pipes = CommandPipes(
+                [sys.executable, "-I", process_owner.__file__, str(child.fileno()), json.dumps(inherited),
+                 "deferred" if detached is not None else "immediate", *command],
+                pass_fds=(*inherited, child.fileno()), start_new_session=True, **options)
+            self.pipes.command = weakref.proxy(self)
+            child.close()
+            try:
+                reply = process_owner.receive(channel)
+                if reply is None:
+                    raise RuntimeError("Fixture subreaper did not announce a command")
+                if "launch_error" in reply:
+                    raise OSError(reply["errno"], reply["launch_error"])
+                self.pid = reply["pid"]
+                self.descriptor = os.pidfd_open(self.pid)
+                self.channel = channel.dup()
+                if detached is not None:
+                    detached.children.add(self)
+            except BaseException:
+                # EOF asks the reaper to drain even if startup failed after exec.
+                channel.close()
+                if self.channel is not None:
+                    self.channel.close()
+                    self.channel = None
+                try:
+                    self.drain()
+                except BaseException as cleanup_error:
+                    child_cleanup.add(self)
+                    raise ProcessExitError("Fixture launch cleanup was not confirmed", process=self) from cleanup_error
+                for stream in (self.stdin, self.stdout, self.stderr):
+                    if stream is not None:
+                        stream.close()
+                raise
+
+    @property
+    def stdin(self):
+        return self.pipes.stdin
+
+    @stdin.setter
+    def stdin(self, stream):
+        self.pipes.stdin = stream
+
+    @property
+    def stdout(self):
+        return self.pipes.stdout
+
+    @property
+    def stderr(self):
+        return self.pipes.stderr
+
+    def communicate(self, **options):
+        return self.pipes.communicate(**options)
+
+    def _reply(self):
+        reply = process_owner.receive(self.channel)
+        if reply is None:
+            # The subreaper's end of the channel is gone: the same read cannot answer again.
+            # Close it and reap the subreaper; the command's descendants stay unconfirmed, so
+            # the caller keeps their working files.
+            self.channel.close()
+            self.channel = None
+            self.pending = None
+            try:
+                self.pipes.join_reaper()
+            except BaseException as reaper_error:
+                raise RuntimeError("Fixture subreaper did not confirm cleanup") from reaper_error
+            raise RuntimeError("Fixture subreaper did not confirm cleanup")
+        operation, self.pending = self.pending[0], None
+        if "error" in reply:
+            raise RuntimeError(reply["error"])
+        if operation in {"stop", "finish"}:
+            self.returncode = reply["result"]
+            if self.descriptor is not None:
+                os.close(self.descriptor)
+                self.descriptor = None
+        if operation == "finish" or (operation == "stop" and not self.deferred):
+            self.channel.close()
+            self.channel = None
+
+    def request(self, *request):
+        with defer_interrupts():
+            previous = self.pending
+            if previous is not None:
+                try:
+                    self._reply()
+                except RuntimeError:
+                    if self.pending is not None or previous == request or self.channel is None:
+                        raise
+                if previous == request:
+                    return
+            if self.channel is not None:
+                process_owner.send(self.channel, request)
+                self.pending = request
+                self._reply()
+
+    def drain(self):
+        if self.channel is not None and self.returncode is None:
+            self.request("stop")
+        if self.channel is None:
+            self.pipes.join_reaper()
+            if self.descriptor is not None:
+                os.close(self.descriptor)
+                self.descriptor = None
+
+    def finish(self):
+        self.request("finish")
+        self.pipes.join_reaper()
+
+    def wait(self, timeout=None):
+        if self.returncode is None and self.descriptor is not None and self.pending is None:
+            if not exit_ready(self.descriptor, None if timeout is None else max(0, timeout)):
+                raise subprocess.TimeoutExpired(self.args, timeout)
+        self.drain()
+        return self.returncode
+
+
+class Descendants:
+    """Keep deferred subtrees owned while the caller settles admitted Runs."""
+
+    def __init__(self):
+        self.children = set()
+
+    def stop_mcp_submitters(self, command):
+        self._visit(lambda process: process.request("submitters", *command))
+
+    def finish(self):
+        def finish(process):
+            process.finish()
+            self.children.discard(process)
+
+        self._visit(finish)
+
+    def _visit(self, visit):
+        with defer_interrupts():
+            failures = []
+            for process in tuple(self.children):
+                try:
+                    visit(process)
+                except BaseException as error:
+                    failures.append(error)
+            if failures:
+                raise ProcessExitError("Detached fixture processes did not settle") from BaseExceptionGroup(
+                    "Detached process cleanup failed", failures)
+
+
+def require_pidfd():
+    # Probe the calling process: no fixture may start until its owner can
+    # open, signal and observe pidfds. Signal 0 checks support without delivery.
+    try:
+        with defer_interrupts():
+            descriptor = os.pidfd_open(os.getpid())
+            try:
+                signal.pidfd_send_signal(descriptor, 0)
+                exit_ready(descriptor, 0)
+            finally:
+                os.close(descriptor)
+    except (AttributeError, OSError) as error:
+        raise RuntimeError("The hey-arti harness requires Linux pidfd open, signal and exit observation support") from error
+
+
+def spawn(command, *, detached=None, **options):
+    """Launch only after proving Linux pidfd support in the harness."""
     if sys.platform != "linux":
         raise RuntimeError("The hey-arti harness runs on Linux only.")
-    options["start_new_session"] = True
-    return subprocess.Popen(command, **options)
+    require_pidfd()
+    return OwnedChild(command, detached=detached, **options)
+
+
+class ChildCleanup:
+    """Own unreleased children, including their pipes, until shutdown retries."""
+
+    def __init__(self):
+        self.pending = set()
+        self.fixtures = set()
+
+    def add(self, process):
+        self.pending.add(process)
+
+    def close(self, process):
+        close_child(process)
+        self.pending.discard(process)
+
+    def retry(self):
+        for process in tuple(self.pending):
+            try:
+                self.close(process)
+            except BaseException as error:
+                print(f"Could not release owned child {process.pid} at shutdown: {error}", file=sys.stderr)
+        for release in tuple(self.fixtures):
+            try:
+                release()
+                self.fixtures.discard(release)
+            except BaseException as error:
+                print(f"Could not release fixture at shutdown: {error}", file=sys.stderr)
+
+
+child_cleanup = ChildCleanup()
+atexit.register(child_cleanup.retry)
+
+
+@contextmanager
+def owned_child(command, *, on_spawn=None, **options):
+    process = None
+    try:
+        try:
+            with defer_interrupts():
+                try:
+                    process = spawn(command, **options)
+                except ProcessExitError as error:
+                    # Even a launch that never completed can own a subprocess.
+                    # Publish its handle before restoring interrupt handlers.
+                    if error.process is not None:
+                        child_cleanup.add(error.process)
+                        if on_spawn is not None:
+                            on_spawn(error.process)
+                    raise
+                child_cleanup.add(process)
+                if on_spawn is not None:
+                    on_spawn(process)
+            yield process
+        finally:
+            if process is not None:
+                with defer_interrupts():
+                    child_cleanup.close(process)
+    except BaseException as error:
+        # The signal may arrive before entering the teardown guard. Preserve
+        # ownership in that case rather than letting the caller drop its inputs.
+        if process is not None and process.returncode is None and not isinstance(error, ProcessExitError):
+            raise ProcessExitError(f"Owned child {process.pid} exit is unconfirmed", process=process) from error
+        raise
 
 
 class ProcessExitError(RuntimeError):
     """An owned process may still use its working files; retain them."""
 
+    def __init__(self, message, *, process=None):
+        super().__init__(message)
+        self.process = process
+
 
 def stop_child(process):
     """Stop and join the owned group before any pipes or working files disappear."""
-    try:
-        _stop_child(process)
-    except Exception as error:
-        raise ProcessExitError(f"Owned child group {process.pid} did not settle") from error
-
-
-def group_members(group):
-    """The live members of a process group, by saved identity."""
-    members = []
-    for stat in Path("/proc").glob("[0-9]*/stat"):
+    with defer_interrupts():
         try:
-            fields = stat.read_text().rsplit(")", 1)[1].split()
-            if int(fields[2]) == group and fields[0] not in {"Z", "X", "x"}:
-                members.append({"pid": int(stat.parent.name), "start_time": int(fields[19])})
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-    return members
-
-
-def _stop_child(process):
-    # A member forked while the group was scanned is still in it: signal and scan again
-    # until no member is left, so none outlives teardown.
-    while True:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait(timeout=EXIT_BOUND)
-        members = group_members(process.pid)
-        if not members:
-            return
-        for member in members:
-            wait_for_exit(member)
+            process.drain()
+            process.wait(timeout=EXIT_BOUND)
+        except BaseException as error:
+            # Unexpected interruption is not evidence that exit was observed.
+            raise ProcessExitError(f"Owned child group {process.pid} did not settle", process=process) from error
 
 
 def close_child(process):
-    stop_child(process)
-    # Close only after exit: a pipe reader can otherwise block close indefinitely.
-    failures = []
-    for stream in (process.stdin, process.stdout, process.stderr):
-        if stream is not None and not stream.closed:
-            try:
-                stream.close()
-            except (OSError, ValueError) as error:
-                failures.append(error)
-    if failures:
-        raise ExceptionGroup("Owned process exited, but pipe cleanup failed", failures)
+    with defer_interrupts():
+        stop_child(process)
+        # Close only after exit: a pipe reader can otherwise block close indefinitely.
+        failures = []
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None and not stream.closed:
+                try:
+                    stream.close()
+                except (OSError, ValueError) as error:
+                    failures.append(error)
+        if failures:
+            raise ExceptionGroup("Owned process exited, but pipe cleanup failed", failures)
 
 
 def run_command(command, *, timeout, check=False, capture_output=False, input=None, **options):
@@ -128,20 +383,68 @@ def run_command(command, *, timeout, check=False, capture_output=False, input=No
         options.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if input is not None:
         options["stdin"] = subprocess.PIPE
-    process = spawn(command, **options)
-    try:
+    with owned_child(command, **options) as process:
         try:
             stdout, stderr = process.communicate(input=input, timeout=timeout)
         except subprocess.TimeoutExpired as error:
             stop_child(process)
-            stdout, stderr = process.communicate()
+            try:
+                stdout, stderr = process.communicate(timeout=EXIT_BOUND)
+            except subprocess.TimeoutExpired as drain_error:
+                raise ProcessExitError("Command output did not close after group exit", process=process) from drain_error
             raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from error
         result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
         if check:
             result.check_returncode()
         return result
-    finally:
-        close_child(process)
+
+
+class Commands:
+    """Retain commands that might still be using the caller's private inputs."""
+
+    def __init__(self):
+        self.pending = set()
+        self.unidentified = []
+
+    @contextmanager
+    def track(self):
+        spawned = None
+
+        def register(process):
+            nonlocal spawned
+            spawned = process
+            self.pending.add(process)
+
+        try:
+            yield register
+        except ProcessExitError as error:
+            if error.process is not None:
+                self.pending.add(error.process)
+            elif spawned is None:
+                self.unidentified.append(error)
+            raise
+        else:
+            self.pending.discard(spawned)
+
+    def run(self, command, **options):
+        with self.track() as register:
+            return run_command(command, on_spawn=register, **options)
+
+    @contextmanager
+    def child(self, command, **options):
+        with self.track() as register, owned_child(command, on_spawn=register, **options) as process:
+            yield process
+
+    def join(self):
+        failures = list(self.unidentified)
+        for process in tuple(self.pending):
+            try:
+                child_cleanup.close(process)
+                self.pending.remove(process)
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise BaseExceptionGroup("Fixture commands did not settle", failures)
 
 
 def run_tests(candidate):
@@ -202,7 +505,7 @@ def materialize(destination):
         pass
     else:
         raise ValueError("case outputs must be outside the project")
-    destination.mkdir(mode=0o700, parents=True, exist_ok=False)
+    destination.mkdir(mode=0o700, exist_ok=False)
     try:
         for case in cases().values():
             source = inside(ROOT, case["source"])
@@ -232,4 +535,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # The in-process tests share the fixture retry registry.
+    sys.modules["driver"] = sys.modules[__name__]
     raise SystemExit(main())

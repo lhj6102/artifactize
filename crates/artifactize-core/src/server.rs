@@ -18,7 +18,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::remote::{MAX_FULL_BYTES, MAX_SUMMARY_BYTES, SCHEMA, valid_hash};
+use crate::{
+    remote::{MAX_FULL_BYTES, MAX_SUMMARY_BYTES, SCHEMA},
+    types::ReuseKey,
+};
 
 /// Loopback only by default: a review store is reachable from other machines only when its
 /// owner says so with `--listen`. 8417 is an unassigned port, fixed so that clients and docs
@@ -116,17 +119,6 @@ async fn authenticate(
         ));
     }
     Ok(Principal { name, scopes })
-}
-
-fn valid_key(key: &str) -> Result<(), ApiError> {
-    if valid_hash(key) {
-        Ok(())
-    } else {
-        Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
-            "Keys are lowercase SHA-256 reuse keys.",
-        ))
-    }
 }
 
 /// What a client from before the 0.5 reuse key gets for its requests.
@@ -287,7 +279,12 @@ async fn publish(
     body: Bytes,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let principal = authenticate(&store, &headers, Some(Scope::Publish)).await?;
-    valid_key(&key)?;
+    let key = key.parse::<ReuseKey>().map_err(|_| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "Keys are lowercase SHA-256 reuse keys.",
+        )
+    })?;
     let mut record: PublishRecord = serde_json::from_slice(&body)
         .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "Expected a JSON record."))?;
     let limit = if !matches!(record.execution, crate::config::Field::Missing) {
@@ -298,7 +295,7 @@ async fn publish(
     let completed_at = record.completed_at.parse::<crate::types::Timestamp>().ok();
     let (true, Some(completed_at)) = (
         record.schema == SCHEMA
-            && record.key.as_str() == key
+            && record.key == key
             && matches!(
                 record.verdict,
                 crate::types::ExecutionStatus::Green | crate::types::ExecutionStatus::Red
@@ -380,8 +377,7 @@ pub async fn serve(
     ready: impl FnOnce(SocketAddr) -> Result<(), String>,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
-    let listener = tokio::net::TcpListener::bind(listen)
-        .await
+    let listener = crate::platform::net::http_listener(listen)
         .map_err(|e| format!("Cannot listen on {listen}: {e}"))?;
     ready(listener.local_addr().map_err(|e| e.to_string())?)?;
     axum::serve(listener, router(store))

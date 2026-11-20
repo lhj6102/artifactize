@@ -1,11 +1,14 @@
-use std::{fs::File, io::Read, path::Path};
+//! Pure image normalization and MIME detection.
+
+mod file;
+pub(crate) use file::{read, read_output};
 
 use base64::{
     Engine, alphabet,
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig, general_purpose::STANDARD},
 };
 
-use crate::scope;
+use std::path::Path;
 
 use super::Content;
 
@@ -70,7 +73,22 @@ const RIFF_SIGNATURE: &[u8] = b"RIFF";
 const WEBP_FORM: &[u8] = b"WEBP";
 const RIFF_FORM_TYPE: std::ops::Range<usize> = 8..12;
 
+/// Accept MIME text from callers at their wire boundary.
 pub fn from_base64(data: &str, mime_type: &str) -> Result<Content, String> {
+    normalize_base64(data, mime_type.parse()?)
+}
+
+/// Read a file-backed image whose MIME type has not already been parsed by the caller.
+pub fn from_output(
+    root: &Path,
+    path: impl AsRef<Path>,
+    mime_type: &str,
+) -> Result<Content, String> {
+    let mime_type = mime_type.parse()?;
+    normalize(&read_output(root, path.as_ref())?, Some(mime_type))
+}
+
+pub(crate) fn normalize_base64(data: &str, mime_type: Mime) -> Result<Content, String> {
     if data.len() > IMAGE_LIMIT.div_ceil(BASE64_INPUT_BYTES) * BASE64_OUTPUT_BYTES {
         return Err("Image exceeds the 4 MiB limit.".into());
     }
@@ -84,35 +102,13 @@ pub fn from_base64(data: &str, mime_type: &str) -> Result<Content, String> {
     normalize(&bytes, Some(mime_type))
 }
 
-pub fn from_output(root: &Path, path: &str, mime_type: &str) -> Result<Content, String> {
-    let relative = crate::files::logical_below(root, path)
-        .ok_or("Image path must be a UTF-8 path below the tool output directory.")?;
-    let file = scope::open_scoped(root, &relative).map_err(|e| format!("Image {relative}: {e}"))?;
-    normalize(&read(file)?, Some(mime_type))
-}
-
-pub fn read(file: File) -> Result<Vec<u8>, String> {
-    let metadata = file.metadata().map_err(|_| "Cannot inspect image file.")?;
-    if !metadata.is_file() {
-        return Err("Viewing an image requires a regular file.".into());
-    }
-    if metadata.len() == 0 || metadata.len() > IMAGE_LIMIT as u64 {
-        return Err("Image exceeds the 4 MiB limit or contains no data.".into());
-    }
-    let mut bytes = Vec::new();
-    file.take((IMAGE_LIMIT + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "Cannot read image file.")?;
-    Ok(bytes)
-}
-
-pub fn normalize(bytes: &[u8], declared: Option<&str>) -> Result<Content, String> {
+pub fn normalize(bytes: &[u8], declared: Option<Mime>) -> Result<Content, String> {
     if bytes.is_empty() || bytes.len() > IMAGE_LIMIT {
         return Err("Image exceeds the 4 MiB limit or contains no data.".into());
     }
     let mime_type = mime_type(bytes)
         .ok_or("Image must be PNG, JPEG or WebP; GIF, BMP and animated PNG are not supported.")?;
-    if declared.is_some_and(|declared| declared != mime_type.as_str()) {
+    if declared.is_some_and(|declared| declared != mime_type) {
         return Err("Image bytes do not match declared MIME type.".into());
     }
     Ok(Content::Image {

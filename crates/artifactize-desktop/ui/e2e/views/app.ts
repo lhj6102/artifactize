@@ -1,0 +1,268 @@
+// The app's window as a person sees it: its header, the command palette, Help, the dialogs it
+// opens over the screen, and its parts (the pane, the main area's graph, the Detail, a Human
+// review, Settings). Cases reach the window only through these views (E2E-REAL-APP).
+import { callWindow, embeddedReady } from "../portable.ts";
+import { pointerGapClick } from "../input.ts";
+import { fill, press, typeText } from "../keys.ts";
+import { Detail } from "./detail.ts";
+import { Graph } from "./graph.ts";
+import { Pane } from "./pane.ts";
+import { Review } from "./review.ts";
+import { Settings } from "./settings.ts";
+import { holds, until } from "./wait.ts";
+
+const PALETTE = '[aria-label="Command palette"][data-state="open"]';
+const HELP = '[role="dialog"].help';
+const DIALOG = '[role="dialog"], [role="alertdialog"]';
+
+export class App {
+  readonly pane: Pane;
+  readonly graph: Graph;
+  readonly detail: Detail;
+  /** A Human review in the main area. */
+  readonly review: Review;
+  /** A Human review in the Detail of a graph. */
+  readonly detailReview: Review;
+  readonly settings: Settings;
+
+  private readonly browser: WebdriverIO.Browser;
+
+  constructor(browser: WebdriverIO.Browser) {
+    this.browser = browser;
+    this.pane = new Pane(browser);
+    this.graph = new Graph(browser);
+    this.detail = new Detail(browser);
+    this.review = new Review(browser, "main");
+    this.detailReview = new Review(browser, "detail");
+    this.settings = new Settings(browser);
+  }
+
+  /** Wait until the app runs its own frontend: anything else fails here, once, by name. */
+  async loaded(): Promise<void> {
+    await holds(this.browser, () => this.browser.execute(() => (document.getElementById("app")?.childElementCount ?? 0) > 0),
+      "setup failed: the test app did not load its frontend", 30000);
+  }
+
+  /** The window's text. */
+  text(): Promise<string> {
+    return this.browser.execute(() => document.body.innerText);
+  }
+
+  /** The native window's own title, as Tauri's window API says it. */
+  async windowTitle(): Promise<string> {
+    return String(await callWindow(this.browser, "title"));
+  }
+
+  /** The header bar's controls and text, left to right, and whether the Pane switch reads as on. */
+  header(): Promise<{ brand: string; items: string[]; paneOn: boolean }> {
+    return this.browser.execute(() => {
+      const bar = document.querySelector("header.bar");
+      return {
+        brand: bar?.querySelector(".brand")?.textContent?.trim() ?? "",
+        items: [...(bar?.querySelectorAll("button, .reviewer") ?? [])].map((item) => item.textContent?.replace(/\s+/g, " ").trim() ?? ""),
+        paneOn: bar?.querySelector("button.switch")?.getAttribute("aria-pressed") === "true",
+      };
+    });
+  }
+
+  /** The header once `ok` holds for it. */
+  async headerUntil(ok: (shown: Awaited<ReturnType<App["header"]>>) => boolean, what: string): Promise<Awaited<ReturnType<App["header"]>>> {
+    return until(this.browser, () => this.header(), ok, what);
+  }
+
+  /** Wait until `check`, an effect outside the window (a file a stand-in wrote, a saved
+   * request), holds. */
+  async eventually(check: () => Promise<boolean> | boolean, what: string, timeout = 15000): Promise<void> {
+    await holds(this.browser, async () => check(), what, timeout);
+  }
+
+  /** Wait until `check`, a reading of the window through the views, holds. */
+  async until(check: () => Promise<boolean>, what: string, timeout = 15000): Promise<void> {
+    await holds(this.browser, check, what, timeout);
+  }
+
+  /** How wide the window's page is. */
+  windowWidth(): Promise<number> {
+    return this.browser.execute(() => document.documentElement.clientWidth);
+  }
+
+  /** Click the header's `name` (Settings, Commands, Pane, a release notice). */
+  async headerButton(name: string): Promise<void> {
+    await this.browser.$("header.bar").$(`button*=${name}`).click();
+  }
+
+  /** Press `keys` wherever the keyboard is. */
+  async press(keys: string[], done: () => Promise<boolean>, what: string): Promise<void> {
+    await press(this.browser, keys, done, what);
+  }
+
+  /** Type `text` where the keyboard is, a key at a time. */
+  async type(text: string): Promise<void> {
+    await typeText(this.browser, text);
+  }
+
+  // -------------------------------------------------------------------------------
+  // The command palette
+
+  /** The open palette: its commands in order, each with its key, which is chosen, and whether
+   * its search has the keyboard; null while it is closed. */
+  palette(): Promise<{ focused: boolean; query: string; commands: { label: string; keys: string; chosen: boolean }[] } | null> {
+    return this.browser.execute((selector) => {
+      const dialog = document.querySelector(selector);
+      const input = dialog?.querySelector("input");
+      if (!dialog || !input) return null;
+      return {
+        focused: document.activeElement === input,
+        query: input.value,
+        commands: [...dialog.querySelectorAll('[role="option"]')].map((option) => ({
+          label: option.querySelector("span")?.textContent?.trim() ?? "",
+          keys: option.querySelector("kbd")?.textContent?.trim() ?? "",
+          chosen: option.getAttribute("aria-selected") === "true",
+        })),
+      };
+    }, PALETTE);
+  }
+
+  /** Click Commands: the palette opens with its search holding the keyboard. */
+  async openPalette(): Promise<NonNullable<Awaited<ReturnType<App["palette"]>>>> {
+    await this.headerButton("Commands");
+    return (await until(this.browser, () => this.palette(), (shown) => !!shown?.focused && shown.commands.length > 0, "the palette opened"))!;
+  }
+
+  /** In the open palette, type `query` and click the command `label`; the palette closes. */
+  async runCommand(query: string, label = query): Promise<void> {
+    const unfiltered = (await this.palette())?.commands.length ?? 0;
+    await typeText(this.browser, query);
+    await until(this.browser, () => this.palette(), (shown) => shown?.query === query && shown.commands.length < unfiltered && shown.commands.some((command) => command.label === label),
+      `the palette narrowed to ${query} and lists ${label}`);
+    for (const option of await this.browser.$$(`${PALETTE} [role="option"]`).getElements()) {
+      if ((await option.$("span").getText()).trim() !== label) continue;
+      await option.click();
+      await holds(this.browser, async () => (await this.palette()) === null, `${label} ran and the palette closed`);
+      return;
+    }
+    throw new Error(`the palette does not list ${label}`);
+  }
+
+  /** Open the palette and run `label` from it. */
+  async command(label: string): Promise<void> {
+    await this.openPalette();
+    await this.runCommand(label);
+  }
+
+  // -------------------------------------------------------------------------------
+  // Help
+
+  /** The open Help: the keys it lists with what each does, and the marks it pairs with their
+   * words; null while it is closed. */
+  help(): Promise<{ keys: { keys: string; action: string }[]; marks: { icon: string; word: string }[] } | null> {
+    return this.browser.execute((selector) => {
+      const dialog = document.querySelector(selector);
+      if (!dialog) return null;
+      return {
+        keys: [...dialog.querySelectorAll("dt")].map((key) => ({ keys: key.textContent?.trim() ?? "", action: key.nextElementSibling?.textContent?.trim() ?? "" })),
+        marks: [...dialog.querySelectorAll('[aria-label="Marks"] li')].map((item) => ({
+          icon: item.querySelector("svg")?.getAttribute("data-icon") ?? "", word: item.textContent?.trim() ?? "",
+        })),
+      };
+    }, HELP);
+  }
+
+  /** Close the open Help with its Close, or with a click outside it. */
+  async closeHelp(by: "Close" | "outside"): Promise<void> {
+    if (by === "Close") await this.browser.$(HELP).$("button=Close").click();
+    else await this.clickOutside(HELP);
+    await holds(this.browser, async () => (await this.help()) === null, `Help closed by ${by}`);
+  }
+
+  /** Click a point of the window outside the dialog `selector`. */
+  async clickOutside(selector: string): Promise<void> {
+    const point = await this.browser.execute((dialog) => {
+      const box = document.querySelector(dialog)!.getBoundingClientRect();
+      return [{ x: 8, y: innerHeight - 8 }, { x: innerWidth - 8, y: innerHeight - 8 }, { x: 8, y: 60 }]
+        .find(({ x, y }) => x < box.left || x >= box.right || y < box.top || y >= box.bottom) ?? null;
+    }, selector);
+    if (!point) throw new Error("the dialog leaves no point of the window outside it");
+    await pointerGapClick(this.browser, point);
+  }
+
+  // -------------------------------------------------------------------------------
+  // Dialogs
+
+  /** The open dialog's title and text, or null. */
+  dialog(): Promise<{ title: string; text: string } | null> {
+    return this.browser.execute((selector) => {
+      const dialog = [...document.querySelectorAll<HTMLElement>(selector)].find((each) => !each.matches(".help, .palette, .settings-dialog"));
+      return dialog ? { title: dialog.querySelector(".dialog-title")?.textContent?.trim() ?? "", text: dialog.innerText.replace(/\s+/g, " ").trim() } : null;
+    }, DIALOG);
+  }
+
+  /** Wait until a dialog titled `title` is open. */
+  async dialogTitled(title: string): Promise<{ title: string; text: string }> {
+    return (await until(this.browser, () => this.dialog(), (shown) => shown?.title === title, `the dialog ${title} opened`))!;
+  }
+
+  /** Click the open dialog's `button`. */
+  async dialogButton(button: string): Promise<void> {
+    await this.browser.$(`${DIALOG}`).$(`button*=${button}`).click();
+  }
+
+  /** Wait until no dialog is open. */
+  async dialogClosed(): Promise<void> {
+    await holds(this.browser, async () => (await this.dialog()) === null, "the dialog closed");
+  }
+
+  /** In the open "Open a request by ID" dialog, type `id` and click Open. */
+  async openById(id: string): Promise<void> {
+    await this.dialogTitled("Open a request by ID");
+    await fill(this.browser, 'input[aria-label="Request ID"]', id);
+    await this.dialogButton("Open");
+    await this.dialogClosed();
+  }
+
+  /** The release dialog's versions line, its update command and the address it links. */
+  releaseDialog(): Promise<{ versions: string; command: string; link: string } | null> {
+    return this.browser.execute(() => {
+      const dialog = [...document.querySelectorAll('[role="dialog"]')].find((each) => each.querySelector(".dialog-title")?.textContent?.trim() === "Update artifactize");
+      if (!dialog) return null;
+      return {
+        versions: dialog.querySelector(".versions")?.textContent?.trim() ?? "",
+        command: dialog.querySelector("pre.command")?.textContent?.trim() ?? "",
+        link: dialog.querySelector("button.link")?.textContent?.trim() ?? "",
+      };
+    });
+  }
+
+  /** Click the release dialog's link: the system browser is handed it. */
+  async followReleaseLink(): Promise<void> {
+    await this.browser.$('[role="dialog"]').$("button.link").click();
+  }
+
+  // -------------------------------------------------------------------------------
+  // The window itself
+
+  /** Ask the window to close, as its frame's close button does (Tauri's window API). */
+  async closeWindow(): Promise<void> {
+    await callWindow(this.browser, "close");
+  }
+
+  /** Wait until the app has exited: its embedded WebDriver server at `port`, which lives in
+   * the app's process, no longer answers. The ended session is then retired, so WebdriverIO
+   * does not ask the gone app to end it again. */
+  async exited(port: number): Promise<void> {
+    const deadline = Date.now() + 30000;
+    while (await embeddedReady(port)) {
+      if (Date.now() > deadline) throw new Error("the app did not exit");
+      await new Promise((done) => setTimeout(done, 100));
+    }
+    Reflect.set(this.browser, "sessionId", undefined);
+  }
+
+  /** Do `action`, which ends the app, and wait until it has exited. The action's own command
+   * may lose its answer as the app goes; that alone is no failure. */
+  async exitsBy(action: () => Promise<unknown>, port: number): Promise<void> {
+    try { await action(); }
+    catch (error) { if (await embeddedReady(port)) throw error; }
+    await this.exited(port);
+  }
+}

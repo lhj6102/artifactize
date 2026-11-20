@@ -1,0 +1,25 @@
+path = "crates/artifactize-desktop/ui/e2e/"
+select = ["views", "cases"]
+# The E2E suite's views (what the cases read from the window and how each action waits for its
+# visible result) and its cases, the journey flows; a part of desktop-e2e.
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.follows-rules]
+title = "The views and cases drive the real app and wait for what the window shows"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.follows-rules.payload]
+instruction = """
+Read E2E-REAL-APP of the end-to-end rules {desktop-e2e-rules} and the TEST- rules and M-TAUTOLOGICAL-TESTS of \
+{rules-code-style}. Review the views and cases of {desktop-e2e-cases} against them: each case drives the app through \
+its UI, each action waits for what the window shows as its result, and each check can fail. Take the helpers outside \
+this Artifact at what their names and comments say; coverage of the journeys is reviewed by desktop-e2e. Report only \
+a defect you can show: name the OS, the order or the timing under which it happens and the concrete failure or false \
+pass it causes, such as a wait that passes before the action's result shows, a check that cannot fail, or a scenario \
+that breaks on one OS. Hardening, theoretical edge cases, further assertions and style are not findings."""

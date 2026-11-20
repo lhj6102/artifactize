@@ -1,9 +1,14 @@
 //! The complete public tool surface; deliberately no credential or Human actions.
-use super::input::SCOPE_IDS;
-use super::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, RUN_LIST_LIMIT};
-use artifactize_core::types::MAX_RUN_COMMENT_CHARS;
+use super::{
+    input::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, MIN_SCOPE_IDS, RUN_LIST_LIMIT, SCOPE_IDS},
+    tool::{ReadTool, ToolId, VerifyTool},
+};
+use artifactize_core::{
+    inspect::DEFAULT_LOG_TAIL_LINES, runs::RESULT_PAGE_SIZE, types::MAX_RUN_COMMENT_CHARS,
+};
 use rmcp::model::{Tool, ToolAnnotations};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
+use std::borrow::Cow;
 
 /// Match core's ASCII RequestKey bound, keeping retry identities compact in stored receipts.
 const REQUEST_KEY_CHARS: usize = 128;
@@ -16,188 +21,222 @@ const LOG_SEARCH_CHARS: usize = 2048;
 /// refused before the provider lookup.
 const BACKEND_NAME_CHARS: usize = 64;
 
+// The outer object is typed; only each individual JSON Schema value needs `json!`.
+macro_rules! object {
+    ({$($key:literal : $value:tt),+ $(,)?}) => {
+        Map::from_iter([$(($key.into(), json!($value))),+])
+    };
+}
+
 pub(super) fn tools() -> Vec<Tool> {
     let scope = json!({"oneOf": [
         {"type":"object","properties":{"kind":{"const":"all"}},"required":["kind"],"additionalProperties":false},
         {"type":"object","properties":{"kind":{"const":"artifact"},"artifactId":{"type":"string"}},"required":["kind","artifactId"],"additionalProperties":false},
         {"type":"object","properties":{"kind":{"const":"eval"},"evalId":{"type":"string"}},"required":["kind","evalId"],"additionalProperties":false},
-        {"type":"object","properties":{"kind":{"const":"artifacts"},"artifactIds":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":SCOPE_IDS}},"required":["kind","artifactIds"],"additionalProperties":false},
-        {"type":"object","properties":{"kind":{"const":"evals"},"evalIds":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":SCOPE_IDS}},"required":["kind","evalIds"],"additionalProperties":false}
+        {"type":"object","properties":{"kind":{"const":"artifacts"},"artifactIds":{"type":"array","items":{"type":"string"},"minItems":MIN_SCOPE_IDS,"maxItems":SCOPE_IDS}},"required":["kind","artifactIds"],"additionalProperties":false},
+        {"type":"object","properties":{"kind":{"const":"evals"},"evalIds":{"type":"array","items":{"type":"string"},"minItems":MIN_SCOPE_IDS,"maxItems":SCOPE_IDS}},"required":["kind","evalIds"],"additionalProperties":false}
     ]});
     let string = json!({"type":"string"});
     vec![
         tool(
-            "verify_start",
+            VerifyTool::Start,
             "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. A comment, a short note on what you are working on, is shown to people with the Run and changes nothing it does. Speculation defaults off; concurrency is unlimited unless jobs is explicitly given; backend limits still apply. Sign-offs the Run selected never hold up other evals (one outside the scope does, and the Run ends incomplete until the scope includes it): the Run stays waiting_human while one is claimed or its idle grace runs, then ends yellow when only sign-offs remain, which is not full approval.",
-            json!({"scope":scope,"jobs":{"type":"integer","minimum":1,"maximum":u32::MAX},"request_key":{"type":"string","pattern":format!("^[A-Za-z0-9._:-]{{1,{REQUEST_KEY_CHARS}}}$")},"comment":{"type":"string","minLength":1,"maxLength":MAX_RUN_COMMENT_CHARS},"speculate":{"type":"boolean","default":false}}),
+            object!({"scope":scope,"jobs":{"type":"integer","minimum":1,"maximum":u32::MAX},"request_key":{"type":"string","pattern":format!("^[A-Za-z0-9._:-]{{1,{REQUEST_KEY_CHARS}}}$")},"comment":{"type":"string","minLength":1,"maxLength":MAX_RUN_COMMENT_CHARS},"speculate":{"type":"boolean","default":false}}),
             &["scope"],
-            false,
         ),
         tool(
-            "verify_status",
+            VerifyTool::Status,
             "Compact saved Run state and counts.",
-            json!({"run":string}),
+            object!({"run":string}),
             &["run"],
-            false,
         ),
         tool(
-            "verify_wait",
+            VerifyTool::Wait,
             "Observe Run end or bound, equally for all eval kinds. Disconnect/cancellation only drops this observer.",
-            json!({"run":string,"seconds":{"type":"integer","minimum":0,"maximum":MAX_WAIT_SECONDS,"default":DEFAULT_WAIT_SECONDS}}),
+            object!({"run":string,"seconds":{"type":"integer","minimum":0,"maximum":MAX_WAIT_SECONDS,"default":DEFAULT_WAIT_SECONDS}}),
             &["run"],
-            false,
         ),
         tool(
-            "verify_watch",
+            VerifyTool::Watch,
             "Subscribe for this bounded call: progress notifications carry JSON update/eval_result/outcome events when the client supplies _meta.progressToken. Reattachment replays saved results. Returns compact observation; only outcome/verify_result is final validation. No conversation injection or background subscription.",
-            json!({"run":string}),
+            object!({"run":string}),
             &["run"],
-            false,
         ),
         tool(
-            "verify_result",
-            "Terminal verdict and at most 20 concise findings; follow next_cursor. Active Runs return ready:false.",
-            json!({"run":string,"cursor":string}),
+            VerifyTool::Result,
+            format!(
+                "Terminal verdict and at most {RESULT_PAGE_SIZE} concise findings; follow next_cursor. Active Runs return ready:false."
+            ),
+            object!({"run":string,"cursor":string}),
             &["run"],
-            false,
         ),
         tool(
-            "verify_cancel",
+            VerifyTool::Cancel,
             "Explicitly request cancellation; committed evidence remains. Observe settlement for cleanup.",
-            json!({"run":string}),
+            object!({"run":string}),
             &["run"],
-            false,
         ),
         tool(
-            "status",
+            ReadTool::Status,
             "Predict execute/reuse/wait using the CLI's status operation. May run trusted fingerprint commands.",
-            json!({"scope":scope}),
+            object!({"scope":scope}),
             &[],
-            true,
         ),
         tool(
-            "config_graph",
+            ReadTool::Graph,
             "Discover static Artifacts, eval criteria, input/consumer relations and cycles without running commands. Scope selects required inputs; impact includes downstream consumers and their inputs, conservatively, not exact cache invalidation.",
-            json!({"scope":scope,"impact":{"type":"boolean","default":false}}),
+            object!({"scope":scope,"impact":{"type":"boolean","default":false}}),
             &[],
-            true,
         ),
         tool(
-            "request_logs",
-            "Inspect runtime stdout/stderr without the full request. Defaults to last 50 lines per stream; explicit evidence distinguishes full local capture, partial, saved audit and missing. Search is literal. Tail/range exclusive. next_start continues forward queries.",
-            json!({"id":string,"stream":{"enum":["stdout","stderr","both"],"default":"both"},"tail":{"type":"integer","minimum":1,"maximum":LOG_TAIL_LINES},"start":{"type":"integer","minimum":1},"end":{"type":"integer","minimum":1},"search":{"type":"string","minLength":1,"maxLength":LOG_SEARCH_CHARS}}),
+            ReadTool::Logs,
+            format!(
+                "Inspect runtime stdout/stderr without the full request. Defaults to last {DEFAULT_LOG_TAIL_LINES} lines per stream; explicit evidence distinguishes full local capture, partial, saved audit and missing. Search is literal. Tail/range exclusive. next_start continues forward queries."
+            ),
+            object!({"id":string,"stream":{"enum":["stdout","stderr","both"],"default":"both"},"tail":{"type":"integer","minimum":1,"maximum":LOG_TAIL_LINES},"start":{"type":"integer","minimum":1},"end":{"type":"integer","minimum":1},"search":{"type":"string","minLength":1,"maxLength":LOG_SEARCH_CHARS}}),
             &["id"],
-            true,
         ),
         tool(
-            "config_check",
+            ReadTool::Config,
             "Validate declarations, without hashing or executing project tools.",
-            json!({}),
+            Map::new(),
             &[],
-            true,
         ),
         tool(
-            "run_list",
-            "List this repository's saved Runs, newest first. limit <=20; offset selects older records.",
-            json!({"limit":{"type":"integer","minimum":0,"maximum":RUN_LIST_LIMIT,"default":RUN_LIST_LIMIT},"offset":{"type":"integer","minimum":0}}),
+            ReadTool::Runs,
+            "List this repository's saved Runs, newest first. Offset selects older records.",
+            object!({"limit":{"type":"integer","minimum":0,"maximum":RUN_LIST_LIMIT,"default":RUN_LIST_LIMIT},"offset":{"type":"integer","minimum":0}}),
             &[],
-            true,
         ),
         tool(
-            "run_show",
+            ReadTool::Run,
             "Read saved Run audit, same JSON as CLI run show.",
-            json!({"run":string}),
+            object!({"run":string}),
             &["run"],
-            true,
         ),
         tool(
-            "request_list",
+            ReadTool::Requests,
             "Read requests from this repository, optionally one Run. No sign-off authority.",
-            json!({"run":string}),
+            object!({"run":string}),
             &[],
-            true,
         ),
         tool(
-            "request_show",
+            ReadTool::Request,
             "Read saved request audit and criteria. No claim or submit.",
-            json!({"id":string}),
+            object!({"id":string}),
             &["id"],
-            true,
         ),
         tool(
-            "session_show",
+            ReadTool::Session,
             "Read saved Agent conversation or summary. Never send a follow-up.",
-            json!({"reference":string,"summary":{"type":"boolean","default":false}}),
+            object!({"reference":string,"summary":{"type":"boolean","default":false}}),
             &["reference"],
-            true,
         ),
         tool(
-            "tools_check",
+            ReadTool::Tools,
             "Static preflight only; never execute tools or start sessions.",
-            json!({"eval":string,"artifact":string,"audience":{"enum":["agent","human"]},"tool":string}),
+            object!({"eval":string,"artifact":string,"audience":{"enum":["agent","human"]},"tool":string}),
             &[],
-            true,
         ),
         tool(
-            "doctor",
+            ReadTool::Doctor,
             "Inspect backend and state readiness without changing credentials.",
-            json!({}),
+            Map::new(),
             &[],
-            true,
         ),
         tool(
-            "models",
+            ReadTool::Models,
             "List models available from the named backend: a built-in provider (codex, claude-agent, openai, anthropic, gemini) or a custom provider set up on this machine.",
-            json!({"provider":{"type":"string","pattern":format!("^[A-Za-z0-9][A-Za-z0-9_-]{{0,{}}}$", BACKEND_NAME_CHARS - 1)}}),
+            object!({"provider":{"type":"string","pattern":format!("^[A-Za-z0-9][A-Za-z0-9_-]{{0,{}}}$", BACKEND_NAME_CHARS - 1)}}),
             &["provider"],
-            true,
         ),
         tool(
-            "remote_status",
+            ReadTool::Remote,
             "Inspect configured review store, token source and reachability; never disclose the token.",
-            json!({}),
+            Map::new(),
             &[],
-            true,
         ),
         tool(
-            "cache_show",
+            ReadTool::Cache,
             "Read latest reusable record, or full history; never remove a record.",
-            json!({"key":string,"history":{"type":"boolean","default":false}}),
+            object!({"key":string,"history":{"type":"boolean","default":false}}),
             &["key"],
-            true,
         ),
     ]
 }
 fn tool(
-    name: &'static str,
-    description: &'static str,
-    mut properties: Value,
+    id: impl Into<ToolId>,
+    description: impl Into<Cow<'static, str>>,
+    mut properties: Map<String, Value>,
     required: &[&str],
-    paged: bool,
 ) -> Tool {
-    let description = if paged {
-        properties["cursor"] = json!({"type":"string"});
+    let id = id.into();
+    let description = description.into();
+    let description = if matches!(id, ToolId::Read(_)) {
+        properties.insert("cursor".into(), json!({"type":"string"}));
         format!(
             "{description} Returns bounded pages of exact CLI JSON: concatenate entries.text, following next_cursor, then parse JSON."
-        )
+        ).into()
     } else {
-        description.to_owned()
+        description
     };
-    properties["project"] = json!({"type":"string","description":"The absolute project folder; needed only when the host names no project."});
-    let schema = json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
-    Tool::new(
-        name,
-        description,
-        schema.as_object().expect("schema is an object").clone(),
-    )
-    .with_annotations(
-        ToolAnnotations::new()
-            .read_only(!matches!(name, "verify_start" | "verify_cancel" | "status"))
-            .destructive(name == "verify_cancel")
-            .idempotent(!matches!(name, "verify_start" | "status"))
-            .open_world(matches!(
-                name,
-                "verify_start" | "status" | "models" | "remote_status"
-            )),
-    )
+    properties.insert(
+        "project".into(),
+        json!({"type":"string","description":"The absolute project folder; needed only when the host names no project."}),
+    );
+    let schema = object!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
+    Tool::new(id.name(), description, schema).with_annotations(annotations(id))
+}
+
+enum Effect {
+    ReadOnly,
+    Mutating(Mutation),
+}
+
+enum Mutation {
+    NonIdempotent,
+    IdempotentDestructive,
+}
+
+enum Reach {
+    Closed,
+    Open,
+}
+
+fn annotations(id: ToolId) -> ToolAnnotations {
+    use ReadTool as Read;
+    use VerifyTool as Verify;
+    let (effect, reach) = match id {
+        ToolId::Verify(Verify::Start) => (Effect::Mutating(Mutation::NonIdempotent), Reach::Open),
+        ToolId::Verify(Verify::Cancel) => (
+            Effect::Mutating(Mutation::IdempotentDestructive),
+            Reach::Closed,
+        ),
+        ToolId::Read(Read::Status) => (Effect::Mutating(Mutation::NonIdempotent), Reach::Closed),
+        ToolId::Read(Read::Models | Read::Remote) => (Effect::ReadOnly, Reach::Open),
+        ToolId::Verify(Verify::Status | Verify::Wait | Verify::Watch | Verify::Result)
+        | ToolId::Read(
+            Read::Graph
+            | Read::Logs
+            | Read::Config
+            | Read::Runs
+            | Read::Run
+            | Read::Requests
+            | Read::Request
+            | Read::Session
+            | Read::Tools
+            | Read::Doctor
+            | Read::Cache,
+        ) => (Effect::ReadOnly, Reach::Closed),
+    };
+    let hints = ToolAnnotations::new().open_world(matches!(reach, Reach::Open));
+    match effect {
+        Effect::ReadOnly => hints.read_only(true).destructive(false).idempotent(true),
+        Effect::Mutating(Mutation::NonIdempotent) => {
+            hints.read_only(false).destructive(false).idempotent(false)
+        }
+        Effect::Mutating(Mutation::IdempotentDestructive) => {
+            hints.read_only(false).destructive(true).idempotent(true)
+        }
+    }
 }

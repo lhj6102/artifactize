@@ -17,12 +17,10 @@ including e2e tests and harnesses.
 
 - **M-DOCUMENTED-MAGIC**: a limit, size or other magic value is a named constant with a comment saying why.
 - **M-WEASEL-WORDS / M-SHORT-NAMES**: names are short and concrete, without words like Manager, Helper or Util.
-- **M-BALANCED-MODULES**: modules are balanced in size and scope; a module that grows past one concern is split.
 
 ## Types (type-driven)
 
-- **M-STRONG-TYPES**: values use the proper type, such as `PathBuf` for paths and `Duration` for time.
-- **M-STRONG-TYPES-GUARD / T-NEWTYPE-IDS**: identifiers (IDs, keys, hashes) are newtypes that guard their invariants.
+- **M-STRONG-TYPES**: paths are `PathBuf`/`Path` and durations are `Duration`, not strings or integers.
 - **T-ILLEGAL-STATES**: a state is an enum, not a string or a set of booleans, so that illegal states cannot be written.
 - **T-PARSE-AT-EDGE**: external input (configuration, CLI arguments, database rows, network responses) is parsed into types once, at the edge. The core does not pass `serde_json::Value` around.
 
@@ -37,12 +35,20 @@ including e2e tests and harnesses.
 - **TEST-EXACT-STATE**: an async test waits for the exact state it asserts. Accepted, saved,
   released and rendered are different states.
 - **TEST-CONTROLLED-TIME**: ordering and expiry tests use explicit times or a controlled clock.
-- **TEST-READ-ONLY**: observations go through read-only interfaces.
+  An end-to-end test controls time only through a declared external input the app already
+  reads (such as a fixture clock of the test build); where the app has no such input, a
+  real-time expiry check bounded by the product's own deadline is acceptable.
+- **TEST-READ-ONLY**: observations go through read-only interfaces. In an end-to-end test that
+  drives a real UI, a UI action that reveals what the case checks (such as opening Debug to
+  read a request ID) is part of the case's action, not an observation; the observations
+  themselves stay read-only.
 - **TEST-OWN-FIXTURES**: a fixture owns its processes, connections and temporary files, and
   cleans them up.
 - **TEST-SELF-CONTAINED**: tests build or declare every executable and input they use; they
   do not rely on an earlier local build.
-- **TEST-SEAMS**: tests check seams only (observable boundaries), with no over-verification.
+- **TEST-SEAMS**: tests check observable behaviour; a module's own unit tests may call its private
+  functions, and integration tests use the public interface; tests do not assert implementation
+  details that callers can't observe.
 
 ## Code written with AI
 

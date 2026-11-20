@@ -9,11 +9,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Use 24 SHA-256 hex characters (96 bits) for the shared runtime-directory namespace,
-/// keeping Unix socket paths short. This is not authentication: owner/peer checks and
-/// the registration handshake's complete identity remain authoritative on both platforms.
-const RUNTIME_ID_PREFIX_HEX_CHARS: usize = 24;
-
 #[derive(Clone)]
 pub(super) struct Endpoint {
     pub identity: crate::config::EndpointId,
@@ -22,12 +17,12 @@ pub(super) struct Endpoint {
 }
 impl Endpoint {
     pub fn new(state: &Path) -> io::Result<Self> {
-        let state = crate::workspace::canonical_target(state)?;
+        let state = platform::paths::ipc_identity(state)?;
         let user = os::user()?;
         let mut digest = Sha256::new();
         digest.update(user.as_bytes());
         digest.update([0]);
-        digest.update(state.as_os_str().as_encoded_bytes());
+        digest.update(state);
         let identity: crate::config::EndpointId = digest
             .finalize()
             .iter()
@@ -35,7 +30,7 @@ impl Endpoint {
             .collect::<String>()
             .parse()
             .expect("SHA-256 endpoint identity");
-        let directory = os::directory(&identity[..RUNTIME_ID_PREFIX_HEX_CHARS], &user)?;
+        let directory = os::directory(&identity, &user)?;
         let address = os::address(&directory, &identity);
         let endpoint = Self {
             identity,

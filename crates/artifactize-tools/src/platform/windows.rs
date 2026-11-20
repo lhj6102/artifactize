@@ -1,18 +1,14 @@
-//! Windows program lookup details and the ShellExecute desktop opener.
+//! Windows program lookup details and Job Object process trees.
 
 use std::{
-    ffi::OsStr,
     io, mem,
-    os::windows::{
-        ffi::OsStrExt,
-        io::{AsRawHandle, FromRawHandle, OwnedHandle},
-    },
+    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     path::Path,
     ptr,
 };
 
 use windows_sys::Win32::{
-    Foundation::INVALID_HANDLE_VALUE,
+    Foundation::{ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE},
     System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
     },
@@ -22,13 +18,15 @@ use windows_sys::Win32::{
         JobObjectExtendedLimitInformation, SetInformationJobObject,
     },
     System::Threading::{CREATE_SUSPENDED, OpenThread, ResumeThread, THREAD_SUSPEND_RESUME},
-    UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
 };
+
+mod desktop;
+pub(crate) use desktop::open_desktop;
 
 /// An extensionless program name is tried with each `PATHEXT` suffix.
 pub(crate) const USES_PATHEXT: bool = true;
 
-/// Windows has no execute bit; any regular file is a candidate.
+/// Windows has no execute bit; any regular file is a lookup candidate, including batch shims.
 pub(crate) fn is_executable(path: &Path) -> bool {
     path.metadata().is_ok_and(|metadata| metadata.is_file())
 }
@@ -69,6 +67,9 @@ pub(crate) fn spawn_tree(command: &mut tokio::process::Command) -> io::Result<Tr
         return Err(io::Error::last_os_error());
     }
     command.creation_flags(CREATE_SUSPENDED);
+    // Pass the argument vector, not a shell string. For batch shims, Rust std
+    // (>= 1.77.2, CVE-2024-24576) quotes it for cmd.exe and returns InvalidInput
+    // if an argument cannot be quoted safely.
     let mut suspended = SuspendedChild(command.spawn()?);
     let admitted = (|| {
         let process = suspended.0.raw_handle().ok_or(io::ErrorKind::NotFound)?;
@@ -110,10 +111,12 @@ fn resume(child: &SuspendedChild) -> io::Result<()> {
         dwSize: mem::size_of::<THREADENTRY32>() as u32,
         ..Default::default()
     };
-    let mut resumed = false;
     // SAFETY: an open snapshot and an entry whose dwSize is set.
-    let mut more = unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } != 0;
-    while more {
+    if unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut resumed = false;
+    loop {
         if entry.th32OwnerProcessID == pid {
             // SAFETY: the result is checked and then owned.
             let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
@@ -129,7 +132,13 @@ fn resume(child: &SuspendedChild) -> io::Result<()> {
             resumed = true;
         }
         // SAFETY: as for Thread32First.
-        more = unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } != 0;
+        if unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } == 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(ERROR_NO_MORE_FILES as i32) {
+                return Err(error);
+            }
+            break;
+        }
     }
     if resumed {
         Ok(())
@@ -142,107 +151,15 @@ fn resume(child: &SuspendedChild) -> io::Result<()> {
 
 impl Tree {
     /// Close the job, which kills every process still in it.
-    pub(crate) fn kill(&mut self) {
+    pub(crate) fn kill(&mut self) -> std::io::Result<()> {
         self.job.take();
+        Ok(())
     }
 }
 
 impl Drop for Tree {
     fn drop(&mut self) {
-        self.kill();
-    }
-}
-
-/// Hand the target to ShellExecute's default verb on a blocking thread.
-pub(crate) async fn open_desktop(target: &OsStr) -> io::Result<()> {
-    let target = target.to_owned();
-    match tokio::task::spawn_blocking(move || shell_execute(&target)).await {
-        Ok(result) => result,
-        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
-        Err(error) => Err(io::Error::other(error)),
-    }
-}
-
-/// ShellExecuteW returns an error code at or below 32; greater values mean a successful
-/// desktop handoff, not a handle that this process owns.
-const SHELL_EXECUTE_ERROR_MAX: isize = 32;
-
-fn shell_execute(target: &OsStr) -> io::Result<()> {
-    handoff(target, |target| {
-        // SAFETY: handoff supplies a NUL-terminated target alive for this call.
-        // No verb, parameters or directory: the file/URL is one literal target.
-        unsafe {
-            ShellExecuteW(
-                ptr::null_mut(),
-                ptr::null(),
-                target.as_ptr(),
-                ptr::null(),
-                ptr::null(),
-                SW_SHOWNORMAL,
-            ) as isize
-        }
-    })
-}
-
-/// The native handoff boundary can be observed without changing a user's default apps.
-fn handoff(target: &OsStr, execute: impl FnOnce(&[u16]) -> isize) -> io::Result<()> {
-    let mut target: Vec<_> = target.encode_wide().collect();
-    if target.contains(&0) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Open target contains NUL.",
-        ));
-    }
-    target.push(0);
-    let result = execute(&target);
-    // ShellExecute returns a value greater than 32 on success, not an owned handle.
-    if result <= SHELL_EXECUTE_ERROR_MAX {
-        return Err(io::Error::other(format!(
-            "ShellExecute could not open the target (code {result})."
-        )));
-    }
-    Ok(())
-}
-
-// Windows has a ShellExecute handoff, not a Unix opener subprocess. Observe its
-// native argument seam without launching a browser or changing file associations.
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn target_is_one_literal_argument() {
-        for target in [
-            "notes with spaces.md",
-            "https://example.invalid/?a=1&b=two words",
-            "한글 문서.md",
-        ] {
-            let mut calls = Vec::new();
-            handoff(OsStr::new(target), |argument| {
-                calls.push(argument.to_vec());
-                33 // ShellExecute's smallest successful handoff value.
-            })
-            .unwrap();
-            assert_eq!(calls.len(), 1);
-            assert_eq!(calls[0].last(), Some(&0));
-            assert_eq!(
-                String::from_utf16(&calls[0][..calls[0].len() - 1]).unwrap(),
-                target
-            );
-        }
-    }
-
-    #[test]
-    fn invalid_target_never_reaches_the_desktop_and_native_errors_are_reported() {
-        let invalid = handoff(OsStr::new("before\0after"), |_| {
-            panic!("NUL reached ShellExecute")
-        });
-        assert_eq!(invalid.unwrap_err().kind(), io::ErrorKind::InvalidInput);
-        assert!(
-            handoff(OsStr::new("missing.md"), |_| 2)
-                .unwrap_err()
-                .to_string()
-                .contains("code 2")
-        );
+        // Closing the job cannot fail; the result only matches the Unix tree's.
+        let _ = self.kill();
     }
 }

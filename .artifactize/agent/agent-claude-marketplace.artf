@@ -1,0 +1,7 @@
+# Claude Code's catalog of this repository's plugin is an input of the plugin's
+# install check and needs no review of its own.
+basis = true
+path = ".claude-plugin/marketplace.json"
+
+[views.agent_tools]
+read = { builtin = "read" }

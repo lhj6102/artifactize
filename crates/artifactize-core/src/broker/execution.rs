@@ -52,7 +52,6 @@ pub(super) async fn execute(
         request.started_at = Some(now());
         request.execution_id = Some(execution.id.clone());
         request.provenance = Some(execution.provenance.clone());
-        request.queue = None;
         request.blocked_reason = Some("Waiting for a Human claim and submission.".into());
         execution.state = request.state.clone().try_into()?;
         receipts.wait_for_human(&execution, &request).await?;
@@ -169,6 +168,42 @@ pub(super) async fn execute(
     } else {
         outcome
     };
+    let outcome = if outcome.is_ok() && request.key.is_none() {
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id == request.eval_id)
+            .expect("included eval");
+        if cache::live_input(&config, eval).is_some() {
+            match cache::recheck_observations(
+                &config,
+                &request.fingerprints,
+                &run_dir,
+                parallelism,
+                cancellation.clone(),
+            )
+            .await
+            {
+                Ok(true) => outcome,
+                Ok(false) => Err((
+                    "Snapshot changed during review.".into(),
+                    crate::types::FailureCode::InputChanged,
+                )),
+                Err(error) => Err((
+                    error,
+                    if cancellation.is_cancelled() {
+                        crate::types::FailureCode::Cancelled
+                    } else {
+                        crate::types::FailureCode::FingerprintRecheckFailed
+                    },
+                )),
+            }
+        } else {
+            outcome
+        }
+    } else {
+        outcome
+    };
     let outcome = if cancellation.is_cancelled() {
         Err((
             process::Error::Cancelled.to_string(),
@@ -198,7 +233,7 @@ fn runtime_result(
     match outcome {
         Outcome::Completed(result) => Ok(crate::store::ExecutionResult::Runtime(
             crate::store::RuntimeResult {
-                verdict: result.verdict,
+                verdict: result.verdict(),
                 exit_code: crate::store::ResultField::Value(result.exit_code),
                 stdout: crate::store::ResultField::Value(
                     String::from_utf8_lossy(&result.output.stdout).into_owned(),
@@ -266,13 +301,13 @@ pub(super) fn prepare(
     };
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let args =
-        scope::resolve_argv(config, &scope, &eval.target, args).map_err(|e| e.to_string())?;
+        scope::resolved_argv(config, &scope, &eval.target, args).map_err(|e| e.to_string())?;
     let cwd = scope::scoped_path(&config.root, config.artifacts[&eval.target].folder())
         .map_err(|e| e.to_string())?;
     let program = scope::executable(&config.root, &scope, &eval.target, command)?;
     let mut prepared = runtime::Command::prepare(
         program,
-        args.iter().map(Into::into).collect(),
+        args.iter().map(|arg| arg.native().into()).collect(),
         &config.root,
         run_dir,
         *timeout_ms,
@@ -282,6 +317,10 @@ pub(super) fn prepare(
     request.run_dir = Some(prepared.directory().to_path_buf());
     // Stored as text, so with `/` on every system.
     let program_text = crate::platform::path_text(std::path::Path::new(command));
-    request.argv = Some(std::iter::once(program_text).chain(args).collect());
+    request.argv = Some(
+        std::iter::once(program_text)
+            .chain(args.iter().map(|arg| arg.shown()))
+            .collect(),
+    );
     Ok(Prepared::Runtime(prepared))
 }

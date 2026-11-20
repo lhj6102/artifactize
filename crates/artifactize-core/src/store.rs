@@ -29,8 +29,8 @@ mod run_read;
 pub use lifecycle::{ExecutionState, GreenResult, PendingRequest, RequestState, RunState};
 pub use result::{ExecutionResult, Field as ResultField, RuntimeResult};
 pub use run_control::read_run_repo;
-pub use run_read::read_run;
 pub(crate) use run_read::{read_new_results, read_run_record, read_run_requests_only};
+pub use run_read::{read_run, read_run_snapshot};
 pub use snapshots::{
     ArtifactValidation, Blocker, ChildIdentity, EvalValidation, HumanDefinition, Validation,
     ValidationSnapshot,
@@ -60,6 +60,10 @@ pub use requests::{
     read_request_batch, read_requests, read_requests_in, read_run_requests, read_session_request,
     read_waiting, read_waiting_originals,
 };
+pub(crate) use requests::{
+    read_request_by_id, read_request_by_session, read_request_id, read_request_repo_by_id,
+    read_requests_for_run,
+};
 
 /// How long one database operation waits for the state other processes are writing before it
 /// fails. Several Runs, the monitor and MCP servers share one state; a Run's write waits behind
@@ -74,6 +78,21 @@ const SQLITE_BUSY_POLL: std::time::Duration = std::time::Duration::from_millis(1
 
 /// Make `db` wait for a busy database, trying every [`SQLITE_BUSY_POLL`] for up to
 /// [`SQLITE_BUSY_TIMEOUT`].
+/// A path column, saved as its path text, read back as the same native path.
+pub(crate) fn path_column(
+    row: &rusqlite::Row<'_>,
+    index: usize,
+) -> rusqlite::Result<std::path::PathBuf> {
+    let text: String = row.get(index)?;
+    artifactize_tools::files::path_from_text(&text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
+
 pub(crate) fn wait_when_busy(db: &rusqlite::Connection) -> rusqlite::Result<()> {
     db.busy_handler(Some(busy))
 }
@@ -183,10 +202,7 @@ pub struct StateHomeError;
 
 /// The variables `state_home` reads, in order, for the error that names them.
 fn state_home_variables() -> String {
-    let names: Vec<&str> = std::iter::once("ARTIFACTIZE_STATE_HOME")
-        .chain(platform::STATE_VARIABLES.iter().copied())
-        .chain([platform::HOME_VARIABLE])
-        .collect();
+    let names: Vec<_> = platform::state_home_variables().collect();
     let (last, rest) = names.split_last().expect("constant names");
     format!("{}, or {last}", rest.join(", "))
 }

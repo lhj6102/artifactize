@@ -423,7 +423,6 @@ impl<'a> Graph<'a> {
                 ArtifactEvaluation {
                     status,
                     own_satisfied: own_satisfied[id],
-                    satisfied,
                     passed: artifact
                         .evals
                         .iter()
@@ -458,7 +457,7 @@ impl<'a> Graph<'a> {
         self.schedule.gates[id].clone()
     }
 
-    pub fn eval_target(&self, id: &str) -> Option<&'a ArtifactName> {
+    pub fn eval_target(&self, id: &EvalId) -> Option<&'a ArtifactName> {
         self.evals.get(id).copied()
     }
 }
@@ -642,10 +641,15 @@ impl From<ArtifactStatus> for crate::types::ArtifactValidationStatus {
 pub struct ArtifactEvaluation {
     pub status: ArtifactStatus,
     pub own_satisfied: bool,
-    /// Includes all required dependencies and SCC peers, even without Evals.
-    pub satisfied: bool,
     pub passed: usize,
     pub total: usize,
+}
+
+impl ArtifactEvaluation {
+    /// Includes all required dependencies and SCC peers, even without Evals.
+    pub fn satisfied(&self) -> bool {
+        matches!(self.status, ArtifactStatus::Green | ArtifactStatus::Basis)
+    }
 }
 
 /// Aggregate validation status, never a fabricated Eval verdict.

@@ -1,0 +1,10 @@
+fingerprint = false
+path = "waiting/"
+
+[evals.check]
+title = "Check waiting"
+profile = { kind = "runtime", command = "/bin/false", args = [] }
+
+[evals.check.payload]
+instruction = """
+Check {timeout}."""

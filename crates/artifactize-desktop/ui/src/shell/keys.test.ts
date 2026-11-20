@@ -27,6 +27,28 @@ describe("chord", () => {
 });
 
 describe("plain", () => {
+  it("is never a shortcut in a field, a true/false field and a choice included", () => {
+    for (const type of ["text", "checkbox", "radio"]) {
+      const field = document.createElement("input");
+      field.type = type;
+      document.body.append(field);
+      const event = press({ key: "m", code: "KeyM", bubbles: true });
+      let shortcut: boolean | undefined;
+      field.addEventListener("keydown", (pressed) => (shortcut = plain(pressed, "m")));
+      field.dispatchEvent(event);
+      field.remove();
+      expect(shortcut, type).toBe(false);
+    }
+    const button = document.createElement("button");
+    document.body.append(button);
+    let shortcut: boolean | undefined;
+    button.addEventListener("keydown", (pressed) => (shortcut = plain(pressed, "m")));
+    button.dispatchEvent(press({ key: "m", code: "KeyM", bubbles: true }));
+    button.remove();
+    expect(shortcut).toBe(true);
+  });
+
+
   it("takes the character, so a jamo typed in Hangul mode is no shortcut", () => {
     expect(plain(press({ key: "c", code: "KeyC" }), "c")).toBe(true);
     expect(plain(press({ key: "ㅊ", code: "KeyC" }), "c")).toBe(false);

@@ -185,3 +185,108 @@ pub fn observed_start_time(pid: u32) -> Option<u64> {
         }
     }
 }
+
+/// Stop an observed fixture owner and wait for that exact birth identity to exit.
+pub fn stop_owned(
+    pid: u32,
+    birth: u64,
+    group: bool,
+    bound: std::time::Duration,
+) -> std::io::Result<()> {
+    if !same_process_running(pid, birth) {
+        return Ok(());
+    }
+    signal_owned(pid, birth, group)?;
+    let deadline = std::time::Instant::now() + bound;
+    // Poll a native read-only process observation; the interval is not a test assertion.
+    const EXIT_POLL: std::time::Duration = std::time::Duration::from_millis(10);
+    while same_process_running(pid, birth) {
+        if std::time::Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("fixture process {pid} did not exit"),
+            ));
+        }
+        std::thread::sleep(EXIT_POLL);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn signal_owned(pid: u32, birth: u64, group: bool) -> std::io::Result<()> {
+    let id = i32::try_from(pid)
+        .ok()
+        .filter(|id| *id > 0)
+        .ok_or(std::io::ErrorKind::InvalidInput)?;
+    if !same_process_running(pid, birth) {
+        return Ok(());
+    }
+    // SAFETY: The positive PID's birth identity was just rechecked. A negative PID
+    // refers to the process group of an owned Eval child, never the caller's group.
+    if unsafe { libc::kill(if group { -id } else { id }, libc::SIGKILL) } == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if !same_process_running(pid, birth) {
+        Ok(())
+    } else {
+        Err(error)
+    }
+}
+
+#[cfg(windows)]
+fn signal_owned(pid: u32, birth: u64, _group: bool) -> std::io::Result<()> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::{
+        Foundation::FILETIME,
+        System::Threading::{
+            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+            TerminateProcess,
+        },
+    };
+    // SAFETY: OpenProcess takes a PID, with no caller pointers. Only a valid, owned handle
+    // is wrapped below and closed on return.
+    let process = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+            0,
+            pid,
+        )
+    };
+    if process.is_null() {
+        let error = std::io::Error::last_os_error();
+        return if same_process_running(pid, birth) {
+            Err(error)
+        } else {
+            Ok(())
+        };
+    }
+    // SAFETY: the successful OpenProcess returned a unique owned handle.
+    let process = unsafe { OwnedHandle::from_raw_handle(process) };
+    let mut created = FILETIME::default();
+    let (mut exit, mut kernel, mut user) = (created, created, created);
+    // SAFETY: the owned handle is live, and all four out-pointers are valid.
+    if unsafe {
+        GetProcessTimes(
+            process.as_raw_handle(),
+            &mut created,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    if (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime) != birth {
+        return Ok(());
+    }
+    // SAFETY: only the handle with the matching birth time is stopped. The executor's
+    // Job Objects own its runtime descendants.
+    if unsafe { TerminateProcess(process.as_raw_handle(), 1) } == 0
+        && same_process_running(pid, birth)
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}

@@ -4,7 +4,6 @@
 use std::{
     io, mem,
     os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
-    process::ExitStatus,
     ptr,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -55,6 +54,8 @@ pub(crate) struct Child {
     released: bool,
 }
 
+use crate::platform::ProcessOutcome;
+
 impl Child {
     pub fn stdin(&mut self) -> &mut Option<ChildStdin> {
         &mut self.child.stdin
@@ -68,16 +69,18 @@ impl Child {
         &mut self.child.stderr
     }
 
-    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.child.wait().await
+    pub async fn wait(&mut self) -> io::Result<ProcessOutcome> {
+        self.child.wait().await.map(ProcessOutcome::from_native)
     }
 
-    pub async fn wait_leader(&mut self) -> io::Result<ExitStatus> {
-        self.child.wait().await
+    pub async fn wait_leader(&mut self) -> io::Result<ProcessOutcome> {
+        self.child.wait().await.map(ProcessOutcome::from_native)
     }
 
-    pub fn try_wait_leader(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.child.try_wait()
+    pub fn try_wait_leader(&mut self) -> io::Result<Option<ProcessOutcome>> {
+        self.child
+            .try_wait()
+            .map(|status| status.map(ProcessOutcome::from_native))
     }
 
     /// Ask the child's console process group to stop with Ctrl-Break, the closest to SIGTERM.
@@ -97,13 +100,13 @@ impl Child {
 
     /// Terminate and await the whole Job, not just its leader. Descendants may
     /// still hold non-delete-shared files after TerminateJobObject returns.
-    pub async fn cleanup(&mut self) -> io::Result<ExitStatus> {
+    pub async fn cleanup(&mut self) -> io::Result<ProcessOutcome> {
         self.kill()?;
         let status = self.child.wait().await?;
         let job = Job(self.job.0.try_clone()?);
         crate::task::joined(tokio::task::spawn_blocking(move || job.wait_empty()).await)
             .map_err(io::Error::other)??;
-        Ok(status)
+        Ok(ProcessOutcome::from_native(status))
     }
 
     /// Terminate every process in the job.
@@ -271,6 +274,8 @@ fn spawn_gated_with(
 ) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
     let job = Job::new()?;
     command.creation_flags(CREATE_SUSPENDED | CREATE_NEW_PROCESS_GROUP | flags);
+    // Pass the argument vector to std. For PATHEXT batch shims it constructs and
+    // validates the native invocation; artifactize supplies no shell string or raw args.
     let child = command
         .spawn()
         .and_then(|mut child| match job.assign(&child) {

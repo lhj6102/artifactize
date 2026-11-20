@@ -44,14 +44,13 @@ pub(super) fn register(
     if reachable {
         return Ok(());
     }
-    let bin_text = bin
-        .to_str()
+    bin.to_str()
         .filter(|text| !text.contains(['\n', '\r']))
         .ok_or_else(|| io::Error::other("bundle path cannot be represented in paths.d"))?;
     if !bin.join("artifactize").is_file() || !bin.join("artifactize-tools").is_file() {
         return Err(io::Error::other("bundle is missing its commands"));
     }
-    let content = format!("{bin_text}\n");
+    let content = format!("{}\n", crate::platform::path_text(bin));
     match fs::read_to_string(paths_file) {
         Ok(existing) if existing == content => return Ok(()),
         // A moved/deleted bundle's old entry can be repaired. Another working bundle is
@@ -77,9 +76,14 @@ pub(super) fn register(
         Consent::Declined => {
             declined.push(bin.to_owned());
             fs::create_dir_all(state)?;
+            #[derive(serde::Serialize)]
+            struct Declined<'a>(
+                #[serde(serialize_with = "crate::platform::serialize_paths")]
+                &'a [std::path::PathBuf],
+            );
             fs::write(
                 declined_file,
-                serde_json::to_vec(&declined).map_err(io::Error::other)?,
+                serde_json::to_vec(&Declined(&declined)).map_err(io::Error::other)?,
             )
         }
     }
@@ -92,6 +96,8 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
         process::{Command, Stdio},
         time::Duration,
     };
+    // AppleScript reports this error marker when the user cancels the authorization prompt.
+    const USER_CANCELLED: &str = "(-128)";
     // A noninteractive sudo probe should finish immediately; bound a stalled plugin.
     const SUDO_TIMEOUT: Duration = Duration::from_secs(5);
     // Give the person time to read the system prompt and authenticate, without leaving
@@ -110,8 +116,8 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
     if super::bounded_status(&mut sudo, SUDO_TIMEOUT)?.success() {
         return Ok(Consent::Installed);
     }
-    // AppleScript's elevation API accepts only a shell command (the P-COMMANDS exception):
-    // the script is constant and AppleScript quotes both paths, which arrive as arguments.
+    // AppleScript's elevation API accepts only a shell command. The script is constant,
+    // and AppleScript quotes both paths, which arrive as arguments.
     const SCRIPT: &str = "on run argv\n do shell script \"/usr/bin/install -m 644 \" & quoted form of item 1 of argv & \" \" & quoted form of item 2 of argv with prompt \"Artifactize wants to make the artifactize command available in Terminal.\" with administrator privileges\nend run";
     let errors = tempfile::NamedTempFile::new()?;
     let mut prompt = Command::new("/usr/bin/osascript");
@@ -129,7 +135,7 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
         Ok(Consent::Installed)
     } else {
         let message = fs::read_to_string(errors.path())?;
-        if message.contains("(-128)") {
+        if message.contains(USER_CANCELLED) {
             Ok(Consent::Declined)
         } else {
             Err(io::Error::other(format!(
@@ -151,15 +157,19 @@ mod tests {
         let first = root.path().join("first-bin");
         let last = root.path().join("last-bin");
         fs::create_dir_all(system.join("paths.d")).unwrap();
-        fs::write(system.join("paths"), format!("{}\n\n", base.display())).unwrap();
+        fs::write(
+            system.join("paths"),
+            format!("{}\n\n", crate::platform::path_text(&base)),
+        )
+        .unwrap();
         fs::write(
             system.join("paths.d/z-last"),
-            format!("{}\n", last.display()),
+            format!("{}\n", crate::platform::path_text(&last)),
         )
         .unwrap();
         fs::write(
             system.join("paths.d/a-first"),
-            format!("{}\n", first.display()),
+            format!("{}\n", crate::platform::path_text(&first)),
         )
         .unwrap();
         assert_eq!(terminal_paths(&system).unwrap(), [base, first, last]);
@@ -189,7 +199,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fs::read_to_string(&paths).unwrap(),
-            format!("{}\n", first.display())
+            format!("{}\n", crate::platform::path_text(&first))
         );
         fs::create_dir_all(moved.parent().unwrap()).unwrap();
         fs::rename(&first, &moved).unwrap();
@@ -200,10 +210,15 @@ mod tests {
         .unwrap();
         assert_eq!(
             fs::read_to_string(&paths).unwrap(),
-            format!("{}\n", moved.display())
+            format!("{}\n", crate::platform::path_text(&moved))
         );
         fs::remove_file(&paths).unwrap();
         register(&moved, &paths, &state, false, |_, _| Ok(Consent::Declined)).unwrap();
+        let declined = fs::read(state.join("desktop-cli-declined.json")).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Vec<String>>(&declined).unwrap(),
+            [crate::platform::path_text(&moved)]
+        );
         register(&moved, &paths, &state, false, |_, _| {
             panic!("declined for this bundle")
         })
@@ -220,7 +235,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fs::read_to_string(&paths).unwrap(),
-            format!("{}\n", first.display())
+            format!("{}\n", crate::platform::path_text(&first))
         );
     }
 }

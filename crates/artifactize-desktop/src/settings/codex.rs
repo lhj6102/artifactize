@@ -15,6 +15,7 @@ impl Flow for Codex {
     const NOT_WAITING: &'static str = "No Codex sign-in is waiting for a URL.";
     const ENDED: &'static str = "The Codex sign-in already ended.";
     const WAITED: &'static str = "The Codex sign-in is already being waited for.";
+    const UNASKED: &'static str = "Codex sign-in ended without asking anything.";
 }
 
 /// A moment as the library counts it: whole seconds since 1970, as decimal text so no value of

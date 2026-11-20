@@ -9,11 +9,10 @@ homepage.workspace = true
 documentation = "https://docs.rs/artifactize-core"
 keywords = ["collaboration", "ai", "agent", "review", "llm"]
 categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
-# The portable OS utility stand-in, which tests build from source on demand.
-exclude = ["tests/support/fixture.rs", "index.artf"]
+exclude = ["index.artf"]
 
 [features]
-# Hooks that the unit tests of artifactize-tui count queries and derivations with.
+# Hooks for counting queries and derivations in tests.
 test-support = ["rusqlite/trace"]
 
 [dependencies]
@@ -35,7 +34,7 @@ rig-reqwest = { version = "=0.43.0", default-features = false, features = ["rust
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.11"
 socket2 = "0.6.5"
 tempfile = "3.27"
@@ -44,6 +43,7 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
 tokio-rusqlite = "0.8.0"
 toml = "1.1.8"
+toml_edit = "0.25.17"
 tokio-util = { version = "0.7", features = ["rt"] }
 url = { version = "2", features = ["serde"] }
 # Session layout cuts at grapheme boundaries.
@@ -58,6 +58,7 @@ process-wrap = { version = "=10.0.1", default-features = false, features = ["tok
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_Security_Authorization",
@@ -81,3 +82,8 @@ tokio = { version = "1", features = ["test-util"] }
 # Tests make junctions through FSCTL_SET_REPARSE_POINT rather than a shell's mklink, and
 # ask whether a probe's console window is visible.
 windows-sys = { version = "0.61", features = ["Win32_System_Ioctl", "Win32_UI_WindowsAndMessaging"] }
+
+# Library fixtures launch the shared worker without depending on the CLI.
+[[example]]
+name = "artifactize-test-worker"
+path = "tests/support/run-worker.rs"

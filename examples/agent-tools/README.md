@@ -16,10 +16,10 @@ agent-tools/
 
 What it demonstrates:
 
-- **An Agent eval with strict schemas.** `spec/review` returns exactly one JSON
-  object. GREEN must carry `covered` (requirement IDs) and `diagramMatches: true`,
-  with optional `notes`. RED must carry `findings`. Fields outside
-  `pass_schema`/`fail_schema` are rejected, and an invalid answer gets one repair
+- **An Agent eval with prioritized findings.** `spec/review` returns a list of
+  findings, each with a priority from P0 (the most important) to P3 and a reason.
+  `red_at = "P1"` makes the eval RED when a finding is P1 or above; P2 and P3
+  findings are reported but do not fail it. An invalid answer gets one repair
   turn with tools disabled. The profile also sets `timeout_ms` and
   `max_tool_calls` budgets.
 - **Built-in tools.** `read`, `grep` and `view_image` are declared as
@@ -83,7 +83,7 @@ checks validate built-in tools without launching a desktop application. Actually
 fallback or model catalog. The default profile uses `backend = "openai"` with
 the placeholder `YOUR_OPENAI_MODEL_ID`. The `anthropic` and `codex` entries in
 `profile_variants` are complete alternative profiles. Replace the `model`
-placeholder of the profile you use in `spec/index.artf`:
+placeholder of the profile you use in `.artifactize/spec.artf`:
 
 | Backend | Credentials | Models | Review command |
 |---|---|---|---|

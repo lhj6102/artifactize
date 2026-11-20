@@ -5,7 +5,6 @@ use owned_run::Watcher;
 use std::{
     fs,
     io::Write,
-    net::TcpListener,
     path::Path,
     process::{Command, Stdio},
     time::Duration,
@@ -177,9 +176,8 @@ fn login_status_overrides_and_logout_against_a_test_server() {
         ),
         json!({"configured":false})
     );
-    let closed = TcpListener::bind("127.0.0.1:0").unwrap();
-    let closed_url = format!("http://{}/", closed.local_addr().unwrap());
-    drop(closed);
+    let disconnected = support::FakeProvider::start(|_| support::Reply::Disconnect);
+    let closed_url = format!("{}/", disconnected.url);
     let elsewhere = run(
         artifactize(&state)
             .args(["remote", "status"])
@@ -230,15 +228,14 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     let bin = root.path().join("bin");
     support::os::create_private_dir_all(&state.join("auth"));
     fs::create_dir(&bin).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
+    let listener = support::os::tcp::nonblocking_loopback_listener();
     let url = format!("http://{}/", listener.local_addr().unwrap());
     let token = test_token();
     let doctor = |code| {
         let report = run(
             artifactize(&state)
                 .arg("doctor")
-                .env("PATH", &bin)
+                .env("PATH", support::os::isolated_path(&bin))
                 .env_remove("OPENAI_API_KEY")
                 .env_remove("ANTHROPIC_API_KEY"),
             "",
@@ -318,7 +315,7 @@ fn login_on_a_terminal_does_not_echo_the_token() {
     );
     let wait = support::os::patience(Duration::from_secs(10));
     let mut output = Vec::new();
-    while !String::from_utf8_lossy(&output).contains("Paste the remote token") {
+    while !support::os::output_lines_of(&output).contains("Paste the remote token") {
         output.extend(
             receiver
                 .recv_timeout(wait)
@@ -327,12 +324,8 @@ fn login_on_a_terminal_does_not_echo_the_token() {
     }
     // A terminal's Enter key sends a carriage return.
     terminal.type_text(format!("{token}\r").as_bytes());
-    assert!(terminal.finish());
-    // The output ends once the terminal has closed.
-    while let Ok(chunk) = receiver.recv_timeout(wait) {
-        output.extend(chunk);
-    }
-    let output = String::from_utf8_lossy(&output);
+    assert!(terminal.finish_and_drain(receiver, &mut output));
+    let output = support::os::output_lines_of(&output);
     assert!(!output.contains(&token));
     assert!(output.contains("as alice-laptop"), "{output}");
 }

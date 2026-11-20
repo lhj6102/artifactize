@@ -9,12 +9,8 @@ use std::{
     fs::{self, DirBuilder, File, OpenOptions, Permissions},
     future::Future,
     io,
-    os::unix::{
-        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-        process::ExitStatusExt,
-    },
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
-    process::ExitStatus,
 };
 
 pub(crate) use tempfile::TempDir as PrivateTempDir;
@@ -38,7 +34,7 @@ pub(crate) fn release_free_memory() {
 }
 
 /// No Windows-style pending sharing disposition survives group cleanup.
-pub(crate) fn remove_abandoned_directory(path: &Path) -> io::Result<()> {
+pub(crate) fn remove_tree(path: &Path) -> io::Result<()> {
     std::fs::remove_dir_all(path)
 }
 
@@ -89,6 +85,17 @@ pub(crate) fn create_private_dir(path: &Path) -> io::Result<()> {
 pub(crate) fn private_tempdir_in(prefix: &str, parent: &Path) -> io::Result<PrivateTempDir> {
     let directory = tempfile::Builder::new()
         .prefix(prefix)
+        .permissions(Permissions::from_mode(PRIVATE_DIR_MODE))
+        .tempdir_in(parent)?;
+    fs::set_permissions(directory.path(), Permissions::from_mode(PRIVATE_DIR_MODE))?;
+    Ok(directory)
+}
+
+/// A private scratch directory that shares its exact basename with an existing lease.
+pub(crate) fn private_named_dir(parent: &Path, name: &str) -> io::Result<PrivateTempDir> {
+    let directory = tempfile::Builder::new()
+        .prefix(name)
+        .rand_bytes(0)
         .permissions(Permissions::from_mode(PRIVATE_DIR_MODE))
         .tempdir_in(parent)?;
     fs::set_permissions(directory.path(), Permissions::from_mode(PRIVATE_DIR_MODE))?;
@@ -151,7 +158,7 @@ pub(crate) fn is_owner_only(file: &File) -> io::Result<bool> {
 pub(crate) const ENV_NAMES_IGNORE_CASE: bool = false;
 
 /// The variable naming the user's home directory.
-pub(crate) const HOME_VARIABLE: &str = "HOME";
+pub(crate) const HOME_VARIABLES: &[&str] = &["HOME"];
 
 /// Variables programs read their temporary directory from. `TMP` and `TEMP` are set too, for
 /// programs written for Windows.
@@ -166,7 +173,7 @@ pub(crate) const USER_VARIABLES: &[&str] = &["USER", "LOGNAME"];
 
 /// The user's home directory.
 pub(crate) fn home_directory() -> Option<std::path::PathBuf> {
-    std::env::var_os(HOME_VARIABLE)
+    std::env::var_os(HOME_VARIABLES[0])
         .filter(|path| !path.is_empty())
         .map(Into::into)
 }
@@ -183,11 +190,6 @@ pub(crate) const CRLF_LINE_ENDINGS: bool = false;
 /// Whether a terminal that cannot hide input is still read, visibly, after a warning. A Unix
 /// terminal always can; failing to hide input is an error.
 pub const VISIBLE_INPUT_FALLBACK: bool = false;
-
-/// The signal that ended a process, if one did.
-pub(crate) fn exit_signal(status: &ExitStatus) -> Option<i32> {
-    status.signal()
-}
 
 /// The operating system's host name, without depending on a proc filesystem.
 pub(crate) fn host_name() -> Option<String> {

@@ -10,6 +10,7 @@ use artifactize_core::{
     process,
     runtime::{self, Command, Error, Outcome, Verdict},
 };
+use futures_util::FutureExt;
 use support::os::{private_dir, symlink_dir};
 use tokio::{sync::oneshot, time::timeout};
 use tokio_util::sync::CancellationToken;
@@ -86,7 +87,7 @@ async fn ordinary_zero_exit_is_green_with_actual_output() {
         ))
         .await,
     );
-    assert_eq!(result.verdict, Verdict::Green);
+    assert_eq!(result.verdict(), Verdict::Green);
     assert_eq!(result.exit_code, 0);
     assert_eq!(result.output.stdout, b"out");
     assert_eq!(result.output.stderr, b"err");
@@ -98,7 +99,7 @@ async fn ordinary_nonzero_exit_is_red() {
     let scratch = Scratch::new();
     let result =
         completed(execute(scratch.command(&support::os::steps(), &["exit", "127"], None)).await);
-    assert_eq!(result.verdict, Verdict::Red);
+    assert_eq!(result.verdict(), Verdict::Red);
     assert_eq!(result.exit_code, 127);
 }
 
@@ -135,7 +136,7 @@ async fn windows_exit_statuses_are_verdicts_not_signals() {
     let (program, args, expected) = support::os::control_c_exit();
     let args: Vec<_> = args.iter().map(String::as_str).collect();
     let result = completed(execute(scratch.command(&program, &args, None)).await);
-    assert_eq!(result.verdict, Verdict::Red);
+    assert_eq!(result.verdict(), Verdict::Red);
     assert_eq!(result.exit_code, expected);
 }
 
@@ -144,7 +145,11 @@ async fn windows_exit_statuses_are_verdicts_not_signals() {
 #[tokio::test(start_paused = true)]
 async fn timeout_is_an_operational_error_and_reaps_the_leader() {
     let scratch = Scratch::new();
-    let command = scratch.command(&support::os::steps(), &["block"], Some(1000));
+    let command = scratch.command(
+        &support::os::steps(),
+        &["touch", "started", "block"],
+        Some(1000),
+    );
     let (registered, child) = oneshot::channel();
     let cancellation = CancellationToken::new();
     let work = runtime::execute(command, cancellation.clone(), |child| async move {
@@ -152,7 +157,13 @@ async fn timeout_is_an_operational_error_and_reaps_the_leader() {
         Ok(())
     });
     support::os::scoped(cancellation, work, async |running| {
+        wait_for(|| !child.is_empty() || running.is_finished()).await;
         let pid = child.await.unwrap();
+        wait_for(|| scratch.workspace().join("started").is_file() || running.is_finished()).await;
+        assert!(
+            scratch.workspace().join("started").is_file(),
+            "the child must run before advancing the deadline"
+        );
         tokio::time::advance(Duration::from_millis(1000)).await;
         let outcome = running.await.unwrap();
         assert!(
@@ -370,21 +381,21 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
             .directory()
             .starts_with(support::os::canonical(&external.join("new/nested")))
     );
-    assert_eq!(completed(execute(command).await).verdict, Verdict::Green);
+    assert_eq!(completed(execute(command).await).verdict(), Verdict::Green);
 }
 
 #[test]
 fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables() {
-    // The probe's PATH has no compiler, so build the Windows stand-ins first.
-    support::os::env_program();
+    // Resolve the fixture in the parent; the probe has no compiler on its PATH.
+    let program = support::os::env_program();
     let root = support::os::tempdir();
     let author_home = root.path().join("author-home");
     std::fs::create_dir(&author_home).unwrap();
     // Set the parent environment in another process, never mutate this test runner's env.
-    let result = support::os::run_test(
+    let mut probe = support::os::isolated_test_command(
         "environment_subprocess_probe",
         &[
-            ("ARTIFACTIZE_ENV_PROBE", "enabled".into()),
+            ("ARTIFACTIZE_ENV_PROBE", program.into()),
             ("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-the-command".into()),
             ("ARTIFACTIZE_REMOTE", "https://store.invalid".into()),
             ("AUTHOR_VARIABLE", "from-the-terminal".into()),
@@ -393,6 +404,7 @@ fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables()
             ("LANG", "C".into()),
         ],
     );
+    let result = support::os::run(support::os::temporary_environment(&mut probe, root.path()));
     assert!(
         result.status.success(),
         "{}{}",
@@ -402,10 +414,27 @@ fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables()
 }
 
 #[tokio::test]
+async fn stand_in_runs_a_background_utility_with_literal_arguments() {
+    let scratch = Scratch::new();
+    let source = scratch.workspace().join("background");
+    std::fs::write(&source, "printf '%s' \"$1\" > result &\nwait\n").unwrap();
+    let shell = support::os::stand_in_shell();
+    let argument = "literal value; $(false)";
+    let result = completed(
+        execute(scratch.command(shell.to_str().unwrap(), &["background", argument], None)).await,
+    );
+    assert_eq!(result.verdict(), Verdict::Green);
+    assert_eq!(
+        std::fs::read_to_string(scratch.workspace().join("result")).unwrap(),
+        argument
+    );
+}
+
+#[tokio::test]
 async fn environment_subprocess_probe() {
-    if support::os::environment_variable("ARTIFACTIZE_ENV_PROBE").is_none() {
+    let Some(program) = support::os::environment_variable("ARTIFACTIZE_ENV_PROBE") else {
         return;
-    }
+    };
     assert_eq!(
         support::os::environment_variable("ARTIFACTIZE_REMOTE_TOKEN").unwrap(),
         "azt_not-for-the-command"
@@ -413,7 +442,7 @@ async fn environment_subprocess_probe() {
     // Capture the controlled parent input before executing the product's child environment.
     let author_home = support::os::environment_variable(support::os::home_env()).unwrap();
     let scratch = Scratch::new();
-    let result = completed(execute(scratch.command(&support::os::env_program(), &[], None)).await);
+    let result = completed(execute(scratch.command(program.to_str().unwrap(), &[], None)).await);
     let output = String::from_utf8(result.output.stdout).unwrap();
     let lines: Vec<&str> = output.lines().collect();
     // The author's own environment: path, locale, real home and any variable of theirs.
@@ -486,7 +515,7 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
         ))
         .await,
     );
-    assert_eq!(result.verdict, Verdict::Green);
+    assert_eq!(result.verdict(), Verdict::Green);
     assert_eq!(result.output.stdout, vec![b'x'; 128 * 1024]);
     assert_eq!(result.output.stderr, vec![b'y'; 128 * 1024]);
     assert!(result.output.truncated);
@@ -513,12 +542,30 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     let scratch = Scratch::new();
     let command = scratch.command(&support::os::steps(), GRANDCHILD, Some(1000));
     let marker = scratch.workspace().join("grandchild");
+    let (registered, child) = oneshot::channel();
     let cancellation = CancellationToken::new();
-    let work = runtime::execute(command, cancellation.clone(), |_| async { Ok(()) });
+    let work = runtime::execute(command, cancellation.clone(), |child| async move {
+        let _ = registered.send(support::os::OwnedProcess {
+            pid: child.pid.get(),
+            birth: child.start_time,
+        });
+        Ok(())
+    });
     support::os::scoped(cancellation, work, async |running| {
-        let pid = grandchild(&marker, running).await;
+        let descendant = support::os::MarkedChild::new(&marker);
+        wait_for(|| !child.is_empty() || running.is_finished()).await;
+        let _leader = child.await.unwrap();
+        wait_for(|| descendant.pid().is_some() || running.is_finished()).await;
+        let pid = descendant
+            .pid()
+            .expect("the blocking grandchild recorded its PID");
         tokio::time::advance(Duration::from_millis(1000)).await;
-        let outcome = running.await.unwrap();
+        // The deadline has elapsed; allow termination grace and reaping to use real time.
+        tokio::time::resume();
+        let outcome = timeout(support::os::patience(TEST_TIMEOUT), &mut *running)
+            .await
+            .expect("the runtime settled after the deadline")
+            .unwrap();
         assert!(
             matches!(
                 outcome,
@@ -531,41 +578,31 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     .await;
 }
 
-/// The PID the lingering grandchild wrote to `marker`, once it has. The test yields rather
-/// than sleeps while it waits, so that a paused clock stands still.
-async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -> u32 {
-    let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
-    loop {
-        let written = std::fs::read_to_string(marker).ok();
-        if let Some(pid) = written
-            .as_deref()
-            .and_then(|text| text.strip_suffix('\n'))
-            .and_then(|text| text.trim().parse().ok())
-        {
-            return pid;
-        }
-        assert!(
-            !running.is_finished(),
-            "execution ended before its grandchild started"
-        );
-        assert!(
-            std::time::Instant::now() < failure_deadline,
-            "the grandchild did not start"
-        );
-        tokio::task::yield_now().await;
-    }
-}
-
 #[tokio::test]
 async fn normal_exit_also_kills_a_background_descendant() {
     let scratch = Scratch::new();
-    let result = completed(execute(scratch.command(&support::os::steps(), &["start"], None)).await);
-    assert_eq!(result.verdict, Verdict::Green);
-    let pid = String::from_utf8(result.output.stdout)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let marker = scratch.workspace().join("normal-child");
+    let child = support::os::MarkedChild::new(&marker);
+    let result = completed(
+        execute(scratch.command(
+            &support::os::steps(),
+            &["start-marked", "normal-child"],
+            None,
+        ))
+        .await,
+    );
+    assert_eq!(result.verdict(), Verdict::Green);
+    let pid = child
+        .pid()
+        .expect("the blocking descendant recorded its PID");
+    assert_eq!(
+        String::from_utf8(result.output.stdout)
+            .unwrap()
+            .trim()
+            .parse::<u32>()
+            .unwrap(),
+        pid
+    );
     assert_gone(pid).await;
 }
 
@@ -574,29 +611,55 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
     let scratch = Scratch::new();
     let command = scratch.command(&support::os::steps(), GRANDCHILD, None);
     let marker = scratch.workspace().join("grandchild");
-    let (registered, child) = oneshot::channel();
+    let descendant = support::os::MarkedChild::new(&marker);
+    let (registered, mut child) = oneshot::channel();
+    // The fixture, not the waiter being dropped, owns the supervisor.
     let cancellation = CancellationToken::new();
-    let work = runtime::execute(command, cancellation.clone(), |child| async move {
+    let mut execution = runtime::start(command, cancellation.clone(), |child| async move {
         registered.send(child).unwrap();
         Ok(())
     });
-    support::os::scoped(cancellation, work, async |running| {
-        let child = child.await.unwrap();
-        wait_for(|| {
-            std::fs::read_to_string(&marker).is_ok_and(|text| text.trim().parse::<u32>().is_ok())
-        })
-        .await;
-        let pid = std::fs::read_to_string(&marker)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        // Dropping the caller is what is under test: abort it rather than cancel it.
-        running.abort();
+    let mut early = None;
+    let checked = std::panic::AssertUnwindSafe(async {
+        let (child, pid) = {
+            let waiter = std::panic::AssertUnwindSafe(execution.wait()).catch_unwind();
+            tokio::pin!(waiter);
+            tokio::select! {
+                biased;
+                outcome = &mut waiter => {
+                    early = Some(outcome);
+                    return;
+                }
+                started = async {
+                    let child = (&mut child).await.unwrap();
+                    wait_for(|| descendant.pid().is_some()).await;
+                    (child, descendant.pid().expect("reported grandchild"))
+                } => started,
+            }
+            // Dropping this pending wait is the action under test.
+        };
         assert_gone(child.pid.get()).await;
         assert_gone(pid).await;
     })
+    .catch_unwind()
     .await;
+    if let Some(outcome) = early {
+        let outcome = outcome.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        panic!("execution completed before its caller was dropped: {outcome:?}");
+    }
+    if checked.is_err() {
+        cancellation.cancel();
+    }
+    // Join the supervisor before fixture teardown, even when an observation failed.
+    let outcome = execution.wait().await;
+    checked.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    assert!(
+        matches!(
+            outcome,
+            Outcome::OperationalError(Error::Process(process::Error::Cancelled))
+        ),
+        "{outcome:?}"
+    );
 }
 
 #[tokio::test(start_paused = true)]

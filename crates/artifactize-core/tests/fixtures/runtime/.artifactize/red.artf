@@ -1,0 +1,10 @@
+fingerprint = false
+path = "red/"
+
+[evals.check]
+title = "Check red"
+profile = { kind = "runtime", command = "/bin/sh", args = ["-c", "printf 'RED finding\\n'; exit 7"] }
+
+[evals.check.payload]
+instruction = """
+Check runtime."""

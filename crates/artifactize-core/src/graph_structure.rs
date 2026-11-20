@@ -65,7 +65,10 @@ pub struct Eval {
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Criteria {
-    Agent,
+    Agent {
+        #[serde(rename = "redAt", skip_serializing_if = "Option::is_none")]
+        red_at: Option<crate::config::Priority>,
+    },
     Human,
     Runtime {
         command: String,
@@ -123,10 +126,10 @@ pub fn extract(config: &RepoConfig) -> Structure {
             (
                 name.clone(),
                 Artifact {
-                    kind: artifact.kind,
+                    kind: artifact.kind(),
                     basis: artifact.basis,
                     fingerprint,
-                    select: artifact.select.clone(),
+                    select: artifact.select().to_vec(),
                 },
             )
         })
@@ -137,7 +140,9 @@ pub fn extract(config: &RepoConfig) -> Structure {
         .map(|eval| {
             let declaration = &eval.declaration;
             let criteria = match declaration.profile() {
-                Profile::Agent { .. } => Criteria::Agent,
+                Profile::Agent { .. } => Criteria::Agent {
+                    red_at: declaration.red_at(),
+                },
                 Profile::Human {} => Criteria::Human,
                 Profile::Runtime { command, args, .. } => Criteria::Runtime {
                     command: crate::platform::program_text(command),
@@ -263,19 +268,16 @@ pub(crate) fn launch(
     if let Err(error) = read(repo) {
         return Err((error, run));
     }
-    let program = match crate::platform::program::resolve(
-        std::ffi::OsStr::new("artifactize-desktop"),
-        repo,
-    ) {
+    let program = match crate::platform::program::resolve(Path::new("artifactize-desktop"), repo) {
         Ok(program) => program,
         Err(error) => return Err((format!("Cannot find artifactize-desktop: {error}"), run)),
     };
     crate::process::launch_watched(
         program.as_os_str(),
         &[
-            "graph".into(),
-            "--repo".into(),
-            crate::platform::path_text(repo),
+            std::ffi::OsStr::new("graph"),
+            std::ffi::OsStr::new("--repo"),
+            repo.as_os_str(),
         ],
         repo,
         run,

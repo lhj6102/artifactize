@@ -19,13 +19,16 @@ pub fn compile() -> Result<(), String> {
             for path in webkit.include_paths {
                 build.include(path);
             }
-            build.compile("artifactize_e2e_input");
+            build
+                .try_compile("artifactize_e2e_input")
+                .map_err(|error| format!("the E2E input adapter did not compile: {error}"))?;
         }
         "macos" => {
             cc::Build::new()
                 .file("src/e2e_input/platform/cocoa.m")
                 .flag("-fobjc-arc")
-                .compile("artifactize_e2e_input");
+                .try_compile("artifactize_e2e_input")
+                .map_err(|error| format!("the E2E input adapter did not compile: {error}"))?;
             println!("cargo:rustc-link-lib=framework=AppKit");
             println!("cargo:rustc-link-lib=framework=WebKit");
         }

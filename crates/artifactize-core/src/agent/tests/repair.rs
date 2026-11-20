@@ -8,11 +8,14 @@ fn final_text(text: &str) -> MockHttpResponse {
 async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
     let (review, http) = Fixture::new("openai")
         .run(vec![
-            final_text("```json\n{\"verdict\":\"GREEN\"}\n```"),
-            final_text(r#"{"verdict":"RED"}"#),
+            final_text("```json\n{\"findings\":[]}\n```"),
+            final_text(r#"{"findings":[]}"#),
         ])
         .await;
-    assert_eq!(review.result.unwrap().into_json(), json!({"verdict":"RED"}));
+    assert_eq!(
+        review.result.unwrap().into_json(),
+        json!({"verdict":"GREEN","findings":[]})
+    );
     let requests = http.requests();
     assert_eq!(requests.len(), 2);
     let first: Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -37,22 +40,15 @@ async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
 }
 
 #[tokio::test]
-async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
-    let mut fixture = Fixture::new("openai");
-    fixture.config.evals[0].declaration.set_pass_schema(
-        json!({
-            "type":"object",
-            "properties":{"reason":{"type":"string","minLength":1}},
-            "required":["reason"],
-        })
-        .as_object()
-        .cloned(),
-    );
-    let result = json!({"verdict":"GREEN","reason":"  Owner text stays unchanged.  "});
-    let (review, http) = fixture
+async fn an_invalid_finding_is_repaired_and_the_reason_is_kept_unchanged() {
+    let result = json!({"verdict":"RED","findings":[
+        {"priority":"P1","reason":"  Owner text stays unchanged.  "},
+        {"priority":"P3","reason":"minor"},
+    ]});
+    let (review, http) = Fixture::new("openai")
         .run(vec![
-            final_text(r#"{"verdict":"GREEN","reason":false}"#),
-            final_text(&result.to_string()),
+            final_text(r#"{"findings":[{"priority":"P5","reason":"x"}]}"#),
+            final_text(&json!({"findings":result["findings"]}).to_string()),
         ])
         .await;
     assert_eq!(review.result.unwrap().into_json(), result);
@@ -62,36 +58,12 @@ async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
         .as_str()
         .unwrap()
         .to_owned();
-    assert_eq!(
-        prompt,
-        "Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema\n- instancePath \"/reason\": false is not of type \"string\"\nReturn only one JSON object matching the schema."
+    assert!(
+        prompt.starts_with("Your final response did not match the required schema: schema_mismatch: result must be an object with a findings list, each finding a priority P0 to P3 and a reason\n- "),
+        "{prompt}"
     );
-}
-
-#[tokio::test]
-async fn schemas_are_selected_by_the_final_verdict() {
-    let mut fixture = Fixture::new("openai");
-    fixture.config.evals[0].declaration.set_pass_schema(
-        json!({"type":"object","properties":{"reason":{"const":"pass"}},"required":["reason"]})
-            .as_object()
-            .cloned(),
-    );
-    fixture.config.evals[0].declaration.set_fail_schema(
-        json!({"type":"object","properties":{"reason":{"const":"fail"}},"required":["reason"]})
-            .as_object()
-            .cloned(),
-    );
-    for (verdict, wrong, right) in [("GREEN", "fail", "pass"), ("RED", "pass", "fail")] {
-        let result = json!({"verdict":verdict,"reason":right});
-        let (review, http) = fixture
-            .run(vec![
-                final_text(&json!({"verdict":verdict,"reason":wrong}).to_string()),
-                final_text(&result.to_string()),
-            ])
-            .await;
-        assert_eq!(review.result.unwrap().into_json(), result);
-        assert_eq!(http.requests().len(), 2);
-    }
+    assert!(prompt.contains("P5"), "{prompt}");
+    assert!(prompt.ends_with("\nReturn only one JSON object matching the schema."));
 }
 
 #[tokio::test]
@@ -99,7 +71,7 @@ async fn second_failure_is_error_without_response_text_or_third_turn() {
     let (review, http) = Fixture::new("openai")
         .run(vec![
             final_text("PRIVATE_SECRET"),
-            final_text(r#"{"verdict":"GREEN","PRIVATE_SECRET":"PRIVATE_SECRET"}"#),
+            final_text(r#"{"findings":[],"PRIVATE_SECRET":"PRIVATE_SECRET"}"#),
             final_openai(),
         ])
         .await;
@@ -147,13 +119,13 @@ async fn repair_retains_model_and_completion_checks() {
         openai_response(
             "wrong-model",
             "completed",
-            vec![message(r#"{"verdict":"GREEN"}"#)],
+            vec![message(r#"{"findings":[]}"#)],
             Value::Null,
         ),
         openai_response(
             "exact-model",
             "incomplete",
-            vec![message(r#"{"verdict":"GREEN"}"#)],
+            vec![message(r#"{"findings":[]}"#)],
             Value::Null,
         ),
     ] {
@@ -167,17 +139,13 @@ async fn repair_retains_model_and_completion_checks() {
 
 #[tokio::test]
 async fn anthropic_repair_after_tools_exposes_no_tools() {
-    let mut fixture = Fixture::new("anthropic");
-    fixture.config.evals[0].declaration.set_fail_schema(
-        json!({"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"]})
-            .as_object()
-            .cloned(),
-    );
+    let fixture = Fixture::new("anthropic");
+    let invalid = r#"{"findings":[{"priority":"P1"}]}"#;
     let (review, http) = fixture
         .run(vec![
             anthropic_response(true, "tool_use"),
-            anthropic_response(false, "end_turn"),
-            anthropic_response(false, "end_turn"),
+            anthropic_text(invalid),
+            anthropic_text(invalid),
         ])
         .await;
     let failure = review.result.unwrap_err();

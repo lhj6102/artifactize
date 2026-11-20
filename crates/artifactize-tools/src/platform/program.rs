@@ -16,14 +16,14 @@ const EXTENSIONS: &str = "PATHEXT";
 /// Resolve against the PATH and, on Windows, PATHEXT that a started program receives (see
 /// [`super::environment::user`]). A bare name never implicitly searches the working directory;
 /// relative PATH entries are based on `cwd`.
-pub fn resolve(program: &OsStr, cwd: &Path) -> io::Result<PathBuf> {
+pub fn resolve(program: &Path, cwd: &Path) -> io::Result<PathBuf> {
     resolve_with(program, cwd, super::environment::var)
 }
 
 /// Resolve using the environment that the child will receive, not the caller's PATH:
 /// `variable` reads one variable of that environment.
 pub fn resolve_with(
-    program: &OsStr,
+    program: &Path,
     cwd: &Path,
     variable: impl Fn(&str) -> Option<OsString>,
 ) -> io::Result<PathBuf> {
@@ -36,36 +36,46 @@ pub fn resolve_with(
 }
 
 fn resolve_from(
-    program: &OsStr,
+    program: &Path,
     cwd: &Path,
     path: Option<&OsStr>,
     pathext: Option<&OsStr>,
 ) -> io::Result<PathBuf> {
-    let program = Path::new(program);
+    lookup_paths(program, cwd, path, pathext)
+        .into_iter()
+        .find(|candidate| platform::is_executable(candidate))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "Program is unavailable: {}",
+                    super::files::path_text(program)
+                ),
+            )
+        })
+}
+
+fn lookup_paths(
+    program: &Path,
+    cwd: &Path,
+    path: Option<&OsStr>,
+    pathext: Option<&OsStr>,
+) -> Vec<PathBuf> {
     let candidates = candidates_from(program, pathext);
-    let explicit = program.is_absolute() || program.components().count() > 1;
-    let found = if explicit {
-        candidates
+    if program.is_absolute() || program.components().count() > 1 {
+        return candidates
             .into_iter()
             .map(|candidate| cwd.join(candidate))
-            .find(|candidate| platform::is_executable(candidate))
-    } else {
-        env::split_paths(path.unwrap_or_default()).find_map(|directory| {
+            .collect();
+    }
+    env::split_paths(path.unwrap_or_default())
+        .flat_map(|directory| {
+            let directory = cwd.join(directory);
             candidates
                 .iter()
-                .map(|candidate| cwd.join(&directory).join(candidate))
-                .find(|candidate| platform::is_executable(candidate))
+                .map(move |candidate| directory.join(candidate))
         })
-    };
-    found.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!(
-                "Program is unavailable: {}",
-                program.to_string_lossy().replace('\\', "/")
-            ),
-        )
-    })
+        .collect()
 }
 
 /// Candidate paths in lookup order, for the environment `variable` reads. Scoped callers
@@ -88,16 +98,41 @@ const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
 
 /// One candidate per `PATHEXT` suffix, in its order.
 fn pathext_candidates(program: &Path, pathext: Option<&OsStr>) -> Vec<PathBuf> {
-    pathext
-        .unwrap_or_else(|| OsStr::new(DEFAULT_PATHEXT))
-        .to_string_lossy()
-        .split(';')
-        .filter(|extension| extension.starts_with('.') && !extension.contains(['/', '\\']))
+    let pathext = pathext.unwrap_or_else(|| OsStr::new(DEFAULT_PATHEXT));
+    // Split the native string itself, so an extension keeps every byte or UTF-16 unit it was
+    // given rather than a lossy text copy.
+    split_list(pathext)
+        .into_iter()
+        .filter(|extension| {
+            let bytes = extension.as_encoded_bytes();
+            bytes.first() == Some(&b'.') && !bytes.iter().any(|byte| matches!(byte, b'/' | b'\\'))
+        })
         .map(|extension| {
             let mut candidate = program.as_os_str().to_owned();
             candidate.push(extension);
             PathBuf::from(candidate)
         })
+        .collect()
+}
+
+/// The `;`-separated entries of a native list, each exactly as the OS string holds it.
+#[cfg(windows)]
+fn split_list(list: &OsStr) -> Vec<OsString> {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let units: Vec<u16> = list.encode_wide().collect();
+    units
+        .split(|unit| *unit == u16::from(b';'))
+        .map(OsString::from_wide)
+        .collect()
+}
+
+/// The `;`-separated entries of a native list, each exactly as the OS string holds it.
+#[cfg(unix)]
+fn split_list(list: &OsStr) -> Vec<OsString> {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    list.as_bytes()
+        .split(|byte| *byte == b';')
+        .map(|entry| OsString::from_vec(entry.to_vec()))
         .collect()
 }
 
@@ -113,15 +148,15 @@ mod tests {
             crate::test_os::lookup_program(&root.path().join(directory), "shim", None);
         }
         let program = crate::test_os::executable_name("shim");
-        let path = env::join_paths(["second", "first"]).unwrap();
+        let path = OsString::from(crate::test_os::path_list(["second", "first"]));
         assert_eq!(
-            resolve_with(OsStr::new(&program), root.path(), |name| (name
+            resolve_with(Path::new(&program), root.path(), |name| (name
                 == SEARCH_PATH)
                 .then(|| path.clone()))
             .unwrap(),
             root.path().join("second").join(&program)
         );
-        assert!(resolve_with(OsStr::new(&program), root.path(), |_| None).is_err());
+        assert!(resolve_with(Path::new(&program), root.path(), |_| None).is_err());
     }
 
     // Only Windows applies PATHEXT when producing executable candidates.
@@ -146,9 +181,9 @@ mod tests {
         for extension in ["cmd", "exe", "bat"] {
             crate::test_os::lookup_program(root.path(), "shim", Some(extension));
         }
-        let path = env::join_paths([root.path()]).unwrap();
+        let path = OsString::from(crate::test_os::path_list([root.path()]));
         assert_eq!(
-            resolve_with(OsStr::new("shim"), root.path(), |name| match name {
+            resolve_with(Path::new("shim"), root.path(), |name| match name {
                 SEARCH_PATH => Some(path.clone()),
                 EXTENSIONS => Some(".CMD;.EXE".into()),
                 _ => None,
@@ -157,7 +192,7 @@ mod tests {
             root.path().join("shim.CMD")
         );
         assert_eq!(
-            resolve_with(OsStr::new("shim"), root.path(), |name| match name {
+            resolve_with(Path::new("shim"), root.path(), |name| match name {
                 SEARCH_PATH => Some(path.clone()),
                 EXTENSIONS => Some(".BAT;.CMD".into()),
                 _ => None,

@@ -13,13 +13,20 @@
   import Section from "../shell/Section.svelte";
   import { markIcon, statusIcon } from "../shell/icons";
   import { tone } from "../shell/tone";
+  import ResultEntries from "./ResultEntries.svelte";
   import Transcript from "./Transcript.svelte";
 
   let {
     detail,
+    path = true,
+    debugFacts = [],
     log = $bindable(),
   }: {
     detail: DetailView;
+    /** Facts the caller knows of this Artifact, shown first under Debug. */
+    debugFacts?: [string, string][];
+    /** An Artifact's Path is shown: a Current shows its Definition instead. */
+    path?: boolean;
     /** The log rather than the Summary; the caller owns it. */
     log: boolean;
   } = $props();
@@ -36,7 +43,7 @@
   const METADATA = ["Timing", "Usage", "Saved usage", "Work", "Budget"];
   const SHOWN = new Set(["Status", "Instruction", "Result", "Error", "Fingerprint", ...OPTIONS, ...METADATA]);
   /** An Artifact's evals are listed above its Detail already. */
-  const ARTIFACT_SHOWN = new Set(["Status", "Path", "Evals"]);
+  const ARTIFACT_SHOWN = new Set(["Status", "Path", "Target kind", "Address", "Evals"]);
 
   const fields = $derived(detail.sections.flatMap((section) => section.fields));
   const waits = $derived(detail.sections.flatMap((section) => section.waits));
@@ -84,18 +91,25 @@
 {/snippet}
 
 {#snippet debug()}
-  {#if debugFields.length > 0 || waits.length > 0}
+  {#if debugFacts.length > 0 || debugFields.length > 0 || waits.length > 0 || card?.raw}
     <Section name="Debug">
-      <dl>
-        {#each debugFields as field, at (at)}
-          <dt>{field.key}</dt>
-          <dd>{field.value}</dd>
-        {/each}
+      <!-- What it waits for first, then the rest of its record. -->
+      <dl class="debug">
         {#if waits.length > 0}
           <dt>Waits for</dt>
           <dd>{waits.map((line) => line.text).join("\n")}</dd>
         {/if}
+        {#each debugFacts as [key, value], at (at)}
+          <dt>{key}</dt>
+          <dd>{value}</dd>
+        {/each}
+        {#each debugFields as field, at (at)}
+          <dt>{field.key}</dt>
+          <dd>{field.value}</dd>
+        {/each}
       </dl>
+      <!-- The result whole, as it is saved. -->
+      {#if card?.raw}<pre class="raw" aria-label="Raw result">{card.raw}</pre>{/if}
     </Section>
   {/if}
 {/snippet}
@@ -175,9 +189,17 @@
     </div>
   {:else if detail.target === "artifact"}
     <div class="shown sections">
-      {#each pick(["Path"]) as field (field.key)}
+      {#each path ? pick(["Path"]) : [] as field (field.key)}
+        <!-- Read-only facts: what the PATH names, and where a Live Artifact is observed. -->
         <Section name="Path">
-          <p class="line muted">{field.value}</p>
+          <dl class="path">
+            <dt>Target</dt>
+            <dd class="mono">{field.value}</dd>
+            {#each pick(["Address"]) as address (address.key)}
+              <dt>Address</dt>
+              <dd class="mono">{address.value}</dd>
+            {/each}
+          </dl>
         </Section>
       {/each}
       {@render debug()}
@@ -202,35 +224,19 @@
           <Section name="Result">
             <div class="result">
               {#if card.error}<p class="error">{card.error}</p>{/if}
-              {#each card.result ?? [] as entry (entry.key)}
-                {#if entry.kind === "text"}
-                  <p class="text">{#if entry.key !== "summary"}<span class="key">{entry.key}</span> {/if}{entry.text}</p>
-                {:else}
-                  <p class="key">{entry.key}</p>
-                  <ol class="items">
-                    {#each entry.items as item, at (at)}
-                      <li>
-                        {#if item.head}<p class="head">{item.head}</p>{/if}
-                        {#each item.fields as field, part (part)}
-                          <p class="line">{#if item.fields.length > 1}<span class="key">{field.key}</span> {/if}{field.value}</p>
-                        {/each}
-                      </li>
-                    {/each}
-                  </ol>
-                {/if}
-              {/each}
+              <ResultEntries entries={card.result ?? []} />
             </div>
           </Section>
         {/if}
         {#if options.length > 0}
           <Section name="Execution options">{@render facts(options)}</Section>
         {/if}
-        <!-- How a past run ran and its fingerprint belong to that run, not to a Current; what the
-             status line says (its time, tokens and exit) is not said again. -->
-        {#if !detail.plan && metadata.length > 0}
+        <!-- On a Current too, each when its facts are present (D-INS-8); what the status line says
+             (its time, tokens and exit) is not said again. -->
+        {#if metadata.length > 0}
           <Section name="Execution metadata">{@render facts(metadata)}</Section>
         {/if}
-        {#if !detail.plan && fingerprint.length > 0}
+        {#if fingerprint.length > 0}
           <Section name="Fingerprint">{@render facts(fingerprint)}</Section>
         {/if}
         {@render debug()}
@@ -251,8 +257,8 @@
 </div>
 
 <style>
-  /* A plain text switch, a level below the Detail's chips: the chosen view dark and bold, the
-   * other light. Hover only highlights. */
+  /* A plain text switch, a level below the Detail's chips: the chosen view bold in the strong
+   * text colour, the other in the quieter one. Hover only highlights. */
   .views {
     display: flex;
     flex-wrap: wrap;
@@ -336,19 +342,26 @@
     margin: 0 0 4px;
     white-space: pre-wrap;
   }
-  .key,
   .muted {
     color: var(--ink-2);
   }
-  .items {
-    margin: 0;
-    padding-left: 20px;
+  /* Debug's values are selectable and in --mono; the raw result has its own scrolling box. */
+  .debug dd {
+    font-family: var(--mono);
+    user-select: text;
   }
-  .items li {
-    margin-bottom: 8px;
-  }
-  .head {
-    font-weight: 600;
+  .raw {
+    margin: 8px 0 0;
+    max-height: 320px;
+    overflow: auto;
+    padding: 6px 8px;
+    font: var(--text-small) var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--surface-input);
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    user-select: text;
   }
   .error {
     color: var(--red);
@@ -370,6 +383,14 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
+  }
+  /* A Run's Path: its facts in --ink-2, the paths and addresses in --mono. */
+  .path dd {
+    color: var(--ink-2);
+    user-select: text;
+  }
+  .mono {
+    font-family: var(--mono);
   }
   .marks {
     display: flex;

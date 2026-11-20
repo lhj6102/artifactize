@@ -1,4 +1,4 @@
-//! Exclusive loopback listeners: do not let an OAuth callback reach a different process.
+//! Listener options shared across operating systems.
 use std::{io, net::SocketAddr};
 
 use socket2::{Domain, Protocol, Socket, Type};
@@ -7,20 +7,36 @@ use tokio::net::TcpListener;
 /// Bind without Unix's SO_REUSEADDR, and with Windows's SO_EXCLUSIVEADDRUSE.
 /// IPv6 is v6-only so the two loopback addresses can be reserved independently.
 pub(crate) fn exclusive_listener(address: SocketAddr) -> io::Result<TcpListener> {
+    // Only a browser's short callback connects here; no large accept queue is needed.
+    const CALLBACK_BACKLOG: i32 = 8;
+    listen(address, Ipv6::Only, CALLBACK_BACKLOG)
+}
+
+/// The HTTP server owns its address on every OS and can serve IPv4 on an IPv6 wildcard.
+pub(crate) fn http_listener(address: SocketAddr) -> io::Result<TcpListener> {
+    // Keep Tokio's normal server accept queue size for bursts of requests.
+    const HTTP_BACKLOG: i32 = 1024;
+    listen(address, Ipv6::DualStack, HTTP_BACKLOG)
+}
+
+enum Ipv6 {
+    Only,
+    DualStack,
+}
+
+fn listen(address: SocketAddr, ipv6: Ipv6, backlog: i32) -> io::Result<TcpListener> {
     let socket = Socket::new(
         Domain::for_address(address),
         Type::STREAM,
         Some(Protocol::TCP),
     )?;
     if address.is_ipv6() {
-        socket.set_only_v6(true)?;
+        socket.set_only_v6(matches!(ipv6, Ipv6::Only))?;
     }
     #[cfg(windows)]
     exclusive(&socket)?;
     socket.bind(&address.into())?;
-    // Only a browser's short callback connects here; no large accept queue is needed.
-    const CALLBACK_BACKLOG: i32 = 8;
-    socket.listen(CALLBACK_BACKLOG)?;
+    socket.listen(backlog)?;
     socket.set_nonblocking(true)?;
     TcpListener::from_std(socket.into())
 }
@@ -79,3 +95,6 @@ fn exclusive(socket: &Socket) -> io::Result<()> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+pub(crate) mod fixtures;

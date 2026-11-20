@@ -29,8 +29,13 @@ impl Project {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
-        fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("spec/spec.md")),
+            "R1: the spec covers R1.\n",
+        )
+        .unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("spec/index.artf"),
             json!({
                 "name":"spec",
@@ -41,11 +46,7 @@ impl Project {
                         "title":"Review",
                         "profile":profile,
                         "payload":{"instruction":"Review {spec}."},
-                        "pass_schema":{
-                            "type":"object",
-                            "properties":{"covered":{"type":"array","items":{"type":"string"}}},
-                            "required":["covered"],
-                        },
+                        "red_at":"P1",
                     },
                 ],
             })
@@ -111,7 +112,7 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
                 .any(|item| item["type"] == "function_call_output")
         });
         if replayed {
-            let verdict = json!({"verdict":"GREEN","covered":["R1"]});
+            let verdict = json!({"findings":[{"priority":"P2","reason":"R1 is covered."}]});
             openai::completed(
                 request,
                 vec![openai::message(&verdict.to_string())],
@@ -134,7 +135,7 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
     assert_eq!(review["status"], "GREEN", "{run}");
     assert_eq!(
         review["result"],
-        json!({"verdict":"GREEN","covered":["R1"]})
+        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"R1 is covered."}]})
     );
     // The review's tool calls live in its saved session, not in the request.
     assert!(review.get("toolCalls").is_none());
@@ -178,7 +179,7 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
             |request| match (request.method.as_str(), request.path.as_str()) {
                 ("POST", "/v1/messages") => anthropic::text(
                     request,
-                    &json!({"verdict":"RED","verdictFields":{}}).to_string(),
+                    &json!({"findings":[{"priority":"P1","reason":"R1 is missing."}]}).to_string(),
                     12,
                     3,
                 ),
@@ -209,7 +210,7 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
     let schema = &review.body["output_config"]["format"]["schema"];
     assert_eq!(schema["type"], "object");
     assert!(schema.get("anyOf").is_none());
-    assert_eq!(schema["required"], json!(["verdict", "verdictFields"]));
+    assert_eq!(schema["required"], json!(["findings"]));
 
     for (backend, variable, base, model) in [
         (
@@ -380,9 +381,15 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     };
     let repaired = FakeProvider::start(move |request| {
         if last_prompt(request).starts_with("Your final response did not match") {
-            reply(request, json!({"verdict":"GREEN","covered":["R1"]}))
+            reply(
+                request,
+                json!({"findings":[{"priority":"P2","reason":"R1 is covered."}]}),
+            )
         } else {
-            reply(request, json!({"verdict":"GREEN","covered":"R1"}))
+            reply(
+                request,
+                json!({"findings":[{"priority":"P5","reason":"R1"}]}),
+            )
         }
     });
     let run = parsed(
@@ -395,18 +402,24 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     );
     assert_eq!(
         run["requests"][0]["result"],
-        json!({"verdict":"GREEN","covered":["R1"]})
+        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"R1 is covered."}]})
     );
     let calls = repaired.requests();
     assert_eq!(calls.len(), 2);
-    assert_eq!(
-        last_prompt(&calls[1]),
-        "Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema\n- instancePath \"/covered\": \"R1\" is not of type \"array\"\nReturn only one JSON object matching the schema."
+    let prompt = last_prompt(&calls[1]);
+    assert!(
+        prompt.starts_with("Your final response did not match the required schema: schema_mismatch: result must be an object with a findings list, each finding a priority P0 to P3 and a reason\n- "),
+        "{prompt}"
     );
+    assert!(prompt.contains("P5"), "{prompt}");
+    assert!(prompt.ends_with("\nReturn only one JSON object matching the schema."));
 
     // A second invalid result ends the review; the saved error stays the bare code.
     let stubborn = FakeProvider::start(move |request| {
-        reply(request, json!({"verdict":"GREEN","covered":"R1"}))
+        reply(
+            request,
+            json!({"findings":[{"priority":"P5","reason":"R1"}]}),
+        )
     });
     let run = parsed(
         project
@@ -418,7 +431,7 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     );
     assert_eq!(
         run["requests"][0]["error"],
-        "Invalid final Agent result after one format repair: schema_mismatch: result must match the selected verdict's owner schema."
+        "Invalid final Agent result after one format repair: schema_mismatch: result must be an object with a findings list, each finding a priority P0 to P3 and a reason."
     );
     assert_eq!(stubborn.requests().len(), 2);
 }
@@ -429,23 +442,23 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
         json!({"kind":"agent","backend":"openai","model":"fake-model","max_tool_calls":6}),
     );
     fs::write(
-        project.repo.join("spec/spec.md"),
+        support::declaration::source_path(project.repo.join("spec/spec.md")),
         "# First\nbody\n## Child\nchild\n# Next\nlast\n",
     )
     .unwrap();
-    let stub = project.repo.join("spec/help-stub");
-    support::os::write_script(&stub, "printf 'stub documentation: %s\\n' \"$*\"\n");
-    support::os::make_executable(&stub);
-    let mut declaration =
-        support::declaration::read(fs::read(project.repo.join("spec/index.artf")).unwrap())
-            .unwrap();
+    let stub = support::os::help_stub(&project.repo.join("spec"));
+    let mut declaration = support::declaration::read(
+        support::declaration::read_file(project.repo.join("spec/index.artf")).unwrap(),
+    )
+    .unwrap();
     declaration["views"]["agent_tools"] = json!({
         "fixed":{"builtin":"read","args":["spec.md"]},
         "section":{"builtin":"section","args":["spec.md"]},
         "fixed_section":{"builtin":"section","args":["spec.md","First"]},
-        "help":{"builtin":"help","args":["./help-stub","sub"]}
+        "help":{"builtin":"help","args":[stub,"sub"]}
     });
     support::declaration::write(
+        &(project.repo),
         project.repo.join("spec/index.artf"),
         declaration.to_string(),
     )
@@ -467,7 +480,8 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
                 return openai::completed(
                     request,
                     vec![openai::message(
-                        &json!({"verdict":"GREEN","covered":["R1"]}).to_string(),
+                        &json!({"findings":[{"priority":"P2","reason":"R1 is covered."}]})
+                            .to_string(),
                     )],
                     openai::usage(30, 5),
                 );

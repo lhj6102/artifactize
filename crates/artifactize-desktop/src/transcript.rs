@@ -219,9 +219,9 @@ pub async fn transcript_window(
         indicator: live.indicator(),
         top: u32::try_from(live.scroll.top).unwrap_or(u32::MAX),
         total: u32::try_from(live.scroll.total).unwrap_or(u32::MAX),
-        status: window.status.clone(),
+        status: window.note().map(str::to_owned),
         following: live.scroll.mode == artifactize_core::agent::session::document::Mode::Following,
-        loading: window.loading,
+        loading: window.loading(),
     })
 }
 

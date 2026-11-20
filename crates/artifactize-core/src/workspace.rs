@@ -5,9 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Legacy markers remain safety boundaries even though discovery refuses their format.
-pub(crate) const ARTIFACT_MARKERS: [&str; 3] = [
-    crate::config::CONFIG_FILE,
+/// The definition directory is the workspace marker.
+pub(crate) const ARTIFACT_MARKERS: [&str; 4] = [
+    ".artifactize",
+    "index.artf",
     "artifactize.json",
     ".artifactizeignore",
 ];
@@ -29,32 +30,17 @@ fn has_marker(path: &Path) -> io::Result<bool> {
 
 pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
     for marker in ARTIFACT_MARKERS {
-        if has_marker(&path.join(marker))? {
+        if crate::platform::paths::has_exact_entry(path, marker)? && has_marker(&path.join(marker))?
+        {
             return Ok(true);
         }
     }
-    let entries = match std::fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(error)
-            if matches!(
-                error.kind(),
-                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-            ) =>
-        {
-            return Ok(false);
-        }
-        // Search-only ancestors can be traversed but not enumerated. Retain fixed-marker
-        // stat probes, including .git, without rejecting an otherwise usable state path.
-        // Unknown sidecars cannot be detected here, but discovery also cannot enumerate
-        // this directory, so artifactize cannot run it as a discovered workspace.
-        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-            return has_marker(&path.join(".git"));
-        }
-        Err(error) => return Err(error),
-    };
-    for entry in entries {
-        if entry?.file_name().as_encoded_bytes().ends_with(b".artf") {
-            return Ok(true);
+
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries {
+            if entry?.file_name().as_encoded_bytes().ends_with(b".artf") {
+                return Ok(true);
+            }
         }
     }
     Ok(false)

@@ -70,10 +70,7 @@ exit 2
 
     /// `PATH` for a spawned artifactize that finds the scripted Claude Code in `dir` first.
     pub fn path(dir: &Path) -> std::ffi::OsString {
-        std::env::join_paths(
-            std::iter::once(dir.to_owned()).chain(std::env::split_paths(&super::os::path())),
-        )
-        .unwrap()
+        super::os::prepend_path(dir)
     }
 }
 
@@ -84,34 +81,32 @@ pub mod schema;
 pub mod tool_sessions;
 
 /// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the
-/// docs can run them as they are; on Windows the copies name the `os::bin` stand-ins, and
-/// their deadlines of a second or more get `os::slow` room. A shorter one is there to expire.
+/// docs can run them as they are; on Windows the copies name the `os::bin` stand-ins.
 pub fn copy_fixture(name: &str, target: &Path) {
     copy(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../artifactize-core/tests/fixtures")
             .join(name),
         target,
-        true,
     );
 }
 
 /// Copy a directory; with the stand-ins, its declarations then name them. Nothing else
 /// changes, so a copy keeps every fingerprint that covers its declarations.
 pub fn copy_directory(source: &Path, target: &Path) {
-    copy(source, target, false);
+    copy(source, target);
 }
 
-fn copy(source: &Path, target: &Path, deadlines: bool) {
+fn copy(source: &Path, target: &Path) {
     fs::create_dir_all(target).unwrap();
     for entry in fs::read_dir(source).unwrap() {
         let entry = entry.unwrap();
         let destination = target.join(entry.file_name());
         if entry.file_type().unwrap().is_dir() {
-            copy(&entry.path(), &destination, deadlines);
+            copy(&entry.path(), &destination);
         } else {
             fs::copy(entry.path(), &destination).unwrap();
-            os::port_fixture(&destination, deadlines);
+            os::port_fixture(&destination);
         }
     }
 }
@@ -130,6 +125,8 @@ pub enum Reply {
     /// A `text/event-stream` of `event: <type>` and `data: <json>` records.
     Events(Vec<Value>),
     Json(u16, Value),
+    /// Close the connection without sending an HTTP response.
+    Disconnect,
     /// A status, extra headers and a raw body.
     Raw(u16, Vec<(&'static str, String)>, String),
 }
@@ -377,6 +374,7 @@ fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>, s
             body.to_string(),
         ),
         Reply::Raw(status, headers, body) => (status, headers, body),
+        Reply::Disconnect => return,
     };
     extra.push(("content-length", body.len().to_string()));
     extra.push(("connection", "close".to_owned()));

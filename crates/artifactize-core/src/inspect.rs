@@ -1,7 +1,7 @@
 //! Shared non-interactive JSON projections. Interfaces add rendering and paging only.
 mod logs;
 pub mod session;
-pub use logs::{LogQuery, Stream, logs};
+pub use logs::{DEFAULT_TAIL as DEFAULT_LOG_TAIL_LINES, LogOptions, LogQuery, Stream, logs};
 
 use crate::{config::read_workspace_config, types::RequestId};
 use serde::Serialize;
@@ -13,10 +13,21 @@ pub struct ConfigCheck {
     pub ok: bool,
     pub artifacts: usize,
     pub evals: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 pub fn config_check(repo: &Path) -> Result<ConfigCheck, String> {
     let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
     Ok(ConfigCheck {
+        notes: config
+            .artifacts
+            .values()
+            .filter_map(|artifact| {
+                crate::scope::validate_file_target(&config.root, artifact)
+                    .err()
+                    .map(|error| error.to_string())
+            })
+            .collect(),
         ok: true,
         artifacts: config.artifacts.len(),
         evals: config.evals.len(),
@@ -40,8 +51,7 @@ pub async fn request_list(
     repo: Option<&Path>,
     now: time::OffsetDateTime,
 ) -> Result<Vec<Value>, String> {
-    let views =
-        crate::store::read_requests_in(state, run.map(crate::types::RunId::as_str), repo).await?;
+    let views = crate::store::read_requests_for_run(state, run.cloned(), repo).await?;
     Ok(views
         .iter()
         .map(|view| crate::query::request_output(view, now))
@@ -69,6 +79,6 @@ pub async fn session_show(
     state: &Path,
     selector: &session::Selector,
     summary: bool,
-) -> Result<Value, String> {
+) -> Result<session::Shown, String> {
     session::show(state, selector, summary).await
 }

@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, fs};
 use artifactize_tools::{
     Builtin, Content,
     builtin::{self, Input},
-    scope::{Artifact, ArtifactId, ArtifactKind, ChildPrefix, Scope},
+    scope::{Artifact, ArtifactId, ChildPrefix, Scope},
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -23,21 +23,22 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
     let owner = id("owner");
     let folder = |path| Artifact {
         path,
-        kind: ArtifactKind::Folder,
+
         name: "fixture".into(),
+        covering_part: None,
         nested: BTreeMap::new(),
-        select: Vec::new(),
     };
     let scope = Scope {
         artifacts: BTreeMap::from([
             (
                 owner.clone(),
                 Artifact {
+                    covering_part: None,
                     nested: BTreeMap::from([(ChildPrefix::new("docs").unwrap(), id("target"))]),
-                    ..folder("".into())
+                    ..folder("".try_into().unwrap())
                 },
             ),
-            (id("target"), folder("docs".into())),
+            (id("target"), folder("docs".try_into().unwrap())),
         ]),
     };
     let call = |tool, input| {
@@ -111,11 +112,11 @@ fn folder_scope(owner: &ArtifactId) -> Scope {
         artifacts: BTreeMap::from([(
             owner.clone(),
             Artifact {
-                path: "".into(),
-                kind: ArtifactKind::Folder,
+                path: "".try_into().unwrap(),
+
                 name: "fixture".into(),
+                covering_part: None,
                 nested: BTreeMap::new(),
-                select: Vec::new(),
             },
         )]),
     }
@@ -182,7 +183,10 @@ async fn help_maps_the_launcher_deadline_to_a_tool_error() {
         artifactize_tools::files::path_text(&launch.program),
         artifactize_tools::files::path_text(&program)
     );
-    assert_eq!(launch.cwd, root.path());
+    assert_eq!(
+        artifactize_tools::files::canonicalize(&launch.cwd).unwrap(),
+        artifactize_tools::files::canonicalize(root.path()).unwrap(),
+    );
     assert_eq!(launch.args, ["subcommand", "--help"]);
     assert_eq!(launch.output_limit, 64 * 1024);
     tokio::time::advance(HELP_BUDGET).await;
@@ -314,11 +318,11 @@ fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
     let id = |name| ArtifactId::new(name).unwrap();
     let owner = id("app");
     let folder = |path: &str, nested| Artifact {
-        path: path.into(),
-        kind: ArtifactKind::Folder,
+        path: path.try_into().unwrap(),
+
         name: "fixture".into(),
         nested,
-        select: Vec::new(),
+        covering_part: None,
     };
     let app = folder(
         "",
@@ -364,5 +368,33 @@ fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
     assert_eq!(
         search(&both, Builtin::Glob, json!({"pattern":"**/*.md"}))["files"],
         json!(["notes.md", "ui/view.md"])
+    );
+}
+
+#[test]
+fn missing_fixed_targets_and_out_of_scope_dot_are_input_errors() {
+    let root = os::tempdir();
+    let scope = Scope {
+        artifacts: BTreeMap::new(),
+    };
+    let owner = ArtifactId::new("missing").unwrap();
+    for builtin in [
+        Builtin::Read,
+        Builtin::List,
+        Builtin::Section,
+        Builtin::Open,
+    ] {
+        assert!(builtin::validate_target(builtin, &[], root.path(), &scope, &owner).is_err());
+    }
+    let result = builtin::call(
+        Input::parse(Builtin::List, serde_json::json!({"path":"."})).unwrap(),
+        root.path(),
+        &scope,
+        &owner,
+        &CancellationToken::new(),
+    );
+    assert!(result.is_error());
+    assert!(
+        matches!(&result.content()[0], Content::Text { text } if text.contains("outside this review: missing"))
     );
 }

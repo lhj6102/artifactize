@@ -1,0 +1,38 @@
+fingerprint = { files = ["src"] }
+path = "website/docs/ko/"
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.matches-english]
+title = "The Korean documentation conveys the same facts and structure as the English documentation"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.matches-english.payload]
+instruction = """
+Review the Korean documentation {docs-ko} against the English documentation {docs-en}. Both are mdBook sources with the same chapter paths under src/; compare every English file with the Korean file at the same path.
+Check these criteria:
+- K-SAME-PAGES: Every English file has a Korean file at the same path and the Korean side has no extra file; src/SUMMARY.md lists the same chapters in the same order and nesting.
+- K-MEANING: Each section (`#`, `##`, `###`) in the Korean file conveys the same facts, commands, options, and conclusions as the corresponding English section, with no English prose left untranslated. Splitting a long English sentence into two or three Korean sentences, merging clauses, or reordering phrases within a paragraph for natural Korean flow is ENCOURAGED and is NEVER a violation.
+- K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output samples are unchanged; only comments inside code blocks and the example requests to Arti after `/artifactize:hey-arti` may be translated. Every link reaches the same target, except that a link to an English documentation page (`/docs/...`) reaches the same page of the Korean documentation (`/docs/ko/...`). Every heading of a chapter page carries its English heading's anchor as an explicit `{#id}` so that links and the language switch land on the same section. The part titles in `src/SUMMARY.md` are not page headings and have no anchor in either book.
+
+The project sentence "Evaluation-driven development for people and AI agents." stays in English by design, and
+"Artifact Graph" and product terms (Artifact, eval, Run, Run ID, fingerprint, artifactsum, GREEN, RED, YELLOW, screen and button names) stay in English per K-TERMS.
+Use the list, glob, grep and read tools of {docs-en} and {docs-ko}. Tool paths are Artifact-relative."""
+
+[evals.follows-write-in-korean]
+title = "The Korean documentation follows the Korean writing rules"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.follows-write-in-korean.payload]
+instruction = """
+Read {rules-write-in-korean}. Read the Korean documentation {docs-ko}, an mdBook source whose chapters are under src/.
+The project sentence "Evaluation-driven development for people and AI agents." stays in English by design, and
+"Artifact Graph" and product terms (Artifact, eval, Run, Run ID, fingerprint, artifactsum, GREEN, RED, YELLOW, screen and button names) stay in English per K-TERMS.
+Check its Korean prose against every K- item. Code, commands, configuration keys, file paths, output samples and links are not prose and are not judged; whether the Korean says the same as the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs-ko}; tool paths are Artifact-relative.
+Read every Korean sentence. A sentence that is grammatical but reads as translated violates K-NATURAL."""

@@ -67,7 +67,7 @@ impl Project {
         fs::create_dir(&repo).unwrap();
         fs::create_dir(&programs).unwrap();
         fs::write(
-            programs.join("argv.py"),
+            support::declaration::source_path(programs.join("argv.py")),
             ARGV_PROBE
                 .replace("LAUNCH_PIDS", support::os::launch_probe_pids())
                 .replace("LAUNCH_SOURCE", &serde_json::to_string(LAUNCH).unwrap()),
@@ -107,7 +107,7 @@ impl Project {
     }
 
     fn declaration(&self, args: Value) {
-        support::declaration::write(self.repo.join("index.artf"), json!({
+        support::declaration::write(&(self.repo), self.repo.join("index.artf"), json!({
             "name":"test",
             "fingerprint":{"script":{"command":"artifactize-lookup-shim","args":["fingerprint"]}},
             "views":{
@@ -191,11 +191,11 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
     let launched = project.launch();
     assert_eq!(launched["result"]["content"][0]["launched"], true);
     support::os::wait_until(LAUNCH_BOUND, || {
-        fs::read_to_string(project.launch_path().join("marker"))
+        support::declaration::read_text(project.launch_path().join("marker"))
             .is_ok_and(|contents| contents == "launched")
     });
     assert_eq!(
-        fs::read_to_string(project.launch_path().join("marker")).unwrap(),
+        support::declaration::read_text(project.launch_path().join("marker")).unwrap(),
         "launched"
     );
 }
@@ -208,15 +208,18 @@ fn lookup_launch_exits_before_temporary_files_on_normal_drop_and_assertion_unwin
         let launched = project.launch();
         assert_eq!(launched["result"]["content"][0]["launched"], true);
         support::os::wait_until(LAUNCH_BOUND, || {
-            fs::read_to_string(project.launch_path().join("marker"))
+            support::declaration::read_text(project.launch_path().join("marker"))
                 .is_ok_and(|contents| contents == "launched")
         });
         assert_eq!(
-            fs::read_to_string(project.launch_path().join("marker")).unwrap(),
+            support::declaration::read_text(project.launch_path().join("marker")).unwrap(),
             "launched"
         );
-        let pids: Vec<u32> =
-            serde_json::from_slice(&fs::read(project.launch_path().join("pids")).unwrap()).unwrap();
+        let pids: Vec<u32> = serde_json::from_slice(
+            &support::declaration::read_file(project.launch_path().join("launch-identities"))
+                .unwrap(),
+        )
+        .unwrap();
         assert!(!pids.is_empty(), "the probe reports its actual processes");
         let identities: Vec<_> = pids
             .into_iter()
@@ -241,7 +244,7 @@ fn lookup_launch_exits_before_temporary_files_on_normal_drop_and_assertion_unwin
         assert_eq!(result.is_err(), unwind);
         assert!(root_path.is_dir(), "temporary files are still retained");
         assert_eq!(
-            fs::read_to_string(root_path.join("marker")).unwrap(),
+            support::declaration::read_text(root_path.join("marker")).unwrap(),
             "launched"
         );
         assert!(
@@ -291,9 +294,10 @@ fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
         );
     }
     let path = project.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["views"]["human_tools"]["launch"]["args"] = json!(["unsafe\nargument"]);
-    support::declaration::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(&(project.repo), path, declaration.to_string()).unwrap();
     let report = project.run(
         &[
             "tools",
@@ -321,7 +325,11 @@ fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments()
     // The scripts are files and every value arrives as a field, never inside a shell string.
     let scripts = support::os::tempdir();
     let fields = scripts.path().join("fields");
-    fs::write(&fields, "printf '<%s>\\n' \"$@\"\n").unwrap();
+    fs::write(
+        support::declaration::source_path(&fields),
+        "printf '<%s>\\n' \"$@\"\n",
+    )
+    .unwrap();
     let output = Command::new(support::os::stand_in_shell())
         .arg(&fields)
         .args(["a b", "say \"hello\"", "a&b", ""])
@@ -331,7 +339,7 @@ fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments()
     assert_eq!(output.stdout, b"<a b>\n<say \"hello\">\n<a&b>\n<>\n");
     // With no fields after the program and its arguments, "$@" adds no empty field.
     let forward = scripts.path().join("forward");
-    fs::write(&forward, "\"$@\"\n").unwrap();
+    fs::write(support::declaration::source_path(&forward), "\"$@\"\n").unwrap();
     let output = Command::new(support::os::stand_in_shell())
         .arg(&forward)
         .args([

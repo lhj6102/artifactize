@@ -107,11 +107,13 @@ impl Selection {
         let mut seen = BTreeSet::new();
         result.roots.retain(|id| seen.insert(*id));
         if matches!(self, Self::Artifact { .. } | Self::Artifacts { .. }) {
-            for id in &result.roots {
-                if let Some(evals) = evals_by_target.get(id) {
-                    result.evals.extend(evals);
-                }
-            }
+            result.evals.extend(
+                result
+                    .roots
+                    .iter()
+                    .filter_map(|id| evals_by_target.get(id))
+                    .flatten(),
+            );
         }
         let mut seen_evals = BTreeSet::new();
         result

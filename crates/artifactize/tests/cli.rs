@@ -6,8 +6,7 @@ use std::{
     fs,
     path::PathBuf,
     process::{Command, Output},
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use serde_json::{Value, json};
@@ -56,6 +55,7 @@ impl Fixture {
             }
             fs::create_dir_all(repo.join(name)).unwrap();
             support::declaration::write(
+                &(repo),
                 repo.join(name).join("index.artf"),
                 declaration.to_string(),
             )
@@ -79,6 +79,13 @@ impl Fixture {
             .arg(&self.state);
         support::os::sign_in_as(&mut command, "alice");
         command
+    }
+
+    fn submit_human(&self) -> String {
+        // Observe the submit-only command output, not the saved audit.
+        let output = support::os::run(self.command().args(["verify", "human", "--json"]));
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        parse(&output)["run"].as_str().unwrap().to_owned()
     }
 
     fn json(&self, args: &[&str], code: i32) -> Value {
@@ -142,48 +149,126 @@ fn malformed_identity_usage_errors_precede_state_access_and_missing_keys_keep_th
     assert!(!fixture.state.exists());
 }
 
+#[test]
+fn remote_login_rejects_bad_inputs_without_echoing_credentials() {
+    let fixture = Fixture::new();
+    let url = "https://user:do-not-echo@example.test/";
+    let json = fixture.json(&["remote", "login", url], 2);
+    let error = json["error"].as_str().unwrap();
+    assert!(error.contains("must not contain credentials"), "{error}");
+    assert!(!error.contains("do-not-echo"), "{error}");
+
+    let output = fixture
+        .command()
+        .args(["remote", "login", url])
+        .record_output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("must not contain credentials"), "{stderr}");
+    assert!(!stderr.contains("do-not-echo"), "{stderr}");
+
+    let mut child = Watcher::new(support::os::start(
+        fixture
+            .command()
+            .args(["remote", "login", "https://example.test", "--json"])
+            .stdin(std::process::Stdio::piped()),
+    ));
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"do-not-echo invalid-token\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let json = parse(&output);
+    let error = json["error"].as_str().unwrap();
+    assert!(
+        error.contains("printable ASCII characters without spaces"),
+        "{error}"
+    );
+    assert!(!error.contains("do-not-echo"), "{error}");
+    assert!(output.stderr.is_empty());
+    assert!(!fixture.state.exists());
+}
+
 fn parse(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|e| panic!("{e}: {output:?}"))
 }
 
-fn waiting_request(fixture: &Fixture) -> Value {
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
-    loop {
-        let list = fixture.json(&["request", "list"], 0);
-        let mut requests = list.as_array().unwrap().iter();
-        if let Some(request) = requests.find(|r| r["status"] == "DEFERRED") {
-            return request.clone();
-        }
-        assert!(Instant::now() < deadline, "Human request did not appear");
-        thread::sleep(Duration::from_millis(20));
-    }
+async fn waiting_run(fixture: &Fixture, id: &str) -> artifactize_core::types::RequestId {
+    use artifactize_core::types::{RequestStatus, RunStatus};
+
+    const WATCHDOG: Duration = Duration::from_secs(30);
+    owned_run::subscribed(&fixture.state, async |changes| {
+        tokio::time::timeout(support::os::patience(WATCHDOG), async {
+            loop {
+                let run = artifactize_core::store::read_run(&fixture.state, id)
+                    .await
+                    .unwrap();
+                if run.run.status() == RunStatus::WaitingHuman
+                    && let Some(request) = run.requests.iter().find(|request| {
+                        request.eval_id == "human/check"
+                            && request.status() == RequestStatus::Deferred
+                    })
+                {
+                    return request.id.clone();
+                }
+                changes.next_reconciled().await;
+            }
+        })
+        .await
+        .expect("Run did not save WAITING_HUMAN with its deferred sign-off")
+    })
+    .await
 }
 
-#[test]
-fn exit_codes_cover_outcomes_waits_and_usage_errors() {
+#[tokio::test]
+async fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     let fixture = Fixture::new();
-    let child = support::os::start(fixture.command().args(["verify", "human"]));
-    let child = Watcher::new(child);
-    let waiting = waiting_request(&fixture);
-    let (id, run) = (
-        waiting["id"].as_str().unwrap(),
-        waiting["runId"].as_str().unwrap(),
-    );
-    let running = fixture.json(&["run", "show", run, "--wait", "--timeout-ms", "50"], 3);
-    assert_eq!(running["status"], "WAITING_HUMAN");
+    owned_run::hold_signoffs(&fixture.state);
+    let submitted = fixture.submit_human();
+    let run = submitted.as_str();
+    let waiting = waiting_run(&fixture, run).await;
+    let id = waiting.as_str();
+    // The live claim keeps the Run open until this fixture supplies a verdict.
     fixture.json(&["request", "claim", id], 0);
+    // The live claim keeps the Run open, so the product's own deadline determines the exit.
+    // Leave room for the initial SQLite read even on a loaded builder. The test asserts
+    // the outcome, not how much wall time elapsed.
+    const WAIT_MS: &str = "5000";
+    let expired = fixture
+        .command()
+        .args(["run", "show", run, "--wait", "--timeout-ms", WAIT_MS])
+        .record_output()
+        .unwrap();
+    assert_eq!(expired.status.code(), Some(3), "{expired:?}");
+    assert_eq!(parse(&expired)["status"], "WAITING_HUMAN");
+    assert_eq!(
+        String::from_utf8_lossy(&expired.stderr).trim_end(),
+        format!("Waiting timed out; Run {run} is still RUNNING."),
+    );
+    assert_eq!(
+        artifactize_core::store::read_run(&fixture.state, run)
+            .await
+            .unwrap()
+            .run
+            .status(),
+        artifactize_core::types::RunStatus::WaitingHuman
+    );
     fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 0);
     assert_eq!(
         fixture.json(&["run", "show", run, "--wait"], 0)["status"],
         "GREEN"
     );
-    assert_eq!(child.wait_with_output().unwrap().status.code(), Some(0));
 
     for (args, code, status) in [
         (vec!["verify", "--wait", "green"], 0, "GREEN"),
         (vec!["verify", "--wait", "red"], 1, "RED"),
         (vec!["verify", "--wait", "broken"], 2, "ERROR"),
-        (vec!["verify", "human"], 0, "WAITING_HUMAN"),
         (
             vec!["verify", "--wait", "human", "--reuse-only", "human"],
             4,
@@ -196,9 +281,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         let shown = fixture.json(&["run", "show", id], 0);
         assert_eq!(shown["status"], saved["status"]);
         assert_eq!(shown["requests"], saved["requests"]);
-        if status != "WAITING_HUMAN" {
-            fixture.json(&["run", "show", id, "--wait"], code);
-        }
+        fixture.json(&["run", "show", id, "--wait"], code);
     }
     fixture.json(&["status", "green"], 0);
     fixture.json(&["status", "red"], 1);
@@ -209,6 +292,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         vec!["status", "--repo", "."],
         vec!["verify"],
         vec!["verify", "green", "--all"],
+        vec!["verify", "green", "--wait", "--watch"],
         vec!["verify", "green", "--profile"],
         vec!["verify", "green", "--bogus"],
         vec!["verify", "green", "--jobs", "0"],
@@ -246,6 +330,29 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
 }
 
 #[test]
+fn remote_login_rejects_an_oversized_secret_even_when_its_prefix_trims_to_a_valid_token() {
+    let fixture = Fixture::new();
+    let mut child = Watcher::new(support::os::start(
+        fixture
+            .command()
+            .args(["remote", "login", "https://example.test", "--json"])
+            .stdin(std::process::Stdio::piped()),
+    ));
+    use std::io::Write;
+    // The prefix looks valid after trimming, but the full line is not a credential.
+    let line = format!("fixture-secret{}not-part-of-the-prefix\n", " ".repeat(8192));
+    let written = child.stdin.take().unwrap().write_all(line.as_bytes());
+    if let Err(error) = written {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let error = parse(&output)["error"].as_str().unwrap().to_owned();
+    assert!(error.contains("line exceeds"), "{error}");
+    assert!(!error.contains("fixture-secret"));
+}
+
+#[test]
 fn run_fixture_releases_executor_supervisor_and_sqlite_on_return_and_unwind() {
     for unwind in [false, true] {
         let parent = owned_run::Root::from(support::os::tempdir());
@@ -253,8 +360,7 @@ fn run_fixture_releases_executor_supervisor_and_sqlite_on_return_and_unwind() {
         // The ancestor also owns the submission scope: if cleanup or an observation fails,
         // it must release the same Run or retain its inputs, never recursively delete them.
         parent.track(&fixture.state, &fixture.repo);
-        let run = fixture.json(&["verify", "human"], 0);
-        let id = run["id"].as_str().unwrap().parse().unwrap();
+        let id = fixture.submit_human().parse().unwrap();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -306,33 +412,41 @@ fn version_matches_package() {
     assert!(output.stderr.is_empty());
 }
 
+#[test]
+fn redirected_help_never_waits_for_input() {
+    assert_help_does_not_read_input(Command::new(support::os::cli()));
+}
+
 // Only Windows creates or suppresses a console for desktop launches.
 #[cfg(windows)]
 #[test]
-fn redirected_or_no_console_help_never_waits_for_input() {
+fn console_launch_modes_never_wait_for_redirected_input() {
     for with_console in [true, false] {
         let mut command = Command::new(support::os::cli());
         support::os::console_launch(&mut command, with_console);
-        let child = support::os::start(command.stdin(std::process::Stdio::piped()));
-        let mut child = Watcher::new(child);
-        // Keep the empty input pipe OPEN until the child has exited: an accidental read
-        // cannot succeed on EOF, so completion proves it did not pause. No clock involved.
-        let input = child.stdin.take().unwrap();
-        let output = child.wait_with_output().unwrap();
-        drop(input);
-        assert!(output.status.success(), "{output:?}");
-        assert!(output.stderr.is_empty());
-        let text = String::from_utf8(output.stdout).unwrap();
-        assert!(text.contains("Usage: artifactize"));
-        assert!(!text.contains("Press Enter"));
+        assert_help_does_not_read_input(command);
     }
+}
+
+fn assert_help_does_not_read_input(mut command: Command) {
+    let child = support::os::start(command.stdin(std::process::Stdio::piped()));
+    let mut child = Watcher::new(child);
+    // Open, empty stdin cannot return EOF. Help must finish without reading it.
+    let input = child.stdin.take().unwrap();
+    let output = child.wait_with_output().unwrap();
+    drop(input);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("Usage: artifactize"));
+    assert!(!text.contains("Press Enter"));
 }
 
 #[test]
 fn tools_facade_matches_the_standalone_cli() {
     let root = support::os::tempdir();
     fs::write(
-        root.path().join("notes.md"),
+        support::declaration::source_path(root.path().join("notes.md")),
         "# First\nalpha\n# Next\nomega\n",
     )
     .unwrap();
@@ -379,6 +493,20 @@ fn tools_facade_matches_the_standalone_cli() {
         assert_eq!(facade.stdout, direct.stdout, "{args:?}");
         if code != 2 {
             assert_eq!(facade.stderr, direct.stderr, "{args:?}");
+        }
+        match args.as_slice() {
+            ["read", "notes.md"] => assert_eq!(facade.stdout, b"# First\nalpha\n# Next\nomega\n"),
+            ["section", "notes.md", "First"] => assert_eq!(facade.stdout, b"# First\nalpha\n"),
+            ["list"] => assert_eq!(
+                parse(&facade)["entries"],
+                json!([{"kind":"file", "name":"notes.md", "path":"notes.md"}]),
+            ),
+            ["glob", "*.md"] => assert_eq!(parse(&facade)["files"], json!(["notes.md"])),
+            ["grep", "--case-insensitive", "ALPHA"] => assert_eq!(
+                parse(&facade)["matches"],
+                json!([{"path":"notes.md", "line":2, "text":"alpha"}]),
+            ),
+            _ => {}
         }
     }
     let help = Command::new(support::os::cli())

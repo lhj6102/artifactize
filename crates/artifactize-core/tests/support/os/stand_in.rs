@@ -9,8 +9,8 @@
 //! `||` and `&`, pipelines and `!`, `if` and `while`, assignments, quotes and backslashes,
 //! `$1`, `$$`, `$!`, `$NAME`, `${NAME}`, `${NAME-word}`, `${NAME+word}`, `$(...)` and
 //! `$((...))` with `+` and `-`, and the redirections `>`, `>>`, `<` and `>&2`. Utilities run
-//! in process, so `$$` is the shell's own process; other commands are spawned, and `&`
-//! spawns the shell again, so `$!` is a real Windows process in the same job.
+//! in process, so `$$` is the shell's process. `&` launches a simple command directly, or
+//! re-enters this fixture in utility mode for a built-in, so `$!` is a real child PID.
 
 use std::{
     collections::HashMap,
@@ -23,7 +23,15 @@ use std::{
     time::Duration,
 };
 
+/// Re-enter the fixture for one background utility, without parsing shell source again.
+const BACKGROUND_UTILITY: &str = "--fixture-background-utility";
+
 pub fn run() {
+    let mut args: Vec<String> = env::args().skip(1).collect();
+    if matches!(args.first().map(String::as_str), Some(BACKGROUND_UTILITY)) && args.len() >= 2 {
+        let name = args.remove(1);
+        run_utility(name, &args[1..]);
+    }
     let name = env::current_exe()
         .ok()
         .and_then(|path| {
@@ -32,7 +40,6 @@ pub fn run() {
         })
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let mut args: Vec<String> = env::args().skip(1).collect();
     let name = if name == "fixture" && !args.is_empty() {
         args.remove(0)
     } else if !BUILTINS.contains(&name.as_str()) {
@@ -44,10 +51,14 @@ pub fn run() {
     } else {
         name
     };
+    run_utility(name, &args);
+}
+
+fn run_utility(name: String, args: &[String]) -> ! {
     let mut shell = Shell::new(vec![name.clone()]);
     let mut out = Out::Stdout;
     let mut err = Out::Stderr;
-    let status = match shell.utility(&name, &args, &mut Input::Inherit, &mut out, &mut err) {
+    let status = match shell.utility(&name, args, &mut Input::Inherit, &mut out, &mut err) {
         Ok(status) | Err(Exit(status)) => status,
     };
     let _ = io::stdout().flush();
@@ -62,6 +73,7 @@ type Run = Result<i32, Exit>;
 enum Input {
     Inherit,
     Bytes(Vec<u8>),
+    File(File),
 }
 
 impl Input {
@@ -73,6 +85,11 @@ impl Input {
                 bytes
             }
             Input::Bytes(bytes) => std::mem::take(bytes),
+            Input::File(file) => {
+                let mut bytes = Vec::new();
+                let _ = file.read_to_end(&mut bytes);
+                bytes
+            }
         }
     }
 }
@@ -151,11 +168,8 @@ struct Lexer<'a> {
     source: &'a str,
 }
 
-/// A token and the character offsets it spans, for the source of a background command.
-type Spanned = (Token, usize, usize);
-
 impl<'a> Lexer<'a> {
-    fn tokens(source: &'a str) -> Result<Vec<Spanned>, String> {
+    fn tokens(source: &'a str) -> Result<Vec<Token>, String> {
         let mut lexer = Lexer {
             chars: source.chars().collect(),
             position: 0,
@@ -172,7 +186,7 @@ impl<'a> Lexer<'a> {
         self.chars.get(self.position + offset).copied()
     }
 
-    fn next(&mut self) -> Result<Option<Spanned>, String> {
+    fn next(&mut self) -> Result<Option<Token>, String> {
         while let Some(c) = self.peek(0) {
             if c == ' ' || c == '\t' || c == '\r' {
                 self.position += 1;
@@ -186,7 +200,6 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        let start = self.position;
         if self.peek(0).is_none() {
             return Ok(None);
         }
@@ -202,11 +215,11 @@ impl<'a> Lexer<'a> {
             if let Some(text) = operator(text) {
                 self.position += text.chars().count();
                 let text = if text == "\n" { ";" } else { text };
-                return Ok(Some((Token::Operator(text), start, self.position)));
+                return Ok(Some(Token::Operator(text)));
             }
         }
         let word = self.word()?;
-        Ok(Some((Token::Word(word), start, self.position)))
+        Ok(Some(Token::Word(word)))
     }
 
     fn word(&mut self) -> Result<Word, String> {
@@ -447,16 +460,13 @@ struct AndOr {
     first: Pipeline,
     rest: Vec<(&'static str, Pipeline)>,
     background: bool,
-    /// The source text, which `&` hands to a new shell.
-    source: String,
 }
 
 type List = Vec<AndOr>;
 
 struct Parser {
-    tokens: Vec<Spanned>,
+    tokens: Vec<Token>,
     position: usize,
-    chars: Vec<char>,
 }
 
 impl Parser {
@@ -464,17 +474,16 @@ impl Parser {
         let mut parser = Parser {
             tokens: Lexer::tokens(source)?,
             position: 0,
-            chars: source.chars().collect(),
         };
         let list = parser.list(&[])?;
         if parser.position < parser.tokens.len() {
-            return Err(format!("unexpected {:?}", parser.tokens[parser.position].0));
+            return Err(format!("unexpected {:?}", parser.tokens[parser.position]));
         }
         Ok(list)
     }
 
     fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.position).map(|(token, _, _)| token)
+        self.tokens.get(self.position)
     }
 
     fn at(&self, operator: &str) -> bool {
@@ -505,10 +514,7 @@ impl Parser {
             if self.peek().is_none() || self.keyword().is_some_and(|k| terminators.contains(&k)) {
                 return Ok(list);
             }
-            let start = self.tokens[self.position].1;
             let mut and_or = self.and_or()?;
-            let end = self.tokens[self.position - 1].2;
-            and_or.source = self.chars[start..end].iter().collect();
             match self.peek() {
                 Some(Token::Operator("&")) => {
                     and_or.background = true;
@@ -538,7 +544,6 @@ impl Parser {
             first,
             rest,
             background: false,
-            source: String::new(),
         })
     }
 
@@ -621,6 +626,12 @@ impl Parser {
 
 // ---- Execution ------------------------------------------------------------------------
 
+#[derive(Clone, Copy)]
+enum Dispatch {
+    Foreground,
+    Background,
+}
+
 struct Shell {
     /// `$0`, `$1`, ...
     args: Vec<String>,
@@ -660,7 +671,17 @@ impl Shell {
         let mut status = 0;
         for and_or in list {
             if and_or.background {
-                status = self.background(&and_or.source, err);
+                status = match and_or.first.commands.as_slice() {
+                    [Node::Simple(words, redirects)]
+                        if !and_or.first.negate && and_or.rest.is_empty() =>
+                    {
+                        self.simple(words, redirects, input, out, err, Dispatch::Background)?
+                    }
+                    _ => {
+                        let _ = writeln!(err, "sh: only simple commands can run in the background");
+                        2
+                    }
+                };
             } else {
                 status = self.and_or(and_or, input, out, err)?;
                 if self.errexit
@@ -723,7 +744,9 @@ impl Shell {
 
     fn node(&mut self, node: &Node, input: &mut Input, out: &mut Out, err: &mut Out) -> Run {
         match node {
-            Node::Simple(words, redirects) => self.simple(words, redirects, input, out, err),
+            Node::Simple(words, redirects) => {
+                self.simple(words, redirects, input, out, err, Dispatch::Foreground)
+            }
             Node::If(condition, body, otherwise) => {
                 self.condition += 1;
                 let test = self.list(condition, input, out, err);
@@ -758,6 +781,7 @@ impl Shell {
         input: &mut Input,
         out: &mut Out,
         err: &mut Out,
+        dispatch: Dispatch,
     ) -> Run {
         let mut fields = Vec::new();
         for word in words {
@@ -777,7 +801,7 @@ impl Shell {
                 _ => break,
             }
         }
-        if fields.is_empty() {
+        if fields.is_empty() && matches!(dispatch, Dispatch::Foreground) {
             self.variables.extend(assignments.clone());
         }
         let mut stdout = None;
@@ -799,7 +823,7 @@ impl Shell {
                 }
                 Redirect::In(target) => {
                     let path = self.path_word(target)?;
-                    fs::read(&path).map(|bytes| stdin = Some(Input::Bytes(bytes)))
+                    File::open(&path).map(|file| stdin = Some(Input::File(file)))
                 }
                 Redirect::OutToErr => {
                     to_err = true;
@@ -816,13 +840,21 @@ impl Shell {
         let Some((name, args)) = fields.split_first() else {
             return Ok(0);
         };
-        let mut redirected = stdin;
-        let input = match &mut redirected {
-            Some(redirected) => redirected,
-            None => input,
+        let mut call = |out: &mut Out, err: &mut Out| match dispatch {
+            Dispatch::Foreground => self.command(
+                name,
+                args,
+                &assignments,
+                stdin.as_mut().unwrap_or(&mut *input),
+                out,
+                err,
+            ),
+            Dispatch::Background => {
+                Ok(self.background(name, args, &assignments, stdin.as_ref(), out, err))
+            }
         };
         let status = match (stdout, to_err) {
-            (Some(mut file), _) => self.command(name, args, &assignments, input, &mut file, err),
+            (Some(mut file), _) => call(&mut file, err),
             (None, true) => {
                 let mut copy = match err {
                     Out::Stdout => Out::Stdout,
@@ -830,9 +862,9 @@ impl Shell {
                     Out::File(file) => Out::File(file.try_clone().unwrap()),
                     Out::Buffer(_) => Out::Stderr,
                 };
-                self.command(name, args, &assignments, input, &mut copy, err)
+                call(&mut copy, err)
             }
-            (None, false) => self.command(name, args, &assignments, input, out, err),
+            (None, false) => call(out, err),
         };
         let _ = out.flush();
         status
@@ -871,11 +903,12 @@ impl Shell {
         out: &mut Out,
         err: &mut Out,
     ) -> Run {
-        let stdin = match input {
-            Input::Inherit => Stdio::inherit(),
-            Input::Bytes(_) => Stdio::piped(),
-        };
         let spawned = (|| {
+            let stdin = match input {
+                Input::Inherit => Stdio::inherit(),
+                Input::Bytes(_) => Stdio::piped(),
+                Input::File(file) => Stdio::from(file.try_clone()?),
+            };
             command
                 .stdin(stdin)
                 .stdout(out.stdio()?)
@@ -911,18 +944,41 @@ impl Shell {
         }
     }
 
-    /// Run `source` in a new shell process, as `&` does.
-    fn background(&mut self, source: &str, err: &mut Out) -> i32 {
-        let shell = env::current_exe()
-            .unwrap()
-            .with_file_name(format!("sh{}", env::consts::EXE_SUFFIX));
-        let spawned = Command::new(shell)
-            .arg("-c")
-            .arg(source)
-            .args(&self.args)
-            .envs(self.variables.clone())
-            .stdin(Stdio::null())
-            .spawn();
+    fn background(
+        &mut self,
+        name: &str,
+        args: &[String],
+        assignments: &[(String, String)],
+        input: Option<&Input>,
+        out: &Out,
+        err: &mut Out,
+    ) -> i32 {
+        let spawned = (|| {
+            let mut command = if BUILTINS.contains(&name) {
+                let mut fixture = Command::new(env::current_exe()?);
+                fixture.args([BACKGROUND_UTILITY, name]);
+                fixture
+            } else {
+                Command::new(name)
+            };
+            let stdin = match input {
+                Some(Input::File(file)) => Stdio::from(file.try_clone()?),
+                _ => Stdio::null(),
+            };
+            let stream = |out: &Out| match out {
+                // Background commands never write into the foreground shell's buffer.
+                Out::Buffer(_) => Ok(Stdio::inherit()),
+                _ => out.stdio(),
+            };
+            command
+                .args(args)
+                .envs(&self.variables)
+                .envs(assignments.iter().cloned())
+                .stdin(stdin)
+                .stdout(stream(out)?)
+                .stderr(stream(err)?)
+                .spawn()
+        })();
         match spawned {
             Ok(child) => {
                 self.last_job = Some(child.id());

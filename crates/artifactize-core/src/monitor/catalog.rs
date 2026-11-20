@@ -61,6 +61,27 @@ pub struct CatalogRow {
     /// A row standing for this repository's worktrees without Runs; Space shows or hides them.
     pub fold: Option<Repository>,
 }
+/// The representative paths for physical directories in this catalog snapshot.
+#[derive(Default)]
+struct Directories {
+    spellings: BTreeMap<PathBuf, PathBuf>,
+    identities: BTreeMap<crate::platform::FileIdentity, PathBuf>,
+}
+
+impl Directories {
+    fn resolve(&mut self, path: PathBuf) -> PathBuf {
+        self.spellings
+            .entry(path.clone())
+            .or_insert_with(|| {
+                crate::platform::paths::directory_identity(&path).map_or_else(
+                    |_| path,
+                    |(id, canonical)| self.identities.entry(id).or_insert(canonical).clone(),
+                )
+            })
+            .clone()
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct Catalog {
     facts: std::sync::Arc<Vec<CatalogRun>>,
@@ -94,31 +115,47 @@ impl Catalog {
     }
     pub fn initial(&mut self, path: Option<&Path>) -> Scope {
         path.map_or(Scope::All, |path| {
-            self.initial_path(path, &self.paths.clone())
+            let paths = self.paths.clone();
+            self.initial_scope(path, &paths)
         })
     }
-    fn initial_path(&mut self, path: &Path, paths: &BTreeMap<Scope, BTreeSet<PathBuf>>) -> Scope {
-        if let Some((scope, _)) = paths.iter().find(|(scope, workspaces)| {
+    fn initial_scope(&mut self, path: &Path, paths: &BTreeMap<Scope, BTreeSet<PathBuf>>) -> Scope {
+        // Take the filesystem and Git observations here; the choice below takes only facts.
+        let exact = paths.iter().find(|(scope, workspaces)| {
             matches!(scope, Scope::Worktree(_, tree) if crate::platform::paths_equal(tree, path) || workspaces.iter().any(|workspace| crate::platform::paths_equal(workspace, path)))
-        }) {
-            return scope.clone();
+        }).map(|(scope, _)| scope.clone());
+        if let Some(scope) = exact {
+            return scope;
         }
         let identity = self.identity(path);
+        let ancestors = if identity.common_dir.is_some() && identity.worktree_path.is_some() {
+            Vec::new()
+        } else {
+            paths
+                .iter()
+                .filter(|(scope, _)| matches!(scope, Scope::Worktree(Repository::Workspace(_), _)))
+                .flat_map(|(scope, workspaces)| {
+                    workspaces
+                        .iter()
+                        .filter(move |workspace| crate::platform::is_within(path, workspace))
+                        .map(move |workspace| (workspace.components().count(), scope))
+                })
+                .collect()
+        };
+        Self::initial_path(path, identity, ancestors.into_iter())
+    }
+
+    fn initial_path<'a>(
+        path: &Path,
+        identity: Identity,
+        ancestors: impl Iterator<Item = (usize, &'a Scope)>,
+    ) -> Scope {
         if let (Some(common), Some(tree)) = (identity.common_dir, identity.worktree_path) {
             return Scope::Worktree(Repository::Git(common), tree);
         }
         // Initial selection only: a known non-Git workspace can contain cwd. Choose the
         // closest ancestor by components, never a string prefix or inferred Git grouping.
-        paths
-            .iter()
-            .filter_map(|(scope, workspaces)| match scope {
-                Scope::Worktree(Repository::Workspace(_), _) => workspaces
-                    .iter()
-                    .filter(|workspace| crate::platform::is_within(path, workspace))
-                    .map(|workspace| (workspace.components().count(), scope))
-                    .max_by_key(|(depth, _)| *depth),
-                _ => None,
-            })
+        ancestors
             .max_by_key(|(depth, _)| *depth)
             .map(|(_, scope)| scope.clone())
             .unwrap_or_else(|| {
@@ -135,6 +172,7 @@ impl Catalog {
         let mut badges: BTreeMap<Scope, Badge> = BTreeMap::new();
         let mut paths: BTreeMap<Scope, BTreeSet<PathBuf>> = BTreeMap::new();
         let mut branches: BTreeMap<Scope, Option<String>> = BTreeMap::new();
+        let mut directories = Directories::default();
         for run in runs {
             let identity =
                 if run.repository.common_dir.is_some() && run.repository.worktree_path.is_some() {
@@ -142,13 +180,16 @@ impl Catalog {
                 } else {
                     self.identity(&run.repo_path)
                 };
-            let repository = identity.common_dir.clone().map_or_else(
-                || Repository::Workspace(run.repo_path.clone()),
-                Repository::Git,
-            );
-            let tree = identity
-                .worktree_path
-                .unwrap_or_else(|| run.repo_path.clone());
+            let (repository, tree) = match (identity.common_dir, identity.worktree_path) {
+                (Some(common), Some(tree)) => (
+                    Repository::Git(directories.resolve(common)),
+                    directories.resolve(tree),
+                ),
+                _ => {
+                    let path = directories.resolve(run.repo_path.clone());
+                    (Repository::Workspace(path.clone()), path)
+                }
+            };
             let scope = Scope::Worktree(repository.clone(), tree);
             branches.insert(scope.clone(), identity.branch);
             for scope in [Scope::All, Scope::Repository(repository), scope] {
@@ -159,14 +200,20 @@ impl Catalog {
                 badges.entry(scope).or_default().add(run);
             }
         }
-        if let Some(path) = initial {
-            let scope = self.initial_path(path, &paths);
-            if let Scope::Worktree(repository, _) = &scope {
-                paths
-                    .entry(Scope::Repository(repository.clone()))
-                    .or_default();
-                paths.entry(scope).or_default();
-            }
+        if let Some(path) = initial
+            && let Scope::Worktree(repository, tree) = self.initial_scope(path, &paths)
+        {
+            let (repository, tree) = match repository {
+                Repository::Git(common) => (
+                    Repository::Git(directories.resolve(common)),
+                    directories.resolve(tree),
+                ),
+                workspace => (workspace, tree),
+            };
+            paths
+                .entry(Scope::Repository(repository.clone()))
+                .or_default();
+            paths.entry(Scope::Worktree(repository, tree)).or_default();
         }
         let repositories: Vec<_> = paths
             .keys()
@@ -178,7 +225,7 @@ impl Catalog {
         for repository in &repositories {
             if let Repository::Git(common) = repository {
                 for tree in self.trees(common) {
-                    let scope = Scope::Worktree(repository.clone(), tree.path);
+                    let scope = Scope::Worktree(repository.clone(), directories.resolve(tree.path));
                     paths.entry(scope.clone()).or_default();
                     branches.entry(scope).or_insert(tree.branch);
                 }
@@ -198,7 +245,7 @@ impl Catalog {
             };
             let label = root.file_name().map_or_else(
                 || crate::platform::path_text(root),
-                |name| name.to_string_lossy().into_owned(),
+                |name| crate::platform::path_text(Path::new(name)),
             );
             // The repository row is the whole repository; there is no separate `ALL` row.
             let scope = Scope::Repository(repository.clone());

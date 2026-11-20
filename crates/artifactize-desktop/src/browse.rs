@@ -76,6 +76,8 @@ struct Shown {
     labels: Labels,
     launch: Option<Place>,
     waiting: Vec<Waiting>,
+    /// The number of the request read that read `waiting` ([`crate::human::Reads`]).
+    waiting_read: u32,
     unreadable: Vec<Unreadable>,
     /// The pane's search.
     query: Search,
@@ -173,6 +175,7 @@ impl Browse {
                 labels: Labels::new(),
                 launch: None,
                 waiting: Vec::new(),
+                waiting_read: 0,
                 unreadable: Vec::new(),
                 query: Search::new(live::DEFAULT.into()),
                 opened: Opened::None,
@@ -259,6 +262,7 @@ impl Browse {
         &self,
         state: &Path,
         reviewer: &artifactize_core::types::ReviewerId,
+        reads: &crate::human::Reads,
         read: Read,
     ) -> Result<Option<Origin>, Failure> {
         let mut loader = self.loader.lock().await;
@@ -287,29 +291,25 @@ impl Browse {
             let mut worker = worker;
             // The graph is drawn from every accepted snapshot: it is built here, off the
             // window's thread, along with the tree.
-            let result = worker.load(input).map(|mut snapshot| {
-                let selected = snapshot
-                    .opened
-                    .take()
-                    .map(|(run, requests, tree, footprint)| {
-                        let graph = monitor::graph(&tree);
-                        // The same Run with the same Artifacts and edges keeps its shape.
-                        let kept = before
-                            .as_ref()
-                            .filter(|before| {
-                                before.run.run.id == run.run.id && before.graph.same_shape(&graph)
-                            })
-                            .map(|before| before.shape);
-                        (run, requests, tree, graph, kept, footprint)
-                    });
-                (snapshot, selected)
+            let result = worker.load(input).map(|snapshot| {
+                snapshot.map_open_run(|(run, requests, tree, footprint)| {
+                    let graph = monitor::graph(&tree);
+                    // The same Run with the same Artifacts and edges keeps its shape.
+                    let kept = before
+                        .as_ref()
+                        .filter(|before| {
+                            before.run.run.id == run.run.id && before.graph.same_shape(&graph)
+                        })
+                        .map(|before| before.shape);
+                    (run, requests, tree, graph, kept, footprint)
+                })
             });
             (worker, result)
         })
         .await;
         let (worker, result) = crate::failure::joined(joined)?;
         *loader = worker;
-        let (snapshot, selected) = match result {
+        let snapshot = match result {
             Ok(read) => read,
             Err(error) => {
                 self.restore_changed(changed);
@@ -317,12 +317,13 @@ impl Browse {
                 return Err(Failure::Read(error));
             }
         };
+        // The waiting reviews' requests are read in turn with the reviews' own reads, so the
+        // views they freshen are ordered with them.
         let waiting = if read.full || !self.shown().initialized {
-            Some(
-                live::waiting(state, reviewer, &snapshot.labels)
-                    .await
-                    .map_err(Failure::Read)?,
-            )
+            let (number, waiting) = reads
+                .numbered(live::waiting(state, reviewer, &snapshot.labels))
+                .await;
+            Some((number, waiting.map_err(Failure::Read)?))
         } else {
             None
         };
@@ -335,7 +336,10 @@ impl Browse {
         }
         let changed = read.full
             || !shown.initialized
-            || selected.is_some()
+            || matches!(snapshot.open_run, live::OpenRun::Loaded(_))
+            || (matches!(snapshot.open_run, live::OpenRun::Absent)
+                && open.is_some()
+                && !matches!(shown.opened, Opened::Missing(_)))
             || shown.branches != snapshot.branches;
         if snapshot.origin.replaces(&shown.origin) {
             if let Some(id) = &open {
@@ -349,11 +353,13 @@ impl Browse {
         shown.labels = snapshot.labels;
         shown.launch = snapshot.launch;
         shown.unreadable = snapshot.unreadable;
-        if let Some(waiting) = waiting {
+        if let Some((number, waiting)) = waiting {
             shown.waiting = waiting;
+            shown.waiting_read = number;
         }
-        match (selected, snapshot.open, open) {
-            (Some((run, requests, tree, graph, kept, footprint)), _, _) => {
+        match snapshot.open_run {
+            live::OpenRun::Loaded(run) => {
+                let (run, requests, tree, graph, kept, footprint) = *run;
                 let shape = kept.unwrap_or_else(|| shown.shapes.next());
                 shown.opened = Opened::Loaded(Arc::new(Selected {
                     run,
@@ -364,9 +370,8 @@ impl Browse {
                     _footprint: footprint,
                 }));
             }
-            (None, false, Some(id)) => shown.opened = Opened::Missing(id),
-            (None, false, None) => shown.opened = Opened::None,
-            (None, true, _) => {}
+            live::OpenRun::Absent => shown.opened = open.map_or(Opened::None, Opened::Missing),
+            live::OpenRun::Unchanged => {}
         }
         shown.initialized = true;
         shown.error = None;
@@ -406,14 +411,15 @@ impl Browse {
             .ok_or_else(|| Failure::Missing("This branch no longer exists; choose another.".into()))
     }
 
-    /// The waiting reviews' requests as the snapshot read them.
-    fn waiting_views(&self) -> Vec<RequestView> {
+    /// The waiting reviews' requests as the snapshot read them, and that read's number.
+    fn waiting_views(&self) -> (u32, Vec<RequestView>) {
         let shown = self.shown();
-        shown
+        let views = shown
             .waiting
             .iter()
             .map(|waiting| waiting.view.clone())
-            .collect()
+            .collect();
+        (shown.waiting_read, views)
     }
 
     /// The pane's completion of `query`'s last term, from what the snapshot lists.
@@ -444,12 +450,19 @@ pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<Br
     };
     let accepted = app
         .browse
-        .load(&app.launch.state, &app.launch.reviewer, read)
+        .load(
+            &app.launch.state,
+            &app.launch.reviewer,
+            &app.human.reads,
+            read,
+        )
         .await?;
     if let Some(origin) = accepted {
         app.observe(origin);
-        // A review opened from the Waiting stack shows the claims and states it lists.
-        app.human.remember(app.browse.waiting_views());
+        // A review opened from the Waiting stack shows the claims and states it lists, unless
+        // it read them since.
+        let (number, views) = app.browse.waiting_views();
+        app.human.remember(number, views);
     }
     Ok(app.browse.view(OffsetDateTime::now_utc()))
 }
@@ -480,7 +493,12 @@ pub(crate) async fn rescan(app: &App) -> Result<bool, Failure> {
         ..Read::default()
     };
     app.browse
-        .load(&app.launch.state, &app.launch.reviewer, read)
+        .load(
+            &app.launch.state,
+            &app.launch.reviewer,
+            &app.human.reads,
+            read,
+        )
         .await?;
     Ok(app.browse.shown().revision != before)
 }

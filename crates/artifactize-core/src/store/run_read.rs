@@ -8,7 +8,7 @@ use tokio_rusqlite::Connection;
 
 use super::{
     DATABASE, Execution, Request, Run, RunView, Unreadable,
-    receipts::{Error, check_files, schema_initialized},
+    receipts::{Error, check_files, regular_files, schema_initialized},
     unreadable::{decode, skipped},
 };
 use crate::{
@@ -16,14 +16,24 @@ use crate::{
     workspace::{canonical_target, outside_workspace},
 };
 
-/// Run `read` on one read-only snapshot of an existing state: no discovery, schema creation,
-/// or execution.
+#[derive(Clone, Copy)]
+enum Schema {
+    Upgrade,
+    ReadOnly,
+}
+
+/// Run `read` on one read-only snapshot of an existing state. A caller may opt into the
+/// normal store upgrade before opening that snapshot.
 async fn snapshot<T: Send + 'static>(
     state: &Path,
+    schema: Schema,
     read: impl FnOnce(&rusqlite::Connection, &Path) -> Result<T, Error> + Send + 'static,
 ) -> Result<T, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
-    check_files(&state)?;
+    match schema {
+        Schema::Upgrade => check_files(&state)?,
+        Schema::ReadOnly => regular_files(&state)?,
+    }
     let connection = Connection::open_with_flags(
         state.join(DATABASE),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -50,13 +60,13 @@ async fn snapshot<T: Send + 'static>(
 
 /// The Run with its definitions, but none of its requests.
 fn saved_run(db: &rusqlite::Connection, state: &Path, id: &RunId) -> Result<Run, Error> {
-    let saved: Option<(String, String)> = db
+    let saved: Option<(std::path::PathBuf, String)> = db
         .query_row("SELECT repo,data FROM runs WHERE id=?", [id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
+            Ok((super::path_column(row, 0)?, row.get(1)?))
         })
         .optional()?;
     let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
-    outside_workspace(Path::new(&repo), state).map_err(|e| Error::Invalid(e.to_string()))?;
+    outside_workspace(&repo, state).map_err(|e| Error::Invalid(e.to_string()))?;
     let mut run: Run =
         decode("run", id.as_str(), &data).map_err(|error| Error::Invalid(error.to_string()))?;
     run.definitions = super::run_record::definitions(db, id)?
@@ -107,12 +117,21 @@ fn unreadable_executions(db: &rusqlite::Connection, id: &RunId) -> Result<Vec<Un
     Ok(unreadable)
 }
 
-/// The whole saved Run: its state, definitions and requests, and the records of it that do
-/// not read, its requests' executions included. Existing store only: no discovery, schema
-/// creation, or execution.
+/// The whole saved Run, upgrading an existing supported schema if needed. No discovery,
+/// schema creation, or execution takes place.
 pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
+    read_whole_run(state, id, Schema::Upgrade).await
+}
+
+/// The Run, definitions, requests and unreadable records in one read-only transaction.
+/// An older schema is refused without upgrading it.
+pub async fn read_run_snapshot(state: &Path, id: &str) -> Result<RunView, String> {
+    read_whole_run(state, id, Schema::ReadOnly).await
+}
+
+async fn read_whole_run(state: &Path, id: &str, schema: Schema) -> Result<RunView, String> {
     let id: RunId = id.parse()?;
-    snapshot(state, move |db, state| {
+    snapshot(state, schema, move |db, state| {
         let mut run = saved_run(db, state, &id)?;
         let (requests, mut unreadable) = saved_requests(db, &id)?;
         run.show_signoffs(requests.iter().map(Request::status));
@@ -130,7 +149,10 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
 /// The Run with its definitions, for executing it; its requests are read when they are needed.
 pub(crate) async fn read_run_record(state: &Path, id: &RunId) -> Result<Run, String> {
     let id = id.clone();
-    snapshot(state, move |db, state| saved_run(db, state, &id)).await
+    snapshot(state, Schema::Upgrade, move |db, state| {
+        saved_run(db, state, &id)
+    })
+    .await
 }
 
 /// The Run's requests in selection order, without the Run or its definitions.
@@ -139,7 +161,10 @@ pub(crate) async fn read_run_requests_only(
     id: &RunId,
 ) -> Result<Vec<Request>, String> {
     let id = id.clone();
-    snapshot(state, move |db, _| Ok(saved_requests(db, &id)?.0)).await
+    snapshot(state, Schema::Upgrade, move |db, _| {
+        Ok(saved_requests(db, &id)?.0)
+    })
+    .await
 }
 
 /// The Run's requests that have a result or an error and whose saved status differs from the
@@ -151,7 +176,7 @@ pub(crate) async fn read_new_results(
     seen: BTreeMap<RequestId, RequestStatus>,
 ) -> Result<Vec<Request>, String> {
     let id = id.clone();
-    snapshot(state, move |db, _| {
+    snapshot(state, Schema::Upgrade, move |db, _| {
         let changed: Vec<RequestId> = {
             let mut statement =
                 db.prepare("SELECT id,status FROM requests WHERE run_id=? ORDER BY ordinal")?;
@@ -189,4 +214,27 @@ fn finished(status: RequestStatus) -> bool {
             | RequestStatus::Red
             | RequestStatus::Error
     )
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn run_snapshot_does_not_upgrade_an_older_store() {
+    let state = crate::test_os::tempdir();
+    let database = state.path().join(DATABASE);
+    rusqlite::Connection::open(&database)
+        .unwrap()
+        .execute_batch("CREATE TABLE runs(status TEXT, data TEXT); PRAGMA user_version = 9;")
+        .unwrap();
+
+    assert!(read_run_snapshot(state.path(), "missing").await.is_err());
+
+    let db = rusqlite::Connection::open_with_flags(
+        &database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let version = db
+        .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+        .unwrap();
+    assert_eq!(version, 9, "observing a Run never upgrades the database");
 }

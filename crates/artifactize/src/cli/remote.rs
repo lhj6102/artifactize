@@ -1,20 +1,28 @@
 use std::{
+    ffi::OsStr,
     io::{self, Write},
     path::Path,
 };
 
-use clap::Subcommand;
+use clap::{Subcommand, builder::TypedValueParser, error::ErrorKind};
 use serde_json::json;
+use url::Url;
 
 use super::print_json;
-use artifactize_core::auth::remote::{self, Share};
+
+/// `remote status` exits 1 when no remote review store is configured, as it does for a
+/// configured store that is not signed in: either way the status is not usable, and the
+/// output says which. Signed in exits 0; errors exit 2.
+const NOT_CONFIGURED_EXIT: u8 = 1;
+use artifactize_core::auth::remote::{self, Share, TokenSource};
 
 #[derive(Debug, Subcommand)]
 pub enum RemoteCommand {
     /// Verify a token read from stdin (never argv) and save it with remote.json.
     Login {
         /// Store URL: https://, or http:// only on loopback.
-        url: String,
+        #[arg(value_parser = LoginUrl)]
+        url: Url,
         /// What published records contain.
         #[arg(long, value_enum, default_value = "summary")]
         share: Share,
@@ -31,30 +39,66 @@ pub enum RemoteCommand {
     },
 }
 
+/// Parse the remote's URL without letting clap echo a rejected URL that may contain credentials.
+#[derive(Clone)]
+struct LoginUrl;
+
+impl TypedValueParser for LoginUrl {
+    type Value = Url;
+
+    fn parse_ref(
+        &self,
+        command: &clap::Command,
+        _argument: Option<&clap::Arg>,
+        value: &OsStr,
+    ) -> Result<Self::Value, clap::Error> {
+        artifactize_core::platform::os_text(value)
+            .ok_or_else(|| "Invalid remote URL.".to_owned())
+            .and_then(remote::parse_url)
+            .map_err(|message| {
+                clap::Error::raw(ErrorKind::ValueValidation, message).format(&mut command.clone())
+            })
+    }
+}
+
+fn share_text(share: Share) -> &'static str {
+    match share {
+        Share::Summary => "summary",
+        Share::Full => "full",
+    }
+}
+
+fn token_source_text(source: TokenSource) -> &'static str {
+    match source {
+        TokenSource::Env => "env",
+        TokenSource::File => "file",
+        TokenSource::None => "none",
+    }
+}
+
 pub(super) async fn execute(
     state: Option<&Path>,
     repo: Option<&Path>,
     command: RemoteCommand,
     json: bool,
 ) -> Result<u8, String> {
-    let mut out = io::stdout();
     match command {
         RemoteCommand::Login { url, share } => {
-            let url = remote::parse_url(&url)?;
-            let token = super::secret::read("remote token")?;
+            let token = super::secret::read("remote token")?.try_into()?;
             let (remote, principal) = remote::login(state, repo, url, share, token).await?;
             if json {
                 print_json(&json!({
-                    "url": remote.url,
+                    "url": remote.url(),
                     "share": share,
                     "principal": principal.principal,
                     "scopes": principal.scopes,
                 }))?;
             } else {
+                let mut out = io::stdout().lock();
                 writeln!(
                     out,
                     "Signed in to {} as {} (scopes: {}).",
-                    remote.url,
+                    remote.url(),
                     principal.principal,
                     principal
                         .scopes
@@ -72,6 +116,7 @@ pub(super) async fn execute(
             if json {
                 print_json(&json!({"signedIn": false}))?;
             } else {
+                let mut out = io::stdout().lock();
                 writeln!(
                     out,
                     "Signed out of the remote review store. The server keeps the token valid until `artifactize server token revoke`."
@@ -85,6 +130,7 @@ pub(super) async fn execute(
             if json {
                 print_json(&report)?;
             } else {
+                let mut out = io::stdout().lock();
                 writeln!(
                     out,
                     "{} {}, already in the store {}, skipped {}.",
@@ -102,20 +148,21 @@ pub(super) async fn execute(
                 if json {
                     print_json(&artifactize_core::inspect::remote_output(None))?;
                 } else {
-                    writeln!(out, "No remote review store is configured.")
+                    writeln!(io::stdout().lock(), "No remote review store is configured.")
                         .map_err(|e| e.to_string())?;
                 }
-                return Ok(1);
+                return Ok(NOT_CONFIGURED_EXIT);
             };
             if json {
                 print_json(&artifactize_core::inspect::remote_output(Some(&status)))?;
             } else {
+                let mut out = io::stdout().lock();
                 writeln!(
                     out,
                     "Remote: {}\nShare: {}\nToken: {}\nReachable: {}",
                     status.url,
-                    json!(status.share).as_str().unwrap_or_default(),
-                    json!(status.token_source).as_str().unwrap_or_default(),
+                    share_text(status.share),
+                    token_source_text(status.token_source),
                     if status.reachable() { "yes" } else { "no" }
                 )
                 .map_err(|e| e.to_string())?;

@@ -44,6 +44,44 @@ pub async fn subscribed<T>(state: &Path, observe: impl AsyncFnOnce(&mut Subscrip
     }
 }
 
+/// Keep a sign-off available across a fixture's unrelated state reads and commands.
+/// The watchdogs bound all observations; the production default grace is not test input.
+pub fn hold_signoffs(state: &Path) {
+    crate::support::os::create_private_dir_all(state);
+    let limits = serde_json::json!({"signoffIdleGraceSeconds":artifactize_core::limits::MAX_SIGNOFF_IDLE_GRACE.as_secs()});
+    crate::support::os::publish_file(&state.join("limits.json"), limits.to_string());
+}
+
+/// Open the provider response gate on unwind before dropping its owning fixture.
+pub struct ReleaseGate(crate::support::Gate);
+impl ReleaseGate {
+    pub fn new(gate: crate::support::Gate) -> Self {
+        gate.close();
+        Self(gate)
+    }
+}
+impl Drop for ReleaseGate {
+    fn drop(&mut self) {
+        self.0.open();
+    }
+}
+
+/// Release a file-gated fixture even when its observer unwinds.
+pub struct FileGate(PathBuf);
+impl FileGate {
+    pub fn new(release: PathBuf) -> Self {
+        Self(release)
+    }
+    pub fn release(&self) -> io::Result<()> {
+        std::fs::write(crate::support::declaration::source_path(&self.0), "ready")
+    }
+}
+impl Drop for FileGate {
+    fn drop(&mut self) {
+        let _ = self.release();
+    }
+}
+
 /// Own only the caller process. Disposing a `run show --wait` observer must not cancel its Run.
 pub struct Watcher(Option<Child>);
 impl Watcher {
@@ -52,11 +90,48 @@ impl Watcher {
     }
     /// Stop only an unreaped caller, never signal a PID after its cached exit.
     pub fn stop(&mut self) -> io::Result<std::process::ExitStatus> {
-        if self.try_wait()?.is_none() {
-            self.kill()?;
-        }
-        self.wait()
+        crate::support::os::stop_child(self)
     }
+    pub fn exited(&mut self) -> bool {
+        crate::support::os::child_exited(self)
+    }
+    /// Reap a fixture owner whose exit has already been established externally.
+    pub fn reap(&mut self) -> io::Result<std::process::ExitStatus> {
+        const EXIT_BOUND: Duration = Duration::from_secs(20);
+        crate::support::os::wait_child_for(self, EXIT_BOUND)
+    }
+    pub fn first_stderr_line(&mut self, bound: Duration) -> io::Result<String> {
+        let mut stderr = self.stderr.take().expect("piped fixture stderr");
+        let (send, receive) = std::sync::mpsc::channel();
+        let line = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let mut line = String::new();
+                // A one-byte reader cannot swallow later stderr from the caller.
+                let read = io::BufReader::with_capacity(1, &mut stderr).read_line(&mut line);
+                let _ = send.send(read.map(|_| line));
+            });
+            match receive.recv_timeout(crate::support::os::patience(bound)) {
+                Ok(line) => line,
+                Err(error) => {
+                    // The CLI's detached workers use their own stderr files. Stopping and
+                    // reaping the caller closes its pipe and lets the scoped reader join.
+                    self.stop()?;
+                    Err(match error {
+                        std::sync::mpsc::RecvTimeoutError::Timeout => io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "fixture caller did not announce its Run",
+                        ),
+                        std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                            io::Error::other("fixture stderr reader disconnected")
+                        }
+                    })
+                }
+            }
+        });
+        self.stderr = Some(stderr);
+        line
+    }
+
     pub fn wait_with_output(mut self) -> io::Result<Output> {
         // Retain the caller guard while draining both pipes, including I/O-error exits.
         fn drain(pipe: Option<impl io::Read>) -> io::Result<Vec<u8>> {
@@ -72,10 +147,12 @@ impl Watcher {
         std::thread::scope(|scope| {
             let stdout = scope.spawn(|| drain(stdout));
             let stderr = scope.spawn(|| drain(stderr));
-            let status = self.wait();
+            // Drain both pipes before waiting so a full pipe cannot block the caller's exit.
+            // The deadline only bounds fixture failure; the native exit is the barrier.
+            const EXIT_BOUND: Duration = Duration::from_secs(60);
+            let status = crate::support::os::wait_child_for(&mut self, EXIT_BOUND);
             if status.is_err() {
-                crate::support::os::kill(self.id());
-                let _ = self.wait();
+                let _ = self.stop();
             }
             let stdout = stdout.join().expect("fixture stdout reader")?;
             let stderr = stderr.join().expect("fixture stderr reader")?;
@@ -101,10 +178,7 @@ impl DerefMut for Watcher {
 impl Drop for Watcher {
     fn drop(&mut self) {
         if let Some(child) = &mut self.0 {
-            if child.try_wait().ok().flatten().is_none() {
-                crate::support::os::kill(child.id());
-            }
-            let _ = child.wait();
+            let _ = crate::support::os::stop_child(child);
         }
     }
 }
@@ -112,17 +186,30 @@ impl Drop for Watcher {
 /// Own detached tool leaders and descendants by birth identity. Each child is registered
 /// independently so a leader exiting cannot leave its leaderless descendants unowned.
 #[derive(Default)]
-pub struct Processes(BTreeSet<(u32, u64)>);
+pub struct Processes {
+    identities: BTreeSet<(u32, u64)>,
+    inputs: root::Inputs,
+}
 impl Processes {
-    pub fn own(&mut self, pid: u32) {
-        if let Some(start) = crate::support::os::observed_start_time(pid) {
-            self.0.insert((pid, start));
+    /// Retain the owning temporary root if cleanup cannot confirm process exit.
+    pub fn protect(root: &Root) -> Self {
+        Self {
+            inputs: root.retention(),
+            identities: BTreeSet::new(),
         }
     }
-}
-impl Drop for Processes {
-    fn drop(&mut self) {
-        for &(pid, start) in &self.0 {
+
+    pub fn own_identity(&mut self, pid: u32, start: u64) {
+        self.identities.insert((pid, start));
+    }
+    pub fn own(&mut self, pid: u32) {
+        if let Some(start) = crate::support::os::observed_start_time(pid) {
+            self.own_identity(pid, start);
+        }
+    }
+
+    pub fn release(&mut self) -> Result<(), String> {
+        for &(pid, start) in &self.identities {
             if crate::support::os::same_process_running(pid, start) {
                 crate::support::os::kill_tree(pid);
                 crate::support::os::kill(pid);
@@ -132,18 +219,31 @@ impl Drop for Processes {
         const RELEASE_BOUND: Duration = Duration::from_secs(30);
         const RELEASE_POLL: Duration = Duration::from_millis(10);
         let deadline = std::time::Instant::now() + crate::support::os::patience(RELEASE_BOUND);
-        while self
-            .0
-            .iter()
-            .any(|&(pid, start)| crate::support::os::same_process_running(pid, start))
-        {
+        loop {
+            self.identities
+                .retain(|&(pid, start)| crate::support::os::same_process_running(pid, start));
+            if self.identities.is_empty() {
+                return Ok(());
+            }
             if std::time::Instant::now() >= deadline {
-                if !std::thread::panicking() {
-                    panic!("owned detached fixture processes did not exit");
-                }
-                return;
+                self.inputs.retain();
+                return Err(format!(
+                    "owned detached fixture processes did not exit: {:?}",
+                    self.identities
+                ));
             }
             std::thread::sleep(RELEASE_POLL);
+        }
+    }
+}
+impl Drop for Processes {
+    fn drop(&mut self) {
+        if let Err(error) = self.release() {
+            if std::thread::panicking() {
+                eprintln!("{error}");
+            } else {
+                panic!("{error}");
+            }
         }
     }
 }
@@ -166,10 +266,12 @@ impl RunChild {
             run: None,
             announcement: String::new(),
         };
-        // A one-byte reader cannot swallow later stderr from the watcher.
-        std::io::BufReader::with_capacity(1, owned.child.stderr.as_mut().expect("piped stderr"))
-            .read_line(&mut owned.announcement)
-            .unwrap();
+        // Startup is only a fixture watchdog; a slow evaluation does not use this bound.
+        const ANNOUNCEMENT_BOUND: Duration = Duration::from_secs(30);
+        owned.announcement = owned
+            .child
+            .first_stderr_line(ANNOUNCEMENT_BOUND)
+            .expect("read the fixture caller's Run announcement");
         owned.run = owned.announcement.starts_with("Started run-").then(|| {
             owned
                 .announcement
@@ -181,6 +283,9 @@ impl RunChild {
         });
         owned
     }
+    pub fn exited(&mut self) -> bool {
+        self.child.exited()
+    }
     pub fn announcement(&self) -> &str {
         &self.announcement
     }
@@ -188,6 +293,23 @@ impl RunChild {
         self.run
             .clone()
             .expect("valid submission announced its Run")
+    }
+    /// Observe the saved Run without asking a caller to reconcile it first.
+    pub fn saved(&self) -> artifactize_core::store::RunView {
+        std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    runtime
+                        .block_on(artifactize_core::store::read_run(&self.state, &self.run()))
+                        .unwrap()
+                })
+                .join()
+                .unwrap()
+        })
     }
     /// The sync CLI fixture keeps the runtime/thread scoped to this read-only barrier.
     pub fn human_waiting(&self) -> artifactize_core::store::RunView {
@@ -205,6 +327,10 @@ impl RunChild {
         })
     }
     pub fn wait_with_output(mut self) -> io::Result<Output> {
+        self.collect_output()
+    }
+    /// Join the watcher without releasing the Run before its saved audit is read.
+    pub fn collect_output(&mut self) -> io::Result<Output> {
         let child = std::mem::replace(&mut self.child, Watcher(None));
         let mut output = child.wait_with_output()?;
         let mut stderr = self.announcement.as_bytes().to_vec();
@@ -230,10 +356,7 @@ impl Drop for RunChild {
         let cleanup = release_run(&self.state, &self.repo, run);
         // Reap the watcher even if Run cleanup fails; the field guard is also unwind-safe.
         if let Some(child) = &mut self.child.0 {
-            if child.try_wait().ok().flatten().is_none() {
-                crate::support::os::kill(child.id());
-            }
-            let _ = child.wait();
+            let _ = crate::support::os::stop_child(child);
         }
         if !std::thread::panicking() {
             cleanup.expect("fixture releases its exact Run and worker before temporary state");
@@ -482,11 +605,12 @@ mod observation_tests {
             let state = root.path().join("state");
             let repo = root.path().join("repo");
             std::fs::create_dir(&repo).unwrap();
-            let writer = artifactize_core::store::OwnedReceipts::open(&state, &repo)
+            let writer = artifactize_core::store::Receipts::open(&state, &repo)
                 .await
                 .unwrap();
-            drop(writer);
+            writer.close().await.unwrap();
             let database = state.join(artifactize_core::store::DATABASE);
+            assert!(crate::support::os::database_released(&database).unwrap());
             let result = std::panic::AssertUnwindSafe(subscribed(&state, async |_changes| {
                 assert!(
                     !crate::support::os::database_released(&database).unwrap(),

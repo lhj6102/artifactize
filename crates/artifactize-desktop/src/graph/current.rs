@@ -465,7 +465,7 @@ pub(crate) fn detail(
                 .find(|artifact| &artifact.name == name)
                 .ok_or_else(missing)?;
             let fields = vec![
-                field("Path", artifactize_tools::files::path_text(&artifact.path)),
+                field("Path", artifact.path.to_string()),
                 field("Kind", format!("{:?}", artifact.kind).to_lowercase()),
                 field("State", artifact.state.to_string()),
                 field("Reason", artifact.reason.clone()),

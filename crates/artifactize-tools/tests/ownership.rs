@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, fs};
 use artifactize_tools::{
     Builtin, Content,
     builtin::{self, Input},
-    scope::{Artifact, ArtifactId, ArtifactKind, ChildPrefix, Scope},
+    scope::{Artifact, ArtifactId, ChildPrefix, Scope},
 };
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -24,11 +24,11 @@ fn child_names_cannot_be_bypassed_by_a_filesystem_alias() {
     fs::write(root.join("Secret/x"), "excluded").unwrap();
     fs::write(root.join("public"), "visible").unwrap();
     let owner = Artifact {
-        path: "".into(),
-        kind: ArtifactKind::Folder,
+        path: "".try_into().unwrap(),
+
         name: "parent".into(),
+        covering_part: None,
         nested: BTreeMap::from([(ChildPrefix::new("Secret").unwrap(), id("child"))]),
-        select: Vec::new(),
     };
     // Excluded child data is intentionally absent from this scope.
     let scope = Scope {
@@ -46,7 +46,7 @@ fn child_names_cannot_be_bypassed_by_a_filesystem_alias() {
     for path in ["Secret/x", "secret/x", "SECRET/x"] {
         let result = call(Builtin::Read, json!({"path":path}));
         assert!(result.is_error(), "{path}: {result:?}");
-        assert!(!format!("{result:?}").contains("excluded"));
+        assert!(!serde_json::to_string(&result).unwrap().contains("excluded"));
     }
     let result = call(Builtin::Read, json!({"path":"public"}));
     assert!(!result.is_error(), "{result:?}");

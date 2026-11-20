@@ -50,6 +50,14 @@ pub(super) fn assemble(
             );
         }
     }
+    for eval in &config.evals {
+        if cache::dependencies(config, eval)
+            .iter()
+            .any(|name| config.artifacts[*name].target_error.is_some())
+        {
+            evidence.insert(eval.id.clone(), Evidence::OperationalError);
+        }
+    }
     let evaluation = graph.evaluate(&evidence);
     // verify defers every sign-off it asks for, so what relies on one is predicted to run
     // provisionally; a sign-off outside the selection is not asked for and still gates, and a
@@ -104,7 +112,7 @@ pub(super) fn assemble(
             .filter(|id| !evaluation.artifacts[id.as_str()].own_satisfied)
             .map(|id| (*id).clone())
             .collect::<Vec<_>>();
-        let reason = if artifact.satisfied {
+        let reason = if artifact.satisfied() {
             "All required obligations are satisfied.".into()
         } else if own.evals.is_empty() && !own.basis {
             "No Evals are declared and this Artifact is not a basis.".into()
@@ -120,7 +128,9 @@ pub(super) fn assemble(
         };
         *counts.artifacts.entry(status).or_default() += 1;
         artifacts.push(ArtifactState {
-            kind: config.artifacts[*id].kind,
+            definition: config.artifacts[*id].declaration_path(),
+            target_missing: config.artifacts[*id].target_error.is_some(),
+            kind: config.artifacts[*id].kind(),
             path: config.artifacts[*id].path.clone(),
             id: (*id).clone(),
             tags: config.artifacts[*id].tags.clone(),
@@ -129,7 +139,7 @@ pub(super) fn assemble(
             eval_ids: own.evals.iter().map(|id| (*id).clone()).collect(),
             passed: artifact.passed,
             total: artifact.total,
-            satisfied: artifact.satisfied,
+            satisfied: artifact.satisfied(),
             obligations: unmet,
         });
     }
@@ -240,6 +250,8 @@ pub(super) fn assemble(
                                 "The current eval and fingerprints have no completed cached result."
                                     .into()
                             }
+                            Err(cache::Unkeyed::LiveObservation(id)) => format!("This runtime eval observes Live Artifact {id} on every verify; its result is not reused."),
+                            Err(cache::Unkeyed::LiveUnobserved(id)) => format!("Live Artifact {id} has no snapshot, so this eval has no reusable key."),
                             Err(cache::Unkeyed::Target) => {
                                 "The Artifact declares fingerprint: false; saved noncached results satisfy only their own Run."
                                     .into()
@@ -252,6 +264,11 @@ pub(super) fn assemble(
                 ),
             },
         };
+        let reason = cache::dependencies(config, eval)
+            .into_iter()
+            .find_map(|name| config.artifacts[name].target_error.as_ref())
+            .map(|error| format!("PREPARATION_FAILED: {error}"))
+            .unwrap_or(reason);
         let status = if !force && matches!(claim(&eval.id), Some(Claim::WaitHuman(_))) {
             if deferred.contains(&eval.id) {
                 EvalCondition::Deferred

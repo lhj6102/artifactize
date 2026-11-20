@@ -23,8 +23,12 @@ impl Fixture {
         fs::create_dir_all(&output).unwrap();
         // The paths tools see, which on Windows are long and without `\\?\`.
         let repo = crate::platform::canonicalize(&repo).unwrap();
-        fs::write(output.join("retained"), "caller-owned").unwrap();
-        write_artifact(&repo, "a", json!({"inspect":tool}), "Review a.");
+        fs::write(
+            crate::test_declaration::source_path(output.join("retained")),
+            "caller-owned",
+        )
+        .unwrap();
+        write_artifact(&(repo), &repo, "a", json!({"inspect":tool}), "Review a.");
         Self {
             directory,
             repo,
@@ -38,7 +42,7 @@ impl Fixture {
 
     async fn call(&self, args: Value) -> ToolResult {
         let config = read_workspace_config(&self.repo).unwrap();
-        let registry = Registry::new(&config, "a/review").unwrap();
+        let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         let result = registry
             .call("inspect_a", args, &self.output, CancellationToken::new())
             .await;
@@ -54,9 +58,10 @@ impl Fixture {
     }
 }
 
-fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
+fn write_artifact(root: &Path, path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::create_dir_all(path).unwrap();
     crate::test_declaration::write(
+        root,
         path.join("index.artf"),
         json!({
             "name":name,
@@ -92,13 +97,25 @@ fn owned_call(
     CancellationToken,
     impl std::future::Future<Output = ToolResult> + Send + 'static,
 ) {
+    owned_call_with_cleanup(fixture, crate::platform::PrivateTempDir::close)
+}
+
+fn owned_call_with_cleanup(
+    fixture: &Fixture,
+    cleanup: impl FnOnce(crate::platform::PrivateTempDir) -> std::io::Result<()> + Send + 'static,
+) -> (
+    CancellationToken,
+    impl Future<Output = ToolResult> + Send + 'static,
+) {
     let config = read_workspace_config(&fixture.repo).unwrap();
     let output = fixture.output.clone();
     let cancellation = CancellationToken::new();
     let token = cancellation.clone();
     let work = async move {
-        let registry = Registry::new(&config, "a/review").unwrap();
-        registry.call("inspect_a", json!({}), &output, token).await
+        let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
+        registry
+            .call_with_cleanup("inspect_a", json!({}), &output, token, cleanup)
+            .await
     };
     (cancellation, work)
 }
@@ -183,7 +200,7 @@ async fn argument_validation_precedes_spawn_and_output_creation() {
         "open('spawned', 'w').write('yes')\nprint('{\"content\":[{\"type\":\"text\",\"text\":\"ran\"}]}')",
     );
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     for args in [
         json!([]),
         json!({}),
@@ -215,7 +232,11 @@ async fn json_context_has_private_paths_declared_material_and_owner_cwd() {
     let mut tool = command();
     tool["execution_paths"] = json!(["shared.txt"]);
     let fixture = Fixture::new(tool);
-    fs::write(fixture.repo.join("shared.txt"), "material").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("shared.txt")),
+        "material",
+    )
+    .unwrap();
     fixture.script(
         &r#"import json, os, sys
 request = json.load(sys.stdin)
@@ -364,7 +385,11 @@ print(json.dumps({{'content':[
             ]
         );
     }
-    fs::write(fixture.repo.join("source"), &image::tests::fixtures()[0].1).unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("source")),
+        &image::tests::fixtures()[0].1,
+    )
+    .unwrap();
     let (file_link, directory_link) = crate::test_os::python_output_links();
     for setup in [
         "path = request['context']['artifactPath'] + '/source'",
@@ -468,6 +493,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     assert!(fixture.call(json!({})).await.is_error());
     tool["command"] = json!("./unique-artifactize-tool-not-on-path");
     write_artifact(
+        &(fixture.repo),
         &fixture.repo,
         "a",
         json!({"inspect":tool.clone()}),
@@ -478,6 +504,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     tool["command"] = json!(program);
     tool["args"] = json!(args);
     write_artifact(
+        &(fixture.repo),
         &fixture.repo,
         "a",
         json!({"inspect":tool.clone()}),
@@ -486,7 +513,13 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
     tool["command"] = json!(printf_program());
     tool["args"] = json!(["%s", "from PATH"]);
-    write_artifact(&fixture.repo, "a", json!({"inspect":tool}), "Review.");
+    write_artifact(
+        &(fixture.repo),
+        &fixture.repo,
+        "a",
+        json!({"inspect":tool}),
+        "Review.",
+    );
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
 }
 
@@ -506,9 +539,15 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
     ] {
         let mut tool = command();
         tool[key] = value;
-        write_artifact(&fixture.repo, "a", json!({"inspect":tool}), "Review.");
+        write_artifact(
+            &(fixture.repo),
+            &fixture.repo,
+            "a",
+            json!({"inspect":tool}),
+            "Review.",
+        );
         if let Ok(config) = read_workspace_config(&fixture.repo) {
-            let registry = Registry::new(&config, "a/review").unwrap();
+            let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
             assert!(
                 registry
                     .call(
@@ -523,9 +562,15 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
         }
         assert!(!fixture.repo.join("spawned").exists());
     }
-    write_artifact(&fixture.repo, "a", json!({"inspect":command()}), "Review.");
+    write_artifact(
+        &(fixture.repo),
+        &fixture.repo,
+        "a",
+        json!({"inspect":command()}),
+        "Review.",
+    );
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let result = registry
         .call(
             "inspect_a",
@@ -541,33 +586,48 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
 #[tokio::test]
 async fn registry_admits_only_eval_scope_and_agent_audience() {
     let fixture = Fixture::new(command());
-    write_artifact(&fixture.repo, "root", json!({}), "Review root.");
     write_artifact(
+        &(fixture.repo),
+        &fixture.repo,
+        "root",
+        json!({}),
+        "Review root.",
+    );
+    write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("a"),
         "a",
         json!({"inspect":command()}),
         "Inspect {b}.",
     );
     write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("b"),
         "b",
         json!({"read":{"builtin":"read"}}),
         "Depends on {c}.",
     );
     write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("b/child"),
         "child",
         json!({"list":{"builtin":"list"}}),
         "Review child.",
     );
     write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("c"),
         "c",
         json!({"grep":{"builtin":"grep"}}),
         "Review c.",
     );
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("b/notes.md")),
+        "notes",
+    )
+    .unwrap();
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     assert_eq!(
         registry
             .list()
@@ -581,7 +641,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
         !registry
             .call(
                 "read_b",
-                json!({"path":"index.artf"}),
+                json!({"path":"notes.md"}),
                 &fixture.output,
                 CancellationToken::new()
             )
@@ -601,27 +661,37 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
         )
         .contains("Unknown")
     );
-    assert!(Registry::new(&config, "a/missing").is_err());
+    assert!(Registry::new(&config, &"a/missing".parse().unwrap()).is_err());
 }
 
 #[test]
 fn concatenated_tool_name_collisions_are_rejected() {
     let fixture = Fixture::new(command());
-    write_artifact(&fixture.repo, "root", json!({}), "Review {a} and {b_a}.");
     write_artifact(
+        &(fixture.repo),
+        &fixture.repo,
+        "root",
+        json!({}),
+        "Review {a} and {b_a}.",
+    );
+    write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("a"),
         "a",
         json!({"inspect_b":{"builtin":"read"}}),
         "Review.",
     );
     write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("b"),
         "b_a",
         json!({"inspect":{"builtin":"read"}}),
         "Review.",
     );
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let error = Registry::new(&config, "root/review").err().unwrap();
+    let error = Registry::new(&config, &"root/review".parse().unwrap())
+        .err()
+        .unwrap();
     assert!(error.contains("collide: inspect_b_a"));
 }
 
@@ -632,12 +702,10 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
     let mut tool = command();
     tool["timeout_ms"] = json!(TIMEOUT.as_millis());
     let fixture = Fixture::new(tool);
-    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .await
-        .unwrap();
-    fixture.script(&format!(
-        "import json,os,socket,sys,threading\njson.load(sys.stdin)\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()",
-        listener.local_addr().unwrap().port()
+    let listener = crate::test_os::tcp::async_loopback_listener();
+    fixture.script(&crate::test_os::tcp::tool_ready_script(
+        listener.local_addr().unwrap(),
+        true,
     ));
     let config = read_workspace_config(&fixture.repo).unwrap();
     let (cancellation, work) = owned_call(&fixture);
@@ -672,7 +740,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
         assert!(crate::test_os::gone(pid));
     })
     .await;
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let cancel = CancellationToken::new();
     cancel.cancel();
     assert!(
@@ -689,32 +757,50 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
 #[tokio::test]
 async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
     let fixture = Fixture::new(command());
-    let mut root: Value =
-        crate::test_declaration::read(fs::read(fixture.repo.join("index.artf")).unwrap()).unwrap();
+    let mut root: Value = crate::test_declaration::read(
+        crate::test_declaration::read_file(fixture.repo.join("index.artf")).unwrap(),
+    )
+    .unwrap();
     root["views"]["human_tools"] = json!({
         "humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]},
     });
+    root["parts"] = json!(["leaf"]);
     root["evals"][0]["payload"]["instruction"] = json!("Review {leaf} and {part}.");
-    crate::test_declaration::write(fixture.repo.join("index.artf"), root.to_string()).unwrap();
+    crate::test_declaration::write(
+        &(fixture.repo),
+        fixture.repo.join("index.artf"),
+        root.to_string(),
+    )
+    .unwrap();
     fs::create_dir_all(fixture.repo.join("cases")).unwrap();
     fs::create_dir_all(fixture.repo.join("parts")).unwrap();
-    fs::write(fixture.repo.join("parts/one.txt"), "one").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("parts/one.txt")),
+        "one",
+    )
+    .unwrap();
     crate::test_declaration::write(
+        &(fixture.repo),
         fixture.repo.join("part.artf"),
         json!({"name":"part","select":["parts/one.txt"]}).to_string(),
     )
     .unwrap();
     crate::test_declaration::write(
+        &(fixture.repo),
         fixture.repo.join("cases/index.artf"),
         json!({"name":"leaf"}).to_string(),
     )
     .unwrap();
-    fs::write(fixture.repo.join("cases/input.txt"), "material").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("cases/input.txt")),
+        "material",
+    )
+    .unwrap();
     fixture.script(
         "import json,sys\nrequest=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':request['context']['scope']}]}))",
     );
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     assert_eq!(
         registry
             .list()
@@ -735,10 +821,6 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
     };
     assert_eq!(data["a"]["nested"], json!({"cases":"leaf"}));
     assert_eq!(
-        data["leaf"]["path"],
-        json!(crate::platform::path_text(&fixture.repo.join("cases")))
-    );
-    assert_eq!(
         data["leaf"],
         json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","nested":{}})
     );
@@ -753,11 +835,25 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
 #[tokio::test]
 async fn dropping_call_cleans_process_before_removing_directories() {
     let fixture = Fixture::new(command());
-    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .await
-        .unwrap();
-    fixture.script(&format!("import os,socket,threading\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()", listener.local_addr().unwrap().port()));
-    let (cancellation, work) = owned_call(&fixture);
+    crate::test_os::share_dir(&fixture.output);
+    assert!(!crate::test_os::private_dir(&fixture.output));
+    let listener = crate::test_os::tcp::async_loopback_listener();
+    fixture.script(&crate::test_os::tcp::tool_ready_script(
+        listener.local_addr().unwrap(),
+        false,
+    ));
+    let (send_pid, received_pid) = std::sync::mpsc::channel();
+    let (send_released, released) = tokio::sync::oneshot::channel();
+    let (cancellation, work) = owned_call_with_cleanup(&fixture, move |directory| {
+        let pid = received_pid
+            .try_recv()
+            .expect("fixture announces the child before dropping the call");
+        let gone = crate::test_os::gone(pid);
+        let private = crate::test_os::private_dir(directory.path());
+        let result = directory.close();
+        let _ = send_released.send((gone, private, result.is_ok()));
+        result
+    });
     crate::test_os::scoped(cancellation, work, async |call| {
         let pid = tokio::select! {
             result = &mut *call => panic!("unexpected completion: {result:?}"),
@@ -769,16 +865,21 @@ async fn dropping_call_cleans_process_before_removing_directories() {
                 pid.parse::<u32>().unwrap()
             }) => result.unwrap(),
         };
+        send_pid.send(pid).unwrap();
         // Dropping the caller is what is under test: abort it rather than cancel it.
         call.abort();
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while fixture.output_entries() != [fixture.output.join("retained")] {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-        assert!(crate::test_os::gone(pid));
+        let (reaped_before_removal, private, removed) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), released)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(reaped_before_removal);
+        assert!(
+            private,
+            "tool scratch must stay private inside a shared output root"
+        );
+        assert!(removed);
+        assert_eq!(fixture.output_entries(), [fixture.output.join("retained")]);
     })
     .await;
 }

@@ -5,7 +5,11 @@ import { call, commands, message, type BranchKey, type Commands, type CurrentVie
 import { keyOf } from "./monitor-state.svelte";
 
 export class Current {
-  constructor(readonly ipc: Commands = commands) {}
+  constructor(
+    readonly ipc: Commands = commands,
+    /** A scan of `branch` starts: what it reads, the branch's definitions, is read again too. */
+    readonly onscan: (branch: BranchKey) => void = () => {},
+  ) {}
 
   /** The newest step of the shown branch's scan. */
   view = $state.raw<CurrentView | null>(null);
@@ -35,6 +39,7 @@ export class Current {
     if (this.view && !this.of(branch)) this.view = null;
     this.#branch = branch;
     this.#asking = true;
+    this.onscan(branch);
     try {
       const view = await call(this.ipc.currentScan(branch, refresh));
       if (scan !== this.#scans) return;

@@ -164,7 +164,7 @@ identity!(EvalId, |value: &str| value.split_once('/').is_some_and(
     |(artifact, eval)| artifact_name(artifact) && name(eval)
 ));
 /// Caller attempt keys are bounded independently of path-segment identities.
-const MAX_REQUEST_KEY_BYTES: usize = 128;
+pub const MAX_REQUEST_KEY_BYTES: usize = 128;
 identity!(RequestKey, |value: &str| (1..=MAX_REQUEST_KEY_BYTES)
     .contains(&value.len())
     && value.bytes().all(
@@ -207,6 +207,12 @@ impl ExecutionId {
     }
 }
 identity!(SessionId, segment);
+impl SessionId {
+    /// A bare conversation selector tries the same validated segment in both namespaces.
+    pub(crate) fn from_bare_request(id: &RequestId) -> Self {
+        Self(id.0.clone())
+    }
+}
 // A tool name as a model called it: the model controls it, so it is only bounded and printable.
 identity!(CalledTool, |value: &str| (1..=MAX_CALLED_TOOL_BYTES)
     .contains(&value.len())

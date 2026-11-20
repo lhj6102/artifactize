@@ -6,7 +6,7 @@ use std::{
 
 use tokio::net::TcpListener;
 
-use super::Pending;
+use super::interactive::Pending;
 use crate::platform::net::{address_in_use, exclusive_listener, ipv6_unavailable};
 
 pub(super) struct Callback {

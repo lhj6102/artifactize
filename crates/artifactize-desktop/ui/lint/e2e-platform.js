@@ -1,27 +1,29 @@
-// Desktop E2E portability: everything that differs between operating systems lives in
-// e2e/platform.ts. Every other E2E file uses that layer instead of Node modules that reach
-// the OS (files, processes, networks, databases), process values, native path joining or
-// OS-specific literals. Only modules that behave the same everywhere stay allowed.
-import { builtinModules } from "node:module";
-
-const portable = new Set(["assert", "assert/strict", "buffer", "crypto", "events", "test", "timers/promises", "util"]);
-const modules = builtinModules.filter((name) => !name.startsWith("_") && !portable.has(name.replace(/^node:/, "")));
-const message = "OS-dependent: use the portable function of e2e/platform.ts";
+// Desktop E2E portability (E2E-PLATFORM): whatever differs between operating systems lives in
+// e2e/platform.ts. Every other E2E file may use portable Node I/O (files, processes, sockets,
+// paths joined by node:path), but never names an OS or branches on one: no OS identifiers, no
+// OS-specific separators or executable suffixes, no Windows- or POSIX-only path flavours.
+const message = "OS-specific: handle this difference in e2e/platform.ts";
 
 export default function e2ePlatform(files, platform) {
   return [{
     files,
     ignores: [platform],
     rules: {
-      "no-restricted-imports": ["error", {
-        paths: [...new Set(modules.flatMap((name) => name.startsWith("node:") ? [name] : [name, `node:${name}`]))]
-          .map((name) => ({ name, message })),
-      }],
       "no-restricted-properties": ["error",
-        ...["platform", "env", "execPath", "kill"].map((property) => ({ object: "process", property, message })),
+        { object: "process", property: "platform", message },
+        { object: "os", property: "platform", message },
+        { object: "os", property: "type", message },
+        { object: "os", property: "EOL", message },
+        { object: "path", property: "win32", message },
+        { object: "path", property: "posix", message },
+        { object: "path", property: "sep", message },
+        { object: "path", property: "delimiter", message },
       ],
+      "no-restricted-imports": ["error", {
+        paths: ["node:os", "os"].map((name) => ({ name, importNames: ["platform", "type", "EOL"], message }))
+          .concat(["node:path", "path"].map((name) => ({ name, importNames: ["win32", "posix", "sep", "delimiter"], message }))),
+      }],
       "no-restricted-syntax": ["error",
-        { selector: "MemberExpression[object.type='MetaProperty'][property.name=/^(dirname|filename|url)$/]", message },
         { selector: "Literal[value=/\\\\/]", message: `${message} (a backslash is a Windows path separator)` },
         { selector: "TemplateElement[value.cooked=/\\\\/]", message: `${message} (a backslash is a Windows path separator)` },
         { selector: "Literal[value=/^(win32|darwin|linux)$/]", message },

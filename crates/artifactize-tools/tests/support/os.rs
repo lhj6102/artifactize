@@ -18,50 +18,34 @@ pub fn tempdir() -> tempfile::TempDir {
     tempfile::tempdir_in(fs::canonicalize(std::env::temp_dir()).unwrap()).unwrap()
 }
 
-/// Make `path` runnable by name: mode 0700 on Unix. Windows runs any file whose
-/// extension is in `PATHEXT`, so nothing changes there.
-pub fn make_executable(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
-    }
-    #[cfg(windows)]
-    let _ = path;
-}
-
-/// A symbolic link to a file, which may not exist. On Windows this needs Developer Mode or
-/// an elevated process; `None` then, after saying the check is skipped.
-pub fn symlink_file(target: impl AsRef<Path>, link: impl AsRef<Path>) -> Option<()> {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).unwrap();
-        Some(())
-    }
-    #[cfg(windows)]
-    {
-        // ERROR_PRIVILEGE_NOT_HELD
-        match std::os::windows::fs::symlink_file(target, link) {
-            Err(error) if error.raw_os_error() == Some(1314) => {
-                eprintln!("skipping a symbolic-link check: creating one needs Developer Mode");
-                None
-            }
-            created => {
-                created.unwrap();
-                Some(())
-            }
-        }
-    }
-}
-
-/// The program a Unix desktop opens files with: `open` on macOS, `xdg-open` elsewhere.
-/// Windows opens through ShellExecute and runs no program by name.
+/// Create a Unix entry containing a literal backslash, not a path separator.
 #[cfg(unix)]
-pub const OPENER: &str = if cfg!(target_os = "macos") {
-    "open"
-} else {
-    "xdg-open"
-};
+pub fn file_with_backslash(root: &Path) -> PathBuf {
+    let path = root.join(r"input\name");
+    fs::write(&path, "data").unwrap();
+    path
+}
+
+/// The verbatim fixture path and two distinct entries that Win32 would treat as aliases.
+#[cfg(windows)]
+pub fn trailing_dot_alias(root: &Path) -> PathBuf {
+    let root = fs::canonicalize(root).unwrap();
+    fs::write(root.join("literal"), "ordinary").unwrap();
+    fs::write(root.join("literal."), "verbatim").unwrap();
+    root
+}
+
+#[path = "platform.rs"]
+mod platform;
+use platform::{make_executable, set_program_extensions};
+
+pub fn symlink_file(target: impl AsRef<Path>, link: impl AsRef<Path>) {
+    platform::symlink_file(target, link);
+}
+
+pub fn opener_program() -> &'static str {
+    platform::OPENER.expect("test requires a native opener command")
+}
 
 /// This test binary, set to run only the test `name`: for a test that runs itself again in
 /// an environment of its own, such as a `PATH` that holds only stand-ins.
@@ -162,6 +146,13 @@ pub fn rename_case(root: &Path, from: &str, to: &str) {
     fs::rename(staging.path(), root.join(to)).unwrap();
 }
 
+/// Replace a directory name while its original handle stays pinned for a test.
+pub fn replace_pinned_directory(root: &Path, original: &Path) {
+    fs::rename(original, root.join("moved")).unwrap();
+    fs::create_dir(original).unwrap();
+    fs::write(original.join("replacement"), "not pinned").unwrap();
+}
+
 /// The command Cargo built, with native process setup kept in the OS fixture layer.
 pub fn tools(binary: &str) -> Command {
     Command::new(binary)
@@ -180,7 +171,9 @@ pub fn call(binary: &str, root: &Path, args: &[&str]) -> std::process::Output {
 }
 
 pub fn help(binary: &str, root: &Path, program: &str, args: &[&str]) -> std::process::Output {
-    tools(binary)
+    let mut command = tools(binary);
+    set_program_extensions(&mut command);
+    command
         .current_dir(root)
         .env("PATH", root)
         .arg("help")
@@ -190,16 +183,34 @@ pub fn help(binary: &str, root: &Path, program: &str, args: &[&str]) -> std::pro
         .unwrap()
 }
 
-pub fn record_path() -> Option<std::ffi::OsString> {
-    std::env::var_os(RECORD)
+/// Only the exact, explicitly selected child may launch the fixture opener.
+pub fn is_recording_child(name: &str) -> bool {
+    std::env::args_os()
+        .skip(1)
+        .eq(["--exact", name, "--nocapture", "--ignored"].map(std::ffi::OsStr::new))
 }
 
-pub fn rerun_recording(root: &Path, test: &str) -> std::process::Output {
+pub fn rerun_recording(root: &Path, record: &Path, test: &str) -> std::process::Output {
     rerun(test)
+        .arg("--ignored")
+        .env_clear()
         .env("PATH", root)
-        .env(RECORD, root.join("record"))
+        .env(RECORD, record)
         .output()
         .unwrap()
+}
+
+// Only Unix allows literal backslashes in a native filename.
+#[cfg(unix)]
+pub fn write_unrepresentable_input(root: &Path) {
+    fs::write(root.join(r"not\logical.md"), "excluded").unwrap();
+}
+
+/// A scoped input with characters that must be passed as one literal argument.
+pub fn opener_input(root: &Path) -> PathBuf {
+    let path = root.join("space ; notes.md");
+    fs::write(&path, "notes").unwrap();
+    path
 }
 
 pub fn open_recording(binary: &str, root: &Path, target: &str) -> std::process::Output {
@@ -248,13 +259,13 @@ pub fn copy_test_binary(path: &Path) {
 
 /// `program`, a copy of this test binary, set to run only the test `name` with exactly
 /// `environment`; its output once it has succeeded.
-pub fn rerun_as(
+pub fn rerun_recording_as(
     program: &Path,
     name: &str,
     environment: &std::collections::BTreeMap<String, String>,
 ) -> std::process::Output {
     let output = Command::new(program)
-        .args(["--exact", name, "--nocapture"])
+        .args(["--exact", name, "--nocapture", "--ignored"])
         .env_clear()
         .envs(environment)
         .output()
@@ -395,6 +406,14 @@ pub fn appimage_bundled(
         ]
         .map(|(name, value)| (name.to_owned(), value)),
     );
+    environment
+}
+
+/// The bundled environment before the runtime introduces its bundle directory marker.
+pub fn appimage_without_bundle_marker(
+    mut environment: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    environment.remove("APPDIR");
     environment
 }
 

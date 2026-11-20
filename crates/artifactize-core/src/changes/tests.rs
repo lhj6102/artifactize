@@ -1,7 +1,7 @@
 use super::*;
 use futures_util::FutureExt;
 use std::path::PathBuf;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 
 /// A watchdog reports a stuck fixture; it never establishes ordering or expiry.
 const WAIT: Duration = Duration::from_secs(6);
@@ -23,9 +23,8 @@ impl TestState {
 
 impl Drop for TestState {
     fn drop(&mut self) {
-        // Remove only this unique state's namespace. remove_dir_all unlinks an owner.lock
-        // symlink without following its target, and needs no permission "repair" first.
-        let removed = std::fs::remove_dir_all(&self.endpoint);
+        // Remove only this unique state's namespace, without following its fixture links.
+        let removed = crate::platform::remove_tree(&self.endpoint);
         if !std::thread::panicking() {
             removed.unwrap_or_else(|error| {
                 panic!(
@@ -327,7 +326,7 @@ fn database_release_probe_tracks_idle_readers_among_unrelated_descriptors() {
     crate::test_os::hard_link(&database, &alias);
     let contents = fs::read(&database).unwrap();
     let unrelated = fs::File::create(root.path().join("unrelated")).unwrap();
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let listener = crate::test_os::tcp::loopback_listener();
 
     for path in [&database, &alias] {
         for observed in [&database, &alias] {
@@ -454,13 +453,14 @@ async fn database_replacement_and_deletion_force_resync() {
     let outcome = unwound(async {
         assert_eq!(probe.changed().await, probe::Probed::Replaced);
         assert_eq!(probe.changed().await, probe::Probed::Same);
-        std::fs::rename(&database, state.path().join("old.sqlite")).unwrap();
+        crate::platform::paths::rename_open_file(&database, &state.path().join("old.sqlite"))
+            .unwrap();
         rusqlite::Connection::open(&database)
             .unwrap()
             .execute_batch("CREATE TABLE replacement(value);")
             .unwrap();
         assert_eq!(probe.changed().await, probe::Probed::Replaced);
-        std::fs::remove_file(&database).unwrap();
+        crate::platform::paths::remove_open_file(&database).unwrap();
         assert_eq!(probe.changed().await, probe::Probed::Replaced);
         assert_eq!(probe.changed().await, probe::Probed::Same);
     })
@@ -473,10 +473,9 @@ fn unsafe_endpoint_directory_and_lock_are_refused_not_repaired() {
     let endpoint = Endpoint::new(state.path()).unwrap();
     let target = state.path().join("foreign-lock");
     std::fs::write(&target, "untouched").unwrap();
-    if crate::test_os::symlink_file(&target, endpoint.directory().join("owner.lock")).is_some() {
-        assert!(endpoint.elect().is_err());
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
-    }
+    crate::test_os::file_link(&target, &endpoint.directory().join("owner.lock"));
+    assert!(endpoint.elect().is_err());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
     crate::test_os::share_dir(endpoint.directory());
     assert!(endpoint.elect().is_err());
     assert!(!crate::test_os::private_dir(endpoint.directory()));
@@ -484,14 +483,23 @@ fn unsafe_endpoint_directory_and_lock_are_refused_not_repaired() {
 
 #[test]
 fn state_fixture_removes_external_endpoint_without_following_links_on_unwind() {
-    let foreign = crate::test_os::tempdir();
-    let target = foreign.path().join("foreign-lock");
-    std::fs::write(&target, "untouched").unwrap();
     for panicking in [false, true] {
+        let foreign = crate::test_os::tempdir();
+        let target = foreign.path().join("foreign-lock");
+        std::fs::write(&target, "untouched").unwrap();
         let state = temporary_state();
         let root = state.path().to_owned();
         let endpoint = state.endpoint.clone();
-        let _ = crate::test_os::symlink_file(&target, endpoint.join("owner.lock"));
+        crate::test_os::file_link(&target, &endpoint.join("owner.lock"));
+        // When a directory junction stands in for a symlink, protect its contents too.
+        let junction_marker = std::fs::read_dir(foreign.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|entry| entry.is_dir())
+            .map(|directory| directory.join("marker"));
+        if let Some(marker) = &junction_marker {
+            std::fs::write(marker, "untouched").unwrap();
+        }
         crate::test_os::share_dir(&endpoint);
         let result = std::panic::catch_unwind(|| {
             let state = state;
@@ -504,6 +512,9 @@ fn state_fixture_removes_external_endpoint_without_following_links_on_unwind() {
         assert!(!endpoint.exists(), "fixture retained its IPC namespace");
         assert!(!root.exists(), "fixture retained its state directory");
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
+        if let Some(marker) = junction_marker {
+            assert_eq!(std::fs::read_to_string(marker).unwrap(), "untouched");
+        }
     }
 }
 
@@ -649,9 +660,8 @@ async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
     rusqlite::Connection::open(&database).unwrap();
     let target = state.path().join("unrelated");
     std::fs::write(&target, "untouched").unwrap();
-    if crate::test_os::symlink_file(&target, state.path().join("state.sqlite-shm")).is_none() {
-        return;
-    }
+    let sidecar = state.path().join("state.sqlite-shm");
+    crate::test_os::file_link(&target, &sidecar);
     let mut probe = probe::Probe::new(state.path().into());
     let outcome = unwound(async {
         assert_eq!(probe.changed().await, probe::Probed::Replaced);
@@ -660,7 +670,9 @@ async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
         assert_eq!(std::fs::read_to_string(target).unwrap(), "untouched");
     })
     .await;
-    settled(outcome, [probe.close().await]);
+    let closed = probe.close().await;
+    crate::test_os::remove_file_link(&sidecar);
+    settled(outcome, [closed]);
 }
 
 // Child processes run this exact fixture test, never a provider, installed binary or default state.
@@ -712,9 +724,7 @@ async fn multiprocess_fixture() {
     }
 }
 async fn child(state: &Path, role: &str) -> (crate::test_os::TestChild, TcpStream) {
-    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .await
-        .unwrap();
+    let listener = crate::test_os::tcp::async_loopback_listener();
     let child = crate::test_os::spawn_test(
         crate::test_os::self_test("changes::tests::multiprocess_fixture")
             .env("ARTIFACTIZE_IPC_FIXTURE_STATE", state)
@@ -909,17 +919,17 @@ async fn a_commit_no_hint_reported_is_read_like_a_state_change_not_a_resync() {
     let db = rusqlite::Connection::open(&database).unwrap();
     db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE fixture(value INTEGER);")
         .unwrap();
-    let mut subscriber = Subscription::new(state.path()).await;
+    let (tick, ticks) = tokio::sync::mpsc::unbounded_channel();
+    let mut subscriber =
+        Subscription::with_reconciliation(state.path(), Reconciliation::Controlled(ticks)).await;
     let outcome = unwound(async {
         registered(&mut subscriber).await;
-        // A writer that never reaches the hub: the reconcile finds its commit.
+        // A writer that never reaches the hub: an explicit reconciliation finds its commit.
         db.execute("INSERT INTO fixture VALUES(1)", []).unwrap();
-        let change = tokio::time::timeout(
-            crate::test_os::patience(RECONCILE + WAIT),
-            subscriber.next(),
-        )
-        .await
-        .unwrap();
+        tick.send(()).unwrap();
+        let change = tokio::time::timeout(crate::test_os::patience(WAIT), subscriber.next())
+            .await
+            .unwrap();
         assert_eq!(change, Change::StateInvalidated);
     })
     .await;

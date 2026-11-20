@@ -33,7 +33,28 @@ fn start_time<'de, D: serde::Deserializer<'de>>(input: D) -> Result<u64, D::Erro
     }
 }
 
+/// The same test binary, installed as `cargo` on an E2E fixture's PATH, is the
+/// external command probe for the manual update instructions.
+fn cargo_probe() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write;
+    let path = artifactize_core::platform::environment::var("ARTIFACTIZE_E2E_CARGO_LOG")
+        .ok_or("missing Cargo probe output path")?;
+    let args: Vec<_> = std::env::args_os()
+        .skip(1)
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect();
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(log, "{}", serde_json::to_string(&args)?)?;
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::current_exe()?.file_stem() == Some("cargo".as_ref()) {
+        return cargo_probe();
+    }
     // `args` panics on a non-Unicode argument; compare the raw one instead.
     if std::env::args_os().nth(1).as_deref() != Some("alive".as_ref()) {
         return Err("usage: artifactize-e2e-observe alive < identities.json".into());

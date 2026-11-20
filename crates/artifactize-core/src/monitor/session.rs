@@ -176,9 +176,9 @@ impl Live {
             self.dirty = true;
             return;
         }
-        if window.loading && window.rows.is_empty() && window.status.is_none() {
+        if window.loading() && window.rows.is_empty() {
             // Keep the old visible text during bounded relayout, with an honest loading label.
-            self.window.loading = true;
+            self.window.status = crate::agent::session::live::WindowStatus::Loading;
             self.position = window.position;
         } else {
             self.scroll
@@ -194,7 +194,7 @@ impl Live {
             };
             self.window = window;
         }
-        self.dirty |= self.window.loading;
+        self.dirty |= self.window.loading();
     }
     pub fn indicator(&self) -> String {
         let position = if self.scroll.total == 0 {
@@ -214,7 +214,7 @@ impl Live {
             } else {
                 "paused"
             },
-            if self.window.loading {
+            if self.window.loading() {
                 " · indexing…"
             } else {
                 ""

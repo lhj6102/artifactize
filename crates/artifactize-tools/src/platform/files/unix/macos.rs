@@ -10,10 +10,14 @@ use std::{
 
 /// Require the directory entry's actual spelling, even on case-insensitive volumes. This
 /// prevents logical exclusions being bypassed by case or Unicode normalization aliases.
-pub fn exact_name(file: &File, name: &OsStr) -> io::Result<bool> {
+pub fn exact_name(_directory: &File, file: &File, name: &OsStr) -> io::Result<bool> {
     let path = rustix::fs::getpath(file)?;
     Ok(Path::new(OsStr::from_bytes(path.to_bytes())).file_name() == Some(name))
 }
+
+/// `fpathconf` returns -1 for an error or an unavailable value. Neither establishes
+/// the volume's case policy, so the lookup must fail rather than guess.
+const CASE_POLICY_UNAVAILABLE: libc::c_long = -1;
 
 /// Ask the pinned directory's volume, since APFS supports both case policies.
 pub fn case_sensitive(directory: &File) -> io::Result<bool> {
@@ -21,7 +25,7 @@ pub fn case_sensitive(directory: &File) -> io::Result<bool> {
     // selector. Query the pinned volume directly, without creating a probe file.
     // SAFETY: fpathconf queries a live descriptor and writes no user memory.
     let sensitive = unsafe { libc::fpathconf(directory.as_raw_fd(), libc::_PC_CASE_SENSITIVE) };
-    if sensitive == -1 {
+    if sensitive == CASE_POLICY_UNAVAILABLE {
         return Err(io::Error::last_os_error());
     }
     Ok(sensitive != 0)

@@ -374,15 +374,12 @@ impl<'a> States<'a> {
     }
 
     fn dependencies(&self, artifact: &ArtifactName) -> Vec<&'a ArtifactName> {
-        let mut dependencies: Vec<&'a ArtifactName> = Vec::new();
-        for eval in self.evals(artifact) {
-            for &upstream in self.upstream(eval) {
-                if !dependencies.contains(&upstream) {
-                    dependencies.push(upstream);
-                }
-            }
-        }
-        dependencies
+        let mut seen = HashSet::new();
+        self.evals(artifact)
+            .iter()
+            .flat_map(|eval| self.upstream(eval).iter().copied())
+            .filter(|name| seen.insert(*name))
+            .collect()
     }
 
     /// The Artifact id as borrowed from the index, for memo keys.
@@ -574,8 +571,9 @@ impl<'a> States<'a> {
             return EvalView::NotRun(NotRun::Unreviewed);
         }
         EvalView::InProgress(Activity::Queued(
-            if let Some(crate::store::QueueReason::Slot { backend }) = request.queue.clone() {
-                Queue::Slot(backend)
+            if let Some(crate::store::QueueReason::Slot { backend }) = request.state.queue_reason()
+            {
+                Queue::Slot(backend.clone())
             } else if request.execution_id.is_some() {
                 Queue::Joined
             } else if self.run.jobs.is_some() {

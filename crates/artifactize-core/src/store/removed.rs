@@ -31,7 +31,7 @@ pub async fn retire_removed_signoffs(state: &Path) -> Result<(), String> {
         return Ok(());
     };
     // The removed repository is only the boundary the state is checked against.
-    let receipts = Receipts::open(state, Path::new(first)).await?;
+    let receipts = Receipts::open(state, first).await?;
     let result = receipts.retire_removed(removed).await;
     let closed = receipts.close().await;
     result.and(closed)
@@ -39,13 +39,13 @@ pub async fn retire_removed_signoffs(state: &Path) -> Result<(), String> {
 
 /// The repositories, as the state saves them, of Runs with a waiting Human request whose
 /// folder is certainly gone. A folder that cannot be checked counts as present.
-async fn removed_repositories(state: &Path) -> Result<Vec<String>, String> {
+async fn removed_repositories(state: &Path) -> Result<Vec<PathBuf>, String> {
     let state = crate::workspace::canonical_target(state).map_err(|e| e.to_string())?;
     let Some(connection) = super::requests::open_read(&state).await? else {
         return Ok(Vec::new());
     };
     let result = connection
-        .call(|db| -> Result<Vec<String>, Error> {
+        .call(|db| -> Result<Vec<PathBuf>, Error> {
             super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
@@ -53,7 +53,7 @@ async fn removed_repositories(state: &Path) -> Result<Vec<String>, String> {
             }
             let repos = transaction
                 .prepare("SELECT DISTINCT r.repo FROM requests q JOIN runs r ON r.id=q.run_id WHERE q.status IN ('WAITING_HUMAN','DEFERRED')")?
-                .query_map([], |row| row.get::<_, String>(0))?
+                .query_map([], |row| super::path_column(row, 0))?
                 .collect::<Result<Vec<_>, _>>()?;
             transaction.commit()?;
             Ok(repos)
@@ -63,7 +63,7 @@ async fn removed_repositories(state: &Path) -> Result<Vec<String>, String> {
     let repos = super::connection::finish(connection, result).await?;
     Ok(repos
         .into_iter()
-        .filter(|repo| matches!(Path::new(repo).try_exists(), Ok(false)))
+        .filter(|repo| matches!(crate::platform::paths::target_exists(repo), Ok(false)))
         .collect())
 }
 
@@ -106,7 +106,7 @@ fn fate<'a>(original: &RequestId, waiters: &'a [Waiter]) -> Fate<'a> {
 }
 
 impl Receipts {
-    async fn retire_removed(&self, removed: Vec<String>) -> Result<(), String> {
+    async fn retire_removed(&self, removed: Vec<PathBuf>) -> Result<(), String> {
         self.connection
             .call(move |db| -> Result<(), Error> {
                 let transaction =
@@ -163,18 +163,19 @@ fn unclaim(db: &rusqlite::Connection, request: &RequestId) -> Result<(), Error> 
 /// of its waiting requests. Unreadable records are left as they are.
 fn affected(
     db: &rusqlite::Connection,
-    removed: &[String],
+    removed: &[PathBuf],
 ) -> Result<BTreeMap<ExecutionId, (Execution, Vec<Waiter>)>, Error> {
-    let removed_set: BTreeSet<&str> = removed.iter().map(String::as_str).collect();
+    let removed_set: BTreeSet<&Path> = removed.iter().map(PathBuf::as_path).collect();
+    let query_paths: Vec<_> = removed.iter().map(crate::platform::path_text).collect();
     let mut statement = db.prepare(
         "SELECT q.data,r.repo,json_extract(r.data,'$.stateDir'),e.id,e.data FROM requests q JOIN runs r ON r.id=q.run_id JOIN executions e ON e.id=q.execution_id WHERE q.status IN ('WAITING_HUMAN','DEFERRED') AND e.status='WAITING_HUMAN' AND e.id IN (SELECT q.execution_id FROM requests q JOIN runs r ON r.id=q.run_id WHERE q.status IN ('WAITING_HUMAN','DEFERRED') AND r.repo IN (SELECT value FROM json_each(?1)))",
     )?;
     let rows = statement
-        .query_map([serde_json::to_string(removed)?], |row| {
+        .query_map([serde_json::to_string(&query_paths)?], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
+                super::path_column(row, 1)?,
+                row.get::<_, Option<String>>(2)?.map(PathBuf::from),
                 row.get::<_, ExecutionId>(3)?,
                 row.get::<_, String>(4)?,
             ))
@@ -188,19 +189,15 @@ fn affected(
         ) else {
             continue;
         };
-        let removed = removed_set.contains(repo.as_str());
-        let run_dir = state_dir.map(|state| {
-            PathBuf::from(state)
-                .join("runs")
-                .join(request.run_id.as_str())
-        });
+        let removed = removed_set.contains(repo.as_path());
+        let run_dir = state_dir.map(|state| state.join("runs").join(request.run_id.as_str()));
         found
             .entry(id)
             .or_insert_with(|| (execution, Vec::new()))
             .1
             .push(Waiter {
                 request,
-                repo: PathBuf::from(repo),
+                repo,
                 run_dir,
                 removed,
             });

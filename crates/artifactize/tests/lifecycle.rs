@@ -6,7 +6,7 @@ use artifactize_core::{
     project::{VerifyOptions, selection::Selection},
     store::{self, DATABASE, Execution, Request},
 };
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use serde_json::{Value, json};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
@@ -59,7 +59,7 @@ async fn owned_root_releases_every_repository_before_removal_on_return_and_unwin
         for name in ["first", "second"] {
             let repo = root.path().join(name);
             fs::create_dir(&repo).unwrap();
-            fs::write(repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
+            support::declaration::write(&repo, repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
             root.track(&state, &repo);
             let saved = support::runs::record(
                 &repo,
@@ -102,20 +102,61 @@ async fn owned_root_releases_every_repository_before_removal_on_return_and_unwin
     }
 }
 
+/// Reclaim the deliberately retained inputs, even when the test assertion unwinds.
+struct RetainedRoot {
+    directory: std::path::PathBuf,
+    state: std::path::PathBuf,
+    repo: std::path::PathBuf,
+}
+
+impl Drop for RetainedRoot {
+    fn drop(&mut self) {
+        let cleanup = owned_run::release_repo_result(&self.state, &self.repo).and_then(|()| {
+            match fs::remove_dir_all(&self.directory) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.to_string()),
+            }
+        });
+        if let Err(error) = cleanup {
+            let path = support::os::path_text(&self.directory);
+            if std::thread::panicking() {
+                eprintln!("Could not reclaim fixture inputs at {path}: {error}");
+            } else {
+                panic!("Could not reclaim fixture inputs at {path}: {error}");
+            }
+        }
+    }
+}
+
 #[tokio::test]
 async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_scopes() {
     for unwind in [false, true] {
         // No auto-deleting ancestor may remove inputs retained by failed Run cleanup.
-        let root = owned_run::Root::from(support::os::tempdir());
-        let directory = root.path().to_owned();
-        let broken = root.path().join("a-broken-state");
-        let state = root.path().join("z-active-state");
-        let repo = root.path().join("repo");
+        let temp = support::os::tempdir();
+        let directory = temp.path().to_owned();
+        let broken = directory.join("a-broken-state");
+        let state = directory.join("z-active-state");
+        let repo = directory.join("repo");
+        let _retained = RetainedRoot {
+            directory: directory.clone(),
+            state: state.clone(),
+            repo: repo.clone(),
+        };
+        let root = owned_run::Root::from(temp);
         fs::create_dir(&broken).unwrap();
         fs::create_dir(&repo).unwrap();
-        fs::write(broken.join(DATABASE), "not SQLite").unwrap();
-        fs::write(repo.join("input"), "owned input").unwrap();
-        fs::write(repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
+        fs::write(
+            support::declaration::source_path(broken.join(DATABASE)),
+            "not SQLite",
+        )
+        .unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("input")),
+            "owned input",
+        )
+        .unwrap();
+        support::declaration::write(&repo, repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
         root.track(&broken, &repo);
         root.track(&state, &repo);
         let saved = support::runs::record(
@@ -156,10 +197,11 @@ async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_
                 owner.start_time
             ));
         }
-        assert_eq!(fs::read(repo.join("input")).unwrap(), b"owned input");
+        assert_eq!(
+            support::declaration::read_file(repo.join("input")).unwrap(),
+            b"owned input"
+        );
         assert!(directory.exists(), "failed cleanup retains inputs");
-        // Explicit removal is safe only after every saved worker/supervisor has exited.
-        fs::remove_dir_all(&directory).unwrap();
     }
 }
 
@@ -169,7 +211,7 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
+    support::declaration::write(&(repo), repo.join("index.artf"), json!({
         "name":"app",
         "evals":[
             {"id":"bad","title":"Bad","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["bad"]}},
@@ -178,7 +220,16 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     }).to_string()).unwrap();
     let first = verify(&repo, &state).await;
     assert_eq!(first.requests.len(), 2);
-    let request = &first.requests[0];
+    let request = first
+        .requests
+        .iter()
+        .find(|row| row.eval_id.as_str() == "app/bad")
+        .unwrap();
+    let healthy = first
+        .requests
+        .iter()
+        .find(|row| row.eval_id.as_str() == "app/healthy")
+        .unwrap();
     let execution = request.execution_id.as_ref().unwrap();
     let db = Connection::open(state.join(DATABASE)).unwrap();
     db.execute(
@@ -219,21 +270,41 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     let requests = store::read_requests(&state, Some(&first.run.id))
         .await
         .unwrap();
-    assert_eq!(requests.len(), 1);
-    let saved = store::read_run(&state, &first.run.id).await.unwrap();
+    let [listed] = requests.as_slice() else {
+        panic!("one surviving request expected: {requests:?}");
+    };
+    assert_eq!(listed.request.id, healthy.id);
     let (snapshot, views) = store::read_run_requests(&state, &first.run.id)
         .await
         .unwrap();
+    assert_eq!(snapshot.run.id, first.run.id);
     assert_eq!(
-        serde_json::to_value(&snapshot).unwrap(),
-        serde_json::to_value(&saved).unwrap()
+        snapshot.run.status(),
+        artifactize_core::types::RunStatus::Green
     );
-    assert_eq!(
-        serde_json::to_value(&views).unwrap(),
-        serde_json::to_value(&requests).unwrap()
-    );
-    let monitor =
-        artifactize_core::monitor::progress(&saved, &requests, time::OffsetDateTime::now_utc());
+    let [row] = snapshot.requests.as_slice() else {
+        panic!("one surviving request expected: {:?}", snapshot.requests);
+    };
+    assert_eq!(row.id, healthy.id);
+    let [view] = views.as_slice() else {
+        panic!("one surviving request view expected: {views:?}");
+    };
+    assert_eq!(view.request.id, healthy.id);
+    assert_eq!(snapshot.unreadable.len(), 2);
+    for (kind, id) in [
+        ("request", request.id.as_str()),
+        ("execution", execution.as_str()),
+    ] {
+        assert!(
+            snapshot
+                .unreadable
+                .iter()
+                .any(|row| row.kind == kind && row.id == id),
+            "{snapshot:?}"
+        );
+    }
+    let observed_at = time::OffsetDateTime::now_utc();
+    let monitor = artifactize_core::monitor::progress(&snapshot, &views, observed_at);
     for id in [request.id.as_str(), execution.as_str()] {
         assert!(
             monitor
@@ -243,10 +314,10 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
         );
     }
     let detail = artifactize_core::monitor::detail(
-        &saved,
-        &requests,
+        &snapshot,
+        &views,
         &artifactize_core::monitor::Target::Run,
-        time::OffsetDateTime::now_utc(),
+        observed_at,
     );
     assert!(detail.field("Errors").unwrap().contains(execution.as_str()));
     let status: Value = serde_json::from_str(&cli(&repo, &state, &["status"], true)).unwrap();
@@ -258,10 +329,7 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     let second = verify(&repo, &state).await;
     assert_eq!(second.run.status().as_str(), "GREEN");
     assert_ne!(second.requests[0].execution_id.as_ref(), Some(execution));
-    assert_eq!(
-        second.requests[1].execution_id,
-        first.requests[1].execution_id
-    );
+    assert_eq!(second.requests[1].execution_id, healthy.execution_id);
     assert_eq!(
         store::read_run(&state, &first.run.id)
             .await
@@ -272,40 +340,17 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     );
 }
 
-#[tokio::test]
-async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_survive() {
-    let root = support::os::tempdir();
-    let repo = root.path().join("repo");
-    let state = root.path().join("state");
-    fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
-        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
-    }).to_string()).unwrap();
-    let run = verify(&repo, &state).await;
-    let db = Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    let request_text: String = db
-        .query_row(
-            "SELECT data FROM requests WHERE id=?",
-            [&run.requests[0].id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let execution_text: String = db
-        .query_row(
-            "SELECT data FROM executions WHERE id=?",
-            params![run.requests[0].execution_id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let request: Request = serde_json::from_str(&request_text).unwrap();
-    let execution: Execution = serde_json::from_str(&execution_text).unwrap();
-    assert_eq!(serde_json::to_string(&request).unwrap(), request_text);
-    assert_eq!(serde_json::to_string(&execution).unwrap(), execution_text);
-    let base = serde_json::to_value(&request).unwrap();
+#[test]
+fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_survive() {
+    // Independent schema-5 records: ordering, nulls and omissions are part of the old wire format.
+    const REQUEST: &str = r#"{"id":"legacy-request","runId":"legacy-run","evalId":"app/check","target":"app","title":"Check","profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","options":{},"executionId":"legacy-execution","provenance":null,"usage":null,"payload":{"instruction":"Review."},"references":{},"deps":[],"force":false,"fingerprint":null,"key":null,"status":"GREEN","createdAt":"2026-01-01T00:00:00.000000000Z","startedAt":null,"completedAt":"2026-01-01T00:00:01.000000000Z","cwd":"repo","runDir":null,"argv":null,"child":null,"result":{"verdict":"GREEN"},"error":null,"errorCode":null,"blockedReason":null}"#;
+    const EXECUTION: &str = r#"{"id":"legacy-execution","key":null,"fingerprint":null,"evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ownerPid":1,"ownerStartTime":1,"status":"GREEN","result":{"verdict":"GREEN"},"error":null,"errorCode":null,"profile":{"kind":"human"},"options":{},"usage":null,"provenance":{"repoPath":"repo","runId":"legacy-run","requestId":"legacy-request","evalId":"app/check","evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","completedAt":"2026-01-01T00:00:01.000000000Z"},"startedAt":"2026-01-01T00:00:00.000000000Z","completedAt":"2026-01-01T00:00:01.000000000Z"}"#;
+    let request: Request = serde_json::from_str(REQUEST).unwrap();
+    let execution: Execution = serde_json::from_str(EXECUTION).unwrap();
+    assert_eq!(serde_json::to_string(&request).unwrap(), REQUEST);
+    assert_eq!(serde_json::to_string(&execution).unwrap(), EXECUTION);
+    let base: Value = serde_json::from_str(REQUEST).unwrap();
+    let execution_base: Value = serde_json::from_str(EXECUTION).unwrap();
     for status in [
         "QUEUED",
         "BLOCKED",
@@ -348,7 +393,7 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
                 status,
                 "RUNNING" | "WAITING_HUMAN" | "GREEN" | "RED" | "ERROR"
             ) {
-                let mut execution_wire = serde_json::to_value(&execution).unwrap();
+                let mut execution_wire = execution_base.clone();
                 for key in ["status", "result", "error", "errorCode", "completedAt"] {
                     execution_wire[key] = wire[key].clone();
                 }
@@ -419,7 +464,7 @@ async fn run_list_reads_no_records_so_damaged_definitions_and_requests_still_lis
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
+    support::declaration::write(&(repo), repo.join("index.artf"), json!({
         "name":"app", "evals":[
             {"id":"one","title":"One","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["one"]}},
             {"id":"two","title":"Two","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["two"]}}
@@ -472,7 +517,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
+    support::declaration::write(&(repo), repo.join("index.artf"), json!({
         "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     let healthy = verify(&repo, &state).await;

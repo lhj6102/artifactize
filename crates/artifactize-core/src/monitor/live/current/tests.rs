@@ -33,7 +33,12 @@ async fn a_scan_shows_the_graph_first_every_artifact_checking_then_what_verify_w
         ),
     ] {
         fs::create_dir(repo.path().join(folder)).unwrap();
-        fs::write(repo.path().join(folder).join("index.artf"), declaration).unwrap();
+        crate::test_declaration::write(
+            repo.path(),
+            repo.path().join(folder).join("index.artf"),
+            declaration,
+        )
+        .unwrap();
     }
     let mut published = Vec::new();
     let current = scan(
@@ -70,7 +75,7 @@ async fn a_whole_holds_its_parts_without_edges_to_them_and_does_what_they_do() {
     let repo = crate::test_os::tempdir();
     let state = crate::test_os::tempdir();
     for (folder, declaration) in [
-        ("kit", "name = 'kit'\nparts = ['notes']\n"),
+        ("kit", "name = 'kit'\nparts = ['core', 'notes']\n"),
         (
             "kit/core",
             "name = 'core'\nfingerprint = { files = ['.'] }\n[evals.review]\ntitle = 'Review the core'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review it.' }\n",
@@ -78,7 +83,12 @@ async fn a_whole_holds_its_parts_without_edges_to_them_and_does_what_they_do() {
         ("notes", "name = 'notes'\nbasis = true\n"),
     ] {
         fs::create_dir_all(repo.path().join(folder)).unwrap();
-        fs::write(repo.path().join(folder).join("index.artf"), declaration).unwrap();
+        crate::test_declaration::write(
+            repo.path(),
+            repo.path().join(folder).join("index.artf"),
+            declaration,
+        )
+        .unwrap();
     }
     let current = scan(repo.path(), state.path(), CancellationToken::new(), |_| {})
         .await

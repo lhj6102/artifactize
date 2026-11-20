@@ -1,69 +1,74 @@
-// The upstream embedded service is the sole native app/driver lifecycle owner.
+// One batch of scenarios: WebdriverIO's Tauri service starts and stops each scenario's app
+// (E2E-INPUT); this configuration prepares their fixtures before and the runner closes them
+// after (teardown).
+import { inspect } from "node:util";
 import { SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { environment, releaseFixtures, settleFixtures } from "./fixture.ts";
-import {
-  browserEnvironment, asNativePath, releaseBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
-  assertClipboardDesktop, makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
-  type Environment,
-} from "./platform.ts";
-import type { Prepared } from "./scenario.ts";
+import { own, type Owned } from "./fixtures/owned.ts";
+import { environment } from "./fixtures/repo.ts";
+import { displayEnvironment, setVariable, variable, type Environment } from "./platform.ts";
+import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson } from "./portable.ts";
+import { COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
 
-// Reject an unsafe OS session before any fixture or service is initialized.
-assertRunnerMachine();
 const candidate = readCandidate();
-const ids = JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[];
-if (!ids.length) throw new Error("a WDIO invocation requires an explicit scenario batch");
-const selected = selectedScenarios(ids);
-const outputDir = makeDirectory(asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each WDIO batch writes its own logs")));
-const prepared: Prepared[] = [];
-// WDIO wraps severe hook errors; retain the original for the matching runner owner.
+const selected = selectedScenarios(JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[]);
+if (!selected.length) throw new Error("a WDIO batch needs its scenarios in DESKTOP_TEST_BATCH");
+const output = makeDirectory(asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? ""));
+const evidence = asNativePath(variable("DESKTOP_TEST_EVIDENCE_RUN") ?? nativePath(output, "evidence"));
+const owned: Owned[] = [];
+// A scenario whose app is started again runs alone, as a second spec after its first: the
+// service starts the app again for it, as it does for any spec whose app has gone.
+const restarts = selected.some((item) => item.restarted);
+if (restarts && selected.length > 1) throw new Error("a scenario that starts its app again runs alone");
+
+/** Why preparing the batch failed, for the runner: WDIO wraps it. */
 export let preparationFailure: unknown;
 
-/** The product has one fixed auth callback endpoint. All its auth actions therefore
- * form one independent accounts capability; no unrelated capability consumes it. */
-export const fixedResources = {
-  accounts: { callbackHost: "127.0.0.1", callbackPort: 1455 },
-  // This is the only capability to copy/paste. It writes its own selection before reading
-  // it back through a paste; neither the runner nor another capability reads the clipboard.
-  "monitor-tool-log-scroll": { clipboard: true },
-} as const;
-
-/** Called by the runner AFTER Launcher.run returns, never from config onComplete:
- * WDIO runs the user's onComplete before the upstream service's shutdown hook. */
-/** Called by the runner when an app was not confirmed stopped: its inputs stay, but the
- * Runs the fixtures started are cancelled and joined, so no fixture worker outlives the batch. */
-export function settlePrepared(): void {
-  settleFixtures();
+/** Fail unless every scenario of the batch ran to its end: a Launcher that found no spec, or a
+ * worker that stopped before its test, ends without failing (E2E-EXPLICIT-FAILURE). */
+export function assertCompleted(): void {
+  const missing = selected.filter((_item, index) => !owned[index] || !exists(nativePath(owned[index].root, COMPLETED)));
+  if (missing.length) throw new Error(`no completed run for ${missing.map((item) => item.id).join(", ")}`);
 }
 
-export async function releasePrepared(): Promise<void> {
+/** Close what each scenario started and delete its files; called once the service has
+ * stopped every app of the batch. A scenario whose teardown fails is the one that failed: the
+ * failure names it and is kept as its evidence, with the window as its flow left it. */
+export async function teardown(): Promise<void> {
+  const scopes = owned.splice(0);
+  // Read before the folders go.
+  const windows = scopes.map((scope) => nativePath(scope.root, LAST_WINDOW)).map((image) => (exists(image) ? readBytes(image) : undefined));
+  const results = await Promise.allSettled(scopes.map((scope) => scope.close()));
   const failures: unknown[] = [];
-  for (const input of prepared.splice(0)) {
-    try { await input.release?.(); } catch (error) { failures.push(error); }
+  for (const [index, result] of results.entries()) {
+    if (result.status !== "rejected") continue;
+    const failure = new Error(`the teardown of ${selected[index].id} failed, once its flow had ended and its app had stopped: no wait of it was running`, { cause: result.reason });
+    failures.push(failure);
+    await keepEvidence(selected[index].id, nativePath(evidence, selected[index].id), inspect(failure, { depth: null }), windows[index]).catch((cause: unknown) => failures.push(cause));
   }
-  try { await releaseFixtures(); } catch (error) { failures.push(error); }
-  if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
+  if (failures.length) throw new AggregateError(failures, "scenario teardown failed");
 }
 
 type Capability = {
   browserName: string;
   "artifactize:scenario": string;
   "artifactize:context"?: string;
-  "wdio:specs": string[];
   "wdio:enforceWebDriverClassic": boolean;
   "wdio:tauriServiceOptions"?: Record<string, unknown>;
   "tauri:options"?: { application: string };
 };
 
+/** The variables of `env` that are set. */
+const set = (env: Environment) => Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+
 export const config = {
   runner: "local",
-  specs: [suitePath("journey.spec.ts")],
+  specs: restarts ? [suitePath("journey.spec.ts"), suitePath("restarted.spec.ts")] : [suitePath("journey.spec.ts")],
   framework: "mocha",
   reporters: ["spec"],
   logLevel: "warn",
-  outputDir,
+  outputDir: output,
   maxInstances: selected.length,
   maxInstancesPerCapability: 1,
   autoXvfb: false,
@@ -72,82 +77,65 @@ export const config = {
   connectionRetryCount: 0,
   waitforTimeout: 15000,
   capabilities: selected.map((item): Capability => ({
-    browserName: "tauri",
-    "artifactize:scenario": item.id,
-    "wdio:specs": [suitePath("journey.spec.ts")],
-    "wdio:enforceWebDriverClassic": true,
+    browserName: "tauri", "artifactize:scenario": item.id, "wdio:enforceWebDriverClassic": true,
   })),
-  services: [["tauri", {
-    appBinaryPath: candidate.app,
-    driverProvider: "embedded",
-    startTimeout: 60000,
-    logDir: outputDir,
-    captureBackendLogs: true,
-  }]],
+  services: [["tauri", { appBinaryPath: candidate.app, driverProvider: "embedded", startTimeout: 60000, logDir: output, captureBackendLogs: true }]],
   async onPrepare(_config: unknown, capabilities: Capability[]) {
     try {
-      assertHarnessPlatform();
-      const native = harnessEnvironment();
-      const endpoints = await embeddedPorts(selected.length);
-      for (let index = 0; index < selected.length; index++) {
-        const item = selected[index];
-        if (item.id === "monitor-tool-log-scroll") assertClipboardDesktop();
-        const input = variable("DESKTOP_TEST_RELAUNCH") === "1" ? prepared[index] : await item.prepare();
-        if (!input) throw new Error("the relaunched case lost its owning fixture");
-        if (variable("DESKTOP_TEST_RELAUNCH") !== "1") prepared.push(input);
-        const context = nativePath(outputDir, `${item.id}.json`);
-        const args = ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])];
-        let env: Environment = {
-          ...environment(input.fixture), ...native, ...input.env,
-          DESKTOP_TEST_SCENARIO: item.id, DESKTOP_TEST_FIXTURE_ROOT: input.fixture.root,
-          DESKTOP_TEST_RELAUNCH: variable("DESKTOP_TEST_RELAUNCH"),
-          ARTIFACTIZE_E2E_OWNER_FILE: nativePath(outputDir, `${item.id}.owner.json`),
-        };
-        const entry = input.browser;
-        if (entry) {
-          env = browserEnvironment(input.fixture.root, env, entry);
-          // Runs after the app has ended and before the fixture is deleted.
-          const release = input.release;
-          input.release = async () => {
-            const failures: unknown[] = [];
-            try { await releaseBrowser(input.fixture.root, entry); } catch (error) { failures.push(error); }
-            try { await release?.(); } catch (error) { failures.push(error); }
-            if (failures.length) throw new AggregateError(failures, "browser fixtures could not be released");
-          };
-        }
-        // Release callbacks and native fixture handles never cross the worker boundary.
-        writeJson(context, { fixture: input.fixture, args, env, data: input.data }, { private: true });
+      const unset = new Set<string>();
+      const prepared: { scope: Owned; input: Awaited<ReturnType<typeof selected[number]["prepare"]>>; env: Environment }[] = [];
+      for (const item of selected) {
+        const scope = own(nativePath(candidate.root, "fixtures"));
+        owned.push(scope);
+        const input = await item.prepare(scope).catch(async (cause: unknown) => {
+          // The scenario whose preparation failed is the one that failed: the failure names it
+          // and is kept as its evidence. No scenario of its batch ran.
+          const failure = new Error(`preparing ${item.id} failed, before any app of its batch (${selected.map((each) => each.id).join(", ")}) started: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+          await keepEvidence(item.id, nativePath(evidence, item.id), inspect(failure, { depth: null }), undefined);
+          throw failure;
+        });
+        const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
+        for (const [name, value] of Object.entries(env)) if (value === undefined) unset.add(name);
+        prepared.push({ scope, input, env });
+      }
+      // Ports of this batch's own (their claims last as long as this process), taken once
+      // every fixture is ready.
+      const ports = await embeddedPorts(selected.length);
+      for (const [index, { scope, input, env }] of prepared.entries()) {
+        const context = nativePath(scope.root, "context.json");
+        writeJson(context, { ...input, root: scope.root, port: ports[index], evidence: nativePath(evidence, selected[index].id) } satisfies Context);
         capabilities[index]["artifactize:context"] = context;
         if (input.app) capabilities[index]["tauri:options"] = { application: input.app };
         capabilities[index]["wdio:tauriServiceOptions"] = {
-          appArgs: args,
-          env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
-          embeddedPort: endpoints[index],
+          appArgs: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])], env: set(env), embeddedPort: ports[index],
         };
       }
-      const ownerRoot = nativePath(candidate.root, "runner-environment");
-      const owner = { root: ownerRoot, repo: nativePath(ownerRoot, "repo"), state: nativePath(ownerRoot, "state") };
-      const safe = { ...environment(owner), ...native };
-      // The service merges process.env before per-capability env: absent secrets and
-      // explicitly unset per-case options must not reappear from the launcher.
-      for (const input of prepared) for (const [name, value] of Object.entries(input.env ?? {})) {
-        if (value === undefined) delete safe[name];
-      }
-      replaceEnvironment(safe);
+      // The service starts each app with this process's variables under the scenario's own:
+      // none of the runner's reaches an app unless its scenario sets it, and none a scenario
+      // removes comes back from here.
+      const safe: Environment = { ...environment({ root: makeDirectory(nativePath(candidate.root, "runner")) }), ...displayEnvironment() };
+      for (const name of unset) delete safe[name];
+      for (const name of Object.keys(process.env)) setVariable(name, undefined);
+      for (const [name, value] of Object.entries(safe)) setVariable(name, value);
     } catch (cause) {
       preparationFailure = cause;
-      // WDIO logs and swallows ordinary launcher-hook failures. Its public severe
-      // error is required to stop before the service launches any unprepared app.
+      // Only a severe service error stops WDIO before it starts an app.
       const failure = new SevereServiceError(`Desktop scenario preparation failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       failure.cause = cause;
       throw failure;
     }
   },
-  beforeSession(_config: unknown, capabilities: Capability) {
-    const context = capabilities["artifactize:context"];
-    if (!context) throw new Error("scenario context was not prepared before the app launch");
-    setVariable("DESKTOP_TEST_SCENARIO", capabilities["artifactize:scenario"]);
-    setVariable("DESKTOP_TEST_CONTEXT", context);
+  beforeSession(_config: unknown, capability: Capability) {
+    setVariable("DESKTOP_TEST_SCENARIO", capability["artifactize:scenario"]);
+    setVariable("DESKTOP_TEST_CONTEXT", capability["artifactize:context"]);
   },
-  mochaOpts: { timeout: 120000 },
+  /** A failed test's evidence (E2E-FAILURE-EVIDENCE), a timeout's too, taken while its app
+   * still runs. */
+  async afterTest(_test: unknown, _context: unknown, result: { passed: boolean; error?: Error }) {
+    if (result.passed) return;
+    const context = readJson(asNativePath(variable("DESKTOP_TEST_CONTEXT") ?? "")) as Context;
+    const failure = result.error ? result.error.stack ?? result.error.message : "the test failed without an error";
+    await keepEvidence(variable("DESKTOP_TEST_SCENARIO") ?? "", context.evidence, failure, (globalThis as { browser?: WebdriverIO.Browser }).browser);
+  },
+  mochaOpts: { timeout: Math.max(...selected.map((item) => item.timeout ?? 180000)) },
 };

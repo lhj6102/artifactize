@@ -1,101 +1,59 @@
-// Exercise the public Launcher and actual Tauri service, not a replacement service hook.
+// The runner's own parts: batching, fixture environments, teardown and build steps.
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { it } from "node:test";
-import { environment } from "./environment.ts";
-import {
-  executableName, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
-  processRunning, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
-} from "./platform.ts";
+import { runStep } from "./build.ts";
+import { own } from "./fixtures/owned.ts";
+import { environment } from "./fixtures/repo.ts";
+import { nodeProgram } from "./platform.ts";
+import { exists, nativePath, removeTree, scratchDirectory, suitePath, newDirectory } from "./portable.ts";
+import { batches } from "./run.ts";
 
-function root(): NativePath {
-  return newDirectory(scratchDirectory(), "desktop-startup-test-");
-}
+it("batches scenarios in order, at most `size` apps at once, one that runs alone by itself", () => {
+  const ids = (names: string) => names.split(" ").map((id) => ({ id, alone: id.startsWith("x") }));
+  assert.deepEqual(batches(ids("a b c d e"), 2), [["a", "b"], ["c", "d"], ["e"]]);
+  assert.deepEqual(batches(ids("a x1 b c x2"), 2), [["a"], ["x1"], ["b", "c"], ["x2"]]);
+  assert.deepEqual(batches(ids("a b c"), 1), [["a"], ["b"], ["c"]]);
+});
 
-function fixture(root: NativePath) {
-  return { root: nativePath(root, "owner"), repo: nativePath(root, "owner", "repo"), state: nativePath(root, "owner", "state") };
-}
-
-async function launch(root: NativePath, id: string, signal: AbortSignal, output = `${id}-logs`) {
-  const env = {
-    ...environment(fixture(root)),
-    DESKTOP_TEST_CANDIDATE: nativePath(root, "candidate.json"),
-    DESKTOP_TEST_BATCH: JSON.stringify([id]),
-    DESKTOP_TEST_BATCH_OUTPUT: nativePath(root, output),
-  };
-  const command = runnerCommand([suitePath("run.ts"), "batch"], env);
-  return await fixtureRunner(command, signal);
-}
-
-it("a failed preparation stops the real service before its executable boundary", { timeout: 120000 }, async (test) => {
-  const directory = root();
+it("gives a fixture's programs homes inside it and none of the person's credentials", () => {
+  const root = newDirectory(scratchDirectory(), "desktop-environment-test-");
+  const saved = { ...process.env };
   try {
-    // A declared invalid executable makes a service launch attempt an immediate,
-    // observable error without starting any native app or WebDriver server.
-    const app = nativePath(directory, executableName("unlaunchable-app"));
-    writeText(app, "not an executable", { private: true });
-    writeJson(nativePath(directory, "candidate.json"), { root: directory, cli: app, app, observer: app, manifest: nativePath(directory, "candidate.json") });
-    // Fail on a private external input after setup has acquired its HTTP fixture.
-    // Never occupy the product's fixed auth callback port: the suite may run beside us.
-    const context = makeDirectory(nativePath(directory, "settings-keys-logs", "settings-keys.json"));
-    const blocked = await launch(directory, "settings-keys", test.signal);
-    assert.equal(blocked.code, 1, blocked.stdout + blocked.stderr);
-    assert.match(blocked.stderr, /Desktop scenario preparation failed/);
-    assert.doesNotMatch(blocked.stderr, /Failed to start embedded WebDriver/);
-    assert.match(blocked.stderr, /\b(?:EISDIR|EACCES|EPERM)\b/);
-    assert.ok(blocked.stderr.includes(context), "nested causes identify this fixture's failed context output");
-
-    // Positive control: fixing only that input must reach the same real service's
-    // executable boundary, proving the first rejection was before app admission.
-    removeTree(context);
-    const admitted = await launch(directory, "settings-keys", test.signal, "settings-keys-retry-logs");
-    assert.equal(admitted.code, 1, admitted.stdout + admitted.stderr);
-    assert.match(admitted.stderr, /Failed to start embedded WebDriver/);
-    assert.match(admitted.stderr, /EACCES|EINVAL|ENOEXEC|spawn/);
-    assert.doesNotMatch(admitted.stderr, /Desktop scenario preparation failed/);
+    Object.assign(process.env, { OPENAI_API_KEY: "secret", ARTIFACTIZE_REMOTE: "on", GIT_DIR: "/elsewhere", KEEP_ME: "kept" });
+    const env = environment({ root });
+    assert.equal(env.OPENAI_API_KEY, undefined);
+    assert.equal(env.GIT_DIR, undefined);
+    assert.equal(env.ARTIFACTIZE_REMOTE, "off");
+    assert.equal(env.KEEP_ME, "kept");
+    for (const name of ["HOME", "XDG_CONFIG_HOME", "TMPDIR"]) assert.ok(env[name]?.startsWith(root), `${name} is inside the fixture`);
+    assert.equal(env.USER, "alice");
   } finally {
-    removeTree(directory);
+    for (const name of Object.keys(process.env)) if (!(name in saved)) delete process.env[name];
+    Object.assign(process.env, saved);
+    removeTree(root);
   }
 });
 
-it("cancelling a wrapped runner joins its fixture descendants before releasing inputs", { timeout: 120000 }, async (test) => {
-  const directory = root();
-  const cancellation = new AbortController();
-  const reason = new Error("fixture owner cancelled the runner");
-  const servers: LoopbackServer[] = [];
-  let running: Promise<{ error?: unknown }> | undefined;
-  try {
-    let received: (port: number) => void = () => {};
-    let refused: (error: unknown) => void = () => {};
-    const ready = new Promise<number>((done, fail) => { received = done; refused = fail; });
-    const receiver = await serveLoopback((socket) => {
-      let input = "";
-      socket.setEncoding("utf8");
-      socket.on("data", (chunk: string) => { input += chunk; });
-      socket.once("error", refused);
-      socket.once("end", () => {
-        try { received(JSON.parse(input) as number); } catch (error) { refused(error); }
-      });
-    });
-    servers.push(receiver);
-    const port = receiver.port;
-    const command = runnerCommand([suitePath("domain-fixtures", "tree.ts"), "owner", String(port)], environment(fixture(directory)));
-    running = fixtureRunner(command, AbortSignal.any([test.signal, cancellation.signal]))
-      .then(() => ({}), (error: unknown) => ({ error }));
-    const descendant = await Promise.race([ready, running.then(({ error }) => {
-      throw error ?? new Error("runner exited before its descendant reported its process id");
-    })]);
-    assert.ok(processRunning(descendant), "the descendant is running before cancellation");
-    cancellation.abort(reason);
-    assert.equal((await running).error, reason, "cancellation is a failure, never a passing runner result");
-    // A read-only lifetime check of the reported process is independent evidence that the
-    // descendant exited, not just that its parent reported an abort or accepted a kill.
-    assert.equal(processRunning(descendant), false, "the runner joined its descendant before returning");
-  } finally {
-    cancellation.abort(reason);
-    await running;
-    const released = await Promise.allSettled(servers.map((server) => server.close()));
-    removeTree(directory);
-    const failures = released.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
-    if (failures.length) throw new AggregateError(failures, "runner regression fixture release failed");
-  }
+it("teardown runs every cleanup, last first, ends a stand-in waiting for its gate and deletes the folder", async () => {
+  const parent = newDirectory(scratchDirectory(), "desktop-owned-test-");
+  const scope = own(parent);
+  const order: string[] = [];
+  scope.defer(() => { order.push("first"); });
+  scope.defer(() => { throw new Error("a cleanup that fails"); });
+  scope.defer(async () => { order.push("last"); });
+  // A stand-in tool that waits for a gate nobody opens.
+  const waiting = spawn(nodeProgram, [suitePath("fixtures", "program.ts"), "slow", nativePath(scope.root, "slow.gate")], { stdio: "ignore" });
+  const ended = new Promise<number | null>((done) => waiting.once("exit", (code) => done(code)));
+  await assert.rejects(scope.close(), (error: AggregateError) => error.errors.length === 1 && /a cleanup that fails/.test(String(error.errors[0])));
+  assert.deepEqual(order, ["last", "first"]);
+  assert.equal(await ended, 0, "the stand-in ended once its fixture closed");
+  assert.equal(exists(scope.root), false);
+  removeTree(parent);
+});
+
+it("returns a build step's output and fails a step that fails", async () => {
+  const cwd = scratchDirectory();
+  assert.equal(await runStep(nodeProgram, ["-e", "process.stdout.write('built')"], { env: process.env, cwd, capture: true }), "built");
+  await assert.rejects(runStep(nodeProgram, ["-e", "process.exit(3)"], { env: process.env, cwd }), /exited 3/);
 });

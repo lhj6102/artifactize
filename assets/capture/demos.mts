@@ -14,14 +14,17 @@
 //      contains BUG; between Runs this script removes the BUG it just saw, as an AI would fix
 //      the code. Try 1 fails mcp and site; try 2 reuses the rest at once and fails docs partway;
 //      try 3 fails release near the end; try 4 passes to the end and is SATISFIED. An overlay
-//      names the try and the speed.
+//      names the try, the speed and how many of the Run's evals reused their saved result, as
+//      the Run's records say; the script checks each try reused exactly the unchanged evals.
 //   B. graph-growth.gif — this repository's own Artifact graph, release by release from the
-//      history of main, in the app opened by `graph --repo` on the branch's Current, with the
+//      history of main (or of origin/main when it is ahead), each committed in turn to a Git
+//      checkout, in the app opened by `graph --repo` on that branch's Current, with the
 //      release in the graph's top-left corner. One blank
 //      step says 0.1.0–0.6.0 had no Artifacts yet; the graph starts at 0.7.0 and ends at the
 //      current main. examples/ is left out. Declarations the current app no longer reads
 //      are converted once to the current format: 0.7–0.8's artifactize.json, and dependency
-//      evals, whose relations become references.
+//      evals, whose relations become references; then the built CLI's own `config migrate`
+//      moves a release declared in its tree into `.artifactize/`, one file per Artifact.
 //
 // Modes:
 //   (none)        record into assets/demos/.
@@ -51,6 +54,13 @@ const SPEED = 8;
 const GIF = { width: 1280, fps: 25, colours: 128, step: 1.6, hold: 1.5 };
 /** The progress bar: its height in GIF pixels and its colour, the introduction video's. */
 const PROGRESS = { height: 4, colour: "0x3EE08F", track: "0xE3E8EE" };
+/** The statuses' colours as the app's theme sets them: GREEN, RED, running and waiting. */
+const STATUS_COLOURS = ["--green", "--red", "--running", "--queued"].map((token) => {
+  const tokens = readFileSync(join(repository, "crates/artifactize-desktop/ui/src/tokens.css"), "utf8");
+  const value = new RegExp(`${token}:\\s*#([0-9a-fA-F]{6})`).exec(tokens)?.[1];
+  if (!value) throw new Error(`the theme has no ${token}`);
+  return `0x${value}`;
+});
 
 /** A virtual display of its own: Xvfb on the first free display number from a random start.
  * A number another server holds makes Xvfb exit at once, so captures running at the same
@@ -160,16 +170,24 @@ async function corner(browser: WebdriverIO.Browser, selector: string): Promise<{
 
 /** Take frames until `done` resolves and the app shows the final state `final` waits for,
  * then one more, so that final state is the recording's last frame. */
-async function record(browser: WebdriverIO.Browser, directory: string, done: Promise<unknown>, final: () => Promise<boolean>): Promise<Frame[]> {
+async function record(browser: WebdriverIO.Browser, directory: string, done: Promise<unknown>, final: () => Promise<boolean>, live: () => Promise<boolean>): Promise<Frame[]> {
   const frames: Frame[] = [];
   let finished = false;
-  void done.finally(() => { finished = true; });
+  // Ended either way: a failed Run watch fails the recording below, where it is awaited.
+  done.then(() => { finished = true; }, () => { finished = true; });
   const take = async () => {
     const file = join(directory, `${String(frames.length).padStart(5, "0")}.png`);
     writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
     frames.push({ file, at: performance.now() / 1000 });
   };
-  while (!finished) await take();
+  // Frames that show the Run still in progress: the loop must be seen running, not only ended.
+  let running = 0;
+  while (!finished) {
+    const shown = await live();
+    await take();
+    if (shown && !finished) running += 1;
+  }
+  if (running < LIVE_FRAMES) throw new Error(`only ${running} frames showed the Run in progress`);
   await done;
   const until = performance.now() + WAIT;
   while (!await final()) {
@@ -186,6 +204,9 @@ async function record(browser: WebdriverIO.Browser, directory: string, done: Pro
   return frames;
 }
 
+/** The fewest frames a try must show of its Run in progress. */
+const LIVE_FRAMES = 8;
+
 /** drawtext's text, with its own special characters escaped. */
 function drawn(text: string): string {
   return text.replaceAll("\\", "\\\\").replaceAll(":", "\\:").replaceAll("'", "\\'").replaceAll("%", "\\%");
@@ -197,38 +218,58 @@ function drawn(text: string): string {
 function encode(segments: Segment[], gif: string, work: string, at: { x: number; y: number }): void {
   const list: string[] = [];
   const captions: string[] = [];
+  /** A moment of the GIF on its frame grid, where the concat input places each picture. */
+  const slot = (seconds: number) => Math.round(seconds * GIF.fps) / GIF.fps;
+  /** Half a frame: a caption switches between two frames of the grid, never on one. */
+  const half = 0.5 / GIF.fps;
   let clock = 0;
   for (const segment of segments) {
     const start = clock;
-    segment.frames.forEach((frame, index) => {
-      const next = segment.frames[index + 1];
-      const duration = next ? Math.max((next.at - frame.at) / segment.speed, 0.01) : segment.hold;
-      list.push(`file '${frame.file}'`, `duration ${duration.toFixed(3)}`);
-      clock += duration;
+    // Each frame starts where its recorded moment falls at the segment's speed, counted from the
+    // segment's first frame, so the whole plays exactly that much faster: rounding to the grid
+    // never adds up. Frames that fall on the same frame of the grid keep the later one.
+    const first = segment.frames[0].at;
+    const placed: { file: string; at: number }[] = [];
+    for (const frame of segment.frames) {
+      const moment = slot(start + (frame.at - first) / segment.speed);
+      if (placed.at(-1)?.at === moment) placed.pop();
+      placed.push({ file: frame.file, at: moment });
+    }
+    const end = slot(placed.at(-1)!.at + Math.max(segment.hold, 1 / GIF.fps));
+    placed.forEach((frame, index) => {
+      const next = placed[index + 1]?.at ?? end;
+      list.push(`file '${frame.file}'`, `duration ${(next - frame.at).toFixed(3)}`);
     });
-    captions.push(`drawtext=font=DejaVu Sans:fontsize=40:fontcolor=white:box=1:boxcolor=0x262E3BE6:boxborderw=18:x=${at.x}:y=${at.y}:text='${drawn(segment.caption)}':enable='gte(t,${start.toFixed(3)})*lt(t,${clock.toFixed(3)})'`);
+    clock = end;
+    captions.push(`drawtext=font=DejaVu Sans:fontsize=40:fontcolor=white:box=1:boxcolor=0x262E3BE6:boxborderw=18:x=${at.x}:y=${at.y}:text='${drawn(segment.caption)}':enable='gte(t,${(start - half).toFixed(3)})*lt(t,${(clock - half).toFixed(3)})'`);
   }
   // The concat demuxer takes the last entry's duration only when its file is listed again.
   list.push(`file '${segments.at(-1)!.frames.at(-1)!.file}'`);
   const concat = join(work, `${basename(gif)}.txt`);
   writeFileSync(concat, `${list.join("\n")}\n`);
-  // Drawn after fps and scaling, so it advances on every GIF frame and stays a crisp thin line.
+  // Drawn after fps and scaling, so it advances on every GIF frame and stays a crisp thin line;
+  // laid over in RGB, since a subsampled overlay would wash out a status's thin strips.
   const { height, colour, track } = PROGRESS;
-  // The last GIF frame starts one frame before the end; the bar is full there.
-  const end = clock - 1 / GIF.fps;
+  // The GIF's frames: the planned length on the frame grid.
+  const count = Math.max(Math.round(clock * GIF.fps), 1);
+  // The bar grows with the frame's number, counted from 1 here, so it is empty on the first
+  // frame and full on the last whatever their times.
   const progress = `drawbox=x=0:y=ih-${height}:w=iw:h=${height}:color=${track}:t=fill[track];` +
-    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min(t/${end.toFixed(3)},1)':y=H-h:shortest=1`;
+    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min((n-1)/${Math.max(count - 1, 1)},1)':y=H-h:shortest=1:format=rgb`;
   // The repeated last entry would otherwise play its hold a second time: end at the planned length.
-  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=duration=${clock.toFixed(3)},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
-  // The bar's few pixels would not earn its colours a palette entry: generate the palette with
-  // two entries to spare, then set the last two to the bar and its track exactly.
+  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=end_frame=${count},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
+  // The bar's few pixels would not earn its colours a palette entry, nor would the statuses'
+  // thin strips, icons and words always: generate the palette with entries to spare, then set
+  // the last ones to the bar, its track and each status's colour exactly.
+  const pinned = [colour, track, ...STATUS_COLOURS];
   const generated = join(work, `${basename(gif)}.palette.png`);
   const palette = join(work, `${basename(gif)}.pinned.png`);
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat,
-    "-filter_complex", `${frames},palettegen=max_colors=${GIF.colours - 2}:stats_mode=diff:reserve_transparent=0`,
+    "-filter_complex", `${frames},palettegen=max_colors=${GIF.colours - pinned.length}:stats_mode=diff:reserve_transparent=0`,
     "-update", "1", generated]);
+  // The palette is a 16×16 image read row by row: its last entries are its last row's end.
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", generated, "-vf",
-    `drawbox=x=14:y=15:w=1:h=1:color=${colour}:t=fill,drawbox=x=15:y=15:w=1:h=1:color=${track}:t=fill`,
+    pinned.map((pin, at) => `drawbox=x=${16 - pinned.length + at}:y=15:w=1:h=1:color=${pin}:t=fill`).join(","),
     "-update", "1", palette]);
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, "-i", palette,
     "-filter_complex", `${frames}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
@@ -237,7 +278,7 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
 
 /** Launch the app on `args` in `env`, at the demo's size. */
 async function launch(service: any, app: string, args: string[], env: NodeJS.ProcessEnv): Promise<WebdriverIO.Browser> {
-  const { embeddedPorts } = await import("../../crates/artifactize-desktop/ui/e2e/platform.ts");
+  const { embeddedPorts } = await import("../../crates/artifactize-desktop/ui/e2e/portable.ts");
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   Object.assign(process.env, env);
   const capabilities = service.createTauriCapabilities(app, {
@@ -260,6 +301,9 @@ async function launch(service: any, app: string, args: string[], env: NodeJS.Pro
   return browser;
 }
 
+/** How long one try's Run may take: its longest chain of checks takes 16 s. */
+const TRY_DEADLINE = 120000;
+
 /** Demo A's input → consumer edges, one per Artifact a declaration uses. */
 const EDGES = (): number => LOOP.reduce((count, artifact) => count + artifact.uses.length, 0);
 
@@ -276,6 +320,17 @@ const LOOP: { name: string; uses: string[]; evals: [string, number][]; bug?: boo
 ];
 /** What each try fails, and so what the fix after it changes. */
 const FAILS = [["mcp", "site"], ["docs"], ["release"], []];
+
+/** How each Artifact of demo A ends while `bugs` still have their BUG, as its node's light: RED
+ * where its own code has the BUG and all it uses passed, blocked while something it uses did not
+ * pass, GREEN otherwise. LOOP lists what an Artifact uses before it. */
+function planned(bugs: ReadonlySet<string>): Map<string, "green" | "red" | "blocked"> {
+  const lights = new Map<string, "green" | "red" | "blocked">();
+  for (const artifact of LOOP) {
+    lights.set(artifact.name, artifact.uses.some((name) => lights.get(name) !== "green") ? "blocked" : bugs.has(artifact.name) ? "red" : "green");
+  }
+  return lights;
+}
 
 function loopProject(root: string, repo: string): void {
   const checker = join(root, "check.mjs");
@@ -295,18 +350,30 @@ title = "${artifact.name} ${id} pass"
 profile = { kind = "runtime", command = ${JSON.stringify(process.execPath)}, args = [${JSON.stringify(checker)}, "{${artifact.name}}", "${seconds}"] }
 payload.instruction = "Run the ${id} of {${artifact.name}}${uses ? ` with ${uses}` : ""}."
 `).join("");
-    writeFileSync(join(folder, "index.artf"), `name = "${artifact.name}"\n${evals}`);
+    mkdirSync(join(repo, ".artifactize"), { recursive: true });
+    writeFileSync(join(repo, ".artifactize", `${artifact.name}.artf`), `path = "${artifact.name}/"\n${evals}`);
   }
+}
+
+/** Stop `child` if it still runs, and wait until it has exited. */
+async function stopped(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise((done) => child.once("close", done));
+  child.kill();
+  await exited;
 }
 
 async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
   const root = join(candidate.root, "fixtures", "fixture-review-loop");
-  // The build's cleanup settles the Runs of fixture roots laid out as root/repo and root/state.
+  // Laid out as the suite's fixtures, so its teardown cancels the Runs left open and waits
+  // until they have ended before the build is removed.
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
   mkdirSync(fixture.repo, { recursive: true });
   loopProject(root, fixture.repo);
-  e2e.git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+  e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
   const env = e2e.environment(fixture);
+  /** The `run show --wait` watchers still running. */
+  const watchers = new Set<ChildProcess>();
   // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
   const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
   const segments: Segment[] = [];
@@ -328,9 +395,9 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         && canvas.querySelectorAll(".svelte-flow__edge").length === edges
         && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
     }, id, MAIN, EDGES());
-    /** The Run `id` ended and its graph is drawn and lit as it ended: every Artifact settled,
-     * exactly `fails` red, and every edge drawn. */
-    const ended = (id: string, fails: string[]) => browser.execute((id, main, fails, count, edges) => {
+    /** The Run `id` ended and its graph is drawn and lit as it ended: its headline says
+     * `verdict`, each Artifact is lit as `lights` plans, and every edge is drawn. */
+    const ended = (id: string, verdict: string, lights: [string, string][]) => browser.execute((id, main, verdict, planned, edges) => {
       const shown = document.querySelector(main);
       const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
       // Every edge drawn as a visible line, not only present in the page.
@@ -339,14 +406,19 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         return !/NaN/.test(line.getAttribute("d") ?? "NaN") && (box.width > 0 || box.height > 0) && getComputedStyle(line).visibility !== "hidden";
       });
       if (lines.length !== edges) return false;
-      const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => [node.dataset.id ?? "", node.dataset.light ?? ""]);
+      const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => `${node.dataset.id}=${node.dataset.light}`).sort();
       // The header row's headline names the Run's verdict once it ended.
-      const verdict = shown?.querySelector(":scope > header button.headline .status")?.textContent?.trim() ?? "";
-      return /^(GREEN|RED|YELLOW|ERROR|BLOCKED|INCOMPLETE)$/.test(verdict) && lights.length === count
-        && lights.every(([, light]) => light !== "waiting" && light !== "active")
-        && lights.filter(([, light]) => light === "red").map(([node]) => node.slice(2)).sort().join() === [...fails].sort().join();
-    }, id, MAIN, fails, LOOP.length, EDGES());
+      const said = shown?.querySelector(":scope > header button.headline .status")?.textContent?.trim() ?? "";
+      return said === verdict && lights.join() === planned.map(([name, light]) => `a:${name}=${light}`).sort().join();
+    }, id, MAIN, verdict, lights, EDGES());
+    /** The evals whose saved GREEN result the next try reuses: those GREEN so far whose
+     * Artifact, and every Artifact they use, the fixes left as they were. */
+    const reusable = new Set<string>();
+    /** The Artifacts whose code still has its BUG. */
+    const bugs = new Set(LOOP.filter((artifact) => artifact.bug).map((artifact) => artifact.name));
     for (const [index, fails] of FAILS.entries()) {
+      const lights = planned(bugs);
+      const last = fails.length === 0;
       const frames = join(work, `loop-${index + 1}`);
       mkdirSync(frames);
       const started = run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], { env: { ...env } });
@@ -361,34 +433,83 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       }, MAIN);
       await browser.$(chip(id)).click();
       await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Main area draws ${id}'s graph` });
-      // `run show --wait` exits with the Run's outcome: 0 when it is satisfied.
+      // `run show --wait` exits with the Run's outcome: 0 when it is satisfied. A Run that has
+      // not ended by the deadline fails the recording; teardown stops a watcher still running.
       const settled = new Promise<{ code: number | null; text: string }>((done, failed) => {
         const watcher = spawn(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", id, "--wait", "--json"], { env });
+        watchers.add(watcher);
+        const deadline = setTimeout(() => {
+          failed(new Error(`${id} did not end within ${TRY_DEADLINE / 1000} s`));
+          watcher.kill();
+        }, TRY_DEADLINE);
         let text = "";
         watcher.stdout.on("data", (chunk) => { text += chunk; });
-        watcher.once("error", failed);
-        watcher.once("close", (code) => done({ code, text }));
+        watcher.once("error", (error) => {
+          clearTimeout(deadline);
+          failed(error);
+        });
+        watcher.once("close", (code) => {
+          clearTimeout(deadline);
+          watchers.delete(watcher);
+          done({ code, text });
+        });
       });
-      segments.push({ frames: await record(browser, frames, settled, () => ended(id, fails)), speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED}`, hold: GIF.hold });
+      /** The Run `id` is shown in progress: an Artifact of its graph still waits or runs. */
+      const live = () => browser.execute((id, main) => {
+        const shown = document.querySelector(main);
+        const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
+        return [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].some((node) => node.dataset.light === "waiting" || node.dataset.light === "active");
+      }, id, MAIN);
+      const recorded = await record(browser, frames, settled, () => ended(id, last ? "GREEN" : "RED", [...lights]), live);
       const area = await corner(browser, `${MAIN} .run .canvas`);
       at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
       const { code, text } = await settled;
-      const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string }[] };
-      const red = [...new Set(view.requests.filter((request) => request.status === "RED").map((request) => request.evalId.split("/")[0]))].sort();
-      const last = fails.length === 0;
-      // Every request settled as planned: GREEN, RED where the BUG still is, BLOCKED below it.
-      const unexpected = view.requests.filter((request) => !["GREEN", "RED", "BLOCKED"].includes(request.status));
-      if (red.join() !== [...fails].sort().join() || unexpected.length > 0 || view.status !== (last ? "GREEN" : "RED")
-        || view.validation?.satisfied !== last || (code === 0) !== last) {
-        throw new Error(`try ${index + 1} ended ${view.status} (exit ${code}) with RED ${red.join(", ") || "nothing"} and ${unexpected.map((request) => `${request.evalId} ${request.status}`).join(", ") || "no other states"}; planned RED ${fails.join(", ") || "nothing"}`);
+      const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string; source: { kind: string } | null }[] };
+      // Unchanged work is reused, as the Run's records say: exactly the evals it could reuse
+      // took their saved result, and every other one ran or was blocked.
+      const reused = view.requests.filter((request) => request.source?.kind === "cache").map((request) => request.evalId).sort();
+      if (reused.join() !== [...reusable].sort().join()) {
+        throw new Error(`try ${index + 1} reused ${reused.join(", ") || "nothing"}; planned ${[...reusable].sort().join(", ") || "nothing"}`);
       }
-      // The fix: remove the BUG from what just failed, as an AI would fix the code.
-      for (const name of fails) writeFileSync(join(fixture.repo, name, "code.txt"), "done\n");
+      segments.push({ frames: recorded, speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED} · ${reused.length} of ${view.requests.length} evals reused`, hold: GIF.hold });
+      // Every eval settled as planned, each once: GREEN, RED where the BUG still is, BLOCKED
+      // below it; and the Run with them.
+      const settledAs = view.requests.map((request) => `${request.evalId} ${request.status}`).sort();
+      const plan = LOOP.flatMap((artifact) => artifact.evals.map(([check]) => `${artifact.name}/${check} ${lights.get(artifact.name)!.toUpperCase()}`)).sort();
+      if (settledAs.join() !== plan.join() || view.status !== (last ? "GREEN" : "RED") || view.validation?.satisfied !== last || (code === 0) !== last) {
+        throw new Error(`try ${index + 1} ended ${view.status} (exit ${code}) with ${settledAs.join(", ")}; planned ${plan.join(", ")}`);
+      }
+      // The fix: remove the BUG from what just failed, as an AI would fix the code. What it
+      // changes, and what uses it, is evaluated again; the rest of what passed is reused.
+      for (const request of view.requests) if (request.status === "GREEN") reusable.add(request.evalId);
+      for (const name of fails) {
+        writeFileSync(join(fixture.repo, name, "code.txt"), "done\n");
+        bugs.delete(name);
+        for (const artifact of LOOP.filter((each) => each.name === name || each.uses.includes(name))) {
+          for (const [check] of artifact.evals) reusable.delete(`${artifact.name}/${check}`);
+        }
+      }
     }
   } finally {
-    await service.cleanupWdioSession(browser);
+    try {
+      for (const watcher of watchers) await stopped(watcher);
+      await service.cleanupWdioSession(browser);
+    } finally {
+      // The Runs this demo started end before its project, its state and the build go.
+      e2e.cancelRuns(fixture);
+    }
   }
   return { segments, at };
+}
+
+/** The newer of this checkout's main and the remote's: a local main is often behind the
+ * remote's, and sometimes ahead of it. Diverged, the remote's is the published history. */
+function newestMain(): string {
+  const exists = (ref: string) => spawnSync("git", ["rev-parse", "--verify", "--quiet", ref], { cwd: repository }).status === 0;
+  if (!exists("origin/main")) return "main";
+  if (!exists("main")) return "origin/main";
+  const contains = (newer: string, older: string) => spawnSync("git", ["merge-base", "--is-ancestor", older, newer], { cwd: repository }).status === 0;
+  return contains("main", "origin/main") ? "main" : "origin/main";
 }
 
 /** The release tags of `main`, oldest first: vX.Y.Z without a pre-release part. */
@@ -426,10 +547,11 @@ function files(directory: string, match: (name: string) => boolean): string[] {
     .map((entry) => join(entry.parentPath, entry.name));
 }
 
-/** Put `ref`'s tree, without examples/, in `tree`, in the format the current app reads. */
-function checkout(ref: string, tree: string): void {
-  rmSync(tree, { recursive: true, force: true });
-  mkdirSync(tree, { recursive: true });
+/** Put `ref`'s tree, without examples/, in `tree`, a Git checkout, in the format the current
+ * app reads: older forms converted here, then a tree that declares its Artifacts where they
+ * live migrated by the built CLI `cli`. The checkout's own Git folder stays. */
+function checkout(ref: string, tree: string, cli: string): void {
+  for (const entry of readdirSync(tree)) if (entry !== ".git") rmSync(join(tree, entry), { recursive: true, force: true });
   run("sh", ["-c", `git -C "$1" archive "$2" | tar -x -C "$3" --exclude=examples`, "sh", repository, ref, tree]);
   // 0.7–0.8 named the ignore file differently; the folders it lists are not part of the graph.
   const oldIgnore = join(tree, ".artifactizeignore");
@@ -482,13 +604,15 @@ function checkout(ref: string, tree: string): void {
     });
     if (converted !== text) writeFileSync(file, converted);
   }
+  // A release from before definitions lived in .artifactize/: its own CLI's successor moves them.
+  const defined = existsSync(join(tree, ".artifactize")) && files(join(tree, ".artifactize"), (name) => name.endsWith(".artf")).length > 0;
+  if (!defined) run(cli, ["--repo", tree, "config", "migrate"]);
 }
 
 async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
   const root = join(candidate.root, "fixtures", "fixture-graph-growth");
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
-  // The remote's main when this checkout has one: a local main is often behind it.
-  const main = spawnSync("git", ["rev-parse", "--verify", "--quiet", "origin/main"], { cwd: repository }).status === 0 ? "origin/main" : "main";
+  const main = newestMain();
   const tags = releases(main);
   const first = tags.findIndex((tag) => tag === "v0.7.0");
   if (first < 0) throw new Error("main has no v0.7.0 release");
@@ -501,49 +625,104 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   const blank = join(frames, "before.png");
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-frames:v", "1", blank]);
   segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: `${tags[0].slice(1)}–${tags[first - 1].slice(1)} · no Artifacts yet`, hold: GIF.step });
-  checkout(steps[0].ref, fixture.repo);
+  // Each step is committed to the checkout's main branch, whose Current the app shows.
+  mkdirSync(fixture.repo, { recursive: true });
+  e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+  const commit = (step: { ref: string; caption: string }) => {
+    checkout(step.ref, fixture.repo, candidate.cli);
+    e2e.git(fixture, fixture.repo, "add", "-A");
+    e2e.git(fixture, fixture.repo, "commit", "-q", "--allow-empty", "-m", step.caption);
+  };
+  commit(steps[0]);
   const browser = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
   let at = { x: 0, y: 0 };
   try {
+    /** When the shown Current was last scanned, as its header says it; "" while none ended. */
+    const scannedAt = () => browser.execute(() => {
+      const scan = document.querySelector('section.panel[aria-label="Main area"] > header .scan');
+      return scan?.querySelector(".checking") ? "" : (scan?.querySelector("time")?.getAttribute("datetime") ?? "");
+    });
     for (const [index, step] of steps.entries()) {
+      // A scan that ended after this step's checkout: the one Refresh starts, or the first.
+      const before = index > 0 ? await scannedAt() : "";
       if (index > 0) {
-        checkout(step.ref, fixture.repo);
+        commit(step);
         await browser.$("button=Refresh").click();
       }
+      await browser.waitUntil(async () => {
+        const now = await scannedAt();
+        return now !== "" && now !== before;
+      }, { timeout: WAIT, timeoutMsg: `${step.caption}'s scan ended` });
+      // Names read from about half size on: every Artifact of a graph this size is then drawn as
+      // an element, so its nodes and edges can be compared below; Fit zooms out again after. The
+      // zoom is read once the graph's tools work, its layout done: until then the strip shows no
+      // zoom of its own. Each wait for the drawing below zooms in again while it is less.
+      const legible = async () => {
+        const zoomIn = browser.$('[aria-label="Graph tools"] [aria-label="Zoom in"]');
+        if (!(await zoomIn.isEnabled())) return false;
+        if (Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10) >= 50) return true;
+        await zoomIn.click();
+        return false;
+      };
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them but a part's, which the Current draws as
       // the part inside its whole. A part of several wholes is drawn once in each, so the
-      // drawing is compared by the Artifacts its nodes and edges stand for, a copy's key ending
-      // in its Artifact's id. The graph drawn is this release's only once these are exactly
-      // its own, never the previous one's.
+      // drawing is compared by its copies, each keyed by the wholes it is drawn inside, and by the
+      // Artifacts its edges join, an edge's ends being copy keys ending in their Artifacts' ids.
+      // The graph drawn is this release's only once these are exactly its own, never the
+      // previous one's.
       const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
         { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string; kind: string }[] };
       const names = new Set(Object.keys(graph.artifacts));
+      // Where each Artifact is drawn: one copy inside each whole that names it as a part, its key
+      // the path of wholes down to it, and once at the top for an Artifact that is no part. A part
+      // that would close a cycle is not drawn again inside itself.
+      const partsOf = new Map<string, string[]>();
+      for (const { source, target, kind } of graph.relations) {
+        if (kind === "part" && names.has(source) && names.has(target)) partsOf.set(target, [...(partsOf.get(target) ?? []), source]);
+      }
+      const isPart = new Set([...partsOf.values()].flat());
+      const copies: string[] = [];
+      const place = (name: string, above: string | null, around: Set<string>) => {
+        const key = above === null ? `a:${name}` : `${above}/a:${name}`;
+        copies.push(key);
+        for (const part of partsOf.get(name) ?? []) if (!around.has(part)) place(part, key, new Set([...around, part]));
+      };
+      for (const name of names) if (!isPart.has(name)) place(name, null, new Set([name]));
       const expected = [
-        [...names].map((name) => `a:${name}`).sort().join(" "),
+        [...new Set(copies)].sort().join(" "),
         [...new Set(graph.relations.filter(({ source, target, kind }) => kind !== "part" && source !== target && names.has(source) && names.has(target))
           .map(({ source, target }) => `a:${source}>a:${target}`))].sort().join(" "),
       ].join("\n");
-      await browser.waitUntil(() => browser.execute((expected) => {
+      await browser.waitUntil(async () => await legible() && browser.execute((expected) => {
         const set = (values: string[]) => [...new Set(values)].sort().join(" ");
         const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
-        const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.artifact ?? ""));
+        // Every copy by its key, the wholes it is drawn inside included: a previous release's
+        // drawing with the same Artifacts nested otherwise does not pass.
+        const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.id ?? ""));
         const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
         const refresh = document.querySelector<HTMLButtonElement>('section.panel[aria-label="Main area"] > header .actions button');
-        return !!refresh && !refresh.disabled && `${artifacts}\n${edges}` === expected;
+        // The graph shown was read at the scan that just ended, not kept from the one before.
+        const host = document.querySelector<HTMLElement>('section.panel[aria-label="Main area"] .host');
+        const current = !!host && host.dataset.read !== undefined && host.dataset.read === host.dataset.drawn;
+        return !!refresh && !refresh.disabled && current && `${artifacts}\n${edges}` === expected;
       }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector('section.panel[aria-label="Main area"] > header .failure')?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
       // Complete and still: exactly this release's Artifact nodes and edges, every node drawn
       // inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
       // over 300 ms.
-      const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
+      const drawn = (inside: boolean) => browser.waitUntil(async () => (inside || await legible()) && browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {
           const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
           const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
           const set = (values: string[]) => [...new Set(values)].sort().join(" ");
           const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
-          const artifacts = set(nodes.map((node) => node.dataset.artifact ?? ""));
+          const artifacts = set(nodes.filter((node) => node.dataset.artifact !== undefined).map((node) => node.dataset.id ?? ""));
+          // The camera, the revision drawn and every node's light: none may change while it holds.
+          const camera = `${document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style")} ${document.querySelector<HTMLElement>('section.panel[aria-label="Main area"] .host')?.dataset.drawn} ${nodes.map((node) => `${node.dataset.id}=${node.dataset.light}`).join(",")}`;
+          // Fitted out until names do not read, the graph checked above is painted as blocks.
+          if (inside && nodes.length === 0 && document.querySelector(".current canvas.paint")) return `painted ${camera}`;
           if (`${artifacts}\n${set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")))}` !== expected) return null;
           const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
           const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
@@ -554,7 +733,6 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
             const box = node.getBoundingClientRect();
             return box.width > 0 && (!inside || (box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom));
           });
-          const camera = document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style");
           return within && nodes.length > 0 && lines === edges ? `${nodes.length} ${edges} ${camera}` : null;
         };
         const before = shown();
@@ -571,7 +749,12 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       segments.push({ frames: [{ file, at: 0 }], speed: 1, caption: step.caption, hold: GIF.step });
     }
   } finally {
-    await service.cleanupWdioSession(browser);
+    try {
+      await service.cleanupWdioSession(browser);
+    } finally {
+      // Nothing of its state keeps running once its project and the build go.
+      e2e.cancelRuns(fixture);
+    }
   }
   return { segments, at };
 }
@@ -579,12 +762,14 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
 /** Record every demo into `output`, building and keeping frames in `work`. */
 async function capture(output: string, work: string): Promise<void> {
   const base = "../../crates/artifactize-desktop/ui/e2e";
-  const { adopt, cleanup, prepare } = await import(`${base}/build.ts`);
-  const e2e = await import(`${base}/environment.ts`);
-  const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
-  mkdirSync(work, { recursive: true });
-  const candidate = adopt(await prepare(join(work, "build")));
+  let candidate: { root: string } | undefined;
+  // The work folder goes whatever fails, the build and its setup included.
   try {
+    const { adopt, prepare } = await import(`${base}/build.ts`);
+    const e2e = await import(`${base}/fixtures/repo.ts`);
+    const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
+    mkdirSync(work, { recursive: true });
+    candidate = adopt(await prepare(join(work, "build")));
     const frames = join(work, "frames");
     mkdirSync(frames);
     const loop = await reviewLoop(service, e2e, candidate, frames);
@@ -600,7 +785,10 @@ async function capture(output: string, work: string): Promise<void> {
     }
   } finally {
     try {
-      await cleanup(candidate.root);
+      if (candidate) {
+        const { cleanup } = await import(`${base}/build.ts`);
+        await cleanup(candidate.root);
+      }
     } finally {
       rmSync(work, { recursive: true, force: true });
     }

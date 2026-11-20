@@ -16,14 +16,14 @@ pub fn canonicalize(path: &Path) -> io::Result<PathBuf> {
 
 /// `\\?\C:\a` as `C:\a` and `\\?\UNC\server\share\a` as `\\server\share\a`, when the Win32
 /// layer would pass every component through unchanged and the result is below `MAX_PATH`.
-fn plain(path: &Path) -> Option<PathBuf> {
+pub(in crate::platform::files) fn plain(path: &Path) -> Option<PathBuf> {
     let mut components = path.components();
     let Some(Component::Prefix(prefix)) = components.next() else {
         return None;
     };
     let mut plain = match prefix.kind() {
         Prefix::VerbatimDisk(drive) => OsString::from(format!("{}:", char::from(drive))),
-        Prefix::VerbatimUNC(server, share) => {
+        Prefix::VerbatimUNC(server, share) if plain_name(server) && plain_name(share) => {
             let mut plain = OsString::from(r"\\");
             plain.push(server);
             plain.push(r"\");
@@ -60,6 +60,8 @@ fn plain_name(name: &OsStr) -> bool {
     // Conservatively permit only short UTF-8 components when removing a
     // verbatim prefix; do not normalize names beyond this existing byte bound.
     const MAX_PLAIN_NAME_BYTES: usize = 255;
+    // Win32 recognizes ISO-8859-1 superscript 1, 2 and 3 as DOS COM/LPT digits too.
+    const DOS_PORT_DIGITS: &str = "0123456789¹²³";
     let Some(name) = name.to_str() else {
         return false;
     };
@@ -75,7 +77,7 @@ fn plain_name(name: &OsStr) -> bool {
             .or_else(|| port.strip_prefix("LPT"))
             .is_some_and(|number| {
                 number.chars().count() == 1
-                    && number.chars().all(|digit| "0123456789¹²³".contains(digit))
+                    && number.chars().all(|digit| DOS_PORT_DIGITS.contains(digit))
             }),
     };
     !name.is_empty()

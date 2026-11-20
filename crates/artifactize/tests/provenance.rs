@@ -26,12 +26,29 @@ impl Fixture {
         fs::create_dir_all(repo.join("bin")).unwrap();
         fs::create_dir_all(repo.join("rules/nested")).unwrap();
         fs::create_dir(root.path().join("home")).unwrap();
-        fs::write(repo.join("bin/sim"), "simulator v1").unwrap();
-        fs::write(repo.join("rules/a.json"), "{}").unwrap();
-        fs::write(repo.join("rules/nested/b.json"), "[]").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("bin/sim")),
+            "simulator v1",
+        )
+        .unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("rules/a.json")),
+            "{}",
+        )
+        .unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("rules/nested/b.json")),
+            "[]",
+        )
+        .unwrap();
         fs::create_dir(repo.join("app")).unwrap();
-        fs::write(repo.join("app/page.md"), "# Page\n").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("app/page.md")),
+            "# Page\n",
+        )
+        .unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("app/index.artf"),
             json!({
                 "name":"app",
@@ -63,7 +80,7 @@ impl Fixture {
         let provider = FakeProvider::start(|request| {
             openai::completed(
                 request,
-                vec![openai::message(&json!({"verdict":"GREEN"}).to_string())],
+                vec![openai::message(&json!({"findings":[]}).to_string())],
                 openai::usage(10, 5),
             )
         });
@@ -125,7 +142,11 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
     let calls = fixture.provider.requests().len();
 
     // The pins are provenance, not part of the key: a reuse keeps the original pins.
-    fs::write(repo.join("bin/sim"), "simulator v2").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("bin/sim")),
+        "simulator v2",
+    )
+    .unwrap();
     let reused = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(reused["executionsStarted"], 0);
     assert_eq!(
@@ -135,14 +156,18 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
     assert_eq!(fixture.provider.requests().len(), calls);
 
     // A new review pins the current files; any change in a pinned folder changes its pin.
-    fs::write(repo.join("rules/nested/b.json"), "[1]").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("rules/nested/b.json")),
+        "[1]",
+    )
+    .unwrap();
     let forced = fixture.json(&["verify", "--wait", "--all", "--force"], 0);
     let pins = &forced["requests"][0]["provenance"]["executionPaths"]["sim_app"];
     assert_eq!(pins["bin/sim"], SIM_V2);
     assert_ne!(pins["rules"], rules.as_str());
 
     // A pinned path that cannot be hashed fails the review before the Agent is called.
-    fs::remove_file(repo.join("bin/sim")).unwrap();
+    support::declaration::remove_file(repo.join("bin/sim")).unwrap();
     let failed = fixture.json(&["verify", "--wait", "--all", "--force"], 2);
     let request = &failed["requests"][0];
     assert_eq!(request["errorCode"], "PREPARATION_FAILED");

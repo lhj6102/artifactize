@@ -283,24 +283,35 @@ pub fn executable() -> Result<&'static Path, String> {
         .map_err(Clone::clone)
 }
 
+/// Core's own package is self-contained; other workspace tests share this source.
+pub fn core_manifest_dir() -> PathBuf {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    if env!("CARGO_PKG_NAME") == "artifactize-core" {
+        manifest.to_owned()
+    } else {
+        manifest.with_file_name("artifactize-core")
+    }
+}
+
 fn source_executable() -> Result<PathBuf, String> {
     // Cargo names the executable for its own package's integration tests. Library
-    // tests instead declare and build the sibling CLI, never discover an installed one.
+    // tests build the core worker example, never an interface or an installed command.
     if let Some(path) = option_env!("CARGO_BIN_EXE_artifactize") {
         return Ok(PathBuf::from(path));
     }
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace crate parent")
-        .join("artifactize")
-        .join("Cargo.toml");
+    library_executable()
+}
+
+/// Build the library-only worker even for a CLI test that needs a fixture-specific entry.
+pub(super) fn library_executable() -> Result<PathBuf, String> {
+    let manifest = core_manifest_dir().join("Cargo.toml");
     let built = Command::new(env!("CARGO"))
         .args([
             "build",
             "--quiet",
             "--locked",
-            "--bin",
-            "artifactize",
+            "--example",
+            "artifactize-test-worker",
             "--message-format=json-render-diagnostics",
         ])
         .arg("--manifest-path")
@@ -312,12 +323,15 @@ fn source_executable() -> Result<PathBuf, String> {
     if !built.status.success() {
         return Err(format!("Fixture CLI build failed: {}", built.status));
     }
-    executable_from_receipt(&built.stdout, "artifactize")
+    executable_target(&built.stdout, "artifactize-test-worker", "example")
 }
 
 /// Read Cargo's executable receipt, including target-dir, target triples, profiles and
 /// native suffixes. The fixture never guesses a path from another executable's location.
 pub fn executable_from_receipt(receipt: &[u8], binary: &str) -> Result<PathBuf, String> {
+    executable_target(receipt, binary, "bin")
+}
+fn executable_target(receipt: &[u8], binary: &str, kind: &str) -> Result<PathBuf, String> {
     for line in receipt
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
@@ -327,7 +341,7 @@ pub fn executable_from_receipt(receipt: &[u8], binary: &str) -> Result<PathBuf, 
             executable: Some(path),
         } = serde_json::from_slice(line).map_err(|error| error.to_string())?
             && target.name == binary
-            && target.kind.iter().any(|kind| kind == "bin")
+            && target.kind.iter().any(|value| value == kind)
         {
             return Ok(path);
         }

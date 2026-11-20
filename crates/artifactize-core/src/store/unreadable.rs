@@ -91,18 +91,40 @@ pub async fn read_unreadable(state: &Path, repo: Option<&Path>) -> Result<Vec<Un
             let runs = statement
                 .query_map(params![repo], |row| row.get::<_, crate::types::RunId>(0))?
                 .collect::<Result<Vec<_>, _>>()?;
-            let mut unreadable = Vec::new();
             let mut seen = BTreeSet::new();
-            for error in in_runs(&transaction, &runs)?.into_values().flatten() {
-                if seen.insert((error.kind.clone(), error.id.clone())) {
-                    unreadable.push(error);
-                }
-            }
-            Ok(unreadable)
+            Ok(in_runs(&transaction, &runs)?
+                .into_values()
+                .flatten()
+                .filter(|error| seen.insert((error.kind.clone(), error.id.clone())))
+                .collect())
         })
         .await
         .map_err(|error| error.to_string());
     super::connection::finish(connection, result).await
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum RecordKind {
+    Run,
+    Definitions,
+    Request,
+    Execution,
+}
+
+impl rusqlite::types::FromSql for RecordKind {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Ok(match value.as_str()? {
+            "run" => Self::Run,
+            "definitions" => Self::Definitions,
+            "request" => Self::Request,
+            "execution" => Self::Execution,
+            _ => {
+                return Err(rusqlite::types::FromSqlError::Other(Box::new(
+                    std::io::Error::other("Unknown saved record kind."),
+                )));
+            }
+        })
+    }
 }
 
 /// Audit the given Runs in one query: their state and definitions rows, their requests and
@@ -123,7 +145,7 @@ pub(super) fn in_runs(
     let records = statement.query_map([serde_json::to_string(runs)?], |row| {
         Ok((
             row.get::<_, crate::types::RunId>(0)?,
-            row.get::<_, String>(1)?,
+            row.get::<_, RecordKind>(1)?,
             row.get::<_, String>(2)?,
             row.get::<_, String>(3)?,
         ))
@@ -132,15 +154,17 @@ pub(super) fn in_runs(
     let mut seen = BTreeSet::new();
     for record in records {
         let (run, kind, id, data) = record?;
-        if !seen.insert((run.clone(), kind.clone(), id.clone())) {
+        if !seen.insert((run.clone(), kind, id.clone())) {
             continue;
         }
-        let error = match kind.as_str() {
-            "run" => decode::<super::Run>("run", &id, &data).err(),
+        let error = match kind {
+            RecordKind::Run => decode::<super::Run>("run", &id, &data).err(),
             // A Run whose definitions do not read is an unreadable Run.
-            "definitions" => decode::<super::definitions::Definitions>("run", &id, &data).err(),
-            "request" => decode::<super::Request>("request", &id, &data).err(),
-            _ => decode::<super::Execution>("execution", &id, &data).err(),
+            RecordKind::Definitions => {
+                decode::<super::definitions::Definitions>("run", &id, &data).err()
+            }
+            RecordKind::Request => decode::<super::Request>("request", &id, &data).err(),
+            RecordKind::Execution => decode::<super::Execution>("execution", &id, &data).err(),
         };
         if let Some(error) = error {
             unreadable.entry(run).or_default().push(error);

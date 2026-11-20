@@ -32,7 +32,17 @@ const SET_BY_BUNDLE: [&str; 5] = [
 
 /// The GTK hook adds the system's data directory right after the bundle's own.
 const DATA_DIRECTORIES: &str = "XDG_DATA_DIRS";
-const HOOK_DATA_DIRECTORY: &str = "/usr/share";
+/// The system data directory the GTK hook inserts.
+fn hook_data_directory() -> &'static Path {
+    Path::new("/usr/share")
+}
+
+/// Only XDG_DATA_DIRS can have one GTK-inserted system entry to remove.
+enum HookRemoval {
+    Inactive,
+    SeekingBundle,
+    AfterBundle,
+}
 
 /// The AppImage bundle this process runs from.
 pub(super) struct Bundle {
@@ -90,20 +100,27 @@ impl Bundle {
         if !entries.iter().any(|entry| self.contains(entry)) {
             return Some(value.to_owned());
         }
-        let mut hook_entry_pending = name == DATA_DIRECTORIES;
-        let mut after_bundle = false;
+        let mut hook = if name == DATA_DIRECTORIES {
+            HookRemoval::SeekingBundle
+        } else {
+            HookRemoval::Inactive
+        };
         let mut kept = Vec::with_capacity(entries.len());
         for entry in entries {
-            let inside = self.contains(&entry);
-            let hook_entry = hook_entry_pending
-                && after_bundle
-                && !inside
-                && entry == Path::new(HOOK_DATA_DIRECTORY);
-            hook_entry_pending &= !hook_entry;
-            after_bundle = inside;
-            if !inside && !hook_entry {
-                kept.push(entry);
+            if self.contains(&entry) {
+                if !matches!(hook, HookRemoval::Inactive) {
+                    hook = HookRemoval::AfterBundle;
+                }
+                continue;
             }
+            if matches!(hook, HookRemoval::AfterBundle) {
+                if entry == hook_data_directory() {
+                    hook = HookRemoval::Inactive;
+                    continue;
+                }
+                hook = HookRemoval::SeekingBundle;
+            }
+            kept.push(entry);
         }
         kept.iter()
             .any(|entry| !entry.as_os_str().is_empty())

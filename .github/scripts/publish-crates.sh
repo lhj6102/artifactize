@@ -15,7 +15,7 @@ indexed() {
     curl -fsS "https://index.crates.io/$(echo "$1" | cut -c1-2)/$(echo "$1" | cut -c3-4)/$1" 2>/dev/null |
         jq -e --arg version "$version" 'select(.vers == $version)' >/dev/null
 }
-for crate in artifactize-tools artifactize-core artifactize-tui artifactize-mcp artifactize; do
+for crate in artifactize-tools artifactize-core artifactize-mcp artifactize; do
     if indexed "$crate"; then
         echo "$crate $version is on crates.io already"
         continue

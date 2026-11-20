@@ -4,7 +4,10 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::{config::read_workspace_config, test_os::symlink_file};
+use crate::{
+    config::{RepoConfig, read_workspace_config},
+    test_os::file_link,
+};
 
 async fn prepare_all<'a>(
     repo: &Repo,
@@ -17,7 +20,7 @@ async fn prepare_all<'a>(
             &config.artifacts["basis"].name,
         ],
         repo.output.path(),
-        &Parallelism::new(2),
+        &Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -80,13 +83,16 @@ async fn fingerprint_false_is_not_prepared_or_rechecked_and_leaves_no_key() {
         }]}),
     );
     // Even an invalid artifactsum input is never read for a disabled fingerprint.
-    let _ = symlink_file("missing", repo.root.path().join("link"));
+    file_link(
+        &repo.root.path().join("missing"),
+        &repo.root.path().join("link"),
+    );
     let config = read_workspace_config(repo.root.path()).unwrap();
     let fingerprints = prepare(
         &config,
         [&config.artifacts["app"].name],
         repo.output.path(),
-        &Parallelism::new(2),
+        &Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -101,7 +107,7 @@ async fn fingerprint_false_is_not_prepared_or_rechecked_and_leaves_no_key() {
             &config,
             &config.evals[0],
             repo.output.path(),
-            &Parallelism::new(2),
+            &Parallelism::new(2).unwrap(),
             CancellationToken::new()
         )
         .await
@@ -123,7 +129,10 @@ async fn a_wholes_manifest_excludes_file_and_aspect_parts_even_as_explicit_input
     for files in [json!(["."]), json!(["own.txt", "part.txt", "selected"])] {
         repo.write("app/part.txt", "file part");
         repo.write("app/selected/input.txt", "aspect part");
-        repo.artifact("app", json!({"name":"app","fingerprint":{"files":files}}));
+        repo.artifact(
+            "app",
+            json!({"name":"app","parts":["file-part","aspect"],"fingerprint":{"files":files}}),
+        );
         assert_eq!(repo.files("app").await, ["own.txt"]);
         let own = repo.fingerprint("app").await.unwrap().value;
         repo.write("app/part.txt", "changed file part");

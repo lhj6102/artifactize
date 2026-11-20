@@ -35,12 +35,10 @@ pub(super) fn prepare(
     for (key, name) in [
         ("ARTIFACTIZE_OUTPUT_DIR", "output"),
         ("ARTIFACTIZE_TMP_DIR", "tmp"),
-    ]
-    .into_iter()
-    .chain(platform::TEMP_VARIABLES.iter().map(|key| (*key, "tmp")))
-    {
+    ] {
         platform::environment::set(&mut environment, key, root.join(name));
     }
+    platform::environment::set_temporary_directory(&mut environment, &root.join("tmp"));
     Ok((workspace, directory.keep(), environment))
 }
 

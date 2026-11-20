@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize, ser::SerializeMap};
 /// Compact findings stay useful within MCP's response bound even with long owner summaries.
 const SUMMARY_CHARS: usize = 512;
 /// Shared page size; interfaces cannot accidentally emit an unbounded findings list.
-const PAGE_SIZE: usize = 20;
+pub const PAGE_SIZE: usize = 20;
 /// Leave room for the envelope and MCP's structured-plus-text mirror under 64 KiB.
 const FINDING_BYTES: usize = 24 * 1024;
 #[derive(Debug, Clone, Copy, Serialize)]

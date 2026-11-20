@@ -20,6 +20,8 @@ pub(super) trait Flow {
     const ENDED: &'static str;
     /// A second waiter for the same sign-in.
     const WAITED: &'static str;
+    /// It ended signed in without asking anything: its status says so.
+    const UNASKED: &'static str;
 }
 
 struct SignIn {
@@ -129,9 +131,9 @@ impl<F: Flow> SignIns<F> {
                 self.finish(id);
                 match ended {
                     Ok(Err(error)) => Err(Failure::Account(error)),
-                    // The library shows the prompt before it can succeed: a success without
-                    // one is a bug in this sign-in's own wiring.
-                    Ok(Ok(())) => unreachable!("a sign-in succeeded without showing its prompt"),
+                    // An outside program may succeed without asking anything, signed in
+                    // already: said, and the status read again shows it.
+                    Ok(Ok(())) => Err(Failure::Account(F::UNASKED.into())),
                     Err(error) => Err(Self::ended_badly(error)),
                 }
             }
@@ -228,6 +230,7 @@ mod tests {
         const NOT_WAITING: &'static str = "No sign-in is waiting for a paste.";
         const ENDED: &'static str = "The sign-in already ended.";
         const WAITED: &'static str = "The sign-in is already being waited for.";
+        const UNASKED: &'static str = "The sign-in ended without asking anything.";
     }
 
     /// A sign-in whose prompt the test releases: `go` shows it.

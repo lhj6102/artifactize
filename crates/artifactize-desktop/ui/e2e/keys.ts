@@ -17,22 +17,28 @@ const MODIFIERS = new Set(["Control", "Shift", "Alt", "Meta"]);
 export type Page = {
   keys: (keys: string[]) => Promise<unknown>;
   received: () => Promise<string[]>;
-  until: (check: () => Promise<boolean> | boolean, timeout: number) => Promise<boolean>;
+  /** Whether `check` held within `timeout`; `what` names the wait. */
+  until: (check: () => Promise<boolean> | boolean, timeout: number, what: string) => Promise<boolean>;
   /** Chords whose real DOM event was consumed by an app handler. */
   handled?: () => Promise<string[]>;
   /** Read-only failure evidence: where the delivered action actually landed. */
   diagnostics?: () => Promise<unknown>;
 };
 
-/** Keep the original event so defaultPrevented is observed after the handlers run. */
+/** Install before scenario input. Keep the original event so defaultPrevented
+ * is observed after the handlers run. */
+export async function recordKeys(browser: WebdriverIO.Browser): Promise<void> {
+  await browser.execute(() => {
+    const log: KeyboardEvent[] = [];
+    (window as unknown as { keyEvents: KeyboardEvent[] }).keyEvents = log;
+    window.addEventListener("keydown", (event) => log.push(event), { capture: true, passive: true });
+  });
+}
+
 function events(browser: WebdriverIO.Browser): Promise<{ received: string[]; handled: string[] }> {
   return browser.execute(() => {
     const page = window as unknown as { keyEvents?: KeyboardEvent[] };
-    if (page.keyEvents === undefined) {
-      const log: KeyboardEvent[] = [];
-      page.keyEvents = log;
-      window.addEventListener("keydown", (event) => log.push(event), { capture: true });
-    }
+    if (!page.keyEvents) throw new Error("the passive key recorder was not installed");
     return {
       received: page.keyEvents.map((event) => event.key),
       handled: page.keyEvents.filter((event) => event.defaultPrevented).map((event) => [
@@ -43,7 +49,7 @@ function events(browser: WebdriverIO.Browser): Promise<{ received: string[]; han
   });
 }
 
-/** The real app's page, logging keydowns on first use without changing their handling. */
+/** The real app's page with its already-installed key recorder. */
 export function page(browser: WebdriverIO.Browser): Page {
   return {
     keys: async (keys) => {
@@ -56,19 +62,22 @@ export function page(browser: WebdriverIO.Browser): Page {
       const key = keys.length === 1 ? keys[0] : undefined;
       if (key === "PageUp" || key === "PageDown") {
         await dispatchInput(browser, { kind: "key", key });
+      } else if (keys.length === 2 && keys.includes("Shift") && keys.includes("Enter")) {
+        await dispatchInput(browser, { kind: "key", key: "Enter", shift: true });
       } else await browser.keys(keys);
     },
-    until: async (check, timeout) => {
+    until: async (check, timeout, what) => {
       let failure: unknown;
+      const expired = `${WAIT_EXPIRED}: ${what}`;
       try {
         await browser.waitUntil(async () => {
           try { return await check(); }
           catch (error) { failure = error; throw error; }
-        }, { timeout, timeoutMsg: WAIT_EXPIRED });
+        }, { timeout, timeoutMsg: expired });
         return true;
       } catch (error) {
         if (failure !== undefined) throw failure;
-        if (error instanceof Error && error.message === WAIT_EXPIRED) return false;
+        if (error instanceof Error && error.message === expired) return false;
         throw error;
       }
     },
@@ -117,10 +126,10 @@ export async function press(
       return done();
     };
     await on.keys(keys);
-    if (await on.until(confirmed, wait)) return;
+    if (await on.until(confirmed, wait, what)) return;
     if (await arrived()) {
       // The page has the action key: the app decides now, however long it takes.
-      if (await on.until(confirmed, ms - wait)) return;
+      if (await on.until(confirmed, ms - wait, what)) return;
       const evidence = on.diagnostics ? `; ${JSON.stringify(await on.diagnostics())}` : "";
       assert.fail(`timed out: ${what} (the page received ${name}${handled ? " but its handled effect was not confirmed" : ""})${evidence}`);
     }

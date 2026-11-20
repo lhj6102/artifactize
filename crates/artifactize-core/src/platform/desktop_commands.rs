@@ -90,7 +90,7 @@ fn terminal_has_command(bundled: &Path) -> io::Result<bool> {
     }))
     .map_err(io::Error::other)?;
     match super::program::resolve_with(
-        std::ffi::OsStr::new("artifactize"),
+        Path::new("artifactize"),
         &std::env::current_dir()?,
         |name| {
             if name == "PATH" {

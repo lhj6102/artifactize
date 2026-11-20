@@ -22,8 +22,8 @@ be mistaken for a publication. Successful publications write their outcome to th
 summary too (Store submission ID, or Homebrew formula and cask). These scripts never sign or
 submit a Windows zip.
 
-The Microsoft Store listing is published and is the Windows install; each
-stable release submits an update. `winget install 9PB6W4LL165D --source msstore`
+The Microsoft Store listing is published and is the Windows install; a stable
+release submits an update when the Store policy and credentials below allow it. `winget install 9PB6W4LL165D --source msstore`
 installs the same Store app. Artifactize is not submitted to the community winget
 repository (microsoft/winget-pkgs).
 
@@ -37,7 +37,7 @@ values in scripts, command history or issue comments.
 | --- | --- | --- |
 | Homebrew | Stable only; a normal tap formula tracks stable, not prereleases | `HOMEBREW_TAP_TOKEN` |
 | Microsoft Store | Stable only; any pending submission is left untouched and logged/skipped | `STORE_TENANT_ID`, `STORE_CLIENT_ID`, `STORE_CLIENT_SECRET` |
-| macOS desktop signing | Every build, PRs included; without them the app is signed ad hoc and only runs where it was built | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
+| macOS desktop signing | Every build, PRs included; without them the app is signed ad hoc, which macOS opens only with quarantine removed (as the smoke checks install it) | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
 
 Homebrew deliberately does not promote prereleases into the ordinary formula.
 Prereleases still carry the unsigned MSIX/Store upload for

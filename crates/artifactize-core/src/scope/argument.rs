@@ -1,7 +1,7 @@
 //! Validated declared argv references and their exact authored string form.
 
 use super::{ScopeError, instruction, logical_path};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// An Artifact root has no suffix; non-root suffixes are validated logical paths.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -57,6 +57,14 @@ impl LogicalTarget {
 impl Serialize for LogicalTarget {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for LogicalTarget {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
     }
 }
 

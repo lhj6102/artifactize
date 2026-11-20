@@ -3,7 +3,7 @@ use std::{fs, path::Path, sync::Arc};
 use serde::{Deserialize, Serialize};
 
 use super::storage::{Storage, Tokens};
-use crate::test_os::{grant_everyone_read, symlink_dir, symlink_file};
+use crate::test_os::{file_link, grant_everyone_read, remove_file_link, symlink_dir};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 struct Secret {
@@ -55,15 +55,27 @@ fn storage_is_atomic_private_and_refuses_links() {
     storage.remove("secret.json").unwrap();
 
     let target = temp.path().join("public.json");
-    fs::write(&target, r#"{"token":"public"}"#).unwrap();
-    if symlink_file(&target, &path).is_some() {
-        assert!(storage.read::<Secret>("secret.json").is_err());
-        fs::remove_file(&path).unwrap();
-    }
-    crate::test_declaration::write(&path, r#"{"token":"readable"}"#).unwrap();
+    fs::write(
+        crate::test_declaration::source_path(&target),
+        r#"{"token":"public"}"#,
+    )
+    .unwrap();
+    file_link(&target, &path);
+    assert!(storage.read::<Secret>("secret.json").is_err());
+    assert!(storage.remove("secret.json").is_err());
+    remove_file_link(&path);
+    assert_eq!(
+        fs::read_to_string(&target).unwrap(),
+        r#"{"token":"public"}"#
+    );
+    std::fs::write(
+        crate::test_declaration::source_path(&path),
+        r#"{"token":"readable"}"#,
+    )
+    .unwrap();
     grant_everyone_read(&path);
     assert!(storage.read::<Secret>("secret.json").is_err());
-    fs::remove_file(&path).unwrap();
+    crate::test_declaration::remove_file(&path).unwrap();
     // Another name for the file could outlive a rotation of this one.
     storage.save("secret.json", &secret("linked")).unwrap();
     crate::test_os::hard_link(&path, &temp.path().join("second-link.json"));
@@ -75,7 +87,11 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
     let temp = crate::test_os::tempdir();
     let repo = temp.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    fs::write(repo.join(".git"), "worktree marker").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(repo.join(".git")),
+        "worktree marker",
+    )
+    .unwrap();
     let Err(refusal) = Storage::new(Some(&repo.join("state")), None, Tokens::Remote) else {
         panic!("auth storage inside a git work tree");
     };
@@ -94,7 +110,7 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
     let junction = temp.path().join("junction");
     crate::test_os::link_dir(&repo, &junction);
     assert!(Storage::new(Some(&junction.join("state")), None, Tokens::Codex).is_err());
-    fs::remove_file(repo.join(".git")).unwrap();
+    crate::test_declaration::remove_file(repo.join(".git")).unwrap();
     let Err(refusal) = Storage::new(Some(&repo.join("state")), Some(&repo), Tokens::Codex) else {
         panic!("auth storage inside --repo");
     };
@@ -104,7 +120,7 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
             && refusal.ends_with("or set ARTIFACTIZE_CODEX_AUTH_FILE."),
         "{refusal}"
     );
-    crate::test_declaration::write(repo.join("index.artf"), "{}").unwrap();
+    crate::test_declaration::write(&(repo), repo.join("index.artf"), "{}").unwrap();
     let Err(refusal) = Storage::new(Some(&repo.join("state")), None, Tokens::Codex) else {
         panic!("auth storage inside an artifactize workspace");
     };
@@ -112,9 +128,14 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
         refusal.contains("auth is inside the artifactize workspace "),
         "{refusal}"
     );
-    fs::remove_file(repo.join("index.artf")).unwrap();
-    fs::write(repo.join("file.txt"), "input").unwrap();
-    crate::test_declaration::write(repo.join("file.txt.artf"), r#"{"name":"file"}"#).unwrap();
+    crate::test_declaration::remove_file(repo.join("index.artf")).unwrap();
+    fs::write(
+        crate::test_declaration::source_path(repo.join("file.txt")),
+        "input",
+    )
+    .unwrap();
+    crate::test_declaration::write(&(repo), repo.join("file.txt.artf"), r#"{"name":"file"}"#)
+        .unwrap();
     assert!(Storage::new(Some(&repo.join("state")), None, Tokens::Codex).is_err());
     assert!(!repo.join("state").exists());
     let state = temp.path().join("state");
@@ -141,10 +162,10 @@ async fn named_locks_serialize_holders_and_stay_private() {
     drop(first);
     let second = second.await.unwrap();
     drop(second);
-    fs::remove_file(&lock).unwrap();
-    if symlink_file(temp.path().join("elsewhere"), &lock).is_some() {
-        assert!(storage.lock("codex").await.is_err());
-    }
+    crate::test_declaration::remove_file(&lock).unwrap();
+    file_link(&temp.path().join("elsewhere"), &lock);
+    assert!(storage.lock("codex").await.is_err());
+    remove_file_link(&lock);
 }
 
 #[test]
@@ -153,7 +174,11 @@ fn credential_storage_keeps_current_and_legacy_workspace_markers_as_boundaries()
         let root = crate::test_os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
-        fs::write(repo.join(marker), "marker").unwrap();
+        fs::write(
+            crate::test_declaration::source_path(repo.join(marker)),
+            "marker",
+        )
+        .unwrap();
         for kind in [Tokens::Codex, Tokens::Remote] {
             let Err(error) = Storage::new(Some(&repo.join("state")), None, kind) else {
                 panic!("credential storage accepted {marker}");

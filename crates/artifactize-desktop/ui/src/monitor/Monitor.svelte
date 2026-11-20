@@ -14,10 +14,11 @@
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { clampWidth, saveWidth } from "./detail-width";
+  import { KEEP, MIN, clampWidth, saveWidth } from "./detail-width";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
+  import GraphTools from "./GraphTools.svelte";
   import RunHeadline from "./RunHeadline.svelte";
   import CurrentView from "./CurrentView.svelte";
   import ScanState from "./ScanState.svelte";
@@ -27,21 +28,20 @@
   import { Review } from "../review/review.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
+  import EditDialogs from "./EditDialogs.svelte";
 
   const app = getAppState();
-  const { browse, current, monitor: m } = app;
+  const { browse, current, definitions, monitor: m } = app;
   const { panes } = m;
 
   const view = $derived(browse.view);
   const branches = $derived(view?.branches ?? []);
   const waiting = $derived(view?.waiting ?? []);
   const shown = $derived(m.shown);
-  const run = $derived(shown.kind === "run" && view?.run?.id === shown.run ? view.run : null);
+  const run = $derived(shown.kind === "run" && view?.run.kind === "read" && view.run.id === shown.run ? view.run : null);
   const source = $derived(sourceOf(shown));
-  /** The branch whose Run or Current is shown. */
-  const branch = $derived(
-    shown.kind === "run" || shown.kind === "current" ? (branches.find((item) => keyOf(item.key) === keyOf(shown.branch)) ?? null) : null,
-  );
+  /** The branch whose Run or Current is shown, also while the Pane's search leaves it out. */
+  const branch = $derived(shown.kind === "run" || shown.kind === "current" ? browse.branch(shown.branch) : null);
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
   const review = $derived(shown.kind === "review" ? app.reviews[shown.id] : undefined);
   /** The pane's search: the library's, overridden while typed until a pause searches it; a
@@ -117,7 +117,7 @@
     else m.expanded.add(key);
   }
 
-  /** Open a waiting review (or a Human request opened by ID) in the Main area. */
+  /** Open a waiting review in the Main area. */
   function openReview(id: string) {
     app.review(id);
     m.finding = false;
@@ -133,11 +133,13 @@
     void focus("main");
   }
 
-  /** Open a request by ID in any repository: a Human request as Review, any other read-only. */
+  /** Open a request by ID in any repository: a waiting Human review as Review, any other
+   * request, a settled Human one included, read-only. */
   async function openId(id: string) {
     try {
       const detail = await call(app.ipc.requestDetail(id));
-      if (detail.profile === "human") return openReview(id);
+      const waiting = detail.mark?.status === "WAITING_HUMAN" || detail.mark?.status === "DEFERRED";
+      if (detail.profile === "human" && waiting) return openReview(id);
       m.folds = { log: false };
       m.shown = { kind: "request", detail };
       m.finding = false;
@@ -211,7 +213,7 @@
     // Leaving the shown Run (or losing it) closes its Detail; so does losing the node, which the
     // Detail finds as it reads its row.
     const opened = m.opened;
-    if (opened?.source.kind === "run" && opened.source.run !== next.run?.id) m.opened = null;
+    if (opened?.source.kind === "run" && (next.run.kind !== "read" || opened.source.run !== next.run.id)) m.opened = null;
     // A Run of the branch whose Current is shown ended: scan it again.
     for (const item of next.branches) {
       const now = item.chips.flatMap((chip) => (chip.kind === "run" && chip.running ? [chip.id] : []));
@@ -364,7 +366,9 @@
     if (shown.kind === "request") return `${shown.detail.title} · read-only`;
     return "Nothing chosen";
   });
-  const notice = $derived(browse.error ?? view?.notice ?? null);
+  // A refused edit on a Current's graph says why here, before what else went wrong: it is what
+  // the person just did (D-CUR-7).
+  const notice = $derived((shown.kind === "current" ? definitions.notice : null) ?? browse.error ?? view?.notice ?? null);
 
   useCommands(() => [
     { id: "main.run", group: "Graph", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
@@ -385,9 +389,12 @@
   const graphTop: Attachment<HTMLElement> = (stage) => {
     let watched: Element | null = null;
     const read = () => {
-      if (!watched) return;
+      if (!watched) {
+        stage.style.removeProperty("--graph-top");
+        return;
+      }
       const top = watched.getBoundingClientRect().top - stage.getBoundingClientRect().top;
-      stage.style.setProperty("--graph-top", `${Math.round(top)}px`);
+      stage.style.setProperty("--graph-top", `${top}px`);
     };
     const sized = new ResizeObserver(read);
     const find = () => {
@@ -396,6 +403,9 @@
       if (watched) sized.unobserve(watched);
       watched = area;
       if (area) sized.observe(area);
+      // A Detail can already be open when the lazy graph first mounts. Dock against
+      // that layout now; the resize observer follows any later changes.
+      read();
     };
     sized.observe(stage);
     const changed = new MutationObserver(find);
@@ -406,12 +416,22 @@
       changed.disconnect();
     };
   };
+
+  /** The Pane's narrowest share of the window, in percent. */
+  const PANE_MIN = 12;
+  /** The window's width, as the Pane and the Main area share it. */
+  let windowWidth = $state(window.innerWidth);
+  /** The Main area's narrowest share: room for the narrowest Detail beside the graph it keeps
+   * visible (D-INS-1), and never less than 30 percent. */
+  const mainMin = $derived(Math.min(100 - PANE_MIN, Math.max(30, ((MIN + KEEP) / windowWidth) * 100)));
 </script>
+
+<svelte:window bind:innerWidth={windowWidth} />
 
 <div class="monitor">
   <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">
     {#if m.paneShown}
-      <Split id="pane" order={1} defaultSize={24} minSize={12}>
+      <Split id="pane" order={1} defaultSize={24} minSize={PANE_MIN}>
         <Pane
           bind:query={() => query, setQuery}
           {filled}
@@ -426,7 +446,7 @@
       </Split>
       <PaneResizer class="resizer" />
     {/if}
-    <Split id="main" order={2} defaultSize={m.paneShown ? 76 : 100} minSize={30}>
+    <Split id="main" order={2} defaultSize={m.paneShown ? 76 : 100} minSize={mainMin}>
       <!-- The dragged width is the stage's, so the Detail, the Navigator beside it and a review's
            side column all take it. -->
       <div
@@ -442,7 +462,7 @@
           {notice}
           bind:noticeOpen={m.noticeOpen}
           bind:element={panes.main}
-          onfocus={() => m.focus !== "detail" && (m.focus = "main")}
+          onfocus={() => (m.focus = "main")}
           onkeydown={mainKey}
         >
           {#snippet headline()}
@@ -456,7 +476,7 @@
           {/snippet}
           {#snippet actions()}
             {#if shown.kind === "current"}
-              <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" disabled={current.scanning} onclick={() => void current.scan(shown.branch, true)}>Refresh</button>
+              <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" onclick={() => void current.scan(shown.branch, true)}>Refresh</button>
             {:else if (shown.kind === "request" || shown.kind === "review") && !m.settings}
               <button class="button small" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={closeMain}>Close</button>
             {/if}
@@ -464,10 +484,10 @@
           {#if shown.kind === "run"}
             {#if run}
               <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
-            {:else if view?.missing}
-              <p class="empty">This Run cannot be read; choose another.</p>
+            {:else if view?.run.kind === "missing"}
+              <div class="pending"><GraphTools /><p class="empty">This Run cannot be read; choose another.</p></div>
             {:else}
-              <p class="empty">Loading the Run…</p>
+              <div class="pending"><GraphTools /><p class="empty">Loading the Run…</p></div>
             {/if}
           {:else if shown.kind === "current"}
             <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
@@ -483,7 +503,7 @@
               <div class="record"><RecordDetail detail={shown.detail} bind:log={m.folds.log} /></div>
             {/key}
           {:else}
-            <p class="empty">Choose a branch or a waiting review in the Pane.</p>
+            <p class="empty">{m.paneShown ? "Choose a branch or a waiting review in the Pane." : "Show the Pane with the Pane switch to choose a branch or a waiting review."}</p>
           {/if}
         </Panel>
         {#if m.opened && source && keyOf(m.opened.source) === keyOf(source)}
@@ -515,6 +535,14 @@
     </Split>
   </PaneGroup>
 </div>
+
+<EditDialogs
+  branch={shown.kind === "current" ? shown.branch : null}
+  ondeleted={() => {
+    // Delete is offered only in the open Detail's Definition: that Artifact is gone.
+    closeDetail();
+  }}
+/>
 
 <Dialog.Root bind:open={app.asking}>
   <Dialog.Portal>
@@ -567,7 +595,7 @@
    * divider's grab zone on the graph's side, and the Detail never sits beside the Pane. */
   /* The Detail's width, as the dock takes it: a drag's, or its default, within its bounds. */
   .stage {
-    --dock-width: clamp(min(320px, 100%), var(--detail-width, min(46%, 680px)), calc(100% - 96px));
+    --dock-width: clamp(min(320px, 100%), var(--detail-width, min(46%, 680px)), calc(100% - 240px));
     position: relative;
     isolation: isolate;
     height: 100%;
@@ -607,6 +635,13 @@
     margin: 0;
     padding: 6px var(--pad);
     color: var(--ink-2);
+  }
+  /* A chosen Run with nothing to act on yet: the tool strip in its place, the line below it. */
+  .pending {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
   }
   /* A review's eval and title, said once, in the header row. */
   .title {

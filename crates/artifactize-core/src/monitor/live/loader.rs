@@ -36,8 +36,28 @@ pub struct Input {
 /// Keep the share with the rest, after it, so the memory goes back once nothing shows the Run.
 pub type Opened = (RunView, Vec<RequestView>, Arc<Vec<Node>>, Footprint);
 
+/// What happened to the selected Run during this read.
+pub enum OpenRun<T = Opened> {
+    /// No Run was selected, or the requested Run is gone or unreadable.
+    Absent,
+    /// The already loaded Run remains current.
+    Unchanged,
+    /// The Run was read and its view is ready to show.
+    Loaded(Box<T>),
+}
+
+impl<T> OpenRun<T> {
+    fn map_loaded<U>(self, map: impl FnOnce(T) -> U) -> OpenRun<U> {
+        match self {
+            Self::Loaded(run) => OpenRun::Loaded(Box::new(map(*run))),
+            Self::Unchanged => OpenRun::Unchanged,
+            Self::Absent => OpenRun::Absent,
+        }
+    }
+}
+
 /// One consistent read.
-pub struct Snapshot {
+pub struct Snapshot<T = Opened> {
     pub origin: Origin,
     /// The live branches, the most recent Run first.
     pub branches: Vec<Branch>,
@@ -47,11 +67,21 @@ pub struct Snapshot {
     pub launch: Option<Place>,
     /// Saved Run records that cannot be read, and records of the open Run that cannot.
     pub unreadable: Vec<Unreadable>,
-    /// The open Run when it was read again, `None` when its records did not change since the
-    /// last read (or no Run is open, or it is gone: see [`Snapshot::open`]).
-    pub opened: Option<Opened>,
-    /// The open Run still exists and reads.
-    pub open: bool,
+    pub open_run: OpenRun<T>,
+}
+
+impl<T> Snapshot<T> {
+    /// Project a newly loaded Run without changing the catalog or selection state.
+    pub fn map_open_run<U>(self, map: impl FnOnce(T) -> U) -> Snapshot<U> {
+        Snapshot {
+            origin: self.origin,
+            branches: self.branches,
+            labels: self.labels,
+            launch: self.launch,
+            unreadable: self.unreadable,
+            open_run: self.open_run.map_loaded(map),
+        }
+    }
 }
 
 /// A persistent read-only worker with its caches.
@@ -100,44 +130,43 @@ impl Loader {
                     .open
                     .as_ref()
                     .filter(|id| runs.iter().any(|run| &run.id == *id));
-                if open.is_none() {
-                    // Nothing shows a Run: the one held goes, and with its last share its memory.
-                    cache.close();
-                }
-                // The open Run is read when it is new here or a hint named it.
-                let read = open.filter(|id| input.force || !cache.holds(id) || changed.run(id));
-                let opened = match read {
-                    Some(id) => match cache.selected(db, state, id, input.force) {
-                        Ok(opened) => Ok(opened.map(|(run, requests)| {
-                            let footprint = cache.footprint().expect("the Run just read is held");
-                            (run, requests, footprint)
-                        })),
-                        // The Run's definitions do not decode: it is listed with why, not opened.
-                        Err(store::receipts::Error::Unreadable(record)) => Err(record),
-                        Err(error) => return Err(error),
-                    },
-                    None => Ok(None),
+                let (open_run, unopened) = match open {
+                    None => {
+                        // With no Run selected, release the cache's share of its memory.
+                        cache.close();
+                        (OpenRun::Absent, None)
+                    }
+                    Some(id) if input.force || !cache.holds(id) || changed.run(id) => {
+                        match cache.selected(db, state, id, input.force) {
+                            Ok(Some((run, requests))) => {
+                                let footprint =
+                                    cache.footprint().expect("the Run just read is held");
+                                (OpenRun::Loaded(Box::new((run, requests, footprint))), None)
+                            }
+                            Ok(None) => (OpenRun::Unchanged, None),
+                            // The Run's definitions do not decode: it is listed with why, not opened.
+                            Err(store::receipts::Error::Unreadable(record)) => {
+                                (OpenRun::Absent, Some(record))
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    }
+                    Some(_) => (OpenRun::Unchanged, None),
                 };
-                Ok((cache.identity(db)?, open.is_some(), opened))
+                Ok((cache.identity(db)?, open_run, unopened))
             })?;
-        let Some((identity, open, opened)) = saved else {
+        let Some((identity, open_run, unopened)) = saved else {
             self.facts = None;
             return Ok(self.empty(&input, Origin::new(None, self.reader.database())));
         };
-        let (opened, unopened) = match opened {
-            Ok(opened) => (opened, None),
-            Err(record) => (None, Some(record)),
-        };
+        let (runs, mut unreadable) = self.facts.clone().expect("read above");
+        unreadable.extend(unopened);
         // No read transaction survives heavy projection or Git discovery.
-        let opened = opened.map(|(run, requests, footprint)| {
+        let open_run = open_run.map_loaded(|(run, requests, footprint)| {
+            unreadable.extend(run.unreadable.iter().cloned());
             let nodes = Arc::new(model::tree(&run, &requests, OffsetDateTime::now_utc()));
             (run, requests, nodes, footprint)
         });
-        let (runs, mut unreadable) = self.facts.clone().expect("read above");
-        if let Some((run, _, _, _)) = &opened {
-            unreadable.extend(run.unreadable.iter().cloned());
-        }
-        unreadable.extend(unopened);
         let listing = branches(&runs, input.launch.as_deref(), &mut self.discovery);
         self.reader.require_current(&input.state)?;
         Ok(Snapshot {
@@ -146,8 +175,7 @@ impl Loader {
             labels: listing.labels,
             launch: listing.launch,
             unreadable,
-            opened,
-            open,
+            open_run,
         })
     }
 
@@ -159,8 +187,7 @@ impl Loader {
             labels: listing.labels,
             launch: listing.launch,
             unreadable: Vec::new(),
-            opened: None,
-            open: false,
+            open_run: OpenRun::Absent,
         }
     }
 }

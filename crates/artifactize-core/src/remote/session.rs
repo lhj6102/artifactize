@@ -50,13 +50,17 @@ impl Session {
     }
 
     fn failed<T: Default>(&self, failure: Failure) -> Result<T, String> {
-        if !failure.unavailable {
-            return Err(failure.message);
+        if !matches!(
+            failure,
+            crate::auth::remote::Failure::Transport(_)
+                | crate::auth::remote::Failure::ServerOutage(_)
+        ) {
+            return Err(failure.into());
         }
         if !self.offline.swap(true, Ordering::SeqCst) {
             warn(&format!(
                 "{}; continuing without the remote review store.",
-                failure.message.trim_end_matches('.')
+                failure.message().trim_end_matches('.')
             ));
         }
         Ok(T::default())
@@ -103,7 +107,7 @@ impl Session {
                 if !requested.contains(record.key.as_str()) {
                     return Err("the store returned an unrequested key".into());
                 }
-                record.mirror(self.remote.url.as_str())
+                record.mirror(self.remote.url().as_str())
             });
             match mirrored {
                 Ok(execution) => executions.push(execution),

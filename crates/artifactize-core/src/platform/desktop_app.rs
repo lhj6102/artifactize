@@ -1,11 +1,12 @@
-//! Where the desktop app is installed, read from file metadata only: nothing is started.
+//! Find or launch the installed desktop app, without a shell.
 //! Every install channel leaves `artifactize-desktop` beside the commands it bundles (the
 //! deb, the Windows zip and MSIX, the Mac app the cask links), on `PATH` (install.sh's
 //! launcher), or at one of this system's app locations.
 
 use std::{
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     path::{Path, PathBuf},
+    process::Stdio,
 };
 
 /// The desktop app's program name, without this system's executable suffix.
@@ -19,6 +20,23 @@ const APPIMAGE_RECORD: &str = "appimage-path";
 /// installed.
 #[cfg(windows)]
 const STORE_PACKAGE_FAMILY: &str = "lhj6102.Artifactize_ayfzfzbsv48sg";
+
+/// Start the installed Desktop app and let it outlive the CLI. `doctor` uses the same
+/// discovery without starting a process.
+pub fn launch(args: &[OsString]) -> Result<(), String> {
+    let app = installed()
+        .filter(|path| path.is_file())
+        .ok_or("Artifactize Desktop is not available. Install it from https://artifactize.dev/.")?;
+    let mut command = tokio::process::Command::new(&app);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    super::spawn_detached(command)
+        .map(|child| child.reap())
+        .map_err(|error| format!("Cannot launch {}: {error}", super::path_text(&app)))
+}
 
 /// The installed desktop app this command finds, if any.
 pub(crate) fn installed() -> Option<PathBuf> {
@@ -47,9 +65,7 @@ fn find(
         .map(|bin| bin.join(format!("{PROGRAM}{}", std::env::consts::EXE_SUFFIX)))
         .filter(|beside| beside.is_file())
         .or_else(|| {
-            cwd.and_then(|cwd| {
-                super::program::resolve_with(OsStr::new(PROGRAM), cwd, variable).ok()
-            })
+            cwd.and_then(|cwd| super::program::resolve_with(Path::new(PROGRAM), cwd, variable).ok())
         })
         .or_else(|| locations.into_iter().find(|location| location.exists()))
 }
@@ -137,10 +153,11 @@ mod tests {
     use super::*;
 
     fn variables(pairs: &[(&str, &Path)]) -> impl Fn(&str) -> Option<OsString> {
+        let (pathext, extensions) = crate::test_os::PATHEXT;
         let pairs: Vec<(String, OsString)> = pairs
             .iter()
             .map(|(name, value)| (name.to_string(), value.as_os_str().to_owned()))
-            .chain([("PATHEXT".to_owned(), OsString::from(".EXE"))])
+            .chain([(pathext.to_owned(), OsString::from(extensions))])
             .collect();
         move |name| {
             pairs
@@ -155,8 +172,7 @@ mod tests {
         let root = crate::test_os::tempdir();
         let bin = root.path().join("bin");
         std::fs::create_dir(&bin).unwrap();
-        let app = bin.join(format!("{PROGRAM}{}", std::env::consts::EXE_SUFFIX));
-        std::fs::write(&app, "").unwrap();
+        let app = crate::test_os::executable_named(&bin, PROGRAM);
         let elsewhere = root.path().join("elsewhere");
         std::fs::write(&elsewhere, "").unwrap();
         assert_eq!(

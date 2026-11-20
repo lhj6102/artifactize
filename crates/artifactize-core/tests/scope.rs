@@ -27,6 +27,7 @@ async fn resolved_nested_and_global_inputs_reach_the_runtime_executor() {
     let fixture = Fixture(support::os::canonical(&root));
     let root = &fixture.0;
     support::declaration::write(
+        root,
         root.join("review/index.artf"),
         json!({
             "name":"review",
@@ -50,12 +51,28 @@ async fn resolved_nested_and_global_inputs_reach_the_runtime_executor() {
         .to_string(),
     )
     .unwrap();
-    fs::write(root.join("review/local"), "owner\n").unwrap();
-    support::declaration::write(root.join("review/nested/index.artf"), r#"{"name":"child"}"#)
-        .unwrap();
-    fs::write(root.join("review/nested/file"), "child\n").unwrap();
-    support::declaration::write(root.join("data/index.artf"), r#"{"name":"input"}"#).unwrap();
-    fs::write(root.join("data/file"), "input\n").unwrap();
+    fs::write(
+        support::declaration::source_path(root.join("review/local")),
+        "owner\n",
+    )
+    .unwrap();
+    support::declaration::write(
+        root,
+        root.join("review/nested/index.artf"),
+        r#"{"name":"child"}"#,
+    )
+    .unwrap();
+    fs::write(
+        support::declaration::source_path(root.join("review/nested/file")),
+        "child\n",
+    )
+    .unwrap();
+    support::declaration::write(root, root.join("data/index.artf"), r#"{"name":"input"}"#).unwrap();
+    fs::write(
+        support::declaration::source_path(root.join("data/file")),
+        "input\n",
+    )
+    .unwrap();
 
     let config = read_workspace_config(root).unwrap();
     let eval = &config.evals[0];
@@ -64,7 +81,7 @@ async fn resolved_nested_and_global_inputs_reach_the_runtime_executor() {
         panic!()
     };
     let args = resolve_argv(&config, &scope, &eval.target, args).unwrap();
-    let cwd = scoped_path(root, &config.artifacts[&eval.target].path).unwrap();
+    let cwd = scoped_path(root, config.artifacts[&eval.target].folder()).unwrap();
     let output = Fixture(scratch.path().join("output"));
     let mut command = Command::prepare(
         command.into(),
@@ -79,6 +96,6 @@ async fn resolved_nested_and_global_inputs_reach_the_runtime_executor() {
     let Outcome::Completed(result) = outcome else {
         panic!("{outcome:?}")
     };
-    assert_eq!(result.verdict, Verdict::Green);
+    assert_eq!(result.verdict(), Verdict::Green);
     assert_eq!(result.output.stdout, b"owner\nchild\ninput\n");
 }

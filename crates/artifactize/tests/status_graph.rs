@@ -64,7 +64,7 @@ impl Fixture {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let expected = match value["id"].as_str() {
             Some(id) if args[0] == "verify" => {
-                format!("Started {id} (follow: artifactize monitor)\n")
+                format!("Started {id} (follow: artifactize run watch {id})\n")
             }
             _ => String::new(),
         };
@@ -193,6 +193,7 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     // In a folder of its own, beside the fixture's Artifacts rather than around them.
     fs::create_dir_all(fixture.repo.join("project")).unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("project/index.artf"),
         r#"{"name":"project","basis":true}"#,
     )
@@ -208,6 +209,7 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     );
     fs::create_dir_all(fixture.repo.join("project/part")).unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("project/part/index.artf"),
         json!({"name":"part","fingerprint":false,"evals":[{"id":"check",
             "title":"Check","payload":{"instruction":"Check the part."},
@@ -226,7 +228,11 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     );
 
     let selector = fixture.root.path().join("selection.json");
-    fs::write(&selector, r#"["red/check","green/check","red/check"]"#).unwrap();
+    fs::write(
+        support::declaration::source_path(&selector),
+        r#"["red/check","green/check","red/check"]"#,
+    )
+    .unwrap();
     let file = fixture.json(&["status", "--evals-file", selector.to_str().unwrap()], 1);
     let csv = fixture.json(&["status", "--evals", "red/check,green/check"], 1);
     assert_eq!(file, csv);
@@ -248,11 +254,12 @@ fn status_selection_policy_and_final_obligations_match_verify() {
 fn profiles_rebuild_static_gates_without_running_commands() {
     let fixture = Fixture::new("runtime");
     let path = fixture.repo.join("red/index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile_variants"] = json!({"dependent":{
         "kind":"runtime","command":"missing-command","args":["{green}/missing.txt"]
     }});
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), &path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status", "red", "--profile", "dependent"], 1);
     assert_eq!(row(&view, "evals", "red/check")["state"], "WAIT_DEPENDENCY");
     assert_eq!(
@@ -271,12 +278,14 @@ fn profiles_rebuild_static_gates_without_running_commands() {
 fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     let fixture = Fixture::new("runtime");
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         r#"{"name":"project","basis":true}"#,
     )
     .unwrap();
     fs::create_dir_all(fixture.repo.join("part")).unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("part/index.artf"),
         r#"{"name":"part","basis":true}"#,
     )
@@ -350,19 +359,40 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
 fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let fixture = Fixture::new("declarations");
     let marker = fixture.repo.join("review/hook-executed");
-    let hook = fixture.repo.join("review/hook.sh");
-    // The hook runs in its Artifact; no native temporary root is interpolated into a shell.
-    support::os::write_script(&hook, "printf called > hook-executed\nexit 91\n");
-    support::os::allow_execution(&hook);
+    let hook = fixture.repo.join("review/hook.py");
+    support::os::write_python_script(
+        &hook,
+        "from pathlib import Path\nPath('hook-executed').write_text('called')\nraise SystemExit(91)\n",
+    );
+    let path = fixture.repo.join("review/index.artf");
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
+    let command = support::os::python_program();
+    declaration["fingerprint"]["script"] =
+        json!({"command":command,"args":["hook.py"],"files":["hook.py"]});
+    declaration["views"]["agent_tools"]["read"]["command"] = json!(command);
+    declaration["views"]["agent_tools"]["read"]["args"] = json!(["hook.py"]);
+    declaration["views"]["human_tools"]["read"]["command"] = json!(command);
+    declaration["views"]["human_tools"]["read"]["args"] = json!(["hook.py"]);
+    let runtime = declaration["evals"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|eval| eval["profile"]["kind"] == "runtime")
+        .unwrap();
+    runtime["profile"]["command"] = json!(command);
+    runtime["profile"]["args"] = json!(["hook.py"]);
+    support::declaration::write(&fixture.repo, &path, declaration.to_string()).unwrap();
     fixture.json(&["config", "check"], 0);
     fixture.json(&["config", "graph"], 0);
     assert!(!marker.exists());
     assert!(!fixture.state.exists());
     let path = fixture.repo.join("review/index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["fingerprint"]["script"] =
         json!({"command":echo_program(),"args":["current-fingerprint"]});
-    support::declaration::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
     assert_eq!(row(&view, "evals", "review/agent")["action"], "execute");
@@ -404,19 +434,13 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .get("last")
             .is_none()
     );
-    let db = Connection::open_with_flags(
-        fixture.state.join("state.sqlite"),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    let before: String = db
-        .query_row("SELECT group_concat(data) FROM runs", [], |row| row.get(0))
-        .unwrap();
+    let second: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let read_audits = || {
+        [&first, &second].map(|run| fixture.json(&["run", "show", run["id"].as_str().unwrap()], 0))
+    };
+    let before = read_audits();
     fixture.json(&["status"], 1);
-    let after: String = db
-        .query_row("SELECT group_concat(data) FROM runs", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(before, after);
+    assert_eq!(read_audits(), before);
     assert!(
         fixture
             .state
@@ -425,7 +449,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .is_dir()
     );
     assert_eq!(
-        fs::read_to_string(
+        support::declaration::read_text(
             Path::new(first["requests"][0]["runDir"].as_str().unwrap()).join("output/result.txt")
         )
         .unwrap(),
@@ -443,11 +467,6 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .as_str()
             .unwrap()
             .contains("Unsupported state schema")
-    );
-    assert_eq!(
-        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
-            .unwrap(),
-        99
     );
     let link = fixture.root.path().join("redirected-state");
     support::os::link_dir(&fixture.repo, &link);

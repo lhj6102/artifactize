@@ -82,7 +82,8 @@ export class FormDraft {
   }
 }
 
-type Busy = { label: string; job: number; since: number };
+/** The review's running work; `tool` marks a tool's run, which a submission cancels first. */
+type Busy = { label: string; job: number; since: number; tool: boolean };
 
 /** One canonical request owns these facts. Alias handles adopt this same instance,
  * never copy its forms, drafts or running work. It is shared through AppState. */
@@ -94,6 +95,8 @@ class ReviewState {
   /** Every tool run of this review, oldest first: kept while the review is open. */
   log = $state.raw<LogEntry[]>([]);
   busy = $state<Busy | null>(null);
+  /** Settles once the running work has ended, its busy state cleared. */
+  idle: Promise<void> = Promise.resolve();
   notice = $state.raw<Notice | null>(null);
   form = $state<FormDraft | null>(null);
   readonly drafts = new SvelteMap<Verdict, Draft>();
@@ -126,6 +129,9 @@ export class Review {
   readonly claimable = $derived(this.view?.stage === "claim" && this.view.claim === null);
   /** A form takes the keys only while the request can still be reviewed. */
   readonly editing = $derived(this.form !== null && !this.settled);
+  /** Submit is open while a form is, also while a tool runs (a submission cancels it first),
+   * but not while a claim, a release or a submission runs. */
+  readonly submittable = $derived(this.editing && (this.busy === null || this.busy.tool));
 
   readonly #jobs: Jobs;
   readonly #intern: ((id: string, review: Review) => Review) | undefined;
@@ -148,11 +154,18 @@ export class Review {
   #show(view: HumanView): void {
     const canonical = this.#intern?.(view.id, this) ?? this;
     if (canonical !== this) this.#state = canonical.#state;
+    // Reads answer in any order. One read before the shown view would bring back what that
+    // view already replaced, a claim's absence say, and take the open form away until the
+    // next read; it is dropped.
+    if (this.view && view.read < this.view.read) return;
     this.view = view;
     this.id = view.id;
     this.tool = Math.min(this.tool, Math.max(view.tools.length - 1, 0));
-    // Settled here or by another command: nothing is left to edit.
-    if (view.stage === "completed") this.stopEditing();
+    // Settled here or by another command: nothing is left to edit, and the Tool log is cleared.
+    if (view.stage === "completed") {
+      this.stopEditing();
+      this.log = [];
+    }
   }
 
   #acted(acted: Pick<Acted, "notice" | "view">): void {
@@ -160,14 +173,17 @@ export class Review {
     if (acted.view) this.#show(acted.view);
   }
 
-  async #job<T>(label: string, work: (job: number) => Promise<T>): Promise<T | undefined> {
+  async #job<T>(label: string, work: (job: number) => Promise<T>, tool = false): Promise<T | undefined> {
     if (this.busy) return undefined;
     const job = this.#jobs.next();
-    this.busy = { label, job, since: Date.now() };
+    this.busy = { label, job, since: Date.now(), tool };
+    let ended!: () => void;
+    this.#state.idle = new Promise((resolve) => (ended = resolve));
     try {
       return await work(job);
     } finally {
       if (this.busy?.job === job) this.busy = null;
+      ended();
     }
   }
 
@@ -187,11 +203,13 @@ export class Review {
   /** Release the claim, also while the form is edited: the form is left, its draft kept. */
   async release(): Promise<void> {
     if (this.busy || this.settled) return;
-    if (this.editing) this.stopEditing();
     try {
+      // The form stays while the release runs, its Submit disabled; released, the form is
+      // left and its draft kept for the next claim.
       const acted = await this.#job("Releasing the claim", (job) =>
         call(this.ipc.humanRelease([this.id], job)),
       );
+      if (acted && this.editing) this.stopEditing();
       if (acted) this.#acted(acted);
     } catch (error) {
       this.notice = { text: message(error), error: true };
@@ -229,6 +247,12 @@ export class Review {
   /** Submit the open form; the result says how the settled request stands, or `null` when
    * nothing was settled. */
   async submit(): Promise<Settled | null> {
+    // A running tool ends first: submitting settles the review its run belongs to.
+    if (this.busy?.tool && this.editing) {
+      const idle = this.#state.idle;
+      this.cancel();
+      await idle;
+    }
     const form = this.form;
     if (this.busy || this.settled) return null;
     if (!form) {
@@ -269,7 +293,7 @@ export class Review {
     try {
       const notice = await this.#job(`Running ${tool.operation}`, (job) =>
         call(this.ipc.humanRun(this.id, tool.name, job)),
-      );
+      true);
       if (!notice) return;
       this.notice = notice;
       // Declarations may have changed; show what the next run resolves.
@@ -281,6 +305,7 @@ export class Review {
 
   /** This review's Tool log, whole, as the backend sends it after each change. */
   logged(entries: LogEntry[]): void {
+    if (this.view?.stage === "completed") return;
     this.log = entries;
   }
 

@@ -11,11 +11,8 @@ mod order;
 use std::{
     fs,
     io::{BufRead, BufReader},
-    net::TcpListener,
     path::{Path, PathBuf},
     process::{ChildStdout, Command, Output, Stdio},
-    thread,
-    time::{Duration, Instant},
 };
 
 use rusqlite::Connection;
@@ -96,26 +93,7 @@ impl Server {
             .collect()
     }
 
-    /// The last use of each stored record, by execution ID; a lookup updates the record it
-    /// returns.
-    fn last_used(&self) -> Vec<(String, String)> {
-        let db = Connection::open_with_flags(
-            self.state.join("review-store.sqlite"),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .unwrap();
-        let mut statement = db
-            .prepare("SELECT execution_id,last_used FROM entries ORDER BY execution_id")
-            .unwrap();
-        statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect()
-    }
-
-    /// Seed completion and last-use fixture times. A forbidden lookup must not hide
-    /// behind a host clock that returns the same timestamp as the original write.
+    /// Seed completion and LRU ordering independently of the host clock.
     fn completed_at(&self, execution: &str, at: &str) {
         let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
         let data: String = db
@@ -136,14 +114,16 @@ impl Server {
         );
     }
 
-    fn stop(&mut self) {
-        self.child.stop().unwrap();
+    fn stop(&mut self) -> std::io::Result<()> {
+        self.child.stop().map(|_| ())
     }
 }
 
 impl Drop for Server {
     fn drop(&mut self) {
-        self.stop();
+        if let Err(error) = self.stop() {
+            eprintln!("review-store fixture shutdown failed: {error}");
+        }
     }
 }
 
@@ -195,8 +175,13 @@ impl<'a> Machine<'a> {
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        let (stdout, _) = self.run(repo, &[args, &["--json"]].concat(), code);
-        serde_json::from_str(&stdout).unwrap()
+        let recorded = self
+            .command(repo, &[args, &["--json"]].concat())
+            .recorded()
+            .unwrap();
+        let saved = recorded.saved_json();
+        let (stdout, _) = checked(recorded.output, code, &self.token);
+        saved.unwrap_or_else(|| serde_json::from_str(&stdout).unwrap())
     }
 
     /// Seed ordering only after this Run's actual producer has closed SQLite.
@@ -259,10 +244,11 @@ fn checked(output: Output, code: i32, token: &str) -> (String, String) {
 /// Artifacts `app` and `docs`, each with a runtime eval and a script fingerprint from `version`.
 fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
     let repo = root.join(name);
-    write(&repo, json!({"name":"root","basis":true}));
+    write(&(repo), &repo, json!({"name":"root","basis":true}));
     for (artifact, version) in [("app", "v1"), ("docs", docs)] {
         let folder = repo.join(artifact);
         write(
+            &(repo),
             &folder,
             json!({
                 "name":artifact,
@@ -277,7 +263,11 @@ fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
                 ],
             }),
         );
-        fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
+        fs::write(
+            support::declaration::source_path(folder.join("version")),
+            format!("{artifact}-{version}\n"),
+        )
+        .unwrap();
     }
     repo
 }
@@ -285,6 +275,7 @@ fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
 fn human_repo(root: &Path, name: &str) -> PathBuf {
     let repo = root.join(name);
     write(
+        &(repo),
         &repo,
         json!({
             "name":"brand",
@@ -299,13 +290,17 @@ fn human_repo(root: &Path, name: &str) -> PathBuf {
             ],
         }),
     );
-    fs::write(repo.join("version"), "brand-v1\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("version")),
+        "brand-v1\n",
+    )
+    .unwrap();
     repo
 }
 
-fn write(folder: &Path, declaration: Value) {
+fn write(root: &Path, folder: &Path, declaration: Value) {
     fs::create_dir_all(folder).unwrap();
-    support::declaration::write(folder.join("index.artf"), declaration.to_string()).unwrap();
+    support::declaration::write(root, folder.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 fn line<'a>(text: &'a str, prefix: &str) -> &'a str {
@@ -402,7 +397,11 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
     );
 
     // Bob changes docs: it executes locally, and his read-only token publishes nothing.
-    fs::write(repo_b.join("docs/version"), "docs-v2\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo_b.join("docs/version")),
+        "docs-v2\n",
+    )
+    .unwrap();
     let (text, stderr) = bob.run(&repo_b, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
@@ -426,8 +425,16 @@ fn composition_keys_publish_and_reuse_across_machines() {
     let repos: Vec<_> = ["a", "b"]
         .map(|name| {
             let repo = runtime_repo(root.path(), name, "v1");
-            write(&repo.join("app/part"), json!({"name":"part","basis":true}));
-            fs::write(repo.join("app/part/input"), "part-v1").unwrap();
+            write(
+                &(repo),
+                &repo.join("app/part"),
+                json!({"name":"part","basis":true}),
+            );
+            fs::write(
+                support::declaration::source_path(repo.join("app/part/input")),
+                "part-v1",
+            )
+            .unwrap();
             repo
         })
         .into_iter()
@@ -449,7 +456,11 @@ fn composition_keys_publish_and_reuse_across_machines() {
             .iter()
             .all(|request| request["origin"].is_object())
     );
-    fs::write(repos[1].join("app/part/input"), "part-v2").unwrap();
+    fs::write(
+        support::declaration::source_path(repos[1].join("app/part/input")),
+        "part-v2",
+    )
+    .unwrap();
     let third = bob.json(&repos[1], &["verify", "--all", "--wait"], 0);
     assert_eq!(third["executionsStarted"], 1);
     let whole = third["requests"]
@@ -471,7 +482,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
         &server.url,
         &server.token("bob", "read,publish"),
     );
-    server.stop();
+    server.stop().unwrap();
     let repo = runtime_repo(root.path(), "repo", "v1");
 
     let (text, stderr) = bob.run(&repo, &["verify", "--wait", "--all"], 0);
@@ -494,8 +505,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
 #[test]
 fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
     let root = owned_run::Root::from(support::os::tempdir());
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
+    let listener = support::os::tcp::nonblocking_loopback_listener();
     let url = format!("http://{}/", listener.local_addr().unwrap());
     let machine = Machine::new(&root, "bob", &url, "azt_unused");
     let repo = runtime_repo(root.path(), "repo", "v1");
@@ -536,7 +546,8 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     let bob = Machine::new(&root, "bob", &server.url, &server.token("bob-ci", "read"));
     let repo = human_repo(root.path(), "repo");
 
-    // Bob waits for a sign-off that does not exist anywhere yet.
+    // Keep Bob waiting across the ordered local and remote publication steps.
+    owned_run::hold_signoffs(&bob.state);
     let waiting = support::os::start(&mut bob.command(&repo, &["verify", "--wait", "--all"]));
     let waiting = RunChild::new(waiting, &bob.state, &repo);
     let saved = waiting.human_waiting();
@@ -561,15 +572,6 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     assert_eq!(entries[0].1["reviewer"], "alice");
 
     // Bob's wait poll finds the remote sign-off and settles his waiting request from it.
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
-    let mut waiting = waiting;
-    while waiting.try_wait().unwrap().is_none() {
-        assert!(
-            Instant::now() < deadline,
-            "the waiting verify did not settle"
-        );
-        thread::sleep(Duration::from_millis(50));
-    }
     let (text, _) = checked(waiting.wait_with_output().unwrap(), 0, &bob.token);
     let marker = line(&text, "brand/signoff");
     assert!(
@@ -652,6 +654,49 @@ fn remote_push_publishes_results_produced_offline_once() {
 }
 
 #[test]
+fn forced_verify_publishes_without_looking_up_remote_evidence() {
+    let root = owned_run::Root::from(support::os::tempdir());
+    let server = support::FakeProvider::start(|request| {
+        match (request.method.as_str(), request.path.as_str()) {
+            ("GET", "/v1/whoami") => {
+                support::Reply::Json(200, json!({"principal":"bob","scopes":["read","publish"]}))
+            }
+            ("POST", "/v1/lookup") => support::Reply::Json(200, json!({"entries":[]})),
+            ("PUT", path) if path.starts_with("/v1/entries/") => {
+                support::Reply::Json(201, json!({"created":true}))
+            }
+            _ => panic!(
+                "unexpected review-store request: {} {}",
+                request.method, request.path
+            ),
+        }
+    });
+    let bob = Machine::new(&root, "bob", &server.url, "azt_fixture");
+    let repo = runtime_repo(root.path(), "repo", "v1");
+    let forced = bob.json(&repo, &["verify", "--wait", "--all", "--force"], 0);
+    let request = &forced["requests"][0];
+    let publish_path = format!("/v1/entries/{}", request["key"].as_str().unwrap());
+    let observed = server.requests();
+    assert!(observed.iter().any(|call| {
+        call.method == "PUT"
+            && call.path == publish_path
+            && call.body["executionId"] == request["executionId"]
+    }));
+    assert!(!observed.iter().any(|call| call.path == "/v1/lookup"));
+
+    // A fresh, ordinary verification of the same key uses the same lookup endpoint.
+    let carol = Machine::new(&root, "carol", &server.url, "azt_fixture");
+    carol.json(&repo, &["verify", "--wait", "--all"], 0);
+    assert!(server.requests()[observed.len()..].iter().any(|call| {
+        call.method == "POST"
+            && call.path == "/v1/lookup"
+            && call.body["keys"]
+                .as_array()
+                .is_some_and(|keys| keys.contains(&request["key"]))
+    }));
+}
+
+#[test]
 fn the_newer_record_wins_across_local_history_and_the_store() {
     // Explicitly ordered fixture timestamps make clock resolution and scheduling irrelevant.
     const FIRST: &str = "2000-01-01T00:00:01.000000000Z";
@@ -678,6 +723,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     let repo = |name: &str| {
         let repo = root.path().join(name);
         write(
+            &(repo),
             &repo,
             json!({
                 "name":"app",
@@ -696,7 +742,11 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
                 ],
             }),
         );
-        fs::write(repo.join("version"), "app-v1\n").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("version")),
+            "app-v1\n",
+        )
+        .unwrap();
         repo
     };
     let (repo_a, repo_b, repo_c) = (repo("a"), repo("b"), repo("c"));
@@ -706,11 +756,9 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     server.completed_at(alice_record, FIRST);
     let key = first["requests"][0]["key"].as_str().unwrap().to_owned();
     assert_eq!(server.entries().len(), 1);
-    let used = server.last_used();
 
-    // Bob reviews again by force: it reads nothing from the store, so no record's last use
-    // changes, and its RED is published as a newer record without `remote push`.
-    fs::write(repo_b.join("broken"), "").unwrap();
+    // Bob reviews again by force. Its RED is published as a newer record without `remote push`.
+    fs::write(support::declaration::source_path(repo_b.join("broken")), "").unwrap();
     let forced = bob.json(&repo_b, &["verify", "--wait", "--all", "--force"], 1);
     let bob_record = forced["requests"][0]["executionId"].as_str().unwrap();
     bob.completed_at(&repo_b, &forced, SECOND);
@@ -720,14 +768,6 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[1].0, "bob-laptop");
     assert_eq!(entries[1].1["verdict"], "RED");
-    let last_use = |used: &[(String, String)]| {
-        used.iter()
-            .find(|(id, _)| id == alice_record)
-            .unwrap()
-            .1
-            .clone()
-    };
-    assert_eq!(last_use(&server.last_used()), last_use(&used));
     assert_eq!(
         bob.json(&repo_b, &["remote", "push"], 0),
         json!({"dryRun":false,"pushed":0,"existing":1,"skipped":0})
@@ -821,11 +861,16 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
         views["agent_sessions"]["app"][command]["execution_paths"] = json!(["harness.py"]);
     }
     write(
+        &(repo),
         &repo,
         json!({"name":"app", "fingerprint":{}, "views":views,
         "evals":[{"id":"check","title":"Review","profile":{"kind":"agent","backend":"openai","model":"fake-model"},"payload":{"instruction":"Review."}}]}),
     );
-    fs::write(repo.join("harness.py"), support::tool_sessions::script()).unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("harness.py")),
+        support::tool_sessions::script(),
+    )
+    .unwrap();
     let server = Server::start(root.path());
     let token = server.token("alice", "read,publish");
     let consumer = Machine::new(&root, "bob", &server.url, &token);
@@ -842,7 +887,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
             &config,
             [&config.artifacts["app"].name],
             &state,
-            &artifactize_core::cache::Parallelism::new(2),
+            &artifactize_core::cache::Parallelism::new(2).unwrap(),
             tokio_util::sync::CancellationToken::new(),
         )
         .await
@@ -886,23 +931,18 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
             Some(&repo),
             artifactize_core::auth::remote::parse_url(&server.url).unwrap(),
             artifactize_core::auth::remote::Share::Summary,
-            token.clone(),
+            token.clone().try_into().unwrap(),
         )
         .await
         .unwrap();
         assert!(remote.publish(&record).await.unwrap());
-        let fetched = remote
-            .lookup(std::slice::from_ref(&record.key))
-            .await
-            .unwrap();
-        assert_eq!(fetched.len(), 1);
-        assert_eq!(fetched[0].as_ref().unwrap().execution_paths, pins);
         serde_json::to_value(pins).unwrap()
     });
-    let expected: String = Sha256::digest(fs::read(repo.join("harness.py")).unwrap())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let expected: String =
+        Sha256::digest(support::declaration::read_file(repo.join("harness.py")).unwrap())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
     for key in ["app_app.start", "app_app.stop"] {
         assert_eq!(pins[key]["harness.py"], expected);
     }

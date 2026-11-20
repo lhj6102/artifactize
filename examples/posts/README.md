@@ -1,27 +1,28 @@
 # Posts as file Artifacts
 
-Three blog posts share one style checker. Each post has its own TOML sidecar,
-Artifact name, eval and reusable result. No folder declaration is needed at the
-example root.
+Three blog posts share one style checker. Each post has a named definition in
+`.artifactize/`, a file target, an eval and a reusable result. No Artifact needs
+to target the example root.
 
 ```text
 posts/
-├── house-style/            basis Artifact with the shared checker and banned words
-│   ├── index.artf
+├── .artifactize/
+│   ├── house-style.artf    basis: path = "house-style/"
+│   ├── welcome.artf        file: path = "welcome.md", 120-word limit
+│   ├── release-notes.artf  file: path = "release-notes.md", 120-word limit
+│   └── tip.artf            file: path = "tip.md", 40-word limit
+├── house-style/
 │   ├── check.py
 │   └── banned.txt
 ├── welcome.md
-├── welcome.md.artf         file Artifact welcome, 120-word limit
 ├── release-notes.md
-├── release-notes.md.artf   file Artifact release-notes, 120-word limit
-├── tip.md
-└── tip.md.artf             file Artifact tip, 40-word limit
+└── tip.md
 ```
 
 What it demonstrates:
 
-- **One file, one declaration.** `tip.md.artf` declares the neighboring `tip.md`.
-  `name` is required, and `[evals.style]` becomes `tip/style`. The other posts
+- **One file, one declaration.** `.artifactize/tip.artf` declares `path = "tip.md"`.
+  Its filename supplies the name, and `[evals.style]` becomes `tip/style`. The other posts
   have separate declarations; their word limits and titles are ordinary TOML,
   not template parameters. Projects that want templates generate `.artf` files
   themselves and commit them.
@@ -40,15 +41,16 @@ What it demonstrates:
 - **File references and cwd.** Runtime argv resolves `{tip}` to the absolute
   file path and `{house-style}/check.py` to the shared checker. File references never
   take a `/path` suffix. The process runs in `examples/posts`, the file's
-  containing folder, with only PATH and LANG inherited. The checker reads its
+  containing folder, with the author's environment. The checker reads its
   arguments without writing into the workspace.
 - **Tags.** `type:post` and `length:brief` appear in status and graph output.
   They do not change fingerprints, relations or reuse keys.
 
-For example, `tip.md.artf` contains:
+For example, `.artifactize/tip.artf` contains:
 
 ```toml
-name = "tip"
+# .artifactize/tip.artf
+path = "tip.md"
 tags = ["type:post", "length:brief"]
 
 [evals.style]
@@ -59,7 +61,7 @@ payload.instruction = "Check that {tip} starts with a title, stays within 40 wor
 
 ## Run it
 
-You need artifactize 0.9 or later on your PATH
+You need an artifactize build that supports `.artifactize/` definitions on your PATH
 ([Install](https://artifactize.dev/docs/getting-started/install.html)), plus
 `python3`. No model or API key is needed. From the repository root:
 

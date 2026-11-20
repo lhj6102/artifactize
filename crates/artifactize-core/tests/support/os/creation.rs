@@ -13,18 +13,29 @@ pub fn deny_creates(directory: &Path) -> CreationDenied {
 pub struct CreationDenied {
     directory: std::path::PathBuf,
     inputs: tempfile::TempDir,
+    denied: &'static str,
 }
 
 #[cfg(windows)]
 pub fn deny_creates(directory: &Path) -> CreationDenied {
+    deny_access(directory, "CreateFiles")
+}
+
+#[cfg(windows)]
+pub(super) fn search_only(directory: &Path) -> CreationDenied {
+    deny_access(directory, "ListDirectory, CreateFiles, CreateDirectories")
+}
+
+#[cfg(windows)]
+fn deny_access(directory: &Path, denied: &'static str) -> CreationDenied {
     let inputs = super::tempdir();
-    std::fs::write(inputs.path().join("deny.ps1"), r#"param([string]$Target, [string]$Saved)
+    std::fs::write(inputs.path().join("deny.ps1"), r#"param([string]$Target, [string]$Saved, [System.Security.AccessControl.FileSystemRights]$Rights)
 $ErrorActionPreference = 'Stop'
 $acl = Get-Acl -LiteralPath $Target
 $sections = [System.Security.AccessControl.AccessControlSections]::Access
 [System.IO.File]::WriteAllText($Saved, $acl.GetSecurityDescriptorSddlForm($sections))
 $everyone = [System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')
-$deny = [System.Security.AccessControl.FileSystemAccessRule]::new($everyone, [System.Security.AccessControl.FileSystemRights]::CreateFiles, [System.Security.AccessControl.AccessControlType]::Deny)
+$deny = [System.Security.AccessControl.FileSystemAccessRule]::new($everyone, $Rights, [System.Security.AccessControl.AccessControlType]::Deny)
 $acl.AddAccessRule($deny)
 Set-Acl -LiteralPath $Target -AclObject $acl
 "#).unwrap();
@@ -37,6 +48,7 @@ Set-Acl -LiteralPath $Target -AclObject $acl
     let guard = CreationDenied {
         directory: directory.to_owned(),
         inputs,
+        denied,
     };
     guard
         .apply("deny.ps1")
@@ -46,16 +58,29 @@ Set-Acl -LiteralPath $Target -AclObject $acl
 
 #[cfg(windows)]
 impl CreationDenied {
+    pub(super) fn restore(&self) {
+        self.apply("restore.ps1")
+            .expect("restore fixture directory ACL");
+    }
+
+    pub(super) fn restrict(&self) {
+        self.apply("deny.ps1")
+            .expect("restrict fixture directory ACL");
+    }
+
     fn apply(&self, script: &str) -> Result<(), String> {
         let system = std::env::var_os("SystemRoot").expect("Windows system directory");
         let powershell = Path::new(&system).join("System32/WindowsPowerShell/v1.0/powershell.exe");
-        let output = std::process::Command::new(powershell)
+        let mut command = std::process::Command::new(powershell);
+        command
             .args(["-NoProfile", "-NonInteractive", "-File"])
             .arg(self.inputs.path().join(script))
             .arg(&self.directory)
-            .arg(self.inputs.path().join("original.sddl"))
-            .output()
-            .map_err(|error| error.to_string())?;
+            .arg(self.inputs.path().join("original.sddl"));
+        if script == "deny.ps1" {
+            command.arg(self.denied);
+        }
+        let output = command.output().map_err(|error| error.to_string())?;
         if output.status.success() {
             Ok(())
         } else {

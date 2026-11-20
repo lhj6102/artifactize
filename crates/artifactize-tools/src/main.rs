@@ -1,7 +1,10 @@
-use artifactize_tools::cli::{Cli, run};
+use artifactize_tools::{
+    cli::{Cli, run},
+    exit_code,
+};
 use clap::Parser;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> std::process::ExitCode {
-    std::process::ExitCode::from(run(Cli::parse().command).await)
+    exit_code(run(Cli::parse().command).await)
 }

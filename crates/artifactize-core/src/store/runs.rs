@@ -143,7 +143,7 @@ fn listed(
         .query_map(params![repos, limit, offset, pinned], |row| {
             Ok(RunSummary {
                 id: row.get(0)?,
-                repo_path: PathBuf::from(row.get::<_, String>(1)?),
+                repo_path: super::path_column(row, 1)?,
                 created_at: row.get(2)?,
                 completed_at: row.get(3)?,
                 status: row.get(4)?,

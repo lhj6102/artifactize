@@ -17,8 +17,6 @@ use crate::types::MAX_SAFE_JSON_INTEGER as MAX_SAFE_INTEGER;
 const MAX_INPUTS: usize = 64;
 /// Keep Artifact/eval/variant names bounded in qualified IDs and graph/audit output.
 const MAX_IDENTIFIER_BYTES: usize = 64;
-/// Bound declared execution paths in JSON-client UTF-16 units before scoped resolution.
-const MAX_PATH_UNITS: usize = 1024;
 
 fn integer<'de, D>(deserializer: D, max: u64, message: &str) -> Result<u64, D::Error>
 where
@@ -152,18 +150,7 @@ pub(super) fn script(command: &str, args: &[crate::scope::Argument]) -> Result<(
 }
 
 pub(crate) fn path(value: &str) -> Result<(), String> {
-    if value.encode_utf16().count() > MAX_PATH_UNITS
-        || crate::platform::paths::drive_rooted(value)
-        || value
-            .bytes()
-            .any(|byte| byte.is_ascii_control() || byte == b'\\')
-        || value
-            .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
-    {
-        return Err("Execution input must be a safe project-relative path.".into());
-    }
-    Ok(())
+    artifactize_tools::files::declaration_path(value)
 }
 
 pub(super) fn paths(values: &[crate::config::LogicalPath], label: &str) -> Result<(), String> {

@@ -34,28 +34,30 @@ pub fn validate(validator: &Validator, args: &Value) -> Result<(), String> {
     {
         return Err("Tool arguments must be an object of at most 64 KiB.".into());
     }
-    let mut errors = validator.iter_errors(args).take(MAX_DIAGNOSTICS).peekable();
-    if errors.peek().is_none() {
-        return Ok(());
+    let lines: String = validator
+        .iter_errors(args)
+        .take(MAX_DIAGNOSTICS)
+        .map(|error| {
+            format!(
+                "\n- instancePath {}: constraint {} failed.",
+                quoted(&error.instance_path().to_string()),
+                quoted(&error.schema_path().to_string()),
+            )
+        })
+        .collect();
+    if lines.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Tool arguments do not match the registered input schema.{lines}"
+        ))
     }
-    let mut message = "Tool arguments do not match the registered input schema.".to_owned();
-    for error in errors {
-        message.push_str(&format!(
-            "\n- instancePath {}: constraint {} failed.",
-            quoted(&error.instance_path().to_string()),
-            quoted(&error.schema_path().to_string()),
-        ));
-    }
-    Err(message)
 }
 
 pub fn quoted(value: &str) -> String {
     let mut value = serde_json::to_string(value).expect("string is JSON");
     if value.len() > MAX_QUOTED_BYTES {
-        let mut end = QUOTED_PREFIX_BYTES;
-        while !value.is_char_boundary(end) {
-            end -= 1;
-        }
+        let end = value.floor_char_boundary(QUOTED_PREFIX_BYTES);
         value.truncate(end);
         value.push_str("… (truncated)");
     }

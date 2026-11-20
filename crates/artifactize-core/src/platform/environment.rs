@@ -3,6 +3,7 @@
 //! gets a snapshot, never this process's environment by inheritance.
 
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     ffi::{OsStr, OsString},
 };
@@ -40,6 +41,21 @@ pub(crate) fn for_command() -> BTreeMap<OsString, OsString> {
     environment
 }
 
+/// Use the same environment for program lookup and launch. When a caller supplies aliases,
+/// the last entry in map order wins, as when passing the ordered map to `Command::envs`.
+pub(crate) fn for_child(
+    environment: &BTreeMap<OsString, OsString>,
+) -> Cow<'_, BTreeMap<OsString, OsString>> {
+    if !super::ENV_NAMES_IGNORE_CASE {
+        return Cow::Borrowed(environment);
+    }
+    let mut normalized = BTreeMap::new();
+    for (name, value) in environment {
+        insert(&mut normalized, name, value.clone());
+    }
+    Cow::Owned(normalized)
+}
+
 /// Set one variable of a built environment, replacing a variable of the same name as this
 /// system compares names.
 pub(crate) fn set(
@@ -47,23 +63,21 @@ pub(crate) fn set(
     name: &str,
     value: impl Into<OsString>,
 ) {
+    insert(environment, OsStr::new(name), value.into());
+}
+
+fn insert(environment: &mut BTreeMap<OsString, OsString>, name: &OsStr, value: OsString) {
     if super::ENV_NAMES_IGNORE_CASE {
-        environment.retain(|key, _| {
-            !key.to_str()
-                .is_some_and(|key| key.eq_ignore_ascii_case(name))
-        });
+        environment.retain(|key, _| !same_name(key, name));
     }
-    environment.insert(name.into(), value.into());
+    environment.insert(name.into(), value);
 }
 
 /// Remove one variable of a built environment, matching its name as this system compares
 /// names.
 pub(crate) fn remove(environment: &mut BTreeMap<OsString, OsString>, name: &str) {
     if super::ENV_NAMES_IGNORE_CASE {
-        environment.retain(|key, _| {
-            !key.to_str()
-                .is_some_and(|key| key.eq_ignore_ascii_case(name))
-        });
+        environment.retain(|key, _| !same_name(key, OsStr::new(name)));
     } else {
         environment.remove(OsStr::new(name));
     }
@@ -76,12 +90,41 @@ pub(crate) fn lookup<'a>(
     name: &str,
 ) -> Option<&'a OsStr> {
     if super::ENV_NAMES_IGNORE_CASE {
-        environment.iter().find_map(|(key, value)| {
-            key.to_str()
-                .is_some_and(|key| key.eq_ignore_ascii_case(name))
-                .then_some(value.as_os_str())
-        })
+        environment
+            .iter()
+            .find_map(|(key, value)| same_name(key, OsStr::new(name)).then_some(value.as_os_str()))
     } else {
         environment.get(OsStr::new(name)).map(OsString::as_os_str)
+    }
+}
+
+#[cfg(unix)]
+fn same_name(left: &OsStr, right: &OsStr) -> bool {
+    left == right
+}
+
+#[cfg(windows)]
+fn same_name(left: &OsStr, right: &OsStr) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
+    let left: Vec<_> = left.encode_wide().collect();
+    let right: Vec<_> = right.encode_wide().collect();
+    let (Ok(left_len), Ok(right_len)) = (i32::try_from(left.len()), i32::try_from(right.len()))
+    else {
+        return false;
+    };
+    // SAFETY: both UTF-16 buffers remain live for their explicit lengths; no pointer is retained.
+    unsafe {
+        CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) == CSTR_EQUAL
+    }
+}
+
+/// Have a child allocate its ordinary temporary files within its owned run directory.
+pub(crate) fn set_temporary_directory(
+    environment: &mut BTreeMap<OsString, OsString>,
+    dir: &std::path::Path,
+) {
+    for key in super::TEMP_VARIABLES {
+        set(environment, key, dir);
     }
 }

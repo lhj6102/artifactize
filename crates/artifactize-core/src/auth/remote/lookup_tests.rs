@@ -22,20 +22,21 @@ async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
         "completedAt":"2026-01-01T00:00:01Z",
     });
     let body = json!({"entries":[{"unexpected":"shape"},good,17]}).to_string();
-    let server = Server::new(vec![MockHttpResponse::success(body)]).await;
-    let remote = Remote {
-        url: parse_url(&server.base).unwrap(),
-        share: Share::Summary,
-        token_source: TokenSource::Env,
-        token: Some("fixture-only-token".into()),
-        client: OnceLock::new(),
-    };
-    let entries = remote
-        .lookup(&["a".repeat(64).parse().unwrap()])
-        .await
-        .unwrap();
-    assert_eq!(entries.len(), 3);
-    assert!(entries[0].is_err());
-    assert_eq!(entries[1].as_ref().unwrap().request_id.as_str(), "run-1-1");
-    assert!(entries[2].is_err());
+    Server::run(vec![MockHttpResponse::success(body)], async |server| {
+        let remote = Remote {
+            url: parse_url(&server.base).unwrap(),
+            share: Share::Summary,
+            token: Credential::Environment("fixture-only-token".to_owned().try_into().unwrap()),
+            client: OnceLock::new(),
+        };
+        let entries = remote
+            .lookup(&["a".repeat(64).parse().unwrap()])
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 3);
+        assert!(entries[0].is_err());
+        assert_eq!(entries[1].as_ref().unwrap().request_id.as_str(), "run-1-1");
+        assert!(entries[2].is_err());
+    })
+    .await;
 }

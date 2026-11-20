@@ -1,9 +1,10 @@
 //! Bounded runtime evidence queries. Full captures stay on disk, never in a tool result.
-use crate::{store, types::RequestId};
+use crate::{platform, store, types::RequestId};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    io::{BufRead, BufReader, Cursor, Read},
+    ffi::OsStr,
+    io::{self, BufRead, BufReader, Cursor, Read},
     path::Path,
 };
 
@@ -12,7 +13,7 @@ const STREAM_BYTES: usize = 10 * 1024;
 /// One query is a diagnostic excerpt, not a replacement for the saved log.
 const MAX_LINES: usize = 200;
 /// A short default tail supplies diagnostic context without filling an agent context.
-const DEFAULT_TAIL: usize = 50;
+pub const DEFAULT_TAIL: usize = 50;
 /// Bound one unusually long line independently of the stream page.
 const LINE_BYTES: usize = 2048;
 
@@ -27,7 +28,7 @@ pub enum Stream {
 
 #[derive(Debug, Clone, Default, Deserialize, clap::Args)]
 #[serde(deny_unknown_fields)]
-pub struct LogQuery {
+pub struct LogOptions {
     /// Select stdout, stderr, or both (default).
     #[arg(long, value_enum, default_value = "both")]
     #[serde(default)]
@@ -76,9 +77,31 @@ pub struct Logs {
     pub streams: Vec<LogExcerpt>,
 }
 
+#[derive(Debug, Clone)]
+pub struct LogQuery {
+    stream: Stream,
+    selection: Selection,
+    search: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum Selection {
+    Tail(usize),
+    Range { start: usize, end: Option<usize> },
+}
+
+impl Default for LogQuery {
+    fn default() -> Self {
+        Self {
+            stream: Stream::Both,
+            selection: Selection::Tail(DEFAULT_TAIL),
+            search: None,
+        }
+    }
+}
+
 pub async fn logs(state: &Path, id: &RequestId, query: LogQuery) -> Result<Logs, String> {
-    validate(&query)?;
-    let view = store::read_request(state, id).await?;
+    let view = store::read_request_id(state, id).await?;
     // Reused/joined results point at the execution's original request, not this Run's output.
     let producer = view
         .request
@@ -92,7 +115,7 @@ pub async fn logs(state: &Path, id: &RequestId, query: LogQuery) -> Result<Logs,
         Some(view.clone())
     } else {
         // Remote mirrors need not carry the original local request.
-        store::read_request(state, &producer).await.ok()
+        store::read_request_id(state, &producer).await.ok()
     };
     let runtime = matches!(
         view.request.result(),
@@ -123,20 +146,38 @@ pub async fn logs(state: &Path, id: &RequestId, query: LogQuery) -> Result<Logs,
     .map_err(|e| e.to_string())?
 }
 
-fn validate(query: &LogQuery) -> Result<(), String> {
-    if query.tail.is_some_and(|n| n == 0 || n > MAX_LINES)
-        || query.start == Some(0)
-        || query.end == Some(0)
-        || query.start.zip(query.end).is_some_and(|(a, b)| a > b)
-        || (query.tail.is_some() && (query.start.is_some() || query.end.is_some()))
-        || query
-            .search
-            .as_ref()
-            .is_some_and(|s| s.is_empty() || s.len() > LINE_BYTES)
-    {
-        return Err("Use positive line numbers, tail 1–200, an ordered range, and a nonempty search up to 2048 bytes; tail and range are exclusive.".into());
+impl TryFrom<LogOptions> for LogQuery {
+    type Error = String;
+
+    fn try_from(query: LogOptions) -> Result<Self, String> {
+        if query.tail.is_some_and(|n| n == 0 || n > MAX_LINES)
+            || query.start == Some(0)
+            || query.end == Some(0)
+            || query.start.zip(query.end).is_some_and(|(a, b)| a > b)
+            || (query.tail.is_some() && (query.start.is_some() || query.end.is_some()))
+            || query
+                .search
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > LINE_BYTES)
+        {
+            return Err(format!(
+                "Use positive line numbers, tail 1–{MAX_LINES}, an ordered range, and a nonempty search up to {LINE_BYTES} bytes; tail and range are exclusive."
+            ));
+        }
+        let selection = match (query.tail, query.start, query.end) {
+            (Some(tail), _, _) => Selection::Tail(tail),
+            (None, None, None) => Selection::Tail(DEFAULT_TAIL),
+            (None, start, end) => Selection::Range {
+                start: start.unwrap_or(1),
+                end,
+            },
+        };
+        Ok(Self {
+            stream: query.stream,
+            search: query.search,
+            selection,
+        })
     }
-    Ok(())
 }
 
 fn excerpt(
@@ -168,15 +209,17 @@ fn excerpt(
     if let Some(directory) = source.and_then(|v| v.request.run_dir.as_ref()) {
         let path = directory.join(format!("runtime.{name}"));
         // Saved paths are not authority to read outside this state's Run output.
-        if path.exists() {
-            let root =
-                crate::platform::canonicalize(&state.join("runs")).map_err(|e| e.to_string())?;
-            let canonical = crate::platform::canonicalize(&path).map_err(|e| e.to_string())?;
-            if !crate::platform::is_within(&canonical, &root) {
-                return Err("Runtime log is outside saved Run output.".into());
-            }
-            let file = std::fs::File::open(&canonical).map_err(|e| e.to_string())?;
-            let complete = path.with_extension(format!("{name}.complete")).is_file();
+        let opened = match platform::paths::open_regular_beneath(&state.join("runs"), &path) {
+            Ok(opened) => Some(opened),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.to_string()),
+        };
+        if let Some((directory, file)) = opened {
+            let marker = format!("runtime.{name}.complete");
+            let complete = matches!(
+                platform::entry_kind(&directory, OsStr::new(&marker)),
+                Ok(platform::FileKind::File)
+            );
             // A live producer may keep appending: query only the bytes present at open.
             let length = file.metadata().map_err(|e| e.to_string())?.len();
             let (lines, next_start) = select(BufReader::new(file.take(length)), query)?;
@@ -238,9 +281,10 @@ fn select(
     mut reader: impl BufRead,
     query: &LogQuery,
 ) -> Result<(Vec<Line>, Option<usize>), String> {
-    let tail = query
-        .tail
-        .or_else(|| (query.start.is_none() && query.end.is_none()).then_some(DEFAULT_TAIL));
+    let (tail, start, end) = match query.selection {
+        Selection::Tail(tail) => (Some(tail), 1, None),
+        Selection::Range { start, end } => (None, start, end),
+    };
     let mut selected = VecDeque::new();
     let mut bytes = 0;
     let mut number = 0;
@@ -281,10 +325,10 @@ fn select(
             break;
         }
         number += 1;
-        if query.end.is_some_and(|end| number > end) {
+        if end.is_some_and(|end| number > end) {
             break;
         }
-        if number < query.start.unwrap_or(1) || !matched {
+        if number < start || !matched {
             continue;
         }
         let text = if length > LINE_BYTES {
@@ -295,9 +339,9 @@ fn select(
         } else {
             text
         };
-        let text = String::from_utf8_lossy(&crate::runtime::clean_output(&text))
-            .trim_end_matches(['\r', '\n'])
-            .to_owned();
+        let cleaned = crate::runtime::clean_output(&text);
+        let text =
+            crate::platform::output_text(crate::platform::output_line(&cleaned)).into_owned();
         let line = Line {
             number,
             text,
@@ -315,4 +359,56 @@ fn select(
         }
     }
     Ok((selected.into(), None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn runtime_evidence_requires_a_regular_completion_marker() {
+        let state = crate::test_os::tempdir();
+        let run = state.path().join("runs/run-1");
+        fs::create_dir_all(&run).unwrap();
+        let capture = run.join("runtime.stdout");
+        fs::write(&capture, "output\n").unwrap();
+        let marker = run.join("runtime.stdout.complete");
+        let view = crate::test_request::request(
+            "app/check",
+            "RUNNING",
+            serde_json::json!({"runDir": platform::path_text(&run)}),
+        );
+        let inspect = || {
+            excerpt(
+                state.path(),
+                Some(&view),
+                &view,
+                true,
+                Stream::Stdout,
+                &LogQuery::default(),
+            )
+        };
+        let evidence = || {
+            let excerpt = inspect().unwrap();
+            assert_eq!(excerpt.lines[0].text, "output");
+            excerpt.evidence
+        };
+        assert!(matches!(evidence(), Evidence::Partial));
+        let outside = state.path().join("outside");
+        fs::write(&outside, "").unwrap();
+        crate::test_os::file_link(&outside, &marker);
+        assert!(matches!(evidence(), Evidence::Partial));
+        crate::test_os::remove_file_link(&marker);
+        fs::write(marker, "").unwrap();
+        assert!(matches!(evidence(), Evidence::Complete));
+
+        fs::remove_file(&capture).unwrap();
+        assert!(matches!(inspect().unwrap().evidence, Evidence::Missing));
+        crate::test_os::file_link(&outside, &capture);
+        assert!(
+            inspect().is_err(),
+            "a linked capture must not expose its target"
+        );
+    }
 }

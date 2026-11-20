@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use super::image;
 use crate::{
     config::read_workspace_config,
-    test_os::{symlink_dir, symlink_file},
+    test_os::{file_link, link_dir},
     tools::{Content, Registry, ToolResult},
 };
 
@@ -69,12 +69,12 @@ impl Fixture {
     fn write(&self, path: &str, data: impl AsRef<[u8]>) {
         let path = self.root.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        crate::test_declaration::write(path, data).unwrap();
+        crate::test_declaration::write(&self.root, path, data).unwrap();
     }
 
     async fn call(&self, tool: &str, args: Value) -> ToolResult {
         let config = read_workspace_config(&self.root).unwrap();
-        let registry = Registry::new(&config, "a/review").unwrap();
+        let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         let output = self.root.join("never-created");
         let result = registry
             .call(tool, args, &output, CancellationToken::new())
@@ -296,20 +296,12 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
         "data\\file",
     ];
     let a = fixture.root.join("a");
-    if symlink_file(PathBuf::from("data").join("file"), a.join("link")).is_some() {
-        paths.push("link");
-    }
-    if symlink_dir("data", a.join("linkdir")).is_some() {
-        paths.push("linkdir/file");
-    }
-    if symlink_dir(fixture.directory.path(), a.join("escape")).is_some() {
-        paths.push("escape");
-    }
+    file_link(&a.join("data/file"), &a.join("link"));
+    link_dir(&a.join("data"), &a.join("linkdir"));
+    link_dir(fixture.directory.path(), &a.join("escape"));
+    paths.extend(["link", "linkdir", "linkdir/file", "escape"]);
     let special_files = crate::test_os::special_files(&a);
     paths.extend(special_files.paths().iter().copied());
-    crate::test_os::link_dir(&a.join("data"), &a.join("joined"));
-    crate::test_os::link_dir(fixture.directory.path(), &a.join("escape-junction"));
-    paths.extend(["joined", "joined/file", "escape-junction"]);
     for path in paths {
         for tool in ["read_a", "list_a", "glob_a", "grep_a", "view_image_a"] {
             let mut args = json!({"path":path});
@@ -326,9 +318,9 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
             .is_error()
     );
     let data = fixture.data("glob_a", json!({"pattern":"**/*"})).await;
-    assert_eq!(data["files"], json!(["data/file", "index.artf"]));
+    assert_eq!(data["files"], json!(["data/file"]));
     let config = read_workspace_config(&fixture.root).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     fs::rename(fixture.root.join("a"), fixture.root.join("old-a")).unwrap();
     let read = || {
         registry.call(
@@ -338,12 +330,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
             CancellationToken::new(),
         )
     };
-    let symlinked = symlink_dir("old-a", fixture.root.join("a")).is_some();
-    if symlinked {
-        assert!(read().await.is_error());
-        crate::test_os::remove_link_dir(&fixture.root.join("a"));
-    }
-    crate::test_os::link_dir(&fixture.root.join("old-a"), &fixture.root.join("a"));
+    link_dir(&fixture.root.join("old-a"), &fixture.root.join("a"));
     assert!(read().await.is_error());
 }
 
@@ -385,16 +372,12 @@ async fn missing_paths_and_links_report_their_cause() {
         ("list_a", "ab/data", r#"No "ab/data" in Artifact a."#),
     ];
     let a = fixture.root.join("a");
-    if symlink_file(PathBuf::from("data").join("file"), a.join("link")).is_some() {
-        cases.push(("read_a", "link", symlink));
-    }
-    if symlink_dir("data", a.join("linkdir")).is_some() {
-        cases.push(("list_a", "linkdir", symlink));
-    }
-    crate::test_os::link_dir(&a.join("data"), &a.join("joined"));
+    file_link(&a.join("data/file"), &a.join("link"));
+    link_dir(&a.join("data"), &a.join("linkdir"));
     cases.extend([
-        ("list_a", "joined", symlink),
-        ("read_a", "joined/file", symlink),
+        ("read_a", "link", symlink),
+        ("list_a", "linkdir", symlink),
+        ("read_a", "linkdir/file", symlink),
     ]);
     for (tool, path, message) in cases {
         let mut args = json!({"path":path});
@@ -417,7 +400,7 @@ async fn missing_paths_and_links_report_their_cause() {
 async fn descriptions_say_paths_are_relative_to_the_artifact_without_its_name() {
     let fixture = Fixture::new();
     let config = read_workspace_config(&fixture.root).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     for tool in registry.list() {
         let example = if tool.name == "view_image_a" {
             r#"use "image.png", not "a/image.png"."#
@@ -485,7 +468,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
     fixture.write("bare/index.artf", r#"{"name":"bare"}"#);
     fixture.artifact("other", "other", "Review.");
     let config = read_workspace_config(&fixture.root).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     assert_eq!(
         registry
             .list()
@@ -524,12 +507,23 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
         json!({"name":"cases"}).to_string(),
     );
     fixture.write("a/nested/cases/input.txt", "child\n");
+    let compose = || {
+        let file = fixture.root.join("a/index.artf");
+        let mut declaration =
+            crate::test_declaration::read(crate::test_declaration::read_file(&file).unwrap())
+                .unwrap();
+        declaration["parts"] = json!(["b", "cases"]);
+        crate::test_declaration::write(&fixture.root, &file, declaration.to_string()).unwrap();
+    };
+    compose();
     // A nested folder Artifact is another Artifact: only a reference brings it in.
     let refused = fixture
         .call("read_a", json!({"path":"nested/cases/input.txt"}))
         .await;
     assert!(refused.is_error(), "{refused:?}");
     fixture.artifact("a", "a", "Review {b} and {cases}.");
+    compose();
+    fixture.write("a/nested/cases/notes.md", "notes");
     let data = fixture.data("list_a", json!({})).await;
     assert_eq!(
         data["entries"]
@@ -538,9 +532,9 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
             .iter()
             .map(|entry| entry["name"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["index.artf", "nested", "source"]
+        ["nested", "source"]
     );
-    assert_eq!(data["entries"][2]["kind"], "directory");
+    assert_eq!(data["entries"][1]["kind"], "directory");
     let data = fixture.data("list_a", json!({"path":"nested"})).await;
     assert_eq!(
         data["entries"][0],
@@ -550,12 +544,12 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
         .data("list_a", json!({"path":"nested/cases","limit":1}))
         .await;
     assert_eq!(data["totalEntries"], 2);
-    assert_eq!(data["entries"][0]["path"], "nested/cases/index.artf");
+    assert_eq!(data["entries"][0]["path"], "nested/cases/input.txt");
     assert_eq!(data["nextOffset"], 1);
     let data = fixture
         .data("list_a", json!({"path":"nested/cases","offset":1}))
         .await;
-    assert_eq!(data["entries"][0]["name"], "input.txt");
+    assert_eq!(data["entries"][0]["name"], "notes.md");
     assert_eq!(data["nextOffset"], Value::Null);
     let data = fixture
         .data("read_a", json!({"path":"nested/cases/input.txt"}))
@@ -575,7 +569,7 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
     assert_eq!(data["truncated"], false);
     let config = read_workspace_config(&fixture.root).unwrap();
     assert!(
-        !Registry::new(&config, "a/review")
+        !Registry::new(&config, &"a/review".parse().unwrap())
             .unwrap()
             .list()
             .any(|tool| tool.name.ends_with("_hidden"))
@@ -606,7 +600,10 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     fixture.write("a/search/.hidden.txt", "alpha\n");
     fixture.write("a/search/binary.txt", b"alpha\n\0");
     fixture.write("a/search/invalid.txt", b"alpha\n\xff");
-    symlink_file("a.txt", fixture.root.join("a/search/link.txt"));
+    file_link(
+        &fixture.root.join("a/search/a.txt"),
+        &fixture.root.join("a/search/link.txt"),
+    );
     crate::test_os::link_dir(
         &fixture.root.join("a/search/sub"),
         &fixture.root.join("a/search/joined.txt"),
@@ -739,7 +736,7 @@ async fn file_artifact_image_view_is_limited_to_the_target() {
             .to_string(),
     );
     let config = read_workspace_config(&fixture.root).unwrap();
-    let registry = Registry::for_artifact(&config, "hero").unwrap();
+    let registry = Registry::for_artifact(&config, &"hero".parse().unwrap()).unwrap();
     let result = registry
         .call(
             "view_image_hero",

@@ -2,30 +2,24 @@
 
 Evaluation-driven development for people and AI agents.
 
-artifactize는 여러분과 팀원이 프로젝트의 각 부분을 리뷰하되, 바뀌지 않은 작업은
-다시 검사하지 않도록 도와줍니다. **Artifact**는 리뷰할 수 있는 작업 단위입니다.
-파일이나 폴더뿐 아니라, 구성 요소 사이의 연결로 이루어진 Artifact Graph도 Artifact로 선언할 수 있습니다.
-**eval**은 Artifact에 대한 검사입니다. eval에는 Runtime 명령 실행, Agent 리뷰, Human 승인 중 한 가지 방식을 지정합니다.
+Artifactize로 프로젝트의 각 부분을 어떻게 검증할지 선언합니다. 입력이 그대로라면 이전 리뷰 결과를 재사용합니다.
 
-- 각자 맡은 부분을 편한 방식으로 작업하세요. 각 eval이 입력으로 사용하는 Artifact를 선언해 두면,
-  입력이 바뀔 때 영향을 받는 리뷰만 다시 실행됩니다.
-- 입력이 바뀌지 않았다면 이전 리뷰 결과를 재사용하세요. **fingerprint**가 그 입력을 식별하며,
-  `artifactize status`는 무엇을 다시 리뷰해야 하는지 보여 줍니다.
-- 팀 리뷰 저장소를 통해 팀원과 CI에 결과를 공유하세요. Monitor에서 진행 상황을
-  확인하고, Review에서 승인 대기 중인 요청을 차례로 처리할 수 있습니다.
+- **Artifact**: 프로젝트에서 리뷰할 작업 단위입니다. 폴더, 단일 파일, 폴더 안에서 고른 경로(**Aspect**), 외부 서비스 URI(**Live**)를 대상으로 삼을 수 있으며 `.artifactize/<name>.artf` 파일에 `path`를 적어 선언합니다.
+- **eval**: Artifact 하나를 검증해 `GREEN` 또는 `RED` 판정을 내리는 검사입니다. `runtime` eval은 테스트나 린터를 실행하고, `agent` eval은 읽기 전용 도구로 대상을 살펴 판정합니다. `human` eval에서는 리뷰어가 직접 판정합니다.
+- **Artifact Graph**: `{name}`으로 참조한 입력과 eval의 의존 관계, 그리고 `parts`로 묶은 Artifact의 구성 관계를 보여 줍니다.
+- **fingerprint와 재사용**: 각 검사는 평가 기준과 입력이 그대로일 때 이전 판정을 재사용합니다. 자세한 동작은 [fingerprint와 재사용](/docs/ko/concepts/reuse.html)을 보세요.
 
-Linux, macOS, Windows에서 실행됩니다. [설치](/docs/ko/getting-started/install.html)부터 시작한 뒤
-[가이드](/docs/ko/getting-started/guide.html)를 따라 첫 GREEN 결과를 얻고, 모델이나 API 키 없이
-그 결과를 재사용해 보세요.
+## 기본 작업 흐름 {#how-a-project-flows}
 
-## 다음으로 볼 곳 {#where-to-go-next}
+1. **평가 기준을 먼저 선언합니다.** `.artifactize/<name>.artf`에 각 Artifact를 정의하고 eval 종류(`runtime`, `agent`, `human`)와 평가에 사용할 입력 Artifact를 지정합니다.
+2. **만들면서 반복 검증합니다.** `artifactize verify --all --wait` 명령을 직접 실행하거나 플러그인을 쓰는 코딩 에이전트에게 검증을 맡깁니다. 검증을 시작하면 Artifactize가 백그라운드에서 **Run**을 실행하고 결과를 기록합니다.
+3. **결과를 재사용하고 승인합니다.** 입력이 그대로라면 로컬 환경, 팀 리뷰 저장소, CI에서도 이전 검사 결과를 그대로 재사용할 수 있습니다. 같은 Artifact의 자동 검사를 모두 통과해야 사람에게 승인을 요청합니다.
 
-- **[기능](/docs/ko/features/artifact.html):** Artifact와 eval을 선언하고, 무엇을
-  재사용할지 정하고, 검증을 실행하고 진행 상황을 확인하며, 리뷰어가 사용할 도구를 제공하고, 팀과 결과를 공유합니다.
-  CLI, 데스크톱 앱, 에이전트 플러그인에서 똑같이 동작합니다.
-- **[데스크톱](/docs/ko/desktop/index.html):** 창에서 Run을 살펴보고 Human 리뷰를 처리합니다.
-- **[에이전트 플러그인](/docs/ko/agent-plugin/hey-arti.html):** 여러 코딩 어시스턴트에서 쓸 수 있는 Arti 스킬을 추가하고
-  [MCP](/docs/ko/agent-plugin/mcp.html)로 코딩 호스트를 연결합니다.
-- **[CLI](/docs/ko/cli/index.html):** 명령 문법, 출력, 종료 코드.
-- **[TUI](/docs/ko/tui/index.html):** 터미널에서 쓰는 Monitor와 Review.
-- **[소스](https://github.com/lhj6102/artifactize):** Apache 2.0으로 공개된 오픈 소스.
+## 다음으로 볼 문서 {#where-to-go-next}
+
+- **[설치](/docs/ko/getting-started/install.html)**: Linux, macOS, Windows에서 데스크톱 앱과 CLI를 설치하고 AI 백엔드를 연결합니다.
+- **[5분 만에 첫 프로젝트 만들어 보기](/docs/ko/getting-started/guide.html)**: AI 계정 없이 작은 프로젝트를 만들고 `verify`와 결과 재사용을 직접 체험합니다.
+- **[핵심 개념](/docs/ko/concepts/artifacts.html)**: Artifact, eval, fingerprint, Run이 서로 어떻게 맞물리는지 살펴봅니다.
+- **[코딩 에이전트와 함께 쓰기](/docs/ko/agent-plugin/plugin.html)**: Claude Code나 Codex에 플러그인을 설치해 **Hey Arti**와 **Focus then sweep**을 활용합니다.
+- **[가이드](/docs/ko/guides/tools.html)**: 리뷰 도구 설정, 데스크톱 앱 사용법, 팀 리뷰 저장소 및 CI 연동 방법을 다룹니다.
+- **[레퍼런스](/docs/ko/reference/declarations.html)**: `.artf` 필드는 [선언(.artf) 레퍼런스](/docs/ko/reference/declarations.html)에서, 명령과 종료 코드 및 MCP 도구는 [CLI와 MCP 레퍼런스](/docs/ko/reference/cli-and-mcp.html)에서 찾아봅니다.

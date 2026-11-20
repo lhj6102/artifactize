@@ -161,14 +161,14 @@ pub fn providers_list(app: tauri::State<'_, App>) -> Result<Providers, Failure> 
             .keys
             .into_iter()
             .map(|key| KeyStatus {
-                provider: key.provider.into(),
-                variable: key.variable.into(),
-                source: match key.source {
+                provider: key.provider().into(),
+                variable: key.variable().into(),
+                source: match key.source() {
                     providers::KeySource::Environment => KeySource::Environment,
                     providers::KeySource::Saved => KeySource::Saved,
                     providers::KeySource::Absent => KeySource::Absent,
                 },
-                saved: key.saved,
+                saved: key.saved(),
             })
             .collect(),
         custom: list

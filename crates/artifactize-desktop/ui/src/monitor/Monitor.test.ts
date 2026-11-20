@@ -164,7 +164,7 @@ it("draws a Current's graph at once, counting the Artifacts still being checked 
   // A count that falls, read aloud as how many Artifacts are left: no sentence, no ratio.
   await waitFor(() => expect(screen.getByLabelText("Checking, 2 Artifacts left").textContent?.trim()).toBe("2 left"));
   await waitFor(() => expect(screen.getByLabelText("graph: would run (1 eval)")).toBeTruthy());
-  expect(screen.getByRole("button", { name: /^Refresh/ }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: /^Refresh/ }).hasAttribute("disabled")).toBe(false);
   await publish(current(2, 1));
   await waitFor(() => expect(screen.getByLabelText("Checking, 1 Artifacts left").textContent?.trim()).toBe("1 left"));
   await publish({ ...current(3), failure: "Fingerprint script for Artifact app failed." });
@@ -236,7 +236,7 @@ it("says a Run's verdict and what needs attention in the header row, which opens
     ],
   };
   const feature = branch("feat/x", [runChip("run-2", "RED", false, "Fixing the login form")]);
-  backend(monitor(), () => browseView(1, { branches: [feature], run }));
+  backend(monitor(), () => browseView(1, { branches: [feature], run: { kind: "read", ...run } }));
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   await fireEvent.click(await within(entries).findByRole("button", { name: /^app \/ feat\/x/ }));

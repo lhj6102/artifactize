@@ -17,9 +17,10 @@
     --text: #0F141B;
     --dim: #586276;
     --folder: #2F6FED;
-    --runtime: #1F5FE0;
-    --agent: #7C3AED;
-    --human: #C26A0A;
+    --runtime: #2A78D6;
+    --agent: #EB6834;
+    --human: #1BAF7A;
+    --person-bg: #E9F7F1;
     --sans: 'Pretendard Variable', 'Noto Sans CJK KR', sans-serif;
     --mono: 'JetBrains Mono', 'Noto Sans Mono CJK KR', monospace;
   }
@@ -66,10 +67,10 @@
     padding: 0;
     list-style: none;
   }
-  .tree > ul { margin-top: 44px; padding-left: 26px; }
+  .tree > ul { margin-top: 20px; padding-left: 26px; }
   .tree ul ul {
-    margin-left: 22px;
-    padding-left: 22px;
+    margin-left: 12px;
+    padding-left: 16px;
     border-left: 1.5px solid var(--line);
   }
   .tree li {
@@ -81,16 +82,26 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    height: 58px;
-    font: 500 21px/1 var(--mono);
+    height: 34px;
+    font: 500 19px/1 var(--mono);
   }
   .tree li > ul { flex-basis: 100%; }
   .tree .chevron { width: 22px; margin-left: -34px; margin-right: -2px; color: var(--dim); }
   .tree .folder { color: var(--folder); }
   .tree .file { color: var(--dim); }
-  .tree .artf { color: var(--agent); }
-  .tree .artf .file { color: var(--agent); }
+  .tree .artf { color: var(--text); height: 24px; font-size: 16px; gap: 10px; }
+  .tree .artf .file { color: var(--dim); }
+  .tree .artf svg { width: 24px; height: 24px; }
+  .tree .definition { margin-bottom: 2px; }
+  /* Each file's declarations, its checks included: every line is TOML as the file holds it. */
+  .tree .definition code { flex-basis: 100%; margin-left: 22px; color: var(--dim); font: 500 13px/15px var(--mono); white-space: pre; }
   .tree svg { width: 30px; height: 30px; flex: none; }
+  /* What the listings leave out, under the tree. */
+  .tree .excerpt { margin: 2px 16px 0 26px; color: var(--dim); font: 400 14px/18px var(--sans); }
+  /* The files the definitions name, two to a row. */
+  .tree li.source { display: inline-flex; width: 50%; }
+  .tree li.source > span { font-size: 18px; gap: 10px; }
+  .tree li.source svg { width: 26px; height: 26px; }
 
   /* ---------- The graph ---------- */
 
@@ -118,7 +129,7 @@
   .edges .runtime path.line { marker-end: url(#arrow-runtime); }
   .edges .agent path.line { stroke-dasharray: 9 7; }
   .edges .human path.line { stroke-dasharray: 2 7; stroke-linecap: round; stroke-width: 3; }
-  .edges text { stroke: none; }
+  .edges text { fill: var(--text); stroke: none; }
 
   .node {
     position: absolute;
@@ -136,6 +147,20 @@
   .node b { display: block; font: 700 22px/1.2 var(--sans); }
   .node small { display: block; margin-top: 6px; color: var(--dim); font: 500 17px/1 var(--mono); }
 
+  .whole {
+    position: absolute;
+    left: 400px;
+    top: 430px;
+    width: 770px;
+    height: 350px;
+    border: 2px solid var(--line);
+    border-radius: 18px;
+    background: var(--panel);
+  }
+  .whole header { display: flex; gap: 16px; align-items: baseline; padding: 14px 20px; }
+  .whole b { font: 700 22px var(--sans); }
+  .whole small { color: var(--dim); font: 500 17px var(--mono); }
+
   .person {
     position: absolute;
     display: flex;
@@ -152,7 +177,7 @@
     height: 56px;
     border: 2.6px solid var(--human);
     border-radius: 50%;
-    background: #FFF4E6;
+    background: var(--person-bg);
   }
   .person svg { width: 30px; height: 30px; }
   .person span { color: var(--text); }
@@ -193,19 +218,21 @@
     <ul>
       <li><span><svg class="chevron"><use href="#i-chevron"/></svg><svg class="folder"><use href="#i-folder"/></svg>project/</span>
         <ul>
-          <li><span><svg class="file"><use href="#i-file"/></svg>PROBLEM.md</span></li>
-          <li><span class="artf"><svg class="file"><use href="#i-file"/></svg>PROBLEM.md.artf</span></li>
-          <li><span><svg class="file"><use href="#i-file"/></svg>SPEC.md</span></li>
-          <li><span class="artf"><svg class="file"><use href="#i-file"/></svg>SPEC.md.artf</span></li>
-          <li><span><svg class="folder"><use href="#i-folder"/></svg>code/</span>
-            <ul><li><span class="artf"><svg class="file"><use href="#i-file"/></svg>index.artf</span></li></ul>
+          <li><span><svg class="folder"><use href="#i-folder"/></svg>.artifactize/</span>
+            <ul>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>app.artf</span><code>path=&quot;./&quot;</code><code>parts=[&quot;code&quot;,&quot;docs&quot;]</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>problem.artf</span><code>path=&quot;PROBLEM.md&quot;</code><code>[evals.review]</code><code>profile.kind=&quot;human&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>path=&quot;SPEC.md&quot;</code><code>[evals.solves]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{problem}&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>path=&quot;code/&quot;</code><code>[evals.covers]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{design}&quot;</code><code>[evals.tests]</code><code>profile.kind=&quot;runtime&quot;</code><code>profile.command=&quot;npm&quot;</code><code>profile.args=[&quot;test&quot;]</code><code>[evals.rules]</code><code>profile.kind=&quot;agent&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>docs.artf</span><code>path=&quot;docs/&quot;</code><code>[evals.usage]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{code}&quot;</code><code>[evals.readable]</code><code>profile.kind=&quot;agent&quot;</code></li>
+            </ul>
           </li>
-          <li><span><svg class="folder"><use href="#i-folder"/></svg>docs/</span>
-            <ul><li><span class="artf"><svg class="file"><use href="#i-file"/></svg>index.artf</span></li></ul>
-          </li>
+          <li class="source"><span><svg class="file"><use href="#i-file"/></svg>PROBLEM.md</span></li><li class="source"><span><svg class="file"><use href="#i-file"/></svg>SPEC.md</span></li>
+          <li class="source"><span><svg class="folder"><use href="#i-folder"/></svg>code/</span></li><li class="source"><span><svg class="folder"><use href="#i-folder"/></svg>docs/</span></li>
         </ul>
       </li>
     </ul>
+    <p class="excerpt" data-t="excerpt"></p>
   </section>
 
   <section class="graph">
@@ -214,6 +241,7 @@
     <!-- Each check sits on a line from the Artifact it reads to the Artifact it belongs to,
          and the arrow points at the latter; a check that reads only its own Artifact loops
          back to it. -->
+    <div class="whole"><header><b>app</b><small>./</small></header></div>
     <svg class="edges" viewBox="0 0 1190 800" aria-hidden="true">
       <defs>
         <marker id="arrow-human" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1.5 11 6 1 10.5Z" fill="var(--human)"/></marker>
@@ -233,36 +261,36 @@
         <use href="#check" x="546" y="238"/>
         <text x="546" y="206" text-anchor="middle" data-t="solvesProblem"></text>
 
-        <path class="line" d="M716 324 C 690 410 652 500 650 596"/>
+        <path class="line" d="M716 324 C 690 410 652 480 650 570"/>
         <use href="#check" x="674" y="455"/>
         <text x="702" y="447" data-t="testsRequirements"></text>
 
-        <path class="line" d="M730 612 C 860 590 1000 480 1060 356"/>
-        <use href="#check" x="922" y="518"/>
-        <text x="950" y="526" data-t="explainsUsage"></text>
+        <path class="line" d="M730 600 C 780 520 850 520 900 600"/>
+        <use href="#check" x="815" y="538"/>
+        <text x="815" y="492" text-anchor="middle" data-t="explainsUsage"></text>
 
-        <path class="line" d="M987 268 C 965 214 995 186 1025 186 C 1055 186 1085 214 1063 268"/>
-        <use href="#check" x="1025" y="186"/>
-        <text x="1025" y="154" text-anchor="middle" data-t="readable"></text>
+        <path class="line" d="M987 570 C 965 516 995 488 1025 488 C 1055 488 1085 516 1063 570"/>
+        <use href="#check" x="1025" y="488"/>
+        <text x="1025" y="456" text-anchor="middle" data-t="readable"></text>
 
-        <path class="line" d="M570 614 C 530 610 506 640 506 676 C 506 716 560 730 596 682"/>
-        <use href="#check" x="508" y="682"/>
-        <text x="520" y="746" text-anchor="middle" data-t="codingRules"></text>
+        <path class="line" d="M570 590 C 530 586 506 616 506 652 C 506 692 560 706 596 658"/>
+        <use href="#check" x="508" y="658"/>
+        <text x="520" y="734" text-anchor="middle" data-t="codingRules"></text>
       </g>
 
       <g class="runtime">
-        <path class="line" d="M730 640 C 770 642 790 662 790 684 C 790 716 740 730 704 682"/>
-        <use href="#check" x="790" y="684"/>
-        <svg x="812" y="694" width="34" height="34" style="color:var(--runtime)"><use href="#i-terminal"/></svg>
-        <text x="830" y="756" text-anchor="middle" data-t="runsTests"></text>
+        <path class="line" d="M730 614 C 770 616 790 636 790 658 C 790 690 740 704 704 658"/>
+        <use href="#check" x="790" y="658"/>
+        <svg x="812" y="668" width="34" height="34" style="color:var(--runtime)"><use href="#i-terminal"/></svg>
+        <text x="830" y="734" text-anchor="middle" data-t="runsTests"></text>
       </g>
     </svg>
 
     <div class="person" style="left:36px;top:250px"><div class="face"><svg><use href="#i-person"/></svg></div><span data-t="person"></span></div>
     <div class="node" style="left:262px;top:236px;width:180px"><svg><use href="#i-idea"/></svg><div><b data-t="problem"></b><small>PROBLEM.md</small></div></div>
     <div class="node" style="left:650px;top:236px;width:172px"><svg><use href="#i-file"/></svg><div><b data-t="spec"></b><small>SPEC.md</small></div></div>
-    <div class="node" style="left:900px;top:268px;width:250px"><svg><use href="#i-file"/></svg><div><b data-t="docs"></b><small>docs/</small></div></div>
-    <div class="node" style="left:570px;top:596px;width:160px"><svg><use href="#i-code"/></svg><div><b data-t="code"></b><small>code/</small></div></div>
+    <div class="node" style="left:900px;top:570px;width:250px"><svg><use href="#i-file"/></svg><div><b data-t="docs"></b><small>docs/</small></div></div>
+    <div class="node" style="left:570px;top:570px;width:160px"><svg><use href="#i-code"/></svg><div><b data-t="code"></b><small>code/</small></div></div>
   </section>
 
   <footer class="legend">
@@ -280,10 +308,10 @@
       repository: "Project files",
       title: "Example Artifact Graph",
       person: "Person",
-      problem: "Problem",
-      spec: "Design",
-      code: "Code",
-      docs: "Documentation",
+      problem: "problem",
+      spec: "design",
+      code: "code",
+      docs: "docs",
       reviewProblem: "Problem review",
       solvesProblem: "Does the design solve the problem?",
       testsRequirements: "Do the tests check\nthe requirements?",
@@ -295,15 +323,16 @@
       legendAgent: "AI agent review",
       legendHuman: "Person's review",
       legendSelf: "Reads only its own Artifact",
+      excerpt: "Excerpts: each eval's title, full instruction and AI model are left out.",
     },
     ko: {
       repository: "프로젝트 파일",
       title: "Artifact Graph 예시",
       person: "사람",
-      problem: "문제",
-      spec: "설계",
-      code: "코드",
-      docs: "문서",
+      problem: "problem",
+      spec: "design",
+      code: "code",
+      docs: "docs",
       reviewProblem: "문제 정의 검토",
       solvesProblem: "문제를 해결하는 설계인가?",
       testsRequirements: "테스트가 요구사항을\n검증하는가?",
@@ -315,15 +344,16 @@
       legendAgent: "AI 에이전트 검토",
       legendHuman: "사람 검토",
       legendSelf: "자기 Artifact만 읽는 평가",
+      excerpt: "발췌: 평가마다 title, instruction 전문, AI 모델은 생략했습니다.",
     },
     zh: {
       repository: "项目文件",
       title: "Artifact Graph 示例",
       person: "人",
-      problem: "问题",
-      spec: "设计",
-      code: "代码",
-      docs: "文档",
+      problem: "problem",
+      spec: "design",
+      code: "code",
+      docs: "docs",
       reviewProblem: "审查问题定义",
       solvesProblem: "设计是否解决了问题？",
       testsRequirements: "测试是否验证了需求？",
@@ -335,6 +365,7 @@
       legendAgent: "AI 智能体审查",
       legendHuman: "人工审查",
       legendSelf: "只读取自身 Artifact 的评估",
+      excerpt: "节选：省略了每个评估的 title、完整 instruction 和 AI 模型。",
     },
   };
 

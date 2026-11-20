@@ -1,5 +1,4 @@
 use std::{
-    fs,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -135,7 +134,8 @@ pub fn prune(
     };
     let mut eligible = Vec::new();
     for (id, repo, data, status) in runs {
-        let repo = workspace::canonical_target(Path::new(&repo)).map_err(|e| e.to_string())?;
+        let repo = artifactize_tools::files::path_from_text(&repo).map_err(|e| e.to_string())?;
+        let repo = workspace::canonical_target(&repo).map_err(|e| e.to_string())?;
         workspace::outside_workspace(&repo, &state).map_err(|e| e.to_string())?;
         repositories.push(repo);
         let Some(run) = super::unreadable::evidence::<super::Run>("run", &data) else {
@@ -180,17 +180,7 @@ pub fn prune(
                     | crate::types::ExecutionStatus::Error
             ) || process::is_alive(owner).map_err(|e| e.to_string())?;
         }
-        if !matches!(
-            status,
-            crate::types::RunStatus::Green
-                | crate::types::RunStatus::Red
-                | crate::types::RunStatus::Error
-                | crate::types::RunStatus::Incomplete
-        ) || finished.is_none()
-            || cutoff.is_some_and(|cutoff| finished.is_some_and(|date| date > cutoff))
-            || !requests_terminal
-            || owned
-        {
+        if !eligible_to_prune(status, finished, cutoff, requests_terminal, owned) {
             report.skipped_runs.push(id);
         } else {
             eligible.push(id);
@@ -220,12 +210,28 @@ pub fn prune(
         } else {
             real_path(&path)?;
             validate_tree(&path, &runs, &repositories)?;
-            fs::remove_dir_all(&path)
+            platform::remove_tree(&path)
                 .map_err(|e| format!("Cannot prune {}: {e}", crate::platform::path_text(&path)))?;
             report.removed.push(path);
         }
     }
     Ok(report)
+}
+
+fn eligible_to_prune(
+    status: crate::types::RunStatus,
+    finished: Option<time::OffsetDateTime>,
+    cutoff: Option<time::OffsetDateTime>,
+    requests_terminal: bool,
+    owned: bool,
+) -> bool {
+    use crate::types::RunStatus;
+    matches!(
+        status,
+        RunStatus::Green | RunStatus::Red | RunStatus::Error | RunStatus::Incomplete
+    ) && finished.is_some_and(|date| cutoff.is_none_or(|cutoff| date <= cutoff))
+        && requests_terminal
+        && !owned
 }
 
 fn segment(value: &str) -> bool {

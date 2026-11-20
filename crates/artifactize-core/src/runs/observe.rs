@@ -96,17 +96,12 @@ pub(super) fn state_for(
             State::Cancelled
         }
         RunStatus::Error => State::Error,
-        RunStatus::WaitingHuman
-            if control.is_some_and(|control| control.cancellation_requested) =>
-        {
+        RunStatus::WaitingHuman if control.is_some_and(super::Control::is_cancelling) => {
             State::Cancelling
         }
         RunStatus::WaitingHuman => State::WaitingHuman,
         RunStatus::Running => {
             if let Some(control) = control {
-                if control.cancellation_requested {
-                    return State::Cancelling;
-                }
                 return match control.activity {
                     Activity::Preparing => State::Preparing,
                     Activity::Executing | Activity::Publishing => State::Running,
@@ -132,7 +127,7 @@ pub(super) fn state(run: &Run, requests: &[std::sync::Arc<Request>]) -> State {
 
 pub async fn view(context: &Context, id: &RunId) -> Result<RunView, String> {
     let view = store::read_run(&context.state, id).await?;
-    if view.run.repo_path != context.repo {
+    if !crate::platform::paths_equal(&view.run.repo_path, &context.repo) {
         return Err("Run not found in this repository.".into());
     }
     super::reconcile(&context.state, view).await
@@ -140,7 +135,7 @@ pub async fn view(context: &Context, id: &RunId) -> Result<RunView, String> {
 pub async fn status(context: &Context, id: &RunId) -> Result<RunObservation, String> {
     const NEXT_CHECK: Duration = Duration::from_secs(30); // One ordinary bounded observation, not a polling cadence.
     let mut saved = store::run_control::observe(&context.state, id).await?;
-    if saved.repo != context.repo {
+    if !crate::platform::paths_equal(&saved.repo, &context.repo) {
         return Err("Run not found in this repository.".into());
     }
     let owner = saved
@@ -184,10 +179,29 @@ pub async fn wait(
     bound: Option<Duration>,
     cancellation: CancellationToken,
 ) -> Result<RunObservation, String> {
+    wait_observing(context, id, bound, cancellation, |_| {}).await
+}
+
+/// Like [`wait`], with each successfully read snapshot available to a caller while it waits.
+pub async fn wait_observing(
+    context: &Context,
+    id: &RunId,
+    bound: Option<Duration>,
+    cancellation: CancellationToken,
+    mut observe: impl FnMut(&RunObservation),
+) -> Result<RunObservation, String> {
     if bound.is_some_and(|bound| bound.is_zero()) {
-        return status(context, id).await;
+        let snapshot = status(context, id).await?;
+        observe(&snapshot);
+        return Ok(snapshot);
     }
-    let deadline = bound.map(|bound| tokio::time::Instant::now() + bound);
+    let deadline = bound
+        .map(|bound| {
+            tokio::time::Instant::now()
+                .checked_add(bound)
+                .ok_or("Run observation bound is too large.")
+        })
+        .transpose()?;
     let mut last = None;
     let mut subscription = None;
     let result = {
@@ -197,6 +211,7 @@ pub async fn wait(
             loop {
                 let current = status(context, id).await?;
                 let ended = current.state.is_terminal();
+                observe(&current);
                 last = Some(current);
                 if ended {
                     return Ok::<(), String>(());
@@ -231,6 +246,22 @@ pub async fn wait(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    #[tokio::test]
+    async fn an_unrepresentable_wait_bound_is_an_input_error() {
+        let scratch = crate::test_os::tempdir();
+        let context = Context::new(scratch.path(), Some(scratch.path()), Path::new("")).unwrap();
+        let error = wait(
+            &context,
+            &"run-missing".parse().unwrap(),
+            Some(Duration::MAX),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, "Run observation bound is too large.");
+    }
 
     #[test]
     fn core_durations_keep_the_existing_integer_second_wire_values() {

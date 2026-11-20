@@ -1,6 +1,6 @@
 //! Minimal behavior checks, not visual snapshots or spacing/color contracts.
 use super::{
-    Event, Kind, MessageEvent,
+    Event, Kind,
     transcript::{BlockId, Transcript},
 };
 use rig_core::message::{
@@ -10,17 +10,13 @@ use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 fn event(message: Message, failed: Vec<bool>) -> Event {
-    Event {
-        at: None,
-        send: None,
-        kind: Kind::Message(MessageEvent {
-            turn: 1,
-            message,
-            repair: false,
-            is_error: failed,
-            question: None,
-        }),
-    }
+    Event::parse(
+        &serde_json::to_vec(&json!({
+            "kind": "message", "turn": 1, "message": message, "isError": failed,
+        }))
+        .unwrap(),
+    )
+    .unwrap()
 }
 fn call(id: &str, path: &str) -> ToolCall {
     ToolCall::from_wire(

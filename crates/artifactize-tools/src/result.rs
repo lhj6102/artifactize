@@ -1,9 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::image;
+pub use crate::terminal_text::clean_output;
 
 /// Text stays readable in the next provider turn rather than filling its whole context.
 const TEXT_LIMIT: usize = 64 * 1024;
@@ -54,6 +55,15 @@ impl<T> ContentBlocks<T> {
 
     pub fn into_vec(self) -> Vec<T> {
         self.0
+    }
+
+    /// A successful one-to-one mapping preserves the already validated count.
+    fn try_map<U, E>(self, map: impl FnMut(T) -> Result<U, E>) -> Result<ContentBlocks<U>, E> {
+        self.0
+            .into_iter()
+            .map(map)
+            .collect::<Result<_, _>>()
+            .map(ContentBlocks)
     }
 }
 
@@ -176,17 +186,17 @@ impl<'de> Deserialize<'de> for ToolResult {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WireResult {
-    content: Vec<WireContent>,
+    content: Vec<WireContent<WireImage>>,
     #[serde(default)]
     is_error: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
-enum WireContent {
+enum WireContent<I> {
     Text { text: String },
     Json { data: Value },
-    Image(WireImage),
+    Image(I),
 }
 
 /// An image block carries its bytes inline or names a file in the output directory, never
@@ -209,7 +219,13 @@ struct InlineImage {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImageFile {
     mime_type: image::Mime,
-    path: String,
+    #[serde(deserialize_with = "image_path")]
+    path: PathBuf,
+}
+
+fn image_path<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<PathBuf, D::Error> {
+    let path = String::deserialize(deserializer)?;
+    crate::files::path_from_text(&path).map_err(serde::de::Error::custom)
 }
 
 /// Malformed or oversized command output; callers expose their own execution diagnostic.
@@ -218,42 +234,23 @@ struct ImageFile {
 pub struct InvalidOutput;
 
 pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutput> {
-    let wire: WireResult = serde_json::from_slice(stdout).map_err(|_| InvalidOutput)?;
-    if !(1..=MAX_CONTENT_BLOCKS).contains(&wire.content.len())
-        || wire.is_error
-            && !matches!(
-                wire.content.as_slice(),
-                [WireContent::Text { text }] if !text.trim().is_empty()
-            )
-    {
-        return Err(InvalidOutput);
-    }
-    let mut content = Vec::with_capacity(wire.content.len());
-    let mut size = 0;
-    for block in wire.content {
-        let block = match block {
-            WireContent::Text { text } if text.len() <= TEXT_LIMIT => Content::Text { text },
-            WireContent::Json { data }
-                if serde_json::to_vec(&data).map_err(|_| InvalidOutput)?.len() <= JSON_LIMIT =>
-            {
-                Content::Json { data }
+    let result = match parse_wire(stdout)? {
+        CommandOutput::Error(message) => {
+            if message.as_str().len() > TEXT_LIMIT {
+                return Err(InvalidOutput);
             }
-            WireContent::Image(WireImage::Data(InlineImage { mime_type, data })) => {
-                image::from_base64(&data, mime_type.as_str()).map_err(|_| InvalidOutput)?
-            }
-            WireContent::Image(WireImage::Path(ImageFile { mime_type, path })) => {
-                image::from_output(output_dir, &path, mime_type.as_str())
-                    .map_err(|_| InvalidOutput)?
-            }
-            _ => return Err(InvalidOutput),
-        };
-        size += serde_json::to_vec(&block).map_err(|_| InvalidOutput)?.len();
-        if size > RESULT_LIMIT {
-            return Err(InvalidOutput);
+            ToolResult::Error(message)
         }
-        content.push(block);
-    }
-    let result = ToolResult::from_wire(content, wire.is_error).map_err(|_| InvalidOutput)?;
+        CommandOutput::Success(blocks) => {
+            let mut size = 0;
+            let normalized = blocks.try_map(|block| {
+                let block = normalize(load(block, output_dir)?)?;
+                size += serde_json::to_vec(&block).map_err(|_| InvalidOutput)?.len();
+                (size <= RESULT_LIMIT).then_some(block).ok_or(InvalidOutput)
+            })?;
+            ToolResult::Success(normalized)
+        }
+    };
     if serde_json::to_vec(&result)
         .map_err(|_| InvalidOutput)?
         .len()
@@ -262,6 +259,72 @@ pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutp
         return Err(InvalidOutput);
     }
     Ok(result)
+}
+
+enum CommandOutput {
+    Success(ContentBlocks<WireContent<WireImage>>),
+    Error(ErrorMessage),
+}
+
+fn parse_wire(stdout: &[u8]) -> Result<CommandOutput, InvalidOutput> {
+    // The program's output is text as its platform writes it (UTF-16 on a Windows console).
+    let wire: WireResult =
+        serde_json::from_str(&crate::platform::text::output(stdout)).map_err(|_| InvalidOutput)?;
+    if !wire.is_error {
+        return ContentBlocks::new(wire.content)
+            .map(CommandOutput::Success)
+            .map_err(|_| InvalidOutput);
+    }
+    let [WireContent::Text { text }] =
+        <[_; 1]>::try_from(wire.content).map_err(|_| InvalidOutput)?
+    else {
+        return Err(InvalidOutput);
+    };
+    ErrorMessage::new(text)
+        .map(CommandOutput::Error)
+        .map_err(|_| InvalidOutput)
+}
+
+enum LoadedImage {
+    Data(InlineImage),
+    FileBytes {
+        mime_type: image::Mime,
+        bytes: Vec<u8>,
+    },
+}
+
+fn load(
+    block: WireContent<WireImage>,
+    output_dir: &Path,
+) -> Result<WireContent<LoadedImage>, InvalidOutput> {
+    Ok(match block {
+        WireContent::Text { text } => WireContent::Text { text },
+        WireContent::Json { data } => WireContent::Json { data },
+        WireContent::Image(WireImage::Data(data)) => WireContent::Image(LoadedImage::Data(data)),
+        WireContent::Image(WireImage::Path(ImageFile { mime_type, path })) => {
+            let bytes = image::read_output(output_dir, &path).map_err(|_| InvalidOutput)?;
+            WireContent::Image(LoadedImage::FileBytes { mime_type, bytes })
+        }
+    })
+}
+
+/// Normalize one loaded block at a time to bound memory and stop I/O at the first failure.
+fn normalize(block: WireContent<LoadedImage>) -> Result<Content, InvalidOutput> {
+    match block {
+        WireContent::Text { text } if text.len() <= TEXT_LIMIT => Ok(Content::Text { text }),
+        WireContent::Json { data }
+            if serde_json::to_vec(&data).map_err(|_| InvalidOutput)?.len() <= JSON_LIMIT =>
+        {
+            Ok(Content::Json { data })
+        }
+        WireContent::Image(LoadedImage::Data(InlineImage { mime_type, data })) => {
+            image::normalize_base64(&data, mime_type).map_err(|_| InvalidOutput)
+        }
+        WireContent::Image(LoadedImage::FileBytes { mime_type, bytes }) => {
+            image::normalize(&bytes, Some(mime_type)).map_err(|_| InvalidOutput)
+        }
+        _ => Err(InvalidOutput),
+    }
 }
 
 pub fn plain(stdout: &[u8], successful: bool, truncated: bool) -> ToolResult {
@@ -275,10 +338,7 @@ pub fn plain(stdout: &[u8], successful: bool, truncated: bool) -> ToolResult {
     };
     if text.len() > TEXT_LIMIT || truncated {
         let suffix = "\n[output truncated]";
-        let mut end = (TEXT_LIMIT - suffix.len()).min(text.len());
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
+        let end = text.floor_char_boundary(TEXT_LIMIT - suffix.len());
         text.truncate(end);
         text.push_str(suffix);
     }
@@ -287,47 +347,4 @@ pub fn plain(stdout: &[u8], successful: bool, truncated: bool) -> ToolResult {
     } else {
         ToolResult::success(Content::Text { text })
     }
-}
-
-/// ECMA-48 control sequence bytes: after `ESC [`, parameter bytes, then intermediate bytes,
-/// then one final byte end the sequence.
-const CSI_PARAMETER: std::ops::RangeInclusive<u8> = 0x30..=0x3f;
-const CSI_INTERMEDIATE: std::ops::RangeInclusive<u8> = 0x20..=0x2f;
-const CSI_FINAL: std::ops::RangeInclusive<u8> = 0x40..=0x7e;
-
-/// The two-byte prefix introducing an ECMA-48 control sequence.
-const CSI_PREFIX: &[u8] = b"\x1b[";
-/// C0 controls except tab, line feed and carriage return are not printable tool output.
-const C0_CONTROLS: &[std::ops::RangeInclusive<u8>] = &[0..=8, 11..=12, 14..=31];
-
-pub fn clean_output(bytes: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut bytes = text.as_bytes();
-    let mut clean = Vec::with_capacity(bytes.len());
-    while let Some((&byte, tail)) = bytes.split_first() {
-        if bytes.starts_with(CSI_PREFIX) {
-            let mut end = CSI_PREFIX.len();
-            while bytes
-                .get(end)
-                .is_some_and(|byte| CSI_PARAMETER.contains(byte))
-            {
-                end += 1;
-            }
-            while bytes
-                .get(end)
-                .is_some_and(|byte| CSI_INTERMEDIATE.contains(byte))
-            {
-                end += 1;
-            }
-            if bytes.get(end).is_some_and(|byte| CSI_FINAL.contains(byte)) {
-                bytes = &bytes[end + 1..];
-                continue;
-            }
-        }
-        if !C0_CONTROLS.iter().any(|range| range.contains(&byte)) {
-            clean.push(byte);
-        }
-        bytes = tail;
-    }
-    clean
 }

@@ -46,9 +46,10 @@ pub fn identify(path: &Path) -> Identity {
     if common_dir.is_none() || worktree_path.is_none() {
         return Identity::default();
     }
-    let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"])
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .map(|text| text.trim_end_matches(['\r', '\n']).to_owned());
+    let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"]).map(|bytes| {
+        crate::platform::output_text(crate::platform::fingerprint_line_ending(&bytes).0)
+            .into_owned()
+    });
     Identity {
         common_dir,
         worktree_path,
@@ -73,7 +74,7 @@ pub fn worktrees(common_dir: &Path) -> Vec<Worktree> {
         .map(|output| parse_worktrees(&output))
         .unwrap_or_default()
         .into_iter()
-        .filter(|tree| tree.path.try_exists().unwrap_or(false))
+        .filter(|tree| crate::platform::paths::target_exists(&tree.path).unwrap_or(false))
         .collect()
 }
 
@@ -86,7 +87,7 @@ fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {
         } else if let Some((tree, _)) = trees.last_mut()
             && let Some(branch) = field.strip_prefix(b"branch refs/heads/")
         {
-            tree.branch = Some(String::from_utf8_lossy(branch).into_owned());
+            tree.branch = Some(crate::platform::output_text(branch).into_owned());
         } else if let Some((_, prunable)) = trees.last_mut()
             && (field == b"prunable" || field.starts_with(b"prunable "))
         {

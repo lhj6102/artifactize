@@ -163,7 +163,15 @@ it("shows the whole graph first, then leaves the camera as the Detail opens, cha
   // size under the docked Detail.
   await rerender({ opened: "a:publish" });
   layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
+  // The new snapshot relights publish: once it shows, it has been drawn.
+  mockIPC((command) => (command === "graph"
+    ? served({
+      nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, light: name === "publish" ? "red" as const : "green" as const, tally: null, note: null, parts: [] })),
+      edges: [{ source: "a:release", target: "a:ship", light: "green" }],
+    })
+    : null));
   await rerender({ revision: 2 });
+  await screen.findByLabelText("publish: RED");
   await rerender({ opened: null });
   layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
   expect(camera.setViewport).not.toHaveBeenCalled();

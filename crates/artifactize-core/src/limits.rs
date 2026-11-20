@@ -14,7 +14,7 @@ use std::{collections::BTreeMap, io::Write, path::Path, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::Backend;
+use crate::config::{Backend, Field};
 #[cfg(test)]
 mod backend_tests;
 
@@ -70,30 +70,92 @@ impl Default for Limits {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessions {
-    pub enabled: bool,
-    pub max_bytes: u64,
-    pub target_bytes: u64,
+    enabled: bool,
+    max_bytes: u64,
+    target_bytes: u64,
+}
+
+impl AgentSessions {
+    pub fn new(enabled: bool, max_bytes: u64, target_bytes: u64) -> Result<Self, String> {
+        if max_bytes == 0 {
+            return Err("agentSessions.maxBytes must be at least 1.".into());
+        }
+        if target_bytes >= max_bytes {
+            return Err(format!(
+                "agentSessions.targetBytes ({target_bytes}) must be lower than maxBytes ({max_bytes})."
+            ));
+        }
+        Ok(Self {
+            enabled,
+            max_bytes,
+            target_bytes,
+        })
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn max_bytes(&self) -> u64 {
+        self.max_bytes
+    }
+
+    pub fn target_bytes(&self) -> u64 {
+        self.target_bytes
+    }
 }
 
 impl Default for AgentSessions {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            max_bytes: SESSIONS_MAX_BYTES,
-            target_bytes: SESSIONS_TARGET_BYTES,
-        }
+        Self::new(true, SESSIONS_MAX_BYTES, SESSIONS_TARGET_BYTES)
+            .expect("valid default session bounds")
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Declared {
-    #[serde(default, deserialize_with = "backend_limits")]
-    backends: BTreeMap<Backend, u32>,
-    #[serde(default, rename = "agentSessions")]
-    agent_sessions: Option<DeclaredSessions>,
-    #[serde(default, rename = "signoffIdleGraceSeconds")]
-    signoff_idle_grace_seconds: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "backend_limits",
+        skip_serializing_if = "Option::is_none"
+    )]
+    backends: Option<BTreeMap<Backend, u32>>,
+    #[serde(default, skip_serializing_if = "Field::missing")]
+    agent_sessions: Field<DeclaredSessions>,
+    #[serde(default, skip_serializing_if = "Field::missing")]
+    signoff_idle_grace_seconds: Field<u64>,
+}
+
+impl Declared {
+    /// Resolve the original declaration even when replacing its grace: invalid input must not
+    /// be silently overwritten. An override has already passed the caller's duration checks.
+    fn resolve(&mut self, override_grace: Option<Duration>) -> Result<Limits, String> {
+        let agent_sessions = self
+            .agent_sessions
+            .value()
+            .map(DeclaredSessions::resolve)
+            .transpose()?
+            .unwrap_or_default();
+        let original_grace = self
+            .signoff_idle_grace_seconds
+            .value()
+            .copied()
+            .map(grace)
+            .transpose()?;
+        let signoff_idle_grace = match override_grace {
+            Some(grace) => {
+                self.signoff_idle_grace_seconds = Field::Value(grace.as_secs());
+                grace
+            }
+            None => original_grace.unwrap_or(SIGNOFF_IDLE_GRACE),
+        };
+        Ok(Limits {
+            backends: self.backends.clone().unwrap_or_default(),
+            agent_sessions,
+            signoff_idle_grace,
+        })
+    }
 }
 
 /// A declared idle grace, in whole seconds, within its bound.
@@ -110,16 +172,16 @@ fn grace(seconds: u64) -> Result<Duration, String> {
 
 fn backend_limits<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<BTreeMap<Backend, u32>, D::Error> {
+) -> Result<Option<BTreeMap<Backend, u32>>, D::Error> {
     // Parse each external name once, retain its Backend, and preserve existing diagnostics
     // and lexicographic validation order at this declaration boundary.
     let names = BTreeMap::<String, u32>::deserialize(deserializer)?;
     names
         .into_iter()
         .map(|(name, limit)| {
-            let backend =
-                serde_json::from_value::<Backend>(serde_json::Value::String(name.clone()))
-                    .map_err(|error| serde::de::Error::custom(format!("backends: {error}")))?;
+            let backend = name
+                .parse()
+                .map_err(|error| serde::de::Error::custom(format!("backends: {error}")))?;
             if !(1..=MAX_SLOTS).contains(&limit) {
                 return Err(serde::de::Error::custom(format!(
                     "backends.{name} must be between 1 and {MAX_SLOTS}."
@@ -127,41 +189,89 @@ fn backend_limits<'de, D: serde::Deserializer<'de>>(
             }
             Ok((backend, limit))
         })
-        .collect()
+        .collect::<Result<_, _>>()
+        .map(Some)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DeclaredSessions {
-    enabled: Option<bool>,
-    max_bytes: Option<u64>,
-    target_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Field::missing")]
+    enabled: Field<bool>,
+    #[serde(default, skip_serializing_if = "Field::missing")]
+    max_bytes: Field<u64>,
+    #[serde(default, skip_serializing_if = "Field::missing")]
+    target_bytes: Field<u64>,
 }
 
 impl DeclaredSessions {
     /// The declared bounds over the defaults. Without `targetBytes`, a `maxBytes` at or below
     /// the 768 MiB default collects down to three quarters of it.
-    fn resolve(self) -> Result<AgentSessions, String> {
-        let max_bytes = self.max_bytes.unwrap_or(SESSIONS_MAX_BYTES);
-        if max_bytes == 0 {
-            return Err("agentSessions.maxBytes must be at least 1.".into());
-        }
-        let target_bytes = match self.target_bytes {
-            Some(target) if target >= max_bytes => {
-                return Err(format!(
-                    "agentSessions.targetBytes ({target}) must be lower than maxBytes ({max_bytes})."
-                ));
+    fn resolve(&self) -> Result<AgentSessions, String> {
+        let max_bytes = self
+            .max_bytes
+            .value()
+            .copied()
+            .unwrap_or(SESSIONS_MAX_BYTES);
+        let target_bytes = self.target_bytes.value().copied().unwrap_or_else(|| {
+            if SESSIONS_TARGET_BYTES < max_bytes {
+                SESSIONS_TARGET_BYTES
+            } else {
+                max_bytes / SESSION_TARGET_DENOMINATOR * SESSION_TARGET_NUMERATOR
             }
-            Some(target) => target,
-            None if SESSIONS_TARGET_BYTES < max_bytes => SESSIONS_TARGET_BYTES,
-            None => max_bytes / SESSION_TARGET_DENOMINATOR * SESSION_TARGET_NUMERATOR,
-        };
-        Ok(AgentSessions {
-            enabled: self.enabled.unwrap_or(true),
+        });
+        AgentSessions::new(
+            self.enabled.value().copied().unwrap_or(true),
             max_bytes,
             target_bytes,
-        })
+        )
     }
+}
+
+fn location(path: &Path, message: impl std::fmt::Display) -> String {
+    format!("{}: {message}", crate::platform::path_text(path))
+}
+
+fn read_declared(path: &Path) -> Result<Declared, String> {
+    let too_large = || {
+        location(
+            path,
+            "limits.json must be a regular file no larger than 64 KiB.",
+        )
+    };
+    let file = match crate::platform::open_regular(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Declared::default());
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
+            return Err(too_large());
+        }
+        Err(error) => return Err(location(path, error)),
+    };
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut std::io::Read::take(&file, MAX_BYTES + 1), &mut text)
+        .map_err(|error| location(path, error))?;
+    if text.len() as u64 > MAX_BYTES {
+        return Err(too_large());
+    }
+    serde_json::from_str(&text).map_err(|error| {
+        let message = error.to_string();
+        // Backend validation previously followed decoding, so its diagnostics had no
+        // JSON location suffix. Preserve that contract when parsing names at the edge.
+        let message = if message.starts_with("backends:") || message.starts_with("backends.") {
+            message
+                .strip_suffix(&format!(
+                    " at line {} column {}",
+                    error.line(),
+                    error.column()
+                ))
+                .unwrap_or(&message)
+        } else {
+            &message
+        };
+        location(path, message)
+    })
 }
 
 impl Limits {
@@ -170,59 +280,9 @@ impl Limits {
     /// `agentSessions` bounds out of order is an error.
     pub fn read(state: &Path) -> Result<Self, String> {
         let path = state.join(FILE);
-        let invalid = |message: String| format!("{}: {message}", crate::platform::path_text(&path));
-        let too_large =
-            || invalid("limits.json must be a regular file no larger than 64 KiB.".into());
-        let file = match crate::platform::open_regular(&path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Self::default());
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
-                return Err(too_large());
-            }
-            Err(error) => return Err(invalid(error.to_string())),
-        };
-        let mut text = String::new();
-        std::io::Read::read_to_string(&mut std::io::Read::take(&file, MAX_BYTES + 1), &mut text)
-            .map_err(|e| invalid(e.to_string()))?;
-        if text.len() as u64 > MAX_BYTES {
-            return Err(too_large());
-        }
-        let declared: Declared = serde_json::from_str(&text).map_err(|error| {
-            let message = error.to_string();
-            // Backend validation previously followed decoding, so its diagnostics had no
-            // JSON location suffix. Preserve that contract when parsing names at the edge.
-            let message = if message.starts_with("backends:") || message.starts_with("backends.") {
-                message
-                    .strip_suffix(&format!(
-                        " at line {} column {}",
-                        error.line(),
-                        error.column()
-                    ))
-                    .unwrap_or(&message)
-            } else {
-                &message
-            };
-            invalid(message.to_owned())
-        })?;
-        let agent_sessions = declared
-            .agent_sessions
-            .map(DeclaredSessions::resolve)
-            .transpose()
-            .map_err(invalid)?
-            .unwrap_or_default();
-        let signoff_idle_grace = declared
-            .signoff_idle_grace_seconds
-            .map(grace)
-            .transpose()
-            .map_err(invalid)?
-            .unwrap_or(SIGNOFF_IDLE_GRACE);
-        Ok(Self {
-            backends: declared.backends,
-            agent_sessions,
-            signoff_idle_grace,
-        })
+        read_declared(&path)?
+            .resolve(None)
+            .map_err(|error| location(&path, error))
     }
 
     /// Save `grace` as the idle grace of the Runs started from now on, keeping every other
@@ -235,24 +295,28 @@ impl Limits {
                 MAX_SIGNOFF_IDLE_GRACE.as_secs()
             ));
         }
-        Self::read(state)?;
         let path = state.join(FILE);
-        let invalid = |message: String| format!("{}: {message}", crate::platform::path_text(&path));
-        let mut declared = match std::fs::read_to_string(&path) {
-            Ok(text) => serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text)
-                .map_err(|e| invalid(e.to_string()))?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Default::default(),
-            Err(error) => return Err(invalid(error.to_string())),
-        };
-        declared.insert(GRACE_FIELD.into(), grace.as_secs().into());
-        crate::platform::create_private_dir_all(state).map_err(|e| invalid(e.to_string()))?;
+        let mut declared = read_declared(&path)?;
+        let limits = declared
+            .resolve(Some(grace))
+            .map_err(|error| location(&path, error))?;
+        let mut text =
+            serde_json::to_vec_pretty(&declared).map_err(|error| location(&path, error))?;
+        text.push(b'\n');
+        if text.len() as u64 > MAX_BYTES {
+            return Err(location(
+                &path,
+                "limits.json must be no larger than 64 KiB.",
+            ));
+        }
+        crate::platform::create_private_dir_all(state).map_err(|error| location(&path, error))?;
         let mut file =
-            tempfile::NamedTempFile::new_in(state).map_err(|e| invalid(e.to_string()))?;
-        serde_json::to_writer_pretty(&mut file, &declared).map_err(|e| invalid(e.to_string()))?;
-        file.write_all(b"\n").map_err(|e| invalid(e.to_string()))?;
-        file.persist(&path)
-            .map_err(|e| invalid(e.error.to_string()))?;
-        Self::read(state)
+            tempfile::NamedTempFile::new_in(state).map_err(|error| location(&path, error))?;
+        file.write_all(&text)
+            .map_err(|error| location(&path, error))?;
+        crate::platform::paths::replace_open_file(file, &path)
+            .map_err(|error| location(&path, error))?;
+        Ok(limits)
     }
 
     /// The slot count of a parsed backend; `None` when it is unlimited.
@@ -396,7 +460,7 @@ mod tests {
         assert_eq!(saved.signoff_idle_grace(), Duration::from_secs(300));
         fs::write(
             state.join(FILE),
-            r#"{"backends":{"codex":4},"agentSessions":{"maxBytes":4000}}"#,
+            r#"{"backends":{"codex":4},"agentSessions":{"maxBytes":4000,"enabled":null}}"#,
         )
         .unwrap();
         let saved = Limits::set_signoff_idle_grace(&state, Duration::ZERO).unwrap();
@@ -404,16 +468,25 @@ mod tests {
         assert_eq!(saved.limit(&crate::config::Provider::Codex.into()), Some(4));
         assert_eq!(saved.agent_sessions().max_bytes, 4000);
         assert_eq!(saved.agent_sessions().target_bytes, 3000);
+        assert_eq!(Limits::read(&state).unwrap(), saved);
+        let declared: serde_json::Value =
+            serde_json::from_slice(&fs::read(state.join(FILE)).unwrap()).unwrap();
+        assert_eq!(
+            declared,
+            serde_json::json!({
+                "backends": {"codex": 4}, "agentSessions": {"maxBytes": 4000, "enabled": null},
+                "signoffIdleGraceSeconds": 0,
+            })
+        );
         assert!(
             Limits::set_signoff_idle_grace(&state, Duration::from_secs(86401))
                 .unwrap_err()
                 .contains("at most 86400")
         );
-        fs::write(state.join(FILE), r#"{"unknown":1}"#).unwrap();
-        assert!(Limits::set_signoff_idle_grace(&state, Duration::ZERO).is_err());
-        assert_eq!(
-            fs::read_to_string(state.join(FILE)).unwrap(),
-            r#"{"unknown":1}"#
-        );
+        for invalid in [r#"{"unknown":1}"#, r#"{"signoffIdleGraceSeconds":86401}"#] {
+            fs::write(state.join(FILE), invalid).unwrap();
+            assert!(Limits::set_signoff_idle_grace(&state, Duration::ZERO).is_err());
+            assert_eq!(fs::read_to_string(state.join(FILE)).unwrap(), invalid);
+        }
     }
 }

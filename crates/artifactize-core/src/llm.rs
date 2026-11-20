@@ -8,6 +8,7 @@ mod degenerate;
 pub(crate) mod delivery;
 #[cfg(test)]
 mod delivery_tests;
+mod error_body;
 pub mod models;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -20,6 +21,7 @@ use std::{
     time::Duration,
 };
 
+use error_body::Body;
 use futures_util::StreamExt;
 use rig_core::{
     Model,
@@ -39,7 +41,7 @@ pub use api::{Api, EndpointApi};
 use crate::{
     agent::error::{Code, Failure},
     auth::providers::{self, ApiKey, Custom},
-    config::{Backend, Provider},
+    config::{Backend, ModelId, Provider},
 };
 
 /// Attempts per turn: the first and up to two retries.
@@ -65,10 +67,15 @@ pub enum Client {
 }
 
 /// Where a provider's requests go: its API, its root and its key.
-pub(crate) struct Route {
-    pub api: Api,
-    pub base: String,
-    pub key: Option<ApiKey>,
+pub(crate) enum Route {
+    ClaudeAgent,
+    Http(HttpRoute),
+}
+
+pub(crate) struct HttpRoute {
+    api: Api,
+    base: url::Url,
+    key: Option<ApiKey>,
 }
 
 /// Resolve `backend` on this machine: a built-in provider, or the custom provider `state`
@@ -86,11 +93,11 @@ pub(crate) fn route(
         None => match providers::custom(backend, state, repo)? {
             Some(Custom::Alias { provider }) => provider,
             Some(Custom::Endpoint { api, url, key }) => {
-                return Ok(Route {
+                return Ok(Route::Http(HttpRoute {
                     api: api.into(),
-                    base: url.as_str().to_owned(),
+                    base: url.into_url(),
                     key,
-                });
+                }));
             }
             None => {
                 return Err(missing(format!(
@@ -99,6 +106,9 @@ pub(crate) fn route(
             }
         },
     };
+    if provider == Provider::ClaudeAgent {
+        return Ok(Route::ClaudeAgent);
+    }
     let key = match providers::key_variable(provider) {
         Some(variable) => Some(providers::key(provider, state, repo)?.ok_or_else(|| {
             missing(format!(
@@ -107,11 +117,11 @@ pub(crate) fn route(
         })?),
         None => None,
     };
-    Ok(Route {
+    Ok(Route::Http(HttpRoute {
         api: provider.into(),
         base: base_url(provider)?,
         key,
-    })
+    }))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,35 +209,33 @@ impl Client {
         state: &Path,
         repo: &Path,
     ) -> Result<Self, Failure> {
-        Self::at(
-            route(backend, Some(state), Some(repo), "for this Agent backend")?,
-            model,
-            state,
-            repo,
-        )
+        match route(backend, Some(state), Some(repo), "for this Agent backend")? {
+            Route::Http(route) => Self::at(route, model, state, repo),
+            Route::ClaudeAgent => Err(Failure::new(
+                Code::AgentError,
+                "Unsupported client backend: claude-agent runs reviews through Claude Code.",
+            )),
+        }
     }
 
     /// The client of a resolved `route`. Claude Code runs its own conversation, so its
     /// reviews never reach this ([`claude_agent`]).
     pub(crate) fn at(
-        Route { api, base, key }: Route,
+        HttpRoute { api, base, key }: HttpRoute,
         model: &crate::config::ModelId,
         state: &Path,
         repo: &Path,
     ) -> Result<Self, Failure> {
-        assert!(
-            api != Api::ClaudeAgent,
-            "Claude Code reviews run in llm::claude_agent"
-        );
         if api == Api::Codex {
-            return Ok(Self::Codex(codex::Codex::new(model, &base, state, repo)?));
+            return Ok(Self::Codex(codex::Codex::new(model, base, state, repo)?));
         }
+        let base = adapter_base(&base);
         // An endpoint without a key sends an empty one, which keyless servers ignore.
         let key = key.map(|key| key.expose().to_owned()).unwrap_or_default();
         let http = delivery::Tap::new(http_client()?);
         let openai = || {
             openai::OpenAIConfig::new(key.clone())
-                .with_base_url(&base)
+                .with_base_url(base)
                 .connect(http.clone())
         };
         Ok(match api {
@@ -238,7 +246,7 @@ impl Client {
             Api::Anthropic => Self::Anthropic(
                 Box::new(
                     anthropic::AnthropicConfig::new(key.clone())
-                        .with_base_url(&base)
+                        .with_base_url(base)
                         .connect(http)
                         .completion(model.as_str()),
                 ),
@@ -247,7 +255,7 @@ impl Client {
             Api::Gemini => Self::Gemini(
                 Box::new(
                     gemini::GeminiConfig::new(key.clone())
-                        .with_base_url(&base)
+                        .with_base_url(base)
                         .connect(http)
                         .completion(model.as_str()),
                 ),
@@ -395,7 +403,7 @@ impl Client {
                 model.stream_observed(request, observed)
             }
         }
-        .map_err(|error| self.classify(&error))
+        .map_err(|error| self.classify(&error, time::OffsetDateTime::now_utc()))
     }
 
     /// The credentials this client sent: its key, or the Codex access tokens of its turns.
@@ -415,20 +423,39 @@ impl Client {
     /// The error code of a provider failure, from its status, codes and message. Its message
     /// is the shared rule's: text holding part of a credential this client sent is withheld
     /// before it reaches output, delivery events, attempts or saved sessions.
-    fn classify(&self, error: &ProviderError) -> Classified {
+    fn classify(&self, error: &ProviderError, now: time::OffsetDateTime) -> Classified {
+        let response = error.provider_response();
+        let body = response.and_then(|response| Body::parse(response.body.as_bytes()));
+        let body = body.as_ref();
+        // Relays may already have a machine code and status independently of the reply.
+        let (status, code) = match error {
+            ProviderError::Relayed(report) => (report.http_status, report.code.as_deref()),
+            _ => (
+                response.and_then(|response| response.status.map(|status| status.as_u16())),
+                response
+                    .and_then(|response| response.code.as_deref())
+                    .or_else(|| body.and_then(Body::provider_code)),
+            ),
+        };
+        let http = status.and_then(|status| reqwest::StatusCode::from_u16(status).ok());
+        let fallback = || diagnostic_from(body, error);
         let text = match self {
-            Self::Codex(_) => codex::diagnostic_text(error),
-            _ => diagnostic_text(error),
+            Self::Codex(_) => {
+                let unix = u64::try_from(now.unix_timestamp())
+                    .ok()
+                    .map(crate::auth::codex::Timestamp::from_seconds);
+                codex::diagnostic_text(http, body, fallback, unix)
+            }
+            _ => fallback(),
         };
         let sent = self.sent();
         let sent: Vec<&str> = sent.iter().map(String::as_str).collect();
         let message = crate::secret::server_text(&text, &sent, MAX_DIAGNOSTIC_CHARS);
-        let report = error.report();
-        let status = report.http_status;
         // Classified by the whole text (codes and words), never shown.
-        let text = format!("{} {text}", report.code.as_deref().unwrap_or_default()).to_lowercase();
+        let text = format!("{} {text}", code.unwrap_or_default()).to_lowercase();
         let any = |terms: &[&str]| terms.iter().any(|term| text.contains(term));
-        let code = if matches!(self, Self::Codex(_)) && codex::usage_limited(error)
+        let code = if matches!(self, Self::Codex(_))
+            && body.is_some_and(|body| body.usage_limit(http))
             || any(&["quota", "billing", "credit balance", "usage limit"])
         {
             Code::Quota
@@ -445,11 +472,13 @@ impl Client {
         } else if status == Some(429) || any(&["rate_limit", "rate limit"]) {
             Code::RateLimit
         } else if error.is_retryable()
-            || matches!(self, Self::Openai(..) | Self::Codex(_)) && codex::overloaded(error)
-            || status.is_some_and(|status| status >= 500)
+            || matches!(self, Self::Openai(..) | Self::Codex(_))
+                && body.and_then(|body| body.codex_fields().code()) == Some("server_is_overloaded")
+            // A server-side failure can clear without changing the request.
+            || http.is_some_and(|status| status.is_server_error())
             || (status.is_none()
                 && matches!(
-                    report.code.as_deref(),
+                    code,
                     // Codex reports overloads inside a successful HTTP stream, without
                     // an HTTP error status; it is the same retryable provider failure.
                     Some(
@@ -464,282 +493,22 @@ impl Client {
         Classified {
             code,
             message,
-            retry_after: retry_after(error),
+            retry_after: retry_after(error, now),
             output_failed: false,
         }
     }
-
-    /// One turn, sent again while an attempt fails with a rate limit or a transient error
-    /// before producing any output or usage, or with a failure of the provider's output
-    /// ([`Failure::output_failed`]): at any turn, since every request replays the whole
-    /// conversation up to its last tool results. A retry waits as long as the provider's
-    /// `Retry-After` asks, or a short backoff, within the review's deadline. Every attempt
-    /// keeps its counters, and its tokens count against the review's `maxTokens`: an output
-    /// failure is not sent again once they reach it. A delivered response that fails
-    /// [`validate_response`] for another reason fails its attempt and is not retried.
-    pub async fn turn(
-        &self,
-        request: &CompletionRequest,
-        context: Turn<'_>,
-        attempts: &mut Vec<Attempt>,
-    ) -> Result<CompletionResponse, Failure> {
-        self.turn_observed(request, context, attempts, &mut |_| {})
-            .await
-    }
-
-    /// Optional display delivery leaves the provider/retry/budget contract unchanged.
-    pub async fn turn_observed(
-        &self,
-        request: &CompletionRequest,
-        context: Turn<'_>,
-        attempts: &mut Vec<Attempt>,
-        observe: &mut impl FnMut(crate::agent::session::Delivery),
-    ) -> Result<CompletionResponse, Failure> {
-        for attempt in 1..=ATTEMPTS {
-            if context.cancellation.is_cancelled() {
-                return Err(Failure::cancelled());
-            }
-            if Instant::now() >= context.deadline {
-                return Err(Failure::timeout());
-            }
-            let usage = Arc::new(ReportedUsage::default());
-            let observed = AdapterContext::new(
-                usage.clone(),
-                Subject::default(),
-                format!("turn-{}", context.number),
-            );
-            let mut emitted = false;
-            let mut tail = degenerate::Tail::default();
-            let sink = delivery::Sink::default();
-            // Task-local registration encloses opening AND every poll, not just request creation.
-            let (result, partial) = sink
-                .scope(async {
-                    let cancelled = || Classified::from(Failure::cancelled());
-                    let timeout = || Classified::from(Failure::timeout());
-                    let deadline = context.deadline;
-                    let opened = tokio::select! {
-                        biased;
-                        _ = context.cancellation.cancelled() => return (Err(cancelled()), None),
-                        _ = tokio::time::sleep_until(deadline) => return (Err(timeout()), None),
-                        opened = self.stream(request.clone(), observed) => opened,
-                    };
-                    let mut stream = match opened {
-                        Ok(stream) => stream,
-                        Err(failure) => return (Err(failure), None),
-                    };
-                    let mut cadence = tokio::time::interval(delivery::CADENCE);
-                    cadence.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-                    let read = loop {
-                        tokio::select! {
-                            biased;
-                            _ = context.cancellation.cancelled() => break Err(cancelled()),
-                            _ = tokio::time::sleep_until(deadline) => break Err(timeout()),
-                            _ = cadence.tick() => {
-                                for event in sink.take(context.number, attempt) {
-                                    observe(event);
-                                }
-                            }
-                            item = stream.next() => match item {
-                                Some(Ok(item)) => {
-                                    emitted = true;
-                                    sink.normalized(&item);
-                                    if let Item::Event(StreamEvent::Text { text, .. }) = &item
-                                        && let Err(failure) = tail.push(text)
-                                    {
-                                        break Err(Classified::from(failure));
-                                    }
-                                    if sink.ready() {
-                                        for event in sink.take(context.number, attempt) {
-                                            observe(event);
-                                        }
-                                    }
-                                }
-                                Some(Err(error)) => break Err(self.classify(&error)),
-                                None => break Ok(()),
-                            }
-                        }
-                    };
-                    for event in sink.take(context.number, attempt) {
-                        observe(event);
-                    }
-                    let partial = stream.partial();
-                    let result = match read {
-                        Ok(()) => stream.finish().await.map_err(|error| self.classify(&error)),
-                        Err(error) => Err(error),
-                    };
-                    let final_response = result.as_ref().ok().unwrap_or(&partial);
-                    if result.is_ok() {
-                        sink.final_response(&final_response.choice);
-                    }
-                    for event in sink.take(context.number, attempt) {
-                        observe(event);
-                    }
-                    if let Err(error) = &result {
-                        observe(crate::agent::session::Delivery {
-                            turn: context.number,
-                            attempt,
-                            block: crate::types::DeliveryBlock::attempt(),
-                            kind: crate::agent::session::DeliveryKind::Text,
-                            text: error.message.clone(),
-                            state: crate::agent::session::DeliveryState::Interrupted,
-                        });
-                    }
-                    (result, Some(partial))
-                })
-                .await;
-            let mut counters = usage.0.lock().unwrap().clone();
-            if let Some(partial) = &partial {
-                add_cache_usage(&mut counters, partial);
-            }
-            if let Ok(response) = &result {
-                add_cache_usage(&mut counters, response);
-            }
-            let used_tokens = counters.values().any(|value| *value > 0);
-            // rig totals include cache reads/writes; absent usage is zero only for enforcement.
-            let spent = result
-                .as_ref()
-                .ok()
-                .or(partial.as_ref())
-                .and_then(|response| response.usage.total_tokens)
-                .unwrap_or(0);
-            *context.tokens_used = context.tokens_used.saturating_add(spent);
-            let result = result.and_then(|response| {
-                validate_response(&response, context.model)
-                    .map(|()| response)
-                    .map_err(Classified::from)
-            });
-            attempts.push(Attempt {
-                turn: context.number,
-                attempt,
-                usage: counters.into(),
-                error: result.as_ref().err().map(|failure| failure.message.clone()),
-                error_code: result.as_ref().err().map(|failure| failure.code),
-            });
-            let failure = match result {
-                Ok(response) => return Ok(response),
-                Err(failure) => failure,
-            };
-            // A stream that broke off after its output began was a sound request.
-            let failure = if failure.code == Code::Transient && (emitted || used_tokens) {
-                Classified {
-                    output_failed: true,
-                    ..failure
-                }
-            } else {
-                failure
-            };
-            // A failed output is already paid for; sending the same request again repeats
-            // only this turn, and the next answer rarely fails the same way.
-            let retry = if failure.output_failed {
-                context
-                    .max_tokens
-                    .is_none_or(|limit| *context.tokens_used < limit)
-            } else {
-                failure.code.retryable() && !emitted && !used_tokens
-            };
-            if !retry || attempt == ATTEMPTS {
-                return Err(failure.into());
-            }
-            let wait = failure
-                .retry_after
-                .unwrap_or(RETRY_BACKOFF_BASE * (1 << (attempt - 1)));
-            // A wait too long to add to now is past any deadline.
-            if failure.retry_after.is_some()
-                && Instant::now()
-                    .checked_add(wait)
-                    .is_none_or(|end| end >= context.deadline)
-            {
-                return Err(Failure::new(
-                    failure.code,
-                    format!(
-                        "{}. The provider asked to retry after {:.1} s, past the review deadline.",
-                        failure.message.trim_end_matches('.'),
-                        wait.as_secs_f64()
-                    ),
-                ));
-            }
-            tokio::select! {
-                _ = context.cancellation.cancelled() => return Err(Failure::cancelled()),
-                _ = tokio::time::sleep_until(context.deadline) => return Err(Failure::timeout()),
-                _ = tokio::time::sleep(wait) => {},
-            }
-        }
-        unreachable!()
-    }
 }
 
-pub struct Turn<'a> {
-    pub number: usize,
-    /// The model the request asked for; a response from another model fails its attempt.
-    pub model: &'a str,
-    pub deadline: Instant,
-    pub cancellation: &'a CancellationToken,
-    /// The review's `maxTokens`, if any.
-    pub max_tokens: Option<u64>,
-    /// The tokens the review has spent; every attempt of the turn adds its own.
-    pub tokens_used: &'a mut u64,
-}
-
-fn add_cache_usage(
-    counters: &mut std::collections::BTreeMap<String, u64>,
-    response: &CompletionResponse,
-) {
-    insert_counter(
-        counters,
-        "cacheWriteTokens",
-        response.usage.cache_creation_input_tokens,
-    );
-    insert_counter(
-        counters,
-        "cacheWrite1hTokens",
-        response
-            .raw
-            .pointer("/usage/cache_creation/ephemeral_1h_input_tokens")
-            .and_then(Value::as_u64),
-    );
-}
-
-/// A delivered response is usable only from the requested model and when it finished. One
-/// stopped at the output cap (`Length`) is a failure of the provider's output.
-fn validate_response(response: &CompletionResponse, model: &str) -> Result<(), Failure> {
-    if response
-        .model
-        .as_deref()
-        .is_some_and(|actual| actual != model)
-    {
-        return Err(Failure::new(
-            Code::ProviderError,
-            format!(
-                "Provider model mismatch: requested {model:?}, received {:?}.",
-                response.model
-            ),
-        ));
-    }
-    let finish = response.finish_reason();
-    if !matches!(finish, Some(FinishReason::Stop | FinishReason::ToolCalls)) {
-        let failure = Failure::new(
-            Code::ProviderError,
-            format!("Provider response was incomplete: {finish:?}."),
-        );
-        return Err(if matches!(finish, Some(FinishReason::Length)) {
-            failure.of_output()
-        } else {
-            failure
-        });
-    }
-    Ok(())
-}
+mod turn;
+pub use turn::Turn;
 
 /// `retry-after-ms` is read as a count of seconds first, so a thousandth of it is the wait.
 const MILLIS_PER_SECOND: u32 = 1000;
 
 /// The wait a provider asked for: `retry-after-ms`, or `Retry-After` in seconds or as an
 /// HTTP date.
-fn retry_after(error: &ProviderError) -> Option<Duration> {
-    wait_header(
-        error.provider_response_headers()?,
-        time::OffsetDateTime::now_utc(),
-    )
+fn retry_after(error: &ProviderError, now: time::OffsetDateTime) -> Option<Duration> {
+    wait_header(error.provider_response_headers()?, now)
 }
 
 fn wait_header(
@@ -768,7 +537,10 @@ fn wait_header(
 /// A provider error as text, cleaned for a terminal but not clipped: callers decide what of
 /// it may be shown ([`crate::secret::server_text`]) before cutting it.
 fn diagnostic_text(error: &ProviderError) -> String {
-    clean_text(&message(error))
+    let body = error
+        .provider_response_body()
+        .and_then(|body| Body::parse(body.as_bytes()));
+    diagnostic_from(body.as_ref(), error)
 }
 
 /// A provider's error for a request that carried `secrets` (an API key): the shared rule for
@@ -777,17 +549,11 @@ fn diagnostic_hiding(error: &ProviderError, secrets: &[&str]) -> String {
     crate::secret::server_text(&diagnostic_text(error), secrets, MAX_DIAGNOSTIC_CHARS)
 }
 
-fn message(error: &ProviderError) -> String {
-    error
-        .provider_response()
-        .and_then(|response| serde_json::from_str::<Value>(&response.body).ok())
-        .and_then(|body| {
-            body.pointer("/error/message")
-                .or_else(|| body.get("message"))
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| error.to_string())
+fn diagnostic_from(body: Option<&Body>, error: &ProviderError) -> String {
+    match body.and_then(Body::provider_message) {
+        Some(message) => clean_text(message),
+        None => clean_text(&error.to_string()),
+    }
 }
 
 /// The environment variable that points a built-in provider at a loopback test endpoint;
@@ -817,6 +583,9 @@ const TEST_ENDPOINTS: [&str; 5] = [
 pub struct TestEndpoint(url::Url);
 
 impl TestEndpoint {
+    pub(crate) fn into_url(self) -> url::Url {
+        self.0
+    }
     /// The endpoint as an API root, the text an SDK or a request path starts from: its URL
     /// without a trailing slash.
     pub fn root(&self) -> &str {
@@ -901,20 +670,23 @@ fn loopback_url(value: &str) -> Result<TestEndpoint, String> {
 
 /// The provider's API root: its loopback test endpoint, else the provider's. Claude Code
 /// has none: it reaches its service itself.
-fn base_url(provider: Provider) -> Result<String, String> {
-    Ok(test_endpoint(provider)?.map_or_else(
-        || {
-            match provider {
-                Provider::Openai => "https://api.openai.com/v1",
-                Provider::Anthropic => "https://api.anthropic.com",
-                Provider::Gemini => gemini::BASE_URL,
-                Provider::Codex => codex::BASE_URL,
-                Provider::ClaudeAgent => "",
-            }
-            .into()
-        },
-        |endpoint| endpoint.root().to_owned(),
-    ))
+fn base_url(provider: Provider) -> Result<url::Url, String> {
+    if let Some(endpoint) = test_endpoint(provider)? {
+        return Ok(endpoint.0);
+    }
+    let base = match provider {
+        Provider::Openai => "https://api.openai.com/v1",
+        Provider::Anthropic => "https://api.anthropic.com",
+        Provider::Gemini => gemini::BASE_URL,
+        Provider::Codex => codex::BASE_URL,
+        Provider::ClaudeAgent => unreachable!("Claude Code has no HTTP route"),
+    };
+    Ok(url::Url::parse(base).expect("built-in provider base URL"))
+}
+
+/// Rig model listing appends a path starting with `/` to this textual root.
+fn adapter_base(base: &url::Url) -> &str {
+    base.as_str().trim_end_matches('/')
 }
 
 fn http_client() -> Result<reqwest::Client, String> {

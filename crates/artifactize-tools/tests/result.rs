@@ -71,6 +71,35 @@ fn constructors_guard_content_counts_and_replace_blank_diagnostics() {
 }
 
 #[test]
+fn command_output_inlines_file_images_in_block_order() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    let directory = os::tempdir();
+    // A 1×1 PNG, used only to exercise result normalization at the public wire boundary.
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII=";
+    std::fs::write(
+        directory.path().join("capture.png"),
+        STANDARD.decode(png).unwrap(),
+    )
+    .unwrap();
+    let wire = json!({"content": [
+        {"type":"text", "text":"before"},
+        {"type":"image", "path":"capture.png", "mimeType":"image/png"},
+        {"type":"json", "data":{"after":true}},
+    ]});
+    let parsed = result::parse(&serde_json::to_vec(&wire).unwrap(), directory.path()).unwrap();
+    drop(directory);
+    assert_eq!(
+        serde_json::to_value(parsed).unwrap(),
+        json!({"content": [
+            {"type":"text", "text":"before"},
+            {"type":"image", "data":png, "mimeType":"image/png"},
+            {"type":"json", "data":{"after":true}},
+        ]})
+    );
+}
+
+#[test]
 fn command_output_and_saved_results_share_shape_validation() {
     let directory = os::tempdir();
     for (wire, expected) in [

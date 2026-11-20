@@ -28,7 +28,10 @@ pub type Pins = BTreeMap<
 /// without being followed. Missing/unreadable paths, special files, more than 1 GiB
 /// of file bytes, or any further entry after 10,000 retained files/links are errors.
 /// Directories are traversed but do not increment the counter or contribute a digest.
-pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins, String> {
+pub async fn execution_paths(
+    config: &RepoConfig,
+    eval_id: &crate::types::EvalId,
+) -> Result<Pins, String> {
     let registry = Registry::new(config, eval_id)?;
     let mut resolved = Vec::new();
     for (name, tool) in &registry.tools {
@@ -99,15 +102,24 @@ fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
     let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
     walk(&directory, path, "", &mut entries, &mut bytes)?;
+    Ok(directory_digest(entries))
+}
+
+type EntryDigest = (String, u8, crate::types::Sha256Bytes);
+
+// The NUL separates the path from the digest bytes; existing pins depend on this format.
+const DIGEST_PATH_SEPARATOR: [u8; 1] = [0];
+
+fn directory_digest(mut entries: Vec<EntryDigest>) -> crate::types::Sha256Digest {
     entries.sort();
     let mut digest = Sha256::new();
     for (relative, kind, entry) in entries {
         digest.update([kind]);
         digest.update(relative.as_bytes());
-        digest.update([0]);
+        digest.update(DIGEST_PATH_SEPARATOR);
         digest.update(entry.as_bytes());
     }
-    Ok(hex(&digest.finalize()))
+    hex(&digest.finalize())
 }
 
 /// Collect `(logical path, kind, digest)` for each file (`f`) and link (`l`) below the
@@ -117,7 +129,7 @@ fn walk(
     directory: &File,
     path: &Path,
     relative: &str,
-    entries: &mut Vec<(String, u8, crate::types::Sha256Bytes)>,
+    entries: &mut Vec<EntryDigest>,
     bytes: &mut u64,
 ) -> Result<(), String> {
     for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {

@@ -1,5 +1,4 @@
-use crate::store::{self, DATABASE, OwnedReceipts};
-use rusqlite::Connection;
+use crate::store::{self, OwnedReceipts};
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -55,45 +54,21 @@ async fn fixture() -> (
     (root, state, receipts, saved)
 }
 
-fn row<T: rusqlite::types::FromSql>(state: &Path, sql: &str) -> T {
-    Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap()
-    .query_row(sql, [], |row| row.get(0))
-    .unwrap()
-}
-
 #[tokio::test]
-async fn a_run_saves_its_definitions_once_and_its_state_without_them() {
+async fn a_saved_run_keeps_its_first_definitions_when_saved_again() {
     let (_root, state, receipts, mut saved) = fixture().await;
-    let written: String = row(
-        &state,
-        "SELECT data FROM run_definitions WHERE run_id='run-1'",
-    );
-    assert_eq!(
-        serde_json::from_str::<Value>(&written).unwrap(),
-        serde_json::from_str::<Value>(DEFINED).unwrap()
-    );
-    // Saving the Run again writes its state; the definitions it holds are not written again.
+    let first = store::read_run(&state, "run-1").await.unwrap();
+    // Saving the Run again saves its state; the definitions it was started with stay.
     saved.jobs = Some(7);
     saved.definitions =
         serde_json::from_value(json!({"artifacts":{"web":{"path":"web"}},"evals":[]})).unwrap();
     receipts.save_run(&saved).await.unwrap();
-    let state_text: String = row(&state, "SELECT data FROM runs WHERE id='run-1'");
-    let state_value: Value = serde_json::from_str(&state_text).unwrap();
-    assert_eq!(state_value["jobs"], 7);
-    assert!(state_value["definitions"].is_null());
-    assert_eq!(
-        row::<String>(
-            &state,
-            "SELECT data FROM run_definitions WHERE run_id='run-1'"
-        ),
-        written
-    );
     let read = store::read_run(&state, "run-1").await.unwrap();
     assert_eq!(read.run.jobs, Some(7));
+    assert_eq!(
+        serde_json::to_value(read.run.definitions.graph().unwrap()).unwrap(),
+        serde_json::to_value(first.run.definitions.graph().unwrap()).unwrap()
+    );
     let artifacts = read
         .run
         .definitions
@@ -106,29 +81,31 @@ async fn a_run_saves_its_definitions_once_and_its_state_without_them() {
 }
 
 #[tokio::test]
-async fn an_update_raises_the_revision_of_only_the_row_it_changes() {
-    let (_root, state, receipts, saved) = fixture().await;
-    let revisions = |state: &Path| -> (i64, i64, i64) {
-        (
-            row(state, "SELECT revision FROM runs WHERE id='run-1'"),
-            row(state, "SELECT revision FROM requests WHERE id='run-1-app'"),
-            row(state, "SELECT revision FROM requests WHERE id='run-1-web'"),
-        )
+async fn an_existing_reader_sees_the_updated_run_and_request() {
+    let (_root, state, receipts, mut saved) = fixture().await;
+    let id = "run-1".parse().unwrap();
+    let mut reader = store::reader::Reader::default();
+    let snapshot = |reader: &mut store::reader::Reader| {
+        reader
+            .snapshot(&state, |db, cache, state| {
+                cache.selected(db, state, &id, false)
+            })
+            .unwrap()
+            .unwrap()
+            .0
     };
-    assert_eq!(revisions(&state), (0, 0, 0));
+    let before = snapshot(&mut reader);
     let mut app = request("run-1", "app", saved.repo_path.as_path());
     app.state = store::RequestState::failed("stopped".into(), None, crate::broker::now());
     receipts.save_request(&app).await.unwrap();
+    let updated = snapshot(&mut reader);
+    assert_eq!(updated.requests[0].error(), Some("stopped"));
+    assert_eq!(updated.requests[1].status(), before.requests[1].status());
+    assert_eq!(before.requests[0].error(), None);
+    saved.jobs = Some(7);
     receipts.save_run(&saved).await.unwrap();
-    receipts.save_run(&saved).await.unwrap();
-    assert_eq!(revisions(&state), (2, 1, 0));
-    // A writer that bypasses the store is numbered too.
-    Connection::open(state.join(DATABASE))
-        .unwrap()
-        .execute(
-            "UPDATE requests SET status='ERROR' WHERE id='run-1-web'",
-            [],
-        )
-        .unwrap();
-    assert_eq!(revisions(&state), (2, 1, 1));
+    let settled = snapshot(&mut reader);
+    assert_eq!(settled.run.jobs, Some(7));
+    assert_eq!(settled.requests[0].error(), Some("stopped"));
+    assert_eq!(settled.requests[1].status(), before.requests[1].status());
 }

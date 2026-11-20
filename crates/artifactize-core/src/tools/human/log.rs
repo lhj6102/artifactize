@@ -95,13 +95,10 @@ pub enum End {
 }
 
 impl End {
-    pub(crate) fn exited(status: &std::process::ExitStatus) -> Self {
+    pub(crate) fn exited(status: &crate::platform::ProcessOutcome) -> Self {
         Self::Exited {
-            code: match crate::platform::process_end(status) {
-                crate::platform::ProcessEnd::Exited(code) => Some(code),
-                crate::platform::ProcessEnd::Signaled(_) => None,
-            },
-            text: crate::platform::exit_description(status),
+            code: status.code(),
+            text: status.to_string(),
         }
     }
 
@@ -237,6 +234,7 @@ impl Shared {
 pub struct Run {
     shared: Arc<Shared>,
     ended: bool,
+    launch: Option<Box<dyn FnOnce(crate::process::ChildIdentity) + Send + Sync>>,
 }
 
 impl std::fmt::Debug for Run {
@@ -257,12 +255,31 @@ impl Run {
                 dropped: AtomicBool::new(false),
             }),
             ended: false,
+            launch: None,
         }
     }
 
     /// A run nobody shows, such as `tool check`'s: launched programs get no pipes at all.
     pub fn unwatched() -> Self {
         Self::new(None)
+    }
+
+    /// Observe the native birth identity at successful spawn, before a detached program's
+    /// own startup protocol. This does not change the log or the launch's lifetime.
+    pub fn observe_launch(
+        mut self,
+        observe: impl FnOnce(crate::process::ChildIdentity) + Send + Sync + 'static,
+    ) -> Self {
+        self.launch = Some(Box::new(observe));
+        self
+    }
+
+    pub(crate) fn launched(&mut self, pid: u32) {
+        if let Some(observe) = self.launch.take()
+            && let Ok(identity) = crate::process::child_identity(pid)
+        {
+            observe(identity);
+        }
     }
 
     pub(crate) fn watched(&self) -> bool {
@@ -314,9 +331,8 @@ impl Lines {
         self.pending.extend_from_slice(bytes);
         while let Some(newline) = self.pending.iter().position(|byte| *byte == b'\n') {
             let line: Vec<u8> = self.pending.drain(..=newline).collect();
-            let line = &line[..newline];
             self.shared
-                .line(self.stream, line.strip_suffix(b"\r").unwrap_or(line));
+                .line(self.stream, crate::platform::output_line(&line));
         }
         while self.pending.len() >= LINE_BYTES {
             let end = piece(&self.pending);

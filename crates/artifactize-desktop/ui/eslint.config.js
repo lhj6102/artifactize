@@ -2,6 +2,7 @@
 // --no-inline-config: no comment can switch a rule off. Generated IPC bindings are excluded.
 import svelte from "eslint-plugin-svelte";
 import tseslint from "typescript-eslint";
+import e2eCases from "./lint/e2e-cases.js";
 import e2ePlatform from "./lint/e2e-platform.js";
 import effectComment from "./lint/effect-comment.js";
 import typescript from "./lint/typescript.js";
@@ -14,6 +15,7 @@ export default [
   // recommended rules cover it and the build configuration.
   ...typescript(["e2e/**/*.ts", "vite.config.ts"]),
   ...e2ePlatform(["e2e/**/*.ts", "e2e/**/*.mjs", "e2e/**/*.js"], "e2e/platform.ts"),
+  ...e2eCases(["e2e/cases/**/*.ts"]),
   {
     files: ["src/**/*.svelte", "src/**/*.svelte.ts"],
     languageOptions: {

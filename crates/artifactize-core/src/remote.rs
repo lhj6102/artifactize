@@ -3,8 +3,8 @@
 mod push;
 mod pushed;
 mod session;
-pub use push::{Push, push};
-pub use pushed::{Pushed, recent as recent_pushes};
+pub use push::{Push, push, push_with_clock};
+pub use pushed::{Pushed, recent as recent_pushes, recent_at as recent_pushes_at};
 pub(crate) use session::REFRESH as REFRESH_INTERVAL;
 pub use session::Session;
 

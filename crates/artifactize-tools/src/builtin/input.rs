@@ -1,5 +1,8 @@
 //! Parse schema-validated provider arguments once, before builtin execution.
-use crate::Builtin;
+use crate::{
+    Builtin,
+    scope::{ArtifactId, InputPath, Scope},
+};
 use globset::GlobMatcher;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Deserializer, de};
@@ -15,28 +18,21 @@ pub enum Input {
 }
 impl Input {
     /// CLI values enter the same compiled domain as provider input, without JSON round trips.
-    pub(crate) fn glob(pattern: &str, path: String) -> Result<Self, String> {
+    pub(crate) fn glob(pattern: &str, path: LogicalPath) -> Result<Self, String> {
         pattern_size(pattern)?;
         Ok(Self::Glob(Glob {
             pattern: super::glob(pattern)?,
-            path: LogicalPath::parse(path)?,
+            path,
         }))
     }
 
     pub(crate) fn grep(
         pattern: &str,
-        path: String,
+        path: LogicalPath,
         glob: Option<&str>,
         insensitive: bool,
     ) -> Result<Self, String> {
-        Grep::new(
-            pattern,
-            LogicalPath::parse(path)?,
-            glob,
-            insensitive,
-            super::MAX_RESULTS,
-        )
-        .map(Self::Grep)
+        Grep::new(pattern, path, glob, insensitive, super::MAX_RESULTS).map(Self::Grep)
     }
 
     pub fn parse(builtin: Builtin, value: Value) -> Result<Self, String> {
@@ -151,25 +147,51 @@ fn pattern_size(pattern: &str) -> Result<(), String> {
     }
 }
 
-/// Validated logical syntax. The legacy file-root spelling is resolved against the owner
-/// by Reader::root_path; it never grants a folder access to dot components.
-#[derive(Debug, Default)]
-pub struct LogicalPath(String);
-impl LogicalPath {
-    pub fn parse(path: String) -> Result<Self, String> {
-        if path != "." {
-            crate::scope::logical_path(&path).map_err(|error| error.to_string())?;
-        }
-        Ok(Self(path))
-    }
-    pub fn as_str(&self) -> &str {
-        &self.0
+/// Validated arguments carry either a logical path or the legacy selective-root alias.
+#[derive(Debug)]
+pub struct LogicalPath(Option<InputPath<String>>);
+impl Default for LogicalPath {
+    fn default() -> Self {
+        Self(Some(InputPath::root().owned()))
     }
 }
-impl std::ops::Deref for LogicalPath {
-    type Target = str;
-    fn deref(&self) -> &str {
-        self.as_str()
+impl LogicalPath {
+    /// A native command-line path, validated once at the edge.
+    pub(crate) fn from_native(path: &std::path::Path) -> Result<Self, String> {
+        InputPath::from_native(path)
+            .map(|path| Self(Some(path)))
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn parse(path: String) -> Result<Self, String> {
+        if path == "." {
+            return Ok(Self(None));
+        }
+        InputPath::parse(path)
+            .map(|path| Self(Some(path)))
+            .map_err(|error| error.to_string())
+    }
+
+    /// Dot is accepted only by listing/search on a selective owner. Check the owner
+    /// fallibly so an unknown owner gives the same error as it would for a real path.
+    pub(crate) fn resolve<'a>(
+        &'a self,
+        scope: &Scope,
+        owner: &ArtifactId,
+        allow_dot: bool,
+    ) -> Result<InputPath<&'a str>, String> {
+        if let Some(path) = &self.0 {
+            return Ok(path.borrowed());
+        }
+        if allow_dot
+            && scope
+                .artifact(owner)
+                .map_err(|error| error.to_string())?
+                .selective()
+        {
+            return Ok(InputPath::root());
+        }
+        Err("Artifact path must be a safe relative logical path.".into())
     }
 }
 impl<'de> Deserialize<'de> for LogicalPath {
@@ -190,7 +212,7 @@ pub struct ViewImage {
 }
 
 fn first_line() -> usize {
-    1
+    super::FIRST_LINE
 }
 fn read_lines() -> usize {
     super::DEFAULT_READ_LINES

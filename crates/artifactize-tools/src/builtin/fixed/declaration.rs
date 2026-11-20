@@ -1,10 +1,15 @@
 //! Validation and descriptions of fixed builtin declarations.
 use crate::{
     Builtin,
-    scope::{self, ArtifactId, Scope},
+    scope::{ArtifactId, Scope},
 };
 use serde_json::{Value, json};
 use std::path::Path;
+
+/// A `section` declaration that fixes its heading: the path, then the heading.
+const SECTION_WITH_HEADING: usize = 2;
+/// A `section` declaration that leaves the heading to each call (Agent tools only): the path.
+const SECTION_HEADING_AT_CALL: usize = 1;
 
 pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> Result<(), String> {
     let Some(args) = args else {
@@ -21,7 +26,9 @@ pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> 
     let valid = match builtin {
         Builtin::Graph => args.is_empty(),
         Builtin::Read | Builtin::List => args.len() == 1,
-        Builtin::Section => args.len() == 2 || !human && args.len() == 1,
+        Builtin::Section => {
+            args.len() == SECTION_WITH_HEADING || !human && args.len() == SECTION_HEADING_AT_CALL
+        }
         Builtin::Help => !args.is_empty(),
         Builtin::Open => human && args.len() == 1,
         Builtin::Glob | Builtin::Grep | Builtin::ViewImage => false,
@@ -32,7 +39,16 @@ pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> 
     {
         return Err("Invalid fixed args for this builtin/kind.".into());
     }
-    if builtin == Builtin::Section && args.get(1).is_some_and(|heading| heading.trim().is_empty()) {
+    if builtin == Builtin::Section
+        && let Some(heading) = args.get(1)
+    {
+        validate_heading(heading)?;
+    }
+    Ok(())
+}
+
+pub(super) fn validate_heading(heading: &str) -> Result<(), String> {
+    if heading.trim().is_empty() {
         return Err("Section heading must not be blank.".into());
     }
     Ok(())
@@ -46,7 +62,7 @@ pub fn fixed_description(builtin: Builtin, args: &[String]) -> &'static str {
         Builtin::List => {
             "List the declared directory in {artifactName}. No input arguments; returns sorted entries and truncation metadata."
         }
-        Builtin::Section if args.len() == 1 => {
+        Builtin::Section if args.len() == SECTION_HEADING_AT_CALL => {
             "Read the declared Markdown file in {artifactName} by exact heading. Supply only heading; includes nested sections until the next same or higher level heading. Missing headings list available titles."
         }
         Builtin::Section => {
@@ -60,7 +76,7 @@ pub fn fixed_description(builtin: Builtin, args: &[String]) -> &'static str {
 }
 
 pub fn fixed_schema(builtin: Builtin, args: &[String]) -> Value {
-    if builtin == Builtin::Section && args.len() == 1 {
+    if builtin == Builtin::Section && args.len() == SECTION_HEADING_AT_CALL {
         super::super::input_schema(builtin)
     } else {
         json!({"type":"object", "properties":{}, "required":[], "additionalProperties":false})
@@ -79,24 +95,16 @@ pub fn validate_target(
     scope: &Scope,
     owner: &ArtifactId,
 ) -> Result<(), String> {
-    if builtin == Builtin::Graph
-        || builtin == Builtin::Help
-        || builtin == Builtin::Open && is_url(&args[0])
-    {
+    if matches!(builtin, Builtin::Graph | Builtin::Help) {
+        return Ok(());
+    }
+    let target = args.first().ok_or("Missing builtin target.")?;
+    if builtin == Builtin::Open && is_url(target) {
         return Ok(());
     }
     // Existing targets are validated without following any symlink.
-    let location = scope
-        .resolve_path(owner, &args[0])
-        .map_err(|error| error.to_string())?;
-    let artifact = &scope.artifacts[&location.artifact_id];
-    let base = scope::scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
-    let path = if location.path.is_empty() {
-        artifact.file_name().unwrap_or("")
-    } else {
-        &location.path
-    };
-    scope::scoped_path(&base, Path::new(path))
+    scope
+        .resolve_input(root, owner, target)
         .map(|_| ())
         .map_err(|error| error.to_string())
 }

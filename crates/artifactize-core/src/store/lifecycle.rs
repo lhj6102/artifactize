@@ -6,7 +6,6 @@ use crate::types::{ExecutionStatus, FailureCode, RequestStatus, RunStatus, Times
 /// Non-active, non-verdict request states historically allow an optional completion time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PendingRequest {
-    Queued,
     Blocked,
     BudgetExhausted,
     Stale,
@@ -56,6 +55,10 @@ impl From<GreenResult> for ExecutionResult {
 
 #[derive(Debug, Clone)]
 pub enum RequestState {
+    Queued {
+        at: Option<Timestamp>,
+        reason: Option<super::QueueReason>,
+    },
     Running,
     WaitingHuman,
     Deferred,
@@ -127,9 +130,9 @@ impl RequestState {
             RequestStatus::Running => Ok(Self::Running),
             RequestStatus::WaitingHuman => Ok(Self::WaitingHuman),
             RequestStatus::Deferred => Ok(Self::Deferred),
+            RequestStatus::Queued => Ok(Self::Queued { at, reason: None }),
             _ => Ok(Self::Pending {
                 kind: match status {
-                    RequestStatus::Queued => PendingRequest::Queued,
                     RequestStatus::Blocked => PendingRequest::Blocked,
                     RequestStatus::BudgetExhausted => PendingRequest::BudgetExhausted,
                     RequestStatus::Stale => PendingRequest::Stale,
@@ -142,8 +145,16 @@ impl RequestState {
         }
     }
 
+    pub fn queue_reason(&self) -> Option<&super::QueueReason> {
+        match self {
+            Self::Queued { reason, .. } => reason.as_ref(),
+            _ => None,
+        }
+    }
+
     pub fn status(&self) -> RequestStatus {
         match self {
+            Self::Queued { .. } => RequestStatus::Queued,
             Self::Running => RequestStatus::Running,
             Self::WaitingHuman => RequestStatus::WaitingHuman,
             Self::Deferred => RequestStatus::Deferred,
@@ -154,7 +165,6 @@ impl RequestState {
             },
             Self::Failed { .. } => RequestStatus::Error,
             Self::Pending { kind, .. } => match kind {
-                PendingRequest::Queued => RequestStatus::Queued,
                 PendingRequest::Blocked => RequestStatus::Blocked,
                 PendingRequest::BudgetExhausted => RequestStatus::BudgetExhausted,
                 PendingRequest::Stale => RequestStatus::Stale,
@@ -187,7 +197,7 @@ impl RequestState {
             Self::Completed { at, .. } | Self::Provisional { at, .. } | Self::Failed { at, .. } => {
                 Some(*at)
             }
-            Self::Pending { at, .. } => *at,
+            Self::Pending { at, .. } | Self::Queued { at, .. } => *at,
             _ => None,
         }
     }
@@ -252,7 +262,7 @@ impl TryFrom<RequestState> for ExecutionState {
             }),
             RequestState::Completed { result, at } => Ok(Self::Completed { result, at }),
             RequestState::Failed { error, code, at } => Ok(Self::Failed { error, code, at }),
-            RequestState::Pending { .. } => {
+            RequestState::Pending { .. } | RequestState::Queued { .. } => {
                 Err("A pending request has no execution lifecycle state.".into())
             }
         }

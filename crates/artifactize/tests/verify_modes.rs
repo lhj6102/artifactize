@@ -76,8 +76,12 @@ impl Fixture {
     fn declare_at(&self, path: &str, name: &str, evals: Vec<Value>) {
         let folder = self.repo.join(path);
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("fingerprint"), name).unwrap();
-        support::declaration::write(folder.join("index.artf"), json!({"name":name,"fingerprint":{"script":{"command":support::os::cat_program(),"args":["fingerprint"]}},"evals":evals}).to_string()).unwrap();
+        fs::write(
+            support::declaration::source_path(folder.join("fingerprint")),
+            name,
+        )
+        .unwrap();
+        support::declaration::write(&(self.repo), folder.join("index.artf"), json!({"name":name,"fingerprint":{"script":{"command":support::os::cat_program(),"args":["fingerprint"]}},"evals":evals}).to_string()).unwrap();
     }
     fn command(&self) -> Command {
         let mut command = Command::new(support::os::cli());
@@ -119,7 +123,7 @@ impl Fixture {
                             return view;
                         }
                         assert!(
-                            view.run.status().is_open(),
+                            view.run.status().is_open() || view.run.status() == RunStatus::Yellow,
                             "{}",
                             serde_json::to_string_pretty(&view).unwrap()
                         );
@@ -132,7 +136,7 @@ impl Fixture {
                 panic!(
                     "observable state not reached: {}\n{}",
                     serde_json::to_string_pretty(&view).unwrap(),
-                    fs::read_to_string(
+                    support::declaration::read_text(
                         self.state
                             .join("runs")
                             .join(id.as_str())
@@ -157,7 +161,7 @@ impl Fixture {
         );
     }
     fn ready(&self, artifact: &str, eval: &str) -> bool {
-        fs::read_to_string(self.repo.join(artifact).join(format!("{eval}-ready")))
+        support::declaration::read_text(self.repo.join(artifact).join(format!("{eval}-ready")))
             .is_ok_and(|contents| contents == "ready")
     }
     async fn claim(&self, view: &RunView, eval: &str) {
@@ -197,7 +201,7 @@ impl Fixture {
             &receipts,
             &request.id,
             &reviewer,
-            &json!({"verdict":verdict}),
+            &human::Submission::try_from(json!({"verdict":verdict})).unwrap(),
             CancellationToken::new(),
         )
         .await
@@ -223,7 +227,6 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
         // The Run stays open for its sign-offs until they are submitted.
         fixture.grace(24 * 60 * 60);
         let gate = support::Gate::default();
-        gate.close();
         let started = Arc::new(AtomicBool::new(false));
         let provider = support::FakeProvider::start({
             let gate = gate.clone();
@@ -234,12 +237,13 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
                 support::openai::completed(
                     request,
                     vec![support::openai::message(
-                        &json!({"verdict":"GREEN"}).to_string(),
+                        &json!({"findings":[]}).to_string(),
                     )],
                     support::openai::usage(1, 1),
                 )
             }
         });
+        let _release_provider = owned_run::ReleaseGate::new(gate.clone());
         fixture.declare("up", vec![fixture.runtime("check", &[])]);
         fixture.declare("down", vec![fixture.runtime("runtime", &["up"]),
             json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},"payload":{"instruction":"Review {up}."}}), human_eval(&["up"])]);
@@ -297,7 +301,8 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
             fixture.release("up", "check", 0);
             let signoff = fixture
                 .until(&run, |view| {
-                    status(view, "down/sign") == RequestStatus::Deferred
+                    view.run.status() == RunStatus::WaitingHuman
+                        && status(view, "down/sign") == RequestStatus::Deferred
                         && status(view, "notes/sign") == RequestStatus::Deferred
                 })
                 .await;
@@ -341,7 +346,12 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
                     .unwrap()
                     .is_empty()
             );
-            assert!(!support::os::running(runtime_child.pid.get()));
+            support::os::wait_until(Duration::from_secs(30), || {
+                !support::os::same_process_running(
+                    runtime_child.pid.get(),
+                    runtime_child.start_time,
+                )
+            });
             let cache = artifactize_core::cache::list(&fixture.state, false)
                 .await
                 .unwrap();
@@ -537,9 +547,21 @@ async fn c2_a_claim_holds_the_run_open_until_it_is_submitted_or_released() {
         let held = fixture
             .until(&run, |view| {
                 status(view, "slow/check") == RequestStatus::Green
+                    && view.run.control.as_ref().is_some_and(|control| {
+                        control.activity == artifactize_core::runs::Activity::Waiting
+                    })
             })
             .await;
         assert_eq!(held.run.status(), RunStatus::WaitingHuman);
+        let signoff = held
+            .requests
+            .iter()
+            .find(|request| request.eval_id == "notes/sign")
+            .unwrap();
+        let saved = store::read_request(&fixture.state, &signoff.id)
+            .await
+            .unwrap();
+        assert_eq!(saved.claim.unwrap().reviewer.as_str(), "reviewer");
         let ended = if submit {
             fixture.sign(&held, "notes/sign", "GREEN").await;
             let ended = fixture.settled(&run).await;
@@ -586,16 +608,8 @@ async fn c2_the_idle_grace_holds_a_run_with_only_signoffs_left_open() {
         })
         .await;
     assert_eq!(waiting.run.status(), RunStatus::WaitingHuman);
-    let observed =
-        support::os::run(
-            fixture
-                .command()
-                .args(["run", "show", run.as_str(), "--json"]),
-        );
-    assert_eq!(
-        serde_json::from_slice::<Value>(&observed.stdout).unwrap()["status"],
-        "WAITING_HUMAN"
-    );
+    let observed = store::read_run(&fixture.state, &run).await.unwrap();
+    assert_eq!(observed.run.status(), RunStatus::WaitingHuman);
     fixture.sign(&waiting, "notes/sign", "RED").await;
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Red);
 
@@ -628,6 +642,7 @@ async fn c2_a_run_that_an_earlier_version_ended_signoffs_pending_reads_as_yellow
     fixture.declare("notes", vec![human_eval(&[])]);
     let run = fixture.submit(&[], None);
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Yellow);
+    support::runs::finished_worker(&fixture.state, &fixture.repo, &run, support::os::running);
     // Back to schema 9, which called the same end SIGNOFFS_PENDING.
     let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
     db.execute(
@@ -699,9 +714,11 @@ async fn c2_cancelling_a_run_ends_its_deferred_signoff_and_the_requests_joined_t
     let cancelled = fixture.settled(&run).await;
     assert_eq!(cancelled.run.status(), RunStatus::Error);
     assert_eq!(status(&cancelled, "up/sign"), RequestStatus::Error);
-    let follower = store::read_run(&fixture.state, &follower.run.id)
-        .await
-        .unwrap();
+    let follower = fixture
+        .until(&follower.run.id, |view| {
+            status(view, "up/sign") == RequestStatus::Error
+        })
+        .await;
     assert_eq!(
         status(&follower, "up/sign"),
         RequestStatus::Error,
@@ -750,9 +767,13 @@ async fn c2_new_human_issuance_supersedes_changed_deferred_signoffs_and_follower
                 .unwrap();
         }
 
-        fs::write(fixture.repo.join("up/fingerprint"), "changed").unwrap();
-        fs::remove_file(fixture.repo.join("up/check-ready")).unwrap();
-        fs::remove_file(fixture.repo.join("up/check-release")).unwrap();
+        fs::write(
+            support::declaration::source_path(fixture.repo.join("up/fingerprint")),
+            "changed",
+        )
+        .unwrap();
+        support::declaration::remove_file(fixture.repo.join("up/check-ready")).unwrap();
+        support::declaration::remove_file(fixture.repo.join("up/check-release")).unwrap();
         let newer = fixture.submit(&[], None);
         fixture
             .until(&newer, |view| {
@@ -772,13 +793,16 @@ async fn c2_new_human_issuance_supersedes_changed_deferred_signoffs_and_follower
             })
             .await;
         for (run, request) in [(&first.run.id, original), (&joined.run.id, follower)] {
-            let ended = store::read_run(&fixture.state, run).await.unwrap();
-            let signoff = ended.requests.iter().find(|q| q.id == request.id).unwrap();
-            assert_eq!(signoff.status(), RequestStatus::Error);
-            assert_eq!(
-                signoff.error_code(),
-                Some(artifactize_core::types::FailureCode::Superseded)
-            );
+            fixture
+                .until(run, |view| {
+                    view.requests.iter().any(|saved| {
+                        saved.id == request.id
+                            && saved.status() == RequestStatus::Error
+                            && saved.error_code()
+                                == Some(artifactize_core::types::FailureCode::Superseded)
+                    })
+                })
+                .await;
             assert!(
                 human::claim(&receipts, &request.id, &reviewer)
                     .await
@@ -822,7 +846,7 @@ async fn c2_a_superseded_signoff_ends_its_run_yellow_and_joined_ones_are_listed_
         .await;
 
     fs::write(
-        fixture.repo.join("docs/changed/fingerprint"),
+        support::declaration::source_path(fixture.repo.join("docs/changed/fingerprint")),
         "changed-again",
     )
     .unwrap();
@@ -890,7 +914,11 @@ async fn c2_a_superseded_signoff_ends_its_run_yellow_and_joined_ones_are_listed_
 async fn c2_superseding_a_signoff_leaves_other_worktrees() {
     let fixture = Fixture::new();
     fixture.declare("up", vec![human_eval(&[])]);
-    fs::write(fixture.repo.join("up/fingerprint"), "deferred").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("up/fingerprint")),
+        "deferred",
+    )
+    .unwrap();
     let deferred = fixture.submit(&[], None);
     let deferred = fixture.settled(&deferred).await;
 
@@ -898,11 +926,19 @@ async fn c2_superseding_a_signoff_leaves_other_worktrees() {
     other.state = fixture.state.clone();
     other._root.track(&other.state, &other.repo);
     other.declare("up", vec![human_eval(&[])]);
-    fs::write(other.repo.join("up/fingerprint"), "other-tree").unwrap();
+    fs::write(
+        support::declaration::source_path(other.repo.join("up/fingerprint")),
+        "other-tree",
+    )
+    .unwrap();
     let other_run = other.submit(&[], None);
     let other_run = other.settled(&other_run).await;
 
-    fs::write(fixture.repo.join("up/fingerprint"), "newest").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("up/fingerprint")),
+        "newest",
+    )
+    .unwrap();
     let newest = fixture.submit(&[], None);
     fixture.settled(&newest).await;
     assert_eq!(
@@ -914,16 +950,14 @@ async fn c2_superseding_a_signoff_leaves_other_worktrees() {
         ),
         RequestStatus::Error
     );
-    let receipts = Receipts::open(&fixture.state, &fixture.repo).await.unwrap();
     let request = &other_run.requests[0];
     let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
-    assert!(
-        waiting.iter().any(|q| q.request.id == request.id),
-        "request={request:#?}, waiting={waiting:#?}"
-    );
-    human::claim(&receipts, &request.id, &"reviewer".parse().unwrap())
-        .await
-        .unwrap();
+    let preserved = waiting
+        .iter()
+        .find(|view| view.request.id == request.id)
+        .unwrap_or_else(|| panic!("request={request:#?}, waiting={waiting:#?}"));
+    assert_eq!(preserved.request.status(), RequestStatus::Deferred);
+    assert!(preserved.claim.is_none(), "{preserved:#?}");
 }
 
 #[tokio::test]
@@ -937,14 +971,22 @@ async fn c2_joining_a_new_key_also_supersedes_earlier_deferred_signoffs() {
     other.state = fixture.state.clone();
     other._root.track(&other.state, &other.repo);
     other.declare("up", vec![human_eval(&[])]);
-    fs::write(other.repo.join("up/fingerprint"), "new-key").unwrap();
+    fs::write(
+        support::declaration::source_path(other.repo.join("up/fingerprint")),
+        "new-key",
+    )
+    .unwrap();
     let active = other.submit(&[], None);
     let active = other.settled(&active).await;
     assert_ne!(
         first.requests[0].key, active.requests[0].key,
         "first={first:#?}, active={active:#?}"
     );
-    fs::write(fixture.repo.join("up/fingerprint"), "new-key").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("up/fingerprint")),
+        "new-key",
+    )
+    .unwrap();
     let joined = fixture.submit(&[], None);
     let joined = fixture.settled(&joined).await;
     assert_eq!(
@@ -991,12 +1033,24 @@ async fn c2_retiring_a_deferred_follower_preserves_its_original_in_another_tree(
         issued.requests[0].execution_id
     );
 
-    fs::write(follower.repo.join("up/fingerprint"), "changed").unwrap();
+    fs::write(
+        support::declaration::source_path(follower.repo.join("up/fingerprint")),
+        "changed",
+    )
+    .unwrap();
     let newer = follower.submit(&[], None);
     follower.settled(&newer).await;
-    let retired = store::read_request(&follower.state, joined.requests[0].id.as_str())
-        .await
-        .unwrap();
+    // The older follower's request is retired by its own Run's settling, which may come after
+    // the newer Run's: wait for its saved state to change.
+    let retired = loop {
+        let read = store::read_request(&follower.state, joined.requests[0].id.as_str())
+            .await
+            .unwrap();
+        if read.request.error_code().is_some() {
+            break read;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
     assert_eq!(
         retired.request.error_code(),
         Some(artifactize_core::types::FailureCode::Superseded)
@@ -1077,7 +1131,7 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
     let fixture = Fixture::new();
     fs::create_dir_all(&fixture.state).unwrap();
     fs::write(
-        fixture.state.join("limits.json"),
+        support::declaration::source_path(fixture.state.join("limits.json")),
         r#"{"backends":{"openai":1},"signoffIdleGraceSeconds":0}"#,
     )
     .unwrap();
@@ -1087,7 +1141,6 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
     fixture.declare("a-spec", vec![agent("Speculative", "up")]);
     fixture.declare("b-ready", vec![agent("Ready", "trigger")]);
     let gate = support::Gate::default();
-    gate.close();
     let spec_starts = Arc::new(AtomicUsize::new(0));
     let ready_started = Arc::new(AtomicBool::new(false));
     let provider = support::FakeProvider::start({
@@ -1109,12 +1162,13 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
             support::openai::completed(
                 request,
                 vec![support::openai::message(
-                    &json!({"verdict":"GREEN"}).to_string(),
+                    &json!({"findings":[]}).to_string(),
                 )],
                 support::openai::usage(1, 1),
             )
         }
     });
+    let _release_provider = owned_run::ReleaseGate::new(gate.clone());
     let run = fixture.submit(
         &["--speculate", "--jobs", "3", "--max-executions", "5"],
         Some(&provider),

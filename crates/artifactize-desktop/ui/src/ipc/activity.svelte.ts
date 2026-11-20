@@ -1,6 +1,7 @@
 import { createContext, untrack } from "svelte";
 
 import type { CommandActivity, Refresh } from "./activity";
+import type { BrowseView } from "./client";
 
 // Read-only command activity at the frontend's IPC boundary. Arguments and results are
 // private; only the public search query is retained so a deferred search can be identified.
@@ -13,8 +14,12 @@ class Refreshes {
     return this.#last;
   }
 
-  shown(): void {
-    this.#last = Object.freeze({ generation: (this.#last?.generation ?? 0) + 1 });
+  shown(read: Pick<BrowseView, "branches">): void {
+    const branches = read.branches.map(({ project, name, chips }) => Object.freeze({
+      project, name,
+      runs: Object.freeze(chips.flatMap((chip) => chip.kind === "run" ? [Object.freeze({ id: chip.id, comment: chip.comment })] : [])),
+    }));
+    this.#last = Object.freeze({ generation: (this.#last?.generation ?? 0) + 1, branches: Object.freeze(branches) });
   }
 }
 
@@ -82,8 +87,8 @@ export class Activity {
 
 /** E2E builds only: a manual refresh showed a fresh read. Observation only; nothing in the app
  * reads it back. Callers guard on the build mode too. */
-export function refreshed(activity: Activity): void {
-  refreshes?.get(activity)?.shown();
+export function refreshed(activity: Activity, read: Pick<BrowseView, "branches">): void {
+  refreshes?.get(activity)?.shown(read);
 }
 
 export const [getActivity, setActivity] = createContext<Activity>();

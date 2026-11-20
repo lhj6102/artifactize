@@ -56,7 +56,7 @@ impl std::fmt::Display for Blocker {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HumanDefinition {
     #[serde(
         default,
@@ -65,13 +65,107 @@ pub struct HumanDefinition {
     )]
     pub repo: Field<PathBuf>,
     pub eval: HumanEval,
-    #[serde(default, skip_serializing_if = "Field::missing")]
+    #[serde(
+        default,
+        skip_serializing_if = "Field::missing",
+        deserialize_with = "super::definitions::artifact_targets"
+    )]
     pub artifacts: Field<BTreeMap<ArtifactName, super::definitions::Artifact>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl HumanDefinition {
+    pub(crate) fn authored(
+        repo: &std::path::Path,
+        eval: &crate::config::Eval,
+        scope: &crate::scope::Scope<'_>,
+    ) -> Self {
+        Self {
+            repo: Field::Value(repo.to_path_buf()),
+            eval: HumanEval::from(HumanEvalWire {
+                id: Field::Value(eval.id.clone()),
+                target: Field::Value(eval.target.clone()),
+                references: Field::Value(eval.references.clone()),
+                deps: Field::Value(eval.deps.clone()),
+                declaration: Field::Value((&eval.declaration).into()),
+                extra: Map::new(),
+            }),
+            artifacts: Field::Value(
+                scope
+                    .artifacts
+                    .iter()
+                    .map(|(name, artifact)| (name.clone(), (*artifact).into()))
+                    .collect(),
+            ),
+            extra: Map::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "HumanEvalWire", into = "HumanEvalWire")]
 pub struct HumanEval {
+    pub id: Field<EvalId>,
+    pub target: Field<ArtifactName>,
+    pub references: Field<BTreeMap<crate::config::ReferenceName, ArtifactName>>,
+    pub deps: Field<Vec<ArtifactName>>,
+    declaration: Field<super::definitions::Declaration>,
+    pub extra: Map<String, Value>,
+    pass: Result<crate::review::Specification, String>,
+    fail: Result<crate::review::Specification, String>,
+}
+
+impl HumanEval {
+    pub(crate) fn declaration(&self) -> Option<&super::definitions::Declaration> {
+        self.declaration.value()
+    }
+    pub(crate) fn form(
+        &self,
+        verdict: crate::runtime::Verdict,
+    ) -> Result<crate::review::Form, String> {
+        let spec = match verdict {
+            crate::runtime::Verdict::Green => &self.pass,
+            crate::runtime::Verdict::Red => &self.fail,
+        };
+        spec.as_ref()
+            .map(|spec| crate::review::Form::from_spec(verdict, spec))
+            .map_err(Clone::clone)
+    }
+}
+
+impl From<HumanEvalWire> for HumanEval {
+    fn from(wire: HumanEvalWire) -> Self {
+        let saved = wire.declaration.value();
+        let pass = crate::review::Specification::parse(saved.and_then(|d| d.pass_schema.value()));
+        let fail = crate::review::Specification::parse(saved.and_then(|d| d.fail_schema.value()));
+        Self {
+            id: wire.id,
+            target: wire.target,
+            references: wire.references,
+            deps: wire.deps,
+            declaration: wire.declaration,
+            extra: wire.extra,
+            pass,
+            fail,
+        }
+    }
+}
+
+impl From<HumanEval> for HumanEvalWire {
+    fn from(eval: HumanEval) -> Self {
+        Self {
+            id: eval.id,
+            target: eval.target,
+            references: eval.references,
+            deps: eval.deps,
+            declaration: eval.declaration,
+            extra: eval.extra,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct HumanEvalWire {
     #[serde(default, skip_serializing_if = "Field::missing")]
     pub id: Field<EvalId>,
     #[serde(default, skip_serializing_if = "Field::missing")]
@@ -85,14 +179,6 @@ pub struct HumanEval {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-impl PartialEq for HumanDefinition {
-    fn eq(&self, other: &Self) -> bool {
-        // Owner JSON schemas are structural values; compare their preserved saved forms.
-        serde_json::to_value(self).expect("Human definition is JSON")
-            == serde_json::to_value(other).expect("Human definition is JSON")
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Validation(pub Option<ValidationSnapshot>);

@@ -9,8 +9,7 @@ fn entry() -> Entry {
         repository: "work/artifactize".into(),
         eval: "release/signoff".into(),
         request: "run-a-2".into(),
-        reviewer: Some("bob".into()),
-        mine: false,
+        claim: Claim::Other("bob".into()),
         kind: ProfileKind::Human,
         status: RequestStatus::WaitingHuman,
         tags: vec!["type:style".into()],
@@ -44,7 +43,7 @@ fn keys_restrict_a_term_to_one_field_and_terms_and_together() {
     assert!(matches("tag:STYLE", &entry));
     assert!(!matches("tag:docs", &entry));
     let unclaimed = Entry {
-        reviewer: None,
+        claim: Claim::Unclaimed,
         ..entry.clone()
     };
     assert!(!matches("reviewer:bob", &unclaimed));
@@ -67,7 +66,7 @@ fn kinds_and_statuses_match_exactly_and_qualifiers_follow_claims() {
     let agent = Entry {
         kind: ProfileKind::Agent,
         status: RequestStatus::Green,
-        reviewer: None,
+        claim: Claim::Unclaimed,
         ..entry.clone()
     };
     assert!(matches("kind:agent status:green", &agent));
@@ -82,14 +81,14 @@ fn kinds_and_statuses_match_exactly_and_qualifiers_follow_claims() {
     assert!(matches(
         "is:mine",
         &Entry {
-            mine: true,
+            claim: Claim::Mine("bob".into()),
             ..entry.clone()
         }
     ));
     assert!(matches(
         "is:unclaimed",
         &Entry {
-            reviewer: None,
+            claim: Claim::Unclaimed,
             ..entry
         }
     ));
@@ -145,7 +144,7 @@ fn completion_offers_keys_then_values_of_the_listed_requests() {
         Entry {
             repository: "work/website".into(),
             eval: "docs/links".into(),
-            reviewer: None,
+            claim: Claim::Unclaimed,
             tags: vec!["docs".into()],
             ..entry()
         },
@@ -352,7 +351,7 @@ async fn suggestions_take_values_from_what_the_terms_before_the_last_find() {
 fn a_quoted_value_with_spaces_completes_as_one_term() {
     let entries = [Entry {
         repository: "work/my repo".into(),
-        reviewer: Some("ann lee".into()),
+        claim: Claim::Other("ann lee".into()),
         tags: vec!["needs review".into()],
         ..entry()
     }];

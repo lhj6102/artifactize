@@ -43,6 +43,7 @@
   --i-fit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4.5V2h2.5M7.5 2H10v2.5M10 7.5V10H7.5M4.5 10H2V7.5'/%3E%3C/svg%3E");
   --i-find: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='5.25' cy='5.25' r='3.25'/%3E%3Cpath d='M7.75 7.75 10.5 10.5'/%3E%3C/svg%3E");
   --i-pane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='2.25' width='8.5' height='7.5' rx='1'/%3E%3Cpath d='M4.75 2.25v7.5'/%3E%3C/svg%3E");
+  --i-reset: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 4.25A3.75 3.75 0 1 1 2.25 6.5'/%3E%3Cpath d='M2.5 1.75v2.5H5'/%3E%3C/svg%3E");
 }
 .m-icon,
 .m-light {
@@ -78,6 +79,7 @@
 .i-fit { --icon-src: var(--i-fit); }
 .i-find { --icon-src: var(--i-find); }
 .i-pane { --icon-src: var(--i-pane); }
+.i-reset { --icon-src: var(--i-reset); }
 .m-light {
   background: var(--light);
   -webkit-mask-image: var(--light-icon);
@@ -170,6 +172,16 @@
 .m-link {
   color: var(--accent);
   text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+/* A control that cannot be used now: its place kept, its text in the faintest ink. */
+.m-button.disabled {
+  color: var(--ink-3);
+}
+.m-button.primary.disabled {
+  background: var(--surface-group);
+  border-color: var(--line-group);
+  color: var(--ink-3);
 }
 
 /* Fields sit one step below their panel, outlined by the faintest line. */
@@ -280,7 +292,7 @@
   color: var(--ink-2);
 }
 .m-branch-name b {
-  font-weight: 600;
+  font-weight: 700;
 }
 .m-star {
   color: var(--ink-3);
@@ -434,6 +446,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Expanded, the notice keeps its place in the header row: raised inside a panel line, its whole
+   text wrapped at that place's width and scrolling within the row's height, so nothing below
+   it moves or is covered. */
+.m-notice.open {
+  align-self: center;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  line-height: 14px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: auto;
+}
 /* What needs attention, in a Run's headline: each eval's status icon and its name, cut at the
    row's end. */
 .m-attention {
@@ -540,6 +569,12 @@
 .m-navigator rect {
   fill: var(--light);
 }
+.m-navigator rect.whole {
+  fill-opacity: 0.3;
+  stroke: var(--light);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
 .m-navigator rect.view {
   fill: var(--selection);
   stroke: var(--outline-selected);
@@ -634,7 +669,8 @@
   height: 32px;
   padding: 0 6px 0 10px;
   font-weight: 600;
-  box-shadow: inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  border-top: var(--strip) solid var(--light);
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
 }
 .m-toggle {
   flex: none;
@@ -794,6 +830,20 @@
 .m-slash {
   color: var(--ink-2);
 }
+/* The Artifact's chip and the slash after it wrap as one group; only the name inside is cut. */
+.m-chip-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.m-chip-lead .m-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .m-body {
   flex: 1;
   min-height: 0;
@@ -910,6 +960,8 @@
 .m-log .m-stderr {
   color: var(--red);
 }
+/* A choice within a tab, Summary or its log: the chosen one bold in the strong text colour,
+   the other in the quieter one. */
 .m-views {
   display: flex;
   gap: 8px;
@@ -920,9 +972,12 @@
   color: var(--ink);
   font-weight: 700;
 }
-.m-views .other,
-.m-views .m-bar-sep {
+.m-views .other {
   color: var(--ink-2);
+  font-weight: 400;
+}
+.m-views .m-bar-sep {
+  color: var(--ink-3);
 }
 .m-summary {
   margin: 0;
@@ -1060,6 +1115,109 @@
   color: var(--red);
   margin-left: 2px;
 }
+/* The Result's form: fields one under another, by kind. */
+.m-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+/* A choice: a one-line field showing the chosen option, the unfold icon at its right. */
+.m-input.m-select {
+  justify-content: space-between;
+  gap: 8px;
+}
+.m-input.m-select > .m-icon {
+  color: var(--ink-2);
+}
+/* True/false: its values side by side as round options, the chosen one filled. */
+.m-radios {
+  display: flex;
+  gap: 16px;
+  min-height: var(--control);
+  align-items: center;
+}
+.m-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.m-radio::before {
+  content: "";
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--line-input);
+  border-radius: 50%;
+  background: var(--surface-input);
+}
+.m-radio.on::before {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--surface-input);
+  background: var(--accent);
+}
+/* A list of text: numbered items, each a field with the remove icon at its right. */
+.m-items {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: item;
+}
+.m-items li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 22px;
+  align-items: start;
+  gap: 6px;
+}
+.m-items li::before {
+  counter-increment: item;
+  content: counter(item) ".";
+  padding-top: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.m-items li > .m-icon,
+.m-group-head > .m-icon {
+  justify-self: center;
+  margin-top: 5px;
+  color: var(--ink-2);
+}
+/* A list of groups: each group inside a faint group line, headed by its name and number. */
+.m-group {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+}
+.m-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-group-head > .m-icon {
+  margin-top: 0;
+}
+.m-button.m-add {
+  justify-self: start;
+  width: max-content;
+}
+/* Running work in a review's action row: its icon, its seconds and Cancel. */
+.m-busy {
+  display: inline-flex;
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
 
 /* A review with room: two panels under the Main area's header row, which a panel line closes:
    the Tool log's view at the left, the review's column docked where the Detail docks, of the
@@ -1189,6 +1347,14 @@
 .m-find .m-found li.active {
   background: var(--selection);
 }
+/* What the find field says when it has no rows, or more than it lists: one line in secondary
+   ink under the input or the rows. */
+.m-find .m-find-note {
+  margin: 4px 0 0;
+  padding: 2px 8px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
 
 /* Settings: a wide dialog with text tabs; Providers is a list beside a setup. */
 .m-settings {
@@ -1298,3 +1464,113 @@
 .tone-reused { color: var(--reused); }
 .tone-checking { color: var(--checking); }
 .tone-muted { color: var(--ink-2); }
+
+/* Editing a Current. A dragged Artifact floats: raised one step, the faint shadow under it, its
+   face and strip as they were. The box or node a drop would make its whole is the drop target,
+   outlined 2px in the accent while the drop would be accepted; nothing else marks a drag. */
+.m-node.lifted,
+.m-whole.lifted {
+  background: var(--surface-raised);
+  box-shadow: 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-node.target,
+.m-whole.target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-whole.target {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+/* A Definition's parts: one dense row each, the name and its remove button. */
+.m-parts {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.m-parts li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--row-dense);
+}
+.m-parts li .m-name {
+  flex: none;
+}
+/* The Source: the file's text in a field one step below the panel, its line numbers in faint
+   ink; the line an error names carries the selection background. */
+.m-source {
+  margin: 0;
+  padding: 6px 0;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  font: var(--text-small) / 1.5 var(--mono);
+  counter-reset: line;
+}
+.m-source span {
+  display: block;
+  padding: 0 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.m-source span::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 28px;
+  margin-right: 8px;
+  color: var(--ink-3);
+  text-align: right;
+}
+.m-source span.marked {
+  background: var(--selection);
+}
+.m-refusal {
+  margin: 4px 0 0;
+  color: var(--red);
+  font-size: var(--text-small);
+}
+.m-edit-actions {
+  display: flex;
+  gap: var(--gap);
+  margin-top: 6px;
+}
+/* An Artifact's comment: text alone under its node (or under a whole's title row), in the
+   quieter ink, wrapped at the width of what it is under and cut after three lines. Dragged, the
+   text alone follows the pointer, lifted by a faint shadow on its letters, never on a card; the
+   open field is a field of the panel's kind. */
+.m-comment {
+  position: absolute;
+  width: 168px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.m-comment.lifted {
+  text-shadow: 0 1px 4px var(--scrim);
+}
+.m-comment-field {
+  position: absolute;
+  box-sizing: border-box;
+  width: 168px;
+  min-height: 44px;
+  padding: 4px 6px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  color: var(--ink);
+  font-size: var(--text-small);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}

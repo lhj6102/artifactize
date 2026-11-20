@@ -1,20 +1,24 @@
 use super::*;
+use futures_util::FutureExt;
+use std::panic::{AssertUnwindSafe, resume_unwind};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::UNIX_EPOCH;
+use tokio_util::sync::CancellationToken;
 
 /// A loopback stand-in for GitHub's latest-release API answering `body`, and how many
 /// requests it answered.
 struct Releases {
     url: String,
     requests: Arc<AtomicUsize>,
+    stop: CancellationToken,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl Releases {
-    async fn answering(status: u16, body: &'static str) -> Self {
+    async fn answering(status: u16, body: &'static str, test: impl AsyncFnOnce(&Self)) {
         let requests = Arc::new(AtomicUsize::new(0));
         let counted = requests.clone();
         let app = axum::Router::new().route(
@@ -32,11 +36,25 @@ impl Releases {
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/latest", listener.local_addr().unwrap());
-        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        Self {
+        let stop = CancellationToken::new();
+        let shutdown = stop.clone().cancelled_owned();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown)
+                .await
+                .unwrap();
+        });
+        let releases = Self {
             url,
             requests,
+            stop,
             task,
+        };
+        // An assertion failure must still join the server and the connections it accepted.
+        let outcome = AssertUnwindSafe(test(&releases)).catch_unwind().await;
+        releases.close().await;
+        if let Err(panic) = outcome {
+            resume_unwind(panic);
         }
     }
 
@@ -47,6 +65,11 @@ impl Releases {
         }
     }
 
+    async fn close(mut self) {
+        self.stop.cancel();
+        (&mut self.task).await.unwrap();
+    }
+
     fn requests(&self) -> usize {
         self.requests.load(Ordering::SeqCst)
     }
@@ -54,7 +77,7 @@ impl Releases {
 
 impl Drop for Releases {
     fn drop(&mut self) {
-        self.task.abort();
+        self.stop.cancel();
     }
 }
 
@@ -71,79 +94,93 @@ const DAY: u64 = 24 * 60 * 60;
 
 #[tokio::test]
 async fn a_newer_release_comes_with_the_channels_update_and_is_asked_once_a_day() {
-    let releases = Releases::answering(200, r#"{"tag_name":"v0.16.0","name":"0.16.0"}"#).await;
-    let state = crate::test_os::tempdir();
-    let running = version("0.15.1");
-    let newer = Outcome::Newer {
-        latest: version("0.16.0"),
-        update: Update::Page {
-            url: "https://github.com/lhj6102/artifactize/releases/latest".into(),
+    Releases::answering(
+        200,
+        r#"{"tag_name":"v0.16.0","name":"0.16.0"}"#,
+        async |releases| {
+            let state = crate::test_os::tempdir();
+            let running = version("0.15.1");
+            let newer = Outcome::Newer {
+                latest: version("0.16.0"),
+                update: Update::Page {
+                    url: "https://github.com/lhj6102/artifactize/releases/latest".into(),
+                },
+            };
+            let source = releases.source(SITE);
+            let look = |now| look_up(&running, Channel::Unknown, &source, state.path(), now);
+            assert_eq!(look(at(0)).await, newer);
+            assert_eq!(look(at(DAY - 1)).await, newer);
+            assert_eq!(releases.requests(), 1);
+            assert_eq!(look(at(DAY)).await, newer);
+            assert_eq!(releases.requests(), 2);
         },
-    };
-    let source = releases.source(SITE);
-    let look = |now| look_up(&running, Channel::Unknown, &source, state.path(), now);
-    assert_eq!(look(at(0)).await, newer);
-    assert_eq!(look(at(DAY - 1)).await, newer);
-    assert_eq!(releases.requests(), 1);
-    assert_eq!(look(at(DAY)).await, newer);
-    assert_eq!(releases.requests(), 2);
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn the_latest_release_or_an_older_one_is_no_news() {
-    let releases = Releases::answering(200, r#"{"tag_name":"v0.15.1"}"#).await;
-    let state = crate::test_os::tempdir();
-    for running in ["0.15.1", "0.16.0-rc.1"] {
+    Releases::answering(200, r#"{"tag_name":"v0.15.1"}"#, async |releases| {
+        let state = crate::test_os::tempdir();
+        for running in ["0.15.1", "0.16.0-rc.1"] {
+            assert_eq!(
+                look_up(
+                    &version(running),
+                    Channel::InstallSh,
+                    &releases.source(SITE),
+                    state.path(),
+                    at(0),
+                )
+                .await,
+                Outcome::Latest(version("0.15.1")),
+                "{running}"
+            );
+        }
         assert_eq!(
-            look_up(
-                &version(running),
-                Channel::InstallSh,
-                &releases.source(SITE),
-                state.path(),
-                at(0),
-            )
-            .await,
-            Outcome::Latest(version("0.15.1")),
-            "{running}"
+            releases.requests(),
+            1,
+            "the second lookup reused the kept answer"
         );
-    }
-    assert_eq!(
-        releases.requests(),
-        1,
-        "the second lookup reused the kept answer"
-    );
-    // An answer is kept for the site that gave it: another site is asked anew.
-    look_up(
-        &version("0.15.1"),
-        Channel::InstallSh,
-        &releases.source("http://127.0.0.1:1/stand-in"),
-        state.path(),
-        at(0),
-    )
-    .await;
-    assert_eq!(releases.requests(), 2);
-}
-
-#[tokio::test]
-async fn a_failed_lookup_is_reported_and_asked_again() {
-    let releases = Releases::answering(403, r#"{"message":"API rate limit exceeded"}"#).await;
-    let state = crate::test_os::tempdir();
-    let running = version("0.15.1");
-    for _ in 0..2 {
-        let outcome = look_up(
-            &running,
-            Channel::Cargo,
-            &releases.source(SITE),
+        // An answer is kept for the site that gave it: another site is asked anew.
+        look_up(
+            &version("0.15.1"),
+            Channel::InstallSh,
+            &releases.source("http://127.0.0.1:1/stand-in"),
             state.path(),
             at(0),
         )
         .await;
-        assert!(
-            matches!(&outcome, Outcome::Failed(error) if error.contains("403")),
-            "{outcome:?}"
-        );
-    }
-    assert_eq!(releases.requests(), 2);
+        assert_eq!(releases.requests(), 2);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_failed_lookup_is_reported_and_asked_again() {
+    Releases::answering(
+        403,
+        r#"{"message":"API rate limit exceeded"}"#,
+        async |releases| {
+            let state = crate::test_os::tempdir();
+            let running = version("0.15.1");
+            for _ in 0..2 {
+                let outcome = look_up(
+                    &running,
+                    Channel::Cargo,
+                    &releases.source(SITE),
+                    state.path(),
+                    at(0),
+                )
+                .await;
+                assert!(
+                    matches!(&outcome, Outcome::Failed(error) if error.contains("403")),
+                    "{outcome:?}"
+                );
+            }
+            assert_eq!(releases.requests(), 2);
+        },
+    )
+    .await;
 }
 
 #[test]

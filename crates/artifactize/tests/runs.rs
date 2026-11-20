@@ -34,7 +34,7 @@ impl Fixture {
             &script,
             "import pathlib, time\npathlib.Path('ready').write_text('ready')\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)\n",
         );
-        support::declaration::write(repo.join("index.artf"), json!({"name":"app", "fingerprint":false, "evals":[
+        support::declaration::write(&(repo), repo.join("index.artf"), json!({"name":"app", "fingerprint":false, "evals":[
             {"id":"a-fast","title":"Committed", "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},"payload":{"instruction":"Check."}},
             {"id":"z-controlled","title":"Controlled", "profile":{"kind":"runtime","command":support::os::python_program(),"args":[support::os::path_text(&script)]},"payload":{"instruction":"Check."}}
         ]}).to_string()).unwrap();
@@ -80,7 +80,7 @@ impl Fixture {
             tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
                 loop {
                     let view = store::read_run(&self.state, id).await.unwrap();
-                    if fs::read_to_string(self.repo.join("ready"))
+                    if support::declaration::read_text(self.repo.join("ready"))
                         .is_ok_and(|contents| contents == "ready")
                         && view.requests[0].status() == RequestStatus::Green
                         && view.requests[1].status() == RequestStatus::Running
@@ -115,41 +115,73 @@ impl Fixture {
     }
 }
 
+const DETACHED_SUBMITTER: &str = "ARTIFACTIZE_TEST_DETACHED_SUBMITTER";
+
+#[tokio::test]
+async fn detached_submitter() {
+    let Some(root) = support::os::environment_variable(DETACHED_SUBMITTER) else {
+        return;
+    };
+    let root = std::path::Path::new(&root);
+    let executable = support::os::environment_variable("ARTIFACTIZE_TEST_DETACHED_WORKER")
+        .expect("the test owns a gated worker executable");
+    let context = runs::Context::new(
+        &root.join("repo"),
+        Some(&root.join("state")),
+        std::path::Path::new(&executable),
+    )
+    .unwrap();
+    runs::start(&context, &Selection::All, &VerifyOptions::default(), None)
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence() {
-    // The real project had 35 requests when a submit-only caller exited before admission.
-    // Retain a substantial saved graph so reading its snapshot overlaps the handoff naturally;
-    // no elapsed-time assertion or watcher keeps the submitter alive.
-    const DETACHED_REQUESTS: usize = 35;
-    const INSTRUCTION_BYTES: usize = 64 * 1024;
+    let executable = support::os::library_worker();
     let detached = Fixture::new();
     let runs = detached.state.join("runs");
     support::os::create_private_dir_all(&detached.state);
     fs::create_dir(&runs).unwrap();
     support::os::share_dir(&runs);
     assert!(!support::os::private_dir(&runs));
-    let instruction = "Check. ".repeat(INSTRUCTION_BYTES / "Check. ".len());
-    let evals: Vec<_> = (0..DETACHED_REQUESTS)
-        .map(|index| {
-            json!({
-                "id":format!("check-{index}"),"title":"Check",
-                "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
-                "payload":{"instruction":instruction},
-            })
-        })
-        .collect();
-    support::declaration::write(
-        detached.repo.join("index.artf"),
-        json!({
-            "name":"app","fingerprint":false,"evals":evals,
-        })
-        .to_string(),
-    )
-    .unwrap();
-    let submitted = support::os::run(detached.command().args(["verify", "--all", "--json"]));
+    let admission = detached.state.join("fixture-admission");
+    fs::create_dir(&admission).unwrap();
+    let gate = owned_run::FileGate::new(admission.join("release"));
+    support::os::publish_file(&detached.repo.join("release"), "ready");
+
+    // Use the durable submission API with an owned fixture worker that cannot enter
+    // admission (or start any eval) until its submitter has demonstrably exited.
+    let mut submitter = support::os::test_command(
+        "detached_submitter",
+        &[
+            (
+                DETACHED_SUBMITTER,
+                detached._root.path().as_os_str().to_owned(),
+            ),
+            (
+                "ARTIFACTIZE_TEST_DETACHED_WORKER",
+                executable.path().as_os_str().to_owned(),
+            ),
+        ],
+    );
+    submitter.env("ARTIFACTIZE_REMOTE", "off");
+    let submitted = Watcher::new(support::os::start(&mut submitter))
+        .wait_with_output()
+        .unwrap();
     assert!(submitted.status.success(), "{submitted:?}");
-    let accepted: Value = serde_json::from_slice(&submitted.stdout).unwrap();
-    let id: RunId = accepted["run"].as_str().unwrap().parse().unwrap();
+    support::os::wait_until(Duration::from_secs(10), || admission.join("held").is_file());
+    let saved = store::read_runs(&detached.state, Some(&detached.repo), 2, 0)
+        .await
+        .unwrap();
+    let [saved] = saved.as_slice() else {
+        panic!("expected one submitted Run: {saved:?}")
+    };
+    let id = saved.id.clone();
+    let held = store::read_run(&detached.state, &id).await.unwrap();
+    assert!(held.run.status().is_open(), "{held:?}");
+    assert_eq!(held.run.executions_started, 0);
+    gate.release().unwrap();
     assert_eq!(detached.settled(&id).await.run.status(), RunStatus::Green);
     let directory = runs.join(id.as_str());
     assert!(support::os::private_dir(&directory));
@@ -159,7 +191,7 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
         completed.run.control.unwrap().worker,
         runs::Worker::Admitted { .. }
     ));
-    assert_eq!(completed.requests.len(), DETACHED_REQUESTS);
+    assert_eq!(completed.requests.len(), 2);
     assert!(
         completed
             .requests
@@ -182,21 +214,28 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
         "--request-key",
         "watch-attempt",
     ]);
-    use std::io::BufRead;
-    let mut announced = String::new();
-    std::io::BufReader::new(watcher.stderr.take().unwrap())
-        .read_line(&mut announced)
-        .unwrap();
-    assert!(announced.contains(run.as_str()));
+    let confirm_attachment = |watcher: &mut owned_run::Watcher| {
+        use std::io::BufRead;
+        let mut announced = String::new();
+        std::io::BufReader::new(watcher.stderr.take().unwrap())
+            .read_line(&mut announced)
+            .unwrap();
+        assert!(
+            announced.starts_with(&format!("Started {run} ")),
+            "{announced}"
+        );
+    };
+    confirm_attachment(&mut watcher);
     support::os::interrupt(watcher.id());
     assert_eq!(watcher.wait_with_output().unwrap().status.code(), Some(130));
-    let closed = fixture.watcher(&[
+    let mut closed = fixture.watcher(&[
         "verify",
         "--all",
         "--wait",
         "--request-key",
         "watch-attempt",
     ]);
+    confirm_attachment(&mut closed);
     // A killed terminal cannot run any graceful cancellation path.
     support::os::kill(closed.id());
     let _ = closed.wait_with_output().unwrap();
@@ -208,7 +247,11 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
             .status()
             .is_open()
     );
-    fs::write(fixture.repo.join("release"), "release").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("release")),
+        "release",
+    )
+    .unwrap();
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
     let output = support::os::run(fixture.command().args([
         "verify",
@@ -218,8 +261,8 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
         "watch-attempt",
     ]));
     assert_eq!(output.status.code(), Some(0));
-    fs::remove_file(fixture.repo.join("release")).unwrap();
-    fs::remove_file(fixture.repo.join("ready")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("release")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("ready")).unwrap();
     let cancelled = fixture.submit(None);
     let active = fixture.controlled(&cancelled).await;
     let child = active.requests[1].child.as_ref().unwrap().pid.get();
@@ -255,14 +298,26 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
 #[tokio::test]
 async fn a2_request_keys_deduplicate_sequential_and_concurrent_attempts_only() {
     let fixture = Fixture::new();
-    fs::write(fixture.repo.join("release"), "release").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("release")),
+        "release",
+    )
+    .unwrap();
     let first = fixture.submit(Some("attempt:one"));
     assert_eq!(fixture.settled(&first).await.run.status(), RunStatus::Green);
     // Existing keys are looked up before today's now-invalid declarations.
-    let declaration = fs::read(fixture.repo.join("index.artf")).unwrap();
-    fs::write(fixture.repo.join("index.artf"), "invalid declaration").unwrap();
+    let declaration = support::declaration::read_file(fixture.repo.join("index.artf")).unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("index.artf")),
+        "invalid declaration",
+    )
+    .unwrap();
     assert_eq!(fixture.submit(Some("attempt:one")), first);
-    fs::write(fixture.repo.join("index.artf"), declaration).unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("index.artf")),
+        declaration,
+    )
+    .unwrap();
     let left = fixture.watcher(&["verify", "--all", "--request-key", "attempt:two", "--json"]);
     let right = fixture.watcher(&["verify", "--all", "--request-key", "attempt:two", "--json"]);
     let ids = [left, right].map(|child| {
@@ -316,8 +371,17 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         {"id":"check","title":"Check","profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},"payload":{"instruction":"Check."}},
         {"id":"approve","title":"Approve","profile":{"kind":"human"},"payload":{"instruction":"Review."}}
     ]});
-    support::declaration::write(fixture.repo.join("index.artf"), definition.to_string()).unwrap();
-    fs::write(fixture.repo.join("version"), "v1").unwrap();
+    support::declaration::write(
+        &(fixture.repo),
+        fixture.repo.join("index.artf"),
+        definition.to_string(),
+    )
+    .unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("version")),
+        "v1",
+    )
+    .unwrap();
     let context = fixture.context();
     let started = runs::start(&context, &Selection::All, &VerifyOptions::default(), None)
         .await
@@ -371,21 +435,27 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         &started.run,
         support::os::running,
     );
-    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
-    let state_id: String = db
+    let database = fixture.state.join(store::DATABASE);
+    let read = || {
+        rusqlite::Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap()
+    };
+    let state_id: String = read()
         .query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {
             row.get(0)
         })
         .unwrap();
     // Back to schema 8, which kept a Run's definitions in its record, then back to schema 6.
+    let db = rusqlite::Connection::open(&database).unwrap();
     db.execute_batch(support::schema::EIGHT).unwrap();
     assert!(
-        db.query_row(
-            "SELECT json_type(data,'$.definitions') FROM runs WHERE id=?",
-            [&started.run],
-            |row| row.get::<_, String>(0)
-        )
-        .unwrap()
+        read()
+            .query_row(
+                "SELECT json_type(data,'$.definitions') FROM runs WHERE id=?",
+                [&started.run],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap()
             == "object"
     );
     db.execute_batch("UPDATE runs SET data=json_remove(data,'$.control','$.requestKey'); DROP INDEX run_request_key; ALTER TABLE runs DROP COLUMN request_key; DROP INDEX active_key; ALTER TABLE executions DROP COLUMN profile_identity; CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN'); PRAGMA user_version=6;").unwrap();
@@ -394,23 +464,11 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
     let migrated = store::read_run(&fixture.state, &started.run).await.unwrap();
     assert_eq!(migrated.run.id, before.run.id);
     assert!(migrated.run.control.is_none());
-    // The definitions moved to their own row and read back as they were saved.
+    // The definitions read back as they were saved.
     assert_eq!(
         serde_json::to_value(&migrated.run.definitions).unwrap(),
         serde_json::to_value(&before.run.definitions).unwrap()
     );
-    let moved = rusqlite::Connection::open_with_flags(
-        fixture.state.join(store::DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap()
-        .query_row(
-            "SELECT json_type(r.data,'$.definitions'),d.run_id FROM runs r JOIN run_definitions d ON d.run_id=r.id WHERE r.id=?",
-            [&started.run],
-            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
-        )
-        .unwrap();
-    assert_eq!(moved.0, None);
     assert_eq!(migrated.requests.len(), before.requests.len());
     let output = support::os::run(
         fixture

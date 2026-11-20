@@ -29,10 +29,9 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 // An independent expectation for the provider/session wire framing, not the production
 // formatter or constant that emits it.
-const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the verdict stays as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
+const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the findings stay as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
 
-/// A workspace of one Artifact, `notes`, with one Agent eval whose result must list
-/// `covered`, and a content fingerprint.
+/// A workspace of one Artifact, `notes`, with one Agent eval and a content fingerprint.
 struct Project {
     root: owned_run::Root,
     repo: PathBuf,
@@ -41,14 +40,24 @@ struct Project {
 
 impl Project {
     fn new(backend: &str) -> Self {
+        const HEADER_TIMEOUT_MS: u64 = 20_000;
+        Self::with_timeout(backend, HEADER_TIMEOUT_MS)
+    }
+
+    fn with_timeout(backend: &str, timeout_ms: u64) -> Self {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         let folder = repo.join("notes");
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("notes.md"), "notes: R1 holds.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(folder.join("notes.md")),
+            "notes: R1 holds.\n",
+        )
+        .unwrap();
         let profile = json!({"kind":"agent","backend":backend,
-            "model":format!("{backend}-model"),"timeout_ms":20000});
+            "model":format!("{backend}-model"),"timeout_ms":timeout_ms});
         support::declaration::write(
+            &(repo),
             folder.join("index.artf"),
             json!({
                 "name":"notes",
@@ -60,11 +69,7 @@ impl Project {
                         "title":"Review",
                         "profile":profile,
                         "payload":{"instruction":"Review {notes}."},
-                        "pass_schema":{
-                            "type":"object",
-                            "required":["covered"],
-                            "properties":{"covered":{"type":"array","items":{"type":"string"}}},
-                        },
+                        "red_at":"P1",
                     },
                 ],
             })
@@ -82,7 +87,11 @@ impl Project {
     }
 
     fn limits(&self, limits: Value) {
-        fs::write(self.state.join("limits.json"), limits.to_string()).unwrap();
+        fs::write(
+            support::declaration::source_path(self.state.join("limits.json")),
+            limits.to_string(),
+        )
+        .unwrap();
     }
 
     fn command(&self, provider: &FakeProvider, state: &Path, args: &[&str]) -> Command {
@@ -141,7 +150,7 @@ impl Project {
     }
 
     fn events(&self, session: &str) -> Vec<Value> {
-        fs::read_to_string(self.sessions().join(format!("{session}.jsonl")))
+        support::declaration::read_text(self.sessions().join(format!("{session}.jsonl")))
             .unwrap()
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
@@ -197,14 +206,14 @@ fn responses(request: &Request, output: Vec<Value>) -> Reply {
     }
 }
 
-/// The review reasons and reads the notes, answers without `covered`, then repairs. The
+/// The review reasons and reads the notes, answers a finding without its reason, then repairs. The
 /// first follow-up reads the notes again before it answers; later ones answer at once.
 fn reply(request: &Request) -> Reply {
     if request.path == "/v1/messages" {
         let text = if request.body.to_string().contains(FOLLOW_UP) {
             "Anthropic: R1 holds."
         } else {
-            r#"{"verdict":"GREEN","covered":["R1"]}"#
+            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#
         };
         return anthropic::text(request, text, 10, 2);
     }
@@ -220,8 +229,10 @@ fn reply(request: &Request) -> Reply {
         (1, true) => vec![openai::message("Because R1 holds.")],
         (2, _) => vec![openai::message("Still GREEN.")],
         (count, _) if count > 2 => vec![openai::message("Noted.")],
-        _ if repairing(request) => vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)],
-        _ if replayed(request) => vec![openai::message(r#"{"verdict":"GREEN"}"#)],
+        _ if repairing(request) => vec![openai::message(
+            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+        )],
+        _ if replayed(request) => vec![openai::message(r#"{"findings":[{"priority":"P2"}]}"#)],
         _ => vec![
             openai::reasoning("rs_1", "Reading the notes", "enc-review-1"),
             read("call_1"),
@@ -301,7 +312,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             "You are an artifactize evaluator. Review only the supplied Artifacts; do not implement or repair. Execute only registered Artifact tools."
         ));
         assert!(system.ends_with(
-            "If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the verdict stays as recorded."
+            "If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the findings stay as recorded."
         ));
         let reasoning = &messages[2]["message"]["content"][0];
         assert_eq!(reasoning["type"], "reasoning");
@@ -316,7 +327,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert!(
             messages[4]
                 .to_string()
-                .contains(r#"{\"verdict\":\"GREEN\"}"#)
+                .contains(r#"{\"findings\":[{\"priority\":\"P2\"}]}"#)
         );
         assert!(
             text_of(&messages[5]["message"])
@@ -328,7 +339,10 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         );
         let end = events.last().unwrap();
         assert_eq!(end["kind"], "end");
-        assert_eq!(end["result"], json!({"verdict":"GREEN","covered":["R1"]}));
+        assert_eq!(
+            end["result"],
+            json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"R1 holds."}]})
+        );
         {
             assert!(support::os::private_dir(&project.sessions()));
             assert!(support::os::private_file(
@@ -531,7 +545,11 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert!(shown.contains(&format!("Request {reused} reused this review's result.")));
 
         // Once the reviewed files change, the answer says so.
-        fs::write(project.repo.join("notes/notes.md"), "notes: R1 fails.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(project.repo.join("notes/notes.md")),
+            "notes: R1 fails.\n",
+        )
+        .unwrap();
         let text = project.text(&provider, &["session", "send", &id, "And now?"], 0);
         assert!(
             text.starts_with(&format!(
@@ -566,7 +584,11 @@ fn anthropic_reviews_are_saved_and_continued_without_a_cache_key() {
     assert_eq!(answer["answer"], "Anthropic: R1 holds.");
     let call = provider.requests().pop().unwrap();
     assert!(call.body.get("prompt_cache_key").is_none());
-    assert!(call.body.to_string().contains(r#"{\"verdict\":\"GREEN\""#));
+    assert!(
+        call.body
+            .to_string()
+            .contains(r#"{\"findings\":[{\"priority\":\"P2\""#)
+    );
 }
 
 #[test]
@@ -594,7 +616,9 @@ fn concurrent_sends_take_turns_in_one_thread() {
             let Some(last) = asked.last() else {
                 return responses(
                     request,
-                    vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)],
+                    vec![openai::message(
+                        r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+                    )],
                 );
             };
             let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
@@ -605,6 +629,7 @@ fn concurrent_sends_take_turns_in_one_thread() {
             responses(request, vec![openai::message(&format!("answer to {last}"))])
         }
     });
+    let _release_provider = owned_run::ReleaseGate::new(gate.clone());
     let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
     let id = run["requests"][0]["id"].as_str().unwrap().to_owned();
     let session = run["requests"][0]["sessionId"].as_str().unwrap().to_owned();
@@ -648,7 +673,8 @@ fn concurrent_sends_take_turns_in_one_thread() {
 
 #[test]
 fn the_session_store_is_collected_oldest_first_down_to_its_target() {
-    let project = Project::new("openai");
+    // The provider gate owns progress during prune. The declared timeout must not race it.
+    let project = Project::with_timeout("openai", artifactize_core::config::MAX_TIMEOUT_MS);
     let release = support::Gate::default();
     release.open();
     let provider = FakeProvider::start({
@@ -657,7 +683,9 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
             release.wait();
             responses(
                 request,
-                vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)],
+                vec![openai::message(
+                    r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+                )],
             )
         }
     });
@@ -729,13 +757,14 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
 
     // A running review's session survives any collection; verify collects at its end.
     project.limits(json!({"agentSessions":{"maxBytes":1,"targetBytes":0}}));
-    release.close();
+    let _launch_gate = owned_run::ReleaseGate::new(release.clone());
     let running = support::os::start(&mut project.command(
         &provider,
         &project.state,
         &["verify", "--wait", "--all", "--force", "--json"],
     ));
     let running = RunChild::new(running, &project.state, &project.repo);
+    let _release_provider = owned_run::ReleaseGate::new(release.clone());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -753,14 +782,13 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
                     {
                         // Creating a JSONL filename is not the saved review header. The exact
                         // RUNNING request and the complete header must both be observable.
-                        let header =
-                            fs::read_to_string(file(session.as_str()))
-                                .ok()
-                                .and_then(|text| {
-                                    text.lines()
-                                        .next()
-                                        .and_then(|line| serde_json::from_str::<Value>(line).ok())
-                                });
+                        let header = support::declaration::read_text(file(session.as_str()))
+                            .ok()
+                            .and_then(|text| {
+                                text.lines()
+                                    .next()
+                                    .and_then(|line| serde_json::from_str::<Value>(line).ok())
+                            });
                         if header.is_some_and(|header| {
                             header["kind"] == "review"
                                 && header["sessionId"] == session.as_str()

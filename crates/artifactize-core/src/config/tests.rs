@@ -22,6 +22,87 @@ fn parse(value: Value) -> Result<ArtifactDeclaration, String> {
 }
 
 #[test]
+fn editor_path_operations_validate_the_target_at_the_wire_boundary() {
+    for kind in ["create", "setPath"] {
+        for target in [
+            "./",
+            "future/",
+            "future/file.txt",
+            "https://example.invalid/path/",
+        ] {
+            let wire = json!({"kind":kind,"name":"node","path":target});
+            let operation: edit::Operation = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+        }
+        for target in ["", "../outside", "folder//", "https://example.invalid/a b"] {
+            let wire = json!({"kind":kind,"name":"node","path":target});
+            assert!(
+                serde_json::from_value::<edit::Operation>(wire).is_err(),
+                "accepted {target:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn editor_view_preserves_authored_path_as_well_as_resolved_target_kind() {
+    let root = crate::test_os::tempdir();
+    let directory = root.path().join(discovery::DEFINITION_DIR);
+    std::fs::create_dir(&directory).unwrap();
+    for (name, target, kind) in [
+        ("root", "./", ArtifactKind::Folder),
+        ("missing", "future/", ArtifactKind::Folder),
+        (
+            "observed",
+            "HtTpS://example.invalid/detail/",
+            ArtifactKind::Live,
+        ),
+    ] {
+        std::fs::write(
+            directory.join(format!("{name}.artf")),
+            format!("path = '{target}'\nbasis = true\n"),
+        )
+        .unwrap();
+        let project = edit::read_project(root.path()).unwrap();
+        let node = &project.nodes[&name.parse::<ArtifactName>().unwrap()];
+        assert_eq!(node.target, target);
+        assert_eq!(node.kind, kind);
+        assert_eq!(node.target_missing, name == "missing");
+    }
+}
+
+#[test]
+fn editor_removing_the_last_part_preserves_unrelated_toml_comments() {
+    let root = crate::test_os::tempdir();
+    let directory = root.path().join(discovery::DEFINITION_DIR);
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(directory.join("kit.artf"), "path = 'kit/'\nbasis = true\n").unwrap();
+    let file = directory.join("core.artf");
+    std::fs::write(
+        &file,
+        "# Core header\npath = 'core/'\n\n# Basis note\nbasis = true\n# reviewed\nparts = [\"kit\"]\n\n# End of file\n",
+    )
+    .unwrap();
+
+    let based_on = edit::read(root.path()).unwrap();
+    edit::apply(
+        root.path(),
+        &based_on,
+        edit::Operation::RemovePart {
+            whole: "core".parse().unwrap(),
+            part: "kit".parse().unwrap(),
+        },
+    )
+    .unwrap();
+
+    // `# reviewed` leads the `parts` key and goes with it when the last part is removed.
+    assert_eq!(
+        std::fs::read_to_string(file).unwrap(),
+        "# Core header\npath = 'core/'\n\n# Basis note\nbasis = true\n\n# End of file\n",
+    );
+}
+
+#[test]
 fn eval_mutex_declarations_are_typed_and_excluded_from_criteria() {
     let declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
     let baseline = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
@@ -336,19 +417,47 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
 }
 
 #[test]
-fn response_schemas_are_validated_without_rewriting_owner_fields() {
-    let schema = json!({
-        "type":"object",
-        "properties":{"ownerField":{"anyOf":[{"type":"string"},{"type":"integer"}]}},
-        "ownerKeyword":true,
-    });
-    let mut declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
-    declared["pass_schema"] = schema.clone();
-    let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
-    assert_eq!(
-        declaration.evals[0].pass_schema().unwrap(),
-        schema.as_object().unwrap()
-    );
+fn an_agent_eval_declares_only_the_priority_at_which_it_turns_red() {
+    let agent = || eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
+    let parsed = |declared: Value| parse(json!({"name": "a", "evals": [declared]}));
+    assert_eq!(parsed(agent()).unwrap().evals[0].red_at(), None);
+    for (text, priority) in [
+        ("P0", Priority::P0),
+        ("P1", Priority::P1),
+        ("P2", Priority::P2),
+        ("P3", Priority::P3),
+    ] {
+        let mut declared = agent();
+        declared["red_at"] = json!(text);
+        assert_eq!(parsed(declared).unwrap().evals[0].red_at(), Some(priority));
+    }
+    for invalid in [json!("P4"), json!("p1"), json!(1)] {
+        let mut declared = agent();
+        declared["red_at"] = invalid.clone();
+        assert!(parsed(declared).is_err(), "{invalid}");
+    }
+    // Every Agent eval reports the one findings result; no eval declares its own.
+    for key in ["pass_schema", "fail_schema"] {
+        let mut declared = agent();
+        declared[key] = json!({"type": "object"});
+        let error = parsed(declared).unwrap_err();
+        assert!(
+            error.contains("remove pass_schema and fail_schema"),
+            "{error}"
+        );
+    }
+    for profile in [
+        json!({"kind": "human"}),
+        json!({"kind": "runtime", "command": "check", "args": []}),
+    ] {
+        let mut declared = eval(profile);
+        declared["red_at"] = json!("P1");
+        let error = parsed(declared).unwrap_err();
+        assert!(
+            error.contains("red_at is supported only on agent"),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -878,9 +987,19 @@ pass_schema = {{ type = "object", properties.note = {{ type = "string" }}, addit
     };
     let write = |name: &str, kind: &str, limit: u32| {
         std::fs::create_dir_all(workspace.path().join(name)).unwrap();
+        std::fs::create_dir_all(workspace.path().join(".artifactize")).unwrap();
         std::fs::write(
-            workspace.path().join(name).join(CONFIG_FILE),
-            chain(name, kind, limit),
+            crate::test_declaration::source_path(
+                workspace
+                    .path()
+                    .join(".artifactize")
+                    .join(format!("{name}.artf")),
+            ),
+            chain(name, kind, limit).replacen(
+                &format!("name = \"{name}\""),
+                &format!("path = \"{name}/\""),
+                1,
+            ),
         )
         .unwrap();
     };
@@ -906,7 +1025,7 @@ pass_schema = {{ type = "object", properties.note = {{ type = "string" }}, addit
     write("b", "whole", 3);
     write("c", "whole", 3);
     let error = read_workspace_config(workspace.path()).unwrap_err();
-    assert!(error.path.ends_with("b/index.artf"), "{error}");
+    assert!(error.path.ends_with(".artifactize/b.artf"), "{error}");
     assert!(
         error.message.contains("Invalid tool inputSchema"),
         "{error}"

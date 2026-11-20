@@ -43,10 +43,12 @@ pub struct StatusView {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactState {
+    #[serde(with = "crate::platform::path_serde")]
+    pub definition: std::path::PathBuf,
+    pub target_missing: bool,
     pub id: crate::config::ArtifactName,
     pub kind: crate::config::ArtifactKind,
-    #[serde(with = "crate::platform::path_serde")]
-    pub path: std::path::PathBuf,
+    pub path: crate::config::Target,
     pub tags: Vec<String>,
     pub state: ArtifactCondition,
     pub reason: String,
@@ -196,7 +198,12 @@ pub(crate) async fn scan(
         state: &state,
         remote: remote.as_deref(),
     };
-    let targets = cache::fingerprint_targets(&config, &required);
+    // Availability is already projected onto the affected evals as PREPARATION_FAILED.
+    // Do not let preparing that target discard the other evals' read-only forecasts.
+    let targets = cache::fingerprint_targets(&config, &required)
+        .into_iter()
+        .filter(|name| config.artifacts[*name].target_error.is_none())
+        .collect();
     let fingerprints = match publish {
         None => {
             cache::prepare(&config, targets, &state, &parallelism, cancellation.clone()).await?
@@ -436,7 +443,8 @@ impl<'a> Scope<'a> {
                         cache::dependencies(self.config, evals[id])
                             .into_iter()
                             .all(|input| {
-                                self.config.artifacts[input].fingerprint.is_none()
+                                self.config.artifacts[input].target_error.is_some()
+                                    || self.config.artifacts[input].fingerprint.is_none()
                                     || fingerprints.contains_key(input)
                             });
                     let decided = keyed

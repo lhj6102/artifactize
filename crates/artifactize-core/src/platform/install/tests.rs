@@ -20,9 +20,9 @@ fn install_scripts_are_known_by_their_receipt_and_an_unpacked_archive_is_not() {
     let ps1 = executable(root.path(), "ps1/artifactize.exe");
     fs::write(root.path().join("ps1").join(RECEIPT), "install.ps1\r\n").unwrap();
     let unpacked = executable(root.path(), "unpacked/artifactize");
-    assert_eq!(classify(&sh, &places), Channel::InstallSh);
-    assert_eq!(classify(&ps1, &places), Channel::InstallPs1);
-    assert_eq!(classify(&unpacked, &places), Channel::Unknown);
+    assert_eq!(installed_channel(&sh, &places), Channel::InstallSh);
+    assert_eq!(installed_channel(&ps1, &places), Channel::InstallPs1);
+    assert_eq!(installed_channel(&unpacked, &places), Channel::Unknown);
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn package_managers_are_known_by_their_directories() {
     ];
     for (relative, channel) in cases {
         assert_eq!(
-            classify(&executable(root.path(), relative), &places),
+            installed_channel(&executable(root.path(), relative), &places),
             channel,
             "{relative}"
         );
@@ -70,10 +70,10 @@ fn the_mac_app_is_known_by_where_its_bundle_is_and_whether_a_cask_installed_it()
         root.path(),
         "Applications/Artifactize.app/Contents/MacOS/artifactize-desktop",
     );
-    assert_eq!(classify(&script, &places), Channel::InstallSh);
-    assert_eq!(classify(&system, &places), Channel::Dmg);
+    assert_eq!(installed_channel(&script, &places), Channel::InstallSh);
+    assert_eq!(installed_channel(&system, &places), Channel::Dmg);
     fs::create_dir_all(caskroom.join("artifactize/0.15.1")).unwrap();
-    assert_eq!(classify(&system, &places), Channel::HomebrewCask);
+    assert_eq!(installed_channel(&system, &places), Channel::HomebrewCask);
 }
 
 #[test]
@@ -89,26 +89,26 @@ fn linux_bundles_are_known_by_the_data_directory_the_appimage_and_dpkg() {
     let unpacked = executable(&data, "artifactize/desktop/usr/bin/artifactize-desktop");
     let copied = executable(&data, "artifactize/bin/artifactize");
     let packaged = executable(root.path(), "usr/bin/artifactize");
-    assert_eq!(classify(&unpacked, &places), Channel::InstallSh);
-    assert_eq!(classify(&copied, &places), Channel::AppImage);
-    assert_eq!(classify(&packaged, &places), Channel::Unknown);
+    assert_eq!(installed_channel(&unpacked, &places), Channel::InstallSh);
+    assert_eq!(installed_channel(&copied, &places), Channel::AppImage);
+    assert_eq!(installed_channel(&packaged, &places), Channel::Unknown);
     fs::create_dir_all(&info).unwrap();
     fs::write(
         info.join("artifactize.list"),
         format!("/.\n{}\n", path_text(&packaged)),
     )
     .unwrap();
-    assert_eq!(classify(&packaged, &places), Channel::Deb);
+    assert_eq!(installed_channel(&packaged, &places), Channel::Deb);
     let mounted = Places {
         appimage: true,
         ..Places::default()
     };
     let mount = executable(root.path(), "mount/usr/bin/artifactize-desktop");
-    assert_eq!(classify(&mount, &mounted), Channel::AppImage);
+    assert_eq!(installed_channel(&mount, &mounted), Channel::AppImage);
 }
 
 fn path_text(path: &Path) -> String {
-    real(path).to_str().unwrap().to_owned()
+    crate::platform::path_text(&real(path))
 }
 
 #[test]

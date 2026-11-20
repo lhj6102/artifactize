@@ -1,17 +1,17 @@
-use std::{
-    io::{self, Read, Write},
-    path::{Path, PathBuf},
-};
+//! Parse and route request commands.
 
-use clap::Subcommand;
-use serde_json::{Value, json};
+mod actions;
+mod fields;
+mod inspect;
 
-use super::{cancellation_listener, print_json};
+use std::path::Path;
+
 use artifactize_core::{
-    human, store,
-    tools::human::Content,
-    types::{RequestId, RunId},
+    runtime::Verdict,
+    types::{RequestId, ReviewerId, RunId},
 };
+use clap::Subcommand;
+use fields::FieldsSource;
 
 #[derive(Debug, Subcommand)]
 pub enum RequestCommand {
@@ -27,21 +27,21 @@ pub enum RequestCommand {
     Logs {
         id: RequestId,
         #[command(flatten)]
-        query: artifactize_core::inspect::LogQuery,
+        query: artifactize_core::inspect::LogOptions,
     },
     /// Acquire the Human reviewer lock.
     Claim {
         id: RequestId,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
+        reviewer: Option<ReviewerId>,
     },
     /// Release your Human reviewer lock while the request still waits.
     Unclaim {
         id: RequestId,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
+        reviewer: Option<ReviewerId>,
     },
     /// Run a predefined Human tool as the claimant.
     Tool {
@@ -49,22 +49,18 @@ pub enum RequestCommand {
         tool: artifactize_core::config::ToolName,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
+        reviewer: Option<ReviewerId>,
     },
     /// Submit a schema-valid Human verdict and owner fields.
     Submit {
         id: RequestId,
         #[arg(long, value_enum)]
-        verdict: artifactize_core::runtime::Verdict,
-        /// Owner fields as a JSON object (default {}).
-        #[arg(long, value_name = "JSON", conflicts_with = "fields_file")]
-        fields: Option<String>,
-        /// Read owner fields from a regular JSON file.
-        #[arg(long, value_name = "PATH")]
-        fields_file: Option<PathBuf>,
+        verdict: Verdict,
+        #[command(flatten)]
+        fields: FieldsSource,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
+        reviewer: Option<ReviewerId>,
     },
 }
 
@@ -74,169 +70,31 @@ pub(super) async fn execute(
     json: bool,
 ) -> Result<u8, String> {
     match command {
-        RequestCommand::List { run } => {
-            if json {
-                print_json(
-                    &artifactize_core::inspect::request_list(
-                        state,
-                        run.as_ref(),
-                        None,
-                        time::OffsetDateTime::now_utc(),
-                    )
-                    .await?,
-                )?;
-            } else {
-                let views = store::read_requests(state, run.as_deref()).await?;
-                let mut out = io::stdout().lock();
-                writeln!(out, "REQUEST\tRUN\tEVAL\tSTATUS\tREVIEWER").map_err(|e| e.to_string())?;
-                for view in views {
-                    writeln!(
-                        out,
-                        "{}\t{}\t{}\t{}\t{}",
-                        view.request.id,
-                        view.request.run_id,
-                        view.request.eval_id,
-                        view.request.status(),
-                        view.claim
-                            .as_ref()
-                            .map_or("-", |claim| claim.reviewer.as_str())
-                    )
-                    .map_err(|e| e.to_string())?;
-                }
-            }
-        }
-        RequestCommand::Show { id } => {
-            print_json(
-                &artifactize_core::inspect::request_show(
-                    state,
-                    &id,
-                    time::OffsetDateTime::now_utc(),
-                )
-                .await?,
-            )?;
-        }
-        RequestCommand::Logs { id, query } => {
-            print_json(&artifactize_core::inspect::logs(state, &id, query).await?)?;
-        }
-        RequestCommand::Claim { id, reviewer } => {
-            let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let (receipts, _) = human::open(state, &id).await?;
-            let result = human::claim(&receipts, &id, &reviewer).await;
-            let closed = receipts.close().await;
-            print_json(&result.and_then(|claim| closed.map(|()| claim))?)?;
-        }
-        RequestCommand::Unclaim { id, reviewer } => {
-            let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let (receipts, _) = human::open(state, &id).await?;
-            let result = human::unclaim(&receipts, &id, &reviewer).await;
-            let closed = receipts.close().await;
-            print_json(&result.and_then(|claim| closed.map(|()| claim))?)?;
-        }
+        RequestCommand::List { run } => inspect::list(state, run, json).await?,
+        RequestCommand::Show { id } => inspect::show(state, &id).await?,
+        RequestCommand::Logs { id, query } => inspect::logs(state, id, query).await?,
+        RequestCommand::Claim { id, reviewer } => actions::claim(state, id, reviewer).await?,
+        RequestCommand::Unclaim { id, reviewer } => actions::unclaim(state, id, reviewer).await?,
         RequestCommand::Tool { id, tool, reviewer } => {
-            let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let (receipts, _) = human::open(state, &id).await?;
-            let result = async {
-                let (cancellation, listener) = cancellation_listener()?;
-                let result = human::run_human_tool(
-                    &receipts,
-                    &id,
-                    &reviewer,
-                    &tool,
-                    cancellation,
-                    artifactize_core::review::log::Run::unwatched(),
-                )
-                .await;
-                listener.abort();
-                result
-            }
-            .await;
-            let closed = receipts.close().await;
-            let result = result.and_then(|result| closed.map(|()| result))?;
-            if json {
-                print_json(&result)?;
-            } else {
-                let mut out = io::stdout().lock();
-                for content in result.content() {
-                    match content {
-                        Content::Text { text } => writeln!(out, "{text}"),
-                        Content::Launch { launched } => writeln!(
-                            out,
-                            "Tool {tool}: {}",
-                            if *launched {
-                                "launched"
-                            } else {
-                                "not launched"
-                            }
-                        ),
-                    }
-                    .map_err(|e| e.to_string())?;
-                }
-            }
-            return Ok(if result.is_error() { 2 } else { 0 });
+            return actions::tool(state, id, tool, reviewer, json).await;
         }
         RequestCommand::Submit {
             id,
             verdict,
             fields,
-            fields_file,
             reviewer,
         } => {
-            let result = submission(verdict, fields, fields_file)?;
-            let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let (cancellation, listener) = cancellation_listener()?;
-            let result =
-                human::submit_and_publish(state, &id, &reviewer, &result, cancellation).await;
-            listener.abort();
-            result?;
-            print_json(
-                &artifactize_core::inspect::request_show(
-                    state,
-                    &id,
-                    time::OffsetDateTime::now_utc(),
-                )
-                .await?,
-            )?;
+            actions::submit(state, id, verdict, fields, reviewer).await?;
         }
     }
     Ok(0)
 }
 
-fn submission(
-    verdict: artifactize_core::runtime::Verdict,
-    fields: Option<String>,
-    file: Option<PathBuf>,
-) -> Result<Value, String> {
-    let fields = if let Some(path) = file {
-        let file =
-            artifactize_core::platform::open_nonblocking(&path).map_err(|e| e.to_string())?;
-        if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-            return Err("Human fields must be a regular JSON file.".into());
-        }
-        let mut bytes = Vec::new();
-        file.take(human::FIELDS_READ_BYTES)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        String::from_utf8(bytes).map_err(|e| e.to_string())?
-    } else {
-        fields.unwrap_or_else(|| "{}".into())
-    };
-    if fields.len() > human::MAX_RESULT_BYTES {
-        return Err("Human fields exceed 256000 bytes.".into());
-    }
-    let mut result: Value = serde_json::from_str(&fields).map_err(|e| e.to_string())?;
-    let object = result
-        .as_object_mut()
-        .ok_or("Human fields must be a JSON object.")?;
-    if object.contains_key("verdict") {
-        return Err("Use --verdict, not a verdict inside --fields.".into());
-    }
-    object.insert("verdict".into(), json!(verdict));
-    Ok(result)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use artifactize_core::{platform::path_text, store};
+    use serde_json::json;
 
     #[tokio::test]
     async fn refused_human_actions_release_the_database_before_returning_the_error() {
@@ -246,15 +104,16 @@ mod tests {
         std::fs::create_dir(&repo).unwrap();
         let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
         let run: store::Run = serde_json::from_value(json!({
-            "id":"run-1", "repoPath":repo, "stateDir":state, "status":"GREEN",
+            "id":"run-1", "repoPath":path_text(&repo), "stateDir":path_text(&state), "status":"GREEN",
             "createdAt":"2026-01-01T00:00:00Z", "completedAt":"2026-01-01T00:00:01Z",
             "selection":{"kind":"all"}, "validation":null, "definitions":null
         }))
         .unwrap();
-        let request = crate::test_request::request("app/check", "GREEN", json!({"cwd":repo}))
-            .request
-            .as_ref()
-            .clone();
+        let request =
+            crate::test_request::request("app/check", "GREEN", json!({"cwd":path_text(&repo)}))
+                .request
+                .as_ref()
+                .clone();
         let id = request.id.clone();
         receipts.create_run(&run, &[request]).await.unwrap();
         store::Receipts::clone(&receipts).close().await.unwrap();
