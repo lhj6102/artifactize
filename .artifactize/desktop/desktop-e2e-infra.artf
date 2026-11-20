@@ -1,13 +1,8 @@
 path = "crates/artifactize-desktop/ui/e2e/"
+type = "files"
 select = ["platform.ts", "portable.ts", "build.ts", "run.ts", "wdio.conf.ts", "journey.spec.ts", "restarted.spec.ts", "scenario.ts", "catalog.ts", "fixtures", "input.ts", "keys.ts", "check-integrity.ts", "package.json", "tsconfig.json", "provider-upstream.json", "input.test.ts", "keys.test.ts", "runner.test.ts"]
 # The E2E suite's infrastructure: the platform layer, the runner and build, the fixtures and
 # the input helpers the views use; a part of desktop-e2e.
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.follows-rules]
 title = "The suite's infrastructure runs every scenario isolated and portably and fails explicitly"

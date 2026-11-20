@@ -1,11 +1,6 @@
 path = "crates/artifactize-desktop/ui/"
+type = "files"
 parts = ["desktop-e2e"]
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.follows-frontend-style]
 title = "The desktop UI follows the frontend checklist"

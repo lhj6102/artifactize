@@ -1,11 +1,6 @@
 fingerprint = { files = ["src"] }
 path = "website/docs/ko/"
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
+type = "files"
 
 [evals.matches-english]
 title = "The Korean documentation conveys the same facts and structure as the English documentation"

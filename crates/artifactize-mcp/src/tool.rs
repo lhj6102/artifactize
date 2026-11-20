@@ -46,12 +46,19 @@ names!(ReadTool {
     Models => "models",
     Remote => "remote_status",
     Cache => "cache_show",
+    Plugins => "plugin_list",
+});
+
+names!(PluginTool {
+    Add => "plugin_add",
+    Remove => "plugin_remove",
 });
 
 #[derive(Clone, Copy)]
 pub(super) enum ToolId {
     Verify(VerifyTool),
     Read(ReadTool),
+    Plugin(PluginTool),
 }
 
 impl ToolId {
@@ -59,12 +66,14 @@ impl ToolId {
         VerifyTool::parse(name)
             .map(Self::Verify)
             .or_else(|| ReadTool::parse(name).map(Self::Read))
+            .or_else(|| PluginTool::parse(name).map(Self::Plugin))
     }
 
     pub(super) fn name(self) -> &'static str {
         match self {
             Self::Verify(tool) => tool.name(),
             Self::Read(tool) => tool.name(),
+            Self::Plugin(tool) => tool.name(),
         }
     }
 }
@@ -78,5 +87,11 @@ impl From<VerifyTool> for ToolId {
 impl From<ReadTool> for ToolId {
     fn from(tool: ReadTool) -> Self {
         Self::Read(tool)
+    }
+}
+
+impl From<PluginTool> for ToolId {
+    fn from(tool: PluginTool) -> Self {
+        Self::Plugin(tool)
     }
 }

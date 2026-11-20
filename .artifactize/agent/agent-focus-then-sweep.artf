@@ -1,8 +1,6 @@
 tags = ["type:skill"]
 path = "agent-plugin/skills/focus-then-sweep/SKILL.md"
-
-[views.agent_tools]
-read = { builtin = "read" }
+type = "files"
 
 [evals.correct]
 title = "What the skill recommends exists in today's artifactize"

@@ -59,6 +59,9 @@ pub struct Eval {
     pub payload: Option<EvalPayload>,
     pub pass_schema: Option<Map<String, Value>>,
     pub fail_schema: Option<Map<String, Value>>,
+    /// Artifactize Viewer names external inputs without importing their definitions.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<ArtifactName>,
 }
 
 /// One explicit extraction per profile: execution options never enter this type.
@@ -167,6 +170,7 @@ fn extract_where(
                     payload: declaration.payload().cloned(),
                     pass_schema: declaration.pass_schema().cloned(),
                     fail_schema: declaration.fail_schema().cloned(),
+                    reads: Vec::new(),
                 },
             )
         })
@@ -226,7 +230,7 @@ pub fn read_scoped(repo: &Path, owner: &crate::config::Artifact) -> Result<Struc
     };
     let config =
         crate::config::read_workspace_declarations(repo).map_err(|error| error.to_string())?;
-    let structure = extract_where(&config, |_, artifact| {
+    let mut structure = extract_where(&config, |_, artifact| {
         let definition = artifact.declaration_path();
         if owner.kind() == ArtifactKind::File {
             return definition == target;
@@ -239,6 +243,11 @@ pub fn read_scoped(repo: &Path, owner: &crate::config::Artifact) -> Result<Struc
                     .any(|selection| path.starts_with(Path::new(selection.as_str())))
         })
     });
+    for eval in &config.evals {
+        if let Some(scoped) = structure.evals.get_mut(&eval.id) {
+            scoped.reads.clone_from(&eval.deps);
+        }
+    }
     Ok(structure)
 }
 

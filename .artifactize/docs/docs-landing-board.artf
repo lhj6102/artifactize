@@ -1,11 +1,6 @@
 path = "website/landing/board/"
+type = "files"
 # The development board at artifactize.dev/board/: reads GitHub's public API in the browser.
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.reads-the-record]
 title = "The board reads the record the development skills write"

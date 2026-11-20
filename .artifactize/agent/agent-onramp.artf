@@ -1,11 +1,6 @@
 path = "harness/"
+type = "files"
 parts = ["agent-harness"]
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.follows-test-rules]
 title = "The onramp's Python tests and harness entry points follow the test rules"

@@ -585,6 +585,53 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     Ok(())
 }
 
+/// Tools are required only for what the instruction can inspect, not for implicit parts
+/// whose results affect reuse but are not present in the review's tool scope.
+pub(crate) fn missing_eval_tools(
+    config: &RepoConfig,
+) -> impl Iterator<Item = (&Eval, &Artifact, &'static str)> {
+    config.evals.iter().flat_map(move |eval| {
+        std::iter::once(&eval.target)
+            .chain(&eval.deps)
+            .filter_map(move |id| {
+                let artifact = &config.artifacts[id];
+                let kind = match eval.declaration.profile() {
+                    Profile::Agent { .. } if artifact.views.agent_tools.is_empty() => "Agent",
+                    Profile::Human {} if artifact.views.human_tools.is_empty() => "Human",
+                    _ => return None,
+                };
+                Some((eval, artifact, kind))
+            })
+    })
+}
+
+pub(crate) fn validate_eval_tools(config: &RepoConfig) -> Result<(), ConfigError> {
+    let Some((eval, artifact, kind)) = missing_eval_tools(config).next() else {
+        return Ok(());
+    };
+    let (article, table) = if kind == "Agent" {
+        ("an", "agent_tools")
+    } else {
+        ("a", "human_tools")
+    };
+    let type_fix = if artifact.kind() == crate::config::ArtifactKind::Live {
+        String::new()
+    } else {
+        r#"; for a local file or folder, type = "files" supplies both tool kinds"#.to_owned()
+    };
+    let path = config
+        .root
+        .join(config.artifacts[&eval.target].declaration_path());
+    Err(ConfigError::declaration(
+        path,
+        &["evals", eval.declaration.id.as_ref()],
+        format!(
+            "Eval {} includes Artifact {} without {article} {kind} Tool. Add one under [views.{table}] on {} or use an Artifact type that provides one{type_fix}.",
+            eval.id, artifact.name, artifact.name
+        ),
+    ))
+}
+
 /// Every Artifact of `config` as one tool scope, which nested paths are checked against.
 fn everything(config: &RepoConfig) -> artifactize_tools::scope::Scope {
     Scope {

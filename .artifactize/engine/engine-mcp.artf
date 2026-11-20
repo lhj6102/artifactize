@@ -1,10 +1,5 @@
 path = "crates/artifactize-mcp/"
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
+type = "files"
 
 [evals.follows-style]
 title = "The MCP server code follows the code checklist"

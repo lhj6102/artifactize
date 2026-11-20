@@ -1,11 +1,6 @@
 fingerprint = { files = ["src"] }
 path = "website/docs/en/"
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
+type = "files"
 
 [evals.matches-engine]
 title = "The documentation accurately covers the core workflow, tools, and CLI without dumping internal bounds"

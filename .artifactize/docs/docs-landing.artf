@@ -1,14 +1,9 @@
 path = "website/landing/"
+type = "files"
 parts = ["docs-landing-board"]
 
 [views.human_tools]
 preview = { description = "Open this tree's landing page in your browser with shared assets, without docs, and clean up after 30 minutes without requests.", kind = "launch", command = "python3", args = ["../preview.py"] }
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.follows-rules]
 title = "The landing page follows the introduction rules"

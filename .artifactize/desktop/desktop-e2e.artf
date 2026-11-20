@@ -1,11 +1,6 @@
 path = "crates/artifactize-desktop/ui/e2e/"
+type = "files"
 parts = ["desktop-e2e-input", "desktop-e2e-integrity", "desktop-e2e-infra", "desktop-e2e-cases"]
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.covers-journeys]
 title = "The scenarios cover every journey of the UX"

@@ -20,6 +20,17 @@ pub(super) enum Output {
     Result(Box<runs::RunResultPage>),
     Cancellation(runs::CancelAcknowledgement),
     Inspection(Page),
+    Plugin(PluginResult),
+}
+
+#[derive(Serialize)]
+#[serde(tag = "action", rename_all = "lowercase")]
+pub(super) enum PluginResult {
+    Added(artifactize_core::config::plugins::PluginInfo),
+    Removed {
+        #[serde(rename = "type")]
+        name: artifactize_core::config::ArtifactType,
+    },
 }
 
 pub(super) fn encode(operation: Result<Output, Error>) -> Result<CallToolResponse, ErrorData> {

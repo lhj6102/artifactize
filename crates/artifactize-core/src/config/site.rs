@@ -168,7 +168,10 @@ pub(crate) fn read_eval_scope(
     let Some(mut config) = combined else {
         return Ok(None);
     };
-    if crate::scope::resolve_config(&mut config).is_err() {
+    if crate::scope::resolve_config(&mut config)
+        .and_then(|()| crate::scope::validate_eval_tools(&config))
+        .is_err()
+    {
         return Ok(None);
     }
     Ok(Some(config))

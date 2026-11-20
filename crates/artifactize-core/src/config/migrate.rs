@@ -8,6 +8,8 @@ pub struct Migration {
     pub files: Vec<(PathBuf, PathBuf)>,
     pub explicit_parts: BTreeMap<ArtifactName, Vec<ArtifactName>>,
     pub ignored: Vec<ArtifactName>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub typed: Vec<ArtifactName>,
     #[serde(serialize_with = "crate::platform::serialize_paths")]
     pub separate_projects: Vec<PathBuf>,
 }
@@ -19,11 +21,11 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     let destination = root.join(discovery::DEFINITION_DIR);
     let existed = crate::platform::paths::reusable_directory(&root, discovery::DEFINITION_DIR)
         .map_err(|error| ConfigError::new(&destination, error))?;
-    if existed && !discovery::sources(&root)?.is_empty() {
-        return Err(ConfigError::new(
-            destination,
-            ".artifactize/ already holds definitions; migration writes nothing.",
-        ));
+    if existed {
+        let sources = discovery::sources(&root)?;
+        if !sources.is_empty() {
+            return migrate_tools(&root, &destination, sources);
+        }
     }
     let old = legacy::read_workspace_config(&root)?;
     let mut sources = BTreeMap::new();
@@ -31,6 +33,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         files: Vec::new(),
         explicit_parts: BTreeMap::new(),
         ignored: Vec::new(),
+        typed: Vec::new(),
         separate_projects: Vec::new(),
     };
     let mut originals = BTreeMap::new();
@@ -127,6 +130,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     if !problems.is_empty() {
         return Err(ConfigError::new(&root, problems.join("\n")));
     }
+    report.typed = type_missing(&root, &mut sources)?;
     discovery::read_sources(root.clone(), &sources)?;
     // Report nested old projects without interpreting them as part of this project.
     let ignored = legacy::discovery_ignore(&root)?;
@@ -224,6 +228,109 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         }
     }
     Ok(report)
+}
+
+/// Add the file plugin only where an eval needs one of its tool kinds. Preserve any
+/// custom tools; an inherited operation with the same name cannot safely replace one.
+fn type_missing(
+    root: &Path,
+    sources: &mut BTreeMap<PathBuf, String>,
+) -> Result<Vec<ArtifactName>, ConfigError> {
+    let config = discovery::read_sources_for_migration(root.to_owned(), sources)?;
+    let missing: BTreeSet<_> = crate::scope::missing_eval_tools(&config)
+        .map(|(_, artifact, _)| &artifact.name)
+        .collect();
+    for name in &missing {
+        let artifact = &config.artifacts[*name];
+        let path = root.join(artifact.declaration_path());
+        if artifact.type_name.is_some() || artifact.kind() == ArtifactKind::Live {
+            continue; // The final check names exactly the tool that still needs a declaration.
+        }
+        let source = sources.get_mut(&path).expect("declaration is in sources");
+        let mut doc = source
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|error| ConfigError::new(&path, error))?;
+        let redundant = artifact.views.agent_tools.iter().filter_map(|(name, view)| {
+            let builtin = match name.as_str() {
+                "read" => Builtin::Read,
+                "list" => Builtin::List,
+                "glob" => Builtin::Glob,
+                "grep" => Builtin::Grep,
+                _ => return None,
+            };
+            Some((name, matches!(view, AgentTool::Builtin(tool) if tool.builtin == builtin && tool.args.is_none() && tool.description.is_none())))
+        }).collect::<Vec<_>>();
+        if artifact.views.human_tools.contains_key("view")
+            || redundant.iter().any(|(_, same)| !same)
+        {
+            // Don't change a custom operation. The final check tells its author what to add.
+            continue;
+        }
+        for (name, _) in redundant {
+            let tools = doc["views"]["agent_tools"]
+                .as_table_like_mut()
+                .expect("declared tools");
+            tools.remove(name);
+        }
+        doc.insert("type", toml_edit::value("files"));
+        *source = doc.to_string();
+    }
+    discovery::read_sources(root.to_owned(), sources)?;
+    Ok(missing.into_iter().cloned().collect())
+}
+
+fn migrate_tools(
+    root: &Path,
+    destination: &Path,
+    original: BTreeMap<PathBuf, String>,
+) -> Result<Migration, ConfigError> {
+    let mut sources = original.clone();
+    let typed = type_missing(root, &mut sources)?;
+    if typed.is_empty() {
+        return Err(ConfigError::new(
+            destination,
+            ".artifactize/ already holds definitions; no migration is needed.",
+        ));
+    }
+    let mut staged = Vec::new();
+    for (file, source) in sources
+        .iter()
+        .filter(|(file, source)| original[*file] != **source)
+    {
+        use std::io::Write;
+        let mut temp = tempfile::NamedTempFile::new_in(file.parent().expect("definition folder"))
+            .map_err(|error| ConfigError::new(file, error))?;
+        temp.write_all(source.as_bytes())
+            .map_err(|error| ConfigError::new(file, error))?;
+        staged.push((file, temp));
+    }
+    for (file, _) in &staged {
+        if read_regular_text(file).map_err(|error| ConfigError::new(*file, error))?
+            != original[*file]
+        {
+            return Err(ConfigError::new(
+                *file,
+                "Definition changed during migration; nothing was written.",
+            ));
+        }
+    }
+    let mut written = Vec::new();
+    for (file, temp) in staged {
+        if let Err(error) = crate::platform::paths::replace_open_file(temp, file) {
+            for file in written {
+                let _ = crate::platform::paths::restore_file(file, original[file].as_bytes());
+            }
+            return Err(ConfigError::new(file, error));
+        }
+        written.push(file);
+    }
+    Ok(Migration {
+        files: Vec::new(),
+        explicit_parts: BTreeMap::new(),
+        ignored: Vec::new(),
+        typed,
+        separate_projects: Vec::new(),
+    })
 }
 
 /// A name `.artifactize/` already holds in another case is the same file on a case-insensitive

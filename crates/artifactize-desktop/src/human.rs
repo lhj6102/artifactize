@@ -709,7 +709,7 @@ async fn submit(
         other => unreachable!("a submit job ends in Submitted or SavedLocally, not {other:?}"),
     };
     app.human.took(&id, false);
-    crate::viewer::settled(&app, &id);
+    crate::viewer::settled(app, &id);
     // A submitted review's log ends here; what a launched program still prints is dropped.
     app.human
         .logs

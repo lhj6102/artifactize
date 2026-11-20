@@ -5,7 +5,10 @@ mod verify;
 pub(super) use inspect::{Inspection, RUN_LIST_LIMIT, Read};
 pub(super) use verify::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, Verify};
 
-use super::{error::ArgumentsError, tool::ToolId};
+use super::{
+    error::ArgumentsError,
+    tool::{PluginTool, ToolId},
+};
 use artifactize_core::{platform, project::selection::Selection, types::RunId};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
@@ -25,6 +28,7 @@ pub(super) struct Call {
 pub(super) enum Command {
     Verify(Verify),
     Inspect(Inspection),
+    Plugin(Plugin),
 }
 
 impl Call {
@@ -44,9 +48,31 @@ impl Call {
         let command = match id {
             ToolId::Verify(tool) => Command::Verify(Verify::parse(tool, arguments)?),
             ToolId::Read(tool) => Command::Inspect(Inspection::parse(tool, arguments, as_of)?),
+            ToolId::Plugin(PluginTool::Add) => Command::Plugin(Plugin::Add(decode(arguments)?)),
+            ToolId::Plugin(PluginTool::Remove) => {
+                Command::Plugin(Plugin::Remove(decode(arguments)?))
+            }
         };
         Ok(Self { project, command })
     }
+}
+
+pub(super) enum Plugin {
+    Add(PluginAdd),
+    Remove(PluginRemove),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct PluginAdd {
+    pub path: PathBuf,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct PluginRemove {
+    #[serde(rename = "type")]
+    pub name: artifactize_core::config::ArtifactType,
 }
 
 fn decode<T: DeserializeOwned>(arguments: Map<String, Value>) -> Result<T, ArgumentsError> {

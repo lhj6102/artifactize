@@ -2,6 +2,5 @@
 # check and needs no review of its own.
 basis = true
 path = ".agents/plugins/marketplace.json"
+type = "files"
 
-[views.agent_tools]
-read = { builtin = "read" }

@@ -1,16 +1,11 @@
 path = "crates/artifactize-desktop/design/"
+type = "files"
 parts = ["desktop-design-chat", "desktop-design-check", "desktop-design-current", "desktop-design-detail", "desktop-design-monitor", "desktop-design-overlays", "desktop-design-review", "desktop-design-settings", "desktop-design-viewers"]
 # The desktop app's UI/UX plan: one HTML page per screen (its parts), the tokens and the anatomy
 # they share, and the rules of the system on index.html. The desktop UI is evaluated against it (desktop-ui/follows-design).
 
 [views.human_tools]
 preview = { description = "Open the design's overview, index.html of {artifactName}, in the browser; its navigation reaches every screen page.", builtin = "open", args = ["{artifactPath}/index.html"] }
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.well-formed]
 title = "The design's pages, tokens and rules hold together"

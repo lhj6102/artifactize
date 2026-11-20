@@ -12,7 +12,7 @@ pub use resolver::Launch;
 
 use artifactize_core::{project::VerifyOptions, runs, types::RunId};
 use error::Error;
-use input::{Call, Command, DEFAULT_WAIT_SECONDS, Verify};
+use input::{Call, Command, DEFAULT_WAIT_SECONDS, Plugin, Verify};
 use resolver::Resolver;
 use response::{Output, encode};
 use rmcp::{
@@ -49,6 +49,26 @@ impl Server {
             .map_err(Error::Project)?;
         let command = match call.command {
             Command::Verify(command) => command,
+            Command::Plugin(plugin) => {
+                use artifactize_core::config::plugins;
+                let result = match plugin {
+                    Plugin::Add(args) => {
+                        if !args.path.is_absolute() {
+                            return Err(Error::from(
+                                "plugin_add path must be absolute.".to_owned(),
+                            ));
+                        }
+                        let info =
+                            plugins::add(context.repo(), &args.path).map_err(Error::Config)?;
+                        response::PluginResult::Added(info)
+                    }
+                    Plugin::Remove(args) => {
+                        plugins::remove(context.repo(), &args.name).map_err(Error::Config)?;
+                        response::PluginResult::Removed { name: args.name }
+                    }
+                };
+                return Ok(Output::Plugin(result));
+            }
             Command::Inspect(inspection) => {
                 return Ok(Output::Inspection(
                     read::inspect(context, inspection).await?,

@@ -1,13 +1,8 @@
 path = "crates/artifactize-desktop/ui/e2e/"
+type = "files"
 select = ["views", "cases"]
 # The E2E suite's views (what the cases read from the window and how each action waits for its
 # visible result) and its cases, the journey flows; a part of desktop-e2e.
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.follows-rules]
 title = "The views and cases drive the real app and wait for what the window shows"

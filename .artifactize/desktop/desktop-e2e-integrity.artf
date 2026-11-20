@@ -1,12 +1,9 @@
 path = "crates/artifactize-desktop/ui/lint/"
+type = "files"
 select = ["e2e-integrity.ts", "e2e-integrity.test.js"]
 # The source-integrity checker of the end-to-end suite and its tests: the suite's lint runs
 # it over the suite and the provider, desktop-e2e-input/no-injection over the device; a part
 # of desktop-e2e.
-
-[views.agent_tools]
-list = { builtin = "list" }
-read = { builtin = "read" }
 
 [evals.tests]
 title = "The integrity checker's tests pass"

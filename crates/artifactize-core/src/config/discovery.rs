@@ -23,20 +23,33 @@ pub(super) fn read_sources(
     root: PathBuf,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Result<RepoConfig, ConfigError> {
-    let mut config = read_sources_unresolved(root, sources)?;
-    crate::scope::resolve_config(&mut config).map_err(|mut error| {
-        if let Some((keys, message)) = &error.declaration
-            && let Some(source) = sources.get(&error.path)
-        {
-            error.message = location::error_at(
-                source,
-                &keys.iter().map(String::as_str).collect::<Vec<_>>(),
-                message,
-            );
-        }
-        error
-    })?;
+    let config = read_sources_for_migration(root, sources)?;
+    crate::scope::validate_eval_tools(&config).map_err(|error| located(error, sources))?;
     Ok(config)
+}
+
+/// The old project must parse and resolve before migration can identify missing tools.
+pub(super) fn read_sources_for_migration(
+    root: PathBuf,
+    sources: &BTreeMap<PathBuf, String>,
+) -> Result<RepoConfig, ConfigError> {
+    let mut config =
+        read_sources_unresolved(root, sources).map_err(|error| located(error, sources))?;
+    crate::scope::resolve_config(&mut config).map_err(|error| located(error, sources))?;
+    Ok(config)
+}
+
+fn located(mut error: ConfigError, sources: &BTreeMap<PathBuf, String>) -> ConfigError {
+    if let Some((keys, message)) = &error.declaration
+        && let Some(source) = sources.get(&error.path)
+    {
+        error.message = location::error_at(
+            source,
+            &keys.iter().map(String::as_str).collect::<Vec<_>>(),
+            message,
+        );
+    }
+    error
 }
 
 pub(super) fn read_sources_unresolved(

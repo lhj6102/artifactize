@@ -1,8 +1,6 @@
 tags = ["type:capture"]
 path = "assets/capture/demos.mts"
-
-[views.agent_tools]
-read = { builtin = "read" }
+type = "files"
 
 [evals.records-demos]
 title = "The script records demos A and B from the real app"

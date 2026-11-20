@@ -1,14 +1,9 @@
 path = "crates/artifactize-desktop/src/"
+type = "files"
 select = ["e2e_input.rs", "e2e_input"]
 # The test-only native text-input device the end-to-end suite drives the WebView engines
 # through (E2E-INPUT). Compiled into the backend only for the E2E test build; a part of
 # desktop-e2e.
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.engine-apis]
 title = "The text-input device follows E2E-INPUT"

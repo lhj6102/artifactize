@@ -1,10 +1,5 @@
 path = "crates/artifactize-desktop/src/"
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
+type = "files"
 
 [evals.follows-style]
 title = "The desktop backend follows the code checklist"

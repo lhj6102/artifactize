@@ -806,7 +806,7 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        ["inspect_a"]
+        ["fixture_read_leaf", "fixture_read_part", "inspect_a"]
     );
     let result = registry
         .call(

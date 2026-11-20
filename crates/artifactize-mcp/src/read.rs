@@ -42,6 +42,7 @@ pub(super) async fn inspect(
             verify_request_project(context, &args.id).await?;
             to_string(&inspect::logs(context.state(), &args.id, args.query).await?)?
         }
+        Read::Plugins => to_string(&config::plugins::list(repo).map_err(Error::Config)?)?,
         Read::Config => to_string(&inspect::config_check(repo)?)?,
         Read::Runs(args) => to_string(
             &store::read_runs(

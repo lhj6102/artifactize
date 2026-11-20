@@ -1,8 +1,6 @@
 tags = ["type:capture"]
 path = "assets/capture/screenshots.mts"
-
-[views.agent_tools]
-read = { builtin = "read" }
+type = "files"
 
 [evals.records-scenes]
 title = "The script captures scenes A, B and C from the real app"

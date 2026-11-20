@@ -977,6 +977,10 @@ command = "node"
 args = ["view.mjs"]
 input_schema = {{ type = "object", properties.depth = {{ type = "{kind}", maximum = {limit} }} }}
 
+[views.human_tools.help]
+builtin = "help"
+args = ["artifactize"]
+
 [evals.review]
 title = "Review"
 profile = {{ kind = "human" }}

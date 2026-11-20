@@ -1,11 +1,6 @@
 path = ".agents/skills/"
+type = "files"
 # The dev-master and dev-worker skills for Claude Code and Codex (.claude/skills links here).
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.correct]
 title = "The development skills state today's commands, outcomes and CI correctly"

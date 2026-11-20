@@ -1,7 +1,7 @@
 //! The complete public tool surface; deliberately no credential or Human actions.
 use super::{
     input::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, MIN_SCOPE_IDS, RUN_LIST_LIMIT, SCOPE_IDS},
-    tool::{ReadTool, ToolId, VerifyTool},
+    tool::{PluginTool, ReadTool, ToolId, VerifyTool},
 };
 use artifactize_core::{
     inspect::DEFAULT_LOG_TAIL_LINES, runs::RESULT_PAGE_SIZE, types::MAX_RUN_COMMENT_CHARS,
@@ -38,6 +38,24 @@ pub(super) fn tools() -> Vec<Tool> {
     ]});
     let string = json!({"type":"string"});
     vec![
+        tool(
+            ReadTool::Plugins,
+            "List built-in and installed project Artifact types.",
+            Map::new(),
+            &[],
+        ),
+        tool(
+            PluginTool::Add,
+            "Install a plugin folder from an absolute path. Only run for a package the user trusts.",
+            object!({"path":string}),
+            &["path"],
+        ),
+        tool(
+            PluginTool::Remove,
+            "Remove an installed Artifact type plugin by type name.",
+            object!({"type":string}),
+            &["type"],
+        ),
         tool(
             VerifyTool::Start,
             "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. A comment, a short note on what you are working on, is shown to people with the Run and changes nothing it does. Speculation defaults off; concurrency is unlimited unless jobs is explicitly given; backend limits still apply. Sign-offs the Run selected never hold up other evals (one outside the scope does, and the Run ends incomplete until the scope includes it): the Run stays waiting_human while one is claimed or its idle grace runs, then ends yellow when only sign-offs remain, which is not full approval.",
@@ -212,6 +230,13 @@ fn annotations(id: ToolId) -> ToolAnnotations {
             Effect::Mutating(Mutation::IdempotentDestructive),
             Reach::Closed,
         ),
+        ToolId::Plugin(PluginTool::Add) => {
+            (Effect::Mutating(Mutation::NonIdempotent), Reach::Closed)
+        }
+        ToolId::Plugin(PluginTool::Remove) => (
+            Effect::Mutating(Mutation::IdempotentDestructive),
+            Reach::Closed,
+        ),
         ToolId::Read(Read::Status) => (Effect::Mutating(Mutation::NonIdempotent), Reach::Closed),
         ToolId::Read(Read::Models | Read::Remote) => (Effect::ReadOnly, Reach::Open),
         ToolId::Verify(Verify::Status | Verify::Wait | Verify::Watch | Verify::Result)
@@ -226,7 +251,8 @@ fn annotations(id: ToolId) -> ToolAnnotations {
             | Read::Session
             | Read::Tools
             | Read::Doctor
-            | Read::Cache,
+            | Read::Cache
+            | Read::Plugins,
         ) => (Effect::ReadOnly, Reach::Closed),
     };
     let hints = ToolAnnotations::new().open_world(matches!(reach, Reach::Open));

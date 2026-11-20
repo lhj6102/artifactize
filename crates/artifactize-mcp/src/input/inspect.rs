@@ -34,6 +34,7 @@ pub(crate) enum Read {
     Models(Backend),
     Remote,
     Cache(Cache),
+    Plugins,
 }
 
 impl Inspection {
@@ -78,6 +79,7 @@ impl Inspection {
             ReadTool::Models => Read::Models(decode::<Models>(arguments)?.provider),
             ReadTool::Remote => empty(arguments, Read::Remote)?,
             ReadTool::Cache => Read::Cache(decode(arguments)?),
+            ReadTool::Plugins => empty(arguments, Read::Plugins)?,
         };
         Ok(Self {
             read,

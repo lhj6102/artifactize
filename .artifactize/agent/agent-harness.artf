@@ -1,9 +1,6 @@
 tags = ["type:harness"]
 path = "harness/hey-arti/"
-
-[views.agent_tools]
-list = { builtin = "list" }
-read = { builtin = "read" }
+type = "files"
 
 [evals.deterministic]
 title = "The fixture driver checks pass without a live builder"

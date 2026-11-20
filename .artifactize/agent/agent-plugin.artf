@@ -1,14 +1,10 @@
 tags = ["type:plugin"]
 path = "agent-plugin/"
+type = "files"
 parts = ["agent-focus-then-sweep", "agent-hey-arti"]
 
 # This folder is the one plugin every host installs: the Agent Plugins manifest and MCP
 # file, Claude Code's own manifest, and skills/hey-arti, which has its own reviews.
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-read = { builtin = "read" }
 
 [evals.claude-code-installs]
 title = "Claude Code installs the plugin with its skill and MCP server"

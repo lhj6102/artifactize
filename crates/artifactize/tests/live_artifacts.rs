@@ -233,7 +233,7 @@ async fn human_live_snapshots_reuse_and_recheck_through_saved_requests() {
     };
     use tokio_util::sync::CancellationToken;
     let project = Project::new();
-    project.node("service", json!({"path":"service:opaque","fingerprint":project.snapshot(),"evals":{"review":{"title":"Fixture snapshot sign-off","profile":{"kind":"human"},"payload":{"instruction":"Review {service}."}}}}));
+    project.node("service", json!({"path":"service:opaque","fingerprint":project.snapshot(),"views":{"human_tools":{"open":{"builtin":"open","args":["https://example.invalid/"]}}},"evals":{"review":{"title":"Fixture snapshot sign-off","profile":{"kind":"human"},"payload":{"instruction":"Review {service}."}}}}));
     let verify = async || {
         support::runs::record(
             &project.repo,
