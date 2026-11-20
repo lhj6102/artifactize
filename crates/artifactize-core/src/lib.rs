@@ -9,6 +9,7 @@ pub mod auth;
 pub mod broker;
 pub mod cache;
 pub mod changes;
+pub mod chat;
 pub mod config;
 pub mod diagnostics;
 pub mod graph;
@@ -57,3 +58,5 @@ mod test_request;
 #[cfg(test)]
 #[path = "../tests/support/session_files.rs"]
 mod test_session_files;
+
+pub mod verify_tools;

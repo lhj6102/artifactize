@@ -4,7 +4,7 @@ use super::{
     input::{Inspection, Read},
     page::Page,
 };
-use artifactize_core::{
+use crate::{
     cache, config, diagnostics, inspect, llm, platform, project, query, runs, store,
     types::RequestId,
 };

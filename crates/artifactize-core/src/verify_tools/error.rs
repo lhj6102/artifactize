@@ -1,10 +1,10 @@
 //! Keep transport failure causes distinct until the MCP response is rendered.
-use super::{page::CursorError, resolver::ProjectError};
-use artifactize_core::config::ConfigError;
+use super::page::CursorError;
+use crate::config::ConfigError;
 use std::fmt;
 
 #[derive(Debug)]
-pub(super) enum ArgumentsError {
+pub enum ArgumentsError {
     ProjectRelative,
     ProjectType,
     UnknownTool(String),
@@ -30,9 +30,8 @@ impl fmt::Display for ArgumentsError {
 }
 
 #[derive(Debug)]
-pub(super) enum Error {
+pub enum Error {
     Arguments(ArgumentsError),
-    Project(ProjectError),
     Config(ConfigError),
     Operation(String),
     RequestOutsideProject,
@@ -45,7 +44,6 @@ impl fmt::Display for Error {
     fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Arguments(error) => error.fmt(out),
-            Self::Project(error) => error.fmt(out),
             Self::Config(error) => error.fmt(out),
             Self::Operation(message) => out.write_str(message),
             Self::RequestOutsideProject => out.write_str("Request not found in this repository."),

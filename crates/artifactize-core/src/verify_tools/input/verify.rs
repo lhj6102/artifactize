@@ -1,7 +1,7 @@
 //! Verification argument envelopes and observation bounds.
 use super::{Run, Scope, decode};
-use crate::{error::ArgumentsError, tool::VerifyTool};
-use artifactize_core::{
+use crate::verify_tools::{error::ArgumentsError, tool::VerifyTool};
+use crate::{
     runs::ResultCursor,
     types::{RequestKey, RunComment, RunId},
 };

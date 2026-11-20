@@ -266,7 +266,7 @@ where
     let mut conversation = Conversation::new(
         Session {
             server: &server,
-            registry: &registry,
+            registry: super::Toolset::Review(&registry),
             output: &fixture.output,
             model: &model,
             limits,
@@ -487,4 +487,76 @@ async fn an_answer_from_another_model_fails_the_review() {
     let failure = outcome.result.unwrap_err();
     assert_eq!(failure.code, Code::ProviderError);
     assert!(failure.message.contains("model mismatch"), "{failure}");
+}
+
+#[tokio::test]
+async fn claude_code_chat_uses_the_worktree_and_verify_tools() {
+    let fixture = Fixture::new();
+    let context = crate::runs::Context::new(
+        &fixture.config.root,
+        Some(&fixture.state),
+        &std::env::current_exe().unwrap(),
+    )
+    .unwrap();
+    let tools = crate::chat::tools::Tools::new(&context, &fixture.output);
+    let server = Server::new(tools.list());
+    let mut recorder = Recorder::off(&SESSION.parse().unwrap());
+    let mut attempts = Vec::new();
+    let cancellation = CancellationToken::new();
+    let model = MODEL.parse().unwrap();
+    let (ours, mut provider) = channel();
+    let mut conversation = Conversation::new(
+        Session {
+            server: &server,
+            registry: Toolset::Chat(&tools),
+            output: &fixture.output,
+            model: &model,
+            limits: limits(None),
+            cancellation: &cancellation,
+            recorder: &mut recorder,
+            attempts: &mut attempts,
+        },
+        ours,
+    );
+    let (answer, ()) = tokio::join!(
+        async {
+            conversation.initialize().await.unwrap();
+            conversation.ask("Read the notes.").await.unwrap()
+        },
+        async {
+            let names = provider.start(VERSION).await;
+            for name in [
+                "read",
+                "list",
+                "glob",
+                "grep",
+                "edit",
+                "write",
+                "run_command",
+                "verify_start",
+                "verify_wait",
+                "config_graph",
+                "run_show",
+                "request_show",
+            ] {
+                assert!(
+                    names.iter().any(|offered| offered == name),
+                    "Claude Code did not get {name}: {names:?}"
+                );
+            }
+            assert_eq!(provider.prompt().await, "Read the notes.");
+            let result = provider
+                .call("read-notes", "read", json!({"path": "notes.txt"}))
+                .await;
+            assert_eq!(result["isError"], false);
+            assert!(result["content"].to_string().contains("the evidence line"));
+            provider.answered("read-notes", &result).await;
+            provider
+                .respond("msg-final", vec![json!({"type":"text","text":"Read it."})])
+                .await;
+            provider.stop().await;
+            provider.write(json!({"type":"result","subtype":"success","is_error":false,"result":"Read it."})).await;
+        }
+    );
+    assert_eq!(answer, "Read it.");
 }

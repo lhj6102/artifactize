@@ -1,5 +1,5 @@
 //! Lossless bounded pages of CLI JSON, without transport-owned result snapshots.
-use artifactize_core::{platform, runs, types::Sha256Digest};
+use crate::{platform, runs, types::Sha256Digest};
 use serde::{Serialize, Serializer};
 use std::{fmt, num::NonZeroUsize, str::FromStr};
 use time::OffsetDateTime;
@@ -13,7 +13,7 @@ const PAGE_ENTRIES: usize = 1;
 const CURSOR_FIELDS: usize = 3;
 
 #[derive(Debug)]
-pub(super) enum CursorError {
+pub enum CursorError {
     Shape,
     Revision,
     Offset,
@@ -164,7 +164,7 @@ impl Query {
 }
 
 #[derive(Serialize)]
-pub(super) struct Page {
+pub struct Page {
     encoding: Encoding,
     entries: [Entry; PAGE_ENTRIES],
     next_cursor: Option<Cursor>,

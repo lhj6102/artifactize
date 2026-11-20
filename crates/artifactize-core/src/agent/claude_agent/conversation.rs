@@ -263,12 +263,28 @@ impl<'a, 'r, R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Conversation<'a, 'r, R
             ));
         }
         let (deadline, cancellation) = (self.session.limits.deadline, self.session.cancellation);
-        tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => Err(Failure::cancelled()),
-            _ = tokio::time::sleep_until(deadline) => Err(Failure::timeout()),
-            result = self.session.registry.call(name, arguments, self.session.output, cancellation.clone()) => Ok(result),
-        }
+        super::super::check_deadline(
+            cancellation.is_cancelled(),
+            deadline,
+            tokio::time::Instant::now(),
+        )?;
+        let invoke = self.session.registry.invoke(
+            name,
+            arguments,
+            self.session.output,
+            cancellation.clone(),
+        );
+        let result = if self.session.registry.durable_start(name) {
+            invoke.await
+        } else {
+            tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => return Err(Failure::cancelled()),
+                _ = tokio::time::sleep_until(deadline) => return Err(Failure::timeout()),
+                result = invoke => result,
+            }
+        };
+        Ok(super::super::recorded_call(self.session.recorder, result))
     }
 
     fn stream(&mut self, event: StreamEvent) -> Result<(), Failure> {

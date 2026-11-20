@@ -9,7 +9,7 @@ use super::{
     error::ArgumentsError,
     tool::{PluginTool, ToolId},
 };
-use artifactize_core::{platform, project::selection::Selection, types::RunId};
+use crate::{platform, project::selection::Selection, types::RunId};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use std::path::PathBuf;
@@ -20,9 +20,9 @@ pub(super) const MIN_SCOPE_IDS: usize = 1;
 /// Bound model-driven array envelopes without changing core selection expansion.
 pub(super) const SCOPE_IDS: usize = 64;
 
-pub(super) struct Call {
+pub struct Call {
     pub project: Option<PathBuf>,
-    pub command: Command,
+    pub(super) command: Command,
 }
 
 pub(super) enum Command {
@@ -32,7 +32,7 @@ pub(super) enum Command {
 }
 
 impl Call {
-    pub(super) fn parse(
+    pub fn parse(
         name: &str,
         mut arguments: Map<String, Value>,
         as_of: OffsetDateTime,
@@ -72,7 +72,7 @@ pub(super) struct PluginAdd {
 #[serde(deny_unknown_fields)]
 pub(super) struct PluginRemove {
     #[serde(rename = "type")]
-    pub name: artifactize_core::config::ArtifactType,
+    pub name: crate::config::ArtifactType,
 }
 
 fn decode<T: DeserializeOwned>(arguments: Map<String, Value>) -> Result<T, ArgumentsError> {

@@ -3,12 +3,26 @@ use super::{
     input::{DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, MIN_SCOPE_IDS, RUN_LIST_LIMIT, SCOPE_IDS},
     tool::{PluginTool, ReadTool, ToolId, VerifyTool},
 };
-use artifactize_core::{
+use crate::{
     inspect::DEFAULT_LOG_TAIL_LINES, runs::RESULT_PAGE_SIZE, types::MAX_RUN_COMMENT_CHARS,
 };
-use rmcp::model::{Tool, ToolAnnotations};
 use serde_json::{Map, Value, json};
 use std::borrow::Cow;
+
+/// One tool's protocol-neutral wire contract, shared by MCP and Chat.
+pub struct Tool {
+    pub name: &'static str,
+    pub description: Cow<'static, str>,
+    pub schema: Map<String, Value>,
+    pub hints: Hints,
+}
+
+pub struct Hints {
+    pub open_world: bool,
+    pub read_only: bool,
+    pub destructive: bool,
+    pub idempotent: bool,
+}
 
 /// Match core's ASCII RequestKey bound, keeping retry identities compact in stored receipts.
 const REQUEST_KEY_CHARS: usize = 128;
@@ -28,7 +42,7 @@ macro_rules! object {
     };
 }
 
-pub(super) fn tools() -> Vec<Tool> {
+pub fn tools() -> Vec<Tool> {
     let scope = json!({"oneOf": [
         {"type":"object","properties":{"kind":{"const":"all"}},"required":["kind"],"additionalProperties":false},
         {"type":"object","properties":{"kind":{"const":"artifact"},"artifactId":{"type":"string"}},"required":["kind","artifactId"],"additionalProperties":false},
@@ -203,7 +217,12 @@ fn tool(
         json!({"type":"string","description":"The absolute project folder; needed only when the host names no project."}),
     );
     let schema = object!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
-    Tool::new(id.name(), description, schema).with_annotations(annotations(id))
+    Tool {
+        name: id.name(),
+        description,
+        schema,
+        hints: annotations(id),
+    }
 }
 
 enum Effect {
@@ -221,7 +240,7 @@ enum Reach {
     Open,
 }
 
-fn annotations(id: ToolId) -> ToolAnnotations {
+fn annotations(id: ToolId) -> Hints {
     use ReadTool as Read;
     use VerifyTool as Verify;
     let (effect, reach) = match id {
@@ -255,14 +274,10 @@ fn annotations(id: ToolId) -> ToolAnnotations {
             | Read::Plugins,
         ) => (Effect::ReadOnly, Reach::Closed),
     };
-    let hints = ToolAnnotations::new().open_world(matches!(reach, Reach::Open));
-    match effect {
-        Effect::ReadOnly => hints.read_only(true).destructive(false).idempotent(true),
-        Effect::Mutating(Mutation::NonIdempotent) => {
-            hints.read_only(false).destructive(false).idempotent(false)
-        }
-        Effect::Mutating(Mutation::IdempotentDestructive) => {
-            hints.read_only(false).destructive(true).idempotent(true)
-        }
+    Hints {
+        open_world: matches!(reach, Reach::Open),
+        read_only: matches!(effect, Effect::ReadOnly),
+        destructive: matches!(effect, Effect::Mutating(Mutation::IdempotentDestructive)),
+        idempotent: !matches!(effect, Effect::Mutating(Mutation::NonIdempotent)),
     }
 }

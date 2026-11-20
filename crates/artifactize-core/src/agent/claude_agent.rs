@@ -20,7 +20,8 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    Continuation, DEFAULT_TIMEOUT, FOLLOW_UP, Prompt, Review, StartedFollowUp, definitions,
+    Continuation, DEFAULT_TIMEOUT, FOLLOW_UP, Prompt, Review, StartedFollowUp, Toolset,
+    definitions,
     error::{Code, Failure},
     prompt_text,
     session::{self, Recorder},
@@ -113,7 +114,7 @@ async fn run_review(
     let effort = reasoning.map(crate::config::Reasoning::as_str);
     let mut parameters = Client::parameters(Api::ClaudeAgent, effort, recorder.id())?;
     Client::output_format(Api::ClaudeAgent, &mut parameters, findings.schema.clone());
-    let definitions = definitions(&registry);
+    let definitions = definitions(registry.list());
     recorder.start(session::Header {
         backend: Some(backend.clone()),
         model: Some(model.clone()),
@@ -140,7 +141,7 @@ async fn run_review(
     let server = Server::new(registry.list());
     let session = Session {
         server: &server,
-        registry: &registry,
+        registry: Toolset::Review(&registry),
         output,
         model,
         limits,
@@ -266,7 +267,7 @@ pub(super) async fn follow_up(
     let registry = crate::tools::Registry::new(config, &eval.id)?;
     let tools = registry.sessions(continuation.state, None, cancellation.clone());
     let registry = registry.with_sessions(&tools);
-    let definitions = definitions(&registry);
+    let definitions = definitions(registry.list());
     recorder.event(session::Kind::Send(session::Send {
         text: Some(message.into()),
         framing: Some(framing),
@@ -296,7 +297,7 @@ pub(super) async fn follow_up(
     let mut attempts = Vec::new();
     let session = Session {
         server: &server,
-        registry: &registry,
+        registry: Toolset::Review(&registry),
         output: continuation.output,
         model,
         limits: Limits {
@@ -323,10 +324,60 @@ pub(super) async fn follow_up(
     Ok(StartedFollowUp { answer, attempts })
 }
 
+/// Adapt Claude Code's model transport to the same Chat tools and persisted history.
+pub(super) async fn chat(
+    model: &ModelId,
+    tools: &crate::chat::tools::Tools<'_>,
+    history: Vec<Message>,
+    text: &str,
+    recorder: &mut Recorder,
+    cancellation: &CancellationToken,
+) -> Result<String, Failure> {
+    let offered = definitions(tools.list());
+    let launch = Launch {
+        model: Some(model.as_str()),
+        effort: None,
+        system: Some(super::chat::SYSTEM),
+        tools: offered.iter().map(|tool| tool.name.as_str()).collect(),
+        schema: None,
+    };
+    let server = Server::new(tools.list());
+    let mut attempts = Vec::new();
+    let session = Session {
+        server: &server,
+        registry: Toolset::Chat(tools),
+        output: tools.output(),
+        model,
+        limits: Limits {
+            deadline: Instant::now() + super::chat::TURN_TIMEOUT,
+            max_tokens: None,
+            max_tool_calls: None,
+        },
+        cancellation,
+        recorder,
+        attempts: &mut attempts,
+    };
+    let prompt = if history.is_empty() {
+        text.to_owned()
+    } else {
+        let records = history
+            .iter()
+            .map(|msg| serde_json::to_string(msg).expect("message is JSON"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "Conversation history (one JSON message per line):\n{records}\n\nNew user message:\n{text}"
+        )
+    };
+    let (mut conversation, running) = session.open(&launch).await?;
+    let answer = conversation.ask(&prompt).await;
+    close(conversation, running, answer).await
+}
+
 /// What one Claude Code session works with.
 struct Session<'a, 'r> {
     server: &'a Server,
-    registry: &'a Registry<'r>,
+    registry: Toolset<'a, 'r>,
     output: &'a Path,
     model: &'a ModelId,
     limits: Limits,

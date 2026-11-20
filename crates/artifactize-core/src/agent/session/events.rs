@@ -38,6 +38,12 @@ pub enum Kind {
     End(End),
     Send(Send),
     Answer(Answer),
+    /// Typed navigation, not model text or part of replay history.
+    RunReference {
+        run: RunId,
+    },
+    /// Display-only single outcome while other tool calls from the same turn still run.
+    ToolOutcome(MessageEvent),
     /// Display-only provider delivery; never part of replay history or usage calculations.
     Delivery(Delivery),
 }

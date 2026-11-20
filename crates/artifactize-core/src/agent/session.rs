@@ -248,6 +248,76 @@ impl Recorder {
         })
     }
 
+    /// A Chat uses the same event stream and append framing as a review follow-up. Its
+    /// independent directory is not eligible for review session GC.
+    pub(crate) fn chat(
+        state: &Path,
+        path: &Path,
+        id: &crate::types::SessionId,
+        send: usize,
+    ) -> Result<Self, String> {
+        use std::io::{Read as _, Seek as _, SeekFrom};
+        match platform::open_no_follow(std::fs::File::options().read(true).append(true), path) {
+            Ok(mut file) => {
+                let end = file
+                    .seek(SeekFrom::End(0))
+                    .map_err(|error| error.to_string())?;
+                if end > 0 {
+                    file.seek(SeekFrom::End(-1))
+                        .map_err(|error| error.to_string())?;
+                    let mut last = [0];
+                    file.read_exact(&mut last)
+                        .map_err(|error| error.to_string())?;
+                    if last != *b"\n" {
+                        file.seek(SeekFrom::Start(0))
+                            .map_err(|error| error.to_string())?;
+                        let mut bytes = Vec::new();
+                        file.read_to_end(&mut bytes)
+                            .map_err(|error| error.to_string())?;
+                        let len = bytes
+                            .iter()
+                            .rposition(|&byte| byte == b'\n')
+                            .map_or(0, |at| at + 1);
+                        file.set_len(len as u64)
+                            .map_err(|error| error.to_string())?;
+                    }
+                }
+                Ok(Self {
+                    id: id.clone(),
+                    state: Recording::FollowUp { file, send },
+                    publisher: crate::changes::Publisher::new(state),
+                })
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let mut file = create(path)?;
+                write_event(
+                    &mut file,
+                    None,
+                    Kind::Review(Box::new(Header {
+                        version: Some(VERSION),
+                        session_id: Some(id.clone()),
+                        ..Default::default()
+                    })),
+                )
+                .map_err(|error| error.to_string())?;
+                Ok(Self {
+                    id: id.clone(),
+                    state: Recording::FollowUp { file, send },
+                    publisher: crate::changes::Publisher::new(state),
+                })
+            }
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    pub(crate) fn check_saved(&self) -> Result<(), String> {
+        if self.active() {
+            Ok(())
+        } else {
+            Err("Could not save the Chat transcript.".into())
+        }
+    }
+
     pub fn id(&self) -> &crate::types::SessionId {
         &self.id
     }
@@ -353,7 +423,7 @@ impl Recorder {
         }
     }
 
-    fn notify(&self) {
+    pub(crate) fn notify(&self) {
         self.publisher
             .notify(crate::changes::Change::SessionInvalidated(self.id.clone()));
     }

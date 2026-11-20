@@ -1,7 +1,7 @@
 //! Inspection argument envelopes and paging inputs.
 use super::{Run, Scope, decode};
-use crate::{error::ArgumentsError, page, tool::ReadTool};
-use artifactize_core::{
+use crate::verify_tools::{error::ArgumentsError, page, tool::ReadTool};
+use crate::{
     config::{Backend, ToolName},
     diagnostics::{self, ToolCheckOptions},
     inspect::{LogOptions, LogQuery, session},

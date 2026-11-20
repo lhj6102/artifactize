@@ -7,6 +7,7 @@
 //! tauri-specta; [`bindings`] is the single list of what the frontend may call.
 
 mod browse;
+mod chat;
 mod definitions;
 mod detail;
 #[cfg(feature = "e2e")]
@@ -44,6 +45,11 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
     Builder::new()
         .commands(collect_commands![
             launch::launch,
+            chat::chat_create,
+            chat::chat_list,
+            chat::chat_open,
+            chat::chat_send,
+            chat::chat_stop,
             browse::browse,
             browse::redraw,
             browse::pane_complete,
@@ -148,6 +154,7 @@ pub fn export(path: &Path) -> Result<(), String> {
 /// The shared state behind every command, one per app.
 pub struct App {
     pub launch: Launch,
+    chat: artifactize_core::chat::Chat,
     browse: browse::Browse,
     human: human::Reviews,
     currents: Arc<graph::current::Currents>,
@@ -162,6 +169,7 @@ impl App {
     pub fn new(launch: Launch) -> Self {
         Self {
             browse: browse::Browse::new(launch.repo.clone()),
+            chat: artifactize_core::chat::Chat::discover(launch.state.clone()),
             launch,
             human: human::Reviews::default(),
             currents: Arc::default(),
@@ -193,6 +201,7 @@ impl App {
     /// the sign-ins have stopped.
     pub fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
         self.human.cancel_all();
+        self.chat.stop_all();
         self.viewers.reset();
         let scans = self.currents.stop();
         let sign_ins = self.settings.close();

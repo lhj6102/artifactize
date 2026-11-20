@@ -8,6 +8,25 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	launch: () => typedError<LaunchView, Failure>(__TAURI_INVOKE("launch")),
+	/**  Create an empty Chat session for the chosen worktree and a model its provider lists. */
+	chatCreate: (worktree: PathKey, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, selection })),
+	/**  List saved sessions newest first. `null` lists all worktrees. */
+	chatList: (worktree: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree })),
+	/**
+	 *  Read a session and its live transcript. `sessionChanged` names sessions to refresh; Run
+	 *  cards can change separately on `stateChanged`, after their originating turn has ended.
+	 */
+	chatOpen: (id: string) => typedError<ChatView, Failure>(__TAURI_INVOKE("chat_open", { id })),
+	/**
+	 *  Accept a user message and start its streaming turn. A supplied model selection is saved
+	 *  for later turns; `null` keeps the current model.
+	 */
+	chatSend: (id: string, text: string, selection: {
+	backend: string,
+	model: string,
+} | null) => typedError<null, Failure>(__TAURI_INVOKE("chat_send", { id, text, selection })),
+	/**  Stop this process's in-flight turn; Verify Runs already accepted keep running. */
+	chatStop: (id: string) => __TAURI_INVOKE<boolean>("chat_stop", { id }),
 	/**  Navigate, read the state and return what to show. */
 	browse: (navigate: Navigate) => typedError<BrowseView, Failure>(__TAURI_INVOKE("browse", { navigate })),
 	/**  Redraw ages and running times from the shown snapshot, without reading the state. */
@@ -77,7 +96,7 @@ export const commands = {
 	/**  Append a line to the current reviewer's draft without submitting it. */
 	humanDraftAppend: (id: string, text: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_append", { id, text })),
 	/**  Submit the current reviewer's saved fields and notes. */
-	humanDraftSubmit: (id: string, job: JobId) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_draft_submit", { id, job })),
+	humanDraftSubmit: (id: string, job: JobId) => typedError<Submitted_Serialize, Failure>(__TAURI_INVOKE("human_draft_submit", { id, job })),
 	/**  `draft` of request `id` with field `name` set to `value`, as the library's form takes it. */
 	humanEditField: (id: string, draft: Draft, name: string, value: FieldValue) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_field", { id, draft, name, value })),
 	/**
@@ -388,6 +407,45 @@ export type CardView = {
 	took: string | null,
 	tokens: number | null,
 	model: string | null,
+};
+
+export type ChatBlock = { kind: "text"; text: string } | { kind: "tool"; name: string; arguments: string; output: string | null; failed: boolean | null } | { kind: "run"; card: ChatRun };
+
+export type ChatModel = {
+	backend: string,
+	model: string,
+};
+
+export type ChatRun = {
+	id: string,
+	state: ChatRunState | null,
+	failed: string[],
+	waiting: string[],
+};
+
+export type ChatRunState = "preparing" | "running" | "waiting" | "waiting_human" | "cancelling" | "green" | "red" | "incomplete" | "yellow" | "error" | "cancelled";
+
+export type ChatSession = {
+	id: string,
+	title: string,
+	worktree: PathKey,
+	selection: ChatModel,
+	createdAt: string,
+	updatedAt: string,
+};
+
+export type ChatTurn = {
+	user: string,
+	blocks: ChatBlock[],
+	state: ChatTurnState,
+};
+
+export type ChatTurnState = { kind: "running" } | { kind: "completed" } | { kind: "stopped" } | { kind: "interrupted" } | { kind: "failed"; message: string };
+
+export type ChatView = {
+	session: ChatSession,
+	running: boolean,
+	turns: ChatTurn[],
 };
 
 /**  One entry of a branch's timeline: a Run, or the branch's Current. */
