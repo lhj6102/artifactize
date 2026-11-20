@@ -52,7 +52,7 @@ export const scenarios: Scenario[] = [
     run: async (app, { data: { firstRun } }) => {
       await app.graph.titled(firstRun);
       await app.mode("Chat");
-      await app.chat.create(CHAT_MODEL);
+      await app.chat.create();
       await app.chat.model(CHAT_MODEL);
       await app.chat.send(WORK_PROMPT);
       await app.chat.says("release/notes.md");
@@ -66,7 +66,7 @@ export const scenarios: Scenario[] = [
       await app.chat.openRun(run);
       await app.graph.titled(run);
       await app.mode("Chat");
-      await app.chat.create(CHAT_MODEL);
+      await app.chat.create();
       await app.chat.emptySession();
       await app.mode("Verify");
       await app.graph.titled(run);

@@ -18,9 +18,10 @@ export const scenarios: Scenario[] = [
       const fixture = await createNotes(own);
       return { fixture, args: ["review"], data: {} };
     },
-    run: async (_app, { fixture }) => {
+    run: async (app, { fixture }) => {
       const w = windows();
       await w.claimReview("notes/signoff");
+      await app.review.writeNotes("Check the rounding.");
       const label = await w.runTool("view");
       assert.equal(await w.viewer(label), "notes — File Explorer", "titled {Artifact} — {viewer}");
       const strip = await w.stripUntil((shown) => shown.point, "Point offered for the claimed review");
@@ -36,14 +37,14 @@ export const scenarios: Scenario[] = [
       // Point, then a click on line 2: its place reaches the review's Notes.
       await w.point();
       await w.clickLine(2);
-      const notes = await w.notesUntil((text) => /^release\.md L2:C\d+$/.test(text.trim()), "the pointed line in the Notes");
+      const notes = await w.notesUntil((text) => /^Check the rounding\.\nrelease\.md L2:C\d+$/.test(text.trim()), "the pointed line in the Notes");
       // It stands out there as pointed.
-      await w.pointedUntil((lines) => lines.length === 1 && lines[0] === notes.trim(), "the pointed line marked in the Notes");
+      await w.pointedUntil((lines) => lines.length === 1 && lines[0] === notes.trim().split("\n").at(-1), "the pointed line marked in the Notes");
       // Away from Review the pet overlay holds the review, its Notes the same draft's.
       await w.mode("Verify");
       const pet = await w.pet();
       assert.match(pet.head, /^notes\/signoff · run-/);
-      assert.match(pet.notes, /^release\.md L2:C\d+/);
+      assert.equal(pet.notes, notes);
       assert.equal(pet.point, true, "Point while the notes' viewer is open");
       await w.petNotes(`${pet.notes.trim()}\nThe rounding reads right.`);
       await w.petChoose("GREEN");

@@ -10,11 +10,11 @@ export class Chat {
 
   constructor(browser: WebdriverIO.Browser) { this.browser = browser; }
 
-  async create(model: string): Promise<void> {
+  async create(): Promise<void> {
     await this.browser.$('[aria-label="Chats"]').$("button=New chat").click();
     const dialog = this.browser.$('[role="dialog"].new-chat');
     const create = dialog.$("button=Create");
-    await holds(this.browser, async () => (await dialog.$('[role="status"]').getText()).includes(model) && await create.isEnabled(), `the starting model ${model} is ready`);
+    await create.waitForEnabled({ timeoutMsg: "the starting model is ready and Create is enabled" });
     await create.click();
     await this.browser.$(`${MAIN} textarea[aria-label="Message"]`).waitForDisplayed();
   }
