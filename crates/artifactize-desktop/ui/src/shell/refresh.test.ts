@@ -31,6 +31,12 @@ function backend(): Read[] {
   mockIPC(
     (cmd, args) => {
       switch (cmd) {
+        case "chat_list":
+          return [];
+        case "human_search":
+          return { reviews: [], next: null };
+        case "human_waiting_count":
+          return 0;
         case "launch":
           return launch;
         case "browse":
