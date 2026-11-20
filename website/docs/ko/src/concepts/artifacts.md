@@ -27,6 +27,8 @@ payload.instruction = "Check that every bold term in {intro} and {usage} is defi
 | `path = "src/"` + `select = ["api", "model.rs"]` | **Aspect** | Aspect는 해당 폴더에서 고른 경로의 모음입니다. 폴더 일부만 따로 리뷰하고 재사용할 때 씁니다. |
 | `path = "https://example.com"` | **Live** | 외부 서비스의 상태를 확인할 때 쓰며, 대상은 URI로 지정합니다. Artifactize가 직접 접속하지 않고, 프로젝트 루트에서 실행하는 읽기 전용 명령에 `{name}`(또는 `{name}/하위경로`)을 그대로 넘깁니다. 내장 파일 도구와 `artifactsum`은 쓸 수 없으며, `fingerprint`를 생략하면 스냅샷이 없어 재사용 키도 생성되지 않습니다. |
 
+대상 종류와 [`type`](../guides/viewer-plugins.md)은 서로 다릅니다. `type`은 도구와 뷰어를 제공하는 플러그인을 고르는 선택 필드입니다.
+
 ## Artifact Graph와 eval 의존성 {#eval-dependencies}
 
 **Artifact Graph**는 입력 Artifact와 그 입력을 사용하는 eval을 연결합니다. 같은 저장소나 폴더에 있다는 이유만으로는 의존성이 생기지 않습니다.

@@ -15,7 +15,10 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `status [SELECTOR]` (default `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (default: available CPUs) | Reports eval and Artifact states, predicted actions (`execute`, `reuse`, `wait`, `blocked`; see [Runs and Workflows](../concepts/runs.md)), and changed inputs when no reusable result matches (see [Fingerprints and Reuse](../concepts/reuse.md#completed-result-reuse)). | `0` satisfied, `1` obligations remain, `2` command/state error |
 | `config check` | — | Validates `.artifactize/` definitions statically without running project code. | `0` valid, `2` invalid |
 | `config graph [ARTIFACT]` | `--impact` | Prints Artifacts, evals, cycle components, and input-to-consumer relations (`--impact` adds downstream consumers). | `0` |
-| `config migrate` | `--repo PATH` | Migrates in-tree `.artf` files into `.artifactize/<name>.artf`. | `0` |
+| `config migrate` | `--repo PATH` | Moves legacy declarations into `.artifactize/` or adds `type = "files"` where a local Artifact is missing a required review tool. | `0` |
+| `plugin add PATH` | `--repo PATH` | Installs a [viewer plugin](../guides/viewer-plugins.md) from a folder. | `0` |
+| `plugin remove TYPE` | `--repo PATH` | Removes a project-installed plugin by type. | `0` |
+| `plugin list` | `--repo PATH` | Lists the built-in and project-installed plugin types. | `0` |
 | `config rename OLD NEW` | — | Renames Artifact `OLD` to `NEW` across definitions, `parts`, and `{OLD}` references. | `0` |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | Lists saved Runs newest first for the current/`--repo` repository (`--repo-only`, the default) or across all repositories in the state (`--all`), with status, counts, and comment. | `0` |
 | `run show RUN_ID` | `--wait [--timeout-ms MS]` | Prints full saved Run JSON (`evidence`, `requests`, `usage`, `validation`). `--wait` waits for an open Run (default 10-minute observation timeout; `--timeout-ms` requires `--wait`). | `0` (or Run outcome with `--wait`; `3` when `--wait` times out, leaving the Run running) |
@@ -94,6 +97,9 @@ Every MCP tool accepts an optional `project` argument (absolute project path); i
 | `verify_cancel` | **`run`** | Requests cancellation of an open Run. |
 | `status` | optional `scope` (Selection object, default `{"kind":"all"}`) | Predicts current states and `execute`/`reuse`/`wait`/`blocked` actions. |
 | `config_check` | none | Static validation of `.artifactize/` definitions. |
+| `plugin_list` | none | Lists the built-in and project-installed plugin types in the paged CLI JSON format. |
+| `plugin_add` | `path` (absolute folder) | Installs a plugin. Returns its type and details with `action: "added"`. |
+| `plugin_remove` | `type` | Removes a project-installed plugin. Returns its type with `action: "removed"`. |
 | `config_graph` | optional `scope` (Selection object), `impact` (boolean, default `false`) | Static graph of Artifacts, evals, cycles, and relations (`impact: true` includes downstream consumers). |
 | `request_logs` | **`id`**, optional `stream` (`"stdout"\|"stderr"\|"both"`), `tail`, `start`, `end`, `search` | Reads bounded runtime output lines for request `id`. |
 | `run_list` | optional `limit` (default 20), `offset` (default 0) | Lists saved Runs for this project, newest first. |

@@ -2,6 +2,8 @@
 
 Tools let an Agent or Human reviewer inspect an Artifact without turning a review into a build session. An eval sees the tools declared on its target Artifact and on every Artifact it references as `{name}`, published to the reviewer as `<tool>_<artifact>` (for example, `read` on `spec` becomes `read_spec`). Tool declarations (`views`) are ways of viewing an Artifact and are not part of the [Eval definition hash](../concepts/reuse.md#the-reuse-key).
 
+To give a local Artifact common tools without writing these declarations, choose a [type and viewer plugin](viewer-plugins.md). A Custom Artifact declares its tools in `[views.*]`.
+
 ## Built-in tools {#builtin-tools}
 
 Declare built-in tools under `[views.agent_tools]` or `[views.human_tools]` with `builtin`:
@@ -34,6 +36,7 @@ notes = { builtin = "read", args = ["notes.md"] }                # kind = "outpu
 | `section` | `{heading}` (when `args = [file]`) | `[file]` or `[file, heading]` (no model input when both are fixed) | `[file, heading]` | Prints one Markdown section from its heading to the next heading of same/higher level. |
 | `help` | — | `[program, subcommand...]` | `[program, subcommand...]` | Runs `program subcommand... --help` and returns cleaned UTF-8 output. |
 | `graph` | — | `[]` | `[]` (`launch`) | Agent: prints the current project's entity tree, criteria, and relations; Human: opens the project's Current view in `artifactize-desktop`. |
+| `declarations` | — | `[]` | — | Prints the Artifacts, eval criteria, and references declared inside an Artifact’s `.artifactize/` target. The `artifactize` type includes this tool. |
 | `open` | — | — | `[file, folder, or http(s) URL]` (`launch`) | Opens the target in the OS default application (`xdg-open` on Linux/WSL, `open` on macOS, default opener on Windows). |
 
 **Scope confinement**: built-in file tools (`read`, `list`, `glob`, `grep`, `view_image`, `section`) are strictly confined to the admitted Artifact scope. They reject `..` and absolute paths and never follow symlinks (`list` reports symlink entries as `symlink`, while the other file tools reject or skip symlinks); on a file Artifact they see only that single file, and on a folder whole dynamic file tools hide folder `parts` unless the eval also references `{part}` (fixed-path Agent built-in tools such as `read = { builtin = "read", args = [...] }`, `list`, and `section` validate their path against the declaring Artifact's own scope, so declare a fixed tool for a folder part on the part itself; file and aspect `parts` remain readable through the whole, though `{part}` must still be referenced to admit the part's own tools and dependency gates). Built-in `help` and custom command tools below are **not** sandboxed by the OS: declare only trusted programs that you have made read-only.

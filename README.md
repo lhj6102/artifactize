@@ -108,6 +108,7 @@ Arti reads your repository, asks what matters to your team, and proposes Artifac
 | **Input-based reuse** | Content fingerprints (`artifactsum` by default) track what each check reads; unchanged inputs reuse earlier verdicts across branches, teammates, and CI. |
 | **Durable Runs** | `artifactize verify` runs in the background while agents fix failing checks, and requests human sign-offs only after automated checks pass. |
 | **Desktop app** | Inspect live Runs on the visual graph, edit declarations, and claim or submit waiting human reviews from the desktop app. |
+| **Artifact viewers** | Give an Artifact a type to reuse its review tools. Open files, Markdown, or scoped Artifactize declarations in a dedicated viewer. Use Point in supported viewers to add a location to your review. |
 
 ## Learn more
 

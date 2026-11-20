@@ -2,6 +2,8 @@
 
 도구를 사용하면 Agent나 Human 리뷰어가 빌드 세션을 따로 열지 않고도 Artifact를 살펴볼 수 있습니다. 리뷰어는 eval의 대상 Artifact와 `{name}`으로 참조한 입력 Artifact에 선언된 도구를 사용할 수 있습니다. 실제로 제공되는 도구 이름은 `<도구이름>_<artifact>` 형태입니다(예: `spec`에 선언한 `read`는 `read_spec`). 도구 선언(`views`)은 Artifact를 조회하는 수단이므로 [eval 정의 해시](../concepts/reuse.md#the-reuse-key)에 포함되지 않습니다.
 
+로컬 Artifact에 자주 쓰는 도구를 하나씩 선언할 필요는 없습니다. [Artifact 유형과 뷰어 플러그인](viewer-plugins.md)을 고르세요. Custom Artifact는 `[views.*]`에 도구를 직접 선언합니다.
+
 ## 내장 도구 {#builtin-tools}
 
 `[views.agent_tools]` 또는 `[views.human_tools]` 아래에 `builtin`으로 내장 도구를 선언합니다.
@@ -34,6 +36,7 @@ notes = { builtin = "read", args = ["notes.md"] }                # kind = "outpu
 | `section` | `{heading}` (`args = [file]`일 때) | `[file]` 또는 `[file, heading]` (둘 다 고정이면 모델 입력 없음) | `[file, heading]` | 지정한 Markdown 제목부터 같은 단계나 상위 단계의 제목이 다시 나오기 전까지 한 섹션을 출력합니다. |
 | `help` | — | `[program, subcommand...]` | `[program, subcommand...]` | `program subcommand... --help`를 실행하고 출력을 정리해 UTF-8 텍스트로 반환합니다. |
 | `graph` | — | `[]` | `[]` (`launch`) | Agent: 현재 프로젝트의 Artifact/eval 트리와 기준·관계를 출력합니다. Human: `artifactize-desktop`에서 프로젝트의 Current 화면을 엽니다. |
+| `declarations` | — | `[]` | — | Artifact가 대상으로 삼은 `.artifactize/` 경로에 선언된 Artifact, eval 기준, 참조 관계를 출력합니다. `artifactize` 유형에 포함된 도구입니다. |
 | `open` | — | — | `[파일, 폴더, 또는 http(s) URL]` (`launch`) | OS 기본 프로그램으로 대상을 엽니다(Linux/WSL은 `xdg-open`, macOS는 `open`, Windows는 기본 프로그램). |
 
 **범위 제한**: 내장 파일 도구(`read`, `list`, `glob`, `grep`, `view_image`, `section`)는 허용된 Artifact 범위 안에서만 파일과 폴더에 접근할 수 있습니다. `..`와 절대 경로는 거부하고 심볼릭 링크는 따라가지 않습니다. `list`는 심볼릭 링크 항목을 `symlink`로 표시하고, 다른 파일 도구는 심볼릭 링크를 거부하거나 건너뜁니다. 파일 Artifact에서는 그 파일 하나만 보여 줍니다. 상위 폴더 Artifact에 선언한 내장 파일 도구 가운데 호출할 때 경로를 받는 도구가 있습니다. 이런 도구는 해당 eval이 `{part}`를 직접 참조할 때만 폴더 `parts`에 접근할 수 있으며, 그렇지 않으면 폴더 `parts`를 건너뜁니다. `read = { builtin = "read", args = [...] }`, `list`, `section`처럼 경로를 미리 지정한 Agent용 내장 도구는 그 경로가 도구를 선언한 Artifact의 범위 안에 있는지 확인합니다. 따라서 폴더 `part`의 경로를 지정하는 도구는 그 `part`에 선언하세요. 파일이나 Aspect로 선언한 하위 Artifact의 파일은 상위 폴더를 통해 읽을 수 있습니다. 다만 하위 Artifact에 선언된 도구를 사용하거나 해당 Artifact를 선행 의존성으로 추가하려면 `{part}`를 직접 참조해야 합니다. 내장 `help`와 아래의 사용자 지정 명령 도구는 OS 샌드박스 없이 실행됩니다. 따라서 직접 작성한 프로그램 중 읽기 전용으로 동작하고 신뢰할 수 있는 것만 선언하세요.

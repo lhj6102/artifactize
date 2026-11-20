@@ -15,7 +15,10 @@
 | `status [SELECTOR]` (기본 `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (기본값: 사용 가능한 CPU 수) | eval과 Artifact 상태, 예상 동작(`execute`, `reuse`, `wait`, `blocked`; [Run과 실행 흐름](../concepts/runs.md) 참고), 재사용할 결과가 없을 때 바뀐 입력([fingerprint와 재사용](../concepts/reuse.md#completed-result-reuse) 참고)을 보여 줍니다. | `0` 충족됨, `1` 아직 충족하지 못한 검증 요건이 있음, `2` 명령/상태 오류 |
 | `config check` | — | 프로젝트 코드를 실행하지 않고 `.artifactize/` 선언을 정적으로 검증합니다. | `0` 유효함, `2` 오류 |
 | `config graph [ARTIFACT]` | `--impact` | Artifact, eval, 순환 참조로 묶인 항목, 각 입력을 사용하는 eval을 출력합니다(`--impact`를 지정하면 해당 Artifact에 의존하는 하위 항목도 표시). | `0` |
-| `config migrate` | `--repo PATH` | 프로젝트 폴더 곳곳에 있는 `.artf` 파일들을 `.artifactize/<name>.artf`로 옮깁니다. | `0` |
+| `config migrate` | `--repo PATH` | 기존 선언을 `.artifactize/`로 옮기거나, 리뷰에 필요한 도구가 빠진 로컬 Artifact에 `type = "files"`를 추가합니다. | `0` |
+| `plugin add PATH` | `--repo PATH` | 폴더에서 [뷰어 플러그인](../guides/viewer-plugins.md)을 설치합니다. | `0` |
+| `plugin remove TYPE` | `--repo PATH` | 프로젝트에 설치한 플러그인을 유형 이름으로 제거합니다. | `0` |
+| `plugin list` | `--repo PATH` | 내장 유형과 프로젝트에 설치한 플러그인 유형을 나열합니다. | `0` |
 | `config rename OLD NEW` | — | 선언 파일, `parts`, `{OLD}` 참조에서 Artifact 이름을 `OLD`에서 `NEW`로 바꿉니다. | `0` |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | 기본 설정(`--repo-only`)에서는 현재 저장소의 Run을 보여 주며, `--repo`를 지정하면 해당 저장소의 Run을 보여 줍니다. `--all`을 쓰면 상태 디렉터리에 기록된 Run을 저장소 구분 없이 모두 보여 줍니다. 목록은 최신순으로 정렬하며 상태, 개수, 메모를 함께 표시합니다. | `0` |
 | `run show RUN_ID` | `--wait [--timeout-ms MS]` | 저장된 Run 전체 JSON(`evidence`, `requests`, `usage`, `validation`)을 출력합니다. `--wait`를 지정하면 Run이 끝날 때까지 명령이 종료되지 않습니다(기본 대기 제한 시간 10분, `--timeout-ms`는 `--wait`와 함께 사용). | `0` (`--wait` 시 Run 결과 코드; 대기 제한 시간이 지나면 Run은 계속 실행되고 CLI 명령만 `3`으로 종료) |
@@ -101,6 +104,9 @@ codex mcp add artifactize -- artifactize mcp                                    
 | `verify_cancel` | **`run`** | 아직 끝나지 않은 Run의 취소를 요청합니다. |
 | `status` | 선택적 `scope` (Selection 객체, 기본 `{"kind":"all"}`) | 현재 상태를 보여 주고, `verify`를 실행했을 때 각 eval을 새로 실행할지(`execute`), 이전 결과를 재사용할지(`reuse`), 선행 조건이 충족될 때까지 대기할지(`wait`), 실행이 막힐지(`blocked`) 알려 줍니다. |
 | `config_check` | 없음 | `.artifactize/` 선언을 정적으로 검증합니다. |
+| `plugin_list` | 없음 | 내장 유형과 프로젝트에 설치한 플러그인 유형을 CLI JSON 형식으로 페이지별로 반환합니다. |
+| `plugin_add` | `path` (폴더 절대 경로) | 플러그인을 설치합니다. `action: "added"`와 플러그인 유형 및 상세 정보를 반환합니다. |
+| `plugin_remove` | `type` | 프로젝트에 설치한 플러그인을 제거합니다. `action: "removed"`와 유형을 반환합니다. |
 | `config_graph` | 선택적 `scope` (Selection 객체), `impact` (불리언, 기본 `false`) | Artifact, eval, 순환 참조로 묶인 항목, 각 입력을 사용하는 eval을 조회합니다(`impact: true`를 지정하면 해당 Artifact에 의존하는 하위 항목도 표시). |
 | `request_logs` | **`id`**, 선택적 `stream` (`"stdout"\|"stderr"\|"both"`), `tail`, `start`, `end`, `search` | 요청 `id`의 Runtime 출력 줄을 조회합니다. |
 | `run_list` | 선택적 `limit` (기본 20), `offset` (기본 0) | 이 프로젝트에서 실행한 Run의 기록을 최신순으로 보여 줍니다. |

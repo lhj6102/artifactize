@@ -27,6 +27,7 @@ text = "Canvas note shown in the desktop app."
 |---|---|
 | Identifiers | Artifact names come from the `.artf` filename stem and must be case-insensitively unique across `.artifactize/` (avoid Windows device names such as `con` or `nul`); eval IDs are unique within their Artifact, and tool/session/variant IDs within their table. |
 | `path` | **Required.** Project-root-relative local path using `/` (`"dir/"` or `"./"` for a folder—trailing `/` required—or `"file.ext"` for a single regular file), or a Live URI (for example `"https://example.com"`; unlike the HTTP(S)-only built-in `open` tool, Live targets accept other URI schemes as well). |
+| `type` | Optional [Artifact type](../guides/viewer-plugins.md). Use a built-in or installed type, or omit it to declare a Custom Artifact. |
 | `select` | Optional array of relative paths inside a folder `path`, defining an **aspect**. Not allowed on file or Live Artifacts. |
 | `parts` | Optional array of Artifact names composing this whole. Cannot contain self-references or cycles. |
 | `basis` | Optional boolean (`true` waives only this Artifact's own reviews; prohibited when `evals` is non-empty). |
@@ -34,7 +35,7 @@ text = "Canvas note shown in the desktop app."
 | `fingerprint` | Optional:<br>• **Folder**: omit or `{}` for default `artifactsum`, `{ files? = [...], ignore? = [...] }` (`files` defaults to `["."]` and `ignore` defaults to `[]`), `{ script = { command = "...", args = [...], files? = [...], timeout_ms? = N } }`, or `false`.<br>• **Aspect**: omit for default `artifactsum` over `select`, `{ files = [...], ignore? = [...] }` (`files` required and within `select`; `fingerprint = {}` is rejected on an aspect), `{ script = ... }`, or `false`.<br>• **File**: omit or `{ files = ["<target-filename>"] }` (no `ignore`), `{ script = ... }`, or `false`.<br>• **Live**: omit (no snapshot), `{ script = ... }`, or `false`.<br>See [Fingerprints and Reuse](../concepts/reuse.md#fingerprints-artifactsum-script-false). |
 | `views.agent_tools` | Map of `<tool_id>` to `{ builtin = "...", args? = [...], description? = "..." }` (`args` is required for `graph`, `help`, and `section`, and optional for fixed-target `read`/`list`; see [Built-in tools](../guides/tools.md#builtin-tools)) or `{ description, protocol = "json"\|"plain", command, args, input_schema?, execution_paths?, timeout_ms?, session? }`. |
 | `views.agent_sessions` | Map of `<session_id>` to `{ start = { command, args, execution_paths? }, stop = { command, args, execution_paths? } }` (`start` and `stop` do not take `timeout_ms`; bound tools declare their own `timeout_ms`). |
-| `views.human_tools` | Map of `<tool_id>` to `{ builtin = "...", args = [...], description?, kind? }` or `{ description, kind = "launch"\|"output", command, args, timeout_ms? }` (`timeout_ms` bounds `output` commands and does not apply to `launch`). |
+| `views.human_tools` | Map of `<tool_id>` to `{ builtin = "...", args = [...], description?, kind? }` or `{ description, kind = "launch"\|"output", command, args, timeout_ms? }` (`timeout_ms` bounds `output` commands and does not apply to `launch`). For a type with a viewer, `{ kind = "viewer", description = "..." }` opens its Artifact Viewer. |
 | `annotations` | Optional presentation metadata (`style.at`, `style.parts`, `comment.text`). Ignored by `artifactsum`'s normalized `.artf` view and by Eval definition hashes. |
 
 ## Eval fields (`[evals.<id>]`) {#eval-fields-evalsid}
@@ -67,7 +68,7 @@ Human results contain `"verdict": "GREEN" | "RED"` plus your declared owner fiel
 
 ## Migrating and renaming definitions {#upgrading-an-in-tree-project}
 
-- **`artifactize config migrate [--repo PATH]`**: converts legacy in-tree `index.artf`, sidecar `.artf`, and root `.artf` files into `.artifactize/<name>.artf` files with explicit `path` and `parts`, removes legacy `pass_schema` and `fail_schema` declarations from `agent` evals while preserving Human schemas, uses `.artfignore` to identify and skip excluded nested projects, and removes the converted legacy files and `.artfignore`.
+- **`artifactize config migrate [--repo PATH]`**: converts legacy in-tree `index.artf`, sidecar `.artf`, and root `.artf` files into `.artifactize/<name>.artf` files with explicit `path` and `parts`, removes legacy `pass_schema` and `fail_schema` declarations from `agent` evals while preserving Human schemas, uses `.artfignore` to identify and skip excluded nested projects, and removes the converted legacy files and `.artfignore`. For an already migrated project, it can also add `type = "files"` to local Artifacts that lack a required review tool. If a custom tool would conflict with the plugin, add the missing tool yourself.
 - **`artifactize config rename OLD NEW`**: validates the project and updates `.artifactize/**/<OLD>.artf` to `<NEW>.artf` along with all `parts`, recognized `{OLD}` references, and saved `[annotations.style]` part positions.
 
 ## Operating system rules {#operating-systems}

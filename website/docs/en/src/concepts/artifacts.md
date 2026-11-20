@@ -27,6 +27,8 @@ Every local `path` is relative to the project root, while a **Live** target is a
 | `path = "src/"` + `select = ["api", "model.rs"]` | **Aspect** | Selected paths below that project-relative folder, so a cross-cutting slice can be reviewed and reused on its own. |
 | `path = "https://example.com"` | **Live** | External state identified by URI. Artifactize never fetches it itself; it passes `{name}` (or `{name}/suffix`) to your declared read-only commands at the project root. File builtins and `artifactsum` do not apply, and omitting `fingerprint` leaves the Live target without a snapshot (no reuse key). |
 
+The target kind is separate from the optional [`type`](../guides/viewer-plugins.md), which selects a plugin’s tools and viewer.
+
 ## The Artifact Graph and eval dependencies {#eval-dependencies}
 
 The **Artifact Graph** connects inputs to the evals that consume them. Sharing a repository or directory never creates an implicit dependency. Instead:
