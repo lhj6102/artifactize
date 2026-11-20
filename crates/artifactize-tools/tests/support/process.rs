@@ -307,13 +307,10 @@ impl NativeRun {
 
     fn cancel_and_wait(&mut self) -> bool {
         self.cancellation.cancel();
-        if self.worker.is_some()
+        let timed_out = self.worker.is_some()
             && self.done.recv_timeout(NATIVE_WATCHDOG)
-                == Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-        {
-            return false;
-        }
-        true
+                == Err(std::sync::mpsc::RecvTimeoutError::Timeout);
+        !timed_out
     }
 
     fn abort_and_join(&mut self) {
