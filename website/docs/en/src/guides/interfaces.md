@@ -57,9 +57,9 @@ In a wide window, Review puts the instruction, tools, and tool log on the left a
 
 ### Review while using a viewer {#review-while-using-a-viewer}
 
-When you leave the active claimed review's evaluation space, a small pet overlay appears at the bottom right. It stays with that review while you use a viewer, another mode, or another application. Write in the same **Notes**, choose a verdict, or submit from the overlay without switching back. Its review reference takes you back to Review. The overlay hides when you return to the evaluation space, release the claim, or submit.
+While you hold the active review, a small pet overlay appears at the bottom right when another mode is shown or the main window loses focus. The overlay has the same draft: verdict, **Notes**, form, and **Submit**. Click its header link to reopen that review in the main window. The overlay hides when you return to the evaluation space, release the claim, or submit.
 
-Use [**Point**](viewer-plugins.md#point-into-the-active-review) in a supported viewer to append a location to the active review's Notes. From the overlay, **Point** uses the open viewer for the review's Artifact; it's unavailable if the needed viewer isn't open. Point never submits.
+Use [**Point**](viewer-plugins.md#point-into-the-active-review) in a supported viewer to append a location to the active review's Notes. The overlay's **Point** is available when a viewer that supports it is open for the review's Artifact. Point never submits.
 
 ## Settings {#settings}
 

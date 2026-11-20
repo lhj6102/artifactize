@@ -14,7 +14,7 @@ Agent eval의 대상과 `{name}`으로 참조한 Artifact에는 각각 **Agent �
 
 ## 내장 플러그인 {#built-in-plugins}
 
-내장 플러그인은 별도로 설치할 필요가 없습니다. 데스크톱 앱에서 Artifact의 **Tools** 목록이나 해당 Artifact가 포함된 Human 리뷰에서 뷰어 도구를 실행하세요. 별도의 **Artifact Viewer** 창이 열립니다. 사용자 지정 `launch`와 `output` 도구는 기존과 같이 프로그램을 실행하거나 결과를 **Tool log**에 출력합니다.
+내장 플러그인은 별도로 설치할 필요가 없습니다. 데스크톱 앱에서 Artifact의 **Tools** 목록이나 해당 Artifact가 포함된 Human 리뷰에서 뷰어 도구를 실행하세요. 앱의 별도 **Artifact Viewer** 창이 열립니다. 같은 Artifact에 같은 뷰어 도구를 다시 실행하면 이미 열린 창이 앞으로 나옵니다. 사용자 지정 `launch`와 `output` 도구는 기존과 같이 프로그램을 실행하거나 결과를 **Tool log**에 출력합니다.
 
 | 유형 | Agent 도구 | Human 도구 |
 |---|---|---|
@@ -59,7 +59,7 @@ view = { kind = "viewer", description = "Open {artifactName} in the HTML Viewer.
 
 ## 뷰어 브리지 {#viewer-bridge}
 
-플러그인 페이지는 격리된 뷰에서 실행되므로 데스크톱 앱의 명령을 직접 호출할 수 없습니다. `parent.postMessage`로 호스트에 호출을 전달하세요.
+플러그인 페이지는 샌드박스에서 실행됩니다. `artifactize-viewer/v1` 브리지만 사용할 수 있으며 데스크톱 앱의 명령은 직접 호출할 수 없습니다. `parent.postMessage`로 호스트에 호출을 전달하세요.
 
 ```js
 parent.postMessage({
@@ -83,4 +83,4 @@ parent.postMessage({
 
 ## Point로 활성 리뷰에 위치 남기기 {#point-into-the-active-review}
 
-Human 리뷰를 맡은 뒤 **Point**를 지원하는 뷰어를 여세요. **Point**를 클릭하고 Artifact에서 위치를 고릅니다. 뷰어는 해당 위치를 텍스트로 바꿉니다. 예를 들어 HTML 요소는 `#checkout .total`, Markdown의 위치는 `L42:C9`, Artifactize Viewer의 eval은 `front-design/matches-layout`로 표시합니다. Artifactize는 기존 **Notes**를 그대로 두고 새 줄에 위치를 추가합니다. 판정을 선택하거나 리뷰를 제출하지는 않습니다. 리뷰 ID는 플러그인이 고르지 않고, 앱의 활성 리뷰를 사용합니다.
+맡은 Human 리뷰가 활성 상태라면 **Point**를 클릭하고 Artifact에서 위치를 고르세요. 내장 뷰어는 도구 막대에 **Point**를 표시합니다. 플러그인은 자체 화면에 버튼을 표시합니다. 위치는 File Explorer에서 `notes.md L42:C9`, Markdown에서 `L42:C9`가 됩니다. Artifactize Viewer에서는 Artifact 이름이나 `front-design/matches-layout` 같은 eval ID, HTML 예제에서는 `#checkout .total` 같은 CSS 선택자를 사용합니다. **Point**를 다시 클릭하거나 Esc를 누르면 아무 내용도 추가하지 않고 취소합니다. Artifactize는 기존 **Notes**를 그대로 두고 새 줄에 위치를 추가합니다. 판정을 선택하거나 리뷰를 제출하지는 않습니다. 리뷰 ID는 플러그인이 고르지 않고, 앱의 활성 리뷰를 사용합니다.

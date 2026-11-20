@@ -14,7 +14,7 @@ An Artifact can declare extra tools alongside its type's tools, but it cannot re
 
 ## Built-in plugins {#built-in-plugins}
 
-You don't have to install the built-ins. In the desktop app, run a viewer tool from the Artifact's **Tools** list or from a Human review that includes the Artifact. This opens a separate **Artifact Viewer** window. Custom `launch` and `output` tools still launch their program or print to the **Tool log**.
+You don't have to install the built-ins. In the desktop app, run a viewer tool from the Artifact's **Tools** list or from a Human review that includes the Artifact. This opens a separate **Artifact Viewer** window in the app. Run the same viewer tool again for the same Artifact to bring that window to the front. Custom `launch` and `output` tools still launch their program or print to the **Tool log**.
 
 | Type | Agent Tools | Human Tool |
 |---|---|---|
@@ -59,7 +59,7 @@ view = { kind = "viewer", description = "Open {artifactName} in the HTML Viewer.
 
 ## Viewer bridge {#viewer-bridge}
 
-The plugin page runs in an isolated view and cannot call the desktop app's commands. Send calls to the host with `parent.postMessage`:
+The plugin page is sandboxed. It can reach only the `artifactize-viewer/v1` bridge, not the desktop app's commands. Send calls to the host with `parent.postMessage`:
 
 ```js
 parent.postMessage({
@@ -83,4 +83,4 @@ In bridge calls, `path` is relative to the Artifact, with `/` as the separator a
 
 ## Point into the active review {#point-into-the-active-review}
 
-In a Human review you have claimed, open a viewer that supports **Point**. Click **Point**, then choose a place in the Artifact. The viewer turns that location into text: for example, `#checkout .total` for an HTML element, `L42:C9` for a Markdown position, or `front-design/matches-layout` for an eval in the Artifactize Viewer. Artifactize appends it on a new line in the same **Notes** draft; it doesn't replace existing notes, choose a verdict, or submit the review. The viewer uses the active review, not a review ID picked by the plugin.
+With an active Human review you have claimed, click **Point** and choose a place in the Artifact. Built-in viewers show **Point** in their tool strip; plugins draw their own controls. The location becomes text: `notes.md L42:C9` in File Explorer, `L42:C9` in Markdown, an Artifact name or eval ID such as `front-design/matches-layout` in the Artifactize Viewer, or a CSS selector such as `#checkout .total` in the HTML example. Click **Point** again or press Esc to cancel without adding anything. Artifactize appends it on a new line in the same **Notes** draft; it doesn't replace existing notes, choose a verdict, or submit the review. The viewer uses the active review, not a review ID picked by the plugin.
