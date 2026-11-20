@@ -12,11 +12,8 @@ export type Entry = { id: string; text: string; sub: string; shown: boolean };
  * selected, expanded and starred, its newest Run's status while folded, and its timeline. */
 export type Branch = { name: string; label: string; selected: boolean; expanded: boolean; starred: boolean; latest: string; entries: Entry[] };
 
-/** A waiting review's row: its request, its eval, where it waits, what else it says. */
-export type WaitingRow = { id: string; eval: string; where: string; meta: string; selected: boolean };
-
 const PANE = 'section[aria-label="Pane"]';
-const SEARCH = 'input[aria-label="Search branches and reviews"]';
+const SEARCH = 'input[aria-label="Search the branches"]';
 const ENTRIES = '[role="group"][aria-label="Pane entries"]';
 
 export class Pane {
@@ -111,7 +108,7 @@ export class Pane {
       const root = document.querySelector(pane);
       const divider = document.querySelector<HTMLElement>(".monitor [data-pane-resizer]");
       return {
-        parts: [...(root?.querySelectorAll('input[aria-label="Search branches and reviews"], [aria-label="Branches"], section[aria-label="Waiting"]') ?? [])]
+        parts: [...(root?.querySelectorAll('input[aria-label="Search the branches"], [aria-label="Branches"]') ?? [])]
           .map((part) => part.getAttribute("aria-label") ?? ""),
         query: root?.querySelector<HTMLInputElement>("input")?.value ?? "",
         divider: !!divider && divider.getBoundingClientRect().width > 0,
@@ -125,12 +122,11 @@ export class Pane {
   stacked(): Promise<boolean> {
     return this.browser.execute((pane) => {
       const root = document.querySelector(pane);
-      const boxes = ['input[aria-label="Search branches and reviews"]', '[aria-label="Branches"]', 'section[aria-label="Waiting"]']
+      const boxes = ['input[aria-label="Search the branches"]', '[aria-label="Branches"]']
         .map((selector) => root?.querySelector(selector)?.getBoundingClientRect());
       if (boxes.some((box) => !box || box.width === 0)) return false;
-      const [search, branches, waiting] = boxes as DOMRect[];
-      return branches.top >= search.bottom - 1 && waiting.top >= branches.bottom - 1
-        && Math.abs(branches.left - waiting.left) <= 2 && search.left >= branches.left - 2 && search.right <= branches.right + 2;
+      const [search, branches] = boxes as DOMRect[];
+      return branches.top >= search.bottom - 1 && search.left >= branches.left - 2 && search.right <= branches.right + 2;
     }, PANE);
   }
 
@@ -214,34 +210,4 @@ export class Pane {
     await press(this.browser, keys, done, what);
   }
 
-  // -------------------------------------------------------------------------------
-  // Waiting reviews
-
-  /** The waiting stack: its bar as it reads (`Waiting (N)`) and its rows, newest first. */
-  waiting(): Promise<{ bar: string; rows: WaitingRow[] }> {
-    return this.browser.execute(() => ({
-      bar: document.querySelector('section[aria-label="Waiting"] .bar')?.textContent?.trim() ?? "",
-      rows: [...document.querySelectorAll<HTMLElement>('[aria-label="Waiting reviews"] [role="option"]')].map((row) => ({
-        id: row.dataset.key ?? "",
-        eval: row.querySelector(".eval")?.textContent?.trim() ?? "",
-        where: row.querySelector(".where")?.textContent?.trim() ?? "",
-        meta: row.querySelector(".meta")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
-        selected: row.getAttribute("aria-selected") === "true",
-      })),
-    }));
-  }
-
-  /** Wait until the waiting stack satisfies `ok`. */
-  async waitingUntil(ok: (stack: { bar: string; rows: WaitingRow[] }) => boolean, what: string): Promise<{ bar: string; rows: WaitingRow[] }> {
-    return until(this.browser, () => this.waiting(), ok, what);
-  }
-
-  /** Click the waiting review `id`: it is selected and opens in the main area. */
-  async openWaiting(id: string): Promise<void> {
-    await this.waitingUntil((stack) => stack.rows.some((row) => row.id === id), `${id} waits in the stack`);
-    const row = this.browser.$(`[aria-label="Waiting reviews"] [data-key=${JSON.stringify(id)}]`);
-    // A dialog that just closed can keep the page from taking the pointer for a moment.
-    await clickAt(this.browser, await visibleCenter(this.browser, await row.getElement()));
-    await this.waitingUntil((stack) => stack.rows.some((each) => each.id === id && each.selected), `${id} selected`);
-  }
 }

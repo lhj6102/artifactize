@@ -29,9 +29,9 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(names, ["other  master", "repo  master", "repo  scope-one"]);
       assert.equal(await app.windowTitle(), "Artifactize");
       assert.equal(await app.graph.title(), "Nothing chosen");
-      assert.equal(await app.graph.empty(), "Choose a branch or a waiting review in the Pane.");
-      assert.deepEqual(await app.pane.layout(), { parts: ["Search branches and reviews", "Branches", "Waiting"], query: "sort:recent", divider: true, scope: false });
-      assert.equal(await app.pane.stacked(), true, "search, branches and waiting reviews in one column");
+      assert.equal(await app.graph.empty(), "Choose a branch in the Pane.");
+      assert.deepEqual(await app.pane.layout(), { parts: ["Search the branches", "Branches"], query: "sort:recent", divider: true, scope: false });
+      assert.equal(await app.pane.stacked(), true, "search and branches in one column");
       // Folded, a branch reads as project and branch over its newest Run's status.
       const folded = await app.pane.branch("repo  scope-one");
       assert.equal(folded.label, "repo / scope-one");
@@ -67,7 +67,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "palette-help",
-    title: "the Commands button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
+    title: "the brand button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
     journeys: ["J-PALETTE", "J-HELP"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -107,7 +107,7 @@ export const scenarios: Scenario[] = [
   scenario({
     id: "open-review-by-id",
     title: "started with review ID it opens that waiting review in the main area, named once in its header; the palette's Open a request by ID opens another request read-only, and choosing a branch leaves the review",
-    journeys: ["J-LAUNCH", "J-MAIN-REVIEW", "J-OPEN-ID", "J-HUMAN-LAYOUT"],
+    journeys: ["J-LAUNCH", "J-REVIEW-REF", "J-OPEN-ID", "J-HUMAN-LAYOUT"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       const first = request(fixture).id;
@@ -116,25 +116,21 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["review", first], data: { first, docs } };
     },
     run: async (app, { data: { first, docs } }) => {
-      await app.graph.titled("Review");
-      assert.match(await app.graph.header(), /release\/signoff/, "the review's eval named in the header");
+      await app.review.titleContains("release/signoff");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${first} · DEFERRED · unclaimed`), "the named review, not the newest one");
       await app.review.until((shown) => shown.stage === "CLAIM" && shown.tools.length > 0, "the review is actionable: it can be claimed");
-      // In the wide main area, the Tool log is the view on the left, the rest a column at the right.
-      await app.until(async () => {
-        const panels = await app.review.panels();
-        return !!panels && panels.log.right <= panels.column.left + 1 && panels.log.bottom > panels.column.top;
-      }, "the Tool log on the left of the column, side by side");
+      await app.review.until((shown) => ["Instruction", "Tools", "Tool log", "Result"].every((section) => shown.sections.includes(section)), "the review shows the instruction, Tools, Tool log and Result");
       // Another request by its ID opens read-only.
       await app.openPalette();
       await app.runCommand("Open a request by ID");
       await app.openById(docs);
-      await app.graph.titled("docs/lint · Check docs · read-only");
+      await app.review.titleContains("docs/lint");
       assert.equal((await app.graph.recordDebug()).Request, docs, "the request of the ID entered, not the other repository's");
       const record = await app.graph.record();
       assert.match(record.status, /^GREEN/, "its saved result");
       assert.equal(record.instruction, "Check docs.", "for its instruction");
       // Choosing a branch leaves what the main area showed.
+      await app.mode("Verify");
       const branch = await app.pane.selectBranch("repo  master");
       await app.graph.titled(branch.entries.find((entry) => entry.shown)!.id);
     },

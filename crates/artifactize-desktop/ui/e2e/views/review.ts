@@ -32,7 +32,7 @@ export class Review {
 
   constructor(browser: WebdriverIO.Browser, scope: "main" | "detail" = "main") {
     this.browser = browser;
-    this.root = `${scope === "main" ? 'section.panel[aria-label="Main area"]' : 'aside[aria-label="Detail"]'} section[aria-label="Human review"]`;
+    this.root = `${scope === "main" ? `section.panel[aria-label="Review's main area"]` : 'aside[aria-label="Detail"]'} section[aria-label="Human review"]`;
   }
 
   /** The boxes of the Tool log and of the column holding the instruction, Tools and Result. */
@@ -76,6 +76,37 @@ export class Review {
   async until(ok: (shown: Shown) => boolean, what: string, timeout = 15000): Promise<Shown> {
     return (await until(this.browser, () => this.read(), (shown) => !!shown && ok(shown), what, timeout))!;
   }
+
+  async titleContains(text: string): Promise<void> {
+    const header = this.browser.$(`section.panel[aria-label="Review's main area"] > header`);
+    await holds(this.browser, async () => (await header.getText()).includes(text), `the review header names ${text}`);
+  }
+
+  async list(): Promise<{ id: string; name: string }[]> {
+    return this.browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Human reviews"] [role="option"]')]
+      .map((row) => ({ id: row.dataset.key ?? "", name: row.innerText })));
+  }
+
+  filter(): Promise<string> { return this.browser.$('input[aria-label="Filter the reviews"]').getValue(); }
+
+  async filterFor(query: string): Promise<void> {
+    await fill(this.browser, 'input[aria-label="Filter the reviews"]', query);
+  }
+
+  async openListed(id: string): Promise<void> {
+    const row = this.browser.$(`[aria-label="Human reviews"] [data-key=${JSON.stringify(id)}]`);
+    await row.waitForDisplayed();
+    await row.click();
+    await holds(this.browser, async () => (await row.getAttribute("aria-selected")) === "true", `${id} selected in Review`);
+  }
+
+  outside(): Promise<string> { return this.browser.$('.outside-line').getText(); }
+
+  back(): Promise<void> { return this.browser.$(`section.panel[aria-label="Review's main area"] > header`).$("button*=Verify").click(); }
+
+  notes(): Promise<string> { return this.browser.$(`${this.root} textarea[placeholder="Optional"]`).getValue(); }
+
+  async writeNotes(text: string): Promise<void> { await fill(this.browser, `${this.root} textarea[placeholder="Optional"]`, text); }
 
   /** The review's instruction. */
   instruction(): Promise<string> {

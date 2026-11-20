@@ -5,6 +5,7 @@ import { clickAt, dispatchInput, visibleCenter } from "../input.ts";
 import { afterRender, press, typeText } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
+const REVIEW_MAIN = `section.panel[aria-label="Review's main area"]`;
 const MAIN = 'section.panel[aria-label="Main area"]';
 /** The main area's graph, never the one a Detail draws of an Artifact's neighbours. */
 const GRAPH = `${MAIN} .graph`;
@@ -44,6 +45,12 @@ export class Graph {
 
   // -------------------------------------------------------------------------------
   // The main area's header
+
+  async openOrigin(session: string): Promise<void> {
+    const origin = this.browser.$(`${MAIN} > header`).$(`button=Chat · ${session}`);
+    await origin.waitForDisplayed();
+    await origin.click();
+  }
 
   /** The header's title: the Run's ID, `Current · {branch}`, `Review`, or `Nothing chosen`. */
   title(): Promise<string> {
@@ -92,17 +99,17 @@ export class Graph {
       const root = document.querySelector(`${main} [role="document"]`);
       const words = (selector: string) => (root?.querySelector<HTMLElement>(selector)?.innerText ?? "").replace(/\s+/g, " ").trim();
       return { status: words(".summary .status"), instruction: words(".instruction") };
-    }, MAIN);
+    }, REVIEW_MAIN);
   }
 
   /** The facts under Debug of a request the main area shows read-only, by name, unfolding Debug
    * with a click on its header row when it is folded. */
   async recordDebug(): Promise<Record<string, string>> {
-    const head = this.browser.$(`${MAIN} [role="document"] section.section[aria-label="Debug"] > button.head`);
+    const head = this.browser.$(`${REVIEW_MAIN} [role="document"] section.section[aria-label="Debug"] > button.head`);
     await head.waitForExist({ timeout: 15000, timeoutMsg: "the request's Debug section" });
     if ((await head.getAttribute("aria-expanded")) === "false") await head.click();
     return until(this.browser, () => this.browser.execute((main) => Object.fromEntries([...document.querySelectorAll(`${main} [role="document"] section.section[aria-label="Debug"] dt`)]
-      .map((term) => [term.textContent?.trim() ?? "", term.nextElementSibling?.textContent?.trim() ?? ""])), MAIN), (facts) => Object.keys(facts).length > 0, "Debug unfolded");
+      .map((term) => [term.textContent?.trim() ?? "", term.nextElementSibling?.textContent?.trim() ?? ""])), REVIEW_MAIN), (facts) => Object.keys(facts).length > 0, "Debug unfolded");
   }
 
   /** Click the Run's headline: the Run's own Detail opens. */

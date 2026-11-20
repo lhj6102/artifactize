@@ -28,6 +28,10 @@ export class Detail {
     this.browser = browser;
   }
 
+  reviewAction(name: "Claim to review" | "Release claim" | "Open in Review"): Promise<void> {
+    return this.browser.$(DETAIL).$(`button=${name}`).click();
+  }
+
   /** The open Detail, or null while none is open. */
   read(): Promise<Shown | null> {
     return this.browser.execute((detail) => {

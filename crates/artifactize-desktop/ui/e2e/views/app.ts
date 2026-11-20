@@ -4,6 +4,7 @@
 import { callWindow, embeddedReady } from "../portable.ts";
 import { pointerGapClick } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
+import { Chat } from "./chat.ts";
 import { Detail } from "./detail.ts";
 import { Graph } from "./graph.ts";
 import { Pane } from "./pane.ts";
@@ -17,6 +18,7 @@ const DIALOG = '[role="dialog"], [role="alertdialog"]';
 
 export class App {
   readonly pane: Pane;
+  readonly chat: Chat;
   readonly graph: Graph;
   readonly detail: Detail;
   /** A Human review in the main area. */
@@ -30,6 +32,7 @@ export class App {
   constructor(browser: WebdriverIO.Browser) {
     this.browser = browser;
     this.pane = new Pane(browser);
+    this.chat = new Chat(browser);
     this.graph = new Graph(browser);
     this.detail = new Detail(browser);
     this.review = new Review(browser, "main");
@@ -41,6 +44,17 @@ export class App {
   async loaded(): Promise<void> {
     await holds(this.browser, () => this.browser.execute(() => (document.getElementById("app")?.childElementCount ?? 0) > 0),
       "setup failed: the test app did not load its frontend", 30000);
+  }
+
+  async mode(mode: "Chat" | "Verify" | "Review"): Promise<void> {
+    const button = this.browser.$(`[aria-label="Modes"] button[aria-label^="${mode}"]`);
+    await button.click();
+    await holds(this.browser, async () => (await button.getAttribute("aria-current")) === "page", `${mode} selected in the bottom bar`);
+  }
+
+  async waitingBadge(count: number): Promise<void> {
+    const button = this.browser.$('[aria-label="Modes"] button[aria-label^="Review"]');
+    await holds(this.browser, async () => (await button.getAttribute("aria-label")) === (count ? `Review, ${count} waiting` : "Review"), `${count} Human reviews waiting`);
   }
 
   /** The window's text. */
@@ -56,7 +70,7 @@ export class App {
   /** The header bar's controls and text, left to right, and whether the Pane switch reads as on. */
   header(): Promise<{ brand: string; items: string[]; paneOn: boolean }> {
     return this.browser.execute(() => {
-      const bar = document.querySelector("header.bar");
+      const bar = document.querySelector('footer[aria-label="Bottom bar"]');
       return {
         brand: bar?.querySelector(".brand")?.textContent?.trim() ?? "",
         items: [...(bar?.querySelectorAll("button, .reviewer") ?? [])].map((item) => item.textContent?.replace(/\s+/g, " ").trim() ?? ""),
@@ -88,7 +102,7 @@ export class App {
 
   /** Click the header's `name` (Settings, Commands, Pane, a release notice). */
   async headerButton(name: string): Promise<void> {
-    await this.browser.$("header.bar").$(`button*=${name}`).click();
+    await this.browser.$(`button*=${name}`).click();
   }
 
   /** Press `keys` wherever the keyboard is. */
@@ -125,7 +139,7 @@ export class App {
 
   /** Click Commands: the palette opens with its search holding the keyboard. */
   async openPalette(): Promise<NonNullable<Awaited<ReturnType<App["palette"]>>>> {
-    await this.headerButton("Commands");
+    await this.browser.$('footer[aria-label="Bottom bar"] button.brand').click();
     return (await until(this.browser, () => this.palette(), (shown) => !!shown?.focused && shown.commands.length > 0, "the palette opened"))!;
   }
 

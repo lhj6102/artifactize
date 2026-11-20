@@ -139,8 +139,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   }
 }
 
-it("embedded endpoint configuration selects distinct loopback ports and releases them for the service", async () => {
-  const ports = await embeddedPorts(3);
+it("embedded endpoint configuration selects distinct loopback ports and releases them for the service", async (test) => {
+  const { ports, close } = await embeddedPorts(3);
+  test.after(close);
   assert.equal(new Set(ports).size, 3);
   for (const port of ports) {
     assert.ok(Number.isInteger(port) && port > 0 && port < 65536);

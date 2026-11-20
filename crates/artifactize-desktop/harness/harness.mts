@@ -153,13 +153,16 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Envir
     logLevel: "error",
   });
   capabilities["wdio:enforceWebDriverClassic"] = true;
-  const [port] = await embeddedPorts(1);
+  const { ports: [port], close } = await embeddedPorts(1);
   capabilities["wdio:tauriServiceOptions"] = {
     ...capabilities["wdio:tauriServiceOptions"],
     embeddedPort: port,
     logDir: join(candidate.root, "logs"),
   };
-  const browser = await startWdioSession(capabilities);
+  const browser = await startWdioSession(capabilities).catch(async (error: unknown) => {
+    await close();
+    throw error;
+  });
   // Commands must fail within one attempt rather than replaying actions after transport loss.
   browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
   browser.options.connectionRetryCount = 0;
@@ -168,7 +171,7 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Envir
   let ending: Promise<void> | undefined;
   return {
     browser,
-    stop: () => ending ??= cleanupWdioSession(browser).catch((error: unknown) => {
+    stop: () => ending ??= cleanupWdioSession(browser).then(close).catch((error: unknown) => {
       ending = undefined;
       throw error;
     }),

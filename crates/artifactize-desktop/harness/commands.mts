@@ -3,13 +3,15 @@
 import type { CommandActivity } from "../ui/src/ipc/activity.ts";
 import { afterRender } from "../ui/e2e/keys.ts";
 
-export type Checkpoint = { activity: CommandActivity; query: string | null; queryFailure?: string | null };
+export type Checkpoint = { activity: CommandActivity; query: string | null; reviewQuery?: string | null; queryFailure?: string | null };
 
 export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
   return browser.execute(() => {
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Search the branches"]');
     const shown = !!input && input.getBoundingClientRect().height > 0;
+    const filter = document.querySelector<HTMLInputElement>('input[aria-label="Filter the reviews"]');
     return {
+      reviewQuery: filter && filter.getBoundingClientRect().height > 0 ? filter.value : null,
       activity: window.artifactizeCommands,
       query: shown ? input.value : null,
       queryFailure: shown ? document.querySelector('[aria-label="Branches"] .empty.error')?.textContent ?? null : null,
@@ -21,6 +23,11 @@ export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
  * A background read of the new query also qualifies: it rendered that exact query. */
 export function completed(current: Checkpoint, before?: Checkpoint): boolean {
   if (current.activity.pending !== 0 || current.queryFailure) return false;
+  if (before && current.reviewQuery != null && current.reviewQuery !== before.reviewQuery) {
+    const search = current.activity.commands.humanSearch;
+    const previous = before.activity.commands.humanSearch;
+    if (!search || search.completed <= (previous?.completed ?? 0) || search.failed > (previous?.failed ?? 0)) return false;
+  }
   if (current.query === null) return true;
   const search = current.activity.search;
   // Nothing typed yet: the field shows the starting query the first read already used.
@@ -37,6 +44,6 @@ export async function commandsRendered(browser: WebdriverIO.Browser, before?: Ch
     if (!completed(first, before)) return false;
     await afterRender(browser);
     const after = await checkpoint(browser);
-    return completed(after, before) && after.activity.revision === first.activity.revision && after.query === first.query;
+    return completed(after, before) && after.activity.revision === first.activity.revision && after.query === first.query && after.reviewQuery === first.reviewQuery;
   }, { timeout, timeoutMsg: "the current query's native commands and render did not complete" });
 }

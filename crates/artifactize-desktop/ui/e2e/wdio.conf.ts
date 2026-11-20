@@ -100,7 +100,8 @@ export const config = {
       }
       // Ports of this batch's own (their claims last as long as this process), taken once
       // every fixture is ready.
-      const ports = await embeddedPorts(selected.length);
+      const { ports, close } = await embeddedPorts(selected.length);
+      prepared[0]?.scope.defer(close);
       for (const [index, { scope, input, env }] of prepared.entries()) {
         const context = nativePath(scope.root, "context.json");
         writeJson(context, { ...input, root: scope.root, port: ports[index], evidence: nativePath(evidence, selected[index].id) } satisfies Context);

@@ -1,8 +1,7 @@
 // The left pane: hiding and resizing it, starring a branch, searching, and the reviews waiting
 // for a person as other processes change them.
 import assert from "node:assert/strict";
-import { addRepository, addWorktrees, artifactize, createProject, createRelease, declareRelease, orderRuns, request, requests, savedRuns, signOff, verify, verifyWaiting } from "../fixtures/repo.ts";
-import { nativePath } from "../portable.ts";
+import { addRepository, addWorktrees, artifactize, createProject, createRelease, orderRuns, request, requests, savedRuns, verify } from "../fixtures/repo.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
@@ -25,15 +24,15 @@ export const scenarios: Scenario[] = [
       // What the pane holds, ages left out: they tick on.
       const held = async () => (await app.pane.branches()).map((branch) => [branch.name, branch.selected, branch.expanded, branch.entries.map((entry) => [entry.id, entry.shown])]);
       const before = await held();
-      assert.equal((await app.header()).paneOn, true, "the switch reads as on");
-      await app.headerButton("Pane");
+      assert.equal((await app.pane.shown()).visible, true);
+      await app.command("Show or hide the Pane");
       await app.until(async () => !(await app.pane.shown()).visible, "the switch hid the pane");
       const hidden = await app.pane.layout();
       assert.equal(hidden.divider, false, "its divider goes with it");
-      assert.equal((await app.header()).paneOn, false, "the switch reads as off");
+      assert.equal((await app.pane.shown()).visible, false);
       assert.ok(Math.abs(await app.graph.width() - await app.windowWidth()) <= 1, "the main area takes the window's width");
       assert.equal(await app.graph.title(), run, "with its view as it was");
-      await app.headerButton("Pane");
+      await app.command("Show or hide the Pane");
       await app.until(async () => (await app.pane.shown()).visible, "the switch showed the pane again");
       assert.ok(Math.abs((await app.pane.shown()).width - width) <= 2, "at the width it had");
       assert.equal((await app.pane.search()).query, "sort:name", "its search as it was");
@@ -109,7 +108,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "pane-search",
-    title: "a click in the search field focuses it; free text and key:value terms narrow the branches and the waiting reviews alike, and typing a term suggests keys and their values, a click taking one",
+    title: "a click in the search field focuses it; free text and key:value terms narrow the branches, and typing a term suggests keys and their values, a click taking one",
     journeys: ["J-PANE-SEARCH", "J-PANE-SUGGEST"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -122,11 +121,9 @@ export const scenarios: Scenario[] = [
       await app.pane.focusSearch();
       assert.equal((await app.pane.search()).query, "sort:recent", "the starting query");
       const names = async () => (await app.pane.branches()).map((branch) => branch.name).sort();
-      const waiting = async () => (await app.pane.waiting()).rows.map((row) => row.where).sort();
-      await app.until(async () => JSON.stringify(await waiting()) === JSON.stringify(["other  master", "repo  master", "repo  scope-one", "repo  scope-two"]), "every branch's waiting review listed");
       await app.pane.searchFor("sort:recent scope");
-      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]) && JSON.stringify(await waiting()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]),
-        "free text narrowed the branches and the waiting reviews to the scope ones");
+      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]),
+        "free text narrowed the branches to the scope ones");
       await app.pane.searchFor("sort:recent branch:one");
       await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one"]), "branch: narrowed to scope-one");
       // A key is suggested, then its values; a click takes each.
@@ -134,8 +131,8 @@ export const scenarios: Scenario[] = [
       await app.pane.typeSearch("rep");
       assert.equal(await app.pane.takeSuggestion("repo:"), "sort:recent repo:");
       assert.equal(await app.pane.takeSuggestion("repo:other"), "sort:recent repo:other ");
-      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["other  master"]) && JSON.stringify(await waiting()) === JSON.stringify(["other  master"]),
-        "repo:other narrowed the branches and the waiting reviews to its own");
+      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["other  master"]),
+        "repo:other narrowed the branches to its own");
       await app.pane.typeSearch("bra");
       await app.until(async () => (await app.pane.search()).suggestions.includes("branch:"), "the branch key suggested");
       await app.pane.leaveSearch();
@@ -145,8 +142,8 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "waiting-live",
-    title: "the waiting reviews of every repository list newest first with who claimed them; a claim, a submission and a new Run made by another process show without a reload, and a click opens a review in the main area",
-    journeys: ["J-WAITING", "J-LIVE", "J-MAIN-REVIEW"],
+    title: "Review lists waiting Human reviews with a live unfiltered badge, and opens a listed request",
+    journeys: ["J-BAR", "J-REVIEW-LIST", "J-REVIEW-FILTER", "J-LIVE"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       const older = request(fixture);
@@ -156,26 +153,16 @@ export const scenarios: Scenario[] = [
       return { fixture, data: { older: older.id, newer: newer.id } };
     },
     run: async (app, { fixture, data: { older, newer } }) => {
-      const stack = await app.pane.waitingUntil((shown) => shown.rows.length === 2, "both waiting reviews listed");
-      assert.equal(stack.bar, "Waiting (2)");
-      assert.deepEqual(stack.rows.map((row) => [row.id, row.eval, row.where]), [[newer, "release/signoff", "other  master"], [older, "release/signoff", "repo  master"]],
-        "newest at the top, each with its eval, project and branch");
-      assert.match(stack.rows[0].meta, /^\d+[smh]/, "how long it waits");
-      // Another process claims a review: its row names who claimed it.
+      await app.mode("Review");
+      await app.waitingBadge(2);
+      assert.equal(await app.review.filter(), "type:human waiting");
+      await app.until(async () => (await app.review.list()).length === 2, "both waiting reviews listed");
+      await app.review.filterFor(`type:human request:${newer}`);
+      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "only the requested review matches the new filter");
+      await app.waitingBadge(2);
       assert.equal(artifactize(fixture, ["request", "claim", older, "--reviewer", "bob"]).status, 0);
-      await app.pane.waitingUntil((shown) => shown.rows.find((row) => row.id === older)?.meta.endsWith("· bob") === true, "the claim shows in its row");
-      // Another process submits it: it leaves the stack.
-      signOff(fixture, older);
-      await app.pane.waitingUntil((shown) => shown.bar === "Waiting (1)" && shown.rows.every((row) => row.id !== older), "the submitted review left the stack");
-      // Another process starts a Run on a new repository: its branch is listed.
-      const third = nativePath(fixture.root, "third");
-      declareRelease(fixture, {}, third, "# Notes of third\n");
-      await verifyWaiting(fixture, third);
-      await app.pane.branch("third  master");
-      await app.pane.waitingUntil((shown) => shown.rows.length === 2, "the new Run's review waits too");
-      // A click on a row opens its review in the main area.
-      await app.pane.openWaiting(newer);
-      await app.graph.titled("Review");
+      await app.waitingBadge(1);
+      await app.review.openListed(newer);
       assert.match(await app.review.debugState(), new RegExp(`^Request ${newer} `));
     },
   }),
