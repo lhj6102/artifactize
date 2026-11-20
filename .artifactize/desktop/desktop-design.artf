@@ -37,8 +37,9 @@ model menu, the Main area's views, references and their ways back, the Detail, t
 filter, the Artifact Viewer windows and their viewers, Point, the pet overlay, Settings and its tabs, the Find \
 field, the overlays, and on a Current the Definition and Source, the edit dialogs, a dragged Artifact or comment, the drop \
 target, Reset layout, comments and the comment field) has a place on one of the screen pages; no D- rule or figure \
-contradicts a journey (what a control does, where it sits, what a state shows, what hovering does); the D- rules describe appearance and arrangement without inventing behaviour the journeys do not have. Keyboard shortcuts are optional: a missing, extra or different shortcut is not a finding; the visible way \
-(button, menu, palette, click) is what must agree. A journey's behaviour (what a click, a key or a dismissal \
+contradicts a journey (what a control does, where it sits, what a state shows, what hovering does); the D- rules describe \
+appearance and arrangement without inventing behaviour the journeys do not have. Apply the visible-way and optional \
+shortcut rule in {desktop-ux-features}. A journey's behaviour (what a click, a key or a dismissal \
 does, what an edit writes) need not be restated in the design: every screen, state and overlay a journey names needs \
 a place and its look on a page, and no D- rule or figure may contradict a journey; a behaviour the pages leave to \
 the journeys is not a finding. The \

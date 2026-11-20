@@ -33,6 +33,20 @@ instruction = """
 Read the checklist {rules-platform}. Then review the Rust code of {desktop-backend} \
 (src/) against every P- item, reading the library {engine-core} as context for the calls the backend makes; the library's own code is judged by its own evals. Tool paths are relative to the Artifact, for example src/lib.rs. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
 
+[evals.implements-journeys]
+title = "The desktop backend supports the app's declared journeys"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.implements-journeys.payload]
+instruction = """
+Read {desktop-ux-features}. Judge the backend code in {desktop-backend} against the parts of those journeys its \
+commands, types, events and windows are responsible for: launches and navigation references, Chat turns and Run \
+links, live Run and review updates, claim and draft lifecycle, viewer scope and Point, and Settings actions. Trace \
+the calls into {engine-core} where the library provides the behavior; judge the desktop's wiring, not the library \
+implementation or the frontend's layout, controls or shortcuts. Report only concrete contradictions or missing support \
+for a named journey, with the journey ID and the backend code that causes it."""
+
 [evals.fmt]
 title = "The Rust formatting check passes"
 profile = { kind = "runtime", command = "rustfmt", args = ["--check", "--edition", "2024", "lib.rs", "main.rs", "e2e_observe.rs"], timeout_ms = 60000 }

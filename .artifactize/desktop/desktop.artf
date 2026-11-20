@@ -94,7 +94,7 @@ default capabilities and its frontend bundle contain none of them. Read how {des
 Cargo.toml (features and optional dependencies), build.rs, src/ where it registers plugins, the capability files and \
 tauri*.json, and the frontend entry and build configuration in ui/. Check the release app, built with the default \
 Cargo features and the default frontend build, against that; how the suite \
-selects the test build is judged by desktop-e2e."""
+selects the test build is judged by desktop-e2e-infra/follows-rules."""
 
 [evals.suite-passes]
 title = "The end-to-end suite passes on a headless display"
