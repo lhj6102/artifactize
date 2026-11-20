@@ -175,7 +175,10 @@ fn affected(
             Ok((
                 row.get::<_, String>(0)?,
                 super::path_column(row, 1)?,
-                row.get::<_, Option<String>>(2)?.map(PathBuf::from),
+                match row.get_ref(2)? {
+                    rusqlite::types::ValueRef::Null => None,
+                    _ => Some(super::path_column(row, 2)?),
+                },
                 row.get::<_, ExecutionId>(3)?,
                 row.get::<_, String>(4)?,
             ))

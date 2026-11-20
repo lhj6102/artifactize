@@ -327,6 +327,9 @@ async function serve(): Promise<void> {
   let scope: Owned | undefined;
   let startupFailure: unknown;
   const acquire = async (...args: Parameters<typeof launch>): Promise<Session> => {
+    if (startupFailure instanceof AggregateError) {
+      throw new Error("Cannot launch again before the previous app's exit is confirmed.", { cause: startupFailure });
+    }
     try { return await launch(...args); }
     catch (error) { startupFailure = error; throw error; }
   };
@@ -348,9 +351,10 @@ async function serve(): Promise<void> {
       } catch (error) { failures.push(error); }
     }
     if (startupFailure !== undefined) failures.push(new Error("App startup failed", { cause: startupFailure }));
-    if (shown) {
-      // The app may still run on the fixture and the build: both are kept, and said so.
-      failures.push(new Error(`The app did not stop; its fixture and build are kept at ${candidate?.root ?? "the build folder"}`));
+    // The service rejects with an AggregateError if startup and cleanup both fail. No
+    // browser handle is returned in that case, but the app may still hold these inputs.
+    if (shown || startupFailure instanceof AggregateError) {
+      failures.push(new Error(`The app's exit was not confirmed; its fixture and build are kept at ${candidate?.root ?? "the build folder"}`));
     } else {
       // The fixture's Runs end and its files go, then the build.
       try { await scope?.close(); } catch (error) { failures.push(error); }
