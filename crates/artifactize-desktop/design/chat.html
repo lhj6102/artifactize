@@ -40,13 +40,13 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar">
-    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span></span>
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
     <span class="m-modes"><span class="m-mode on"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">1</span></span></span>
-    <span class="m-bar-side end"><span class="m-reviewer">alice</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span><span class="m-button">Settings</span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
   </header>
   <div class="m-screen">
     <section class="m-pane">
-      <div class="m-pane-head"><span class="m-button small"><span class="m-icon i-add"></span>New</span></div>
+      <div class="m-pane-head"><b>Chats</b><span class="m-spacer"></span><span class="m-button small"><span class="m-icon i-add"></span>New</span></div>
       <ul class="m-list">
         <li class="m-item plain selected"><span class="m-item-name">Fix checkout rounding</span><span class="m-item-sub">shop · fix/checkout-rounding · now</span></li>
         <li class="m-item plain"><span class="m-item-name">Gift card balance</span><span class="m-item-sub">shop · feat/gift-cards · 1h</span></li>
@@ -77,7 +77,7 @@
         </div>
         <div class="m-composer">
           <div class="m-composer-box">
-            <div class="m-composer-text"><span class="m-placeholder" style="color: var(--ink-3)">Message</span></div>
+            <div class="m-composer-text"><span class="m-placeholder" style="color: var(--ink-3)">Ask the agent to work on this branch…</span></div>
             <div class="m-composer-row"><span class="m-picker"><span class="m-provider">Claude Agent</span>·<span>Opus 5.5</span><span class="m-icon i-unfold"></span></span><span class="m-spacer"></span><span class="m-icon-button primary" aria-label="Send"><span class="m-icon i-send"></span></span></div>
           </div>
         </div>
@@ -100,7 +100,7 @@
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>New</b><span>The Pane's head: one small button, New, which opens the dialog that asks for the session's branch.</span></div></li>
+  <li><span class="n">1</span><div><b>Chats and New</b><span>The Pane's head: its name, <i>Chats</i>, and at its right one small button, New, which opens the dialog that asks for the session's branch.</span></div></li>
   <li><span class="n">2</span><div><b>Sessions</b><span>Newest first, each its title and, under it, its project, branch and age; the shown one on the selection. A long title is cut with an ellipsis inside the Pane.</span></div></li>
   <li><span class="n">3</span><div><b>Header row</b><span>The session's title, then its project and branch as its headline in the quieter ink: the branch whose worktree the agent works in.</span></div></li>
   <li><span class="n">4</span><div><b>A message</b><span>What the person sent, on the group surface at the column's right; the agent's text runs at the left without a box.</span></div></li>
@@ -189,7 +189,7 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-CHAT-1">D-CHAT-1</dt>
-  <dd>Chat's Pane is one <code>--surface-panel</code> column: its head, a 40px row closed below by <code>--line-group</code>, holds <b>New</b>, a small button with the add icon; under it the sessions, newest first, each a two-line row: the title in <code>--ink</code> at <code>--text-body</code>, cut with an ellipsis, and under it <i>project · branch · age</i> in <code>--ink-2</code> at <code>--text-small</code> with tabular figures. The shown session's row has <code>--selection</code> and, while the keyboard is in the list, the 2px inset bar (D-SYS-7). <span class="avoid">a heading such as Chats; a card per session; a session's last message under its title; a preview on hover.</span></dd>
+  <dd>Chat's Pane is one <code>--surface-panel</code> column: its head, a 40px row closed below by <code>--line-group</code>, holds <i>Chats</i> semibold at <code>--text-small</code> and, at its right, <b>New</b>, a small button with the add icon; under it the sessions, newest first, each a two-line row: the title in <code>--ink</code> at <code>--text-body</code>, cut with an ellipsis, and under it <i>project · branch · age</i> in <code>--ink-2</code> at <code>--text-small</code> with tabular figures. The shown session's row has <code>--selection</code> and, while the keyboard is in the list, the 2px inset bar (D-SYS-7). <span class="avoid">a card per session; a session's last message under its title; a preview on hover.</span></dd>
   <dt id="D-CHAT-2">D-CHAT-2</dt>
   <dd>The Main area's header row (D-MAIN-1) names the session: its title as the view's name, then as its headline <i>{project} / {branch}</i> in <code>--ink-2</code>. Under it, closed above by <code>--line-panel</code>, the conversation stands on <code>--surface-app</code>, in a column of <code>--measure</code> centred in the area, newest at the bottom: it scrolls on its own and follows its newest line unless scrolled up. With no session shown, one <code>--ink-2</code> line says how to start one (D-MAIN-3). <span class="avoid">the conversation stretched to the window's width; the session's ID as its title; avatars; timestamps on every message.</span></dd>
   <dt id="D-CHAT-3">D-CHAT-3</dt>
@@ -199,7 +199,7 @@
   <dt id="D-CHAT-5">D-CHAT-5</dt>
   <dd>A Run reference is a row of 32px inside a <code>--line-group</code> border of <code>--radius-control</code> on <code>--surface-panel</code>: the Run's status icon in its colour, <b>Verify</b>, the Run ID in <code>--mono</code>, its status word bold in its colour (in progress, then its verdict, changing in place), what needs attention (each eval that failed or waits for a person, its status's icon and its name, cut with an ellipsis), and at the right <i>Open in Verify</i>, a text reference in <code>--accent</code> led by the open icon (D-REF-1). A Run that cannot be read says so in <code>--red</code> in place of its status. <span class="avoid">a coloured card or stripe for the Run's status; a Run reference without its Run ID; Open in Verify as a primary button.</span></dd>
   <dt id="D-CHAT-6">D-CHAT-6</dt>
-  <dd>The composer stands under the conversation in the same <code>--measure</code> column, 12px above the area's bottom: a field on <code>--surface-input</code> with a <code>--line-input</code> border of <code>--radius-chip</code>, its text growing to eight lines, then one row: the provider and model selector at the left, a quiet button of <code>--control</code> height with the provider's name in <code>--ink-2</code>, the model's in <code>--ink</code> and the unfold icon; and at the right <b>Send</b>, the one primary control, an icon button of <code>--control</code> with the send icon and its accessible name, which becomes <b>Stop</b>, a quiet icon button with the stop icon, while a turn runs. Keyboard focus is the field's 2px ring (D-SYS-7). <span class="avoid">the selector above the field or at its right; Send at the left; a Send button with a key cap; a disabled composer while a turn runs.</span></dd>
+  <dd>The composer stands under the conversation in the same <code>--measure</code> column, 12px above the area's bottom: a field on <code>--surface-input</code> with a <code>--line-input</code> border of <code>--radius-chip</code>, its text growing to eight lines, its placeholder <i>Ask the agent to work on this branch…</i> in <code>--ink-3</code>, then one row: the provider and model selector at the left, a quiet button of <code>--control</code> height with the provider's name in <code>--ink-2</code>, the model's in <code>--ink</code> and the unfold icon; and at the right <b>Send</b>, the one primary control, an icon button of <code>--control</code> with the send icon and its accessible name, which becomes <b>Stop</b>, a quiet icon button with the stop icon, while a turn runs. Keyboard focus is the field's 2px ring (D-SYS-7). <span class="avoid">the selector above the field or at its right; Send at the left; a Send button with a key cap; a disabled composer while a turn runs.</span></dd>
   <dt id="D-CHAT-7">D-CHAT-7</dt>
   <dd>The model menu opens upward from the selector, its bottom left at the selector's top left, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow. Each provider Settings lists is a group: its name as a group label (D-SYS-5), then its models as <code>--row</code> rows, each the model's name in <code>--ink</code> and its ID in <code>--mono</code> <code>--ink-2</code> at the right; the session's model has <code>--selection</code> and semibold; a provider that lists none says why in <code>--red</code> at <code>--text-small</code> in its group. After a <code>--line-group</code> line, <b>Connect provider</b> with the add icon ends the menu. Taller than the room above the selector, the menu scrolls inside itself. <span class="avoid">a menu that opens downward over the composer; a menu that opens on hover; a model chosen by colour alone; a line explaining the harness.</span></dd>
 </dl>

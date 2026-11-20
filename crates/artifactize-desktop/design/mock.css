@@ -2277,3 +2277,40 @@
   background: var(--surface-bar);
   overflow: hidden;
 }
+
+/* A review's evaluation space with room: the review at the left (instruction, Tools, the Tool
+   log taking the rest, Debug), the Evaluation at the right, of the Detail's width: its head row
+   with the stage, Notes growing into the free height, the verdict choice and its form, and the
+   actions along the column's bottom. */
+.m-review-split > .m-review:first-child {
+  border-left: 0;
+  background: var(--surface-panel);
+}
+.m-eval {
+  display: flex;
+  flex-direction: column;
+}
+.m-eval-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 10px;
+}
+.m-eval .m-notes {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 10px;
+}
+.m-eval .m-notes .m-input {
+  flex: 1;
+}
+.m-review.m-eval .m-actions {
+  margin: 0;
+  padding: 8px var(--pad);
+  border-top: 1px solid var(--line-group);
+}
+.m-eval .m-notes > .m-name {
+  flex: none;
+}
