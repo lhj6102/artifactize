@@ -19,13 +19,15 @@ pub fn check_build(context: &tauri::Context<tauri::Wry>) -> std::process::ExitCo
                 .windows(plugin_path.len())
                 .any(|part| part == plugin_path)
         });
-    if context.config().app.with_global_tauri && test_frontend {
-        println!("artifactize-desktop-e2e");
-        std::process::ExitCode::SUCCESS
-    } else {
-        eprintln!("the desktop binary does not contain the E2E configuration and frontend");
-        std::process::ExitCode::FAILURE
-    }
+    println!(
+        "{}",
+        serde_json::json!({
+            "embeddedDriver": true,
+            "globalTauri": context.config().app.with_global_tauri,
+            "testFrontend": test_frontend,
+        })
+    );
+    std::process::ExitCode::SUCCESS
 }
 
 /// Evidence of a zero-status return from the normal Tauri event loop.

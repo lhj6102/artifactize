@@ -7,13 +7,16 @@ import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { displayEnvironment, setVariable, variable, type Environment } from "./platform.ts";
+import { appsAtOnce, displayEnvironment, setVariable, variable, type Environment } from "./platform.ts";
 import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson } from "./portable.ts";
 import { COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
 
 const candidate = readCandidate();
 const selected = selectedScenarios(JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[]);
 if (!selected.length) throw new Error("a WDIO batch needs its scenarios in DESKTOP_TEST_BATCH");
+if (selected.length > appsAtOnce || (selected.length > 1 && selected.some((item) => item.alone))) {
+  throw new Error("this WDIO batch exceeds the platform's isolated app capacity");
+}
 const output = makeDirectory(asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? ""));
 const evidence = asNativePath(variable("DESKTOP_TEST_EVIDENCE_RUN") ?? nativePath(output, "evidence"));
 const owned: Owned[] = [];

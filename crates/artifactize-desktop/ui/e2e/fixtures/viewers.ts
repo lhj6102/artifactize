@@ -51,8 +51,8 @@ export async function createViewed(own: Owned): Promise<Fixture> {
   writeText(nativePath(definitions, "back.artf"), `path = "back/"\n${check("serves", "back", "pass", "Check that {front} is served.")}`);
   for (const folder of ["front", "back"]) writeText(nativePath(makeDirectory(nativePath(fixture.repo, folder)), ".gitkeep"), "");
   writeText(nativePath(fixture.repo, ".artifactize", "system.artf"), `path = ".artifactize/system/"\ntype = "artifactize"\n${signoff("the system")}`);
-  declareArtifact(fixture.repo, ["page"], "page", `type = "html"\n${signoff("the page")}`);
-  writeText(nativePath(fixture.repo, "page", "index.html"), '<!doctype html><title>Checkout</title><div id="checkout"><span class="total">42</span></div>\n');
+  declareArtifact(fixture.repo, ["checkout"], "page", `type = "html"\n${signoff("the page")}`);
+  writeText(nativePath(fixture.repo, "checkout", "index.html"), '<!doctype html><title>Checkout</title><div id="checkout"><span class="total">42</span></div>\n');
   initRepo(fixture);
   const added = artifactize(fixture, ["plugin", "add", suitePath("..", "..", "..", "..", "examples", "plugins", "html")]);
   if (added.status !== 0) throw new Error(`the html plugin was not added: ${added.stderr}${added.stdout}`);

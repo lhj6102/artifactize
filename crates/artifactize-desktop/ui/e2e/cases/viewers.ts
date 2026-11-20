@@ -50,7 +50,7 @@ export const scenarios: Scenario[] = [
       await w.petChoose("GREEN");
       await w.petEnter("comment", "Checked the totals.");
       const done = await w.petSubmit();
-      assert.equal(done.error, "", "submitted");
+      assert.equal(done.refusal, "", "submitted");
       const saved = request(fixture, "notes/signoff");
       assert.notEqual(saved.status, "DEFERRED", "the review is settled");
       assert.equal(saved.result?.comment, "Checked the totals.");
@@ -97,10 +97,9 @@ export const scenarios: Scenario[] = [
       const frame = await w.frameUntil((shown) => shown !== null, "the plugin's page framed");
       assert.equal(frame?.sandbox, "allow-scripts", "the page runs sandboxed, without the app's origin");
       assert.match(frame?.src ?? "", /viewer/, "served from the viewer's own scheme");
-      // The page reached the bridge and says, in the strip, what it shows: its loaded page.
-      const strip = await w.stripUntil((shown) => shown.items.some((item) => item.endsWith("· Checkout")), "the html page's status in the strip");
-      assert.ok(!strip.items.some((item) => item.startsWith("Loading") || item.includes("did not connect")), "connected");
-      assert.equal(strip.point, true, "Point in the strip for the claimed review");
+      const strip = await w.stripUntil((shown) => shown.items.includes("checkout/index.html · Checkout")
+        && !shown.items.some((item) => item.startsWith("Loading") || item.includes("did not connect") || item.includes("did not load")), "the HTML Viewer shows the loaded Checkout document");
+      assert.equal(strip.point, true, "the claimed review can Point in the plugin");
       await w.main();
     },
   }),
