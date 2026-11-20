@@ -27,6 +27,7 @@ mod transcript;
 mod watch;
 
 mod viewer;
+mod windows;
 
 pub use failure::Failure;
 pub use ids::{JobId, SignInId, TranscriptHandle};
@@ -94,6 +95,9 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             viewer::viewer_close,
             viewer::viewer_point,
             viewer::active_review_set,
+            windows::viewer_window,
+            windows::pet_show,
+            windows::main_focus,
             request::request_detail,
             release::release_notice,
             release::release_open,
@@ -163,6 +167,7 @@ pub struct App {
     generation: generation::Generation,
     sites: tools::Sites,
     viewers: viewer::Sessions,
+    windows: windows::Windows,
 }
 
 impl App {
@@ -178,6 +183,7 @@ impl App {
             generation: generation::Generation::default(),
             sites: tools::Sites::default(),
             viewers: viewer::Sessions::default(),
+            windows: windows::Windows::default(),
         }
     }
 
@@ -229,6 +235,7 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
         .setup(move |app| {
             specta.mount_events(app);
             app.state::<App>().viewers.forward(app.handle().clone());
+            app.state::<App>().windows.attach(app.handle().clone());
             let command_state = state.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 if let Err(error) =
@@ -247,10 +254,16 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
             }
             Ok(())
         })
+        .register_asynchronous_uri_scheme_protocol(
+            windows::SCHEME,
+            |context, request, responder| {
+                responder.respond(windows::page(context.app_handle(), &request));
+            },
+        )
         .on_window_event(|window, event| {
             // Nothing waits for the scans to stop: the app is closing.
             if let tauri::WindowEvent::Destroyed = event {
-                drop(window.state::<App>().close());
+                windows::destroyed(window);
             }
         })
 }

@@ -196,6 +196,15 @@ export const commands = {
 	/**  Append to the shared draft and return the updated plain-text response. */
 	viewerPoint: (session: number, text: string) => typedError<string, Failure>(__TAURI_INVOKE("viewer_point", { session, text })),
 	activeReviewSet: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("active_review_set", { request })),
+	/**
+	 *  Open the Artifact Viewer of viewer session `session`, titled `title`; one already showing the
+	 *  same Artifact in the same viewer comes to the front instead.
+	 */
+	viewerWindow: (session: number, title: string) => typedError<null, Failure>(__TAURI_INVOKE("viewer_window", { session, title })),
+	/**  Show the pet overlay for the active review `request`, or hide it for `None`. */
+	petShow: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("pet_show", { request })),
+	/**  Bring the main window to the front: the pet overlay leads back to its review there. */
+	mainFocus: () => typedError<null, Failure>(__TAURI_INVOKE("main_focus")),
 	/**  The read-only Detail of request `id` in its Run. */
 	requestDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("request_detail", { id })),
 	/**

@@ -397,6 +397,8 @@ export class Review {
       true);
       if (!notice) return;
       this.notice = notice;
+      // A viewer tool opened a viewer session: its Artifact Viewer window shows it (J-VIEWER).
+      if (notice.viewer) await call(this.ipc.viewerWindow(notice.viewer.session, notice.viewer.title));
       // Declarations may have changed; show what the next run resolves.
       await this.load();
     } catch (error) {

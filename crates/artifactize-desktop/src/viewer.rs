@@ -66,6 +66,30 @@ impl Sessions {
             .ok_or_else(|| Failure::Missing("Artifact Viewer session closed.".into()))
     }
 
+    /// End viewer session `session`: its window closed, or another shows the same Artifact.
+    pub(crate) fn drop_session(&self, session: u32) {
+        self.0
+            .lock()
+            .expect("viewer sessions")
+            .live
+            .remove(&session);
+    }
+
+    /// The page of viewer session `session` when its viewer is a plugin's web page.
+    pub(crate) fn web_page(&self, session: u32) -> Option<String> {
+        let viewer = self
+            .0
+            .lock()
+            .expect("viewer sessions")
+            .live
+            .get(&session)
+            .cloned()?;
+        match viewer.entry() {
+            plugins::ViewerEntry::Web { html } => Some(html.to_string()),
+            plugins::ViewerEntry::Builtin { .. } => None,
+        }
+    }
+
     pub(crate) fn reset(&self) {
         let mut sessions = self.0.lock().expect("viewer sessions");
         sessions.active = None;

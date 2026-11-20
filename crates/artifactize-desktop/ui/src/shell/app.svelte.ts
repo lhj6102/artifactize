@@ -68,6 +68,32 @@ export class AppState {
   waiting = $state(0);
   /** The Open by ID dialog. */
   asking = $state(false);
+  /** The active review: the claimed review last shown in Review, which viewers' Point and the
+   * pet overlay act on; the library holds it and clears it when the review settles. */
+  active = $state<string | null>(null);
+  /** This window is in front. */
+  focused = $state(true);
+  /** The review the pet overlay was last asked to show, or `null` when it was hidden. */
+  #pet: string | null = null;
+
+  /** Make the claimed review `id` the active one. */
+  async activate(id: string): Promise<void> {
+    if (this.active === id) return;
+    this.active = id;
+    try {
+      await call(this.ipc.activeReviewSet(id));
+    } catch {
+      // Not this reviewer's claim (any more): the library keeps the active review it had.
+      if (this.active === id) this.active = null;
+    }
+  }
+
+  /** Show the pet overlay for review `id`, or hide it for `null`. */
+  async pet(id: string | null): Promise<void> {
+    if (this.#pet === id) return;
+    this.#pet = id;
+    await this.ipc.petShow(id).catch(() => {});
+  }
 
   /** One canonical Review, with requested IDs as aliases once IPC resolves them. */
   review(id: string): Review {

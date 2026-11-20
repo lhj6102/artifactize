@@ -50,6 +50,8 @@ export class ArtifactTools {
     this.busy = { label: `Running ${tool.operation}`, job };
     try {
       this.notice = await call(this.ipc.artifactToolRun(branch, this.artifact, tool.name, job));
+      // A viewer tool opened a viewer session: its Artifact Viewer window shows it (J-VIEWER).
+      if (this.notice.viewer) await call(this.ipc.viewerWindow(this.notice.viewer.session, this.notice.viewer.title));
     } catch (error) {
       this.notice = { text: message(error), error: true };
     } finally {

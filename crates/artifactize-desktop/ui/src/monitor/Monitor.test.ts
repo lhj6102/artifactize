@@ -437,3 +437,26 @@ it("closes a review in Review with the one Close in its header, after leaving th
   await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Human reviews" })));
 });
+
+it("makes the claimed review shown in Review the active one, and shows the pet overlay while its evaluation space is not in front", async () => {
+  const { calls } = backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1")] }));
+  render(App);
+  const main = await screen.findByLabelText("Review's main area");
+  const region = await within(main).findByLabelText("Human review");
+  await within(main).findByRole("button", { name: "Claim to review (c)" });
+  const asked = (command: string) => calls.filter((call) => call.command === command).map((call) => (call.args as { request: string | null }).request);
+  expect(asked("active_review_set")).toEqual([]);
+  await fireEvent.keyDown(region, { key: "c" });
+  await waitFor(() => expect(asked("active_review_set")).toEqual(["run-a-2"]));
+  // In front, the review needs no overlay.
+  expect(asked("pet_show")).toEqual([]);
+  await fireEvent.keyDown(window, { key: "2", code: "Digit2", ctrlKey: true });
+  await waitFor(() => expect(asked("pet_show")).toEqual(["run-a-2"]));
+  await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
+  await waitFor(() => expect(asked("pet_show")).toEqual(["run-a-2", null]));
+  // Another application in front: the overlay shows again.
+  window.dispatchEvent(new Event("blur"));
+  await waitFor(() => expect(asked("pet_show")).toEqual(["run-a-2", null, "run-a-2"]));
+  window.dispatchEvent(new Event("focus"));
+  await waitFor(() => expect(asked("pet_show")).toEqual(["run-a-2", null, "run-a-2", null]));
+});

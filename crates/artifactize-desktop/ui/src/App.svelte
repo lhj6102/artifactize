@@ -5,7 +5,10 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { Dialog } from "bits-ui";
   import { onMount, tick } from "svelte";
-  import { call, message, onCurrentChanged, onHumanDraftChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
+  import { listen } from "@tauri-apps/api/event";
+  import type { Attachment } from "svelte/attachments";
+  import { call, message, subscribe, onActiveReviewChanged, onCurrentChanged, onHumanDraftChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
+  import { PET_OPEN } from "./pet/pet";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewMode from "./review/ReviewMode.svelte";
   import ChatMode from "./chat/ChatMode.svelte";
@@ -54,6 +57,15 @@
     const unscanned = onCurrentChanged((branch) => void current.changed(branch));
     // A review's draft written elsewhere (another window, the pet overlay, a viewer's Point).
     const undrafted = onHumanDraftChanged((id) => void app.reviews[id]?.readDraft());
+    // The active review settled, was released or was replaced.
+    const unactive = onActiveReviewChanged((request) => (app.active = request));
+    // The pet overlay leads back to its review here.
+    const unpet = subscribe<string>((handler) => listen(PET_OPEN, handler), (id) => void app.showReview(id));
+    // Whether this window is in front: the pet overlay stands aside while the review is.
+    const focus = () => (app.focused = true);
+    const blur = () => (app.focused = false);
+    window.addEventListener("focus", focus);
+    window.addEventListener("blur", blur);
     // Closing the window asks about this session's review claims first, like `q`.
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
@@ -67,9 +79,23 @@
       unlogged();
       unscanned();
       undrafted();
+      unactive();
+      unpet();
+      window.removeEventListener("focus", focus);
+      window.removeEventListener("blur", blur);
       unlisten?.();
     };
   });
+
+  /** The active review follows the claimed review shown in Review, and the pet overlay shows it
+   * while its evaluation space is not in front (J-POINT, J-PET). Re-runs as those change. */
+  const following: Attachment = () => {
+    const shown = r.shown.kind === "review" ? app.reviews[r.shown.id] : undefined;
+    const owned = shown?.owned ? shown.id : null;
+    if (owned) void app.activate(owned);
+    const inFront = app.focused && app.mode === "review" && owned !== null && owned === app.active;
+    void app.pet(app.active && !inFront ? app.active : null);
+  };
 
   async function quit() {
     if (await leaving.allowed()) await getCurrentWindow().destroy();
@@ -217,7 +243,7 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="app">
+<div class="app" {@attach following}>
   {#if app.failure}
     <p class="failure">{app.failure}</p>
   {:else if app.launch}
