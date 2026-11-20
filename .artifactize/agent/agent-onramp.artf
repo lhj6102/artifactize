@@ -2,6 +2,11 @@ path = "harness/"
 type = "files"
 parts = ["agent-harness"]
 
+[evals.owned-hosts]
+title = "Disposable host output and process ownership work together"
+profile = { kind = "runtime", command = "python3", args = ["-I", "test_agent_plugin.py"], timeout_ms = 60000 }
+payload.instruction = "Run the disposable host process seams of {agent-onramp} using the shared command ownership from {agent-harness}."
+
 [evals.follows-test-rules]
 title = "The onramp's Python tests and harness entry points follow the test rules"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
