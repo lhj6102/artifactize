@@ -1,18 +1,20 @@
-// One request in the shared Human Detail: what it shows, which area has focus, the GREEN and
-// RED drafts and the running job. Every write goes through a backend job; the request's state
-// is whatever the backend last read.
-import { SvelteMap } from "svelte/reactivity";
+// One request in the shared Human Detail: what it shows, which area has focus, the open form and
+// the running job. Every write goes through a backend job; the request's state is whatever the
+// backend last read. Its draft (the Notes, the chosen verdict and both forms' values) is the
+// library's, one per review and reviewer, shared with the pet overlay and a viewer's Point.
 import type { Jobs } from "../ipc/jobs.svelte";
 import { CommandError, call, commands, message, type Commands } from "../ipc/client";
 import type {
   Acted,
   Draft,
+  DraftChange,
   FieldValue,
   FormField,
   FormView,
   HumanView,
   LogEntry,
   Notice,
+  ReviewDraft,
   Settled,
   Verdict,
 } from "../ipc/client";
@@ -21,10 +23,10 @@ export type Area = "instruction" | "tools" | "fields";
 
 const NO_DRAFT: Draft = { verdict: "GREEN", fields: [] };
 
-/** The draft of one verdict; it survives switching verdicts and leaving the Detail. The library
- * owns what an edit means: every edit is sent to it and its answer replaces the draft whole. A
- * typed value shows at once as a temporary override of the values derived from that draft, and
- * is rolled back if the library refuses it. */
+/** The form of one verdict of the library's draft. The library owns the draft and what an edit
+ * means: every edit is sent to it and its answer replaces the draft whole. A typed value shows at
+ * once as a temporary override of the values derived from that draft, and is rolled back if the
+ * library refuses it. */
 export class FormDraft {
   readonly id: string;
   readonly verdict: Verdict;
@@ -36,12 +38,26 @@ export class FormDraft {
   error = $state<string | null>(null);
   /** Counts edits: only the newest answer replaces the draft. */
   #edits = 0;
+  /** Edits sent and not answered yet. */
+  #pending = 0;
 
-  constructor(id: string, view: FormView, readonly ipc: Commands = commands) {
+  constructor(
+    id: string,
+    view: FormView,
+    readonly ipc: Commands = commands,
+    /** The library's whole draft after one of this form's edits. */
+    readonly onanswer: (draft: ReviewDraft) => void = () => {},
+  ) {
     this.id = id;
     this.verdict = view.verdict;
     this.fields = view.fields;
     this.snapshot = view.draft;
+  }
+
+  /** The library's draft of this verdict, read after a change made elsewhere; an edit on its
+   * way answers with a newer one. */
+  adopt(view: FormView): void {
+    if (this.#pending === 0) this.snapshot = view.draft;
   }
 
   draft(): Draft {
@@ -54,25 +70,32 @@ export class FormDraft {
   /** Set field `name`. */
   async set(name: string, value: FieldValue): Promise<void> {
     this.values = { ...this.values, [name]: value };
-    await this.#ask((draft) => call(this.ipc.humanEditField(this.id, draft, name, value)));
+    await this.#ask({ kind: "field", verdict: this.verdict, name, value });
   }
 
   /** Add an empty item to the list field `name`; the library builds it. */
   async add(name: string): Promise<void> {
-    await this.#ask((draft) => call(this.ipc.humanAddItem(this.id, draft, name)));
+    await this.#ask({ kind: "addItem", verdict: this.verdict, name });
   }
 
   /** Remove item `item` of the list field `name`; the library keeps one to type in. */
   async remove(name: string, item: number): Promise<void> {
-    await this.#ask((draft) => call(this.ipc.humanRemoveItem(this.id, draft, name, item)));
+    await this.#ask({ kind: "removeItem", verdict: this.verdict, name, item });
   }
 
-  async #ask(edit: (draft: Draft) => Promise<Draft>): Promise<void> {
+  async #ask(change: DraftChange): Promise<void> {
     const mine = ++this.#edits;
+    this.#pending += 1;
     try {
-      const answer = await edit(this.draft());
-      if (mine === this.#edits) this.snapshot = answer;
+      const answer = await call(this.ipc.humanDraftEdit(this.id, change));
+      this.#pending -= 1;
+      if (mine === this.#edits) {
+        this.snapshot = (this.verdict === "GREEN" ? answer.green : answer.red).draft;
+        this.error = null;
+      }
+      this.onanswer(answer);
     } catch (error) {
+      this.#pending -= 1;
       if (mine === this.#edits) {
         // Rolled back: a new snapshot object derives the values from the draft again.
         this.snapshot = { ...this.snapshot };
@@ -99,8 +122,13 @@ class ReviewState {
   idle: Promise<void> = Promise.resolve();
   notice = $state.raw<Notice | null>(null);
   form = $state<FormDraft | null>(null);
-  readonly drafts = new SvelteMap<Verdict, Draft>();
+  /** The library's draft of this review for this reviewer, as last read or answered. */
+  draft = $state.raw<ReviewDraft | null>(null);
   choice = 0;
+  /** Notes typed and not sent yet; the text the next send is based on; one send at a time. */
+  pending: string | null = null;
+  base: string | null = null;
+  sending = false;
 
   constructor(id: string) { this.id = id; }
 }
@@ -123,6 +151,10 @@ export class Review {
   set notice(value: Notice | null) { this.#state.notice = value; }
   get form(): FormDraft | null { return this.#state.form; }
   set form(value: FormDraft | null) { this.#state.form = value; }
+  get draft(): ReviewDraft | null { return this.#state.draft; }
+
+  /** The draft's Notes; typed text shows at once, as an override, until the library answers. */
+  notes = $derived(this.#state.draft?.notes ?? "");
 
   readonly settled = $derived(this.view?.stage === "completed");
   readonly owned = $derived(this.view?.stage === "review");
@@ -151,6 +183,11 @@ export class Review {
     }
   }
 
+  /** A read made elsewhere (a reference's opening): show it as this review's own. */
+  adopt(view: HumanView): void {
+    this.#show(view);
+  }
+
   #show(view: HumanView): void {
     const canonical = this.#intern?.(view.id, this) ?? this;
     if (canonical !== this) this.#state = canonical.#state;
@@ -166,6 +203,61 @@ export class Review {
       this.stopEditing();
       this.log = [];
     }
+    // Claimed by this reviewer: its draft, kept by the library, is written from here on.
+    if (view.stage === "review" && this.#state.draft === null) void this.readDraft();
+  }
+
+  /** Read the library's draft again: after a change made elsewhere (the pet overlay, a Point,
+   * another window), unless Notes typed here are still on their way. */
+  async readDraft(): Promise<void> {
+    const state = this.#state;
+    if (state.sending) return;
+    try {
+      const draft = await call(this.ipc.humanDraft(this.id));
+      if (state !== this.#state || state.sending) return;
+      this.#take(draft);
+    } catch (error) {
+      this.notice = { text: message(error), error: true };
+    }
+  }
+
+  /** The library's answer: the draft whole, the open form following it. */
+  #take(draft: ReviewDraft): void {
+    this.#state.draft = draft;
+    this.#state.base = draft.notes;
+    this.form?.adopt(this.form.verdict === "GREEN" ? draft.green : draft.red);
+  }
+
+  /** Write the Notes: what is typed shows at once and is sent in order, one edit at a time, each
+   * based on the text the one before sent, so a Point appended meanwhile is kept. */
+  writeNotes(text: string): void {
+    this.notes = text;
+    const state = this.#state;
+    state.pending = text;
+    if (!state.sending) void this.#sendNotes(state);
+  }
+
+  async #sendNotes(state: ReviewState): Promise<void> {
+    state.sending = true;
+    let last: ReviewDraft | null = null;
+    try {
+      while (state.pending !== null) {
+        const text = state.pending;
+        state.pending = null;
+        const previous = state.base ?? state.draft?.notes ?? "";
+        last = await call(this.ipc.humanDraftEdit(this.id, { kind: "notes", previous, text }));
+        state.base = text;
+      }
+    } catch (error) {
+      state.pending = null;
+      last = null;
+      this.notice = { text: message(error), error: true };
+    } finally {
+      state.sending = false;
+    }
+    if (state !== this.#state) return;
+    if (last) this.#take(last);
+    else void this.readDraft();
   }
 
   #acted(acted: Pick<Acted, "notice" | "view">): void {
@@ -195,6 +287,7 @@ export class Review {
         call(this.ipc.humanClaim(this.id, job)),
       );
       if (acted) this.#acted(acted);
+      if (acted && this.owned) await this.readDraft();
     } catch (error) {
       this.notice = { text: message(error), error: true };
     }
@@ -216,31 +309,32 @@ export class Review {
     }
   }
 
-  /** Open the form of `verdict`, keeping the other verdict's draft. */
+  /** Open the form of `verdict`: the library's draft takes the verdict, each verdict keeping
+   * what was typed into its form. */
   async choose(verdict: Verdict): Promise<void> {
     if (this.busy || this.settled) return;
     this.area = "fields";
     const state = this.#state;
     const choice = ++state.choice;
     if (this.form?.verdict === verdict) return;
-    let draft: FormDraft;
+    let answer: ReviewDraft;
     try {
-      draft = new FormDraft(this.id, await call(this.ipc.humanForm(this.id, verdict, this.#state.drafts.get(verdict) ?? null)), this.ipc);
+      answer = await call(this.ipc.humanDraftEdit(this.id, { kind: "verdict", verdict }));
     } catch (error) {
       if (state === this.#state && choice === state.choice) this.notice = { text: message(error), error: true };
       return;
     }
     // Another verdict was chosen, or editing stopped, while this form was on its way.
     if (state !== this.#state || choice !== state.choice) return;
-    this.#state.drafts.delete(verdict);
-    if (this.form) this.#state.drafts.set(this.form.verdict, this.form.draft());
-    this.form = draft;
+    if (!state.sending) state.draft = answer;
+    this.form = new FormDraft(this.id, verdict === "GREEN" ? answer.green : answer.red, this.ipc, (draft) => {
+      if (state === this.#state && !state.sending) state.draft = draft;
+    });
   }
 
-  /** Leave the form with its draft kept; the same verdict reopens it. */
+  /** Leave the form; the library keeps its draft, and the same verdict reopens it. */
   stopEditing(): void {
     this.#state.choice += 1;
-    if (this.form) this.#state.drafts.set(this.form.verdict, this.form.draft());
     this.form = null;
   }
 
@@ -260,13 +354,15 @@ export class Review {
       return null;
     }
     try {
-      const submitted = await this.#job(`Submitting ${form.verdict}`, (job) =>
-        call(this.ipc.humanSubmit(this.id, form.draft(), job)),
-      );
+      const submitted = await this.#job(`Submitting ${form.verdict}`, async (job) => {
+        // What is typed reaches the library first: it submits the draft it keeps.
+        await this.#settledNotes();
+        return call(this.ipc.humanDraftSubmit(this.id, job));
+      });
       if (!submitted) return null;
       form.error = null;
       this.form = null;
-      this.#state.drafts.clear();
+      this.#state.draft = null;
       this.log = [];
       this.#acted(submitted);
       return submitted.settled;
@@ -278,6 +374,11 @@ export class Review {
       }
       return null;
     }
+  }
+
+  /** Settles once no Notes are on their way to the library. */
+  async #settledNotes(): Promise<void> {
+    while (this.#state.sending) await new Promise((resolve) => setTimeout(resolve, 20));
   }
 
   /** Run a tool at once; the backend checks the claim when it starts. What the tool prints

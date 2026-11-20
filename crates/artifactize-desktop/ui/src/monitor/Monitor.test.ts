@@ -10,7 +10,7 @@ import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import type { BrowseView, CurrentView, LaunchView, Navigate, RunPanel } from "../ipc/client";
 import App from "../App.svelte";
 import { branch, branchKey, browseView, runChip, waitingRow } from "./fixtures";
-import { greenForm, humanView } from "../review/fixtures";
+import { draftLibrary, humanView } from "../review/fixtures";
 
 vi.mock("./layout", () => ({
   NODE: { width: 168, height: 44 },
@@ -59,18 +59,42 @@ const current = (revision: number, checking = 0): CurrentView => ({
 const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
 /** The backend: `snapshot` answers every browse; the calls are recorded. */
-function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: (scan: number) => CurrentView } = { view: current }) {
+function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: (scan: number) => CurrentView } = { view: current }, outside: string | null = null) {
   const calls: { command: string; args: unknown }[] = [];
   let scans = 0;
   /** The newest step the backend holds. */
   let shown: CurrentView | null = null;
   let stage: "claim" | "review" = "claim";
+  const library = draftLibrary();
   mockIPC(
     (command, args) => {
       calls.push({ command, args });
+      const drafted = library.answer(command, args);
+      if (drafted) return drafted;
       switch (command) {
         case "launch":
           return launch;
+        case "human_search":
+          return {
+            reviews: snapshot().waiting.map((row) => ({
+              id: row.id, target: { run: "run-0", node: "e:release/signoff" }, title: row.title, eval: row.eval,
+              worktree: "/app", project: row.project, branch: row.branch, age: row.age, mark: row.mark, claimant: null, mine: false,
+            })),
+            next: null,
+          };
+        case "human_waiting_count":
+          return snapshot().waiting.length;
+        case "human_open_reference":
+          return { view: humanView(stage), outsideFilter: outside !== null, outsideReason: outside };
+        case "detail": {
+          const asked = args as { source: unknown; node: string };
+          return {
+            source: asked.source, node: asked.node, target: "artifact", title: asked.node, summary: "", request: null, profile: null,
+            mark: null, plan: null, outcome: null, sections: [], evidence: null, card: null, running: false,
+          };
+        }
+        case "request_detail":
+          return { profile: "human", request: (args as { id: string }).id };
         case "browse":
         case "redraw":
           return snapshot();
@@ -99,8 +123,6 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
         case "human_claim":
           stage = "review";
           return { notice: null, view: humanView(stage) };
-        case "human_form":
-          return greenForm;
         default:
           return null;
       }
@@ -366,23 +388,40 @@ it("searches the Pane as typed, and Esc puts sort:recent back before leaving the
 it("opens the newest waiting review when started with review alone", async () => {
   backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1"), waitingRow("run-8-1")] }));
   render(App);
-  await waitFor(() => expect(screen.getByLabelText("Review's main area").querySelector("h2")?.textContent).toBe("Review"));
+  const main = await screen.findByLabelText("Review's main area");
+  // The review's eval names the main area, its title beside it.
+  await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("release/signoff"));
   expect(workspace("Review").hidden).toBe(false);
   const rows = within(screen.getByRole("listbox", { name: "Human reviews" })).getAllByRole("option");
   expect(rows[0].getAttribute("aria-selected")).toBe("true");
-  expect(within(screen.getByLabelText("Review's main area")).getByLabelText("Human review")).toBeTruthy();
+  expect(within(main).getByLabelText("Human review")).toBeTruthy();
+});
+
+it("opens a review by reference outside the filter, says why, and leads back to its Run in Verify", async () => {
+  const main = branch("main", [runChip("run-a", "GREEN")]);
+  backend({ ...monitor("run-a-2"), mode: "review" }, () => browseView(1, { branches: [main] }), { view: current }, "claimed by you");
+  render(App);
+  const area = await screen.findByLabelText("Review's main area");
+  await within(area).findByLabelText("Human review");
+  expect(within(area).getByRole("status").textContent).toBe("Opened from a reference · outside the filter (claimed by you)");
+  // The filter is left as it was.
+  expect((screen.getByLabelText("Filter the reviews") as HTMLInputElement).value).toBe("type:human waiting");
+  await fireEvent.click(within(area).getByRole("button", { name: "Verify · run-a › release" }));
+  expect(workspace("Verify").hidden).toBe(false);
+  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-a"));
 });
 
 it("closes a review in Review with the one Close in its header, after leaving the review's form", async () => {
   backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1")] }));
   render(App);
   const main = await screen.findByLabelText("Review's main area");
-  await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("Review"));
+  await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("release/signoff"));
   const region = await within(main).findByLabelText("Human review");
   await within(main).findByRole("button", { name: "Claim to review (c)" });
-  // Close is the header's one control, and the review keeps none of its own.
+  // The way back to its Run leads the header; Close is its one control, and the review keeps
+  // none of its own.
   const header = main.querySelector("h2")!.parentElement!;
-  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close"]);
+  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Verify · run-a › release", "Close"]);
   expect(within(main).getAllByRole("button", { name: /Close/ })).toHaveLength(1);
 
   await fireEvent.keyDown(region, { key: "c" });
@@ -392,7 +431,7 @@ it("closes a review in Review with the one Close in its header, after leaving th
   // The first Close leaves the form with the review still open; the next returns to the Pane.
   await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
   await waitFor(() => expect(within(main).queryByLabelText(/comment/)).toBeNull());
-  expect(main.querySelector("h2")?.textContent).toBe("Review");
+  expect(main.querySelector("h2")?.textContent).toBe("release/signoff");
   await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Human reviews" })));
 });

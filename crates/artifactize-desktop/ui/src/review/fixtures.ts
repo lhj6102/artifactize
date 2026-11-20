@@ -1,5 +1,43 @@
 // Backend answers for component tests: what the commands would return for one request.
-import type { FormView, HumanView } from "../ipc/client";
+import type { DraftChange, FieldValue, FormView, HumanView, ReviewDraft, Verdict } from "../ipc/client";
+
+/** The library's draft of one review, kept as the backend keeps it: `answer` takes the draft
+ * commands (`human_draft`, `human_draft_edit`, `human_draft_append`) and returns what the backend
+ * would, `undefined` for any other command. A list item added is `empty` of that list. */
+export function draftLibrary(green: FormView = greenForm, red: FormView = redForm, empty: Record<string, unknown> = {}) {
+  const draft: ReviewDraft = { verdict: "GREEN", notes: "", green: structuredClone(green), red: structuredClone(red) };
+  const form = (verdict: Verdict) => (verdict === "GREEN" ? draft.green : draft.red);
+  const edit = (verdict: Verdict, name: string, change: (value: FieldValue) => FieldValue) => {
+    const fields = form(verdict).draft.fields;
+    const at = fields.findIndex(([field]) => field === name);
+    fields[at] = [name, change(fields[at][1])];
+  };
+  const answer = (cmd: string, args: unknown): ReviewDraft | undefined => {
+    if (cmd === "human_draft") return structuredClone(draft);
+    if (cmd === "human_draft_append") {
+      const text = (args as { text: string }).text;
+      draft.notes = draft.notes === "" || draft.notes.endsWith("\n") ? `${draft.notes}${text}` : `${draft.notes}\n${text}`;
+      return structuredClone(draft);
+    }
+    if (cmd !== "human_draft_edit") return undefined;
+    const change = (args as { change: DraftChange }).change;
+    if (change.kind === "verdict") draft.verdict = change.verdict;
+    else if (change.kind === "notes") {
+      if (!draft.notes.startsWith(change.previous)) throw { kind: "action", message: "Review notes changed; reload the draft before saving." };
+      draft.notes = change.text + draft.notes.slice(change.previous.length);
+    } else if (change.kind === "field") edit(change.verdict, change.name, () => change.value);
+    else {
+      const item = change.kind === "removeItem" ? change.item : null;
+      edit(change.verdict, change.name, (value) => {
+        const items = "value" in value && Array.isArray(value.value) ? (value.value as unknown[]) : [];
+        const next = item === null ? [...items, empty[change.name] ?? ""] : items.toSpliced(item, 1);
+        return { ...value, value: value.kind === "groups" && next.length === 0 ? [empty[change.name]] : next } as FieldValue;
+      });
+    }
+    return structuredClone(draft);
+  };
+  return { draft, answer };
+}
 
 export function humanView(stage: HumanView["stage"], overrides: Partial<HumanView> = {}): HumanView {
   return {

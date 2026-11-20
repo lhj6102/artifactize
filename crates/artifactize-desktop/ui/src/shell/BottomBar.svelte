@@ -1,54 +1,43 @@
 <script lang="ts">
-  // The window's one bar, along its bottom in every mode (D-BAR-1): the brand and the Pane switch
-  // at its left, Chat, Verify and Review in its middle, Review with the count of Human reviews
-  // waiting for a person, and the reviewer, the release notice, Commands and Settings at its
-  // right. Showing a mode changes only the workspace above it.
+  // The window's one bar, along its bottom in every mode (D-BAR-1), as the reference screens draw
+  // it: the brand at its left, which opens the command palette; Chat, Verify and Review in its
+  // middle, Review with the count of Human reviews waiting for a person; Settings at its right.
+  // Showing a mode changes only the workspace above it.
   import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
   import { getAppState, MODES, type WindowMode } from "./app.svelte";
   import Icon from "./Icon.svelte";
-  import { label } from "./keys";
 
-  let { ontogglepane, onsettings }: { ontogglepane: () => void; onsettings: () => void } = $props();
+  let { onsettings }: { onsettings: () => void } = $props();
   const app = getAppState();
-  const { browse, monitor: m, release } = app;
+  const { monitor: m } = app;
 
-  /** The Human reviews waiting for a person, whatever a filter shows. */
-  const waiting = $derived(browse.view?.waiting.length ?? 0);
   const ICON: Record<WindowMode, "chat" | "verify" | "review"> = { chat: "chat", verify: "verify", review: "review" };
 </script>
 
 <footer class="bar" class:raised={m.settings} aria-label="Bottom bar">
   <div class="side">
-    <div class="brand"><img src={brandMark} alt="" width="16" height="16" />Artifactize</div>
-    <!-- The Pane switch: on (a line along its top) while the Panes are shown. -->
-    <button class="switch" class:on={app.paneShown} aria-pressed={app.paneShown} aria-label="Pane (Ctrl+B)" aria-keyshortcuts="Control+B" onclick={ontogglepane}>
-      <Icon name="pane" />Pane
+    <button class="brand" aria-label="Artifactize: commands (Ctrl+K)" aria-keyshortcuts="Control+K" onclick={() => (app.palette = true)}>
+      <img src={brandMark} alt="" width="16" height="16" />Artifactize
     </button>
   </div>
   <nav class="modes" aria-label="Modes">
     {#each MODES as item (item.mode)}
       {@const on = app.mode === item.mode}
+      {@const count = item.mode === "review" ? app.waiting : 0}
       <button
         class="mode"
         class:on
         aria-current={on ? "page" : undefined}
-        aria-label={item.mode === "review" && waiting > 0 ? `Review, ${waiting} waiting` : item.label}
+        aria-label={count > 0 ? `${item.label}, ${count} waiting` : item.label}
         aria-keyshortcuts={item.keys.replace("Ctrl", "Control")}
         onclick={() => (app.mode = item.mode)}
       >
         <Icon name={ICON[item.mode]} />{item.label}
-        {#if item.mode === "review" && waiting > 0}<span class="count" aria-hidden="true">{waiting}</span>{/if}
+        {#if count > 0}<span class="count" aria-hidden="true">{count}</span>{/if}
       </button>
     {/each}
   </nav>
   <div class="side end">
-    {#if app.launch}<span class="reviewer" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
-    {#if release.notice}
-      <button class="button" onclick={() => (release.open = true)}>{release.notice.latest} available</button>
-    {/if}
-    <button class="button" aria-keyshortcuts="Control+K" onclick={() => (app.palette = true)}>
-      Commands <kbd>{label("Ctrl+K")}</kbd>
-    </button>
     <button class="button" aria-pressed={m.settings} aria-label="Settings (Ctrl+,)" aria-keyshortcuts="Control+," data-settings-toggle onclick={onsettings}>Settings</button>
   </div>
 </footer>
@@ -79,24 +68,41 @@
   .side.end {
     justify-content: flex-end;
   }
+  /* The brand, borderless; hovering only steps its face up. */
   .brand {
     display: flex;
     align-items: center;
     flex: none;
     gap: 8px;
+    height: var(--control);
+    margin: 0;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--ink);
+    font: inherit;
     font-weight: 600;
     letter-spacing: 0.01em;
+    cursor: pointer;
   }
-  /* Borderless as tall as the bar: ink under a 2px accent line along its top while on. */
-  .switch,
+  .brand:hover {
+    background: var(--surface-group);
+  }
+  /* Borderless as tall as the bar: the shown one on the group surface, in ink, semibold, under
+     a 2px accent line along its top. */
+  .modes {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+  }
   .mode {
     flex: none;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    align-self: stretch;
     margin: 0;
-    padding: 0 10px;
+    padding: 0 12px;
     border: 0;
     border-radius: 0;
     background: none;
@@ -105,26 +111,9 @@
     cursor: pointer;
     box-shadow: inset 0 2px 0 transparent;
   }
-  .switch {
-    margin-left: 4px;
-  }
-  .switch.on {
-    color: var(--ink);
-    box-shadow: inset 0 2px 0 var(--accent);
-  }
-  .switch:hover,
   .mode:not(.on):hover {
     background: var(--surface-group);
   }
-  .modes {
-    display: flex;
-    align-items: stretch;
-    gap: 2px;
-  }
-  .mode {
-    padding: 0 12px;
-  }
-  /* The shown mode: on the group surface, in ink, semibold, under the accent line. */
   .mode.on {
     background: var(--surface-group);
     color: var(--ink);
@@ -145,14 +134,6 @@
     line-height: 14px;
     text-align: center;
     font-variant-numeric: tabular-nums;
-  }
-  /* A long reviewer name is cut inside the bar; the buttons after it keep their place. */
-  .reviewer {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--ink-2);
   }
   .side :global(.button) {
     flex: none;

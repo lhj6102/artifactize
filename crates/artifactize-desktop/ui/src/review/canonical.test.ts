@@ -3,22 +3,16 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, expect, it } from "vitest";
 import { waitFor } from "@testing-library/svelte";
 import { AppState } from "../shell/app.svelte";
-import { greenForm, humanView, redForm } from "./fixtures";
+import { draftLibrary, humanView } from "./fixtures";
 
 afterEach(() => clearMocks());
 
 function backend() {
+  const library = draftLibrary();
   mockIPC(async (command, args) => {
-    const payload = args as Record<string, unknown>;
     if (command === "human_open") return humanView("review");
-    if (command === "human_form") {
-      const form = payload.verdict === "RED" ? redForm : greenForm;
-      return payload.kept ? { ...form, draft: payload.kept } : form;
-    }
-    if (command === "human_edit_field") {
-      const edit = payload as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-      return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-    }
+    const drafted = library.answer(command, args);
+    if (drafted) return drafted;
     throw new Error(`Unexpected command: ${command}`);
   });
 }

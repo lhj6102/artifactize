@@ -5,7 +5,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { Dialog } from "bits-ui";
   import { onMount, tick } from "svelte";
-  import { call, message, onCurrentChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
+  import { call, message, onCurrentChanged, onHumanDraftChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewMode from "./review/ReviewMode.svelte";
   import ChatMode from "./chat/ChatMode.svelte";
@@ -43,11 +43,17 @@
     // Ages and running times redraw from the snapshot; nothing is read.
     const clock = setInterval(() => void browse.redraw(), 1000);
     const unwatched = release.watch();
-    const unchanged = onStateChanged((resync) => browse.refresh(resync));
+    void app.countWaiting();
+    const unchanged = onStateChanged((resync) => {
+      browse.refresh(resync);
+      void app.countWaiting();
+    });
     // What Human tools print, for whichever review or Artifact shows it.
     const unlogged = onHumanToolLog((logs) => app.logged(logs));
     // Each step of the shown Current's scan.
     const unscanned = onCurrentChanged((branch) => void current.changed(branch));
+    // A review's draft written elsewhere (another window, the pet overlay, a viewer's Point).
+    const undrafted = onHumanDraftChanged((id) => void app.reviews[id]?.readDraft());
     // Closing the window asks about this session's review claims first, like `q`.
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
@@ -60,6 +66,7 @@
       unchanged();
       unlogged();
       unscanned();
+      undrafted();
       unlisten?.();
     };
   });
@@ -113,6 +120,16 @@
     (verify ? m.panes.main : r.panes.main)?.focus();
   }
 
+  /** Focus Review's filter, showing Review and its Pane first. */
+  async function filter() {
+    m.settings = false;
+    app.mode = "review";
+    app.paneShown = true;
+    await tick();
+    r.panes.filter?.focus();
+    r.panes.filter?.select();
+  }
+
   /** Show a mode: the workspace above the bar changes, each mode as it was left. */
   function show(mode: WindowMode) {
     m.settings = false;
@@ -139,6 +156,7 @@
     ...MODES.map((item) => ({ id: `app.mode.${item.mode}`, group: "App", label: `Show ${item.label}`, keys: item.keys, run: () => show(item.mode) })),
     { id: "app.pane", group: "App", label: "Show or hide the Pane", keys: "Ctrl+B", run: () => void togglePane() },
     { id: "app.search", group: "App", label: "Search the branches", keys: "/", run: () => void search() },
+    { id: "app.filter", group: "App", label: "Filter the reviews", run: () => void filter() },
     { id: "app.open-id", group: "App", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
     { id: "app.refresh", group: "App", label: "Refresh", keys: "Ctrl+R", run: () => void refresh() },
     { id: "app.quit", group: "App", label: "Quit", keys: "q", run: () => void quit() },
@@ -213,7 +231,7 @@
   {:else}
     <div></div>
   {/if}
-  <BottomBar ontogglepane={() => void togglePane()} onsettings={settings} />
+  <BottomBar onsettings={settings} />
 </div>
 
 <Dialog.Root bind:open={app.asking}>

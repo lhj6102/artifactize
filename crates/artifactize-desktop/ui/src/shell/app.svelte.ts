@@ -7,12 +7,13 @@ import { Activity, observeCommands } from "../ipc/activity.svelte";
 import { Browse } from "../monitor/browse.svelte";
 import { Current } from "../monitor/current.svelte";
 import { Definitions } from "../monitor/definitions.svelte";
-import { MonitorState } from "../monitor/monitor-state.svelte";
+import { MonitorState, keyOf } from "../monitor/monitor-state.svelte";
 import { ArtifactTools, toolsKey } from "../monitor/artifact-tools.svelte";
 import { Registry } from "./commands.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "../review/review.svelte";
 import { ReviewModeState } from "../review/review-mode-state.svelte";
+import { ChatModeState } from "../chat/chat-state.svelte";
 import { Leaving } from "./leaving.svelte";
 import { Release } from "./release.svelte";
 import { Sections } from "./sections.svelte";
@@ -46,6 +47,8 @@ export class AppState {
   readonly monitor = new MonitorState();
   /** Review's chosen review and what its main area shows. */
   readonly reviewMode = new ReviewModeState();
+  /** Chat's sessions and the one shown. */
+  readonly chat = new ChatModeState();
   readonly leaving = new Leaving(this.ipc);
   /** A newer release and its dialog. */
   readonly release = new Release(this.ipc);
@@ -61,6 +64,8 @@ export class AppState {
   readonly tools = $state<Record<string, ArtifactTools>>({});
   palette = $state(false);
   help = $state(false);
+  /** The Human reviews waiting for a person, whatever Review's filter shows: the bar's count. */
+  waiting = $state(0);
   /** The Open by ID dialog. */
   asking = $state(false);
 
@@ -104,33 +109,77 @@ export class AppState {
     for (const id of Object.keys(this.reviews)) delete this.reviews[id];
   }
 
-  /** Show Review with the review `id` open, as a reference opens it: its exact request,
-   * whether or not the list shows it. */
-  showReview(id: string): void {
-    this.review(id);
-    const r = this.reviewMode;
-    r.shown = { kind: "review", id };
-    r.selected = id;
-    r.error = null;
-    this.mode = "review";
+  /** Read the count of Human reviews waiting for a person again. */
+  async countWaiting(): Promise<void> {
+    try {
+      this.waiting = await call(this.ipc.humanWaitingCount());
+    } catch {
+      // The count stays as it was; the next state change reads it again.
+    }
   }
 
-  /** Open the saved request `id` in Review, as a reference opens it: a waiting Human review
-   * actionable, any other request, a settled Human one included, read-only. */
+  /** Show Review with the Human review `id` open, as a reference opens it: its exact request,
+   * whether or not Review's filter lists it, which then says why (J-REVIEW-REF). */
+  async showReview(id: string): Promise<void> {
+    const r = this.reviewMode;
+    this.mode = "review";
+    try {
+      const opened = await call(this.ipc.humanOpenReference(id, r.query));
+      const review = this.review(opened.view.id);
+      review.adopt(opened.view);
+      r.shown = { kind: "review", id: opened.view.id };
+      r.outside = opened.outsideFilter ? (opened.outsideReason ?? "outside the filter") : null;
+      r.selected = id;
+      r.error = null;
+    } catch (failure) {
+      r.error = message(failure);
+    }
+  }
+
+  /** Open the saved request `id` in Review, as a reference opens it: a Human review as its
+   * review, any other request read-only. */
   async openRequest(id: string): Promise<void> {
     const r = this.reviewMode;
     this.mode = "review";
     try {
       const detail = await call(this.ipc.requestDetail(id));
-      const waiting = detail.mark?.status === "WAITING_HUMAN" || detail.mark?.status === "DEFERRED";
-      if (detail.profile === "human" && waiting) return this.showReview(id);
+      if (detail.profile === "human") return await this.showReview(id);
       r.folds = { log: false };
       r.shown = { kind: "request", detail };
+      r.outside = null;
       r.selected = null;
       r.error = null;
     } catch (failure) {
       r.error = message(failure);
     }
+  }
+
+  /** Show Chat with session `id`, brought to Run `run`'s reference when one is named. */
+  showChat(id: string, run: string | null = null): void {
+    this.monitor.settings = false;
+    this.chat.selected = id;
+    this.chat.reveal = run;
+    this.mode = "chat";
+  }
+
+  /** Show Verify with Run `run` chosen on `branch` and node `node`'s Detail open on `tab`. */
+  showRun(run: string, node: string | null = null, tab: string | null = null): void {
+    const m = this.monitor;
+    const branch = this.browse.view?.branches.find((item) => item.chips.some((chip) => chip.kind === "run" && chip.id === run))?.key ?? null;
+    m.settings = false;
+    m.finding = false;
+    this.mode = "verify";
+    if (!branch) {
+      // Only a live branch's Runs are drawn: one whose branch is gone is read in its Detail.
+      this.browse.error = `Run ${run} is not on a live branch.`;
+      return;
+    }
+    m.expanded.add(keyOf(branch));
+    m.selected = { kind: "chip", branch, chip: run };
+    m.shown = { kind: "run", branch, run };
+    m.opened = node === null ? null : { source: { kind: "run", run }, node, tab };
+    this.current.clear();
+    void this.browse.open(run);
   }
 
   /** The backend's launch arrived: remember it; the first snapshot opens what it asks for. */

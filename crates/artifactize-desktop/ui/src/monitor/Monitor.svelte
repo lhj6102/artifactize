@@ -24,6 +24,7 @@
   import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
   import EditDialogs from "./EditDialogs.svelte";
+  import Reference from "../shell/Reference.svelte";
 
   const app = getAppState();
   const { browse, current, definitions, monitor: m } = app;
@@ -382,6 +383,13 @@
           onfocus={() => (m.focus = "main")}
           onkeydown={mainKey}
         >
+          {#snippet lead()}
+            {#if shown.kind === "run" && run?.origin?.kind === "chat"}
+              {@const origin = run.origin}
+              <!-- The way back, first: the Chat session that started the Run (J-RUN-ORIGIN). -->
+              <Reference chip onclick={() => app.showChat(origin.sessionId, run.id)}>Chat · {origin.title}</Reference>
+            {/if}
+          {/snippet}
           {#snippet headline()}
             {#if shown.kind === "run" && run}
               <RunHeadline {run} onrun={openRun} />

@@ -12,9 +12,12 @@
   import ProvidersTab from "./ProvidersTab.svelte";
   import RemoteStore from "./RemoteStore.svelte";
   import { SettingsState, setSettingsState } from "./settings-state.svelte";
+  import { getAppState } from "../shell/app.svelte";
 
   let { active, onclose }: { active: boolean; onclose?: () => void } = $props();
   const s = new SettingsState(useIpc());
+  /** The window's reviewer and a newer release: Settings' header holds them (D-SET-1). */
+  const { launch, release } = $derived(getAppState());
   setSettingsState(s);
 
   const TABS = [
@@ -78,6 +81,10 @@
       {/each}
     </div>
     <div class="spacer"></div>
+    {#if launch}<span class="reviewer">Reviewer {launch.reviewer}</span>{/if}
+    {#if release.notice}
+      <button class="button" onclick={() => (release.open = true)}>{release.notice.latest} available</button>
+    {/if}
     {#if onclose}<button class="button" aria-keyshortcuts="Escape" onclick={onclose}>Close</button>{/if}
   </header>
   {#if s.tab === "providers"}
@@ -110,6 +117,14 @@
   }
   .spacer {
     flex: 1;
+  }
+  /* The name the app claims reviews as, cut inside the header when long. */
+  .reviewer {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-2);
   }
   h1 {
     margin: 0;

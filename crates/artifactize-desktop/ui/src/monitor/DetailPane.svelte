@@ -21,6 +21,7 @@
   import { NeighboursState } from "./neighbours-state.svelte";
   import Neighbours from "./Neighbours.svelte";
   import ArtifactTools from "./ArtifactTools.svelte";
+  import EvalReview from "./EvalReview.svelte";
   import ArtifactStar from "./ArtifactStar.svelte";
   import Definition from "./Definition.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
@@ -219,6 +220,7 @@
                   </span>
                   <span class="muted right">{item.right}</span>
                 </button>
+                {#if source.kind === "run" && item.tone === "human"}<EvalReview {source} node={item.id} {revision} />{/if}
               </li>
             {/each}
           </ul>

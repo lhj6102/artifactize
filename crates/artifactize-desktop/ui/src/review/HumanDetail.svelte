@@ -18,6 +18,7 @@
   import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
+  import Reference from "../shell/Reference.svelte";
   import Section from "../shell/Section.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { chord, composing, editable, label, plain } from "../shell/keys";
@@ -155,21 +156,17 @@
   });
 </script>
 
-{#snippet head()}
-  <!-- The stage alone: CLAIM, or REVIEW (yours) once claimed here; the claimant beside it while
-       another reviewer holds the claim. -->
-  <div class="head">
-    {#if stage}<span class="stage" data-stage={view?.stage}>{stage}</span>{/if}
-    {#if view?.claim && !view.claim.mine && !review.owned}<span class="claimant">{view.claim.reviewer}</span>{/if}
-    {#if onopenreview && view?.stage !== "completed"}
-      <button class="reference" onclick={onopenreview}><Icon name="open" />Open in Review</button>
-    {/if}
-  </div>
+{#snippet stagePill()}
+  {#if stage}<span class="stage" data-stage={view?.stage}>{stage}</span>{/if}
+  {#if view?.claim && !view.claim.mine && !review.owned}<span class="claimant">{view.claim.reviewer}</span>{/if}
+  {#if onopenreview && view?.stage !== "completed"}
+    <Reference onclick={onopenreview}>Open in Review</Reference>
+  {/if}
 {/snippet}
 
-{#snippet column()}
+<!-- The instruction and the Tools: what the reviewer reads and runs. -->
+{#snippet reading()}
   {#if view}
-    {@render head()}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
       class="instruction"
@@ -187,53 +184,67 @@
     <Section name="Tools" folds={false}>
       <Tools {review} />
     </Section>
-    {#if !split && !(review.settled && review.log.length === 0)}
-      <Section name="Tool log" folds={false}>
-        <ToolLog entries={review.log} empty="What the tools print shows here." />
-      </Section>
-    {/if}
-    <Section name="Result" folds={false}>
-      <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
-        {#if review.settled}
-          <!-- The completed result by field, read-only; a request settled without one, its error. -->
-          <div class="completed">
-            {#if view.completed}<ResultEntries entries={view.completed} />{:else}<pre>{view.result}</pre>{/if}
-          </div>
-          <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
-          {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
-        {:else if review.owned && review.form}
+  {/if}
+{/snippet}
+
+<!-- The Result: once claimed, the Notes, then the verdict and its form; settled, the result. -->
+{#snippet result()}
+  {#if view}
+    <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
+      {#if review.settled}
+        <!-- The completed result by field, read-only; a request settled without one, its error. -->
+        <div class="completed">
+          {#if view.notes}<p class="notes-done"><span class="label">Notes</span>{view.notes}</p>{/if}
+          {#if view.completed}<ResultEntries entries={view.completed} />{:else}<pre>{view.result}</pre>{/if}
+        </div>
+        <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
+        {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
+      {:else if review.owned}
+        <label class="notes">
+          <span class="label">Notes</span>
+          <textarea rows="3" placeholder="Optional" value={review.notes} oninput={(event) => review.writeNotes(event.currentTarget.value)}></textarea>
+        </label>
+        {#if review.form}
           <VerdictForm {review} form={review.form} />
-        {:else if review.owned}
+        {:else}
           <div class="verdicts">
             <button class="button" aria-label="GREEN (g)" aria-keyshortcuts="g" onclick={() => void review.choose("GREEN")}>GREEN</button>
             <button class="button" aria-label="RED (r)" aria-keyshortcuts="r" onclick={() => void review.choose("RED")}>RED</button>
           </div>
-        {:else if view.claim}
-          <p class="muted">Read-only until released.</p>
-        {:else}
-          <button class="button primary" aria-label="Claim to review (c)" aria-keyshortcuts="c" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
         {/if}
-        <!-- One row of actions, the last of the Result: Release claim at the left, Submit at the
-             right, and between them what running work or a failure has to say. -->
-        {#if !review.settled && (review.owned || review.busy || review.notice?.error)}
-          <div class="actions">
-            {#if review.owned}
-              <button class="button small" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
-            {/if}
-            <span class="said">
-              {#if review.busy}
-                <span class="busy" role="status"><span class="running"><Icon name="running" label={review.busy.label} /></span><span class="seconds">{Math.floor((h.now - review.busy.since) / 1000)}s</span><button class="button small" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button></span>
-              {:else if review.notice?.error}
-                <span class="error" role="status">{review.notice.text}</span>
-              {/if}
-            </span>
-            {#if review.form}
-              <button class="button small primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
-            {/if}
-          </div>
+      {:else if view.claim}
+        <p class="muted">Read-only until released.</p>
+      {:else}
+        <button class="button primary" aria-label="Claim to review (c)" aria-keyshortcuts="c" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
+<!-- One row of actions: Release claim at the left, Submit at the right, and between them what
+     running work or a failure has to say. -->
+{#snippet actions()}
+  {#if view && !review.settled && (review.owned || review.busy || review.notice?.error)}
+    <div class="actions">
+      {#if review.owned}
+        <button class="button small" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
+      {/if}
+      <span class="said">
+        {#if review.busy}
+          <span class="busy" role="status"><span class="running"><Icon name="running" label={review.busy.label} /></span><span class="seconds">{Math.floor((h.now - review.busy.since) / 1000)}s</span><button class="button small" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button></span>
+        {:else if review.notice?.error}
+          <span class="error" role="status">{review.notice.text}</span>
         {/if}
-      </div>
-    </Section>
+      </span>
+      {#if review.form}
+        <button class="button small primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet debug()}
+  {#if view}
     <Section name="Debug">
       <dl>
         <dt>State</dt>
@@ -254,13 +265,36 @@
   {#if !view}
     <p class="loading">{review.notice?.text ?? "Loading…"}</p>
   {:else if split}
-    <div class="viewer">
-      <div class="head"><span class="name">Tool log</span></div>
-      <ToolLog entries={review.log} view />
+    <!-- The review at the left: the instruction, the Tools and the Tool log taking the rest. -->
+    <div class="reviewing">
+      {@render reading()}
+      <Section name="Tool log" folds={false}>
+        <div class="fill"><ToolLog entries={review.log} empty="What the tools print shows here." /></div>
+      </Section>
+      {@render debug()}
     </div>
-    <div class="side">{@render column()}</div>
+    <!-- The Evaluation at the right, of the Detail's width: the stage, the Result scrolling on
+         its own, the actions along its bottom. -->
+    <div class="evaluation" aria-label="Evaluation" role="group">
+      <div class="head"><span class="name">Evaluation</span>{@render stagePill()}</div>
+      <div class="scroll"><Section name="Result" folds={false}>{@render result()}</Section></div>
+      <div class="bottom">{@render actions()}</div>
+    </div>
   {:else}
-    <div class="one">{@render column()}</div>
+    <div class="one">
+      <div class="head">{@render stagePill()}</div>
+      {@render reading()}
+      {#if !(review.settled && review.log.length === 0)}
+        <Section name="Tool log" folds={false}>
+          <ToolLog entries={review.log} empty="What the tools print shows here." />
+        </Section>
+      {/if}
+      <Section name="Result" folds={false}>
+        {@render result()}
+        {@render actions()}
+      </Section>
+      {@render debug()}
+    </div>
   {/if}
 </section>
 
@@ -284,28 +318,57 @@
     max-width: var(--measure);
     overflow: auto;
   }
-  /* Two panels under the header row's panel line: the Tool log's view at the left and the column
-     at the right, of the Detail's width, meeting at a panel line. */
+  /* Two panels under the header row's panel line (D-REV-1): the review at the left, the
+     Evaluation at the right, of the Detail's width, meeting at a panel line. */
   .human.split {
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--dock-width);
     border-top: 1px solid var(--line-panel);
   }
-  .viewer {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+  /* The review: the instruction and the Tools, then the Tool log taking the rest of the height. */
+  .reviewing {
+    display: flex;
+    flex-direction: column;
     min-height: 0;
     min-width: 0;
-    background: var(--surface-input);
+    overflow: hidden;
+    background: var(--surface-panel);
   }
-  .side {
+  .reviewing > :global(section:has(.fill)) {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .reviewing :global(section:has(.fill) > .body),
+  .fill {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .fill > :global(*) {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  /* The Evaluation: its head row, the Result scrolling on its own, the actions along its bottom. */
+  .evaluation {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     min-height: 0;
     min-width: 0;
-    overflow: auto;
     border-left: 1px solid var(--line-panel);
     background: var(--surface-panel);
   }
-  /* A panel's head row: the view's name, or the column's stage pill; the two in one band. */
+  .scroll {
+    min-height: 0;
+    overflow: auto;
+  }
+  .bottom:not(:empty) {
+    padding: 8px var(--pad);
+    border-top: 1px solid var(--line-group);
+  }
+  /* A panel's head row: the Evaluation's name and the stage pill, or the stage pill alone. */
   .head {
     display: flex;
     align-items: center;
@@ -330,24 +393,6 @@
   .stage[data-stage="review"] {
     background: var(--accent-soft);
     color: var(--accent);
-  }
-  /* A reference to another mode: a text button in the accent led by the open icon (D-REF-1). */
-  .reference {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin: 0;
-    padding: 0 4px;
-    border: 0;
-    border-radius: var(--radius-control);
-    background: none;
-    color: var(--accent);
-    font: inherit;
-    font-size: var(--text-small);
-    cursor: pointer;
-  }
-  .reference:hover {
-    background: var(--surface-group);
   }
   .claimant,
   .muted,
@@ -380,6 +425,39 @@
   .result p {
     margin: 0;
   }
+  /* The review's free text, whatever the verdict: a field of three lines that grows. */
+  .notes {
+    display: grid;
+    gap: 4px;
+  }
+  .label {
+    font-size: var(--text-small);
+    font-weight: 600;
+  }
+  .notes textarea {
+    min-height: 56px;
+    resize: vertical;
+    padding: 6px 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
+    font: inherit;
+  }
+  .notes textarea::placeholder {
+    color: var(--ink-3);
+  }
+  .notes textarea:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
+  }
+  .notes-done {
+    display: grid;
+    gap: 2px;
+    margin: 0 0 8px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
   .verdicts {
     display: flex;
     gap: 6px;
@@ -391,6 +469,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+  .one .actions {
+    margin-top: 12px;
   }
   .actions > :global(.button) {
     flex: none;

@@ -112,7 +112,7 @@ describe("the manual refresh witness", () => {
     await manual.answer();
     await vi.waitFor(() => expect(witnessed()).toEqual({ generation: 1, branches: [] }), WAIT);
 
-    await fireEvent.click(screen.getByRole("button", { name: /Commands/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /commands \(Ctrl\+K\)/ }));
     await fireEvent.click(await screen.findByRole("option", { name: /Refresh/ }));
     const palette = await next(reads, true);
     expect(witnessed()?.generation).toBe(1);

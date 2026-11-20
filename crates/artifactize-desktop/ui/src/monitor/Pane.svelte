@@ -154,10 +154,6 @@
     flex-direction: column;
     min-height: 0;
     background: var(--surface-panel);
-    border-top: 2px solid transparent;
-  }
-  .pane.focused {
-    border-top-color: var(--accent);
   }
   .entries {
     flex: 1;

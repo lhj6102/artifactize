@@ -73,6 +73,14 @@ export const onHumanToolLog = (callback: (logs: KeyedLog[]) => void) =>
 export const onSessionChanged = (callback: (session: string) => void) =>
   subscribe(events.sessionChanged.listen, (payload) => callback(payload.session));
 
+/** A review's draft changed, here, in another process or through a viewer's Point: read it again. */
+export const onHumanDraftChanged = (callback: (id: string) => void) =>
+  subscribe(events.humanDraftChanged.listen, (payload) => callback(payload.id));
+
+/** The active review changed: the review a viewer's Point and the pet overlay act on. */
+export const onActiveReviewChanged = (callback: (request: string | null) => void) =>
+  subscribe(events.activeReviewChanged.listen, (payload) => callback(payload.request));
+
 /** A branch's Current changed: its scan published a step, or ended. */
 export const onCurrentChanged = (callback: (branch: BranchKey) => void) =>
   subscribe(events.currentChanged.listen, (payload) => callback(payload.branch));

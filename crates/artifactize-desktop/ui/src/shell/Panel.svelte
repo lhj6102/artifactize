@@ -16,6 +16,7 @@
     noticeOpen = $bindable(),
     actions,
     beside,
+    lead,
     headline,
     children,
     label,
@@ -30,6 +31,8 @@
     actions?: Snippet;
     /** Controls of what the title names, right after it. */
     beside?: Snippet;
+    /** A way back to where the shown view was opened from, first in the row (D-REF-1). */
+    lead?: Snippet;
     /** What the view shows, in the same row after the title, cut at the row's end. */
     headline?: Snippet;
     children: Snippet;
@@ -62,6 +65,7 @@
   {onkeydown}
 >
   <header>
+    {#if lead}{@render lead()}{/if}
     <h2 class:whole={wholeTitle}>{title}</h2>
     {#if beside}{@render beside()}{/if}
     {#if headline}<div class="headline">{@render headline()}</div>{/if}
@@ -85,17 +89,13 @@
     background: var(--surface-panel);
     outline: none;
   }
-  /* A 32px header row; a focused panel shows a 2px accent line at its top. */
+  /* A 32px header row; which panel has focus shows in its title's ink, not a line. */
   header {
     display: flex;
     align-items: center;
     gap: var(--gap);
     min-height: 32px;
     padding: 0 var(--pad);
-    border-top: 2px solid transparent;
-  }
-  .focused header {
-    border-top-color: var(--accent);
   }
   h2 {
     margin: 0;

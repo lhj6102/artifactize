@@ -1,37 +1,31 @@
 // The Review state against a mocked command boundary: verdict forms that answer out of
-// order, drafts per verdict, and the Tool log the backend's lines build.
+// order, the library's draft per verdict and its Notes, and the Tool log the backend's lines
+// build.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
-import { greenForm, humanView, redForm } from "./fixtures";
+import { draftLibrary, humanView } from "./fixtures";
+import type { DraftChange } from "../ipc/client";
 
-/** A form request the test answers when it chooses. */
+/** A verdict change the test answers when it chooses. */
 type Pending = { verdict: string; answer: () => void };
 
+/** The backend of one claimed review whose draft the library keeps; verdict changes wait for
+ * the test to answer them. */
 function backend() {
   const pending: Pending[] = [];
-  const drafts: unknown[] = [];
+  const library = draftLibrary();
   mockIPC(async (cmd, args) => {
-    const payload = args as Record<string, unknown>;
     if (cmd === "human_open") return humanView("review");
-    if (cmd === "human_edit_field") {
-      // The library's form takes the value as typed.
-      const edit = payload as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-      return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
+    const change = (args as { change?: DraftChange }).change;
+    if (cmd === "human_draft_edit" && change?.kind === "verdict") {
+      await new Promise<void>((answer) => pending.push({ verdict: change.verdict, answer }));
     }
-    if (cmd === "human_form") {
-      drafts.push(payload.kept);
-      const verdict = payload.verdict as string;
-      await new Promise<void>((answer) => pending.push({ verdict, answer }));
-      // The library hands a kept draft back when the schema still takes it.
-      const form = verdict === "RED" ? redForm : greenForm;
-      return payload.kept ? { ...form, draft: payload.kept } : form;
-    }
-    return null;
+    return library.answer(cmd, args) ?? null;
   });
-  return { pending, drafts };
+  return { pending, library };
 }
 
 afterEach(() => clearMocks());
@@ -63,8 +57,8 @@ describe("Review", () => {
     expect(review.form).toBeNull();
   });
 
-  it("keeps each verdict's typed draft when switching verdicts", async () => {
-    const { pending, drafts } = backend();
+  it("keeps each verdict's typed draft in the library when switching verdicts", async () => {
+    const { pending, library } = backend();
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     const green = review.choose("GREEN");
@@ -80,15 +74,23 @@ describe("Review", () => {
     await waitFor(() => expect(pending[2]?.verdict).toBe("GREEN"));
     pending[2].answer();
     await again;
-    // The kept draft goes back to the library, which answers with it.
-    expect(drafts[2]).toEqual({
-      verdict: "GREEN",
-      fields: [
-        ["approved", { kind: "fixed" }],
-        ["comment", { kind: "text", value: "x" }],
-      ],
-    });
+    // The library kept the GREEN draft while RED was open, and hands it back.
+    expect(library.draft.verdict).toBe("GREEN");
     expect(review.form?.values.comment).toEqual({ kind: "text", value: "x" });
+  });
+
+  it("writes the Notes in order, keeping a Point the library appended meanwhile", async () => {
+    const { library } = backend();
+    const review = new Review("run-a-2", new Jobs());
+    await review.load();
+    await waitFor(() => expect(review.draft).not.toBeNull());
+    review.writeNotes("Total");
+    review.writeNotes("Total still");
+    // A viewer's Point lands while the typing is on its way.
+    library.answer("human_draft_append", { text: "#checkout .total" });
+    review.writeNotes("Total still wrong");
+    await waitFor(() => expect(library.draft.notes).toBe("Total still wrong\n#checkout .total"));
+    await waitFor(() => expect(review.notes).toBe("Total still wrong\n#checkout .total"));
   });
 
   it("keeps the claim and the open form when a read from before the claim answers after it", async () => {
@@ -96,6 +98,7 @@ describe("Review", () => {
     let answer!: () => void;
     const held = new Promise<void>((done) => (answer = done));
     let opened = 0;
+    const library = draftLibrary();
     mockIPC(async (cmd, args) => {
       if (cmd === "human_open") {
         opened += 1;
@@ -103,9 +106,7 @@ describe("Review", () => {
         return humanView("claim", { read: opened });
       }
       if (cmd === "human_claim") return { notice: { text: "Claimed.", error: false }, view: humanView("review", { read: 3 }) };
-      if (cmd === "human_form") return greenForm;
-      if (cmd === "human_edit_field") return (args as { draft: unknown }).draft;
-      return null;
+      return library.answer(cmd, args) ?? null;
     });
     const review = new Review("run-a-2", new Jobs());
     await review.load();

@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
-import { greenForm, humanView, redForm } from "./fixtures";
+import { draftLibrary, greenForm, humanView } from "./fixtures";
 import type { FormView, ToolView } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
@@ -21,31 +21,27 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 } as unknown as typeof ResizeObserver;
 
-/** Answer commands like the backend would for one waiting request, recording every call. */
-function backend(stage: "claim" | "review", submit?: (args: Record<string, unknown>) => unknown) {
+/** The library's draft of the request the newest backend answers for. */
+let library = draftLibrary();
+
+/** Answer commands like the backend would for one waiting request, recording every call; its
+ * draft is the library's (`library`). `submit` answers a submission of the saved draft. */
+function backend(stage: "claim" | "review", submit?: (args: Record<string, unknown>) => unknown, kept = draftLibrary()) {
   const calls: Call[] = [];
   let current = stage;
+  library = kept;
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
+    const drafted = kept.answer(cmd, args);
+    if (drafted) return drafted;
     switch (cmd) {
       case "human_open":
         return humanView(current);
       case "human_claim":
         current = "review";
         return { notice: { text: "Claimed. Fill GREEN or RED fields, then Submit.", error: false }, view: humanView("review") };
-      case "human_form": {
-        // The library hands a kept draft back when the schema still takes it.
-        const asked = args as { verdict: string; kept: object | null };
-        const form = asked.verdict === "RED" ? redForm : greenForm;
-        return asked.kept ? { ...form, draft: asked.kept } : form;
-      }
-      case "human_submit":
+      case "human_draft_submit":
         return submit?.(args as Record<string, unknown>);
-      case "human_edit_field": {
-        // The library's form takes the value as typed.
-        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-      }
       default:
         return null;
     }
@@ -53,21 +49,8 @@ function backend(stage: "claim" | "review", submit?: (args: Record<string, unkno
   return calls;
 }
 
-type Edited = { draft: { fields: [string, { kind: string; value: unknown[] }][] }; name: string; item?: number };
-
-/** The library's answer to adding or removing an item of a list: `empty` is the list's new
- * item, and one is always left to type in. */
-function listed(cmd: string, args: unknown, empty: unknown): unknown {
-  const edit = args as Edited;
-  const items = (value: unknown[]) => {
-    const next = cmd === "human_add_item" ? [...value, empty] : value.toSpliced(edit.item!, 1);
-    return next.length > 0 ? next : [empty];
-  };
-  return {
-    ...edit.draft,
-    fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? { ...value, value: items(value.value) } : value]),
-  };
-}
+/** The saved draft's fields of `verdict`, as the library would submit them. */
+const saved = (verdict: "GREEN" | "RED") => (verdict === "GREEN" ? library.draft.green : library.draft.red).draft.fields;
 
 afterEach(() => {
   cleanup();
@@ -121,7 +104,7 @@ describe("HumanDetail", () => {
     const reason = await screen.findByLabelText(/reason/);
     await user.type(reason, "no");
     // Letters typed into a field are text, not shortcuts.
-    expect(calls.filter((call) => call.cmd === "human_form").length).toBe(1);
+    expect(calls.filter((call) => call.cmd === "human_draft_edit" && (call.args.change as { kind: string }).kind === "verdict").length).toBe(1);
 
     await user.click(screen.getByRole("radio", { name: "GREEN" }));
     const comment = await screen.findByLabelText(/comment/);
@@ -132,8 +115,9 @@ describe("HumanDetail", () => {
     await fireEvent.keyDown(await screen.findByLabelText(/reason/), { key: "s", ctrlKey: true });
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("/reason");
-    const submitted = calls.find((call) => call.cmd === "human_submit");
-    expect(submitted?.args.draft).toEqual({ verdict: "RED", fields: [["reason", { kind: "text", value: "no" }]] });
+    expect(calls.some((call) => call.cmd === "human_draft_submit")).toBe(true);
+    expect(library.draft.verdict).toBe("RED");
+    expect(saved("RED")).toEqual([["reason", { kind: "text", value: "no" }]]);
     expect(((await screen.findByLabelText(/reason/)) as HTMLTextAreaElement).value).toBe("no");
   });
 
@@ -163,7 +147,7 @@ describe("HumanDetail", () => {
     await screen.findByText("REVIEW (yours)");
     await fireEvent.keyDown(region, { key: "g" });
     const comment = await screen.findByLabelText(/comment/);
-    const writes = new Set(["human_form", "human_claim", "human_release", "human_run", "human_submit", "human_cancel"]);
+    const writes = new Set(["human_draft_edit", "human_claim", "human_release", "human_run", "human_draft_submit", "human_cancel"]);
     const before = calls.filter(({ cmd }) => writes.has(cmd)).length;
     await fireEvent.compositionStart(comment);
     for (const key of ["g", "r", "q", "u", "c", "Escape"]) {
@@ -177,12 +161,10 @@ describe("HumanDetail", () => {
     expect(screen.queryByLabelText(/comment/)).not.toBeNull();
     await fireEvent.input(comment, { target: { value: "안녕" }, inputType: "insertCompositionText", data: "안녕" });
     await fireEvent.compositionEnd(comment, { data: "안녕" });
-    await waitFor(() => expect(calls.find(({ cmd }) => cmd === "human_edit_field")?.args.value).toEqual({ kind: "text", value: "안녕" }));
+    await waitFor(() => expect(saved("GREEN")).toEqual([["approved", { kind: "fixed" }], ["comment", { kind: "text", value: "안녕" }]]));
     await fireEvent.keyDown(comment, { key: "s", ctrlKey: true });
-    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "human_submit")).toBe(true));
-    expect(calls.find(({ cmd }) => cmd === "human_submit")?.args.draft).toEqual({
-      verdict: "GREEN", fields: [["approved", { kind: "fixed" }], ["comment", { kind: "text", value: "안녕" }]],
-    });
+    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "human_draft_submit")).toBe(true));
+    expect(library.draft.verdict).toBe("GREEN");
   });
 
   it.each(["typed field", "Submit button"])("keeps the completed result keyboard-accessible after submitting from the %s", async (from) => {
@@ -215,20 +197,21 @@ describe("HumanDetail", () => {
   it("submits while a tool runs, cancelling that tool first", async () => {
     const calls: Call[] = [];
     let stop!: () => void;
+    const kept = draftLibrary();
     mockIPC((cmd, args) => {
       calls.push({ cmd, args: args as Record<string, unknown> });
+      const drafted = kept.answer(cmd, args);
+      if (drafted) return drafted;
       switch (cmd) {
         case "human_open":
           return humanView("review");
-        case "human_form":
-          return greenForm;
         case "human_run":
           // The tool runs until it is cancelled.
           return new Promise((resolve) => (stop = () => resolve({ text: "■ error: cancelled", error: true })));
         case "human_cancel":
           stop();
           return null;
-        case "human_submit":
+        case "human_draft_submit":
           return { notice: { text: "Submitted GREEN", error: false }, view: humanView("completed"), settled: "published" };
         default:
           return null;
@@ -247,8 +230,8 @@ describe("HumanDetail", () => {
     expect(submit.disabled).toBe(false);
     await user.click(submit);
     await completedResult();
-    expect(calls.map(({ cmd }) => cmd).filter((cmd) => ["human_run", "human_cancel", "human_submit"].includes(cmd))).toEqual([
-      "human_run", "human_cancel", "human_submit",
+    expect(calls.map(({ cmd }) => cmd).filter((cmd) => ["human_run", "human_cancel", "human_draft_submit"].includes(cmd))).toEqual([
+      "human_run", "human_cancel", "human_draft_submit",
     ]);
   });
 
@@ -306,18 +289,7 @@ describe("HumanDetail", () => {
       ],
       draft: { verdict: "RED", fields: [["approved", { kind: "fixed" }], ["change", { kind: "list", value: [""] }]] },
     };
-    const calls = backend("review");
-    mockIPC((cmd, args) => {
-      calls.push({ cmd, args: args as Record<string, unknown> });
-      if (cmd === "human_open") return humanView("review");
-      if (cmd === "human_form") return list;
-      if (cmd === "human_add_item" || cmd === "human_remove_item") return listed(cmd, args, "");
-      if (cmd === "human_edit_field") {
-        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-      }
-      return null;
-    }, { shouldMockEvents: true });
+    const calls = backend("review", undefined, draftLibrary(greenForm, list, { change: "" }));
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
@@ -332,9 +304,13 @@ describe("HumanDetail", () => {
     await waitFor(() => expect((screen.getByLabelText("change 1") as HTMLTextAreaElement).value).toBe("Fix the date"));
     expect(screen.queryByLabelText("change 2")).toBeNull();
     // The library adds and removes the items; the form asked it each time.
-    expect(calls.filter(({ cmd }) => cmd === "human_add_item" || cmd === "human_remove_item").map(({ cmd, args }) => [cmd, args.name, args.item])).toEqual([
-      ["human_add_item", "change", undefined],
-      ["human_remove_item", "change", 0],
+    const items = calls.flatMap(({ cmd, args }) => {
+      const change = args.change as { kind: string; name?: string; item?: number } | undefined;
+      return cmd === "human_draft_edit" && (change?.kind === "addItem" || change?.kind === "removeItem") ? [[change.kind, change.name, change.item]] : [];
+    });
+    expect(items).toEqual([
+      ["addItem", "change", undefined],
+      ["removeItem", "change", 0],
     ]);
     expect(screen.getByRole("button", { name: "Submit RED (Ctrl+S)" })).toBeTruthy();
   });
@@ -398,19 +374,11 @@ describe("HumanDetail", () => {
       },
     };
     const submitted: unknown[] = [];
-    mockIPC((cmd, args) => {
-      if (cmd === "human_open") return humanView("review");
-      if (cmd === "human_form") return findings;
-      if (cmd === "human_add_item" || cmd === "human_remove_item") {
-        return listed(cmd, args, [["kind", { kind: "fixed" }], ["problem", { kind: "text", value: "" }], ["severity", { kind: "choice", value: null }]]);
-      }
-      if (cmd === "human_edit_field") {
-        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-      }
-      if (cmd === "human_submit") submitted.push((args as { draft: unknown }).draft);
+    const empty = [["kind", { kind: "fixed" }], ["problem", { kind: "text", value: "" }], ["severity", { kind: "choice", value: null }]];
+    backend("review", () => {
+      submitted.push({ verdict: library.draft.verdict, fields: saved("RED") });
       return null;
-    }, { shouldMockEvents: true });
+    }, draftLibrary(greenForm, findings, { findings: empty }));
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
@@ -438,7 +406,7 @@ describe("HumanDetail", () => {
 
   it("says in grey that an optional field may stay empty", async () => {
     const optional: FormView = { ...greenForm, fields: greenForm.fields.map((field) => ({ ...field, required: field.name !== "comment" })) };
-    mockIPC((cmd) => (cmd === "human_open" ? humanView("review") : cmd === "human_form" ? optional : null), { shouldMockEvents: true });
+    backend("review", undefined, draftLibrary(optional));
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
