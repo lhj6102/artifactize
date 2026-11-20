@@ -311,11 +311,6 @@
   min-height: 0;
   min-width: 0;
   background: var(--surface-panel);
-  border-top: 2px solid transparent;
-}
-.m-pane.focused,
-.m-main.focused {
-  border-top-color: var(--accent);
 }
 
 /* The Pane: Search, Branches, the Waiting stack. */
@@ -855,12 +850,6 @@
   background: var(--surface-panel);
   border-left: 1px solid var(--line-panel);
   overflow: hidden;
-}
-.m-dock .m-main-head {
-  border-top: 2px solid transparent;
-}
-.m-dock.focused .m-main-head {
-  border-top-color: var(--accent);
 }
 .m-dock.focused .m-main-head h2 {
   color: var(--ink);
@@ -1833,37 +1822,75 @@
   color: var(--ink-2);
   font-size: var(--text-small);
 }
-/* A tool the agent used: one dense row on the input surface, its icon, the tool's name, what it
-   acts on, then its outcome at the right. */
+/* A tool the agent used: one quiet line, no box: its icon, then what it did as a verb and what
+   it acted on; a failure follows in red on the same line. */
 .m-call {
-  display: grid;
-  grid-template-columns: var(--icon) max-content minmax(0, 1fr) max-content;
-  gap: 8px;
+  display: flex;
   align-items: center;
+  gap: 8px;
   min-height: var(--row-dense);
-  padding: 0 8px;
-  border-radius: var(--radius-control);
-  background: var(--surface-input);
-  font: var(--text-small) var(--mono);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  overflow: hidden;
 }
 .m-call > .m-icon {
-  color: var(--ink-2);
+  color: var(--ink-3);
 }
 .m-call .m-target {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-call .m-failed {
+  color: var(--red);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Chat's Pane: New chat across its top, then the sessions under their project's label, one line
+   each: the title, and its age at the right. */
+.m-new {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: var(--control);
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  color: var(--ink);
+}
+.m-group-label {
+  margin: 0;
+  padding: 10px var(--pad) 4px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--ink-2);
+}
+.m-session {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row);
+  padding: 0 var(--pad);
+}
+.m-session .m-item-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.m-call .m-outcome {
-  color: var(--ink-2);
-  font-family: var(--font);
-  font-variant-numeric: tabular-nums;
+.m-session .m-age {
+  color: var(--ink-3);
+  font-size: var(--text-small);
 }
-.m-call .m-failed {
-  grid-column: 2 / -1;
-  color: var(--red);
-  font-family: var(--font);
+.m-session.selected {
+  background: var(--selection);
 }
 /* A Run reference: a row inside a group line, the Run's status icon, Verify, the Run ID, its
    status word and what needs attention, then Open in Verify. */
@@ -1922,7 +1949,7 @@
   gap: 6px;
   height: var(--control);
   padding: 0 8px;
-  border: 1px solid var(--line-group);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
   color: var(--ink);
   font-size: var(--text-small);
