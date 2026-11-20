@@ -48,13 +48,21 @@ export function assertCompleted(): void {
 
 /** Close what each scenario started and delete its files; called once the service has
  * stopped every app of the batch. A scenario whose teardown fails is the one that failed: the
- * failure names it and is kept as its evidence, with the window as its flow left it. */
-export async function teardown(): Promise<void> {
+ * failure names it and is kept as its evidence, with the window as its flow left it. When the
+ * service failed to stop the batch's apps (`serviceFailure`), every scenario of the batch keeps
+ * that failure as its evidence, with the window as its flow left it, before its files go. */
+export async function teardown(serviceFailure?: unknown): Promise<void> {
   const scopes = owned.splice(0);
   // Read before the folders go.
   const windows = scopes.map((scope) => nativePath(scope.root, LAST_WINDOW)).map((image) => (exists(image) ? readBytes(image) : undefined));
-  const results = await Promise.allSettled(scopes.map((scope) => scope.close()));
   const failures: unknown[] = [];
+  if (serviceFailure !== undefined) {
+    for (const [index] of scopes.entries()) {
+      const failure = new Error(`the Tauri service failed to stop the apps of the batch (${selected.map((each) => each.id).join(", ")}) once ${selected[index].id}'s flow had ended`, { cause: serviceFailure });
+      await keepEvidence(selected[index].id, nativePath(evidence, selected[index].id), inspect(failure, { depth: null }), windows[index]).catch((cause: unknown) => failures.push(cause));
+    }
+  }
+  const results = await Promise.allSettled(scopes.map((scope) => scope.close()));
   for (const [index, result] of results.entries()) {
     if (result.status !== "rejected") continue;
     const failure = new Error(`the teardown of ${selected[index].id} failed, once its flow had ended and its app had stopped: no wait of it was running`, { cause: result.reason });

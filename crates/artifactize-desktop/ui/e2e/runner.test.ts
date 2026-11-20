@@ -9,11 +9,13 @@ import { nodeProgram } from "./platform.ts";
 import { exists, nativePath, removeTree, scratchDirectory, suitePath, newDirectory } from "./portable.ts";
 import { batches } from "./run.ts";
 
-it("batches scenarios in order, at most `size` apps at once, one that runs alone by itself", () => {
+it("batches scenarios in order, at most `size` apps at once, one that runs alone or is started again by itself", () => {
   const ids = (names: string) => names.split(" ").map((id) => ({ id, alone: id.startsWith("x") }));
   assert.deepEqual(batches(ids("a b c d e"), 2), [["a", "b"], ["c", "d"], ["e"]]);
   assert.deepEqual(batches(ids("a x1 b c x2"), 2), [["a"], ["x1"], ["b", "c"], ["x2"]]);
   assert.deepEqual(batches(ids("a b c"), 1), [["a"], ["b"], ["c"]]);
+  const again = (names: string) => names.split(" ").map((id) => ({ id, restarted: id.startsWith("r") ? async () => {} : undefined }));
+  assert.deepEqual(batches(again("a r1 b c r2 d"), 3), [["a"], ["r1"], ["b", "c"], ["r2"], ["d"]]);
 });
 
 it("gives a fixture's programs homes inside it and none of the person's credentials", () => {

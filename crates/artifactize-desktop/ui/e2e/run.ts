@@ -14,13 +14,15 @@ import { appsAtOnce, assertHeadless, desktopResources, nodeProgram, packageComma
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
 import type { Scenario } from "./scenario.ts";
 
-/** Scenarios in batches of at most `size`, in their order; one that runs alone has a batch of
- * its own. */
-export function batches(scenarios: readonly Pick<Scenario, "id" | "alone">[], size: number): string[][] {
+/** Scenarios in batches of at most `size`, in their order; one that runs alone, or whose app
+ * is started again (the service restarts it for the batch's second spec), has a batch of its
+ * own. */
+export function batches(scenarios: readonly Pick<Scenario, "id" | "alone" | "restarted">[], size: number): string[][] {
+  const single = (item: Pick<Scenario, "alone" | "restarted"> | undefined) => !!item?.alone || !!item?.restarted;
   const result: string[][] = [];
   for (const item of scenarios) {
     const last = result.at(-1);
-    if (item.alone || !last || last.length >= size || last.some((id) => scenarios.find((other) => other.id === id)?.alone)) result.push([item.id]);
+    if (single(item) || !last || last.length >= size || last.some((id) => single(scenarios.find((other) => other.id === id)))) result.push([item.id]);
     else last.push(item.id);
   }
   return result;
@@ -212,8 +214,11 @@ async function launch(): Promise<void> {
   } catch (error) {
     failures.push(configuration.preparationFailure ?? error);
   }
-  try { configuration.assertServiceShutdown(); } catch (error) { failures.push(error); }
-  try { await configuration.teardown(); } catch (error) { failures.push(error); }
+  // A service that failed to stop the apps fails the batch, each scenario keeping it as its
+  // evidence with the window its flow left.
+  let shutdown: unknown;
+  try { configuration.assertServiceShutdown(); } catch (error) { shutdown = error; failures.push(error); }
+  try { await configuration.teardown(shutdown); } catch (error) { failures.push(error); }
   if (failures.length) {
     for (const log of logs()) console.error(log);
     throw new AggregateError(failures, "desktop WDIO batch failed");
