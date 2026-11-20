@@ -7,6 +7,15 @@ const USAGE_ERROR: u8 = 2;
 mod e2e_metadata;
 
 fn main() -> std::process::ExitCode {
+    #[cfg(feature = "e2e")]
+    let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+    #[cfg(feature = "e2e")]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--check-e2e-build")
+    {
+        return e2e_metadata::check_build(&context);
+    }
     let launch = match artifactize_desktop::Launch::parse(std::env::args_os()) {
         Ok(launch) => launch,
         Err(error) => {
@@ -37,7 +46,7 @@ fn main() -> std::process::ExitCode {
     #[cfg(not(feature = "e2e"))]
     let result = app.run(tauri::generate_context!());
     #[cfg(feature = "e2e")]
-    let result = app.build(tauri::generate_context!()).map(|app| {
+    let result = app.build(context).map(|app| {
         use std::sync::{
             Arc,
             atomic::{AtomicBool, Ordering},

@@ -8,6 +8,26 @@
 #[path = "../../artifactize-core/tests/support/os/observation.rs"]
 mod observation;
 
+/// Check the settings and frontend of this actual binary, without opening a window.
+pub fn check_build(context: &tauri::Context<tauri::Wry>) -> std::process::ExitCode {
+    let plugin_path = b"/@wdio/tauri-plugin/";
+    let test_frontend = context
+        .assets()
+        .get(&"/.vite/manifest.json".into())
+        .is_some_and(|contents| {
+            contents
+                .windows(plugin_path.len())
+                .any(|part| part == plugin_path)
+        });
+    if context.config().app.with_global_tauri && test_frontend {
+        println!("artifactize-desktop-e2e");
+        std::process::ExitCode::SUCCESS
+    } else {
+        eprintln!("the desktop binary does not contain the E2E configuration and frontend");
+        std::process::ExitCode::FAILURE
+    }
+}
+
 /// Evidence of a zero-status return from the normal Tauri event loop.
 pub struct ExitReceipt {
     file: Option<std::path::PathBuf>,

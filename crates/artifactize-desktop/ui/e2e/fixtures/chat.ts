@@ -4,6 +4,7 @@ import type { Owned } from "./owned.ts";
 import { artifactize, type Fixture } from "./repo.ts";
 
 export const CHAT_MODEL = "fixture-chat";
+const DEFAULT_MODEL = "fixture-small";
 export const WORK_PROMPT = "Read the release notes and verify the worktree";
 export const STOP_PROMPT = "Wait for my next instruction";
 export const CONTINUE_PROMPT = "Continue after the stopped turn";
@@ -18,7 +19,7 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
   const endpoint = await serveLoopbackHttp((request, response) => {
     if (request.method === "GET" && request.url === "/v1/models") {
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ object: "list", data: [{ id: CHAT_MODEL, object: "model", created: 1, owned_by: "fixture" }] }));
+      response.end(JSON.stringify({ object: "list", data: [DEFAULT_MODEL, CHAT_MODEL].map((id) => ({ id, object: "model", created: 1, owned_by: "fixture" })) }));
       return;
     }
     if (request.method !== "POST" || request.url !== "/v1/responses") {
@@ -28,6 +29,12 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
     let body = "";
     request.setEncoding("utf8").on("data", (chunk: string) => { body += chunk; });
     request.once("end", () => {
+      const selection = (JSON.parse(body) as { model?: string }).model;
+      if (selection !== CHAT_MODEL) {
+        response.writeHead(400, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ error: { message: `Expected the selected model ${CHAT_MODEL}, got ${selection ?? "no model"}` } }));
+        return;
+      }
       const resumed = body.includes(CONTINUE_PROMPT);
       if (!resumed && body.includes(STOP_PROMPT)) return; // The user owns cancellation of this response.
       let number = 1;

@@ -203,6 +203,7 @@ async function launch(): Promise<void> {
   await launcher.initialize();
   const configuration = await import("./wdio.conf.ts");
   loaded = configuration;
+  configuration.trackServiceShutdown(() => (launcher as unknown as { _launcher?: { onComplete?: (...args: never[]) => Promise<void> }[] })._launcher ?? []);
   const failures: unknown[] = [];
   try {
     const code = await launcher.run();
@@ -211,6 +212,7 @@ async function launch(): Promise<void> {
   } catch (error) {
     failures.push(configuration.preparationFailure ?? error);
   }
+  try { configuration.assertServiceShutdown(); } catch (error) { failures.push(error); }
   try { await configuration.teardown(); } catch (error) { failures.push(error); }
   if (failures.length) {
     for (const log of logs()) console.error(log);

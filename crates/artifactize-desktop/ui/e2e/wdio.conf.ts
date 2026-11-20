@@ -23,6 +23,17 @@ const restarts = selected.some((item) => item.restarted);
 if (restarts && selected.length > 1) throw new Error("a scenario that starts its app again runs alone");
 
 /** Why preparing the batch failed, for the runner: WDIO wraps it. */
+type Service = { onComplete?: (...args: never[]) => Promise<void> };
+let observeService: (() => Service[]) | undefined;
+const shutdownFailures: unknown[] = [];
+
+/** WDIO can log an ordinary service error without propagating it to the batch result. */
+export function trackServiceShutdown(services: () => Service[]): void { observeService = services; }
+
+export function assertServiceShutdown(): void {
+  if (shutdownFailures.length) throw new AggregateError(shutdownFailures, "Tauri service failed to stop its apps");
+}
+
 export let preparationFailure: unknown;
 
 /** Fail unless every scenario of the batch ran to its end: a Launcher that found no spec, or a
@@ -82,6 +93,13 @@ export const config = {
   services: [["tauri", { appBinaryPath: candidate.app, driverProvider: "embedded", startTimeout: 60000, logDir: output, captureBackendLogs: true }]],
   async onPrepare(_config: unknown, capabilities: Capability[]) {
     try {
+      for (const service of observeService?.() ?? []) {
+        const original = service.onComplete?.bind(service);
+        if (original) service.onComplete = async (...args) => {
+          try { await original(...args); }
+          catch (error) { shutdownFailures.push(error); throw error; }
+        };
+      }
       const unset = new Set<string>();
       const prepared: { scope: Owned; input: Awaited<ReturnType<typeof selected[number]["prepare"]>>; env: Environment }[] = [];
       for (const item of selected) {
