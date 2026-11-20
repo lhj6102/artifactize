@@ -23,9 +23,11 @@ const input = readJson(asNativePath(context)) as Context;
 // batch): its evidence names the wait it was in and holds the window as the app shows it then;
 // an app the same interrupt ended shows none, which the evidence says.
 let running = false;
+let interruption: Error | undefined;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     if (!running) return;
+    interruption ??= new Error(`interrupted by ${signal}`);
     keepEvidence(item.id, input.evidence, `interrupted by ${signal}`, browser)
       .catch((cause: unknown) => console.error(`no evidence of the interrupted ${item.id} was kept: ${String(cause)}`));
   });
@@ -54,11 +56,13 @@ describe(item.title, () => {
         if (item.restarted) {
           // Quit as a person does, by closing the window, before the app is started again.
           await app.exitsBy(() => app.closeWindow(), input.port);
+          if (interruption) throw interruption;
           writeJson(nativePath(input.root, FIRST), { carried: carried ?? null });
           return;
         }
       }
       // The runner accepts the batch only when every scenario says it ran to its end.
+      if (interruption) throw interruption;
       writeText(nativePath(input.root, COMPLETED), "");
     } catch (error) {
       // A failure carries what the window showed when it failed.

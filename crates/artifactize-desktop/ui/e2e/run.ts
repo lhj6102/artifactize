@@ -1,5 +1,5 @@
-// The suite's runner. `suite [ids...]` builds a candidate (or, for named scenarios, copies the
-// one DESKTOP_TEST_CANDIDATE names), runs the scenarios in batches of as many apps as this OS
+// The suite's runner. `suite [ids...]` builds its own test candidate and runs
+// the scenarios in batches of as many apps as this OS
 // runs at once, each batch a runner of its own on a headless display, and removes what it
 // built. `prepare` and `cleanup <manifest>` build and remove a candidate for later runs, and
 // `unit` runs the suite's own unit tests.
@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { basename } from "node:path";
 import { inspect } from "node:util";
 import { checkSuite } from "../lint/e2e-integrity.ts";
-import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
+import { cleanup, prepare, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { appsAtOnce, assertHeadless, desktopResources, nodeProgram, packageCommand, runnerCommand, systemName, variable } from "./platform.ts";
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
@@ -84,7 +84,7 @@ async function suite(ids: string[]): Promise<void> {
   const noted = () => failures.some((failure) => failure instanceof Error && failure.message.startsWith("interrupted"));
   let candidate: Awaited<ReturnType<typeof prepare>> | undefined;
   try {
-    candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratchDirectory()) : await prepare();
+    candidate = await prepare();
     for (const [index, ids] of groups.entries()) {
       if (interrupted) {
         const left = groups.slice(index).flat();
