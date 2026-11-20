@@ -13,7 +13,7 @@ const REVIEW = `[aria-label="Review's main area"] section[aria-label="Human revi
 
 /** The pet overlay as read: its head row, its Notes, the verdict whose form is open, Point and
  * why it is off, and what it says went wrong. */
-export type Pet = { head: string; notes: string; verdict: string; point: boolean; why: string; error: string };
+export type Pet = { head: string; notes: string; verdict: string; point: boolean; why: string; refusal: string };
 
 export class Windows {
   private readonly browser: WebdriverIO.Browser;
@@ -241,7 +241,7 @@ export class Windows {
         verdict: card?.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
         point: !!point && !point.hasAttribute("disabled"),
         why: card?.querySelector(".why")?.textContent?.trim() ?? "",
-        error: card?.querySelector(".error")?.textContent?.trim() ?? "",
+        refusal: card?.querySelector(".error")?.textContent?.trim() ?? "",
       };
     });
   }
@@ -269,7 +269,7 @@ export class Windows {
   /** Click Submit in the pet: the review is submitted. */
   async petSubmit(): Promise<Pet> {
     await this.browser.$(".card").$("button*=Submit").click();
-    return this.petUntil((pet) => pet.why === "Submitted." || pet.error !== "", "the pet's review submitted or refused");
+    return this.petUntil((pet) => pet.why === "Submitted." || pet.refusal !== "", "the pet's review submitted or refused");
   }
 }
 

@@ -1,14 +1,15 @@
 // The builds the suite and the desktop's own tools run: the E2E test app with the CLI (a
 // candidate), the production app for a person's launch, and the Rust gates. Each build has
 // its own folder, Cargo output included, removed when its owner is done with it.
+import { createHash } from "node:crypto";
 import { executableName, packageCommand, pathNotUrl, setVariable, startTree, stopTree, tempEnvironment, testWindowOptions, variable, type Environment } from "./platform.ts";
-import { absolutePath, asNativePath, copyFile, exists, makeDirectory, nativePath, newDirectory, readJson, removeTree, scratchDirectory, suitePath, writeJson, type NativePath } from "./portable.ts";
+import { absolutePath, asNativePath, copyFile, exists, makeDirectory, nativePath, newDirectory, readBytes, readJson, removeTree, scratchDirectory, suitePath, writeJson, type NativePath } from "./portable.ts";
 
 export const workspace = absolutePath(suitePath(), "../../../..");
 const ui = absolutePath(suitePath(), "..");
 
 /** A built E2E app and CLI, described by the manifest file in their folder. */
-export type Candidate = { root: NativePath; cli: NativePath; app: NativePath; manifest: NativePath };
+export type Candidate = { root: NativePath; cli: NativePath; app: NativePath; manifest: NativePath; e2eAppHash: string };
 
 /** Run a build step with its progress on standard error; with `capture`, its standard output
  * is returned. An interrupt of this process ends its whole process tree. */
@@ -69,8 +70,11 @@ async function building<T>(parent: NativePath | undefined, build: (root: NativeP
   }
 }
 
-function save(root: NativePath, cli: NativePath, app: NativePath): Candidate {
-  const candidate = { root, cli, app, manifest: nativePath(root, "candidate.json") };
+const verifiedCandidates = new Map<string, Candidate>();
+const appHash = (app: NativePath) => createHash("sha256").update(readBytes(app)).digest("hex");
+
+function save(root: NativePath, cli: NativePath, app: NativePath, e2eAppHash = appHash(app)): Candidate {
+  const candidate = { root, cli, app, e2eAppHash, manifest: nativePath(root, "candidate.json") };
   writeJson(candidate.manifest, candidate);
   return candidate;
 }
@@ -99,10 +103,18 @@ export function prepare(parent?: NativePath): Promise<Candidate> {
 /** The candidate the manifest `DESKTOP_TEST_CANDIDATE` names. */
 export function readCandidate(manifest = variable("DESKTOP_TEST_CANDIDATE")): Candidate {
   if (!manifest) throw new Error("DESKTOP_TEST_CANDIDATE is not set; prepare a candidate first");
+  const cached = verifiedCandidates.get(manifest);
+  if (cached) return cached;
   const candidate = readJson(asNativePath(manifest)) as Candidate;
   for (const path of [candidate.cli, candidate.app]) {
     if (typeof path !== "string" || !exists(asNativePath(path))) throw new Error(`the candidate's ${path} is missing`);
   }
+  // Only `prepare`, after checking the test frontend and enabling withGlobalTauri, records
+  // the executable it built. Refuse another executable substituted in the prepared manifest.
+  if (!candidate.e2eAppHash || appHash(candidate.app) !== candidate.e2eAppHash) {
+    throw new Error("the candidate is not the prepared E2E test app; build a new candidate");
+  }
+  verifiedCandidates.set(manifest, candidate);
   return candidate;
 }
 
@@ -121,7 +133,7 @@ export function snapshotCandidate(parent: NativePath): Promise<Candidate> {
     const app = nativePath(root, executableName("artifactize-desktop"));
     copyFile(source.cli, cli);
     copyFile(source.app, app);
-    return adopt(save(root, cli, app));
+    return adopt(save(root, cli, app, source.e2eAppHash));
   });
 }
 

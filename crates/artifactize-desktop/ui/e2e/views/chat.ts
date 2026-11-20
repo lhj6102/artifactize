@@ -10,9 +10,12 @@ export class Chat {
 
   constructor(browser: WebdriverIO.Browser) { this.browser = browser; }
 
-  async create(): Promise<void> {
+  async create(model: string): Promise<void> {
     await this.browser.$('[aria-label="Chats"]').$("button=New chat").click();
-    await this.browser.$('[role="dialog"].new-chat').$("button=Create").click();
+    const dialog = this.browser.$('[role="dialog"].new-chat');
+    const create = dialog.$("button=Create");
+    await holds(this.browser, async () => (await dialog.$('[role="status"]').getText()).includes(model) && await create.isEnabled(), `the starting model ${model} is ready`);
+    await create.click();
     await this.browser.$(`${MAIN} textarea[aria-label="Message"]`).waitForDisplayed();
   }
 
@@ -37,6 +40,15 @@ export class Chat {
   async runCard(): Promise<string> {
     return (await until(this.browser, () => this.browser.execute((log) => document.querySelector(`${log} [data-run]`)?.getAttribute("data-run") ?? "", LOG),
       (run) => /^run-/.test(run), "Chat shows a Run card"));
+  }
+
+  async runStatus(run: string, status: string): Promise<void> {
+    const verdict = this.browser.$(`${LOG} [data-run=${JSON.stringify(run)}] b`);
+    await holds(this.browser, async () => await verdict.getText() === status, `${run}'s Chat card shows ${status}`);
+  }
+
+  async emptySession(): Promise<void> {
+    await holds(this.browser, async () => (await this.browser.$(LOG).getText()).trim() === "", "the other Chat conversation is empty");
   }
 
   async openRun(run: string): Promise<void> {
