@@ -7,13 +7,13 @@
 // and drives the app the way a person would. Nothing is mocked and no model is called.
 //
 // The scenes (assets/screenshots/):
-//   A. monitor.png — the app's one screen: the Pane with the example's branch expanded to its Runs
-//      and the waiting sign-off, and the Run's graph in the Main area with mixed verdicts
-//      (GREEN, RED, blocked, waiting for a person).
+//   A. monitor.png — Verify: the example's branch expanded to its Runs in the Pane, the Run's
+//      graph with mixed verdicts (GREEN, RED, blocked, waiting for a person), and the waiting
+//      review count on the bottom bar.
 //   B. detail.png  — an Artifact's Detail docked over the graph on its Artifact tab: its evals
 //      with their verdicts, and the Artifact between its neighbours, unfolded.
-//   C. review.png  — a claimed Human review opened from the Pane's waiting reviews: its
-//      instruction, Tools, a Tool log run and the GREEN form.
+//   C. review.png  — switch to Review in the bottom bar, open the waiting sign-off and claim it:
+//      its instruction, Tools and a Tool log run on the left, and the GREEN form on the right.
 //
 // Modes:
 //   (none)    capture into assets/screenshots/.
@@ -169,6 +169,13 @@ payload.instruction = "Build the release package from {core}."
 title = "A person approves the release notes"
 profile = { kind = "human" }
 payload.instruction = "Read the release notes and approve them for publication."
+
+[evals.signoff.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.summary = { type = "string", minLength = 1, description = "What did you check in the notes?" }
+required = ["approved", "summary"]
+additionalProperties = false
 `, {
     "package.mjs": "import assert from \"node:assert/strict\";\nimport * as core from \"../core/sum.mjs\";\n\n// The package exports exactly core's public functions.\nassert.deepEqual(Object.keys(core), [\"sum\"]);\n",
     "notes.md": "# Release notes\n\n- Faster startup.\n- Clearer error messages.\n",
@@ -181,7 +188,6 @@ async function capture(output: string, work: string): Promise<void> {
   const { adopt, cleanup, prepare } = await import(`${e2e}/build.ts`);
   const { environment, git } = await import(`${e2e}/fixtures/repo.ts`);
   const { Graph } = await import(`${e2e}/views/graph.ts`);
-  const { Review } = await import(`${e2e}/views/review.ts`);
   const { embeddedPorts } = await import(`${e2e}/portable.ts`);
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
   mkdirSync(output, { recursive: true });
@@ -229,22 +235,29 @@ async function capture(output: string, work: string): Promise<void> {
       writeFileSync(join(output, name), Buffer.from(await app.takeScreenshot(), "base64"));
     };
 
-    // A. The branch's Run shown from its timeline, its graph drawn, and the sign-off in the
-    // Waiting stack. The launched branch opens expanded: its Current first, since the Run ended,
-    // then its one Run.
-    const MAIN = 'section.panel[aria-label="Main area"]';
-    const runChip = '[aria-label="Branches"] [role="treeitem"] button[data-chip]:not([data-chip="current"])';
-    await app.$(runChip).waitForExist({ timeout: WAIT });
-    await app.$(runChip).click();
-    await app.waitUntil(() => app.execute((main) => /^run-/.test(document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? ""), MAIN),
-      { timeout: WAIT, timeoutMsg: "the Main area shows the Run" });
+    // A. Verify shows the branch's Run from its timeline. The bar, not Verify's Pane,
+    // shows the number of reviews waiting for a person.
+    const VERIFY = 'main[aria-label="Verify"]:not([hidden])';
+    const MAIN = `${VERIFY} section.panel[aria-label="Main area"]`;
+    const MODES = '[aria-label="Bottom bar"] [aria-label="Modes"]';
+    const waitingReview = `${MODES} button[aria-label="Review, 1 waiting"]`;
+    const runChip = app.$(`${VERIFY} [aria-label="Branches"] [role="treeitem"] button[data-chip]:not([data-chip="current"])`);
+    await runChip.waitForDisplayed({ timeout: WAIT });
+    const runId = await runChip.getAttribute("data-chip");
+    await runChip.click();
+    await app.waitUntil(() => app.execute((main, id) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === id, MAIN, runId),
+      { timeout: WAIT, timeoutMsg: "Verify shows the selected Run" });
     const graph = new Graph(app);
-    const review = new Review(app, "main");
     await graph.node("a:release");
-    await app.$('[aria-label="Waiting reviews"] [role="option"]').waitForExist({ timeout: WAIT, timeoutMsg: "the sign-off waits in the Pane" });
-    // core → cli, core → release and cli → docs.
-    await app.waitUntil(() => app.execute(() => document.querySelectorAll(".svelte-flow__edge").length === 3),
-      { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges" });
+    await app.$(waitingReview).waitForDisplayed({ timeout: WAIT, timeoutMsg: "Review counts the waiting sign-off in the bottom bar" });
+    // core → cli, core → release and cli → docs, with the fixture's four different verdicts.
+    await app.waitUntil(() => app.execute((main) => {
+      const graph = document.querySelector(`${main} .run`);
+      const lights = { core: "green", cli: "red", docs: "blocked", release: "waiting" };
+      return graph?.querySelectorAll(".svelte-flow__edge").length === 3
+        && Object.entries(lights).every(([name, light]) =>
+          graph.querySelector(`.svelte-flow__node[data-id="a:${name}"][data-light="${light}"]`));
+    }, MAIN), { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges and mixed verdicts" });
     // The first fit can happen while the graph area is still taking its size, and the Run view
     // keeps its camera after that; the tool strip's Fit frames the drawn graph the same way on
     // every capture.
@@ -276,20 +289,36 @@ async function capture(output: string, work: string): Promise<void> {
     await app.execute(() => (document.activeElement as HTMLElement | null)?.blur());
     await shot("detail.png");
 
-    // C. The release sign-off opened from the Pane's waiting reviews, which list the sign-off
-    // that verify left: claimed, its notes tool run, the GREEN form open.
-    await app.$('[aria-label="Waiting reviews"] [role="option"]').click();
-    await app.waitUntil(() => app.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === "Review", MAIN),
-      { timeout: WAIT, timeoutMsg: "the Main area shows the review" });
-    await review.until((shown) => shown.stage === "CLAIM" && !shown.running, "the sign-off can be claimed", WAIT);
-    await app.$("button=Claim to review").click();
-    await review.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the sign-off is claimed", WAIT);
-    await app.$('[aria-label="Human review"]').$("button=notes").click();
+    // C. Review's own Pane lists the sign-off Verify left. Claim it, run its notes tool,
+    // and display its GREEN form without submitting a result.
+    await app.$(waitingReview).click();
+    const REVIEW = 'main[aria-label="Review"]:not([hidden])';
+    const options = `${REVIEW} [role="listbox"][aria-label="Human reviews"] [role="option"]`;
+    await app.waitUntil(() => app.execute((options) => [...document.querySelectorAll(options)].some((row) => row.textContent?.includes("release/signoff")), options),
+      { timeout: WAIT, timeoutMsg: "Review lists the release sign-off" });
+    const rows = await app.$$(options).getElements();
+    for (const row of rows) {
+      if ((await row.getText()).includes("release/signoff")) {
+        await row.click();
+        break;
+      }
+    }
+    const review = `${REVIEW} [aria-label="Review's main area"] [aria-label="Human review"]`;
+    const claim = app.$(review).$("button=Claim to review");
+    await claim.waitForEnabled({ timeout: WAIT });
+    await claim.click();
+    const notes = app.$(review).$("button=notes");
+    await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the sign-off is claimed and its notes tool is usable" });
+    await notes.click();
     // The built-in read prints the notes and ends its run with `■ done`.
-    await review.runUntil("notes", (rows) => rows.includes("- Faster startup.") && rows.at(-1) === "■ done", "the notes tool printed the notes and finished");
-    await review.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the notes run settled", WAIT);
-    await app.$('[aria-label="Human review"]').$("button=GREEN").click();
-    await app.$('[aria-label="Human review"] .form').waitForExist({ timeout: WAIT });
+    await app.waitUntil(() => app.execute((review) => {
+      const lines = [...document.querySelectorAll(`${review} [role="log"][aria-label="Tool log"] p:not(.muted)`)]
+        .map((row) => row.textContent?.trim());
+      return lines.includes("- Faster startup.") && lines.at(-1) === "■ done";
+    }, review), { timeout: WAIT, timeoutMsg: "the notes tool printed the notes and finished" });
+    await app.$(review).$("button=GREEN").click();
+    await app.$(`${review} [aria-label="Evaluation"] #field-summary`).waitForDisplayed({ timeout: WAIT });
+    await app.$(`${review} [role="radio"][aria-checked="true"].green`).waitForDisplayed({ timeout: WAIT });
     await shot("review.png");
   } finally {
     try {

@@ -9,8 +9,9 @@
 // The demos (assets/demos/):
 //   A. review-loop.gif — an example shaped like this repository (core, cli, tui, mcp, docs,
 //      site, release) goes through four Runs of real `verify`, recorded from the app with its
-//      branch expanded in the Pane, each new Run shown from its timeline in the Main area, and played back
-//      fast. Each eval is a runtime check that fails while its Artifact's code.txt
+//      bottom bar on Verify, the branch expanded in its Pane and each new Run shown from its
+//      timeline under the Run header. Played back fast. Each eval is a runtime check that fails
+//      while its Artifact's code.txt
 //      contains BUG; between Runs this script removes the BUG it just saw, as an AI would fix
 //      the code. Try 1 fails mcp and site; try 2 reuses the rest at once and fails docs partway;
 //      try 3 fails release near the end; try 4 passes to the end and is SATISFIED. An overlay
@@ -18,8 +19,8 @@
 //      the Run's records say; the script checks each try reused exactly the unchanged evals.
 //   B. graph-growth.gif — this repository's own Artifact graph, release by release from the
 //      history of main (or of origin/main when it is ahead), each committed in turn to a Git
-//      checkout, in the app opened by `graph --repo` on that branch's Current, with the
-//      release in the graph's top-left corner. One blank
+//      checkout, in Verify's Current opened by `graph --repo`, with its scan header, the
+//      fitted graph and the release in the graph's top-left corner. One blank
 //      step says 0.1.0–0.6.0 had no Artifacts yet; the graph starts at 0.7.0 and ends at the
 //      current main. examples/ is left out. Declarations the current app no longer reads
 //      are converted once to the current format: 0.7–0.8's artifactize.json, and dependency
@@ -48,6 +49,8 @@ const DEMOS = ["review-loop.gif", "graph-growth.gif"];
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const WAIT = 60000;
+const VERIFY_MAIN ='main[aria-label="Verify"]:not([hidden]) section.panel[aria-label="Main area"]';
+const VERIFY_MODE = '[aria-label="Bottom bar"] [aria-label="Modes"] button[aria-label="Verify"][aria-current="page"]';
 /** Demo A plays back this many times faster than it ran. */
 const SPEED = 8;
 /** The GIFs' width, frame rate and palette; one step of demo B stays this long. */
@@ -379,10 +382,9 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   const segments: Segment[] = [];
   // The graph's top-left corner, below the Main area's header row and the graph's tool strip.
   let at = { x: 0, y: 0 };
-  /** The Main area while it shows the Run `id`. */
-  const MAIN = 'section.panel[aria-label="Main area"]';
   try {
-    const chip = (id: string) => `[aria-label="Branches"] button[data-chip="${id}"]`;
+    await browser.$(VERIFY_MODE).waitForDisplayed({ timeout: WAIT });
+    const chip = (id: string) => `main[aria-label="Verify"] [aria-label="Branches"] button[data-chip="${id}"]`;
     /** The Main area shows the Run `id`'s own graph, not the one drawn before it was opened: a
      * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
     const opened = (id: string) => browser.execute((id, main, edges) => {
@@ -394,7 +396,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       return !!canvas && (canvas !== before?.canvas || before.run === id) && !!box && box.width > 0
         && canvas.querySelectorAll(".svelte-flow__edge").length === edges
         && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
-    }, id, MAIN, EDGES());
+    }, id, VERIFY_MAIN, EDGES());
     /** The Run `id` ended and its graph is drawn and lit as it ended: its headline says
      * `verdict`, each Artifact is lit as `lights` plans, and every edge is drawn. */
     const ended = (id: string, verdict: string, lights: [string, string][]) => browser.execute((id, main, verdict, planned, edges) => {
@@ -410,7 +412,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       // The header row's headline names the Run's verdict once it ended.
       const said = shown?.querySelector(":scope > header button.headline .status")?.textContent?.trim() ?? "";
       return said === verdict && lights.join() === planned.map(([name, light]) => `a:${name}=${light}`).sort().join();
-    }, id, MAIN, verdict, lights, EDGES());
+    }, id, VERIFY_MAIN, verdict, lights, EDGES());
     /** The evals whose saved GREEN result the next try reuses: those GREEN so far whose
      * Artifact, and every Artifact they use, the fixes left as they were. */
     const reusable = new Set<string>();
@@ -430,7 +432,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         const canvas = shown?.querySelector(".run .svelte-flow") ?? null;
         const run = canvas ? shown?.querySelector(":scope > header h2")?.textContent?.trim() ?? null : null;
         (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before = { canvas, run };
-      }, MAIN);
+      }, VERIFY_MAIN);
       await browser.$(chip(id)).click();
       await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Main area draws ${id}'s graph` });
       // `run show --wait` exits with the Run's outcome: 0 when it is satisfied. A Run that has
@@ -459,9 +461,9 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         const shown = document.querySelector(main);
         const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
         return [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].some((node) => node.dataset.light === "waiting" || node.dataset.light === "active");
-      }, id, MAIN);
+      }, id, VERIFY_MAIN);
       const recorded = await record(browser, frames, settled, () => ended(id, last ? "GREEN" : "RED", [...lights]), live);
-      const area = await corner(browser, `${MAIN} .run .canvas`);
+      const area = await corner(browser, `${VERIFY_MAIN} .run .canvas`);
       at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
       const { code, text } = await settled;
       const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string; source: { kind: string } | null }[] };
@@ -550,7 +552,7 @@ function files(directory: string, match: (name: string) => boolean): string[] {
 /** Put `ref`'s tree, without examples/, in `tree`, a Git checkout, in the format the current
  * app reads: older forms converted here, then a tree that declares its Artifacts where they
  * live migrated by the built CLI `cli`. The checkout's own Git folder stays. */
-function checkout(ref: string, tree: string, cli: string): void {
+function checkout(ref: string, tree: string, state: string, cli: string, env: NodeJS.ProcessEnv): void {
   for (const entry of readdirSync(tree)) if (entry !== ".git") rmSync(join(tree, entry), { recursive: true, force: true });
   run("sh", ["-c", `git -C "$1" archive "$2" | tar -x -C "$3" --exclude=examples`, "sh", repository, ref, tree]);
   // 0.7–0.8 named the ignore file differently; the folders it lists are not part of the graph.
@@ -606,7 +608,11 @@ function checkout(ref: string, tree: string, cli: string): void {
   }
   // A release from before definitions lived in .artifactize/: its own CLI's successor moves them.
   const defined = existsSync(join(tree, ".artifactize")) && files(join(tree, ".artifactize"), (name) => name.endsWith(".artf")).length > 0;
-  if (!defined) run(cli, ["--repo", tree, "config", "migrate"]);
+  const config = ["--repo", tree, "--state-dir", state, "config"];
+  if (!defined) run(cli, [...config, "migrate"], { env });
+  // Keep every release in the lineage, but never ask the app to open an invalid graph.
+  try { run(cli, [...config, "check"], { env }); }
+  catch (error) { throw new Error(`${ref}'s historical declarations did not pass config check`, { cause: error }); }
 }
 
 async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
@@ -629,7 +635,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   mkdirSync(fixture.repo, { recursive: true });
   e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
   const commit = (step: { ref: string; caption: string }) => {
-    checkout(step.ref, fixture.repo, candidate.cli);
+    checkout(step.ref, fixture.repo, fixture.state, candidate.cli, e2e.environment(fixture));
     e2e.git(fixture, fixture.repo, "add", "-A");
     e2e.git(fixture, fixture.repo, "commit", "-q", "--allow-empty", "-m", step.caption);
   };
@@ -637,22 +643,29 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   const browser = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
   let at = { x: 0, y: 0 };
   try {
-    /** When the shown Current was last scanned, as its header says it; "" while none ended. */
-    const scannedAt = () => browser.execute(() => {
-      const scan = document.querySelector('section.panel[aria-label="Main area"] > header .scan');
-      return scan?.querySelector(".checking") ? "" : (scan?.querySelector("time")?.getAttribute("datetime") ?? "");
-    });
+    await browser.$(VERIFY_MODE).waitForDisplayed({ timeout: WAIT });
+    /** The visible Current's scan, as its header says it. */
+    const scanState = () => browser.execute((main) => {
+      const head = document.querySelector(`${main} > header`);
+      if (!head?.querySelector("h2")?.textContent?.startsWith("Current")) return { at: "", failure: "" };
+      const scan = head.querySelector(".scan");
+      return {
+        at: scan?.querySelector(".checking") ? "" : (scan?.querySelector("time")?.getAttribute("datetime") ?? ""),
+        failure: scan?.querySelector(".failure")?.textContent?.trim() ?? "",
+      };
+    }, VERIFY_MAIN);
     for (const [index, step] of steps.entries()) {
       // A scan that ended after this step's checkout: the one Refresh starts, or the first.
-      const before = index > 0 ? await scannedAt() : "";
+      const before = index > 0 ? (await scanState()).at : "";
       if (index > 0) {
         commit(step);
-        await browser.$("button=Refresh").click();
+        await browser.$(`${VERIFY_MAIN} > header button[aria-label^="Refresh"]`).click();
       }
       await browser.waitUntil(async () => {
-        const now = await scannedAt();
-        return now !== "" && now !== before;
-      }, { timeout: WAIT, timeoutMsg: `${step.caption}'s scan ended` });
+        const { at, failure } = await scanState();
+        if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
+        return at !== "" && at !== before;
+      }, { timeout: WAIT, timeoutMsg: `${step.caption}'s Current scan ended` });
       // Names read from about half size on: every Artifact of a graph this size is then drawn as
       // an element, so its nodes and edges can be compared below; Fit zooms out again after. The
       // zoom is read once the graph's tools work, its layout done: until then the strip shows no

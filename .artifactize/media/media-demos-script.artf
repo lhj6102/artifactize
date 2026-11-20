@@ -15,16 +15,17 @@ script records each demo below from the real desktop app at 1920×1080, with rea
 through the real CLI and nothing mocked:
 
 A. The review loop, played back fast: an example project goes through four Runs of real \
-verify, its branch selected in the left pane and each new Run's chip shown in the main area \
-(J-BRANCH-RUNS, J-MAIN-RUN, J-GRAPH-COLOURS). Between Runs the script changes the \
-files that just failed, standing in for an AI fixing the code; unchanged work is reused; the \
-last Run is SATISFIED. An overlay names the try (try n/4) and the speed (×8).
-B. The graph's growth: this repository's own Artifact graph in the app opened on the \
-branch's Current by `graph --repo` (J-LAUNCH, J-MAIN-CURRENT), one step per \
-release on main from 0.7.0 to the current main, with the release in the graph's top-left corner; one \
-step says 0.1.0–0.6.0 had no Artifacts; examples/ is left out; 0.7–0.8 declarations are \
-converted once to the current format, and a release that declares its Artifacts where they live \
-is moved into `.artifactize/` by the built CLI's own `config migrate`, so the lineage shows.
+verify. Verify is selected in the bottom bar; select each Run from the branch's timeline \
+and show that Run's header and graph (J-BAR, J-BRANCH-RUNS, J-MAIN-RUN, J-GRAPH-COLOURS). \
+Between Runs the script changes the files that just failed, standing in for an AI fixing the \
+code; unchanged work is reused; the last Run is SATISFIED. An overlay names the try (try n/4) \
+and the speed (×8).
+B. The graph's growth: open Verify's Current with `graph --repo` (J-LAUNCH, J-BAR, J-MAIN-CURRENT). \
+For each release on main from 0.7.0 to the current main, show its finished scan and fitted \
+graph with the release in the graph's top-left corner. One step says 0.1.0–0.6.0 had no \
+Artifacts. Leave out examples/, convert 0.7–0.8 declarations to the current format, and use \
+the built CLI's `config migrate` for declarations that predate `.artifactize/`. Run `config \
+check` on each temporary checkout before showing it; do not change a published release.
 
 Both GIFs carry a thin progress bar along the bottom edge, in the introduction video's light \
 green (#3EE08F) on a light track: it advances smoothly on every GIF frame, in proportion to \
