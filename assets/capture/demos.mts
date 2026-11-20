@@ -654,12 +654,16 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         return now !== "" && now !== before;
       }, { timeout: WAIT, timeoutMsg: `${step.caption}'s scan ended` });
       // Names read from about half size on: every Artifact of a graph this size is then drawn as
-      // an element, so its nodes and edges can be compared below; Fit zooms out again after.
-      for (let tries = 0; tries < 20; tries += 1) {
-        const percent = Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10);
-        if (percent >= 50) break;
-        await browser.$('[aria-label="Graph tools"] [aria-label="Zoom in"]').click();
-      }
+      // an element, so its nodes and edges can be compared below; Fit zooms out again after. The
+      // zoom is read once the graph's tools work, its layout done: until then the strip shows no
+      // zoom of its own. Each wait for the drawing below zooms in again while it is less.
+      const legible = async () => {
+        const zoomIn = browser.$('[aria-label="Graph tools"] [aria-label="Zoom in"]');
+        if (!(await zoomIn.isEnabled())) return false;
+        if (Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10) >= 50) return true;
+        await zoomIn.click();
+        return false;
+      };
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them but a part's, which the Current draws as
       // the part inside its whole. A part of several wholes is drawn once in each, so the
@@ -690,7 +694,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         [...new Set(graph.relations.filter(({ source, target, kind }) => kind !== "part" && source !== target && names.has(source) && names.has(target))
           .map(({ source, target }) => `a:${source}>a:${target}`))].sort().join(" "),
       ].join("\n");
-      await browser.waitUntil(() => browser.execute((expected) => {
+      await browser.waitUntil(async () => await legible() && browser.execute((expected) => {
         const set = (values: string[]) => [...new Set(values)].sort().join(" ");
         const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
         // Every copy by its key, the wholes it is drawn inside included: a previous release's
@@ -708,7 +712,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       // Complete and still: exactly this release's Artifact nodes and edges, every node drawn
       // inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
       // over 300 ms.
-      const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
+      const drawn = (inside: boolean) => browser.waitUntil(async () => (inside || await legible()) && browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {
           const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
           const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
