@@ -1,5 +1,5 @@
 path = "crates/artifactize-desktop/design/"
-parts = ["desktop-design-check", "desktop-design-current", "desktop-design-detail", "desktop-design-monitor", "desktop-design-overlays", "desktop-design-review", "desktop-design-settings"]
+parts = ["desktop-design-chat", "desktop-design-check", "desktop-design-current", "desktop-design-detail", "desktop-design-monitor", "desktop-design-overlays", "desktop-design-review", "desktop-design-settings", "desktop-design-viewers"]
 # The desktop app's UI/UX plan: one HTML page per screen (its parts), the tokens and the anatomy
 # they share, and the rules of the system on index.html. The desktop UI is evaluated against it (desktop-ui/follows-design).
 
@@ -35,10 +35,12 @@ sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning 
 [evals.agrees-with-journeys.payload]
 instruction = """
 Read the journeys {desktop-ux-features}. Then read the design {desktop-design}: index.html (the system's rules \
-D-SYS-*) and each screen page (monitor.html, current.html, detail.html, review.html, settings.html, overlays.html: \
-a figure, numbered notes and D- rules). Check that: every screen, state and overlay a journey names (the Pane and \
-its parts, the Main area's views, the Detail, the Human review, Settings and its tabs, the Find field, the \
-overlays, and on a Current the Definition and Source, the edit dialogs, a dragged Artifact or comment, the drop \
+D-SYS-*) and each screen page (chat.html, monitor.html (Verify), current.html, detail.html, review.html, viewers.html, \
+settings.html, overlays.html: a figure, numbered notes and D- rules). Check that: every screen, state and overlay a \
+journey names (the bottom bar and its modes, each mode's Pane and its parts, Chat's conversation, composer and \
+model menu, the Main area's views, references and their ways back, the Detail, the Human review, Review's list and \
+filter, the Artifact Viewer windows and their viewers, Point, the pet overlay, Settings and its tabs, the Find \
+field, the overlays, and on a Current the Definition and Source, the edit dialogs, a dragged Artifact or comment, the drop \
 target, Reset layout, comments and the comment field) has a place on one of the screen pages; no D- rule or figure \
 contradicts a journey (what a control does, where it sits, what a state shows, what hovering does); the D- rules describe appearance and arrangement without inventing behaviour the journeys do not have. Keyboard shortcuts are optional: a missing, extra or different shortcut is not a finding; the visible way \
 (button, menu, palette, click) is what must agree. A journey's behaviour (what a click, a key or a dismissal \

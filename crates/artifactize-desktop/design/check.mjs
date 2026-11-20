@@ -14,7 +14,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 
 const SHEETS = ["tokens.css", "mock.css", "design.css"];
-const SCREENS = ["monitor", "current", "detail", "review", "settings", "overlays"];
+const SCREENS = ["chat", "monitor", "current", "detail", "review", "viewers", "settings", "overlays"];
 const COLOUR = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(|(?<![-\w])(?:white|black)(?![-\w])/gi;
 const read = (path) => readFileSync(path, "utf8");
 const problems = [];

@@ -56,10 +56,10 @@ sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning 
 [evals.follows-design.payload]
 instruction = """
 Read the design {desktop-design}: index.html (the tokens by role and the rules of the system, D-SYS-*), then each \
-screen page (monitor.html, current.html, detail.html, review.html, settings.html, overlays.html), whose figures \
-are drawn with mock.css and whose D- rules say what must hold on that screen. Then review the Svelte and CSS of \
-{desktop-ui}: src/app.css and src/tokens.css, src/App.svelte, and the components under src/monitor, src/review, \
-src/settings and src/shell (the generated bindings in src/ipc are not UI; the tests and e2e are reviewed \
+screen page (chat.html, monitor.html (Verify), current.html, detail.html, review.html, viewers.html, settings.html, \
+overlays.html), whose figures are drawn with mock.css and whose D- rules say what must hold on that screen. Then \
+review the Svelte and CSS of {desktop-ui}: src/app.css and src/tokens.css, src/App.svelte and the other windows' \
+entries, and the components under src/chat, src/monitor, src/review, src/viewers, src/pet, src/settings and src/shell (the generated bindings in src/ipc are not UI; the tests and e2e are reviewed \
 elsewhere). For each D- rule, find the component or stylesheet that renders what the rule describes and judge \
 whether it holds: the surfaces, lines and tokens it names, the sizes within the tolerances the rule states, the order and anatomy of \
 the elements, the treatment of selection, hover and focus, and what the rule says to avoid. Mock markup need not \

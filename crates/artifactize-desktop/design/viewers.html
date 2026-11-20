@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Viewer windows</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="mock.css" />
+<link rel="stylesheet" href="design.css" />
+</head>
+<body>
+<div class="doc">
+<header class="doc-head">
+  <span>Artifactize desktop / design / viewers</span>
+  <nav aria-label="Design pages">
+    <a href="index.html">Overview</a>
+    <a href="chat.html">Chat</a>
+    <a href="monitor.html">Verify</a>
+    <a href="current.html">Current</a>
+    <a href="detail.html">Detail</a>
+    <a href="review.html">Review</a>
+    <a href="viewers.html" aria-current="page">Viewers</a>
+    <a href="settings.html">Settings</a>
+    <a href="overlays.html">Overlays</a>
+  </nav>
+</header>
+<main data-screen="viewers">
+<h1>Viewers: Artifact Viewer windows and the pet overlay</h1>
+<p class="lead">
+  A viewer tool opens an Artifact Viewer, a window of the app of its own, titled with the
+  Artifact and its viewer. The app's strip runs along its top, the same for every viewer: the
+  Artifact, the viewer, the active review and Point; under it the viewer itself, one of the
+  built-in File Explorer, Markdown viewer and Artifactize Viewer, or a project's own plugin's
+  page. While a claimed review is worked on outside Review, the pet overlay stays at the
+  screen's bottom right above every window, holding the same draft. The figures draw each
+  window over a dark backdrop that stands for the rest of the screen.
+</p>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 760">
+<div class="stage-inner">
+<div class="m-desktop">
+  <div class="m-vwindow" style="left: 40px; top: 24px; width: 900px; height: 600px">
+    <div class="m-frame"><b>checkout — HTML</b></div>
+    <div class="m-vstrip"><span class="m-vname">checkout</span><span class="m-vkind">HTML</span><span class="m-spacer"></span><span class="m-vreview"><span class="m-icon i-human tone-human"></span>checkout/looks-right</span><span class="m-button small pointing"><span class="m-icon i-point"></span>Point</span></div>
+    <div class="m-vbody single">
+      <div class="m-md" style="padding: 24px 32px">
+        <h1>Checkout</h1>
+        <p>Linen tote bag · Natural · Qty 1 <span style="float: right">$18.00</span></p>
+        <p>Stoneware mug · Sage · Qty 2 <span style="float: right">$24.50</span></p>
+        <h2>Order summary</h2>
+        <p>Subtotal <span style="float: right">$42.50</span></p>
+        <p class="pointed" style="font-weight: 600">Total <span style="float: right">$42.5000</span></p>
+        <p><span class="m-button primary">Place order</span></p>
+      </div>
+    </div>
+  </div>
+  <div class="m-pet" style="right: 24px; bottom: 24px">
+    <img class="m-pet-sprite" src="../ui/src/shell/pet.svg" alt="" />
+    <div class="m-pet-head"><span class="m-icon i-human tone-human"></span>checkout/looks-right<span class="m-run">· run-9PLM3X</span></div>
+    <div class="m-verdicts"><span class="m-verdict green">GREEN</span><span class="m-verdict red chosen">RED</span></div>
+    <div class="m-field"><span class="m-name">change<span class="m-required">*</span></span>
+      <ol class="m-items"><li><div class="m-input area text focused"><span>Total still shows 4 decimals at <span class="m-pointed">#checkout .total</span></span></div><span class="m-icon i-remove"></span></li></ol>
+    </div>
+    <div class="m-pet-actions"><span class="m-button small pointing"><span class="m-icon i-point"></span>Point</span><span class="m-spacer"></span><span class="m-button primary">Submit RED</span></div>
+  </div>
+</div>
+<span class="callout" style="left: 260px; top: 26px">1</span>
+<span class="callout" style="left: 200px; top: 58px">2</span>
+<span class="callout" style="left: 640px; top: 62px">3</span>
+<span class="callout" style="left: 860px; top: 62px">4</span>
+<span class="callout" style="left: 420px; top: 300px">5</span>
+<span class="callout" style="left: 900px; top: 520px">6</span>
+<span class="callout" style="left: 1236px; top: 548px">7</span>
+<span class="callout" style="left: 1060px; top: 600px">8</span>
+<span class="callout" style="left: 1010px; top: 700px">9</span>
+</div>
+<figcaption>Stage 1280 × 760. The <code>html</code> example plugin's viewer over another application, pointing: the reviewer clicked Point, then the order total; the selector of what was pointed at is appended to the review's draft in the pet overlay at the screen's bottom right, nothing submitted. The page inside is the plugin's, drawn here in the app's tokens.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">1</span><div><b>Window</b><span>A window of the app of its own with the system's frame, titled <i>{Artifact} — {viewer}</i>; closing it closes it alone.</span></div></li>
+  <li><span class="n">2</span><div><b>The app's strip</b><span>One row along the window's top, the same for every viewer: the Artifact's name, then the viewer's name in the quieter ink.</span></div></li>
+  <li><span class="n">3</span><div><b>Active review</b><span>While this reviewer holds a claimed review, its eval with the human icon, in monospace: what Point appends to.</span></div></li>
+  <li><span class="n">4</span><div><b>Point</b><span>A small button with the point icon, only where the viewer supports pointing and a form of the active review is open; while pointing, outlined in the accent.</span></div></li>
+  <li><span class="n">5</span><div><b>Pointed place</b><span>While pointing, what is under the pointer is outlined in the accent; a click appends its readable text to the draft and pointing ends.</span></div></li>
+  <li><span class="n">6</span><div><b>The pet</b><span>The app's own pet, the brand's faceted emerald in its bezel with a face, sits on the overlay's top edge.</span></div></li>
+  <li><span class="n">7</span><div><b>Review</b><span>The active review's eval and Run in monospace; a click shows the review in Review.</span></div></li>
+  <li><span class="n">8</span><div><b>The same draft</b><span>The verdict choice and the open form of the draft, the pointed text in it on the accent's soft fill; what is typed here is what Review shows.</span></div></li>
+  <li><span class="n">9</span><div><b>Point and Submit</b><span>Point at the left, pointing in the viewer that is open for the review's Artifact; Submit, naming the verdict, at the right.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 440">
+<div class="stage-inner">
+<div class="m-desktop">
+  <div class="m-vwindow" style="left: 24px; top: 20px; width: 616px; height: 400px; --tree-width: 200px">
+    <div class="m-frame"><b>core — File Explorer</b></div>
+    <div class="m-vstrip"><span class="m-vname">core</span><span class="m-vkind">File Explorer</span></div>
+    <div class="m-vbody">
+      <ul class="m-tree">
+        <li><span class="m-icon i-unfold"></span><span class="m-icon i-folder"></span>src</li>
+        <li class="selected" style="--depth: 1"><span class="m-icon i-file"></span>money.ts</li>
+        <li style="--depth: 1"><span class="m-icon i-file"></span>cart.ts</li>
+        <li style="--depth: 1"><span class="m-icon i-file"></span>tax.ts</li>
+        <li><span class="m-icon i-fold"></span><span class="m-icon i-folder"></span>tests</li>
+        <li><span class="m-icon i-file"></span>README.md</li>
+        <li><span class="m-icon i-file"></span>package.json</li>
+      </ul>
+      <div class="m-doc">
+        <div class="m-doc-head">src/money.ts</div>
+        <pre class="m-source"><span>// Amounts are kept in cents.</span><span>export function toCents(amount: number): number {</span><span>  return Math.round(amount * 100);</span><span>}</span><span></span><span>export function formatMoney(cents: number): string {</span><span>  return "$" + (cents / 100).toFixed(2);</span><span>}</span></pre>
+      </div>
+    </div>
+  </div>
+  <div class="m-vwindow" style="left: 664px; top: 20px; width: 592px; height: 400px; --tree-width: 160px">
+    <div class="m-frame"><b>guide — Markdown</b></div>
+    <div class="m-vstrip"><span class="m-vname">guide</span><span class="m-vkind">Markdown</span><span class="m-spacer"></span><span class="m-vreview"><span class="m-icon i-human tone-human"></span>guide/reads-well</span><span class="m-button small"><span class="m-icon i-point"></span>Point</span></div>
+    <div class="m-vbody">
+      <ul class="m-tree">
+        <li class="selected"><span class="m-icon i-file"></span>install.md</li>
+        <li><span class="m-icon i-file"></span>usage.md</li>
+      </ul>
+      <div class="m-md">
+        <h1>Install</h1>
+        <p>Run the installer for your system, then check the version with <code>artifactize --version</code>.</p>
+        <h2>From a release</h2>
+        <ul><li>Linux: the <code>.deb</code> or the shell installer.</li><li>Windows: the Microsoft Store.</li></ul>
+      </div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 180px; top: 100px">10</span>
+<span class="callout" style="left: 560px; top: 100px">11</span>
+<span class="callout" style="left: 790px; top: 100px">12</span>
+<span class="callout" style="left: 1100px; top: 150px">13</span>
+</div>
+<figcaption>Stage 1280 × 440. The built-in File Explorer (left), with no review claimed, so no review and no Point in its strip; and the built-in Markdown viewer (right) of an Artifact of two Markdown files, a review claimed with its form open.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">10</span><div><b>Tree</b><span>The Artifact's files: dense rows, a folder with its fold icon and the folder icon, a file with the file icon, indented by depth; the shown file on the selection.</span></div></li>
+  <li><span class="n">11</span><div><b>Document view</b><span>A head row with the file's path in monospace, then its text with line numbers, one step below the panel, read-only.</span></div></li>
+  <li><span class="n">12</span><div><b>Files</b><span>An Artifact of several Markdown files lists them at the left as the tree does; one file alone takes the whole window.</span></div></li>
+  <li><span class="n">13</span><div><b>Rendered</b><span>Headings, paragraphs, lists, links, tables and code as they read, in a column of the reading measure on the panel surface; pointing outlines the line under the pointer and appends its line and column.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 520">
+<div class="stage-inner">
+<div class="m-desktop">
+  <div class="m-vwindow" style="left: 24px; top: 20px; width: 1232px; height: 480px; --detail-width: 380px">
+    <div class="m-frame"><b>structure — Artifactize Viewer</b></div>
+    <div class="m-vstrip"><span class="m-vname">structure</span><span class="m-vkind">Artifactize Viewer</span><span class="m-spacer"></span><span class="m-vreview"><span class="m-icon i-human tone-human"></span>structure/scope-reads-clearly</span><span class="m-button small"><span class="m-icon i-point"></span>Point</span></div>
+    <div class="m-vbody graph">
+      <div class="m-canvas" style="position: relative">
+        <div class="m-edge" style="left: 236px; top: 158px; width: 220px; transform: rotate(20deg)"></div>
+        <div class="m-edge" style="left: 236px; top: 158px; width: 210px"></div>
+        <div class="m-dnode selected" style="left: 68px; top: 140px"><span class="m-name">front-design</span><span class="m-type">files</span></div>
+        <div class="m-dnode" style="left: 456px; top: 140px"><span class="m-name">checkout</span><span class="m-type">html</span></div>
+        <div class="m-dnode" style="left: 440px; top: 220px"><span class="m-name">copy</span><span class="m-type">markdown</span></div>
+      </div>
+      <div class="m-dpanel">
+        <div class="m-main-head"><div class="m-dock-title"><h2>Artifact front-design</h2><span class="m-type">files</span></div></div>
+        <div class="m-deval">
+          <div class="m-deval-head pointed">matches-layout<span class="m-type">agent</span></div>
+          <dl>
+            <dt>Title</dt><dd>The checkout page matches the front-design layout</dd>
+            <dt>Criteria</dt><dd>The checkout page follows the layout: section order, spacing and the total row.</dd>
+            <dt>Reads</dt><dd class="m-reads"><span class="m-type">checkout</span><span class="m-type">copy</span></dd>
+          </dl>
+        </div>
+        <div class="m-deval">
+          <div class="m-deval-head">approved<span class="m-type">human</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 240px; top: 190px">14</span>
+<span class="callout" style="left: 340px; top: 150px">15</span>
+<span class="callout" style="left: 1180px; top: 100px">16</span>
+<span class="callout" style="left: 1180px; top: 136px">17</span>
+</div>
+<figcaption>Stage 1280 × 520. The built-in Artifactize Viewer of an Artifact of type <code>artifactize</code> over three declarations: what the project declares, without verdicts. front-design is selected; its eval matches-layout is being pointed at.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">14</span><div><b>Artifacts</b><span>A node per Artifact the definitions under its path declare: a neutral face, its name and its type in a small tag; no verdict, icon or strip, since nothing here ran.</span></div></li>
+  <li><span class="n">15</span><div><b>References</b><span>Plain neutral connections, one per Artifact an eval reads: a connection is not an eval.</span></div></li>
+  <li><span class="n">16</span><div><b>The Artifact's panel</b><span>Docked at the right as the Detail is: the Artifact's name and type, then its evals, each with its kind, its title, its criteria and the Artifacts it reads.</span></div></li>
+  <li><span class="n">17</span><div><b>Pointed eval</b><span>While pointing, the eval or node under the pointer is outlined in the accent; a click appends its ID, <code>front-design/matches-layout</code>.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 760; --h: 300">
+<div class="stage-inner">
+<div class="m-desktop">
+  <div class="m-pet" style="left: 24px; bottom: 24px">
+    <img class="m-pet-sprite" src="../ui/src/shell/pet.svg" alt="" />
+    <div class="m-pet-head"><span class="m-icon i-human tone-human"></span>docs/reads-well<span class="m-run">· run-2HQV8W</span></div>
+    <div class="m-verdicts"><span class="m-verdict green">GREEN</span><span class="m-verdict red">RED</span></div>
+    <div class="m-pet-actions"><span class="m-button small disabled"><span class="m-icon i-point"></span>Point</span><span class="m-why">Choose GREEN or RED to write a result first.</span></div>
+  </div>
+  <div class="m-pet" style="left: 408px; bottom: 24px">
+    <img class="m-pet-sprite" src="../ui/src/shell/pet.svg" alt="" />
+    <div class="m-pet-head"><span class="m-icon i-human tone-human"></span>docs/reads-well<span class="m-run">· run-2HQV8W</span></div>
+    <div class="m-verdicts"><span class="m-verdict green chosen">GREEN</span><span class="m-verdict red">RED</span></div>
+    <div class="m-field"><span class="m-name">comment</span><div class="m-input area text"><span>Reads well.</span></div></div>
+    <div class="m-pet-actions"><span class="m-button small disabled"><span class="m-icon i-point"></span>Point</span><span class="m-why">Open the review's viewer to point.</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
+  </div>
+</div>
+<span class="callout" style="left: 180px; top: 210px">18</span>
+<span class="callout" style="left: 560px; top: 266px">19</span>
+</div>
+<figcaption>Stage 760 × 300. The overlay before a verdict is chosen (left), and with GREEN's form open while no viewer of the review's Artifact is open (right): Point is disabled and says why.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">18</span><div><b>Before a verdict</b><span>The choice alone; Point waits for a form to write into and says so; no Submit yet.</span></div></li>
+  <li><span class="n">19</span><div><b>No viewer open</b><span>Point is disabled while no Artifact Viewer of the review's Artifact is open, saying why beside it; the form and Submit work as in Review.</span></div></li>
+</ol>
+
+<h2>Rules</h2>
+<dl class="rules">
+  <dt id="D-VIEW-1">D-VIEW-1</dt>
+  <dd>An Artifact Viewer is a window of the app of its own, with the system's frame, titled <i>{Artifact} — {viewer}</i>, opening at a size of its own over the window it was opened from, on <code>--surface-app</code>. Along its top runs the app's strip, the same for every viewer: one row of <code>--row-head</code> on <code>--surface-panel</code>, closed below by <code>--line-panel</code>: the Artifact's name semibold, the viewer's name in <code>--ink-2</code>, and at the right, while this reviewer holds a claimed review, the active review's eval as <i>{Artifact}/{eval}</i> in <code>--mono</code> <code>--ink-2</code> led by the human icon in <code>--human</code>, then Point (D-VIEW-2). Everything under the strip is the viewer's. <span class="avoid">a second title inside the window; the app's bottom bar or modes in a viewer; the viewer's own controls in the app's strip; a viewer drawn inside the main window.</span></dd>
+  <dt id="D-VIEW-2">D-VIEW-2</dt>
+  <dd><b>Point</b> is a small button with the point icon at the strip's right end, shown only where the viewer supports pointing and while a form of the active review is open. A click starts pointing: the button reads as on (a 1px <code>--accent</code> outline inside its <code>--accent</code> border), the pointer is a crosshair over the viewer, and what is under it (an element, a line, a node or an eval) is outlined 2px in <code>--accent</code>; a click appends its text to the draft and ends pointing, and Esc or Point again ends it without appending. Nothing says the text was appended but the draft itself, where the pointed text stands in <code>--mono</code> on <code>--accent-soft</code> until the draft is next edited. <span class="avoid">Point shown without a claimed review or an open form; a toast or a sentence for an appended reference; an outline in a status colour; a pointer that submits.</span></dd>
+  <dt id="D-VIEW-3">D-VIEW-3</dt>
+  <dd>The File Explorer is two panels that meet at <code>--line-panel</code>: at the left the tree, about 240px wide, on <code>--surface-panel</code>, its rows <code>--row-dense</code> at <code>--text-small</code>, each indented 14px per depth, a folder led by its fold or unfold icon and the folder icon, a file by the file icon, all in <code>--ink-2</code>, its name in <code>--ink</code>, the shown file on <code>--selection</code>; at the right the document view on <code>--surface-input</code>: a head row of <code>--row-head</code> on <code>--surface-panel</code> with the file's path in <code>--mono</code>, closed below by <code>--line-group</code>, then the file's text in <code>--mono</code> at <code>--text-small</code> with line numbers in <code>--ink-3</code>, as the Source draws it (D-INS-11), wrapping within its width and read-only. <span class="avoid">an editable document view; syntax colours taken from a status; a tree that widens the window.</span></dd>
+  <dt id="D-VIEW-4">D-VIEW-4</dt>
+  <dd>The Markdown viewer shows the rendered document on <code>--surface-panel</code> in a column of <code>--measure</code>, padded 16px by 24px: its first heading at <code>--text-heading</code> bold over a <code>--line-group</code> line, its second at <code>--text-title</code> semibold, deeper ones at <code>--text-body</code> semibold, text at <code>--text-body</code> in <code>--ink</code>, links in <code>--accent</code>, inline code and code blocks in <code>--mono</code> on <code>--surface-input</code>, tables with <code>--line-group</code> rules. An Artifact of several Markdown files lists them at the left as the File Explorer's tree does (D-VIEW-3); one file takes the whole window. While pointing, the line under the pointer is outlined in <code>--accent</code>. <span class="avoid">the raw Markdown shown as the document; font sizes outside the tokens; a page wider than the measure.</span></dd>
+  <dt id="D-VIEW-5">D-VIEW-5</dt>
+  <dd>The Artifactize Viewer draws what the project declares, not a Run: a canvas as a graph's (D-GRAPH-1, D-GRAPH-6) with a node per declared Artifact, 168 × 36px, a <code>--surface-panel</code> face, a <code>--line-node</code> outline, its name in <code>--ink</code> and its type as a small tag (<code>--mono</code> at <code>--text-label</code> in <code>--ink-2</code> inside a <code>--line-group</code> border of <code>--radius-chip</code>; an untyped Artifact's tag reads <i>custom</i>), with no status icon, strip or tally; references as edges in the neutral <code>--edge</code>, without ports or colour. A click on a node gives it the selected outline (D-NODE-2) and opens its panel, docked at the right as the Detail is (D-INS-1): its name and type in the header row, then each eval in a section opened by <code>--line-group</code>: its name in <code>--mono</code> with its kind as a tag (<i>agent</i>, <i>human</i>, <i>runtime</i>), then Title, Criteria (its instruction, whole) and Reads (the Artifacts it reads, as tags), each label in <code>--ink-2</code> at <code>--text-small</code>. While pointing, the node or the eval under the pointer is outlined in <code>--accent</code>. <span class="avoid">verdict colours, icons or tallies in the Artifactize Viewer; an edge drawn as an eval; a connection that cannot tell which Artifact reads which.</span></dd>
+  <dt id="D-VIEW-6">D-VIEW-6</dt>
+  <dd>A project's own viewer plugin fills everything under the strip with its page, which the app does not restyle; the <code>html</code> example shows the Artifact's page in an embedded browser. What a plugin shows while pointing is its own, held to the same outline: what is under the pointer outlined 2px in <code>--accent</code>. A plugin's page that cannot load says why in <code>--red</code> in its place, under the strip. <span class="avoid">the app's controls drawn over a plugin's page; a plugin page that reaches the app's window or its state.</span></dd>
+  <dt id="D-PET-1">D-PET-1</dt>
+  <dd>The pet overlay is a small window of its own, without a frame, above every window, 16px from the bottom right of the screen's work area: a card 320px wide on <code>--surface-raised</code>, a <code>--line-panel</code> border of <code>--radius-chip</code>, the faint shadow (D-SYS-2), padded 12px. The pet sits on its top edge at the left, 56px, half over the card; beside it the head row in <code>--mono</code> at <code>--text-small</code>: the human icon in <code>--human</code>, the active review's eval, then <i>· {Run}</i> in <code>--ink-2</code>, the whole row a link to the review in Review. Under it the review's Result as the review's column draws it (D-REV-4): the GREEN / RED choice, then the chosen verdict's form, which scrolls inside the card past 280px; then one row: Point at the left (a small button, D-VIEW-2, disabled and followed by why in <code>--ink-2</code> while no form is open or no viewer of the review's Artifact is open), and Submit, the one primary button naming its verdict, at the right once a form is open. A failure to submit shows in <code>--red</code> above that row, the form kept. <span class="avoid">a second draft or a free text box apart from the form; Release claim in the overlay; the overlay over the review's evaluation space; a card that grows taller than the screen's lower half; a frame or title bar.</span></dd>
+  <dt id="D-PET-2">D-PET-2</dt>
+  <dd>The pet is the app's own drawing, an image asset: the brand icon's round faceted emerald in its ivory and silver bezel, with eyes, cheeks, two feet and a sprout. It is the one picture of the app whose colours are its own and not tokens, like the brand mark; it stands still and carries no status. <span class="avoid">a pet in a status colour; an animated pet that draws the eye while a person types; a third-party character.</span></dd>
+</dl>
+</main>
+</div>
+<script src="design.js"></script>
+</body>
+</html>

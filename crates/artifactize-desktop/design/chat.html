@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chat screen</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="mock.css" />
+<link rel="stylesheet" href="design.css" />
+</head>
+<body>
+<div class="doc">
+<header class="doc-head">
+  <span>Artifactize desktop / design / chat</span>
+  <nav aria-label="Design pages">
+    <a href="index.html">Overview</a>
+    <a href="chat.html" aria-current="page">Chat</a>
+    <a href="monitor.html">Verify</a>
+    <a href="current.html">Current</a>
+    <a href="detail.html">Detail</a>
+    <a href="review.html">Review</a>
+    <a href="viewers.html">Viewers</a>
+    <a href="settings.html">Settings</a>
+    <a href="overlays.html">Overlays</a>
+  </nav>
+</header>
+<main data-screen="chat">
+<h1>Chat: a session with Artifactize's own agent</h1>
+<p class="lead">
+  Chat mode: its Pane lists the sessions, newest first, with New at its top; its Main area shows
+  the chosen session: one header row with its title and its branch, then the conversation in a
+  column of the reading measure and, under it, the composer. A turn streams in as the agent
+  works: its text, one row per tool it uses and, for each verify it starts, a Run reference
+  that opens that Run in Verify. The provider and model selector sits at the composer's bottom
+  left, its menu opening upward; Send, or Stop while a turn runs, at its bottom right.
+</p>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 800">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span></span>
+    <span class="m-modes"><span class="m-mode on"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">1</span></span></span>
+    <span class="m-bar-side end"><span class="m-reviewer">alice</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span><span class="m-button">Settings</span></span>
+  </header>
+  <div class="m-screen">
+    <section class="m-pane">
+      <div class="m-pane-head"><span class="m-button small"><span class="m-icon i-add"></span>New</span></div>
+      <ul class="m-list">
+        <li class="m-item plain selected"><span class="m-item-name">Fix checkout rounding</span><span class="m-item-sub">shop · fix/checkout-rounding · now</span></li>
+        <li class="m-item plain"><span class="m-item-name">Gift card balance</span><span class="m-item-sub">shop · feat/gift-cards · 1h</span></li>
+        <li class="m-item plain"><span class="m-item-name">Release notes wording</span><span class="m-item-sub">artifactize · dev · 1d</span></li>
+        <li class="m-item plain"><span class="m-item-name">결제 흐름 문서 정리와 검증 범위 확인</span><span class="m-item-sub">웹툰-플랫폼 · feature/결제-흐름-정리-및-검증 · 3d</span></li>
+      </ul>
+    </section>
+    <div class="m-divider"></div>
+    <section class="m-main focused">
+      <div class="m-main-head"><h2>Fix checkout rounding</h2><span class="m-headline"><span class="m-text">shop / fix/checkout-rounding</span></span></div>
+      <div class="m-chat">
+        <div class="m-convo">
+          <div class="m-msg">Checkout total shows too many decimals. Fix it and verify.</div>
+          <div class="m-turn">
+            <p>I'll check how the checkout total is formatted.</p>
+            <div class="m-call"><span class="m-icon i-file"></span><span>read</span><span class="m-target">checkout/total.ts</span><span class="m-outcome">0.1s</span></div>
+            <div class="m-call"><span class="m-icon i-edit"></span><span>edit</span><span class="m-target">checkout/total.ts · +3 −1</span><span class="m-outcome">0.1s</span></div>
+            <div class="m-call"><span class="m-icon i-verify"></span><span>verify</span><span class="m-target">checkout</span><span class="m-outcome">1m 04s</span></div>
+            <div class="m-runref"><span class="m-icon i-red tone-red"></span><b>Verify</b><span class="m-mono">run-4FT2KQ</span><span class="tone-red"><b>RED</b></span><span class="m-what"><span class="m-icon i-red tone-red"></span> checkout/unit</span><span class="m-go"><span class="m-icon i-open"></span>Open in Verify</span></div>
+            <p>checkout/unit fails: the total is rounded before the discount is applied. Moving the rounding to the end.</p>
+            <div class="m-call"><span class="m-icon i-edit"></span><span>edit</span><span class="m-target">checkout/total.ts · +2 −2</span><span class="m-outcome">0.1s</span></div>
+            <div class="m-call"><span class="m-icon i-command"></span><span>run</span><span class="m-target">pnpm test checkout</span><span class="m-failed">exit 1: vitest is not installed in this worktree</span></div>
+            <div class="m-call"><span class="m-icon i-verify"></span><span>verify</span><span class="m-target">checkout</span><span class="m-outcome">48s</span></div>
+            <div class="m-runref"><span class="m-icon i-human tone-human"></span><b>Verify</b><span class="m-mono">run-9PLM3X</span><span class="tone-yellow"><b>YELLOW</b></span><span class="m-what"><span class="m-icon i-human tone-human"></span> checkout/looks-right</span><span class="m-go"><span class="m-icon i-open"></span>Open in Verify</span></div>
+            <p>checkout/unit passes now. checkout/looks-right waits for a person to check the page.</p>
+            <div class="m-turn-end"><span class="m-icon i-chat"></span>Claude Agent · Opus 5.5 · 2m 31s</div>
+          </div>
+        </div>
+        <div class="m-composer">
+          <div class="m-composer-box">
+            <div class="m-composer-text"><span class="m-placeholder" style="color: var(--ink-3)">Message</span></div>
+            <div class="m-composer-row"><span class="m-picker"><span class="m-provider">Claude Agent</span>·<span>Opus 5.5</span><span class="m-icon i-unfold"></span></span><span class="m-spacer"></span><span class="m-icon-button primary" aria-label="Send"><span class="m-icon i-send"></span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<span class="callout" style="left: 140px; top: 10px">1</span>
+<span class="callout" style="left: 210px; top: 54px">2</span>
+<span class="callout" style="left: 700px; top: 4px">3</span>
+<span class="callout" style="left: 1080px; top: 250px">4</span>
+<span class="callout" style="left: 1080px; top: 330px">5</span>
+<span class="callout" style="left: 1080px; top: 398px">6</span>
+<span class="callout" style="left: 820px; top: 524px">7</span>
+<span class="callout" style="left: 540px; top: 690px">8</span>
+<span class="callout" style="left: 1130px; top: 712px">9</span>
+<span class="callout" style="left: 470px; top: 776px">10</span>
+</div>
+<figcaption>Stage 1280 × 800. A session whose turn has ended: two verifies, each with its Run reference, a failed command among the tool rows, the model it ran with at its end. The composer is empty, Send at its right.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">1</span><div><b>New</b><span>The Pane's head: one small button, New, which opens the dialog that asks for the session's branch.</span></div></li>
+  <li><span class="n">2</span><div><b>Sessions</b><span>Newest first, each its title and, under it, its project, branch and age; the shown one on the selection. A long title is cut with an ellipsis inside the Pane.</span></div></li>
+  <li><span class="n">3</span><div><b>Header row</b><span>The session's title, then its project and branch as its headline in the quieter ink: the branch whose worktree the agent works in.</span></div></li>
+  <li><span class="n">4</span><div><b>A message</b><span>What the person sent, on the group surface at the column's right; the agent's text runs at the left without a box.</span></div></li>
+  <li><span class="n">5</span><div><b>Tool rows</b><span>One dense row per tool the agent used: its icon, its name and what it acts on in monospace, how long it took at the right; an edit adds the lines it added and removed. A running tool shows the in-progress icon in its place.</span></div></li>
+  <li><span class="n">6</span><div><b>Run reference</b><span>Each verify the agent starts: the Run's status icon, <i>Verify</i>, the Run ID, its status word, and what failed or waits for a person, then Open in Verify. Its status changes in place as the Run goes on.</span></div></li>
+  <li><span class="n">7</span><div><b>A failed tool</b><span>The reason, in red, on a line of its own under the tool's name; the turn goes on.</span></div></li>
+  <li><span class="n">8</span><div><b>Composer</b><span>A field one step below the panel, as wide as the conversation, growing with what is typed up to eight lines; its last row holds the provider and model selector at the left and Send at the right.</span></div></li>
+  <li><span class="n">9</span><div><b>Send</b><span>The one primary control of Chat: an icon button with its accessible name. While a turn runs it is Stop.</span></div></li>
+  <li><span class="n">10</span><div><b>Bottom bar</b><span>Chat is on; Review still counts the Human reviews waiting for a person.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 760; --h: 420">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr); background: var(--surface-app)">
+  <div class="m-chat" style="position: relative; border-top: 0">
+    <div class="m-convo">
+      <div class="m-msg">Also round the tax line.</div>
+      <div class="m-turn">
+        <p>Looking at the tax line.</p>
+        <div class="m-call"><span class="m-icon i-folder"></span><span>grep</span><span class="m-target">round · checkout/</span><span class="m-outcome">0.2s</span></div>
+        <div class="m-call"><span class="m-icon i-running tone-running"></span><span>read</span><span class="m-target">checkout/tax.ts</span><span class="m-outcome"></span></div>
+      </div>
+    </div>
+    <div class="m-composer">
+      <div class="m-composer-box">
+        <div class="m-composer-text"><span class="m-placeholder" style="color: var(--ink-3)">Message</span></div>
+        <div class="m-composer-row"><span class="m-picker" style="outline: 2px solid var(--focus); outline-offset: -1px"><span class="m-provider">Claude Agent</span>·<span>Opus 5.5</span><span class="m-icon i-unfold"></span></span><span class="m-spacer"></span><span class="m-icon-button" aria-label="Stop"><span class="m-icon i-stop"></span></span></div>
+      </div>
+    </div>
+    <div class="m-menu" style="left: 20px; bottom: 56px">
+      <div class="m-label">Claude Agent</div>
+      <div class="m-menu-item chosen">Opus 5.5<span class="m-right">claude-opus-5-5</span></div>
+      <div class="m-menu-item">Sonnet 5.5<span class="m-right">claude-sonnet-5-5</span></div>
+      <div class="m-label">Codex</div>
+      <div class="m-menu-item">GPT-6.2 Sol<span class="m-right">gpt-6.2-sol</span></div>
+      <div class="m-label">Gemini</div>
+      <div class="m-menu-note">No key is set.</div>
+      <div class="m-menu-sep"></div>
+      <div class="m-menu-item"><span class="m-icon i-add"></span>Connect provider</div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 330px; top: 140px">11</span>
+<span class="callout" style="left: 330px; top: 300px">12</span>
+<span class="callout" style="left: 680px; top: 380px">13</span>
+<span class="callout" style="left: 700px; top: 290px">14</span>
+</div>
+<figcaption>Stage 760 × 420. A turn running, a read still in progress: the selector's menu open upward over the conversation, one group per provider, Gemini saying why it lists nothing; Stop in Send's place.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">11</span><div><b>Model menu</b><span>Raised, opening upward from the selector and as wide as needed for a model's name and ID; a provider's name as a group label, its models as rows, the session's model on the selection. A click on a row takes it for the next turn.</span></div></li>
+  <li><span class="n">12</span><div><b>Connect provider</b><span>After a group line, the last row: it opens Settings on its Providers tab. A provider that lists no models says why in red under its name.</span></div></li>
+  <li><span class="n">13</span><div><b>Stop</b><span>While a turn runs, Send's place holds Stop, a quiet icon button with the stop icon; the composer stays usable.</span></div></li>
+  <li><span class="n">14</span><div><b>In progress</b><span>A tool still running shows the in-progress icon in its row's icon place and no time yet.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 300">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
+  <div class="m-screen" style="position: relative">
+    <section class="m-pane"><div class="m-pane-head"><span class="m-button small"><span class="m-icon i-add"></span>New</span></div><ul class="m-list"></ul></section>
+    <div class="m-divider"></div>
+    <section class="m-main"><div class="m-main-head"><h2>Chat</h2></div><p class="m-empty">Start a session with New.</p></section>
+    <div class="m-scrim"></div>
+    <div class="m-dialog" style="top: 24px; left: 62%; width: 420px">
+      <h2>New chat</h2>
+      <div class="m-field"><span class="m-name">Branch</span><div class="m-input focused"><span>shop / fix/checkout-rounding</span></div></div>
+      <div class="m-dialog-actions"><span class="m-button">Cancel</span><span class="m-button primary">Create</span></div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 300px; top: 40px">15</span>
+<span class="callout" style="left: 1000px; top: 40px">16</span>
+</div>
+<figcaption>Stage 1280 × 300. No session yet, and the New dialog open: one field, the branch, suggesting the live branches.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">15</span><div><b>No session yet</b><span>The Main area's one line says how to start one, in the quieter ink, as an empty place may.</span></div></li>
+  <li><span class="n">16</span><div><b>New chat</b><span>A dialog of the app's kind with one field, the branch, which suggests the live branches as the search does, the branch selected in Verify first; Create starts the session there.</span></div></li>
+</ol>
+
+<h2>Rules</h2>
+<dl class="rules">
+  <dt id="D-CHAT-1">D-CHAT-1</dt>
+  <dd>Chat's Pane is one <code>--surface-panel</code> column: its head, a 40px row closed below by <code>--line-group</code>, holds <b>New</b>, a small button with the add icon; under it the sessions, newest first, each a two-line row: the title in <code>--ink</code> at <code>--text-body</code>, cut with an ellipsis, and under it <i>project · branch · age</i> in <code>--ink-2</code> at <code>--text-small</code> with tabular figures. The shown session's row has <code>--selection</code> and, while the keyboard is in the list, the 2px inset bar (D-SYS-7). <span class="avoid">a heading such as Chats; a card per session; a session's last message under its title; a preview on hover.</span></dd>
+  <dt id="D-CHAT-2">D-CHAT-2</dt>
+  <dd>The Main area's header row (D-MAIN-1) names the session: its title as the view's name, then as its headline <i>{project} / {branch}</i> in <code>--ink-2</code>. Under it, closed above by <code>--line-panel</code>, the conversation stands on <code>--surface-app</code>, in a column of <code>--measure</code> centred in the area, newest at the bottom: it scrolls on its own and follows its newest line unless scrolled up. With no session shown, one <code>--ink-2</code> line says how to start one (D-MAIN-3). <span class="avoid">the conversation stretched to the window's width; the session's ID as its title; avatars; timestamps on every message.</span></dd>
+  <dt id="D-CHAT-3">D-CHAT-3</dt>
+  <dd>A person's message is a block at the column's right, at most 80% of its width, on <code>--surface-group</code> with <code>--radius-chip</code> and no border, its text as typed. The agent's turn runs at the column's left without a box: its text at <code>--text-body</code> in <code>--ink</code>, and its last row, once it ends, the provider, the model and how long the turn took in <code>--ink-2</code> at <code>--text-small</code>, led by the Chat icon; a stopped turn ends <i>Stopped</i> there, a failed one with why in <code>--red</code>. <span class="avoid">a bubble around the agent's text; the model named on every row; a sentence saying the turn went well.</span></dd>
+  <dt id="D-CHAT-4">D-CHAT-4</dt>
+  <dd>A tool the agent used is one <code>--row-dense</code> row on <code>--surface-input</code> with <code>--radius-control</code>: an icon of what it does in <code>--ink-2</code> (the file icon to read, the folder icon to list, find or search, the edit icon to edit or write, the command icon to run a command, the Verify icon for Verify's tools), the tool's name in <code>--mono</code> <code>--ink</code>, what it acts on in <code>--mono</code> <code>--ink-2</code> cut with an ellipsis (an edit adds <i>+N −M</i>, the lines it added and removed, in the same ink), and at the right how long it took in tabular figures. While it runs the in-progress icon in <code>--running</code> takes its icon's place and no time shows; a failed tool's reason follows on a line of its own under its name, in <code>--red</code>. Rows of one turn stack with 4px between them. <span class="avoid">a tool's output dumped into the conversation; a tick for a tool that went well; added and removed lines in GREEN and RED; a row per tool that folds open on hover.</span></dd>
+  <dt id="D-CHAT-5">D-CHAT-5</dt>
+  <dd>A Run reference is a row of 32px inside a <code>--line-group</code> border of <code>--radius-control</code> on <code>--surface-panel</code>: the Run's status icon in its colour, <b>Verify</b>, the Run ID in <code>--mono</code>, its status word bold in its colour (in progress, then its verdict, changing in place), what needs attention (each eval that failed or waits for a person, its status's icon and its name, cut with an ellipsis), and at the right <i>Open in Verify</i>, a text reference in <code>--accent</code> led by the open icon (D-REF-1). A Run that cannot be read says so in <code>--red</code> in place of its status. <span class="avoid">a coloured card or stripe for the Run's status; a Run reference without its Run ID; Open in Verify as a primary button.</span></dd>
+  <dt id="D-CHAT-6">D-CHAT-6</dt>
+  <dd>The composer stands under the conversation in the same <code>--measure</code> column, 12px above the area's bottom: a field on <code>--surface-input</code> with a <code>--line-input</code> border of <code>--radius-chip</code>, its text growing to eight lines, then one row: the provider and model selector at the left, a quiet button of <code>--control</code> height with the provider's name in <code>--ink-2</code>, the model's in <code>--ink</code> and the unfold icon; and at the right <b>Send</b>, the one primary control, an icon button of <code>--control</code> with the send icon and its accessible name, which becomes <b>Stop</b>, a quiet icon button with the stop icon, while a turn runs. Keyboard focus is the field's 2px ring (D-SYS-7). <span class="avoid">the selector above the field or at its right; Send at the left; a Send button with a key cap; a disabled composer while a turn runs.</span></dd>
+  <dt id="D-CHAT-7">D-CHAT-7</dt>
+  <dd>The model menu opens upward from the selector, its bottom left at the selector's top left, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow. Each provider Settings lists is a group: its name as a group label (D-SYS-5), then its models as <code>--row</code> rows, each the model's name in <code>--ink</code> and its ID in <code>--mono</code> <code>--ink-2</code> at the right; the session's model has <code>--selection</code> and semibold; a provider that lists none says why in <code>--red</code> at <code>--text-small</code> in its group. After a <code>--line-group</code> line, <b>Connect provider</b> with the add icon ends the menu. Taller than the room above the selector, the menu scrolls inside itself. <span class="avoid">a menu that opens downward over the composer; a menu that opens on hover; a model chosen by colour alone; a line explaining the harness.</span></dd>
+</dl>
+</main>
+</div>
+<script src="design.js"></script>
+</body>
+</html>

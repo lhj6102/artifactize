@@ -14,10 +14,12 @@
   <span>Artifactize desktop / design / settings</span>
   <nav aria-label="Design pages">
     <a href="index.html">Overview</a>
-    <a href="monitor.html">Monitor</a>
+    <a href="chat.html">Chat</a>
+    <a href="monitor.html">Verify</a>
     <a href="current.html">Current</a>
     <a href="detail.html">Detail</a>
     <a href="review.html">Review</a>
+    <a href="viewers.html">Viewers</a>
     <a href="settings.html" aria-current="page">Settings</a>
     <a href="overlays.html">Overlays</a>
   </nav>
@@ -36,17 +38,14 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar" style="position: relative; z-index: 2">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
-    <span class="m-spacer"></span>
-    <span class="m-reviewer">alice</span>
-    <span class="m-button" style="outline: 2px solid var(--focus); outline-offset: -2px">Settings</span>
-    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-reviewer">alice</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span><span class="m-button" style="outline: 2px solid var(--focus); outline-offset: -2px">Settings</span></span>
   </header>
   <div class="m-screen" style="position: relative">
     <section class="m-pane">
       <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
       <div class="m-branches"><div class="m-branch"><div class="m-branch-head"><span class="m-chevron"></span><span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span><span class="m-star on m-icon i-star-on"></span></div><div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">3h ago</span></div></div></div>
-      <section class="m-waiting"><h2>(0)</h2></section>
     </section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
@@ -84,10 +83,10 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 150px; top: 120px">1</span>
-<span class="callout" style="left: 560px; top: 96px">2</span>
-<span class="callout" style="left: 150px; top: 200px">3</span>
-<span class="callout" style="left: 1140px; top: 190px">4</span>
+<span class="callout" style="left: 150px; top: 84px">1</span>
+<span class="callout" style="left: 560px; top: 60px">2</span>
+<span class="callout" style="left: 150px; top: 164px">3</span>
+<span class="callout" style="left: 1140px; top: 154px">4</span>
 </div>
 <figcaption>Stage 1280 × 800. The Providers tab with Claude Agent chosen.</figcaption>
 </figure>
@@ -96,9 +95,13 @@
 <div class="stage" style="--w: 1280; --h: 560">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-reviewer">alice</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
@@ -130,8 +133,8 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 640px; top: 142px">5</span>
-<span class="callout" style="left: 640px; top: 342px">6</span>
+<span class="callout" style="left: 640px; top: 106px">5</span>
+<span class="callout" style="left: 640px; top: 306px">6</span>
 </div>
 <figcaption>Stage 1280 × 560. Provider setups: Codex signing in (what finishes it by hand folded), an API key read from the environment, and the form of sol-proxy, a saved custom provider. The figure stacks three setups that the app shows one at a time, as excerpts: each also has its Models, with List models, below what is drawn here (shown in the first figure).</figcaption>
 </figure>
@@ -140,9 +143,13 @@
 <div class="stage" style="--w: 1280; --h: 490">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-reviewer">alice</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
@@ -164,8 +171,8 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 700px; top: 320px">7</span>
-<span class="callout" style="left: 700px; top: 160px">9</span>
+<span class="callout" style="left: 700px; top: 284px">7</span>
+<span class="callout" style="left: 700px; top: 124px">9</span>
 </div>
 <figcaption>Stage 1280 × 490. The Remote tab signed out, after a sign-in that failed (top), and signed in (bottom): the figure stacks the two states that the app shows one at a time.</figcaption>
 </figure>
@@ -174,9 +181,13 @@
 <div class="stage" style="--w: 1280; --h: 260">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-reviewer">alice</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
@@ -192,7 +203,7 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 520px; top: 164px">8</span>
+<span class="callout" style="left: 520px; top: 128px">8</span>
 </div>
 <figcaption>Stage 1280 × 260. The Limits tab: the sign-off idle grace, in the field that changes it.</figcaption>
 </figure>
