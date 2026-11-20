@@ -321,6 +321,7 @@ payload.instruction = "Review {app} against {spec}; each requirement that is not
 
 ```toml
 path = "logo.svg"
+type = "files"
 
 [evals.signoff]
 title = "The logo is approved for publication"
