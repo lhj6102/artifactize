@@ -5,6 +5,7 @@
 import { createContext } from "svelte";
 import { emit } from "@tauri-apps/api/event";
 import { call, commands, message, type Commands, type ViewerContext, type ViewerEntry } from "../ipc/client";
+import { announcePointed } from "../review/pointed";
 
 /** What a viewer window tells the others about itself: the pet overlay points through it. */
 export type Presence = { session: number; artifact: string; review: string | null; open: boolean; pointable: boolean };
@@ -20,6 +21,8 @@ export class ViewerState {
   /** Pointing: the next click on a place in the Artifact appends it to the draft. */
   pointing = $state(false);
   error = $state<string | null>(null);
+  /** The active review's eval, `{Artifact}/{eval}`, once read. */
+  evalId = $state<string | null>(null);
 
   constructor(readonly session: number, readonly ipc: Commands = commands) {}
 
@@ -35,7 +38,7 @@ export class ViewerState {
     } catch (failure) {
       this.error = message(failure);
     }
-    await this.announce();
+    await Promise.all([this.announce(), this.readEval()]);
   }
 
   /** Read the context again: the active review changed. Pointing stops with the review it was for. */
@@ -46,7 +49,7 @@ export class ViewerState {
       this.error = message(failure);
     }
     if (!this.pointable) this.pointing = false;
-    await this.announce();
+    await Promise.all([this.announce(), this.readEval()]);
   }
 
   /** Tell the other windows this viewer is open, for which Artifact and review. */
@@ -61,14 +64,39 @@ export class ViewerState {
     await emit(PRESENCE, presence).catch(() => {});
   }
 
+  /** Append `text` to the active review's Notes through the library; the Notes it answers. The
+   * windows showing those Notes are told what was pointed, which stands out there. */
+  async append(text: string): Promise<string> {
+    const notes = await call(this.ipc.viewerPoint(this.session, text));
+    const review = this.context?.review;
+    if (review) announcePointed(review, text);
+    return notes;
+  }
+
   /** Append `text`, a place pointed at, to the active review's draft; pointing ends. */
   async point(text: string): Promise<void> {
     this.pointing = false;
     try {
-      await call(this.ipc.viewerPoint(this.session, text));
+      await this.append(text);
       this.error = null;
     } catch (failure) {
       this.error = message(failure);
+    }
+  }
+
+  /** The active review's eval, as the strip names it: read from the library's review. */
+  async readEval(): Promise<void> {
+    const review = this.context?.review;
+    if (!review) {
+      this.evalId = null;
+      return;
+    }
+    try {
+      const view = await call(this.ipc.humanOpen(review, false));
+      if (this.context?.review === review) this.evalId = view.target.node.replace(/^e:/, "");
+    } catch {
+      // The strip names the review by its request until its eval can be read.
+      this.evalId = null;
     }
   }
 }

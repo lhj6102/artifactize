@@ -14,6 +14,7 @@
   import type { Review } from "./review.svelte";
   import Tools from "./Tools.svelte";
   import ToolLog from "./ToolLog.svelte";
+  import NotesField from "./NotesField.svelte";
   import VerdictForm from "./VerdictForm.svelte";
   import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
@@ -202,7 +203,7 @@
       {:else if review.owned}
         <label class="notes">
           <span class="label">Notes</span>
-          <textarea rows="3" placeholder="Optional" value={review.notes} oninput={(event) => review.writeNotes(event.currentTarget.value)}></textarea>
+          <NotesField value={review.notes} pointed={review.pointed} oninput={(text) => review.writeNotes(text)} />
         </label>
         {#if review.form}
           <VerdictForm {review} form={review.form} />
@@ -433,23 +434,6 @@
   .label {
     font-size: var(--text-small);
     font-weight: 600;
-  }
-  .notes textarea {
-    min-height: 56px;
-    resize: vertical;
-    padding: 6px 8px;
-    border: 1px solid var(--line-input);
-    border-radius: var(--radius-control);
-    background: var(--surface-input);
-    color: var(--ink);
-    font: inherit;
-  }
-  .notes textarea::placeholder {
-    color: var(--ink-3);
-  }
-  .notes textarea:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
   }
   .notes-done {
     display: grid;

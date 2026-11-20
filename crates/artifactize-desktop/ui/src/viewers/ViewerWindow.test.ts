@@ -2,6 +2,7 @@
 // Artifact through its viewer session and Point appends the place clicked; a plugin's page
 // reaches the Artifact only through the bridge, answered for its own frame alone.
 import { clearMocks, mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
+import { listen } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ViewerContext, ViewerEntry } from "../ipc/client";
@@ -69,6 +70,8 @@ function backend(entry: ViewerEntry, files: Record<string, string>, shown: Viewe
         return declarations;
       case "viewer_point":
         return String(given.text);
+      case "human_open":
+        return { id: given.id, target: { run: "run-a", node: "e:checkout/signoff" }, read: 0 };
       default:
         return null;
     }
@@ -81,7 +84,11 @@ const pointed = (calls: Call[]) => calls.filter((call) => call.cmd === "viewer_p
 describe("File Explorer", () => {
   it("lists folders before files, unfolds a folder, shows a file with its lines and points at a line", async () => {
     const calls = backend({ kind: "builtin", viewer: "files" }, { "README.md": "# Checkout", "src/": "", "src/total.ts": "export const total = 1;\nexport const tax = 2;" });
-    render(ViewerWindow, { session: 7 });
+    const told: unknown[] = [];
+    await listen("notes-pointed", (event) => told.push(event.payload));
+    const { container } = render(ViewerWindow, { session: 7 });
+    // The strip names the active review by its eval.
+    await waitFor(() => expect(container.querySelector("header.strip .review")?.textContent).toBe("checkout/signoff"));
     const tree = await screen.findByRole("list", { name: "Files" });
     await within(tree).findByText("README.md");
     expect(within(tree).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["src", "README.md"]);
@@ -95,6 +102,8 @@ describe("File Explorer", () => {
     await fireEvent.click(second);
     await waitFor(() => expect(pointed(calls)).toEqual(["src/total.ts L2:C1"]));
     expect(screen.getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false");
+    // The windows showing the review's Notes are told what was pointed, to mark it there.
+    await waitFor(() => expect(told).toEqual([{ review: "run-a-2", text: "src/total.ts L2:C1" }]));
   });
 
   it("shows no Point without an active review, and Esc stops pointing without appending", async () => {

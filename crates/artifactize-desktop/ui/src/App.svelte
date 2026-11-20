@@ -9,6 +9,7 @@
   import type { Attachment } from "svelte/attachments";
   import { call, message, subscribe, onActiveReviewChanged, onCurrentChanged, onHumanDraftChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
   import { PET_OPEN } from "./pet/pet";
+  import { followPointed } from "./review/pointed";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewMode from "./review/ReviewMode.svelte";
   import ChatMode from "./chat/ChatMode.svelte";
@@ -59,6 +60,17 @@
     const undrafted = onHumanDraftChanged((id) => void app.reviews[id]?.readDraft());
     // The active review settled, was released or was replaced.
     const unactive = onActiveReviewChanged((request) => (app.active = request));
+    // What a viewer's Point appends stands out in the review's Notes until they are next edited.
+    const unpointed = followPointed(
+      ({ review, text }) => {
+        const shown = app.reviews[review];
+        if (shown) shown.pointed = [...shown.pointed, text];
+      },
+      (review) => {
+        const shown = app.reviews[review];
+        if (shown) shown.pointed = [];
+      },
+    );
     // The pet overlay leads back to its review here.
     const unpet = subscribe<string>((handler) => listen(PET_OPEN, handler), (id) => void app.showReview(id));
     // Whether this window is in front: the pet overlay stands aside while the review is.
@@ -80,6 +92,7 @@
       unscanned();
       undrafted();
       unactive();
+      unpointed();
       unpet();
       window.removeEventListener("focus", focus);
       window.removeEventListener("blur", blur);

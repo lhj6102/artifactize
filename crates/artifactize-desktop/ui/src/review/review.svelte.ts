@@ -4,6 +4,7 @@
 // library's, one per review and reviewer, shared with the pet overlay and a viewer's Point.
 import type { Jobs } from "../ipc/jobs.svelte";
 import { CommandError, call, commands, message, type Commands } from "../ipc/client";
+import { announceEdited } from "./pointed";
 import type {
   Acted,
   Draft,
@@ -155,6 +156,8 @@ export class Review {
 
   /** The draft's Notes; typed text shows at once, as an override, until the library answers. */
   notes = $derived(this.#state.draft?.notes ?? "");
+  /** What Point appended to the Notes since they were last edited: those lines stand out. */
+  pointed = $state<string[]>([]);
 
   readonly settled = $derived(this.view?.stage === "completed");
   readonly owned = $derived(this.view?.stage === "review");
@@ -232,6 +235,9 @@ export class Review {
    * based on the text the one before sent, so a Point appended meanwhile is kept. */
   writeNotes(text: string): void {
     this.notes = text;
+    // Edited: what was pointed reads as the rest of the Notes, here and in every other window.
+    this.pointed = [];
+    announceEdited(this.id);
     const state = this.#state;
     state.pending = text;
     if (!state.sending) void this.#sendNotes(state);

@@ -88,6 +88,13 @@ export class Windows {
     return until(this.browser, () => this.browser.$(`${REVIEW} label.notes textarea`).getValue(), ok, what);
   }
 
+  /** The lines of the shown review's Notes that stand out as pointed, once `ok` holds for them. */
+  async pointedUntil(ok: (lines: string[]) => boolean, what: string): Promise<string[]> {
+    await this.main();
+    const read = () => this.browser.execute((root) => [...document.querySelectorAll(`${root} label.notes mark`)].map((mark) => mark.textContent ?? ""), REVIEW);
+    return until(this.browser, read, ok, what);
+  }
+
   // -------------------------------------------------------------------------------
   // An Artifact Viewer
 

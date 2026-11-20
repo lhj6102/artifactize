@@ -10,6 +10,8 @@
   import { commands, onActiveReviewChanged, onHumanDraftChanged, subscribe } from "../ipc/client";
   import { Jobs } from "../ipc/jobs.svelte";
   import { Review } from "../review/review.svelte";
+  import NotesField from "../review/NotesField.svelte";
+  import { followPointed } from "../review/pointed";
   import VerdictForm from "../review/VerdictForm.svelte";
   import Icon from "../shell/Icon.svelte";
   import { ARM, ASK, PRESENCE, type Presence } from "../viewers/viewer-state.svelte";
@@ -57,8 +59,18 @@
       if (presence.open) viewers.set(presence.session, presence);
       else viewers.delete(presence.session);
     });
+    // What a viewer's Point appends stands out in the Notes until they are next edited.
+    const unpointed = followPointed(
+      (pointed) => {
+        if (pointed.review === review.id) review.pointed = [...review.pointed, pointed.text];
+      },
+      (id) => {
+        if (id === review.id) review.pointed = [];
+      },
+    );
     void emit(ASK);
     return () => {
+      unpointed();
       undrafted();
       unactive();
       unpresent();
@@ -76,7 +88,7 @@
       <div class="scroll">
         <label class="notes">
           <span class="label">Notes</span>
-          <textarea rows="3" placeholder="Optional" value={review.notes} oninput={(event) => review.writeNotes(event.currentTarget.value)}></textarea>
+          <NotesField value={review.notes} pointed={review.pointed} oninput={(text) => review.writeNotes(text)} />
         </label>
         <div class="verdicts">
           <button class="button small" class:on={review.form?.verdict === "GREEN"} onclick={() => void review.choose("GREEN")}>GREEN</button>
@@ -173,15 +185,6 @@
   .label {
     color: var(--ink-2);
     font-size: var(--text-small);
-  }
-  textarea {
-    padding: 4px 6px;
-    border: 1px solid var(--line-input);
-    border-radius: var(--radius-control);
-    background: var(--surface-input);
-    color: var(--ink);
-    font: inherit;
-    resize: vertical;
   }
   .verdicts {
     display: flex;

@@ -36,7 +36,9 @@ export const scenarios: Scenario[] = [
       // Point, then a click on line 2: its place reaches the review's Notes.
       await w.point();
       await w.clickLine(2);
-      await w.notesUntil((notes) => /^release\.md L2:C\d+$/.test(notes.trim()), "the pointed line in the Notes");
+      const notes = await w.notesUntil((text) => /^release\.md L2:C\d+$/.test(text.trim()), "the pointed line in the Notes");
+      // It stands out there as pointed.
+      await w.pointedUntil((lines) => lines.length === 1 && lines[0] === notes.trim(), "the pointed line marked in the Notes");
       // Away from Review the pet overlay holds the review, its Notes the same draft's.
       await w.mode("Verify");
       const pet = await w.pet();

@@ -77,3 +77,17 @@ it("leads back to the review in the main window", async () => {
   await waitFor(() => expect(asked).toEqual(["run-a-2"]));
   expect(calls.some((call) => call.cmd === "main_focus")).toBe(true);
 });
+
+it("marks what a viewer's Point appended in the Notes until they are next edited", async () => {
+  const { library } = backend();
+  const { container } = render(PetWindow, { request: "run-a-2" });
+  await screen.findByRole("button", { name: "Submit GREEN" });
+  // A viewer's Point appended a line through the library, and says so.
+  library.draft.notes = "Read it.\nrelease.md L2:C4";
+  await emit("notes-pointed", { review: "run-a-2", text: "release.md L2:C4" });
+  await emit("human-draft-changed", { id: "run-a-2" });
+  await waitFor(() => expect([...container.querySelectorAll(".backdrop mark")].map((mark) => mark.textContent)).toEqual(["release.md L2:C4"]));
+  // Edited, the Notes read as one text again.
+  await fireEvent.input(screen.getByLabelText("Notes"), { target: { value: "Read it.\nrelease.md L2:C4\nFine." } });
+  await waitFor(() => expect(container.querySelector(".backdrop")).toBeNull());
+});

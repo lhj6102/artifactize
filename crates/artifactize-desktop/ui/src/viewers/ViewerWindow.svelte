@@ -38,7 +38,7 @@
       if (data.method === "context") result = await call(v.ipc.viewerContext(session));
       else if (data.method === "files") result = await call(v.ipc.viewerFiles(session, args.path ?? ""));
       else if (data.method === "readText") result = await call(v.ipc.viewerReadText(session, args.path ?? ""));
-      else if (data.method === "pointing") result = await call(v.ipc.viewerPoint(session, args.text ?? ""));
+      else if (data.method === "pointing") result = await v.append(args.text ?? "");
       else throw new Error(`The viewer bridge has no ${data.method}.`);
       reply({ result });
     } catch (failure) {
@@ -92,7 +92,7 @@
     <span class="kind">{context?.title ?? ""}</span>
     <span class="spacer"></span>
     {#if context?.review}
-      <span class="review"><span class="tone-human"><Icon name="human" /></span>{context.review}</span>
+      <span class="review"><span class="tone-human"><Icon name="human" /></span>{v.evalId ?? context.review}</span>
     {/if}
     {#if v.pointable}
       <button class="button small" class:on={v.pointing} aria-pressed={v.pointing} onclick={() => (v.pointing = !v.pointing)}><Icon name="point" />Point</button>
