@@ -59,14 +59,16 @@ view = { kind = "viewer", description = "Open {artifactName} in the HTML Viewer.
 
 ## 뷰어 브리지 {#viewer-bridge}
 
-플러그인 페이지는 샌드박스에서 실행됩니다. `artifactize-viewer/v1` 브리지만 사용할 수 있으며 데스크톱 앱의 명령은 직접 호출할 수 없습니다. `parent.postMessage`로 호스트에 호출을 전달하세요.
+플러그인 페이지는 샌드박스에서 실행됩니다. `artifactize-viewer/v1` 브리지만 사용할 수 있으며 데스크톱 앱의 명령은 직접 호출할 수 없습니다. 페이지가 시작할 때 `context`를 요청하세요. 첫 브리지 요청을 받기 전까지 뷰어의 도구 막대에 **Loading {plugin title}…**가 표시됩니다. 페이지를 다 불러왔는데도 요청이 없으면, 요청이 도착할 때까지 플러그인이 연결되지 않았다고 표시합니다.
+
+`parent.postMessage`로 호스트에 호출을 전달하세요.
 
 ```js
 parent.postMessage({
   channel: 'artifactize-viewer/v1',
   id: 1,
-  method: 'readText',
-  args: { path: '' },
+  method: 'context',
+  args: {},
 }, '*');
 ```
 
@@ -83,4 +85,4 @@ parent.postMessage({
 
 ## Point로 활성 리뷰에 위치 남기기 {#point-into-the-active-review}
 
-맡은 Human 리뷰가 활성 상태라면 **Point**를 클릭하고 Artifact에서 위치를 고르세요. 내장 뷰어는 도구 막대에 **Point**를 표시합니다. 플러그인은 자체 화면에 버튼을 표시합니다. 위치는 File Explorer에서 `notes.md L42:C9`, Markdown에서 `L42:C9`가 됩니다. Artifactize Viewer에서는 Artifact 이름이나 `front-design/matches-layout` 같은 eval ID, HTML 예제에서는 `#checkout .total` 같은 CSS 선택자를 사용합니다. **Point**를 다시 클릭하거나 Esc를 누르면 아무 내용도 추가하지 않고 취소합니다. Artifactize는 기존 **Notes**를 그대로 두고 새 줄에 위치를 추가합니다. 판정을 선택하거나 리뷰를 제출하지는 않습니다. 리뷰 ID는 플러그인이 고르지 않고, 앱의 활성 리뷰를 사용합니다.
+맡은 Human 리뷰가 활성 상태라면 **Point**를 클릭하고 Artifact에서 위치를 고르세요. 뷰어는 도구 막대에 활성 리뷰의 eval을 표시합니다. 내장 뷰어에서는 같은 막대에 **Point**가 표시됩니다. 플러그인은 자체 화면에 버튼을 표시합니다. 위치는 File Explorer에서 `notes.md L42:C9`, Markdown에서 `L42:C9`가 됩니다. Artifactize Viewer에서는 Artifact 이름이나 `front-design/matches-layout` 같은 eval ID, HTML 예제에서는 `#checkout .total` 같은 CSS 선택자를 사용합니다. **Point**를 다시 클릭하거나 Esc를 누르면 아무 내용도 추가하지 않고 취소합니다. Artifactize는 기존 **Notes**를 그대로 두고 새 줄에 위치를 추가합니다. 판정을 선택하거나 리뷰를 제출하지는 않습니다. 리뷰 ID는 플러그인이 고르지 않고, 앱의 활성 리뷰를 사용합니다.

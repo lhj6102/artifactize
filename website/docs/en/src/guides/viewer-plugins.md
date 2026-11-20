@@ -59,14 +59,16 @@ view = { kind = "viewer", description = "Open {artifactName} in the HTML Viewer.
 
 ## Viewer bridge {#viewer-bridge}
 
-The plugin page is sandboxed. It can reach only the `artifactize-viewer/v1` bridge, not the desktop app's commands. Send calls to the host with `parent.postMessage`:
+The plugin page is sandboxed. It can reach only the `artifactize-viewer/v1` bridge, not the desktop app's commands. Ask for `context` when your page starts. The viewer's strip shows **Loading {plugin title}…** until it receives the first bridge request. If the page finishes loading without sending one, the strip says the plugin did not connect until a request arrives.
+
+Send calls to the host with `parent.postMessage`:
 
 ```js
 parent.postMessage({
   channel: 'artifactize-viewer/v1',
   id: 1,
-  method: 'readText',
-  args: { path: '' },
+  method: 'context',
+  args: {},
 }, '*');
 ```
 
@@ -83,4 +85,4 @@ In bridge calls, `path` is relative to the Artifact, with `/` as the separator a
 
 ## Point into the active review {#point-into-the-active-review}
 
-With an active Human review you have claimed, click **Point** and choose a place in the Artifact. Built-in viewers show **Point** in their tool strip; plugins draw their own controls. The location becomes text: `notes.md L42:C9` in File Explorer, `L42:C9` in Markdown, an Artifact name or eval ID such as `front-design/matches-layout` in the Artifactize Viewer, or a CSS selector such as `#checkout .total` in the HTML example. Click **Point** again or press Esc to cancel without adding anything. Artifactize appends it on a new line in the same **Notes** draft; it doesn't replace existing notes, choose a verdict, or submit the review. The viewer uses the active review, not a review ID picked by the plugin.
+With an active Human review you have claimed, click **Point** and choose a place in the Artifact. The viewer's tool strip names the active review's eval. Built-in viewers show **Point** in that strip; plugins draw their own controls. The location becomes text: `notes.md L42:C9` in File Explorer, `L42:C9` in Markdown, an Artifact name or eval ID such as `front-design/matches-layout` in the Artifactize Viewer, or a CSS selector such as `#checkout .total` in the HTML example. Click **Point** again or press Esc to cancel without adding anything. Artifactize appends it on a new line in the same **Notes** draft; it doesn't replace existing notes, choose a verdict, or submit the review. The viewer uses the active review, not a review ID picked by the plugin.
