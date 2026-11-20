@@ -90,11 +90,13 @@ export class FormDraft {
     try {
       const answer = await call(this.ipc.humanDraftEdit(this.id, change));
       this.#pending -= 1;
+      // Only the newest answer is the draft: an older one would bring back what a newer edit
+      // replaced, in this form and in the review's draft alike.
       if (mine === this.#edits) {
         this.snapshot = (this.verdict === "GREEN" ? answer.green : answer.red).draft;
         this.error = null;
+        this.onanswer(answer);
       }
-      this.onanswer(answer);
     } catch (error) {
       this.#pending -= 1;
       if (mine === this.#edits) {
@@ -257,6 +259,8 @@ export class Review {
     } catch (error) {
       state.pending = null;
       last = null;
+      // Refused: the Notes show what the library last accepted, until it is read again.
+      if (state === this.#state) this.notes = state.draft?.notes ?? "";
       this.notice = { text: message(error), error: true };
     } finally {
       state.sending = false;

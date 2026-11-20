@@ -90,9 +90,11 @@ export class ChatModeState {
     const view = this.view;
     if (!view || view.running) return;
     const id = view.session.id;
-    const text = (this.typed[id] ?? "").trim();
+    const draft = this.typed[id] ?? "";
+    const text = draft.trim();
     if (text === "") return;
     const chosen = this.chosen[id] ?? null;
+    // The composer empties for the next message; the draft comes back if nothing was sent.
     this.typed[id] = "";
     try {
       await call(this.ipc.chatSend(id, text, chosen));
@@ -100,8 +102,8 @@ export class ChatModeState {
       this.error = null;
       await this.read();
     } catch (failure) {
-      // Nothing was sent: what was typed comes back to be sent again.
-      this.typed[id] = text;
+      // Nothing was sent: the draft comes back as it was, unless something new was typed since.
+      if ((this.typed[id] ?? "") === "") this.typed[id] = draft;
       this.error = message(failure);
     }
   }

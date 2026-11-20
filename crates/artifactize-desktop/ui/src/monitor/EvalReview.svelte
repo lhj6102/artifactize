@@ -38,6 +38,8 @@
 
 <div class="review" {@attach read}>
   {#if review && view && view.stage !== "completed"}
+    <!-- Its stage: claimable, this reviewer's, or taken by its claimant (J-DETAIL-REVIEW). -->
+    <span class="stage" class:yours={review.owned}>{review.owned ? "yours" : view.claim ? `taken by ${view.claim.reviewer}` : "claimable"}</span>
     {#if review.owned}
       <button class="button small" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
     {:else if review.claimable}
@@ -57,6 +59,12 @@
     min-height: var(--control);
     padding: 2px var(--pad) 6px calc(var(--pad) + var(--icon) + 8px);
     font-size: var(--text-small);
+  }
+  .stage {
+    color: var(--ink-2);
+  }
+  .stage.yours {
+    color: var(--accent);
   }
   .error {
     color: var(--red);

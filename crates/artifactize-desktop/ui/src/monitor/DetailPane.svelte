@@ -27,7 +27,7 @@
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
-  import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
+  import brandMark from "@brand/artifactize-icon-mark.svg";
 
   let {
     source,

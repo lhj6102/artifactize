@@ -69,7 +69,7 @@
             <p>checkout/unit fails: the total is rounded before the discount is applied. Moving the rounding to the end.</p>
             <div class="m-call"><span class="m-icon i-edit"></span>Edited <span class="m-target">checkout/total.ts</span><span>+2 −2</span></div>
             <div class="m-call"><span class="m-icon i-command"></span>Ran <span class="m-target">pnpm test checkout</span><span class="m-failed">exit 1: vitest is not installed in this worktree</span></div>
-            <div class="m-runref"><span class="m-icon i-human tone-human"></span><span class="m-mono">run-9PLM3X</span><span class="tone-yellow"><b>YELLOW</b></span><span></span><span class="m-what">checkout/looks-right waits for a person</span><span class="m-go"><span class="m-icon i-open"></span>Open in Verify</span></div>
+            <div class="m-runref"><span class="m-icon i-human tone-yellow"></span><span class="m-mono">run-9PLM3X</span><span class="tone-yellow"><b>YELLOW</b></span><span></span><span class="m-what">checkout/looks-right waits for a person</span><span class="m-go"><span class="m-icon i-open"></span>Open in Verify</span></div>
             <p>checkout/unit passes now. checkout/looks-right waits for a person to check the page.</p>
           </div>
         </div>
@@ -109,7 +109,7 @@
 </ol>
 
 <figure class="figure">
-<div class="stage" style="--w: 760; --h: 420">
+<div class="stage" style="--w: 760; --h: 480">
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr); background: var(--surface-app)">
   <div class="m-chat" style="position: relative; border-top: 0">
@@ -128,13 +128,19 @@
       </div>
     </div>
     <div class="m-menu" style="left: 20px; bottom: 56px; width: 240px">
+      <div class="m-label">Codex</div>
+      <div class="m-menu-item">GPT-6.2 Sol</div>
       <div class="m-label">Claude Agent</div>
       <div class="m-menu-item chosen">Opus 5.5</div>
       <div class="m-menu-item">Sonnet 5.5</div>
-      <div class="m-label">Codex</div>
-      <div class="m-menu-item">GPT-6.2 Sol</div>
+      <div class="m-label">OpenAI</div>
+      <div class="m-menu-note">No key is set.</div>
+      <div class="m-label">Anthropic</div>
+      <div class="m-menu-note">No key is set.</div>
       <div class="m-label">Gemini</div>
       <div class="m-menu-note">No key is set.</div>
+      <div class="m-label">sol-proxy</div>
+      <div class="m-menu-item">gpt-6.2-sol</div>
       <div class="m-menu-sep"></div>
       <div class="m-menu-item"><span class="m-icon i-add"></span>Connect provider</div>
     </div>
@@ -145,7 +151,7 @@
 <span class="callout" style="left: 690px; top: 384px">12</span>
 <span class="callout" style="left: 690px; top: 290px">13</span>
 </div>
-<figcaption>Stage 760 × 420. A turn running, a read in progress: the model menu open upward over the conversation; Stop in Send's place.</figcaption>
+<figcaption>Stage 760 × 480. A turn running, a read in progress: the model menu open upward over the conversation; Stop in Send's place.</figcaption>
 </figure>
 
 <ol class="notes">

@@ -50,7 +50,7 @@
 
   const view = $derived(review.view);
   /** The stage pill's words; a submitted review has none. */
-  const stage = $derived(view?.stage === "completed" ? null : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM");
+  const stage = $derived(view?.stage === "completed" ? null : view?.stage === "review" ? "REVIEW (yours)" : view?.claim ? "TAKEN" : "CLAIM");
   /** The default share of the area the Detail takes, as the dock's width says. */
   const DOCK_SHARE = 0.46;
   const DOCK_MOST = 680;

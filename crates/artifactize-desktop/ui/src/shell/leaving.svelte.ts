@@ -1,20 +1,27 @@
-// Leaving the window with claims this window took: every way out (q, the window's
-// close button, repeated close requests) asks once and waits for the answer; only the
-// prompt's keep or release ends the window.
+// Leaving the window with claims this window took, or with a Chat turn running: every way out
+// (q, the window's close button, repeated close requests) asks once and waits for the answer;
+// only the prompt's keep, or its release (or quit) ends the window (J-QUIT).
 import { commands, type Commands } from "../ipc/client";
 
+/** What the open prompt asks about: the claims held, and the Chat sessions whose turn runs. */
+export type Held = { taken: string[]; turns: string[] };
+
 export class Leaving {
+  /** The Chat sessions with a turn running, by title: quitting stops them. */
+  turns: () => string[] = () => [];
+
   constructor(readonly ipc: Commands = commands) {}
 
-  /** The claims the open prompt asks about; `null` while no prompt is open. */
-  taken = $state.raw<string[] | null>(null);
+  /** What the open prompt asks about; `null` while no prompt is open. */
+  held = $state.raw<Held | null>(null);
 
   /** Whether the window may close now; otherwise the prompt opens (or stays open). */
   async allowed(): Promise<boolean> {
-    if (this.taken !== null) return false;
+    if (this.held !== null) return false;
     const taken = await this.ipc.humanTaken();
-    if (taken.length === 0) return this.taken === null;
-    this.taken = taken;
+    const turns = this.turns();
+    if (taken.length === 0 && turns.length === 0) return this.held === null;
+    this.held = { taken, turns };
     return false;
   }
 
@@ -24,6 +31,6 @@ export class Leaving {
   }
 
   stay(): void {
-    this.taken = null;
+    this.held = null;
   }
 }

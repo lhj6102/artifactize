@@ -3,7 +3,7 @@
   // it: the brand at its left, which opens the command palette; Chat, Verify and Review in its
   // middle, Review with the count of Human reviews waiting for a person; Settings at its right.
   // Showing a mode changes only the workspace above it.
-  import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
+  import brandMark from "@brand/artifactize-icon-mark.svg";
   import { getAppState, MODES, type WindowMode } from "./app.svelte";
   import Icon from "./Icon.svelte";
 

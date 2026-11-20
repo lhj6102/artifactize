@@ -63,10 +63,19 @@
       r.next = page.next;
       r.searched = true;
       r.error = null;
-      // The shown review, listed again, is no longer outside the filter.
-      if (r.outside !== null && shown.kind === "review" && page.reviews.some((row) => row.id === shown.id)) r.outside = null;
+      // Whether the shown review is outside this filter, and why, is the library's answer.
+      if (shown.kind === "review") {
+        const id = shown.id;
+        const opened = await call(app.ipc.humanOpenReference(id, text));
+        if (mine === searches && r.shown.kind === "review" && r.shown.id === id) r.outside = opened.outsideFilter ? opened.outsideReason : null;
+      }
     } catch (failure) {
-      if (mine === searches) r.error = message(failure);
+      if (mine !== searches) return;
+      // A filter the library cannot read lists nothing, and says why under it.
+      r.query = text;
+      r.matches = [];
+      r.next = null;
+      r.error = message(failure);
     }
   }
 

@@ -8,7 +8,7 @@
   import type { ToolView } from "../ipc/client";
   import type { Review } from "./review.svelte";
   import Icon from "../shell/Icon.svelte";
-  import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
+  import brandMark from "@brand/artifactize-icon-mark.svg";
 
   let { review }: { review: Review } = $props();
 

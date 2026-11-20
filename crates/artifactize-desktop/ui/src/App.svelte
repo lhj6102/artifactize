@@ -202,7 +202,7 @@
   ]);
 
   /** No dialog is open: window keys belong to the screen. */
-  const free = () => !app.palette && !app.help && !app.asking && !m.settings && !release.open && leaving.taken === null;
+  const free = () => !app.palette && !app.help && !app.asking && !m.settings && !release.open && leaving.held === null;
 
   function keydown(event: KeyboardEvent) {
     if (event.defaultPrevented || composing(event)) return;
@@ -303,7 +303,7 @@
 <Help bind:open={app.help} sections={keys.sections} marks={keys.marks} />
 <ReleaseDialog {release} />
 <LeaveDialog
-  taken={leaving.taken}
+  held={leaving.held}
   onstay={() => leaving.stay()}
   onleave={() => void getCurrentWindow().destroy()}
 />

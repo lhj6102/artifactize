@@ -49,7 +49,11 @@ export class AppState {
   readonly reviewMode = new ReviewModeState();
   /** Chat's sessions and the one shown. */
   readonly chat: ChatModeState = new ChatModeState(this.ipc);
-  readonly leaving = new Leaving(this.ipc);
+  /** Quitting asks first while claims are held or a Chat turn runs (the shown session's, the
+   * one whose turn this window reads). */
+  readonly leaving = Object.assign(new Leaving(this.ipc), {
+    turns: () => (this.chat.view?.running ? [this.chat.view.session.title || "New chat"] : []),
+  });
   /** A newer release and its dialog. */
   readonly release = new Release(this.ipc);
   /** The numbers of this window's cancellable Human jobs. */
@@ -78,15 +82,20 @@ export class AppState {
 
   /** Make the claimed review `id` the active one. */
   async activate(id: string): Promise<void> {
-    if (this.active === id) return;
-    this.active = id;
+    if (this.active === id || this.#activating === id) return;
+    this.#activating = id;
     try {
       await call(this.ipc.activeReviewSet(id));
+      // The library took it: it is the active review from now on.
+      this.active = id;
     } catch {
       // Not this reviewer's claim (any more): the library keeps the active review it had.
-      if (this.active === id) this.active = null;
+    } finally {
+      if (this.#activating === id) this.#activating = null;
     }
   }
+  /** The review asked to become the active one, until the library answers. */
+  #activating: string | null = null;
 
   /** Show the pet overlay for review `id`, or hide it for `null`. */
   async pet(id: string | null): Promise<void> {

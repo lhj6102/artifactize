@@ -27,9 +27,9 @@
 <main data-screen="overlays">
 <h1>Overlays: the palette, Help, dialogs and the find field</h1>
 <p class="lead">
-  What opens over the screen: the command palette (the bar's Commands), Help (the palette's
+  What opens over the screen: the command palette (the bar's brand, or Ctrl+K), Help (the palette's
   Keyboard shortcuts), Open a request by ID, the Leave dialog (quit while claims
-  are held), the Update dialog (from the bar's release notice), and the graph's find field
+  are held or a Chat turn runs), the Update dialog (from the release notice in Settings' header), and the graph's find field
   (the tool strip's Find), which floats over the graph's top left rather than over the screen, and,
   on a Current, the New Artifact, Rename and Delete dialogs.
 </p>
@@ -44,9 +44,9 @@
     <span class="m-bar-side end"><span class="m-button">Settings</span></span>
   </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-pane-head"><div class="m-filter"><span class="m-term">type:human<span class="m-icon i-remove"></span></span><span class="m-term">waiting<span class="m-icon i-remove"></span></span></div></div><ul class="m-list"></ul></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>type:human waiting</span></div></div><ul class="m-list"></ul></section>
     <div class="m-divider"></div>
-    <section class="m-main"><div class="m-main-head"><h2>Review</h2><span class="m-headline"><span class="m-text">release/signoff · A person approves the release notes</span></span></div></section>
+    <section class="m-main"><div class="m-main-head"><span class="m-ref"><span class="m-icon i-back"></span>Verify · <span class="m-mono">run-7SR0YW</span> › release</span><h2>release/signoff</h2><span class="m-headline"><span class="m-text">A person approves the release notes</span></span></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-palette" style="top: 60px">
       <div class="m-palette-input">Type a command…</div>
@@ -113,7 +113,7 @@
     <div class="m-dialog" style="top: 32px; left: 74%; width: 420px">
       <h2>Keyboard shortcuts</h2>
       <p class="m-section-label" style="margin: 0 0 6px">Review</p>
-      <dl class="m-kv" style="grid-template-columns: max-content 1fr"><dt style="text-align: left"><span class="m-kbd">c</span></dt><dd>Claim to review</dd><dt style="text-align: left"><span class="m-kbd">u</span></dt><dd>Release the claim</dd><dt style="text-align: left"><span class="m-kbd">g</span> <span class="m-kbd">r</span></dt><dd>Open the GREEN or the RED form</dd><dt style="text-align: left"><span class="m-kbd">Ctrl+S</span></dt><dd>Submit</dd><dt style="text-align: left"><span class="m-kbd">t</span></dt><dd>Show or hide Debug; not in a field typed in</dd><dt style="text-align: left"><span class="m-kbd">Esc</span></dt><dd>Cancel running work, then leave the form; then, in a Run's Detail, close the Detail, or, for a review opened from the Pane, focus the Pane (shown first if hidden), the review staying open</dd></dl>
+      <dl class="m-kv" style="grid-template-columns: max-content 1fr"><dt style="text-align: left"><span class="m-kbd">c</span></dt><dd>Claim to review</dd><dt style="text-align: left"><span class="m-kbd">u</span></dt><dd>Release the claim</dd><dt style="text-align: left"><span class="m-kbd">g</span> <span class="m-kbd">r</span></dt><dd>Open the GREEN or the RED form</dd><dt style="text-align: left"><span class="m-kbd">Ctrl+S</span></dt><dd>Submit</dd><dt style="text-align: left"><span class="m-kbd">t</span></dt><dd>Show or hide Debug; not in a field typed in</dd><dt style="text-align: left"><span class="m-kbd">Esc</span></dt><dd>Cancel running work, then leave the form; then, in a Run's Detail, close the Detail, or, for a review shown in Review, focus the Pane (shown first if hidden), the review staying open</dd></dl>
       <div class="m-dialog-actions"><span class="m-button">Close</span></div>
     </div>
   </div>
@@ -296,7 +296,7 @@
     </div>
     <div class="m-dialog" style="top: 40px; left: 74%; width: 420px">
       <h2>Leave the review?</h2>
-      <p style="margin: 0 0 8px">This window holds 1 review claim: release/signoff.</p>
+      <p style="margin: 0 0 8px">This window holds 1 review claim: release/signoff. A Chat turn is running in Fix checkout rounding; quitting stops it.</p>
       <div class="m-dialog-actions"><span class="m-button">Stay <span class="m-kbd">Esc</span></span><span class="m-button primary">Release and quit <span class="m-kbd">u</span></span></div>
     </div>
   </div>
@@ -304,7 +304,7 @@
 <span class="callout" style="left: 130px; top: 34px">7</span>
 <span class="callout" style="left: 730px; top: 34px">4</span>
 </div>
-<figcaption>Stage 1280 × 300. Open a request by ID (left): a waiting Human review opens actionable, any other request read-only. The Leave dialog (right), asked when quitting while claims are held. The app opens one at a time.</figcaption>
+<figcaption>Stage 1280 × 300. Open a request by ID (left): a waiting Human review opens actionable, any other request read-only. The Leave dialog (right), asked when quitting while claims are held or a Chat turn runs; with a turn running and no claim held it is titled <i>Quit while the agent works?</i> and its primary button is <i>Quit</i>. The app opens one at a time.</figcaption>
 </figure>
 
 
@@ -351,15 +351,15 @@
 
 <ol class="notes">
   <li><span class="n">1</span><div><b>Palette</b><span>A 640px raised dialog near the top: an input closed below by a group line, groups with 11px headings, 24px items with the key cap at the right; the selected item on the selection background. The app's commands come first, then those of what the Main area shows. Typing into the input filters them: only the commands whose names contain the text stay, a group's heading only while one of its commands does (J-PALETTE).</span></div></li>
-  <li><span class="n">2</span><div><b>Key caps</b><span>A command the app offers a key for shows it as a key cap at the item's right. The palette and Help are where keys are named; on a working screen at most the bar's Commands button carries one.</span></div></li>
+  <li><span class="n">2</span><div><b>Key caps</b><span>A command the app offers a key for shows it as a key cap at the item's right. The palette and Help are where keys are named; on a working screen no control carries one.</span></div></li>
   <li><span class="n">3</span><div><b>Help</b><span>The keys the app has for what has focus, as a key-cap / action grid under a group label, and Close. For a graph it adds the marks: each status's icon beside its word, the one place that spells them out.</span></div></li>
   <li><span class="n">17</span><div><b>Help in the Pane and in Settings</b><span>With the Pane focused, Help lists the keys the app has for the Pane and its Search; with Settings focused, those for Settings. No marks: neither shows a graph.</span></div></li>
-  <li><span class="n">4</span><div><b>Leave dialog</b><span>Says what is held; Stay and the primary Release and quit (J-QUIT), each of which may show its key as a hint at the end of its label (here Esc and <kbd>u</kbd>). The one dialog whose buttons may show keys.</span></div></li>
+  <li><span class="n">4</span><div><b>Leave dialog</b><span>Says what is held and which Chat turn quitting stops; Stay and the primary Release and quit, or Quit when no claim is held (J-QUIT), each of which may show its key as a hint at the end of its label (here Esc and <kbd>u</kbd>). The one dialog whose buttons may show keys.</span></div></li>
   <li><span class="n">7</span><div><b>Open by ID</b><span>One text field for the request ID (placeholder <code>req-…</code>) and two actions, Cancel and the primary Open. Review shows what opens, as a reference opens it: a waiting Human review actionable; any other request as the read-only Request view.</span></div></li>
   <li><span class="n">8</span><div><b>New Artifact</b><span>Name and Path, then Cancel and the primary Create; a refusal under the field it concerns, the text kept.</span></div></li>
   <li><span class="n">9</span><div><b>Rename</b><span>The name in one field, then Cancel and the primary Rename; the parts, references and places that name the Artifact follow in the same edit. Here a file it would write, desktop's, changed on disk since the Current read it: the refusal names that file, nothing is written, the name typed stays, and the Current is scanned again.</span></div></li>
   <li><span class="n">10</span><div><b>Delete</b><span>Says which file Delete would remove, the one sentence a decision that cannot be undone here gets. Done, it closes with the Detail and the node goes from the graph. Refused while another Artifact names it: the red line says the file was not removed and which Artifact names it, as here; nothing was written.</span></div></li>
-  <li><span class="n">14</span><div><b>Release notice</b><span>In the bar only while a newer stable release than the running one is out, as <i>{version} available</i> before Settings; never on a Microsoft Store install, which the Store updates. A click opens the Update dialog.</span></div></li>
+  <li><span class="n">14</span><div><b>Release notice</b><span>In Settings' header only while a newer stable release than the running one is out, as <i>{version} available</i> (D-SET-1); never on a Microsoft Store install, which the Store updates. A click opens the Update dialog.</span></div></li>
   <li><span class="n">6</span><div><b>A command</b><span>The running and the new version as two numbers, then the command to run, as selectable monospace in an input-surface box, to copy into a terminal; no link.</span></div></li>
   <li><span class="n">15</span><div><b>A download</b><span>The file to download as a link, which opens in the browser, then, when there is one, the command that installs it by hand, selectable as above.</span></div></li>
   <li><span class="n">16</span><div><b>The release page</b><span>When the way this app was installed is unknown: the release page as a link, which opens in the browser, and nothing else.</span></div></li>
@@ -372,7 +372,7 @@
   <dt id="D-OVL-2">D-OVL-2</dt>
   <dd>The command palette, which a click on the bar's brand opens (D-BAR-1), is 640px wide near the top: an input of 36px closed below by <code>--line-group</code>, group headings at <code>--text-label</code> uppercase in <code>--ink-2</code>, items of <code>--row</code> with the label left and its key cap, if it has one, right, the selected item on <code>--selection</code>; typing filters the rows: only the commands whose names contain the typed text stay, in their order, each group heading kept only while one of its commands does (typing <i>rel</i> here would leave Release the claim alone, under Human review), and the selected row among them on <code>--selection</code>. It lists every command that is enabled now, each with its key cap where the app offers a key (J-PALETTE): the app's first, under App, then those of what is shown, each under its group (Graph, Human review, and Settings while Settings is open); the Graph group holds a graph's commands that can run now, <i>Minimize or expand the whole</i> among them while a whole's Detail is open (J-GRAPH-MINIMIZE); while a graph's Detail shows a Human review on a Human eval's tab, that review's commands are listed too, under the review's group, as they are for a review in the Main area. <span class="avoid">icons per command; the selection shown by colour alone; a command that opens the palette itself.</span></dd>
   <dt id="D-OVL-3">D-OVL-3</dt>
-  <dd>A key cap is the one <code>kbd</code> style: <code>--mono</code> at <code>--text-label</code>, <code>--ink-2</code>, a 1px <code>--line-input</code> border, <code>--radius-control</code>, <code>--surface-group</code>. It shows where keys are looked up, in the palette and in Help, and on the Leave dialog's two buttons (D-OVL-1); nowhere else, other dialogs' buttons included (D-SYS-12). On the primary button its text and border take <code>--ink-on-accent</code> over the button's fill. <span class="avoid">a second kbd style; a key cap on any control other than Commands and the Leave dialog's two buttons.</span></dd>
+  <dd>A key cap is the one <code>kbd</code> style: <code>--mono</code> at <code>--text-label</code>, <code>--ink-2</code>, a 1px <code>--line-input</code> border, <code>--radius-control</code>, <code>--surface-group</code>. It shows where keys are looked up, in the palette and in Help, and on the Leave dialog's two buttons (D-OVL-1); nowhere else, other dialogs' buttons included (D-SYS-12). On the primary button its text and border take <code>--ink-on-accent</code> over the button's fill. <span class="avoid">a second kbd style; a key cap on any control other than the Leave dialog's two buttons.</span></dd>
   <dt id="D-OVL-4">D-OVL-4</dt>
   <dd>The find field is opened by the tool strip's Find button (D-GRAPH-4, J-GRAPH-FIND). It floats over the canvas's top left (8px in, under the strip), 380px wide on <code>--surface-raised</code> with a <code>--line-panel</code> border: a <code>--mono</code> input, empty and focused when it opens, then result rows of <code>--row-dense</code> in <code>--mono</code> at <code>--text-small</code> led by the verdict's icon in its colour (on a Current, what verify would do), each showing the whole name, wrapping within the field's width rather than cut with an ellipsis, the chosen row on <code>--selection</code> with a 2px inset bar, a hovered row on <code>--surface-group</code>. It has four states. Nothing typed, with starred Artifacts on the graph: those Artifacts as rows, as if found, in the graph's order. Text typed with matches: the Artifacts and evals whose names contain the text, ignoring case, as rows in the graph's order, the list no taller than the canvas below the field and scrolling inside the field, so all 50 listed rows and the line after them stay reachable, an eval as <i>{Artifact} / {eval}</i>, and past the first 50 one <code>--ink-2</code> line under them saying how many more match. Nothing typed and nothing starred: no rows, one <code>--ink-2</code> line saying how to star one. Text typed and nothing matching: no rows, one <code>--ink-2</code> line saying that none does. Typing moves nothing on the graph. No row shows as chosen when the list appears. A click on a row closes the field, opens and focuses the Detail on that Artifact's tab or that eval's tab, and moves the camera so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable (J-GRAPH-FIND). A part of several wholes is listed once, and the camera goes to its copy in the first of its wholes. An Artifact hidden in a minimized whole, or an eval of one, is listed as any other; chosen, the Detail opens on that Artifact or eval, and the camera centres the minimized whole that hides it, which takes the selection's outline (J-GRAPH-MINIMIZE), the whole staying minimized. A click outside closes the field and does nothing else: the click neither acts on the graph nor opens, switches or closes the Detail, and the graph, its camera and the Detail stay as they were. <span class="avoid">a modal find; a camera that moves while typing or choosing a row; an empty list with no line under it; the starred list and the how-to-star line together; a no-match line that reads like the how-to-star line.</span></dd>
   <dt id="D-OVL-6">D-OVL-6</dt>
