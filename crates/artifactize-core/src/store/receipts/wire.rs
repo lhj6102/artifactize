@@ -243,6 +243,8 @@ pub struct Request {
     /// Where the saved conversation behind this request's result lives: its own review's,
     /// or for a reused result the producing review's. Absent when none was saved.
     pub session: Option<crate::agent::session::SessionRef>,
+    /// Free-form Human response accompanying the schema-owned answer on this receipt.
+    pub review_notes: Option<String>,
     pub human_definition: Option<store::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
     pub references: BTreeMap<crate::config::ReferenceName, crate::types::ArtifactName>,
@@ -317,6 +319,8 @@ struct RequestWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<crate::agent::session::SessionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_definition: Option<store::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
     pub references: BTreeMap<crate::config::ReferenceName, crate::types::ArtifactName>,
@@ -389,6 +393,7 @@ impl TryFrom<RequestWire> for Request {
             origin: wire.origin,
             session_id: wire.session_id,
             session: wire.session,
+            review_notes: wire.review_notes,
             human_definition: wire.human_definition,
             payload: wire.payload,
             references: wire.references,
@@ -436,6 +441,7 @@ impl From<Request> for RequestWire {
             origin: record.origin,
             session_id: record.session_id,
             session: record.session,
+            review_notes: record.review_notes,
             human_definition: record.human_definition,
             payload: record.payload,
             references: record.references,

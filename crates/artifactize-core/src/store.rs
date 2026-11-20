@@ -194,7 +194,7 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
 /// and numbers every change of a Run, request or execution row; schema 10 adds the open
 /// WAITING_HUMAN Run and names a Run that ended with only sign-offs left YELLOW. Versions from
 /// schema 6 upgrade additively.
-pub const STATE_SCHEMA_VERSION: u32 = 10;
+pub const STATE_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set {}", state_home_variables())]

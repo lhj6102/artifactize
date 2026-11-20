@@ -23,6 +23,107 @@ use tokio_util::sync::CancellationToken;
 mod support;
 use support::runs::RecordOutput;
 
+const DRAFT_FIXTURE: &str = "ARTIFACTIZE_HUMAN_DRAFT_FIXTURE";
+const DRAFT_REQUEST: &str = "ARTIFACTIZE_HUMAN_DRAFT_REQUEST";
+
+#[tokio::test]
+async fn draft_fixture_writer() {
+    let Some(state) = std::env::var_os(DRAFT_FIXTURE).map(PathBuf::from) else {
+        return;
+    };
+    let id = std::env::var(DRAFT_REQUEST).unwrap().parse().unwrap();
+    let reviewer = "alice".parse().unwrap();
+    artifactize_core::review::edit_draft(
+        &state,
+        &id,
+        &reviewer,
+        artifactize_core::review::DraftEdit::Notes {
+            previous: String::new(),
+            text: "Initial response".into(),
+        },
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn draft_is_shared_across_processes_and_cleared_on_submission() {
+    use artifactize_core::review::{DraftEdit, append_draft, edit_draft, read_draft};
+
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(returning()).await;
+    let id = &run.requests[0].id;
+    let receipts = fixture.receipts().await;
+    let alice = "alice".parse().unwrap();
+    let bob = "bob".parse().unwrap();
+    let state = &fixture.state;
+    human::claim(&receipts, id, &alice).await.unwrap();
+
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "draft_fixture_writer"])
+        .env(DRAFT_FIXTURE, state)
+        .env(DRAFT_REQUEST, id.as_str())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let initial = read_draft(state, id, &alice).await.unwrap().unwrap();
+    assert_eq!(initial.notes, "Initial response");
+    assert_eq!(read_draft(state, id, &bob).await.unwrap(), None);
+    assert!(
+        append_draft(state, id, &bob, "#unauthorized")
+            .await
+            .is_err()
+    );
+
+    human::unclaim(&receipts, id, &alice).await.unwrap();
+    assert_eq!(
+        read_draft(state, id, &alice).await.unwrap(),
+        Some(initial.clone())
+    );
+    assert!(append_draft(state, id, &alice, "#released").await.is_err());
+    human::claim(&receipts, id, &alice).await.unwrap();
+    let (first, second) = tokio::join!(
+        append_draft(state, id, &alice, "#checkout .total"),
+        append_draft(state, id, &alice, "L42:C9"),
+    );
+    first.unwrap();
+    second.unwrap();
+    let pointed = read_draft(state, id, &alice).await.unwrap().unwrap().notes;
+    let mut points = pointed.lines();
+    assert_eq!(points.next(), Some("Initial response"));
+    let mut points = points.collect::<Vec<_>>();
+    points.sort_unstable();
+    assert_eq!(points, ["#checkout .total", "L42:C9"]);
+    assert!(
+        edit_draft(
+            state,
+            id,
+            &alice,
+            DraftEdit::Notes {
+                previous: initial.notes,
+                text: "Stale edit".into(),
+            }
+        )
+        .await
+        .is_err()
+    );
+
+    human::submit(&receipts, id, &alice, &green(), CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(read_draft(state, id, &alice).await.unwrap(), None);
+    let saved = store::read_request(state, id.as_str()).await.unwrap();
+    assert_eq!(
+        saved.request.review_notes.as_deref(),
+        Some(pointed.as_str())
+    );
+    assert!(append_draft(state, id, &alice, "#settled").await.is_err());
+}
+
 struct Fixture {
     _root: owned_run::Root,
     repo: PathBuf,

@@ -280,6 +280,7 @@ impl Receipts {
                     store::migrations::apply(&transaction)?;
                     if !schema_initialized(&transaction)? {
                         transaction.execute_batch(SCHEMA)?;
+                        transaction.execute_batch(store::migrations::WORKSPACES)?;
                         transaction.execute_batch(REVISIONS)?;
                         transaction.execute(
                             "INSERT INTO state_meta(name,value) VALUES ('id',?)",

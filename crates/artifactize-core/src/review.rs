@@ -1,6 +1,7 @@
 //! Human review: the facts and lifecycle jobs every interface shares.
 
 mod detail;
+mod draft;
 mod form;
 mod runs;
 pub mod search;
@@ -8,6 +9,9 @@ pub mod search;
 /// The Tool log every review interface shows; see [`log::Sink`].
 pub use crate::{human::Submission, tools::human::log};
 pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
+pub use draft::{
+    Draft, DraftEdit, DraftFields, FieldValue, append_draft, edit_draft, read_draft, values_of,
+};
 pub use form::{Field, Form, Input, Key, Row, Specification};
 pub use runs::Runs;
 

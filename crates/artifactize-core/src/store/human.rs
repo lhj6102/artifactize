@@ -1,3 +1,5 @@
+mod draft;
+
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
@@ -346,6 +348,10 @@ impl Receipts {
                 claimant(&transaction, &current.id, &reviewer)?;
                 request.state = match request.state {
                     super::RequestState::Completed { result, .. } => {
+                        request.review_notes = draft::read(&transaction, &current.id, &reviewer)?
+                            .map(|draft| draft.notes)
+                            .filter(|notes| !notes.is_empty());
+                        draft::clear(&transaction, &current.id)?;
                         super::RequestState::completed(result, crate::broker::now())
                     }
                     super::RequestState::Failed { error, code, .. } => {
