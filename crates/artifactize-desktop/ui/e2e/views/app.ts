@@ -42,6 +42,7 @@ export class App {
 
   /** Wait until the app runs its own frontend: anything else fails here, once, by name. */
   async loaded(): Promise<void> {
+    await this.browser.switchToWindow("main");
     await holds(this.browser, () => this.browser.execute(() => (document.getElementById("app")?.childElementCount ?? 0) > 0),
       "setup failed: the test app did not load its frontend", 30000);
   }

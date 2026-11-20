@@ -61,7 +61,7 @@ export class Windows {
     const option = this.browser.$('[role="listbox"][aria-label="Human reviews"]').$(`[role="option"]*=${evalId}`);
     await option.waitForExist({ timeout: 15000, timeoutMsg: `timed out: Review lists ${evalId}` });
     await option.click();
-    await holds(this.browser, () => this.browser.execute((root) => document.querySelector(root) !== null, REVIEW), `the review of ${evalId} opened`);
+    await holds(this.browser, () => this.browser.execute((expected) => document.querySelector(`[aria-label="Review's main area"] > header h2`)?.textContent?.trim() === expected, evalId), `the review of ${evalId} opened`);
     await this.browser.$(REVIEW).$("button=Claim to review").click();
     await holds(this.browser, () => this.browser.$(`${REVIEW} label.notes textarea`).isExisting(), `the review of ${evalId} claimed`);
   }

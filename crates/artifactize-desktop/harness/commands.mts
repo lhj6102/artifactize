@@ -23,7 +23,7 @@ export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
  * A background read of the new query also qualifies: it rendered that exact query. */
 export function completed(current: Checkpoint, before?: Checkpoint): boolean {
   if (current.activity.pending !== 0 || current.queryFailure) return false;
-  if (before && current.reviewQuery != null && current.reviewQuery !== before.reviewQuery) {
+  if (before?.reviewQuery != null && current.reviewQuery != null && current.reviewQuery !== before.reviewQuery) {
     const search = current.activity.commands.humanSearch;
     const previous = before.activity.commands.humanSearch;
     if (!search || search.completed <= (previous?.completed ?? 0) || search.failed > (previous?.failed ?? 0)) return false;
