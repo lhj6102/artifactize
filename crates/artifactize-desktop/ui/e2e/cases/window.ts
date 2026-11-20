@@ -145,7 +145,7 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["review"], data: { id: request(fixture).id } };
     },
     run: async (app, { fixture, data: { id }, port }) => {
-      await app.graph.titled("Review");
+      await app.review.titleContains("release/signoff");
       await app.review.claim();
       await app.command("Quit");
       const asked = await app.dialogTitled("Leave the review?");
@@ -177,7 +177,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "update-notice",
-    title: "a newer stable release shows as `{version} available` before Settings; its dialog names both versions and links the release page, which opens in the browser",
+    title: "a newer stable release shows as `{version} available` in Settings; its dialog names both versions and links the release page, which opens in the browser",
     journeys: ["J-UPDATE"],
     prepare: async (own) => {
       const fixture = createEmpty(own);
@@ -195,9 +195,8 @@ export const scenarios: Scenario[] = [
       return { fixture, env, data: { site: site.url, visits } };
     },
     run: async (app, { fixture, data: { site, visits } }) => {
-      const header = await app.headerUntil((shown) => shown.items.includes("9.9.9 available"), "the newer release shows in the header");
-      assert.ok(header.items.indexOf("9.9.9 available") < header.items.findIndex((item) => item.startsWith("Settings")), "before Settings");
-      await app.headerButton("9.9.9 available");
+      await app.settings.open();
+      await app.settings.openUpdate("9.9.9");
       await app.dialogTitled("Update artifactize");
       const dialog = (await app.releaseDialog())!;
       assert.match(dialog.versions, / → 9\.9\.9$/, "the running and the new version");
@@ -205,8 +204,8 @@ export const scenarios: Scenario[] = [
       await app.followReleaseLink();
       await app.eventually(async () => browserHandoffs(fixture).includes(dialog.link), "the release page opened in the browser");
       await app.eventually(async () => readText(visits).split("\n").includes("/releases/latest"), "the browser fetched the release page");
-      await app.dialogButton("Close");
-      await app.dialogClosed();
+      await app.closeRelease();
+      await app.settings.close("Close");
     },
   }),
 

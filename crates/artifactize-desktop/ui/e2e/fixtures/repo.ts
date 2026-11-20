@@ -273,7 +273,7 @@ export async function createStates(own: Owned): Promise<Fixture> {
     [["crash"], "crash", `\n[evals.check]\ntitle = "Check crash"\nprofile = ${runtimeProfile("hold", 1000)}\npayload.instruction = "Exceed the deadline."\n`],
     [["down"], "down", check("check", "down", "pass", "Run after {red}.")],
     [["fine"], "fine", check("check", "fine")],
-    [["gate"], "gate", `\n[evals.signoff]\ntitle = "A person approves"\nprofile = { kind = "human" }\npayload.instruction = "Approve."\n`],
+    [["gate"], "gate", `type = "files"\n[evals.signoff]\ntitle = "A person approves"\nprofile = { kind = "human" }\npayload.instruction = "Approve."\n`],
     [["later"], "later", check("check", "later", "pass", "Run after {gate}.")],
   ], false);
   await verifyWaiting(fixture);
@@ -312,7 +312,7 @@ export function createChecking(own: Owned): Checking {
   const fixture = createProject(own, [
     [["slow"], "slow", `fingerprint = { script = { ${commandFields("fingerprint", portablePath(gate), portablePath(runs))}, files = [], timeout_ms = 600000 } }\n${check("check", "slow")}`],
     [["quick"], "quick", check("check", "quick", "pass", "Check quick with {slow}.")],
-    [["other"], "other", `\n[evals.signoff]\ntitle = "A person approves other"\nprofile = { kind = "human" }\npayload.instruction = "Approve other."\n`],
+    [["other"], "other", `type = "files"\n[evals.signoff]\ntitle = "A person approves other"\nprofile = { kind = "human" }\npayload.instruction = "Approve other."\n`],
   ], false);
   return { ...fixture, gate, runs };
 }
@@ -416,7 +416,7 @@ export async function createReviewed(own: Owned): Promise<Fixture> {
   });
   try {
     const fixture = newFixture(own);
-    declareArtifact(fixture.repo, ["report"], "report", `
+    declareArtifact(fixture.repo, ["report"], "report", `type = "files"
 [evals.agent]
 title = "Review the receipt"
 profile = { kind = "agent", backend = "openai", model = "${REVIEW_MODEL}", timeout_ms = 60000 }

@@ -33,6 +33,15 @@ it("a completed failed query cannot reuse rows left by a successful query", () =
   assert.equal(completed({ ...failed, queryFailure: null }, before), true);
 });
 
+it("waits for Review's debounced search after the visible filter changes", () => {
+  const before: Checkpoint = { query: null, reviewQuery: "waiting", activity: { revision: 2, pending: 0, search: null,
+    commands: { humanSearch: { started: 1, completed: 1, failed: 0, pending: 0 } } } };
+  const typed = { ...before, reviewQuery: "is:mine" };
+  assert.equal(completed(typed, before), false);
+  assert.equal(completed({ ...typed, activity: { ...typed.activity, revision: 4,
+    commands: { humanSearch: { started: 2, completed: 2, failed: 0, pending: 0 } } } }, before), true);
+});
+
 it("needs no search for the starting query until one is typed", () => {
   const start: Checkpoint = { query: "sort:recent", activity: { revision: 1, pending: 0, commands: {}, search: null } };
   assert.equal(completed(start), true);

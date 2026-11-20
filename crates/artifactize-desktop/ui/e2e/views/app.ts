@@ -247,9 +247,15 @@ export class App {
     });
   }
 
+  async closeRelease(): Promise<void> {
+    const link = await this.browser.$('[role="dialog"] button.link').getElement();
+    await link.$("./ancestor::*[@role='dialog']").$("button=Close").click();
+    await holds(this.browser, async () => (await this.releaseDialog()) === null, "the update dialog closed");
+  }
+
   /** Click the release dialog's link: the system browser is handed it. */
   async followReleaseLink(): Promise<void> {
-    await this.browser.$('[role="dialog"]').$("button.link").click();
+    await this.browser.$('[role="dialog"] button.link').click();
   }
 
   // -------------------------------------------------------------------------------

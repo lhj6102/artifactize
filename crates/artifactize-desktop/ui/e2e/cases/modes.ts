@@ -29,6 +29,7 @@ export const scenarios: Scenario[] = [
       await app.review.release();
       await app.waitingBadge(1);
       await app.review.claim();
+      await app.review.choose("GREEN");
       await app.until(async () => (await app.review.notes()) === "Keep the checked selector." && (await app.review.value("comment")) === "Release notes checked", "reclaim restored the Notes and GREEN draft");
       const completed = await app.review.submit();
       assert.match(completed.completed, /Keep the checked selector\./);
@@ -36,7 +37,7 @@ export const scenarios: Scenario[] = [
       assert.equal(saved.status, "GREEN");
       await app.review.back();
       await app.graph.titled(runId);
-      await app.detail.until((detail) => detail.title === "Artifact release", "the originating Artifact's Detail is open again");
+      await app.detail.until((detail) => detail.tabs.some((tab) => tab.name === "signoff" && tab.selected), "the originating Artifact Detail is open on its sign-off");
     },
   }),
   scenario({

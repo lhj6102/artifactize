@@ -73,7 +73,7 @@ export const scenarios: Scenario[] = [
       await review.runTool("fail");
       assert.deepEqual(await review.runUntil("fail", (rows) => rows.at(-1)?.startsWith("■") === true, "fail ended"),
         ["▶ HH:MM:SS · fail · release", "■ exit 1 [red]"]);
-      assert.equal((await review.read())?.notice, "fail_release failed; a tool error is not a verdict.");
+      await review.until((shown) => shown.notice === "fail_release failed; a tool error is not a verdict.", "the failed tool notice arrived without a verdict");
       await review.runTool("gone");
       const gone = await review.runUntil("gone", (rows) => rows.at(-1)?.startsWith("■") === true, "the missing tool ended");
       assert.match(gone.at(-1)!, /^■ error: \S.* \[red\]$/, "a tool that could not run ends with its error, in red");

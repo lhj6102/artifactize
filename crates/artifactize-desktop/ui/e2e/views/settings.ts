@@ -42,25 +42,30 @@ export class Settings {
 
   /** Click the header's Settings: Settings opens on its Providers tab. */
   async open(): Promise<Shown> {
-    await this.browser.$("header.bar").$("button=Settings").click();
+    await this.browser.$('footer[aria-label="Bottom bar"]').$("button=Settings").click();
     return this.until((shown) => shown.tabs.some((tab) => tab.selected), "Settings opened");
   }
 
   /** Close Settings by its Close, the header's Settings again, or a click outside it. */
   async close(by: "Close" | "Settings" | "outside"): Promise<void> {
     if (by === "Close") await this.browser.$(SETTINGS).$("button=Close").click();
-    else if (by === "Settings") await this.browser.$("header.bar").$("button=Settings").click();
+    else if (by === "Settings") await this.browser.$('footer[aria-label="Bottom bar"]').$("button=Settings").click();
     else {
       // A point of the screen beneath, outside the panel and below the header, which stays above it.
       const point = await this.browser.execute((selector) => {
         const box = document.querySelector(selector)!.getBoundingClientRect();
-        const header = document.querySelector("header.bar")!.getBoundingClientRect();
-        const y = Math.round(Math.max(box.top, header.bottom) + 40);
+        const y = Math.round(box.top + box.height / 2);
         return box.left > 24 ? { x: Math.round(box.left / 2), y } : { x: 12, y: Math.round((box.bottom + innerHeight) / 2) };
       }, SETTINGS);
       await pointerGapClick(this.browser, point);
     }
     await holds(this.browser, async () => (await this.read()) === null, `Settings closed by ${by}`);
+  }
+
+  async openUpdate(version: string): Promise<void> {
+    const notice = this.browser.$(SETTINGS).$(`button=${version} available`);
+    await notice.waitForDisplayed();
+    await notice.click();
   }
 
   /** Click the tab `name`: it shows. */
