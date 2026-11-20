@@ -232,7 +232,7 @@
       <PaneResizer class="resizer" />
     {/if}
     <Split id="review-main" order={2} defaultSize={app.paneShown ? 76 : 100} minSize={30}>
-      <div class="main">
+      <div class="main" style:--detail-width={app.monitor.detailWidth === null ? null : `${app.monitor.detailWidth}px`}>
         <Panel
           {title}
           label="Review's main area"

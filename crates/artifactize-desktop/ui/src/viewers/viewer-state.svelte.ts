@@ -29,10 +29,12 @@ export class ViewerState {
 
   constructor(readonly session: number, readonly ipc: Commands = commands) {}
 
-  /** A built-in viewer: the host draws Point for it; a plugin's page draws its own. */
-  readonly builtin = $derived(this.entry?.kind === "builtin");
-  /** Point is offered while this reviewer holds the active review and the viewer points. */
-  readonly pointable = $derived(this.builtin && this.context?.review != null);
+  /** Point is offered in the strip while this reviewer holds the active review: a built-in
+   * viewer points by itself, a plugin's page once the strip tells it to (the bridge's `point`
+   * event). */
+  readonly pointable = $derived(this.entry !== null && this.context?.review != null);
+  /** The plugin page's latest status line, as it reports it through the bridge. */
+  status = $state<string | null>(null);
 
   async load(): Promise<void> {
     try {

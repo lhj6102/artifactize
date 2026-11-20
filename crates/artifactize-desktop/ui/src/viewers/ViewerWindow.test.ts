@@ -176,11 +176,15 @@ describe("a plugin's page", () => {
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
     expect(frame.src).toContain("viewer");
     expect(frame.src).toContain("4");
-    // The app's Point is not drawn over a plugin's page: the page draws its own.
-    expect(screen.queryByRole("button", { name: "Point" })).toBeNull();
     // Until the page reaches the bridge, the strip says it is loading.
     expect((await screen.findByRole("status")).textContent?.trim()).toBe("Loading HTML Viewer…");
     const reply = vi.spyOn(frame.contentWindow!, "postMessage");
+    // The strip's Point tells the page to point; Esc tells it to stop.
+    await fireEvent.click(await screen.findByRole("button", { name: "Point" }));
+    expect(reply).toHaveBeenLastCalledWith({ channel: "artifactize-viewer/v1", event: "point", armed: true }, "*");
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(reply).toHaveBeenLastCalledWith({ channel: "artifactize-viewer/v1", event: "point", armed: false }, "*");
+    reply.mockClear();
     const ask = { channel: "artifactize-viewer/v1", id: 1, method: "readText", args: { path: "index.html" } };
     // Another window's message is not answered.
     window.dispatchEvent(new MessageEvent("message", { data: ask, source: window }));
@@ -188,8 +192,15 @@ describe("a plugin's page", () => {
     await waitFor(() => expect(reply).toHaveBeenCalledWith({ channel: "artifactize-viewer/v1", id: 1, result: "<h1>Hi</h1>" }, "*"));
     expect(reply).toHaveBeenCalledTimes(1);
     expect(calls.filter((call) => call.cmd === "viewer_read_text")).toHaveLength(1);
-    // Connected, the strip says nothing more of the page.
+    // Connected, the strip says nothing more of the page until the page reports its status,
+    // each line replacing the last.
     expect(screen.queryByRole("status")).toBeNull();
+    for (const [id, text] of [[3, "Loading checkout/index.html"], [4, "checkout/index.html · Checkout"]] as const) {
+      window.dispatchEvent(new MessageEvent("message", { data: { channel: "artifactize-viewer/v1", id, method: "status", args: { text } }, source: frame.contentWindow }));
+      await waitFor(() => expect(screen.getByRole("status").textContent?.trim()).toBe(text));
+      expect(reply).toHaveBeenCalledWith({ channel: "artifactize-viewer/v1", id, result: null }, "*");
+    }
+    reply.mockClear();
     window.dispatchEvent(new MessageEvent("message", { data: { ...ask, id: 2, method: "invoke" }, source: frame.contentWindow }));
     await waitFor(() => expect(reply).toHaveBeenCalledWith({ channel: "artifactize-viewer/v1", id: 2, error: "The viewer bridge has no invoke." }, "*"));
   });

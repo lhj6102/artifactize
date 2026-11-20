@@ -238,7 +238,7 @@ export class Windows {
       return {
         head: [...(card?.querySelector(".head")?.children ?? [])].map((part) => part.textContent?.trim() ?? "").filter(Boolean).join(" "),
         notes: card?.querySelector<HTMLTextAreaElement>(".notes textarea")?.value ?? "",
-        verdict: card?.querySelector(".verdicts .on")?.textContent?.trim() ?? "",
+        verdict: card?.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
         point: !!point && !point.hasAttribute("disabled"),
         why: card?.querySelector(".why")?.textContent?.trim() ?? "",
         error: card?.querySelector(".error")?.textContent?.trim() ?? "",

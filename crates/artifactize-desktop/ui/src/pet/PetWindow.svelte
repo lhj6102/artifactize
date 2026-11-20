@@ -90,11 +90,15 @@
           <span class="label">Notes</span>
           <NotesField value={review.notes} pointed={review.pointed} oninput={(text) => review.writeNotes(text)} />
         </label>
-        <div class="verdicts">
-          <button class="button small" class:on={review.form?.verdict === "GREEN"} onclick={() => void review.choose("GREEN")}>GREEN</button>
-          <button class="button small" class:on={review.form?.verdict === "RED"} onclick={() => void review.choose("RED")}>RED</button>
-        </div>
-        {#if review.form}<VerdictForm {review} form={review.form} />{/if}
+        <!-- The verdict's form carries the GREEN / RED choice once open, as the review's does. -->
+        {#if review.form}
+          <VerdictForm {review} form={review.form} />
+        {:else}
+          <div class="verdicts">
+            <button class="button small" onclick={() => void review.choose("GREEN")}>GREEN</button>
+            <button class="button small" onclick={() => void review.choose("RED")}>RED</button>
+          </div>
+        {/if}
       </div>
       {#if review.form?.error}<p class="error" role="status">{review.form.error}</p>{:else if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
       <div class="row">
@@ -189,10 +193,6 @@
   .verdicts {
     display: flex;
     gap: var(--gap);
-  }
-  .on {
-    border-color: var(--accent);
-    box-shadow: inset 0 0 0 1px var(--accent);
   }
   .row {
     display: flex;

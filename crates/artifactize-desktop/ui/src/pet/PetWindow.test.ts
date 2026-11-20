@@ -42,7 +42,7 @@ it("writes the review's Notes and opens the verdict the draft holds", async () =
   await screen.findByRole("button", { name: "Submit GREEN" });
   await fireEvent.input(screen.getByLabelText("Notes"), { target: { value: "Looks right." } });
   await waitFor(() => expect(library.draft.notes).toBe("Looks right."));
-  await fireEvent.click(screen.getByRole("button", { name: "RED" }));
+  await fireEvent.click(screen.getByRole("radio", { name: "RED" }));
   await screen.findByRole("button", { name: "Submit RED" });
   expect(library.draft.verdict).toBe("RED");
   await fireEvent.click(screen.getByRole("button", { name: "Submit RED" }));

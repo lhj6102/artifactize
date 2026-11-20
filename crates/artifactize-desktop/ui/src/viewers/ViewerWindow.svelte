@@ -40,8 +40,14 @@
       if (data.method === "context") result = await call(v.ipc.viewerContext(session));
       else if (data.method === "files") result = await call(v.ipc.viewerFiles(session, args.path ?? ""));
       else if (data.method === "readText") result = await call(v.ipc.viewerReadText(session, args.path ?? ""));
-      else if (data.method === "pointing") result = await v.append(args.text ?? "");
-      else throw new Error(`The viewer bridge has no ${data.method}.`);
+      else if (data.method === "pointing") {
+        // A place pointed at in the page ends pointing, as a built-in viewer's click does.
+        v.pointing = false;
+        result = await v.append(args.text ?? "");
+      } else if (data.method === "status") {
+        v.status = args.text?.trim() || null;
+        result = null;
+      } else throw new Error(`The viewer bridge has no ${data.method}.`);
       reply({ result });
     } catch (failure) {
       reply({ error: failure instanceof Error ? failure.message : message(failure) });
@@ -60,10 +66,16 @@
     if (v.page === "loading") v.page = "silent";
   }
 
+  /** Start or stop pointing; a plugin's page is told, and points in its own document. */
+  function point(on: boolean) {
+    v.pointing = on;
+    if (entry?.kind === "web") frame?.contentWindow?.postMessage({ channel: CHANNEL, event: "point", armed: on }, "*");
+  }
+
   function keydown(event: KeyboardEvent) {
     if (event.key === "Escape" && v.pointing) {
       event.preventDefault();
-      v.pointing = false;
+      point(false);
     }
   }
 
@@ -76,7 +88,7 @@
     // The pet overlay's Point points here, and asks which viewers are open.
     const unarm = subscribe<{ artifact: string }>((handler) => listen(ARM, handler), (asked) => {
       if (!v.pointable || asked.artifact !== context?.artifact) return;
-      v.pointing = true;
+      point(true);
       void getCurrentWindow().setFocus().catch(() => {});
     });
     const unask = subscribe<unknown>((handler) => listen(ASK, handler), () => void v.announce());
@@ -102,13 +114,16 @@
       <span class="page" class:silent={v.page === "silent"} role="status">
         {v.page === "loading" ? `Loading ${context?.title ?? "the viewer"}…` : `${context?.title ?? "The viewer"} did not connect: its page never asked the viewer for its context.`}
       </span>
+    {:else if entry?.kind === "web" && v.status}
+      <!-- The page's own latest word on what it shows, replaced by the next. -->
+      <span class="page" role="status">{v.status}</span>
     {/if}
     <span class="spacer"></span>
     {#if context?.review}
       <span class="review"><span class="tone-human"><Icon name="human" /></span>{v.evalId ?? context.review}</span>
     {/if}
     {#if v.pointable}
-      <button class="button small" class:on={v.pointing} aria-pressed={v.pointing} onclick={() => (v.pointing = !v.pointing)}><Icon name="point" />Point</button>
+      <button class="button small" class:on={v.pointing} aria-pressed={v.pointing} onclick={() => point(!v.pointing)}><Icon name="point" />Point</button>
     {/if}
   </header>
   {#if v.error}<p class="error" role="status">{v.error}</p>{/if}
@@ -195,6 +210,7 @@
     font-size: var(--text-small);
   }
   .body {
+    grid-row: 3;
     min-height: 0;
     min-width: 0;
   }
