@@ -334,7 +334,8 @@ pub fn add(root: &Path, source: &Path) -> Result<PluginInfo, ConfigError> {
     }
     let source =
         platform::open_directory(&source).map_err(|error| ConfigError::new(&source, error))?;
-    copy(&source, &payload).map_err(|error| ConfigError::new(&installed, error))?;
+    platform::paths::copy_portable_tree(&source, &payload)
+        .map_err(|error| ConfigError::new(&installed, error))?;
     let validated = read(&payload)?;
     if validated.info.name != plugin.info.name {
         return Err(ConfigError::new(
@@ -342,7 +343,8 @@ pub fn add(root: &Path, source: &Path) -> Result<PluginInfo, ConfigError> {
             "Plugin type changed during installation.",
         ));
     }
-    std::fs::rename(&payload, &installed).map_err(|error| ConfigError::new(&installed, error))?;
+    platform::paths::rename_open_file(&payload, &installed)
+        .map_err(|error| ConfigError::new(&installed, error))?;
     Ok(validated.info)
 }
 
@@ -360,31 +362,6 @@ fn ensure_directory(parent: &Path, name: &str) -> std::io::Result<()> {
     } else {
         Ok(())
     }
-}
-
-fn copy(source: &File, target: &Path) -> std::io::Result<()> {
-    std::fs::create_dir(target)?;
-    for entry in platform::read_dir(source)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let path = target.join(&name);
-        match entry.file_type()? {
-            platform::FileKind::Directory => {
-                copy(&platform::paths::open_named(source, &name)?, &path)?
-            }
-            platform::FileKind::File => {
-                let mut input = platform::paths::open_regular_entry(source, &name)?;
-                std::io::copy(&mut input, &mut File::create_new(path)?)?;
-            }
-            _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "Plugin folders cannot contain links or special files.",
-                ));
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Remove an installed package, even if its manifest is no longer valid.
@@ -410,11 +387,9 @@ pub fn remove(root: &Path, name: &super::ArtifactType) -> Result<(), ConfigError
     {
         return Err(ConfigError::new(&path, "Plugin is not installed."));
     }
-    let staged = tempfile::Builder::new()
-        .prefix(".remove-")
-        .tempdir_in(&directory)
+    let staged = platform::private_tempdir_in(".remove-", &directory)
         .map_err(|error| ConfigError::new(&path, error))?;
-    std::fs::rename(&path, staged.path().join("plugin"))
+    platform::paths::rename_open_file(&path, &staged.path().join("plugin"))
         .map_err(|error| ConfigError::new(&path, error))?;
     staged
         .close()

@@ -64,16 +64,9 @@ impl Call {
             Command::Plugin(plugin) => {
                 use crate::config::plugins;
                 let result = match plugin {
-                    Plugin::Add(args) => {
-                        if !args.path.is_absolute() {
-                            return Err(Error::Operation(
-                                "plugin_add path must be absolute.".into(),
-                            ));
-                        }
-                        PluginResult::Added(
-                            plugins::add(context.repo(), &args.path).map_err(Error::Config)?,
-                        )
-                    }
+                    Plugin::Add(args) => PluginResult::Added(
+                        plugins::add(context.repo(), &args.path).map_err(Error::Config)?,
+                    ),
                     Plugin::Remove(args) => {
                         plugins::remove(context.repo(), &args.name).map_err(Error::Config)?;
                         PluginResult::Removed { name: args.name }

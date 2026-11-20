@@ -65,7 +65,14 @@ pub(super) enum Plugin {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct PluginAdd {
+    #[serde(deserialize_with = "plugin_path")]
     pub path: PathBuf,
+}
+
+fn plugin_path<'de, D: serde::Deserializer<'de>>(input: D) -> Result<PathBuf, D::Error> {
+    let text = String::deserialize(input)?;
+    platform::absolute_folder(&text)
+        .ok_or_else(|| serde::de::Error::custom("plugin_add path must be absolute."))
 }
 
 #[derive(Deserialize)]

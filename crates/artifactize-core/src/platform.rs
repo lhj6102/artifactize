@@ -114,7 +114,9 @@ pub fn file_uri_path(uri: &str) -> Option<std::path::PathBuf> {
 /// The absolute folder a caller names; a relative one would resolve against this
 /// process's working directory, which the caller cannot see.
 pub fn absolute_folder(text: &str) -> Option<std::path::PathBuf> {
-    Some(std::path::PathBuf::from(text)).filter(|path| path.is_absolute())
+    artifactize_tools::files::path_from_text(text)
+        .ok()
+        .filter(|path| path.is_absolute())
 }
 
 /// Whether native lookup reaches a regular file, following links and honoring the volume's

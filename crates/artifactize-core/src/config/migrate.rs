@@ -340,27 +340,16 @@ fn refuse_case_aliases(
     destination: &Path,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Result<(), ConfigError> {
-    let wanted: BTreeSet<String> = sources
-        .keys()
-        .filter_map(|file| file.file_name())
-        .map(|name| name.to_string_lossy().to_lowercase())
-        .collect();
-    let opened = crate::platform::open_directory(destination)
-        .map_err(|error| ConfigError::new(destination, error))?;
-    for entry in
-        crate::platform::read_dir(&opened).map_err(|error| ConfigError::new(destination, error))?
+    let wanted = sources.keys().filter_map(|file| file.file_name());
+    match crate::platform::paths::conflicting_entry(destination, wanted)
+        .map_err(|error| ConfigError::new(destination, error))?
     {
-        let name = entry
-            .map_err(|error| ConfigError::new(destination, error))?
-            .file_name();
-        if wanted.contains(&name.to_string_lossy().to_lowercase()) {
-            return Err(ConfigError::new(
-                destination.join(&name),
-                "This name is taken in .artifactize/ in another case; migration writes nothing.",
-            ));
-        }
+        None => Ok(()),
+        Some(name) => Err(ConfigError::new(
+            destination.join(name),
+            "This name is taken in .artifactize/ in another case; migration writes nothing.",
+        )),
     }
-    Ok(())
 }
 
 /// Agent evals report prioritized findings: drop their old result schemas, and with them every

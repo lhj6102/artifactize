@@ -1,7 +1,8 @@
 //! Native path normalization and portable declaration-path checks.
 
 use std::{
-    ffi::OsStr,
+    collections::BTreeSet,
+    ffi::{OsStr, OsString},
     fs::File,
     io,
     path::{Component, Path, PathBuf},
@@ -182,6 +183,77 @@ pub(crate) fn portable_filename(name: &str) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+fn case_key(name: &OsStr) -> String {
+    name.to_string_lossy().to_lowercase()
+}
+
+/// Reject a name already held by the destination even on case-sensitive volumes.
+pub(crate) fn conflicting_entry<'a>(
+    directory: &Path,
+    wanted: impl Iterator<Item = &'a OsStr>,
+) -> io::Result<Option<OsString>> {
+    let wanted: BTreeSet<_> = wanted.map(case_key).collect();
+    let opened = super::open_directory(directory)?;
+    for entry in super::read_dir(&opened)? {
+        let name = entry?.file_name();
+        if wanted.contains(&case_key(&name)) {
+            return Ok(Some(name));
+        }
+    }
+    Ok(None)
+}
+
+/// The checkout must be usable even on a volume with Windows filename restrictions.
+fn portable_component(name: &OsStr) -> io::Result<()> {
+    let invalid = |reason| io::Error::new(io::ErrorKind::InvalidInput, reason);
+    let text = name
+        .to_str()
+        .ok_or_else(|| invalid("Package filenames must be UTF-8."))?;
+    if text.ends_with([' ', '.'])
+        || text.chars().any(|ch| {
+            ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        })
+    {
+        return Err(invalid("Package filename is not portable."));
+    }
+    let stem = text.split_once('.').map_or(text, |(stem, _)| stem);
+    portable_filename(stem.trim_end_matches(' '))
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))
+}
+
+/// Stage a package with portable filenames. Pin each source directory; do not copy a link
+/// or a special entry, including one installed by a concurrent source edit.
+pub(crate) fn copy_portable_tree(source: &File, target: &Path) -> io::Result<()> {
+    std::fs::create_dir(target)?;
+    let mut names = BTreeSet::new();
+    for entry in super::read_dir(source)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        portable_component(&name)?;
+        if !names.insert(case_key(&name)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Package filenames collide ignoring case.",
+            ));
+        }
+        let path = target.join(&name);
+        match entry.file_type()? {
+            super::FileKind::Directory => copy_portable_tree(&open_named(source, &name)?, &path)?,
+            super::FileKind::File => {
+                let mut input = open_regular_entry(source, &name)?;
+                io::copy(&mut input, &mut File::create_new(path)?)?;
+            }
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Package folders cannot contain links or special files.",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Restore bytes through a regular-file handle, refusing links and reparse points.

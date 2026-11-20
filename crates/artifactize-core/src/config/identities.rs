@@ -170,8 +170,11 @@ mod tests {
     }
 }
 
+/// Match other declaration keys so plugin type names remain short and portable.
+const MAX_ARTIFACT_TYPE_BYTES: usize = 64;
+
 identity!(ArtifactType, |value: &str| {
-    value.len() <= 64
+    value.len() <= MAX_ARTIFACT_TYPE_BYTES
         && value
             .bytes()
             .next()
