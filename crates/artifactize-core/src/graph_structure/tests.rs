@@ -164,10 +164,16 @@ async fn artifact_type_exposes_the_same_scoped_declarations_to_both_tools() {
     let scoped = definitions.join("design");
     fs::create_dir_all(&scoped).unwrap();
     fs::write(repo.path().join("inside.txt"), "design").unwrap();
+    fs::write(repo.path().join("plain.txt"), "custom").unwrap();
     fs::write(repo.path().join("outside.txt"), "outside").unwrap();
     fs::write(
         scoped.join("inside.artf"),
-        "path = 'inside.txt'\nbasis = true\n",
+        "path = 'inside.txt'\ntype = 'markdown'\nbasis = true\n",
+    )
+    .unwrap();
+    fs::write(
+        scoped.join("plain.artf"),
+        "path = 'plain.txt'\nbasis = true\n",
     )
     .unwrap();
     fs::write(
@@ -210,6 +216,14 @@ payload.instruction = 'Inspect the declared graph.'
             .keys()
             .map(|name| name.as_str())
             .collect::<Vec<_>>(),
-        ["inside"]
+        ["inside", "plain"]
     );
+    let wire = serde_json::to_value(graph).unwrap();
+    assert_eq!(wire["artifacts"]["inside"]["type"], "markdown");
+    assert_eq!(
+        wire["artifacts"]["plain"].get("type"),
+        Some(&serde_json::Value::Null)
+    );
+    let whole = serde_json::to_value(extract(&config)).unwrap();
+    assert!(whole["artifacts"]["inside"].get("type").is_none());
 }

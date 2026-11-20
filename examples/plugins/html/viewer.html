@@ -36,12 +36,21 @@
       });
     }
 
+    function arm(next) {
+      armed = next;
+      point.setAttribute('aria-pressed', String(armed));
+      status.textContent = armed ? 'Click an element to point.' : '';
+      page.contentWindow.postMessage({ type: 'point', armed }, '*');
+    }
+
+    window.addEventListener('keydown', (event) => {
+      if (armed && event.key === 'Escape') arm(false);
+    });
+
     window.addEventListener('message', async (event) => {
       if (event.source === parent && event.data?.channel === channel) {
         if (event.data.event === 'activeReviewChanged') {
-          armed = false;
-          point.removeAttribute('aria-pressed');
-          page.contentWindow.postMessage({ type: 'point', armed: false }, '*');
+          if (armed) arm(false);
           checkingReview().catch(() => {});
           return;
         }
@@ -51,6 +60,8 @@
         pending.delete(id);
         if (typeof error === 'string') call.reject(new Error(error));
         else call.resolve(result);
+      } else if (event.source === page.contentWindow && armed && event.data?.cancelPoint === true) {
+        arm(false);
       } else if (event.source === page.contentWindow && armed && typeof event.data?.selector === 'string') {
         armed = false;
         point.removeAttribute('aria-pressed');
@@ -94,6 +105,13 @@
         }
         return unique ?? suffix.join(' > ');
       }
+      document.addEventListener('keydown', (event) => {
+        if (armed && event.key === 'Escape') {
+          armed = false;
+          document.documentElement.style.cursor = '';
+          parent.postMessage({ cancelPoint: true }, '*');
+        }
+      }, true);
       document.addEventListener('click', (event) => {
         if (!armed || !event.isTrusted || !(event.target instanceof Element)) return;
         event.preventDefault();
@@ -117,10 +135,7 @@
     point.addEventListener('click', async () => {
       try {
         if (!(await checkingReview()).review) return;
-        armed = !armed;
-        point.setAttribute('aria-pressed', String(armed));
-        status.textContent = armed ? 'Click an element to point.' : '';
-        page.contentWindow.postMessage({ type: 'point', armed }, '*');
+        arm(!armed);
       } catch (error) {
         status.textContent = error.message;
       }
