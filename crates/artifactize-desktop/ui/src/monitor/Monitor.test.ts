@@ -259,6 +259,7 @@ it("switches modes from the bottom bar, each kept as it was left, and lists and 
 it("says a Run's verdict and what needs attention in the header row, which opens the Run's Detail", async () => {
   const run: RunPanel = {
     id: "run-2",
+    origin: null,
     node: "run:run-2",
     mark: { status: "RED", glyph: "✗" },
     needs: [

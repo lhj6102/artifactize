@@ -4,6 +4,8 @@ import type { FormView, HumanView } from "../ipc/client";
 export function humanView(stage: HumanView["stage"], overrides: Partial<HumanView> = {}): HumanView {
   return {
     id: "run-a-2",
+    target: { run: "run-a", node: "e:release/signoff" },
+    notes: null,
     title: "release/signoff · A person approves the release",
     artifact: "release",
     meta: stage === "claim" ? "WAITING_HUMAN · unclaimed · waiting 3s" : "WAITING_HUMAN · claimed by you (alice) · waiting 3s",
