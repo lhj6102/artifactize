@@ -235,6 +235,7 @@ pub struct BuiltinTool {
 pub enum HumanTool {
     Command(HumanCommandTool),
     Builtin(HumanBuiltinTool),
+    Viewer(config::HumanViewerTool),
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -468,6 +468,7 @@ fn declared(
                     let (kind, description) = match tool {
                         HumanTool::Command(tool) => (tool.kind, &tool.description),
                         HumanTool::Builtin(tool) => (tool.kind, &tool.description),
+                        HumanTool::Viewer(tool) => (HumanToolKind::Viewer, &tool.description),
                     };
                     Some(Tool {
                         name: format!("{operation}_{}", id).parse().ok()?,

@@ -169,3 +169,15 @@ mod tests {
         }
     }
 }
+
+identity!(ArtifactType, |value: &str| {
+    value.len() <= 64
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && crate::platform::paths::portable_filename(value).is_ok()
+});

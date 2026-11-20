@@ -86,6 +86,32 @@ pub(super) fn read_sources_unresolved(
             .to_owned();
         artifact.authored_path = Some(parsed.authored_path);
     }
+    let plugins = super::plugins::catalog(&config.root)?;
+    for artifact in config.artifacts.values_mut() {
+        if let Some(name) = artifact.type_name.as_ref() {
+            let path = config.root.join(artifact.declaration_path());
+            let plugin = plugins.get(name).ok_or_else(|| ConfigError::declaration(&path, &["type"], format!("Unknown Artifact type {name}. Install the plugin with artifactize plugin add PATH or choose an installed type.")))?;
+            plugin
+                .apply(artifact)
+                .map_err(|error| ConfigError::declaration(&path, &["type"], error))?;
+            artifact.views.validate_sessions().map_err(|error| {
+                ConfigError::declaration(&path, &["views", "agent_tools"], error)
+            })?;
+            if plugin.viewer.is_none()
+                && artifact
+                    .views
+                    .human_tools
+                    .values()
+                    .any(|tool| matches!(tool, HumanTool::Viewer(_)))
+            {
+                return Err(ConfigError::declaration(
+                    &path,
+                    &["views", "human_tools"],
+                    "This Artifact type has no viewer entry.",
+                ));
+            }
+        }
+    }
     populate_nested(&mut config);
     Ok(config)
 }
@@ -224,6 +250,9 @@ pub(super) fn files(root: &Path) -> Result<Vec<(PathBuf, crate::platform::FileKi
         for entry in entries {
             let entry = entry.map_err(|error| ConfigError::new(&directory, error))?;
             let file = directory.join(entry.file_name());
+            if file == root.join(DEFINITION_DIR).join(super::plugins::DIRECTORY) {
+                continue;
+            }
             let kind = entry
                 .file_type()
                 .map_err(|error| ConfigError::new(&file, error))?;
@@ -282,6 +311,7 @@ pub(super) fn insert_artifact(
     let ArtifactDeclaration {
         name,
         tags,
+        type_name,
         evals,
         views,
         basis,
@@ -324,6 +354,8 @@ pub(super) fn insert_artifact(
             name,
             tags,
             views,
+            type_name,
+            plugin: None,
             basis,
             fingerprint,
         },

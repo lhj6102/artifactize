@@ -176,11 +176,12 @@ pub async fn artifact_tool_run(
         }
     };
     app.human.end(job);
-    Ok(Outcome::Ran {
+    let outcome = Outcome::Ran {
         tool,
         claimed: None,
         result,
-    }
-    .notice()
-    .into())
+    };
+    let mut notice: Notice = outcome.notice().into();
+    notice.viewer = crate::viewer::launch(&app, &outcome, None, Some(workspace)).await?;
+    Ok(notice)
 }

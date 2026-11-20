@@ -17,6 +17,7 @@ mod interactive;
 mod maintenance;
 #[cfg(test)]
 mod monitor_tests;
+mod plugin;
 mod provider;
 mod remote;
 mod render;
@@ -148,6 +149,11 @@ pub enum Command {
     Provider {
         #[command(subcommand)]
         command: provider::ProviderCommand,
+    },
+    /// Add, remove, or list Artifact type plugins for this project.
+    Plugin {
+        #[command(subcommand)]
+        command: plugin::PluginCommand,
     },
     /// Sign in to, sign out of, or check a shared remote review store.
     Remote {

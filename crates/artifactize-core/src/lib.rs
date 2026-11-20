@@ -36,6 +36,7 @@ pub mod store;
 pub mod task;
 pub mod tools;
 pub mod types;
+pub mod viewer;
 pub mod workspace;
 
 /// Links, permissions, processes and the Windows stand-ins for Unix utilities, shared with

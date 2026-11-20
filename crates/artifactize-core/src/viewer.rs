@@ -1,0 +1,202 @@
+//! The desktop hosts a viewer; this library decides what its bridge can read.
+
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
+
+use artifactize_tools::scope::{self, InputPath};
+use serde::Serialize;
+
+use crate::{
+    config::{
+        self, Artifact, ArtifactKind, ArtifactType, RepoConfig,
+        plugins::{BuiltinViewer, ViewerEntry},
+    },
+    graph_structure, platform,
+    types::{ArtifactName, RequestId, ReviewerId},
+};
+
+/// Relative file reads and directory listings use the selected Artifact's own scope, not the
+/// workspace or the rest of the review's scope. A viewer cannot choose its own scope.
+#[derive(Debug)]
+pub struct Session {
+    root: PathBuf,
+    artifact: Artifact,
+    entry: ViewerEntry,
+    review: Option<Review>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Review {
+    pub id: RequestId,
+    pub reviewer: ReviewerId,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Context<'a> {
+    pub artifact: &'a ArtifactName,
+    #[serde(rename = "type")]
+    pub type_name: &'a ArtifactType,
+    pub title: &'a str,
+    pub target: &'a config::Target,
+    pub target_kind: ArtifactKind,
+    pub review: Option<&'a RequestId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EntryKind {
+    File,
+    Directory,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: InputPath,
+    pub kind: EntryKind,
+}
+
+impl Session {
+    pub fn open(
+        repo: &Path,
+        artifact: &ArtifactName,
+        review: Option<Review>,
+    ) -> Result<Self, String> {
+        let config = config::read_workspace_config(repo).map_err(|error| error.to_string())?;
+        Self::from_config(&config, artifact, review)
+    }
+
+    pub(crate) fn from_config(
+        config: &RepoConfig,
+        artifact: &ArtifactName,
+        review: Option<Review>,
+    ) -> Result<Self, String> {
+        let artifact = config
+            .artifacts
+            .get(artifact)
+            .ok_or_else(|| format!("Unknown Artifact {artifact}."))?;
+        let entry = artifact
+            .plugin
+            .as_ref()
+            .and_then(|plugin| plugin.viewer.clone())
+            .ok_or_else(|| format!("Artifact {} does not declare a viewer.", artifact.name))?;
+        if !artifact
+            .views
+            .human_tools
+            .values()
+            .any(|tool| tool.kind() == config::HumanToolKind::Viewer)
+        {
+            return Err(format!(
+                "Artifact {} has no viewer Human tool.",
+                artifact.name
+            ));
+        }
+        crate::scope::validate_file_target(&config.root, artifact)
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            root: config.root.clone(),
+            artifact: artifact.clone(),
+            entry,
+            review,
+        })
+    }
+
+    pub fn entry(&self) -> &ViewerEntry {
+        &self.entry
+    }
+
+    pub fn context(&self) -> Context<'_> {
+        let plugin = self.artifact.plugin.as_ref().expect("viewer has a plugin");
+        Context {
+            artifact: &self.artifact.name,
+            type_name: &plugin.info.name,
+            title: &plugin.info.title,
+            target: &self.artifact.path,
+            target_kind: self.artifact.kind(),
+            review: self.review.as_ref().map(|review| &review.id),
+        }
+    }
+
+    pub fn review(&self) -> Option<&Review> {
+        self.review.as_ref()
+    }
+
+    pub fn read_text(&self, path: &InputPath) -> Result<String, String> {
+        let path = self
+            .artifact
+            .file_name()
+            .filter(|_| path.as_str().is_empty())
+            .unwrap_or(path.as_str());
+        config::plugins::read_document(self.open_file(path)?)
+    }
+
+    /// Read one directory at a time. Never list non-owned siblings of a file Artifact or
+    /// directories outside an aspect's selection.
+    pub fn files(&self, path: &InputPath) -> Result<Vec<FileEntry>, String> {
+        let path = path.as_str();
+        if path.is_empty()
+            && let Some(name) = self.artifact.file_name()
+        {
+            self.open_file(name)?;
+            return Ok(vec![FileEntry {
+                name: name.into(),
+                path: name
+                    .parse()
+                    .map_err(|error: scope::ScopeError| error.to_string())?,
+                kind: EntryKind::File,
+            }]);
+        }
+        let directory = self.open_file(path)?;
+        let mut entries = Vec::new();
+        for entry in platform::read_dir(&directory).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let child = if path.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{path}/{name}")
+            };
+            let Ok(child_path) = child.parse::<InputPath>() else {
+                continue;
+            };
+            let kind = match entry.file_type().map_err(|error| error.to_string())? {
+                platform::FileKind::File => EntryKind::File,
+                platform::FileKind::Directory => EntryKind::Directory,
+                _ => continue,
+            };
+            if self.open_file(child_path.as_str()).is_ok() {
+                entries.push(FileEntry {
+                    name: name.into(),
+                    path: child_path,
+                    kind,
+                });
+            }
+        }
+        entries.sort_by(|left, right| left.path.cmp(&right.path));
+        Ok(entries)
+    }
+
+    pub fn declarations(&self) -> Result<graph_structure::Structure, String> {
+        if !matches!(
+            self.entry,
+            ViewerEntry::Builtin {
+                viewer: BuiltinViewer::Artifactize
+            }
+        ) {
+            return Err("Only an Artifactize Viewer can read the declared graph.".into());
+        }
+        graph_structure::read_scoped(&self.root, &self.artifact)
+    }
+
+    fn open_file(&self, path: &str) -> Result<File, String> {
+        if self.artifact.covering_part.is_some() {
+            return Err("This Artifact's files belong to a folder part.".into());
+        }
+        scope::open_input(&self.root, &self.artifact.tool_scope(), path)
+            .map_err(|error| error.to_string())
+    }
+}

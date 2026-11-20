@@ -308,8 +308,20 @@ impl<'a> Registry<'a> {
         let command = match tool.declaration {
             AgentTool::Command(command) => command,
             AgentTool::Builtin(tool_declaration) => {
-                if tool_declaration.builtin == crate::config::Builtin::Graph {
-                    return match crate::graph_structure::read(&self.config.root) {
+                if matches!(
+                    tool_declaration.builtin,
+                    crate::config::Builtin::Graph | crate::config::Builtin::Declarations
+                ) {
+                    let graph = if tool_declaration.builtin == crate::config::Builtin::Declarations
+                    {
+                        crate::graph_structure::read_scoped(
+                            &self.config.root,
+                            &self.config.artifacts[&tool.definition.artifact_id],
+                        )
+                    } else {
+                        crate::graph_structure::read(&self.config.root)
+                    };
+                    return match graph {
                         Ok(graph) => ToolResult::success(Content::Text { text: graph.tree() }),
                         Err(error) => ToolResult::error(error),
                     };

@@ -25,6 +25,8 @@ mod tools;
 mod transcript;
 mod watch;
 
+mod viewer;
+
 pub use failure::Failure;
 pub use ids::{JobId, SignInId, TranscriptHandle};
 pub use launch::{Launch, Mode};
@@ -70,6 +72,12 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             definitions::definition_check,
             tools::artifact_tools,
             tools::artifact_tool_run,
+            viewer::viewer_context,
+            viewer::viewer_entry,
+            viewer::viewer_files,
+            viewer::viewer_read_text,
+            viewer::viewer_declarations,
+            viewer::viewer_close,
             request::request_detail,
             release::release_notice,
             release::release_open,
@@ -131,6 +139,7 @@ pub struct App {
     settings: settings::Settings,
     generation: generation::Generation,
     sites: tools::Sites,
+    viewers: viewer::Sessions,
 }
 
 impl App {
@@ -144,6 +153,7 @@ impl App {
             settings: settings::Settings::default(),
             generation: generation::Generation::default(),
             sites: tools::Sites::default(),
+            viewers: viewer::Sessions::default(),
         }
     }
 
@@ -157,6 +167,7 @@ impl App {
         if replaced {
             self.human.reset();
             self.currents.reset();
+            self.viewers.reset();
         }
         generation
     }
@@ -166,6 +177,7 @@ impl App {
     /// the sign-ins have stopped.
     pub fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
         self.human.cancel_all();
+        self.viewers.reset();
         let scans = self.currents.stop();
         let sign_ins = self.settings.close();
         async move {

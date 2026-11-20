@@ -31,8 +31,15 @@ pub struct ToolDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Content {
-    Text { text: String },
-    Launch { launched: bool },
+    Text {
+        text: String,
+    },
+    Launch {
+        launched: bool,
+    },
+    Viewer {
+        artifact: crate::types::ArtifactName,
+    },
 }
 
 /// Human failures retain separate stdout and stderr blocks in saved results,
@@ -226,6 +233,7 @@ impl<'a> Registry<'a> {
             .resolve_input(&self.config.root, owner, "")
             .map_err(|e| e.to_string())?;
         match tool.declaration {
+            HumanTool::Viewer(_) => {}
             HumanTool::Command(declaration) => {
                 super::preflight_executable(
                     &self.config.root,
@@ -302,6 +310,12 @@ impl<'a> Registry<'a> {
             return ToolResult::error("Human tool call was cancelled.");
         }
         let declaration = match tool.declaration {
+            HumanTool::Viewer(_) => {
+                run.end(End::Launched);
+                return ToolResult::success(Content::Viewer {
+                    artifact: tool.definition.artifact_id.clone(),
+                });
+            }
             HumanTool::Builtin(declaration) => {
                 return self
                     .call_builtin(&tool.definition.artifact_id, declaration, cancellation, run)
@@ -320,6 +334,7 @@ impl<'a> Registry<'a> {
             return ToolResult::error("Human tool call was cancelled.");
         }
         match declaration.kind {
+            HumanToolKind::Viewer => unreachable!("command tool cannot be a viewer"),
             HumanToolKind::Launch => match process::launch_watched(&program, &args, &cwd, run) {
                 Ok(()) => ToolResult::success(Content::Launch { launched: true }),
                 Err((error, run)) => failed(

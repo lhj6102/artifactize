@@ -192,6 +192,8 @@ pub enum ToolKind {
     Launch,
     /// Waits and captures the output.
     Output,
+    /// Opens the Artifact Viewer.
+    Viewer,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -255,11 +257,17 @@ pub struct HumanView {
 pub struct Notice {
     pub text: String,
     pub error: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewer: Option<crate::viewer::ViewerLaunch>,
 }
 
 impl From<(String, bool)> for Notice {
     fn from((text, error): (String, bool)) -> Self {
-        Self { text, error }
+        Self {
+            text,
+            error,
+            viewer: None,
+        }
     }
 }
 
@@ -275,6 +283,7 @@ pub(crate) fn kind(kind: HumanToolKind) -> ToolKind {
     match kind {
         HumanToolKind::Launch => ToolKind::Launch,
         HumanToolKind::Output => ToolKind::Output,
+        HumanToolKind::Viewer => ToolKind::Viewer,
     }
 }
 
@@ -544,7 +553,9 @@ pub async fn human_run(
         .lock()
         .expect("commands lock")
         .remove(&id);
-    Ok(outcome.notice().into())
+    let mut notice: Notice = outcome.notice().into();
+    notice.viewer = crate::viewer::launch(&app, &outcome, Some(id), None).await?;
+    Ok(notice)
 }
 
 /// Cancel running job `job`: a tool, or a submission's fingerprint recheck.

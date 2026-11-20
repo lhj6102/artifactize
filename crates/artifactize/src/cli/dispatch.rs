@@ -2,7 +2,7 @@
 
 use super::{
     Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, account, cache, config,
-    maintenance, provider, remote, request, run, server, session, status, workflow,
+    maintenance, plugin, provider, remote, request, run, server, session, status, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -111,6 +111,7 @@ async fn execute_general(command: Option<Command>, context: Context) -> Result<u
             )
             .await
         }
+        Some(Command::Plugin { command }) => plugin::execute(context, command),
         Some(Command::Doctor) => maintenance::doctor(context).await,
         Some(Command::Prune {
             older_than,

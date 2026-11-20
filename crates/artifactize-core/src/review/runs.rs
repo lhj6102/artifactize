@@ -23,6 +23,8 @@ const ROOT: &str = ".";
 pub enum Runs {
     /// The declared command and args, shell-quoted, placeholders unresolved.
     Command(String),
+    /// Open the type's Artifact Viewer window.
+    Viewer,
     /// Open a file or folder in the desktop's default application.
     Open(PathBuf),
     /// Open an HTTP(S) URL in the browser.
@@ -45,6 +47,7 @@ impl Runs {
         tool: &HumanTool,
     ) -> Self {
         let (builtin, command, args) = match tool {
+            HumanTool::Viewer(_) => return Self::Viewer,
             HumanTool::Command(tool) => (None, tool.command.as_str(), tool.args.as_slice()),
             HumanTool::Builtin(tool) => (Some(tool.builtin), "", tool.args.as_slice()),
         };
@@ -79,6 +82,7 @@ impl Runs {
     ) -> Self {
         use crate::config::HumanTool;
         let (builtin, command, args) = match tool {
+            HumanTool::Viewer(_) => return Self::Viewer,
             HumanTool::Command(tool) => (None, tool.command.as_str(), tool.args.as_slice()),
             HumanTool::Builtin(tool) => (Some(tool.builtin), "", tool.args.as_slice()),
         };
@@ -135,6 +139,7 @@ impl Runs {
                             Builtin::Help => "help",
                             Builtin::Open => "open",
                             Builtin::Graph => "graph",
+                            Builtin::Declarations => "declarations",
                         }
                         .to_owned()
                     })
@@ -149,6 +154,7 @@ impl Runs {
     /// The action in one line: `$ command args`, or a builtin's verb and target.
     pub fn line(&self) -> String {
         match self {
+            Self::Viewer => "Open Artifact Viewer".into(),
             Self::Command(command) => format!("$ {command}"),
             Self::Open(path) => format!(
                 "opens {} in its default app",

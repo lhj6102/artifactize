@@ -78,23 +78,23 @@ export const commands = {
 	 *  Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
 	 *  for release on quit, whichever screen took it.
 	 */
-	humanClaim: (id: string, job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_claim", { id, job })),
+	humanClaim: (id: string, job: JobId) => typedError<Acted_Serialize, Failure>(__TAURI_INVOKE("human_claim", { id, job })),
 	/**
 	 *  Run tool `tool` of request `id`; job number `job` cancels it. The run needs this
 	 *  reviewer's claim on a request that still waits and unchanged declarations. What it prints
 	 *  arrives as [`log::HumanToolLog`] events while it runs; a launch tool answers at once and its
 	 *  program's output keeps arriving until it exits.
 	 */
-	humanRun: (id: string, tool: string, job: JobId) => typedError<Notice, Failure>(__TAURI_INVOKE("human_run", { id, tool, job })),
+	humanRun: (id: string, tool: string, job: JobId) => typedError<Notice_Serialize, Failure>(__TAURI_INVOKE("human_run", { id, tool, job })),
 	/**  Cancel running job `job`: a tool, or a submission's fingerprint recheck. */
 	humanCancel: (job: JobId) => __TAURI_INVOKE<void>("human_cancel", { job }),
 	/**
 	 *  Submit `draft` for request `id` and publish it like `request submit`. A result the
 	 *  schema rejects keeps the request waiting and fails as `invalid`.
 	 */
-	humanSubmit: (id: string, draft: Draft, job: JobId) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
+	humanSubmit: (id: string, draft: Draft, job: JobId) => typedError<Submitted_Serialize, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
 	/**  Release this reviewer's claims on `ids` without a verdict. */
-	humanRelease: (ids: string[], job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
+	humanRelease: (ids: string[], job: JobId) => typedError<Acted_Serialize, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**
 	 *  The graph of `source`: the shown Run's, from the shown snapshot, only its lights while it
 	 *  keeps the shape `known` the caller holds; or a branch's Current as its last scan found it.
@@ -150,7 +150,14 @@ export const commands = {
 	 *  the Artifact; a launch tool answers at once and its program's output keeps arriving until
 	 *  it exits.
 	 */
-	artifactToolRun: (branch: BranchKey, artifact: string, tool: string, job: JobId) => typedError<Notice, Failure>(__TAURI_INVOKE("artifact_tool_run", { branch, artifact, tool, job })),
+	artifactToolRun: (branch: BranchKey, artifact: string, tool: string, job: JobId) => typedError<Notice_Serialize, Failure>(__TAURI_INVOKE("artifact_tool_run", { branch, artifact, tool, job })),
+	viewerContext: (session: number) => typedError<ViewerContext, Failure>(__TAURI_INVOKE("viewer_context", { session })),
+	viewerEntry: (session: number) => typedError<ViewerEntry, Failure>(__TAURI_INVOKE("viewer_entry", { session })),
+	viewerFiles: (session: number, path: string) => typedError<ViewerFile[], Failure>(__TAURI_INVOKE("viewer_files", { session, path })),
+	viewerReadText: (session: number, path: string) => typedError<string, Failure>(__TAURI_INVOKE("viewer_read_text", { session, path })),
+	/**  The exact scoped graph wire shape used by the library. Serialize at the IPC edge. */
+	viewerDeclarations: (session: number) => typedError<string, Failure>(__TAURI_INVOKE("viewer_declarations", { session })),
+	viewerClose: (session: number) => __TAURI_INVOKE<void>("viewer_close", { session }),
 	/**  The read-only Detail of request `id` in its Run. */
 	requestDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("request_detail", { id })),
 	/**
@@ -265,8 +272,17 @@ export const PRECEDENCE = {"current":["run","checking","blocked","waiting","reus
 
 /* Types */
 /**  What a Human action left: its notice and the request as it now stands. */
-export type Acted = {
-	notice: Notice,
+export type Acted = Acted_Serialize | Acted_Deserialize;
+
+/**  What a Human action left: its notice and the request as it now stands. */
+export type Acted_Deserialize = {
+	notice: Notice_Deserialize,
+	view: HumanView | null,
+};
+
+/**  What a Human action left: its notice and the request as it now stands. */
+export type Acted_Serialize = {
+	notice: Notice_Serialize,
 	view: HumanView | null,
 };
 
@@ -328,6 +344,8 @@ export type BrowseView = {
 	 */
 	revision: number,
 };
+
+export type BuiltinViewer = "files" | "markdown" | "artifactize";
 
 /**  An eval at a glance, from the library's [`monitor::Card`]. */
 export type CardView = {
@@ -848,9 +866,18 @@ export type Neighbours = {
 
 export type NodeKind = "run" | "artifact" | "eval";
 
-export type Notice = {
+export type Notice = Notice_Serialize | Notice_Deserialize;
+
+export type Notice_Deserialize = {
 	text: string,
 	error: boolean,
+	viewer: ViewerLaunch | null,
+};
+
+export type Notice_Serialize = {
+	text: string,
+	error: boolean,
+	viewer?: ViewerLaunch | null,
 };
 
 /**  The session behind a request, or why there is none to read. */
@@ -1103,9 +1130,19 @@ export type StateChanged = {
 export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "DEFERRED" | "PROVISIONAL" | "YELLOW" | "GREEN" | "BASIS";
 
 /**  A settled submission: how it stands, its notice and the completed request. */
-export type Submitted = {
+export type Submitted = Submitted_Serialize | Submitted_Deserialize;
+
+/**  A settled submission: how it stands, its notice and the completed request. */
+export type Submitted_Deserialize = {
 	settled: Settled,
-	notice: Notice,
+	notice: Notice_Deserialize,
+	view: HumanView | null,
+};
+
+/**  A settled submission: how it stands, its notice and the completed request. */
+export type Submitted_Serialize = {
+	settled: Settled,
+	notice: Notice_Serialize,
 	view: HumanView | null,
 };
 
@@ -1137,7 +1174,9 @@ export type ToolKind =
 /**  Starts a program and returns at once. */
 "launch" | 
 /**  Waits and captures the output. */
-"output";
+"output" | 
+/**  Opens the Artifact Viewer. */
+"viewer";
 
 export type ToolView = {
 	name: string,
@@ -1221,6 +1260,30 @@ export type UpstreamMark = {
 };
 
 export type Verdict = "GREEN" | "RED";
+
+export type ViewerContext = {
+	artifact: string,
+	type: string,
+	title: string,
+	target: string,
+	targetKind: DefinitionKind,
+	review: string | null,
+};
+
+export type ViewerEntry = { kind: "builtin"; viewer: BuiltinViewer } | { kind: "web"; html: string };
+
+export type ViewerFile = {
+	name: string,
+	path: string,
+	kind: ViewerFileKind,
+};
+
+export type ViewerFileKind = "file" | "directory";
+
+export type ViewerLaunch = {
+	session: number,
+	title: string,
+};
 
 /**  One `Waits for` line: an upstream Artifact, or (`pending`) one of its unfinished evals. */
 export type WaitLine = {

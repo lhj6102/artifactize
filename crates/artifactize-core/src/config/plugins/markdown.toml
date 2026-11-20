@@ -1,0 +1,8 @@
+type = "markdown"
+title = "Markdown"
+
+[views.agent_tools]
+read = { builtin = "read" }
+
+[views.human_tools]
+view = { kind = "viewer", description = "Open {artifactName} in Markdown." }

@@ -50,10 +50,11 @@ impl Views {
         Ok(views)
     }
 
-    fn validate(
+    pub(super) fn validate(
         &self,
         location: &Location<'_, '_>,
         schemas: &mut schemas::Schemas,
+        plugin: Option<&super::ArtifactType>,
     ) -> Result<(), String> {
         for (name, session) in &self.agent_sessions {
             let sessions = location.child("agent_sessions");
@@ -70,6 +71,7 @@ impl Views {
             let tools = location.child("agent_tools");
             if let AgentTool::Command(tool) = tool
                 && let Some(session) = &tool.session
+                && plugin.is_none()
                 && !self.agent_sessions.contains_key(session)
             {
                 return Err(tools
@@ -87,6 +89,20 @@ impl Views {
             tools
                 .child(name)
                 .check(tool.validate().map_err(|e| format!("Tool {name}: {e}")))?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate_sessions(&self) -> Result<(), String> {
+        for (name, tool) in &self.agent_tools {
+            if let AgentTool::Command(tool) = tool
+                && let Some(session) = &tool.session
+                && !self.agent_sessions.contains_key(session)
+            {
+                return Err(format!(
+                    "Agent tool {name}: unknown tool session {session}."
+                ));
+            }
         }
         Ok(())
     }
@@ -324,6 +340,8 @@ impl Fingerprint {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct ArtifactDeclaration {
     pub name: ArtifactName,
+    #[serde(rename = "type")]
+    pub type_name: Option<super::ArtifactType>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default, deserialize_with = "declared_evals")]
@@ -376,7 +394,20 @@ impl ArtifactDeclaration {
                 .child("basis")
                 .error(format!("Basis Artifact {} cannot own Evals.", self.name)));
         }
-        self.views.validate(&location.child("views"), schemas)?;
+        self.views
+            .validate(&location.child("views"), schemas, self.type_name.as_ref())?;
+        if self.type_name.is_none()
+            && self
+                .views
+                .human_tools
+                .values()
+                .any(|tool| matches!(tool, HumanTool::Viewer(_)))
+        {
+            return Err(location
+                .child("views")
+                .child("human_tools")
+                .error("A viewer Human tool needs an Artifact type with a viewer entry."));
+        }
         if let Some(fingerprint) = &self.fingerprint {
             fingerprint.validate(&location.child("fingerprint"))?;
         }

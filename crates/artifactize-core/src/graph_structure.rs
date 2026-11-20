@@ -101,9 +101,17 @@ pub enum Edge {
 }
 
 pub fn extract(config: &RepoConfig) -> Structure {
-    let artifacts = config
+    extract_where(config, |_, _| true)
+}
+
+fn extract_where(
+    config: &RepoConfig,
+    include: impl Fn(&ArtifactName, &crate::config::Artifact) -> bool,
+) -> Structure {
+    let artifacts: BTreeMap<_, _> = config
         .artifacts
         .iter()
+        .filter(|(name, artifact)| include(name, artifact))
         .map(|(name, artifact)| {
             let fingerprint = match &artifact.fingerprint {
                 Some(Fingerprint::Graph) => Coverage::Graph,
@@ -137,6 +145,7 @@ pub fn extract(config: &RepoConfig) -> Structure {
     let evals = config
         .evals
         .iter()
+        .filter(|eval| artifacts.contains_key(&eval.target))
         .map(|eval| {
             let declaration = &eval.declaration;
             let criteria = match declaration.profile() {
@@ -165,6 +174,9 @@ pub fn extract(config: &RepoConfig) -> Structure {
     let mut relations: Vec<_> = config
         .relations
         .iter()
+        .filter(|relation| {
+            artifacts.contains_key(&relation.source) && artifacts.contains_key(&relation.target)
+        })
         .map(|relation| Relation {
             source: relation.source.clone(),
             target: relation.target.clone(),
@@ -201,6 +213,33 @@ pub fn read(repo: &Path) -> Result<Structure, String> {
     crate::config::read_workspace_declarations(repo)
         .map(|config| extract(&config))
         .map_err(|error| error.to_string())
+}
+
+/// Read only nodes with declarations in the owner's target, and edges between those nodes.
+pub fn read_scoped(repo: &Path, owner: &crate::config::Artifact) -> Result<Structure, String> {
+    let Some(target) = owner
+        .path
+        .local()
+        .filter(|path| path.starts_with(".artifactize"))
+    else {
+        return Err("The scoped declarations tool must target .artifactize/.".into());
+    };
+    let config =
+        crate::config::read_workspace_declarations(repo).map_err(|error| error.to_string())?;
+    let structure = extract_where(&config, |_, artifact| {
+        let definition = artifact.declaration_path();
+        if owner.kind() == ArtifactKind::File {
+            return definition == target;
+        }
+        definition.strip_prefix(target).is_ok_and(|path| {
+            owner.select().is_empty()
+                || owner
+                    .select()
+                    .iter()
+                    .any(|selection| path.starts_with(Path::new(selection.as_str())))
+        })
+    });
+    Ok(structure)
 }
 
 impl Structure {
