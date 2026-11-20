@@ -48,7 +48,7 @@
 
 ## 상태 디렉터리, 캐시, `limits.json` {#state-cache-and-limits}
 
-Artifactize는 로컬 Run 기록, 캐시, Agent 대화, 자격 증명(`codex`, API 키, 사용자 지정 프로바이더, 팀 리뷰 저장소 토큰)을 저장소 바깥의 상태 디렉터리 한 곳에 보관합니다. `claude-agent` 로그인 정보는 Claude Code에서 따로 보관합니다. 경로 우선순위는 `--state-dir PATH` → `$ARTIFACTIZE_STATE_HOME` → `$XDG_STATE_HOME/artifactize` → Windows의 `%LOCALAPPDATA%\artifactize` 또는 Linux·macOS의 `~/.local/state/artifactize`입니다. Microsoft Store 패키지는 별도 상태 디렉터리를 사용합니다. 상태 디렉터리가 Git 워크트리나 Artifactize 프로젝트 안에 있으면 Artifactize는 `$STATE/auth/`에 자격 증명을 저장하지 않습니다.
+Artifactize는 로컬 Run 기록, 캐시, Agent 대화, 자격 증명(`codex`, API 키, 사용자 지정 프로바이더, 팀 리뷰 저장소 토큰)을 저장소 바깥의 상태 디렉터리 한 곳에 보관합니다. `claude-agent` 로그인 정보는 Claude Code에서 따로 보관합니다. 경로 우선순위는 `--state-dir PATH` → `$ARTIFACTIZE_STATE_HOME` → `$XDG_STATE_HOME/artifactize` → Windows의 `%LOCALAPPDATA%\artifactize` 또는 Linux·macOS의 `~/.local/state/artifactize`입니다. Microsoft Store 패키지는 별도 상태 디렉터리를 사용합니다. 상태 디렉터리가 Git 워크트리나 Artifactize 작업 공간 안에 있으면 `$STATE/auth/` 아래의 인증 파일 사용을 거부합니다.
 
 같은 상태 디렉터리를 사용하는 모든 Run에 공통으로 적용할 한도가 필요하면 `$STATE/limits.json`에서 설정하세요.
 

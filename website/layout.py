@@ -151,6 +151,8 @@ def layout(destination: Path) -> None:
         shutil.copyfile(BRAND / name, destination / "media" / name)
     for name in ("review-loop.gif", "graph-growth.gif"):
         shutil.copyfile(WEBSITE.parent / "assets" / "demos" / name, destination / "media" / name)
+    for name in ("monitor.png", "detail.png", "review.png"):
+        shutil.copyfile(WEBSITE.parent / "assets" / "screenshots" / name, destination / "media" / name)
     # The hero's example graph is rendered from assets/others/graph-example.html, and its role
     # animation, in English on every page, from assets/others/roles.html.
     for name in [f"graph-example.{locale}.png" for locale in LOCALES] + ["roles.en.gif"]:
