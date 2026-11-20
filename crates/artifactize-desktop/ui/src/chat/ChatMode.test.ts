@@ -139,3 +139,58 @@ it("opens the model menu upward with each provider's models, and a model chosen 
     expect(calls.find((call) => call.cmd === "chat_send")?.args.selection).toEqual({ backend: "claude-agent", model: "claude-sonnet-5-5" }),
   );
 });
+
+/** A library with no session yet whose providers answer once `answer` is called, the custom
+ * provider `lab` listing `models`. */
+function unlisted(models: { slug: string; displayName: string }[]) {
+  const calls: { cmd: string; args: Record<string, unknown> }[] = [];
+  let answer: () => void = () => {};
+  const answered = new Promise<void>((done) => (answer = done));
+  mockIPC(async (cmd, args) => {
+    calls.push({ cmd, args: args as Record<string, unknown> });
+    switch (cmd) {
+      case "chat_list":
+        return [];
+      case "providers_list":
+        await answered;
+        return { builtin: ["codex"], keys: [], custom: [{ name: "lab", target: { kind: "endpoint" } }] };
+      case "models_list":
+        if ((args as { provider: string }).provider === "codex") throw { kind: "read", message: "Codex is not signed in." };
+        return models;
+      case "chat_create":
+        return { ...session, id: "chat-2", worktree: (args as { worktree: string }).worktree, selection: (args as { selection: ChatSession["selection"] }).selection };
+      case "chat_open":
+        return { session: { ...session, id: "chat-2" }, running: false, turns: [] } satisfies ChatView;
+      default:
+        return null;
+    }
+  }, { shouldMockEvents: true });
+  return { calls, answer };
+}
+
+it("offers Create in New chat only once the model the session starts with is known", async () => {
+  const { calls, answer } = unlisted([{ slug: "lab-large", displayName: "Lab large" }]);
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: "New chat" }));
+  const dialog = await screen.findByRole("dialog", { name: "New chat" });
+  const create = within(dialog).getByRole("button", { name: "Create" });
+  // The providers are still being read: the dialog says so, and Create waits.
+  expect(within(dialog).getByRole("status").textContent?.trim()).toBe("Reading the providers' models…");
+  expect(create.hasAttribute("disabled")).toBe(true);
+  answer();
+  await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("lab · lab-large"));
+  expect(create.hasAttribute("disabled")).toBe(false);
+  await fireEvent.click(create);
+  await waitFor(() => expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({ worktree: "/work/app", selection: { backend: "lab", model: "lab-large" } }));
+});
+
+it("says no provider lists a model once every provider has answered with none", async () => {
+  const { calls, answer } = unlisted([]);
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: "New chat" }));
+  const dialog = await screen.findByRole("dialog", { name: "New chat" });
+  answer();
+  await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("No provider lists a model. Connect one in Settings."));
+  expect(within(dialog).getByRole("button", { name: "Create" }).hasAttribute("disabled")).toBe(true);
+  expect(calls.some((call) => call.cmd === "chat_create")).toBe(false);
+});

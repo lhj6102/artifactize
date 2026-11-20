@@ -24,6 +24,10 @@ export class ChatModeState {
   readonly chosen: Record<string, ChatModel> = $state({});
   /** The providers Settings lists, with their models, as the model menu shows them. */
   providers = $state.raw<MenuProvider[]>([]);
+  /** Reads of the providers and their models still under way. */
+  #listing = $state(0);
+  /** The providers' models are being read: what a new session starts with is not known yet. */
+  readonly reading = $derived(this.#listing > 0);
   /** What went wrong, for the main area's notice. */
   error = $state<string | null>(null);
   noticeOpen = $state(false);
@@ -112,6 +116,7 @@ export class ChatModeState {
 
   /** Read the providers Settings lists and the models each offers, for the model menu. */
   async providersRead(): Promise<void> {
+    this.#listing += 1;
     try {
       const listed = await call(this.ipc.providersList());
       const names = [...listed.builtin, ...listed.custom.map((custom) => custom.name)];
@@ -129,14 +134,17 @@ export class ChatModeState {
       );
     } catch (failure) {
       this.error = message(failure);
+    } finally {
+      this.#listing -= 1;
     }
   }
 
   /** The model a new session on `worktree` starts with: its last session's, else the first
-   * model a provider lists. */
+   * model a provider lists once every provider has answered (none while they are being read). */
   startingModel(worktree: string): ChatModel | null {
     const last = this.sessions.find((session) => session.worktree === worktree);
     if (last) return last.selection;
+    if (this.reading) return null;
     for (const entry of this.providers) {
       const first = entry.models?.[0];
       if (first) return { backend: entry.provider, model: first.slug };
@@ -147,10 +155,8 @@ export class ChatModeState {
   /** Start a session on `worktree` and show it, its composer ready. */
   async create(worktree: string): Promise<boolean> {
     const selection = this.startingModel(worktree);
-    if (!selection) {
-      this.error = "No provider lists a model. Connect one in Settings.";
-      return false;
-    }
+    // Without a model yet the dialog says why and does not offer Create.
+    if (!selection) return false;
     try {
       const session = await call(this.ipc.chatCreate(worktree, selection));
       await this.list();

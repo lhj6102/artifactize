@@ -42,6 +42,8 @@
   const running = $derived(view?.running ?? false);
   const model = $derived(session ? c.model(session) : null);
   const typed = $derived(session ? (c.typed[session.id] ?? "") : "");
+  /** The model New chat's session starts with, once it is known. */
+  const starting = $derived(c.worktree ? c.startingModel(c.worktree) : null);
 
   /** How long ago `at` (an RFC 3339 time) was, as the Pane says it. */
   function age(at: string): string {
@@ -294,9 +296,21 @@
             {/each}
           </select>
         </label>
+        <div class="field">
+          <span class="field-name" id="new-chat-model">Model</span>
+          <p class="starting" class:quiet={!starting} role="status" aria-labelledby="new-chat-model">
+            {#if starting}
+              {providerName(starting.backend)} · {starting.model}
+            {:else if c.reading}
+              Reading the providers' models…
+            {:else}
+              No provider lists a model. Connect one in Settings.
+            {/if}
+          </p>
+        </div>
         <div class="dialog-actions">
           <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
-          <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={!c.worktree}>Create</button>
+          <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={!c.worktree || !starting}>Create</button>
         </div>
       </form>
     </Dialog.Content>
@@ -653,6 +667,17 @@
   .field-name {
     font-size: var(--text-small);
     font-weight: 600;
+  }
+  .starting {
+    margin: 0;
+    min-height: var(--control);
+    display: flex;
+    align-items: center;
+    font: var(--text-small) var(--mono);
+  }
+  .starting.quiet {
+    color: var(--ink-2);
+    font-family: inherit;
   }
   select {
     height: var(--control);

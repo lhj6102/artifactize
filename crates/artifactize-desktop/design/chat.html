@@ -167,6 +167,7 @@
     <div class="m-dialog" style="top: 24px; left: 62%; width: 420px">
       <h2>New chat</h2>
       <div class="m-field"><span class="m-name">Branch</span><div class="m-input focused"><span>shop / fix/checkout-rounding</span></div></div>
+      <div class="m-field"><span class="m-name">Model</span><span class="m-mono">Claude Agent · claude-opus-5-5</span></div>
       <div class="m-dialog-actions"><span class="m-button">Cancel</span><span class="m-button primary">Create</span></div>
     </div>
   </div>
@@ -179,7 +180,7 @@
 
 <ol class="notes">
   <li><span class="n">14</span><div><b>No session yet</b><span>One quiet line says how to start one.</span></div></li>
-  <li><span class="n">15</span><div><b>New chat</b><span>One field, the branch, suggesting the live branches, the one selected in Verify first.</span></div></li>
+  <li><span class="n">15</span><div><b>New chat</b><span>One field, the branch, a choice of the live branches, the one selected in Verify first; under it the model the session starts with, which reads <i>Reading the providers' models…</i> until it is known, Create waiting for it.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
@@ -198,6 +199,8 @@
   <dd>The composer stands under the conversation in the same <code>--measure</code> column, 12px above the area's bottom: one field on <code>--surface-input</code> with a <code>--line-input</code> border of <code>--radius-chip</code>, its text growing to eight lines, its placeholder <i>Ask the agent to work on this branch…</i> in <code>--ink-3</code>; under the text, inside the field, one row: the model selector at the left, the session's model in <code>--ink</code> with the unfold icon, borderless; at the right <b>Send</b>, the one primary control, an icon button of <code>--control</code> with the send icon and its accessible name, which becomes <b>Stop</b>, a quiet icon button with the stop icon, while a turn runs. Keyboard focus is the field's 2px ring (D-SYS-7). <span class="avoid">the selector above the field or at its right; the provider's name beside the model; Send at the left; a key cap; a disabled composer while a turn runs.</span></dd>
   <dt id="D-CHAT-7">D-CHAT-7</dt>
   <dd>The model menu opens upward from the selector, its bottom left at the selector's top left, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow. Each provider Settings lists is a group: its name as a group label, then its models as <code>--row</code> rows by name; the session's model has <code>--selection</code> and semibold; a provider that lists none says why in <code>--red</code> at <code>--text-small</code> in its group. After a <code>--line-group</code> line, <b>Connect provider</b> with the add icon ends the menu. Taller than the room above the selector, the menu scrolls inside itself. <span class="avoid">a menu that opens downward over the composer or on hover; a model chosen by colour alone; IDs or a line explaining the harness in the menu.</span></dd>
+  <dt id="D-CHAT-8">D-CHAT-8</dt>
+  <dd>The New chat dialog is a dialog as the overlays draw one (D-OVL-1): its title, the <b>Branch</b> field, a choice on <code>--surface-input</code> inside <code>--line-input</code>, then <b>Model</b>, labelled as a form's field is, its value plain text, not a field: the provider's name and the model in <code>--mono</code> at <code>--text-small</code>; while the providers' models are being read it says <i>Reading the providers' models…</i> in <code>--ink-2</code>, and once they are read with none listed, <i>No provider lists a model. Connect one in Settings.</i> in <code>--ink-2</code>. Cancel and the primary Create end its last row, Create disabled until the model is known. <span class="avoid">Create offered before the model is known; the no-model sentence while the models are still being read; a model choice in the dialog (the composer's selector changes it).</span></dd>
 </dl>
 </main>
 </div>
