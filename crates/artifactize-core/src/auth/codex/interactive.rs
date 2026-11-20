@@ -350,6 +350,20 @@ pub(super) async fn sign_in(
     browser: bool,
     show: impl FnOnce(&Url, bool),
 ) -> Result<(), String> {
+    let open = browser.then_some(crate::platform::program::open_desktop);
+    sign_in_opening(storage, root, listener, redirect_uri, pasted, open, show).await
+}
+
+/// [`sign_in`] that hands the sign-in URL to `open`, when given, as the browser's opener.
+pub(super) async fn sign_in_opening(
+    storage: &Storage,
+    root: &Url,
+    listener: Option<Callback>,
+    redirect_uri: &str,
+    pasted: Option<oneshot::Receiver<String>>,
+    open: Option<impl AsyncFnOnce(&OsStr) -> io::Result<()>>,
+    show: impl FnOnce(&Url, bool),
+) -> Result<(), String> {
     if listener.is_none() && pasted.is_none() {
         return Err(format!(
             "Port {CALLBACK_PORT} is in use and there is no terminal to paste the redirect URL into; finish the other sign-in and try again."
@@ -358,10 +372,15 @@ pub(super) async fn sign_in(
     let pending = Pending::new()?;
     let url = pending.authorize_url(root, redirect_uri)?;
     show(&url, listener.is_some());
-    if browser {
-        open_browser(&url, crate::platform::program::open_desktop).await;
-    }
-    let code = pending.wait(listener, pasted).await?;
+    let opened = async {
+        if let Some(open) = open {
+            open_browser(&url, open).await;
+        }
+    };
+    // The callback answers while the opener hands the URL off: the browser may come back
+    // before the opener returns, as when the opener waits for what it opened.
+    let (code, ()) = tokio::join!(pending.wait(listener, pasted), opened);
+    let code = code?;
     let tokens = token_request(
         root,
         &[

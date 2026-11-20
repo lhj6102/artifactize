@@ -638,6 +638,53 @@ async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
     }).await;
 }
 
+/// Far longer than an answered sign-in takes; unanswered, the opener below would wait forever.
+const ANSWERED: std::time::Duration = std::time::Duration::from_secs(30);
+
+#[tokio::test]
+async fn a_browser_back_before_its_opener_returns_completes_the_sign_in() {
+    let temp = crate::test_os::tempdir();
+    let storage = storage(temp.path());
+    let access = jwt("account-1", 10_000 + 3600);
+    Server::run(vec![tokens(&access, "refresh-1")], async |server| {
+        let listener = Callback::bind(0).unwrap().unwrap();
+        let port = listener.ipv4.local_addr().unwrap().port();
+        let redirect = format!("http://localhost:{port}{CALLBACK_PATH}");
+        // An opener that returns only once the browser it opened has come back to the
+        // callback and been answered, as one that waits for what it opened.
+        let open = async |target: &OsStr| {
+            let url = Url::parse(target.to_str().unwrap()).unwrap();
+            let state = url
+                .query_pairs()
+                .find(|(key, _)| key == "state")
+                .unwrap()
+                .1
+                .into_owned();
+            let target = format!("/auth/callback?code=the-code&state={state}");
+            let back = browser(port, &format!("localhost:{port}"), &target).await;
+            assert!(back.starts_with("HTTP/1.1 200"), "{back}");
+            Ok(())
+        };
+        let root = root(server);
+        let signed_in = sign_in_opening(
+            &storage,
+            &root,
+            Some(listener),
+            &redirect,
+            None,
+            Some(open),
+            |_, callback| assert!(callback),
+        );
+        tokio::time::timeout(ANSWERED, signed_in)
+            .await
+            .expect("the callback answers while the opener runs")
+            .unwrap();
+        let saved: Credentials = storage.read(CREDENTIALS).unwrap().unwrap();
+        assert_eq!(saved.access_token, access);
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn sign_in_browser_hands_the_desktop_one_literal_url() {
     let url = Url::parse("https://example.invalid/?a=1&b=two words").unwrap();
