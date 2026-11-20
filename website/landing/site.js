@@ -103,6 +103,64 @@ var TEXT = WORDS[document.documentElement.lang] || WORDS.en;
   }
 })();
 
+// Hero product showcase tabs: switch between the three real desktop app views
+// (running evaluations, seeing results on the Artifact Graph, opening a Human review).
+// Without JS the tab bar stays hidden and all three views remain visible.
+(function () {
+  var showcase = document.querySelector('[data-showcase]');
+  if (!showcase) return;
+  var list = showcase.querySelector('[role="tablist"]');
+  var tabs = Array.prototype.slice.call(showcase.querySelectorAll('[role="tab"]'));
+  if (!list || !tabs.length) return;
+
+  function select(tab, focus) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      var panel = document.getElementById(t.getAttribute('aria-controls'));
+      if (panel) panel.hidden = !on;
+    });
+    if (focus) tab.focus();
+  }
+
+  function step(by) {
+    var current = tabs.indexOf(document.activeElement);
+    if (current < 0) {
+      current = tabs.findIndex(function (t) { return t.getAttribute('aria-selected') === 'true'; });
+    }
+    select(tabs[(current + by + tabs.length) % tabs.length], true);
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () { select(tab, false); });
+  });
+  list.addEventListener('keydown', function (event) {
+    if (event.key === 'ArrowRight') step(1);
+    else if (event.key === 'ArrowLeft') step(-1);
+    else if (event.key === 'Home') select(tabs[0], true);
+    else if (event.key === 'End') select(tabs[tabs.length - 1], true);
+    else return;
+    event.preventDefault();
+  });
+
+  var startX = null;
+  showcase.addEventListener('touchstart', function (event) {
+    startX = event.touches.length === 1 ? event.touches[0].clientX : null;
+  }, { passive: true });
+  showcase.addEventListener('touchend', function (event) {
+    if (startX === null) return;
+    var dx = event.changedTouches[0].clientX - startX;
+    startX = null;
+    if (Math.abs(dx) < 50) return;
+    var current = tabs.findIndex(function (t) { return t.getAttribute('aria-selected') === 'true'; });
+    select(tabs[(current + (dx < 0 ? 1 : -1) + tabs.length) % tabs.length], false);
+  }, { passive: true });
+
+  list.hidden = false;
+  select(tabs[0], false);
+})();
+
 // Install: the visitor's OS gets the primary download button and its command tab
 // first. Without JS no download stands out and every command panel shows; with it,
 // the tabs pick one, and arrow keys, Home/End or a sideways swipe switch between them.

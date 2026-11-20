@@ -56,12 +56,14 @@
       <span>Artifactize</span>
     </a>
     <nav class="top-nav" aria-label="Main" data-ko-aria-label="주 메뉴">
+      <a data-locale="en" class="hide-sm" href="#features">Features</a>
+      <a data-locale="ko" class="hide-sm" href="#features">기능</a>
       <a data-locale="en" class="hide-sm" href="#story">How it works</a>
       <a data-locale="ko" class="hide-sm" href="#story">동작 방식</a>
-      <a data-locale="en" class="hide-sm" href="#start">Install</a>
-      <a data-locale="ko" class="hide-sm" href="#start">설치</a>
       <a data-locale="en" class="nav-docs" href="/docs/">Docs</a>
       <a data-locale="ko" class="nav-docs" href="/docs/ko/">문서</a>
+      <a data-locale="en" class="nav-cta hide-sm" href="#start">Get started</a>
+      <a data-locale="ko" class="nav-cta hide-sm" href="#start">시작하기</a>
       <a data-locale="en" class="nav-lang" href="/ko/" hreflang="ko" lang="ko" aria-label="한국어"><span class="hide-sm">한국어</span><span class="only-sm" aria-hidden="true">KO</span></a>
       <a data-locale="ko" class="nav-lang" href="/" hreflang="en" lang="en" aria-label="English"><span class="hide-sm">English</span><span class="only-sm" aria-hidden="true">EN</span></a>
       <a class="nav-icon" href="https://github.com/lhj6102/artifactize" aria-label="Artifactize on GitHub" data-ko-aria-label="Artifactize GitHub 저장소">
@@ -83,21 +85,54 @@
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-copy">
       <h1 id="hero-title">Artifactize: <em><span class="nowrap">Evaluation-driven</span></em> development for people and AI agents.</h1>
-      <p data-locale="en" class="download-note">Declare how each component of your project—code, documents, images, or a running service—is checked by command checks, AI agent reviews, and human sign-offs. Each reviewed component is an <strong>Artifact</strong>, and the project-wide map of your Artifacts and the inputs each check depends on is the <strong>Artifact Graph</strong>. When you integrate changes across branches, teammates, or CI, every check whose inputs still match reuses its earlier result.</p>
-      <p data-locale="ko" class="download-note">코드, 문서, 이미지, 실행 중인 서비스 등 프로젝트의 각 구성 요소를 어떻게 검사할지 정하세요. 검사 대상인 구성 요소를 <strong>Artifact</strong>라고 부릅니다. 명령 실행, AI 에이전트 리뷰, 담당자 승인 중 필요한 방식을 지정하세요. <strong>Artifact Graph</strong>에서는 프로젝트의 모든 Artifact를 한눈에 볼 수 있고, 각 eval에 어떤 입력이 필요한지도 확인할 수 있습니다. eval에 쓰는 입력이 바뀌지 않으면 이전 결과를 재사용합니다. 브랜치를 병합하거나 팀원의 변경 사항을 반영하거나 CI를 실행할 때도 마찬가지입니다.</p>
+      <p data-locale="en" class="hero-lead">Declare command checks, AI agent reviews, and human sign-offs for each part of your project—code, docs, images, or services (each an <strong>Artifact</strong>). Artifactize links their inputs in an <strong>Artifact Graph</strong> so unchanged work reuses earlier results across branches, teammates, and CI.</p>
+      <p data-locale="ko" class="hero-lead">코드, 문서, 이미지, 서비스 등 프로젝트의 구성 요소(<strong>Artifact</strong>)마다 명령 실행, AI 에이전트 리뷰, 담당자 승인 평가를 선언하세요. <strong>Artifact Graph</strong>로 입력을 연결해 두면, 브랜치·팀원·CI 환경에서도 입력이 그대로인 결과는 재사용합니다.</p>
       <div class="cta">
-        <a data-locale="en" class="btn btn-primary" href="#start">Install &amp; Quick Start <span aria-hidden="true">↓</span></a>
-        <a data-locale="ko" class="btn btn-primary" href="#start">설치 및 빠른 시작 <span aria-hidden="true">↓</span></a>
-        <a data-locale="en" class="btn btn-ghost" href="/docs/">Read the docs</a>
-        <a data-locale="ko" class="btn btn-ghost" href="/docs/ko/">문서 보기</a>
+        <a data-locale="en" class="btn btn-primary" href="#start">Get started <span aria-hidden="true">↓</span></a>
+        <a data-locale="ko" class="btn btn-primary" href="#start">시작하기 <span aria-hidden="true">↓</span></a>
+        <a data-locale="en" class="btn btn-ghost" href="#features">See features</a>
+        <a data-locale="ko" class="btn btn-ghost" href="#features">기능 살펴보기</a>
       </div>
-      <figure class="hero-demo">
-        <img src="/media/review-loop.gif" width="1280" height="720" loading="eager" decoding="async"
-             alt="Real recording of the Artifactize desktop app over four verification attempts of an example project: failing parts turn red, an AI agent fixes them before the next attempt, checks with unchanged inputs reuse their earlier results, and the fourth attempt passes."
-             data-ko-alt="Artifactize 데스크톱 앱에서 예제 프로젝트를 네 번 검증하는 과정을 녹화했습니다. 앱은 실패한 항목을 빨간색으로 표시합니다. AI 에이전트는 다음 검증 전에 실패 원인을 찾아 문제를 해결합니다. eval에 쓰는 입력이 그대로면 이전 결과를 재사용합니다. 네 번째 검증에서는 모든 eval 결과가 GREEN입니다.">
-        <figcaption data-locale="en">Each box represents one Artifact, each check on it is an <strong>eval</strong>, and each verification session is a <strong>Run</strong> that records the checks and their results.</figcaption>
-        <figcaption data-locale="ko">상자 하나가 Artifact 하나를 나타냅니다. Artifact에 선언하는 개별 검사를 <strong>eval</strong>이라고 부릅니다. 검증할 때마다 새 <strong>Run</strong>을 만들어 eval 실행 내역과 결과를 기록합니다.</figcaption>
-      </figure>
+      <div class="hero-showcase" data-showcase>
+        <div class="showcase-bar" role="tablist" aria-label="Product workflow" data-ko-aria-label="제품 작업 흐름" hidden>
+          <button type="button" class="showcase-tab" role="tab" id="flow-tab-run" aria-controls="flow-panel-run" aria-selected="true">
+            <span class="showcase-step" aria-hidden="true">01</span>
+            <span data-locale="en">Run evaluations</span>
+            <span data-locale="ko">평가 실행과 재사용</span>
+          </button>
+          <button type="button" class="showcase-tab" role="tab" id="flow-tab-graph" aria-controls="flow-panel-graph" aria-selected="false" tabindex="-1">
+            <span class="showcase-step" aria-hidden="true">02</span>
+            <span data-locale="en">Inspect Artifact Graph</span>
+            <span data-locale="ko">Artifact Graph 결과 확인</span>
+          </button>
+          <button type="button" class="showcase-tab" role="tab" id="flow-tab-review" aria-controls="flow-panel-review" aria-selected="false" tabindex="-1">
+            <span class="showcase-step" aria-hidden="true">03</span>
+            <span data-locale="en">Open Human review</span>
+            <span data-locale="ko">Human 리뷰와 승인</span>
+          </button>
+        </div>
+        <figure class="showcase-panel" role="tabpanel" id="flow-panel-run" aria-labelledby="flow-tab-run">
+          <img src="/media/review-loop.gif" width="1280" height="720" loading="eager" decoding="async"
+               alt="Real recording of the Artifactize desktop app over four verification attempts of an example project: failing parts turn red, an AI agent fixes them before the next attempt, checks with unchanged inputs reuse their earlier results, and the fourth attempt passes."
+               data-ko-alt="Artifactize 데스크톱 앱에서 예제 프로젝트를 네 번 검증하는 과정을 녹화했습니다. 앱은 실패한 항목을 빨간색으로 표시합니다. AI 에이전트는 다음 검증 전에 실패 원인을 찾아 문제를 해결합니다. eval에 쓰는 입력이 그대로면 이전 결과를 재사용합니다. 네 번째 검증에서는 모든 eval 결과가 GREEN입니다.">
+          <figcaption data-locale="en">Each box represents one Artifact, each check on it is an <strong>eval</strong>, and each verification session is a <strong>Run</strong> that records the checks and their results.</figcaption>
+          <figcaption data-locale="ko">박스 하나가 Artifact 하나를 나타냅니다. Artifact에 선언하는 개별 평가를 <strong>eval</strong>이라고 부릅니다. 검증할 때마다 새 <strong>Run</strong>을 만들어 eval 실행 내역과 결과를 기록합니다.</figcaption>
+        </figure>
+        <figure class="showcase-panel" role="tabpanel" id="flow-panel-graph" aria-labelledby="flow-tab-graph">
+          <img src="/media/monitor.png" width="1280" height="720" loading="lazy" decoding="async"
+               alt="Real screenshot of the Artifactize desktop app showing a Run on the Artifact Graph: core passed, cli failed, docs is blocked by cli, and release has a Human sign-off pending."
+               data-ko-alt="Artifactize 데스크톱 앱에서 Run 결과를 Artifact Graph로 보여 주는 실제 화면입니다. core는 통과했고 cli는 실패했으며, docs는 cli 때문에 막혔습니다. release에는 담당자가 처리할 Human 승인 요청이 남아 있습니다.">
+          <figcaption data-locale="en">Inspect a Run on the Artifact Graph: <code>core</code> passed, <code>cli</code> failed so downstream <code>docs</code> is blocked, and <code>release</code> has a Human sign-off pending.</figcaption>
+          <figcaption data-locale="ko">Artifact Graph에서 Run 결과를 바로 확인합니다. <code>core</code>는 통과했고 <code>cli</code>가 실패해 하위 항목인 <code>docs</code>는 막혔습니다. <code>release</code>에는 담당자가 처리할 Human 승인 요청이 남아 있습니다.</figcaption>
+        </figure>
+        <figure class="showcase-panel" role="tabpanel" id="flow-panel-review" aria-labelledby="flow-tab-review">
+          <img src="/media/review.png" width="1280" height="720" loading="lazy" decoding="async"
+               alt="Real screenshot of the Artifactize desktop app Human review screen: the reviewer claimed release/signoff, ran the declared notes tool, read its output in Tool log, and opened the GREEN result form."
+               data-ko-alt="Artifactize 데스크톱 앱의 Human 리뷰 실제 화면입니다. 리뷰어가 release/signoff 요청을 맡아 선언된 notes 도구를 실행했고, Tool log에서 출력을 확인한 뒤 GREEN 결과 양식을 열어 둔 모습입니다.">
+          <figcaption data-locale="en">Open a Human review from the waiting list: claim the request, run its declared tools in <strong>Tool log</strong>, and submit GREEN or RED.</figcaption>
+          <figcaption data-locale="ko">대기 목록에서 Human 리뷰를 여세요. 요청을 맡아 선언된 도구를 실행하고 <strong>Tool log</strong>를 확인한 뒤 GREEN 또는 RED를 제출합니다.</figcaption>
+        </figure>
+      </div>
     </div>
   </section>
 
@@ -141,12 +176,12 @@ Summary: executed 2 (runtime 1, agent 1, human 0), reused 1 (human 1)</code></pr
     </div>
   </section>
 
-  <section class="wrap audience" aria-labelledby="audience-title">
+  <section class="wrap audience" id="features" aria-labelledby="audience-title">
     <h2 data-locale="en" id="audience-title">Why teams use Artifactize</h2>
     <h2 data-locale="ko" id="audience-title">팀이 Artifactize를 쓰는 이유</h2>
     <ul class="audience-list">
       <li data-locale="en"><strong>Three kinds of checks on one Artifact Graph:</strong> combine command checks, read-only AI agent reviews (such as checking <code>api</code> against <code>spec</code>), and human sign-offs. People are asked to sign off only after automated checks pass.</li>
-      <li data-locale="ko"><strong>세 가지 방식의 eval을 한 Artifact Graph에서 관리:</strong> 명령을 실행해 검사합니다. AI 에이전트에게는 읽기 권한만 주고 리뷰를 맡깁니다. 담당자의 승인을 받는 방법도 있습니다. 예를 들어 AI 에이전트에게 <code>api</code>와 <code>spec</code>이 일치하는지 확인해 달라고 요청할 수 있습니다. 자동으로 실행하는 eval이 모두 GREEN일 때만 담당자에게 승인을 요청합니다.</li>
+      <li data-locale="ko"><strong>세 가지 방식의 eval을 한 Artifact Graph에서 관리:</strong> 명령을 실행해 평가합니다. AI 에이전트에게는 읽기 권한만 주고 리뷰를 맡깁니다. 담당자의 승인을 받는 방법도 있습니다. 예를 들어 AI 에이전트에게 <code>api</code>와 <code>spec</code>이 일치하는지 확인해 달라고 요청할 수 있습니다. 자동으로 실행하는 eval이 모두 GREEN일 때만 담당자에게 승인을 요청합니다.</li>
       <li data-locale="en"><strong>Content fingerprints and shared review store:</strong> each check identifies its inputs with a content fingerprint (<code>artifactsum</code>), and a shared team review store lets teammates and CI pull existing results.</li>
       <li data-locale="ko"><strong>입력 내용으로 만든 fingerprint와 팀 공용 저장소:</strong> eval마다 입력 내용으로 fingerprint(<code>artifactsum</code>)를 만듭니다. 팀 공용 저장소를 쓰면 팀원과 CI가 모두 이전 eval 결과를 재사용할 수 있습니다.</li>
       <li data-locale="en"><strong>Built for coding agents and people:</strong> the Claude Code and Codex plugin lets your coding agent shape declarations and run checks, while the desktop app lets people inspect Runs and sign off.</li>
@@ -166,7 +201,7 @@ Summary: executed 2 (runtime 1, agent 1, human 0), reused 1 (human 1)</code></pr
         <div class="downloads">
           <a class="btn btn-ghost download" data-os="macos" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg">
             <span data-locale="en">Download for macOS</span>
-            <span data-locale="ko">macOS용 내려받기</span>
+            <span data-locale="ko">macOS용 다운로드</span>
             <span data-locale="en" class="download-meta">Apple silicon and Intel · .dmg</span>
             <span data-locale="ko" class="download-meta">Apple silicon과 Intel · .dmg</span>
           </a>
@@ -177,7 +212,7 @@ Summary: executed 2 (runtime 1, agent 1, human 0), reused 1 (human 1)</code></pr
           </a>
           <a class="btn btn-ghost download" data-os="linux" href="https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb">
             <span data-locale="en">Download for Linux</span>
-            <span data-locale="ko">Linux용 내려받기</span>
+            <span data-locale="ko">Linux용 다운로드</span>
             <span class="download-meta">x86_64 · .deb</span>
           </a>
         </div>
@@ -229,7 +264,7 @@ Summary: executed 2 (runtime 1, agent 1, human 0), reused 1 (human 1)</code></pr
 <span class="t-prompt">PS&gt;</span> <span data-command>irm https://artifactize.dev/install.ps1 | iex</span></code></pre>
           </div>
           <p data-locale="en" class="install-alt">The PowerShell download is not code-signed, so Smart App Control may block it; the Store version is signed by Microsoft.</p>
-          <p data-locale="ko" class="install-alt">PowerShell로 내려받는 파일에는 코드 서명이 없습니다. 그래서 Smart App Control이 파일 실행을 막을 수 있습니다. Microsoft Store에서는 Microsoft가 서명한 버전을 받을 수 있습니다.</p>
+          <p data-locale="ko" class="install-alt">PowerShell로 다운로드하는 파일에는 코드 서명이 없습니다. 그래서 Smart App Control이 파일 실행을 막을 수 있습니다. Microsoft Store에서는 Microsoft가 서명한 버전을 받을 수 있습니다.</p>
         </div>
       </div>
       <div class="cta center">

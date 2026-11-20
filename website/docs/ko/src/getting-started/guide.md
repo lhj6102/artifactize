@@ -1,6 +1,6 @@
 # 5분 만에 첫 프로젝트 만들어 보기 {#first-project-in-5-minutes}
 
-이 가이드에서는 작은 프로젝트를 직접 만들고 `artifactize verify`를 실행한 뒤, 일부 파일만 바꿨을 때 이전 검사 결과를 어떻게 재사용하는지 확인합니다. AI 계정이나 API 키는 필요하지 않습니다.
+이 가이드에서는 작은 프로젝트를 직접 만들고 `artifactize verify`를 실행한 뒤, 일부 파일만 바꿨을 때 이전 평가 결과를 어떻게 재사용하는지 확인합니다. AI 계정이나 API 키는 필요하지 않습니다.
 
 ## 1. 두 Artifact와 eval 선언하기 {#1-create-two-artifacts-and-a-check}
 
@@ -56,7 +56,7 @@ artifactize status
 
 ## 2. 검증 실행과 결과 재사용 {#2-verify-and-reuse}
 
-모든 검사를 실행하고 결과가 나올 때까지 기다립니다.
+모든 평가를 실행하고 결과가 나올 때까지 기다립니다.
 
 ```sh
 artifactize verify --all --wait

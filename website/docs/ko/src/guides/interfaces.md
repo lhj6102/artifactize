@@ -20,7 +20,7 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--reviewer NAME]  # Revie
 - **Pane** 스위치: 메인 영역은 그대로 두고 왼쪽 Pane을 숨기거나 다시 표시합니다.
 - **Commands** 버튼: 현재 화면에서 실행할 수 있는 명령을 검색하는 명령 팔레트를 엽니다. 공통 명령으로 **Keyboard shortcuts**, **Show Settings**, **Show or hide the Pane**, **Search the branches**, **Open a request by ID**, **Refresh**, **Quit**을 나열합니다. 현재 열어 둔 Artifact Graph·Human review·Settings 화면에 맞는 전용 명령도 함께 표시합니다.
 - **Settings** 버튼: **Settings** 모달(**Providers**, **Remote**, **Limits**)을 엽니다.
-- **업데이트 알림** (`{version} available`): 새 정식 릴리스가 나오면 **Settings** 앞에 표시됩니다. 프리릴리스 버전은 무시하며, Microsoft Store 설치 버전에는 표시하지 않습니다. 클릭하면 설치 방식에 맞는 업데이트 안내 대화상자가 열리며, 앱이 직접 파일을 내려받거나 설치하지는 않습니다.
+- **업데이트 알림** (`{version} available`): 새 정식 릴리스가 나오면 **Settings** 앞에 표시됩니다. 프리릴리스 버전은 무시하며, Microsoft Store 설치 버전에는 표시하지 않습니다. 클릭하면 설치 방식에 맞는 업데이트 안내 창이 열리며, 앱이 직접 파일을 다운로드하거나 설치하지는 않습니다.
 
 마우스 대신 키보드 단축키를 쓸 수도 있습니다. 지원하는 단축키는 **Commands**의 각 명령 옆과 **Help**(**Commands → Keyboard shortcuts**, 그래프 범례 포함)에서 확인할 수 있습니다. 요청을 맡았지만 아직 판정을 제출하지 않은 경우가 있습니다. 그 상태에서 창을 닫으려 하거나 **Quit**을 선택하면 종료 확인 창이 뜹니다. **Stay**를 누르면 창을 닫지 않고 계속 리뷰할 수 있습니다. **Release and quit**을 누르면 요청의 담당 지정을 해제하고 앱을 종료합니다.
 
@@ -34,7 +34,7 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--reviewer NAME]  # Revie
 ## 메인 영역: Run, Current, Artifact Graph, Detail {#current}
 
 - **Run 화면**: Run ID와 상태 요약은 Artifact Graph의 도구 막대 위에 표시합니다. 상태 요약을 클릭하거나 **Commands**에서 **Open the Run's Detail**을 실행하면 **Outcome**, **Waits for**, **What**, **Provenance**, **Technical** 항목을 담은 Run Detail이 열립니다.
-- **Current 화면과 편집**: `artifactize status`처럼 워크트리를 검사하면서 확인을 마친 Artifact부터 예상 동작(`reused`, `would run`, `waiting`, `blocked`)을 색으로 표시합니다. 헤더 오른쪽 끝에는 **Refresh** 버튼이 있습니다.
+- **Current 화면과 편집**: `artifactize status`처럼 워크트리를 스캔하면서 확인을 마친 Artifact부터 예상 동작(`reused`, `would run`, `waiting`, `blocked`)을 색으로 표시합니다. 헤더 오른쪽 끝에는 **Refresh** 버튼이 있습니다.
   - **선언 생성과 편집**: 도구 막대에서 **New Artifact**를 클릭하고 **Name**과 **Path**를 입력한 뒤 **Create**를 누르면 `.artifactize/<name>.artf` 파일이 만들어집니다. Artifact의 **Detail** 패널에서는 **Definition**의 세 항목(`Path`, `Parts`, `Comment`)을 수정할 수 있습니다.
     - `Path`: 새 경로를 입력하고 `Enter`를 눌러 저장합니다.
     - `Parts`: `+ Add`를 클릭해 제안 목록에서 고르거나 `Enter`로 추가하고, `✕`를 클릭해 제거합니다.
