@@ -91,10 +91,17 @@ export class Detail {
   }
 
   /** Switch the open eval's tab to its view `name` (Summary, Agent log, Runtime log), then
-   * wait until what it shows below the switch satisfies `ok`. */
+   * wait until what it shows below the switch satisfies `ok`. A log laid out in rows (the
+   * Agent log) breaks its lines where its pane's width in characters ends, which differs with
+   * each OS's font, even inside a word: its rows read as one text with no break between them,
+   * so a check holds wherever the rows break. */
   async view(name: string, ok: (text: string) => boolean, what: string): Promise<string> {
     await this.browser.$(`${DETAIL} [role="tablist"][aria-label="Views"]`).$(`button=${name}`).click();
-    return until(this.browser, () => this.browser.execute((detail) => document.querySelector<HTMLElement>(`${detail} [role="document"] .shown`)?.innerText ?? "", DETAIL), ok, what);
+    return until(this.browser, () => this.browser.execute((detail) => {
+      const shown = document.querySelector<HTMLElement>(`${detail} [role="document"] .shown`);
+      const rows = [...(shown?.querySelectorAll<HTMLElement>('[role="log"] .row') ?? [])];
+      return rows.length > 0 ? rows.map((row) => row.textContent ?? "").join("") : shown?.innerText ?? "";
+    }, DETAIL), ok, what);
   }
 
   /** Whether the Detail draws its Neighbours. */

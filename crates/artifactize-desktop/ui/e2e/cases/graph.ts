@@ -254,7 +254,8 @@ export const scenarios: Scenario[] = [
       writeText(gate, "go");
       await app.graph.node("a:slow", (node) => node.label === "slow: would run (1 eval)", "slow coloured in place once its fingerprint is in");
       await app.graph.node("a:quick", (node) => /^quick: (would run|waiting)/.test(node.label), "quick too");
-      assert.match(await app.graph.scan(), /^Scanned at /);
+      // Every Artifact checked, the scan still ends after its last one: the header then says when.
+      await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
     },
   }),
 
@@ -279,7 +280,8 @@ export const scenarios: Scenario[] = [
       await app.graph.node("a:slow", (node) => /^slow: reused/.test(node.label), "slow coloured in place as reused once its fingerprint is in");
       await app.graph.node("a:other", (node) => /^other: reused/.test(node.label), "other's sign-off would be reused");
       await app.graph.node("a:quick", (node) => node.label === "quick: would run (1 eval)", "quick, changed since the Run, would run again");
-      assert.match(await app.graph.scan(), /^Scanned at /);
+      // Every Artifact checked, the scan still ends after its last one: the header then says when.
+      await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
     },
   }),
 
