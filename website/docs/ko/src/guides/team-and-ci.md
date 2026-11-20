@@ -55,4 +55,4 @@ CI에는 **`read`** 권한만 있는 토큰을 발급하고 `artifactize verify 
     ARTIFACTIZE_REMOTE_TOKEN: ${{ secrets.ARTIFACTIZE_READ_TOKEN }}
 ```
 
-`--reuse-only agent,human`을 지정하면 CI는 `runtime` 평가를 직접 실행하거나 캐시 결과를 씁니다. `agent`와 `human` 평가는 직접 실행하지 않고 팀 리뷰 저장소나 로컬 캐시에서 일치하는 최신 판정을 재사용합니다([fingerprint와 재사용](../concepts/reuse.md#completed-result-reuse)). 선행 eval이 `RED`여서 이미 실행이 막힌 항목은 제외합니다. 승인을 기다리다 Run이 `YELLOW`로 끝난 경우나 리뷰 후 파일이 바뀐 경우에는 `--reuse-only` 대상 eval에 재사용할 판정이 없을 수 있습니다. 이때 해당 eval과 여기에 의존하는 하위 eval은 실행되지 않고 `STALE`로 남으며, Run은 **`INCOMPLETE`**로 끝납니다(종료 코드 `4`; Run 결과 우선순위는 [승인과 Run의 종료](../concepts/runs.md#sign-offs-and-the-end-of-a-run) 참고).
+`--reuse-only agent,human`을 지정하면 CI는 `runtime` 평가를 직접 실행하거나 캐시 결과를 씁니다. `agent`와 `human` 평가는 직접 실행하지 않고 팀 리뷰 저장소나 로컬 캐시에서 일치하는 최신 판정을 재사용합니다([fingerprint와 재사용](../concepts/reuse.md#completed-result-reuse)). 선행 eval이 `RED`여서 이미 실행이 막힌 항목은 제외합니다. 승인을 기다리다 Run이 `YELLOW`로 끝난 경우나 리뷰 후 파일이 바뀐 경우에는 `--reuse-only` 대상 eval에 재사용할 판정이 없을 수 있습니다. 이때 해당 eval은 실행되지 않고 `STALE`로 남으며, 여기에 의존하는 하위 eval도 실행되지 않아 Run은 **`INCOMPLETE`**로 끝납니다(종료 코드 `4`; Run 결과 우선순위는 [승인과 Run의 종료](../concepts/runs.md#sign-offs-and-the-end-of-a-run) 참고).
