@@ -154,6 +154,10 @@ export class Review {
   #show(view: HumanView): void {
     const canonical = this.#intern?.(view.id, this) ?? this;
     if (canonical !== this) this.#state = canonical.#state;
+    // Reads answer in any order. One read before the shown view would bring back what that
+    // view already replaced, a claim's absence say, and take the open form away until the
+    // next read; it is dropped.
+    if (this.view && view.read < this.view.read) return;
     this.view = view;
     this.id = view.id;
     this.tool = Math.min(this.tool, Math.max(view.tools.length - 1, 0));

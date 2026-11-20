@@ -696,6 +696,11 @@ export type HumanView = {
 	completed: ResultEntry[] | null,
 	/**  The state generation it was read from; a newer one means it no longer applies. */
 	generation: number,
+	/**
+	 *  The number of the read it shows: a view of a lower number was read before it, and
+	 *  never replaces it.
+	 */
+	read: number,
 };
 
 /**  A cancellable job of one Human action, numbered by the frontend. */

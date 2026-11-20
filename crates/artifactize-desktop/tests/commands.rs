@@ -567,6 +567,41 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_review_never_goes_back_to_a_view_read_before_its_newest() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    // The stack is read with the review unclaimed; the review is then opened and claimed.
+    let shown = invoke(&window, "browse", json!({"navigate": STILL()})).unwrap();
+    assert_eq!(shown["waiting"][0]["claim"], "-");
+    let branch = shown["branches"][0]["key"].clone();
+    let open = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
+    let claimed = invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    assert_eq!(claimed["view"]["stage"], "review");
+    // A pane step that does not read the stack again keeps the stack it read before the claim;
+    // the review's redraw still shows the claim, not that older read.
+    invoke(&window, "browse", json!({"navigate": star(&branch, true)})).unwrap();
+    let redrawn = invoke(&window, "human_open", json!({"id": id, "reload": false})).unwrap();
+    assert_eq!(redrawn["stage"], "review");
+    // Each view says which read it is: a later read has a higher number.
+    let read = |view: &Value| view["read"].as_u64().unwrap();
+    assert!(
+        read(&claimed["view"]) > read(&open),
+        "{open} then {claimed}"
+    );
+    assert_eq!(read(&redrawn), read(&claimed["view"]));
+    // A stack read after the claim is newer than the review's last read; its redraw shows it.
+    assert_ne!(waiting(&window)[0]["claim"], "-");
+    let after = invoke(&window, "human_open", json!({"id": id, "reload": false})).unwrap();
+    assert_eq!(after["stage"], "review");
+    assert!(
+        read(&after) > read(&claimed["view"]),
+        "{claimed} then {after}"
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);

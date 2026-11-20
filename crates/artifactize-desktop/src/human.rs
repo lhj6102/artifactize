@@ -37,11 +37,31 @@ type Commands = BTreeMap<ToolName, Result<CommandLine, String>>;
 /// What resolving a request's tool commands answered: them, or why it could not.
 type Resolved = Result<Commands, String>;
 
+/// Request reads numbered in the order their database reads ran, the waiting stack's
+/// included: of two views of a request, the one with the higher number is the newer.
+/// Reads answer in any order, so a read that answers late never replaces a newer view.
+#[derive(Default)]
+pub(crate) struct Reads(tokio::sync::Mutex<u32>);
+
+impl Reads {
+    /// Run the database read `read` after the reads numbered before it; its number and what
+    /// it read.
+    pub(crate) async fn numbered<T>(&self, read: impl Future<Output = T>) -> (u32, T) {
+        let mut last = self.0.lock().await;
+        let value = read.await;
+        *last += 1;
+        (*last, value)
+    }
+}
+
 /// Per-app review state: what is cached for drawing, running jobs, claims taken here, and
 /// the Tool log every run logs to.
 pub struct Reviews {
-    /// The last read view of each opened request, for redraws without a read.
-    views: Mutex<BTreeMap<RequestId, RequestView>>,
+    /// The newest read view of each opened request and its read's number, for redraws
+    /// without a read.
+    views: Mutex<BTreeMap<RequestId, (u32, RequestView)>>,
+    /// Numbers every read of requests.
+    pub(crate) reads: Reads,
     /// Resolved tool command lines, resolved once per request and again after each run.
     commands: Mutex<BTreeMap<RequestId, Resolved>>,
     /// Running jobs by the frontend's job number.
@@ -61,6 +81,7 @@ impl Default for Reviews {
         let (log, events) = review::log::channel();
         Self {
             views: Mutex::default(),
+            reads: Reads::default(),
             commands: Mutex::default(),
             jobs: Mutex::default(),
             taken: Mutex::default(),
@@ -124,12 +145,23 @@ impl Reviews {
         self.jobs.lock().expect("jobs lock").remove(&job);
     }
 
-    /// Freshen the cached views of requests the waiting stack just read, so a review opened
-    /// from it shows the claims and states the stack shows.
-    pub(crate) fn remember(&self, views: impl IntoIterator<Item = RequestView>) {
-        let mut cached = self.views.lock().expect("views lock");
+    /// Freshen the cached views of requests the waiting stack read as read number `read`, so
+    /// a review opened from it shows the claims and states the stack shows.
+    pub(crate) fn remember(&self, read: u32, views: impl IntoIterator<Item = RequestView>) {
         for view in views {
-            cached.insert(view.request.id.clone(), view);
+            let id = view.request.id.clone();
+            self.keep(read, &[&id], view);
+        }
+    }
+
+    /// Cache `view`, read as read number `read`, under each of `ids`, unless a newer read is
+    /// cached there: a stack read before a claim never brings back the unclaimed request.
+    fn keep(&self, read: u32, ids: &[&RequestId], view: RequestView) {
+        let mut cached = self.views.lock().expect("views lock");
+        for id in ids {
+            if cached.get(*id).is_none_or(|(newest, _)| *newest < read) {
+                cached.insert((*id).clone(), (read, view.clone()));
+            }
         }
     }
 
@@ -213,6 +245,9 @@ pub struct HumanView {
     pub completed: Option<Vec<ResultEntry>>,
     /// The state generation it was read from; a newer one means it no longer applies.
     pub generation: u32,
+    /// The number of the read it shows: a view of a lower number was read before it, and
+    /// never replaces it.
+    pub read: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -271,6 +306,7 @@ fn view(
     reviewer: &str,
     commands: Option<&Resolved>,
     generation: u32,
+    read: u32,
     now: OffsetDateTime,
 ) -> HumanView {
     let request = &view.request;
@@ -326,24 +362,29 @@ fn view(
         result: settled.then(|| format!("{}\n{}", request.status(), review::outcome_text(request))),
         completed: settled.then(|| completed(request)).flatten(),
         generation,
+        read,
     }
 }
 
-/// Read `id` afresh: a waiting follower resolves to its original, which records the Human
-/// definition and receives every action. The request records all the review shows, so its
-/// Run's definitions, which can hold a large Run's whole graph, are not read.
-async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
+/// Read `id` afresh, with the read's number: a waiting follower resolves to its original,
+/// which records the Human definition and receives every action. The request records all the
+/// review shows, so its Run's definitions, which can hold a large Run's whole graph, are not
+/// read.
+async fn read(app: &App, id: &RequestId) -> Result<(u32, RequestView), Failure> {
     let state = &app.launch.state;
-    let view = store::read_request_as(state, id, store::Shown::Requests)
-        .await
-        .map_err(Failure::Read)?;
-    let view = if view.request.status().is_human_wait() {
-        store::read_original_as(state, &view, store::Shown::Requests)
-            .await
-            .map_err(Failure::Read)?
-    } else {
-        view
-    };
+    let (number, view) = app
+        .human
+        .reads
+        .numbered(async {
+            let view = store::read_request_as(state, id, store::Shown::Requests).await?;
+            if view.request.status().is_human_wait() {
+                store::read_original_as(state, &view, store::Shown::Requests).await
+            } else {
+                Ok(view)
+            }
+        })
+        .await;
+    let view = view.map_err(Failure::Read)?;
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
     let resolve = view.request.status().is_human_wait()
         && view.request.human_definition.is_some()
@@ -367,19 +408,20 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
             .expect("commands lock")
             .insert(view.request.id.clone(), commands);
     }
-    let mut views = app.human.views.lock().expect("views lock");
-    views.insert(id.clone(), view.clone());
-    views.insert(view.request.id.clone(), view.clone());
-    Ok(view)
+    app.human
+        .keep(number, &[id, &view.request.id], view.clone());
+    Ok((number, view))
 }
 
-fn show(app: &App, request: &RequestView) -> HumanView {
+/// The review of `request`, read as read number `read`.
+fn show(app: &App, read: u32, request: &RequestView) -> HumanView {
     let commands = app.human.commands.lock().expect("commands lock");
     view(
         request,
         app.launch.reviewer.as_str(),
         commands.get(&request.request.id),
         app.generation.current(),
+        read,
         OffsetDateTime::now_utc(),
     )
 }
@@ -404,11 +446,11 @@ pub async fn human_open(
                 .cloned()
         })
         .flatten();
-    let request = match cached {
-        Some(request) => request,
+    let (number, request) = match cached {
+        Some(cached) => cached,
         None => read(&app, &id).await?,
     };
-    Ok(show(&app, &request))
+    Ok(show(&app, number, &request))
 }
 
 /// The form for `verdict`, from the owner schema recorded with request `id`, holding the values
@@ -451,7 +493,7 @@ pub async fn human_claim(
 ) -> Result<Acted, Failure> {
     let id = id.into_inner();
     // Someone else's claim, or a settled request, is refused in the library's words.
-    let view = read(&app, &id).await?;
+    let (_, view) = read(&app, &id).await?;
     review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
     let outcome = run_job(&app, job, Job::Claim { id: id.clone() }).await;
     if let Outcome::Claimed { result: Ok(_) } = &outcome {
@@ -464,7 +506,10 @@ async fn acted(app: &App, id: &RequestId, outcome: Outcome) -> Result<Acted, Fai
     let notice = outcome.notice().into();
     Ok(Acted {
         notice,
-        view: read(app, id).await.ok().map(|request| show(app, &request)),
+        view: read(app, id)
+            .await
+            .ok()
+            .map(|(number, request)| show(app, number, &request)),
     })
 }
 
@@ -539,7 +584,7 @@ async fn guard(
     id: &RequestId,
     rule: fn(Option<&RequestView>, &artifactize_core::types::ReviewerId) -> Option<String>,
 ) -> Result<(), Failure> {
-    let view = read(app, id).await?;
+    let (_, view) = read(app, id).await?;
     match rule(Some(&view), &app.launch.reviewer) {
         Some(refusal) => Err(Failure::Action(refusal)),
         None => Ok(()),
@@ -552,7 +597,7 @@ fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
         .lock()
         .expect("views lock")
         .get(id)
-        .cloned()
+        .map(|(_, view)| view.clone())
         .ok_or_else(|| Failure::Missing("Open the request first.".into()))
 }
 
@@ -684,7 +729,7 @@ pub async fn human_release(
         [id] => read(&app, id)
             .await
             .ok()
-            .map(|request| show(&app, &request)),
+            .map(|(number, request)| show(&app, number, &request)),
         _ => None,
     };
     Ok(Acted { notice, view })
