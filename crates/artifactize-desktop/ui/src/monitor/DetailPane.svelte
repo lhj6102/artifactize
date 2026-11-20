@@ -81,7 +81,8 @@
     return [["Drawn in", graph.wholes.join(", ")]];
   });
   const commands = useIpc();
-  const { sections } = getAppState();
+  const app = getAppState();
+  const { sections } = app;
   const d = new DetailPaneState();
   setDetailPaneState(d);
   const key = $derived(keyOf(source));
@@ -240,7 +241,8 @@
       {:else if human && detail.request}
         {#key detail.request}
           {@const reviewing = review(detail.request)}
-          {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
+          {@const request = detail.request}
+          {#if reviewing}<HumanDetail review={reviewing} {active} {onback} onopenreview={() => app.showReview(request)} />{/if}
         {/key}
       {:else}
         <RecordDetail {detail} path={source.kind !== "current"} debugFacts={tab === null ? drawnIn : []} bind:log={() => log, (value) => (d.log = value ? target : null)} />

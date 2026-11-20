@@ -1,8 +1,8 @@
-// The window's one screen against a mocked command boundary: the Pane lists the branches the
-// backend sends, expands them to their timelines and moves one selection through them and the
-// Waiting stack; a timeline entry shows its
-// Run or the branch's Current; a waiting review opens as Review; a Current scans again when
-// chosen, refreshed or when a Run of its branch ends; the search's Esc puts sort:recent back.
+// The window against a mocked command boundary: Verify's Pane lists the branches the backend
+// sends, expands them to their timelines and moves one selection through them; a timeline entry
+// shows its Run or the branch's Current; a Current scans again when chosen, refreshed or when a
+// Run of its branch ends; the search's Esc puts sort:recent back. The bottom bar switches
+// modes, each kept as it was left, and counts the waiting reviews, which Review lists and opens.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
@@ -117,6 +117,13 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
   return { calls, navigations, scanned, publish };
 }
 
+/** A mode's workspace, shown or hidden. */
+function workspace(mode: string): HTMLElement {
+  const found = document.querySelector<HTMLElement>(`main[aria-label="${mode}"]`);
+  if (!found) throw new Error(`no ${mode} workspace`);
+  return found;
+}
+
 const monitor = (request: string | null = null): LaunchView => ({ mode: "monitor", state: "/state", reviewer: "alice", request });
 
 it("opens on the Current of the branch it was started for, and scans it again on Refresh, Ctrl+R and F5", async () => {
@@ -174,7 +181,7 @@ it("draws a Current's graph at once, counting the Artifacts still being checked 
   expect(screen.getByRole("button", { name: /^Refresh/ }).hasAttribute("disabled")).toBe(false);
 });
 
-it("expands a clicked branch to its timeline, moves through timelines and the Waiting stack with the keys, and opens a review", async () => {
+it("expands a clicked branch to its timeline and moves through the timelines with the keys", async () => {
   const feature = branch("feat/x", [runChip("run-2", "RUNNING", true, "Fixing the login form"), runChip("run-1", "GREEN")]);
   const main = branch("main", [{ kind: "current" }, runChip("run-0", "RED")]);
   const { navigations, scanned } = backend(monitor(), () => browseView(1, { branches: [feature, main], waiting: [waitingRow("run-0-1")] }));
@@ -215,14 +222,38 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   await fireEvent.keyDown(entries, { key: "ArrowRight" });
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-0" } }));
-  // ↓ again only selects the waiting review; Enter opens it as Review.
+  // Verify's Pane has no waiting reviews: ↓ past the last entry stays on it.
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  const waiting = within(screen.getByRole("listbox", { name: "Waiting reviews" })).getByRole("option");
-  expect(waiting.getAttribute("aria-selected")).toBe("true");
   expect(header()).toBe("run-0");
-  await fireEvent.keyDown(entries, { key: "Enter" });
-  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Review"));
-  expect(screen.getByRole("heading", { name: "Waiting (1)" })).toBeTruthy();
+  expect(screen.queryByRole("listbox", { name: "Waiting reviews" })).toBeNull();
+});
+
+it("switches modes from the bottom bar, each kept as it was left, and lists and opens the waiting reviews in Review", async () => {
+  const main = branch("main", [runChip("run-0", "RED")]);
+  backend(monitor(), () => browseView(1, { branches: [main], waiting: [waitingRow("run-0-1")] }));
+  render(App);
+  const modes = await screen.findByRole("navigation", { name: "Modes" });
+  const mode = (name: RegExp) => within(modes).getByRole("button", { name });
+  // Verify shows first; Review carries the count of the reviews waiting.
+  expect(mode(/^Verify/).getAttribute("aria-current")).toBe("page");
+  await waitFor(() => expect(mode(/^Review/).getAttribute("aria-label")).toBe("Review, 1 waiting"));
+  await fireEvent.click(await within(screen.getByRole("group", { name: "Pane entries" })).findByRole("button", { name: /^app \/ main/ }));
+  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0"));
+  // Review lists the waiting review; a click opens it in Review's main area.
+  await fireEvent.click(mode(/^Review/));
+  expect(mode(/^Review/).getAttribute("aria-current")).toBe("page");
+  expect(workspace("Verify").hidden).toBe(true);
+  const list = screen.getByRole("listbox", { name: "Human reviews" });
+  await fireEvent.click(within(list).getByRole("option"));
+  const review = screen.getByLabelText("Review's main area");
+  await within(review).findByLabelText("Human review");
+  // Verify again: its Run is shown as it was left; Ctrl+3 shows the review again.
+  await fireEvent.keyDown(window, { key: "2", code: "Digit2", ctrlKey: true });
+  expect(workspace("Verify").hidden).toBe(false);
+  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0");
+  await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
+  expect(workspace("Review").hidden).toBe(false);
+  expect(within(review).getByLabelText("Human review")).toBeTruthy();
 });
 
 it("says a Run's verdict and what needs attention in the header row, which opens the Run's Detail", async () => {
@@ -318,7 +349,7 @@ it("scans the shown Current again when a Run of its branch ends", async () => {
 it("searches the Pane as typed, and Esc puts sort:recent back before leaving the field", async () => {
   const { navigations } = backend(monitor(), () => browseView(1, { branches: [branch("main", [{ kind: "current" }])] }));
   render(App);
-  const field = await screen.findByLabelText<HTMLInputElement>("Search branches and reviews");
+  const field = await screen.findByLabelText<HTMLInputElement>("Search the branches");
   expect(field.value).toBe("sort:recent");
   await fireEvent.keyDown(window, { key: "/" });
   expect(document.activeElement).toBe(field);
@@ -334,15 +365,17 @@ it("searches the Pane as typed, and Esc puts sort:recent back before leaving the
 it("opens the newest waiting review when started with review alone", async () => {
   backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1"), waitingRow("run-8-1")] }));
   render(App);
-  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Review"));
-  const rows = within(screen.getByRole("listbox", { name: "Waiting reviews" })).getAllByRole("option");
+  await waitFor(() => expect(screen.getByLabelText("Review's main area").querySelector("h2")?.textContent).toBe("Review"));
+  expect(workspace("Review").hidden).toBe(false);
+  const rows = within(screen.getByRole("listbox", { name: "Human reviews" })).getAllByRole("option");
   expect(rows[0].getAttribute("aria-selected")).toBe("true");
+  expect(within(screen.getByLabelText("Review's main area")).getByLabelText("Human review")).toBeTruthy();
 });
 
-it("closes a review in the Main area with the one Close in its header, after leaving the review's form", async () => {
+it("closes a review in Review with the one Close in its header, after leaving the review's form", async () => {
   backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1")] }));
   render(App);
-  const main = await screen.findByLabelText("Main area");
+  const main = await screen.findByLabelText("Review's main area");
   await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("Review"));
   const region = await within(main).findByLabelText("Human review");
   await within(main).findByRole("button", { name: "Claim to review (c)" });
@@ -360,5 +393,5 @@ it("closes a review in the Main area with the one Close in its header, after lea
   await waitFor(() => expect(within(main).queryByLabelText(/comment/)).toBeNull());
   expect(main.querySelector("h2")?.textContent).toBe("Review");
   await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("group", { name: "Pane entries" })));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Human reviews" })));
 });

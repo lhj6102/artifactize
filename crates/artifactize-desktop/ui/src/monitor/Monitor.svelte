@@ -1,17 +1,14 @@
 <script lang="ts">
-  // The window's one screen: the Pane on the left and the Main area on the right, with the
-  // divider between them while the Pane is shown; the bar's Pane switch (Ctrl+B) hides both, the
-  // Main area taking the window's width, and shows them again at the width the Pane had. A chip
-  // shows its Run or the branch's Current in the Main area, under one header row with its
-  // headline; a waiting review opens there as Review. A click on an Artifact (or on the Run's
-  // headline) opens its Detail, a panel docked at the graph's right edge under its tool strip;
-  // dragging its left edge sets its width, kept like the split ratio.
-  import { Dialog } from "bits-ui";
+  // Verify: the Pane on the left and the Main area on the right, with the divider between them
+  // while the Pane is shown; the bar's Pane switch (Ctrl+B) hides both, the Main area taking the
+  // workspace's width, and shows them again at the width the Pane had. A chip shows its Run or
+  // the branch's Current in the Main area, under one header row with its headline. A click on an
+  // Artifact (or on the Run's headline) opens its Detail, a panel docked at the graph's right
+  // edge under its tool strip; dragging its left edge sets its width, kept like the split ratio.
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import type { BranchKey, BranchView, BrowseView, Chip, WaitingRow } from "../ipc/client";
-  import { call, message } from "../ipc/client";
+  import type { BranchKey, BranchView, BrowseView, Chip } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
   import { KEEP, MIN, clampWidth, saveWidth } from "./detail-width";
@@ -23,9 +20,7 @@
   import CurrentView from "./CurrentView.svelte";
   import ScanState from "./ScanState.svelte";
   import DetailPane from "./DetailPane.svelte";
-  import RecordDetail from "./RecordDetail.svelte";
-  import HumanDetail from "../review/HumanDetail.svelte";
-  import { Review } from "../review/review.svelte";
+  import type { Review } from "../review/review.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
   import EditDialogs from "./EditDialogs.svelte";
@@ -36,28 +31,24 @@
 
   const view = $derived(browse.view);
   const branches = $derived(view?.branches ?? []);
-  const waiting = $derived(view?.waiting ?? []);
   const shown = $derived(m.shown);
   const run = $derived(shown.kind === "run" && view?.run.kind === "read" && view.run.id === shown.run ? view.run : null);
   const source = $derived(sourceOf(shown));
   /** The branch whose Run or Current is shown, also while the Pane's search leaves it out. */
   const branch = $derived(shown.kind === "run" || shown.kind === "current" ? browse.branch(shown.branch) : null);
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
-  const review = $derived(shown.kind === "review" ? app.reviews[shown.id] : undefined);
   /** The pane's search: the library's, overridden while typed until a pause searches it; a
    * failed search puts the library's back. */
   let query = $derived(browse.query);
   let typing: ReturnType<typeof setTimeout> | undefined;
 
-  /** The entries the keys move through: each branch and, expanded, its timeline, then the
-   * Waiting stack. */
-  const entries = $derived<Entry[]>([
-    ...branches.flatMap((item): Entry[] => [
+  /** The entries the keys move through: each branch and, expanded, its timeline. */
+  const entries = $derived<Entry[]>(
+    branches.flatMap((item): Entry[] => [
       { kind: "branch", branch: item.key },
       ...(m.expanded.has(keyOf(item.key)) ? item.chips.map((chip): Entry => ({ kind: "chip", branch: item.key, chip: chipKey(chip) })) : []),
     ]),
-    ...waiting.map((row): Entry => ({ kind: "waiting", id: row.id })),
-  ]);
+  );
   const branchOf = (key: BranchKey) => branches.find((candidate) => keyOf(candidate.key) === keyOf(key));
 
   /** The chip of `item` shown in the Main area, by its index. */
@@ -117,43 +108,8 @@
     else m.expanded.add(key);
   }
 
-  /** Open a waiting review in the Main area. */
-  function openReview(id: string) {
-    app.review(id);
-    m.finding = false;
-    m.shown = { kind: "review", id };
-    m.opened = null;
-    current.clear();
-    void browse.close();
-  }
-
-  function openWaiting(row: WaitingRow) {
-    m.selected = { kind: "waiting", id: row.id };
-    openReview(row.id);
-    void focus("main");
-  }
-
-  /** Open a request by ID in any repository: a waiting Human review as Review, any other
-   * request, a settled Human one included, read-only. */
-  async function openId(id: string) {
-    try {
-      const detail = await call(app.ipc.requestDetail(id));
-      const waiting = detail.mark?.status === "WAITING_HUMAN" || detail.mark?.status === "DEFERRED";
-      if (detail.profile === "human" && waiting) return openReview(id);
-      m.folds = { log: false };
-      m.shown = { kind: "request", detail };
-      m.finding = false;
-      m.opened = null;
-      current.clear();
-      void browse.close();
-      void focus("main");
-    } catch (failure) {
-      browse.error = message(failure);
-    }
-  }
-
   /** Move the selection by `by` entries: a branch shows its newest entry, a timeline entry
-   * shows itself, a review is only selected. Down past a timeline's oldest entry, older Runs
+   * shows itself. Down past a timeline's oldest entry, older Runs
    * are asked for before the next branch is reached. */
   function move(by: number) {
     if (entries.length === 0) return;
@@ -165,20 +121,17 @@
     }
     const next = entries[Math.max(0, Math.min(entries.length - 1, at < 0 ? 0 : at + by))];
     if (entryKey(next) === entryKey(selected)) return;
-    if (next.kind === "waiting") m.selected = next;
-    else {
-      const item = branchOf(next.branch);
-      const chip = next.kind === "chip" ? item?.chips.find((candidate) => chipKey(candidate) === next.chip) : undefined;
-      if (item && chip) choose(item, chip);
-      else if (item) select(item);
-    }
+    const item = branchOf(next.branch);
+    const chip = next.kind === "chip" ? item?.chips.find((candidate) => chipKey(candidate) === next.chip) : undefined;
+    if (item && chip) choose(item, chip);
+    else if (item) select(item);
   }
 
   /** → expands the selected branch, or enters its timeline when expanded; ← steps from a
    * timeline entry back to its branch, or folds an expanded branch. */
   function step(by: number) {
     const selected = m.selected;
-    if (selected === null || selected.kind === "waiting") return;
+    if (selected === null) return;
     const item = branchOf(selected.branch);
     if (!item) return;
     const key = keyOf(item.key);
@@ -193,12 +146,10 @@
   /** Move focus to the Pane's entries, the Main area or the Detail; the Pane shows first when
    * it is hidden. */
   async function focus(to: Focus) {
-    if (to === "pane") m.paneShown = true;
+    if (to === "pane") app.paneShown = true;
     m.focus = to;
     await tick();
-    const pane = panes[to];
-    if (to === "main" && review) (pane?.querySelector<HTMLElement>('[aria-label="Human review"]') ?? pane)?.focus();
-    else pane?.focus();
+    panes[to]?.focus();
   }
 
   /** What a snapshot changes here, as it is accepted. */
@@ -207,7 +158,6 @@
     if (next.replaced) {
       m.opened = null;
       app.forgetReviews();
-      if (m.shown.kind === "review" || m.shown.kind === "request") m.shown = { kind: "none" };
       if (m.focus === "detail") m.focus = "main";
     }
     // Leaving the shown Run (or losing it) closes its Detail; so does losing the node, which the
@@ -222,21 +172,7 @@
       const ended = before !== undefined && before.some((id) => !now.includes(id));
       if (ended && m.shown.kind === "current" && keyOf(m.shown.branch) === keyOf(item.key)) void current.scan(item.key);
     }
-    // The state changed (another process, Ctrl+R or F5): a request shown by ID is read again.
-    const byId = m.shown.kind === "request" ? m.shown.detail.request : null;
-    if (byId !== null && next.revision !== m.followed) void reread(byId);
-    m.followed = next.revision;
     start(next);
-  }
-
-  /** Read the request shown by ID again, unless another one was opened meanwhile. */
-  async function reread(id: string) {
-    try {
-      const detail = await call(app.ipc.requestDetail(id));
-      if (m.shown.kind === "request" && m.shown.detail.request === id) m.shown = { kind: "request", detail };
-    } catch (failure) {
-      browse.error = message(failure);
-    }
   }
 
   /** Open what the launch asked for, once, on the first snapshot read. */
@@ -245,11 +181,8 @@
     m.started = true;
     const launched = next.launch === null ? undefined : next.branches.find((item) => keyOf(item.key) === keyOf(next.launch!));
     const mode = app.launch.mode;
-    if (mode === "review") {
-      if (app.launch.request) void openId(app.launch.request);
-      else if (next.waiting.length > 0) openWaiting(next.waiting[0]);
-      return;
-    }
+    // A review's launch opens Review, which takes it.
+    if (mode === "review") return;
     // The launched branch opens expanded, so the entry it shows is in view.
     if (launched) m.expanded.add(keyOf(launched.key));
     if (launched && mode === "graph") {
@@ -313,12 +246,6 @@
     if (inside) void focus("main");
   }
 
-  /** Close of a request or a review in the Main area returns to the Pane; a review first
-   * cancels its running work, then leaves its form, as Esc in it does. */
-  function closeMain() {
-    if (review === undefined || review.escape()) void focus("pane");
-  }
-
   /** Esc in the Main area closes its Detail, else steps back to the Pane. */
   function back() {
     if (m.opened) closeDetail();
@@ -327,14 +254,8 @@
 
 
   function mainKey(event: KeyboardEvent) {
-    // A review takes its own keys; a read-only request has its folds.
-    if (shown.kind === "review") return;
-    if (shown.kind === "request" && !plain(event, "Escape") && !plain(event, "ArrowLeft")) {
-      if (m.folds.log) return;
-      if (plain(event, "t")) app.sections.toggle(shown.detail.target === "run" ? "Technical" : "Debug");
-      else return;
-    } else if (plain(event, "Escape") || (shown.kind === "request" && plain(event, "ArrowLeft"))) back();
-    else return;
+    if (!plain(event, "Escape")) return;
+    back();
     event.preventDefault();
   }
 
@@ -361,9 +282,6 @@
   const title = $derived.by(() => {
     if (shown.kind === "run") return shown.run;
     if (shown.kind === "current") return branch ? `Current · ${branch.project}${branch.name ? `  ${branch.name}` : ""}` : "Current";
-    // A completed review is read-only, like any request that waits for nothing (D-REV-6).
-    if (shown.kind === "review") return review?.settled ? "Review · read-only" : "Review";
-    if (shown.kind === "request") return `${shown.detail.title} · read-only`;
     return "Nothing chosen";
   });
   // A refused edit on a Current's graph says why here, before what else went wrong: it is what
@@ -430,7 +348,7 @@
 
 <div class="monitor">
   <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">
-    {#if m.paneShown}
+    {#if app.paneShown}
       <Split id="pane" order={1} defaultSize={24} minSize={PANE_MIN}>
         <Pane
           bind:query={() => query, setQuery}
@@ -438,7 +356,6 @@
           onselect={open}
           ontoggle={toggle}
           onchoose={choose}
-          onopen={openWaiting}
           onmove={move}
           onstep={step}
           onmain={() => void focus("main")}
@@ -446,7 +363,7 @@
       </Split>
       <PaneResizer class="resizer" />
     {/if}
-    <Split id="main" order={2} defaultSize={m.paneShown ? 76 : 100} minSize={mainMin}>
+    <Split id="main" order={2} defaultSize={app.paneShown ? 76 : 100} minSize={mainMin}>
       <!-- The dragged width is the stage's, so the Detail, the Navigator beside it and a review's
            side column all take it. -->
       <div
@@ -470,15 +387,11 @@
               <RunHeadline {run} onrun={openRun} />
             {:else if shown.kind === "current"}
               <ScanState branch={shown.branch} />
-            {:else if shown.kind === "review" && review?.view}
-              <span class="title">{review.view.title}</span>
             {/if}
           {/snippet}
           {#snippet actions()}
             {#if shown.kind === "current"}
               <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" onclick={() => void current.scan(shown.branch, true)}>Refresh</button>
-            {:else if (shown.kind === "request" || shown.kind === "review") && !m.settings}
-              <button class="button small" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={closeMain}>Close</button>
             {/if}
           {/snippet}
           {#if shown.kind === "run"}
@@ -491,19 +404,8 @@
             {/if}
           {:else if shown.kind === "current"}
             <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
-          {:else if shown.kind === "review"}
-            {#if review}
-              {#key review}
-                <HumanDetail {review} active={!m.settings} wide onback={() => void focus("pane")} />
-              {/key}
-            {/if}
-          {:else if shown.kind === "request"}
-            {#key shown.detail.request}
-              <!-- A read-only request reads as a review does: one column at the left, no wider than the measure. -->
-              <div class="record"><RecordDetail detail={shown.detail} bind:log={m.folds.log} /></div>
-            {/key}
           {:else}
-            <p class="empty">{m.paneShown ? "Choose a branch or a waiting review in the Pane." : "Show the Pane with the Pane switch to choose a branch or a waiting review."}</p>
+            <p class="empty">{app.paneShown ? "Choose a branch in the Pane." : "Show the Pane with the Pane switch to choose a branch."}</p>
           {/if}
         </Panel>
         {#if m.opened && source && keyOf(m.opened.source) === keyOf(source)}
@@ -519,7 +421,7 @@
               node={m.opened.node}
               tab={m.opened.tab}
               focused={m.focus === "detail"}
-              active={!m.settings}
+              active={!m.settings && app.mode === "verify"}
               review={reviewOf}
               openReview={noteReview}
               bind:element={panes.detail}
@@ -544,45 +446,8 @@
   }}
 />
 
-<Dialog.Root bind:open={app.asking}>
-  <Dialog.Portal>
-    <Dialog.Overlay class="overlay" />
-    <Dialog.Content
-      class="dialog open-id"
-      onCloseAutoFocus={(event) => {
-        // An opened request takes focus, not what had it before the dialog.
-        if (m.focus !== "main") return;
-        event.preventDefault();
-        void focus("main");
-      }}
-    >
-      <Dialog.Title class="dialog-title">Open a request by ID</Dialog.Title>
-      <form
-        onsubmit={(event) => {
-          event.preventDefault();
-          if (m.wanted.trim()) {
-            void openId(m.wanted.trim());
-            app.asking = false;
-            m.wanted = "";
-          }
-        }}
-      >
-        <input class="input" placeholder="req-…" bind:value={m.wanted} aria-label="Request ID" />
-        <div class="dialog-actions">
-          <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
-          <button class="button primary" type="submit" aria-keyshortcuts="Enter">Open</button>
-        </div>
-      </form>
-    </Dialog.Content>
-  </Dialog.Portal>
-</Dialog.Root>
 
 <style>
-  .record {
-    height: 100%;
-    min-height: 0;
-    max-width: var(--measure);
-  }
   .monitor {
     height: 100%;
     min-height: 0;
@@ -642,28 +507,5 @@
     grid-template-rows: auto minmax(0, 1fr);
     height: 100%;
     min-height: 0;
-  }
-  /* A review's eval and title, said once, in the header row. */
-  .title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--ink-2);
-  }
-  :global(.dialog.open-id) {
-    width: min(480px, 92vw);
-  }
-  .input::placeholder {
-    color: var(--ink-3);
-  }
-  .input {
-    width: 100%;
-    height: var(--control);
-    font: inherit;
-    padding: 0 8px;
-    border: 1px solid var(--line-input);
-    border-radius: var(--radius-control);
-    background: var(--surface-input);
-    color: var(--ink);
   }
 </style>

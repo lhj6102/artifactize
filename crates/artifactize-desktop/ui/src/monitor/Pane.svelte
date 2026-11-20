@@ -1,15 +1,12 @@
 <script lang="ts">
-  // The one left column: the Search at the top, the live Branches below it and the Waiting
-  // stack at the bottom. A branch reads as `project / branch` with its newest Run's status;
-  // expanded, it lists its timeline under its name. ↑ ↓ move one selection through the
-  // branches, the expanded timelines and then the Waiting stack; → expands the selected branch
-  // or enters its timeline, ← steps back out or folds it; Enter goes to the Main area, or opens
-  // the selected waiting review. The stack is a thin bar with no review waiting and grows
-  // upward with each one, up to half the Pane, beyond which it scrolls.
-  import type { BranchView, Chip, WaitingRow } from "../ipc/client";
+  // Verify's left column: the Search at the top and the live Branches below it. A branch reads
+  // as `project / branch` with its newest Run's status; expanded, it lists its timeline under
+  // its name. ↑ ↓ move one selection through the branches and the expanded timelines; →
+  // expands the selected branch or enters its timeline, ← steps back out or folds it; Enter goes
+  // to the Main area. The reviews waiting for a person are Review's.
+  import type { BranchView, Chip } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
-  import { statusIcon } from "../shell/icons";
   import SearchField from "../shell/SearchField.svelte";
   import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
@@ -23,7 +20,6 @@
     onselect,
     ontoggle,
     onchoose,
-    onopen,
     onmove,
     onstep,
     onmain,
@@ -38,8 +34,6 @@
     ontoggle: (branch: BranchView) => void;
     /** Show an entry of a branch's timeline. */
     onchoose: (branch: BranchView, chip: Chip) => void;
-    /** Open a waiting review in the Main area. */
-    onopen: (row: WaitingRow) => void;
     /** Move the selection by one entry. */
     onmove: (by: number) => void;
     /** → (1) or ← (-1) on the selection. */
@@ -52,7 +46,6 @@
 
   const view = $derived(browse.view);
   const branches = $derived(view?.branches ?? []);
-  const waiting = $derived(view?.waiting ?? []);
   const selected = $derived(m.selected);
   const invalid = $derived(view?.query.error ?? null);
 
@@ -70,11 +63,8 @@
     else if (plain(event, "ArrowUp") || plain(event, "k")) onmove(-1);
     else if (plain(event, "ArrowLeft")) onstep(-1);
     else if (plain(event, "ArrowRight")) onstep(1);
-    else if (plain(event, "Enter")) {
-      const row = selected?.kind === "waiting" ? waiting.find((item) => item.id === selected.id) : undefined;
-      if (row) onopen(row);
-      else if (selected) onmain();
-    } else return;
+    else if (plain(event, "Enter") && selected) onmain();
+    else return;
     event.preventDefault();
   }
 
@@ -87,13 +77,13 @@
   <SearchField
     bind:value={query}
     bind:input={m.panes.search}
-    label="Search branches and reviews"
+    label="Search the branches"
     placeholder="Search: text, repo:, branch:, sort:recent, sort:name"
     reset={browse.start}
     complete={(text) => browse.complete(text)}
     onleave={() => m.panes.pane?.focus()}
   />
-  <!-- The keys move one selection through both lists; they bubble up from any entry. -->
+  <!-- The keys move one selection through the branches; they bubble up from any entry. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div
     class="entries"
@@ -154,29 +144,6 @@
         </li>
       {/each}
     </ul>
-    <section class="waiting" aria-label="Waiting">
-      <!-- With none waiting, the thin bar reads (0) alone. -->
-      <h2 class="bar">{waiting.length > 0 ? "Waiting " : ""}({waiting.length})</h2>
-      {#if waiting.length > 0}
-        <ul role="listbox" aria-label="Waiting reviews">
-          {#each waiting as row (row.id)}
-            <li
-              role="option"
-              aria-selected={isSelected(row.id)}
-              class:selected={isSelected(row.id)}
-              data-key={row.id}
-              onclick={() => onopen(row)}
-              onkeydown={() => {}}
-            >
-              <span class="glyph tone-human"><Icon name={statusIcon(row.mark.status)} /></span>
-              <span class="eval">{row.eval}</span>
-              <span class="where">{row.branch ? `${row.project}  ${row.branch}` : row.project}</span>
-              <span class="meta">{row.age}{#if row.claim !== "-"}{` · ${row.claim}`}{/if}</span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
   </div>
 </section>
 
@@ -330,62 +297,6 @@
   .entries:focus-within .selected,
   .entries:focus-within .branch :global(li.selected > .entry) {
     box-shadow: inset 2px 0 0 var(--accent);
-  }
-  /* Grows upward like a stack, up to half the Pane; beyond that it scrolls. */
-  .waiting {
-    flex: 0 0 auto;
-    max-height: 50%;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    border-top: 1px solid var(--line-group);
-  }
-  /* A section label: 11px uppercase in secondary ink. */
-  .bar {
-    margin: 0;
-    padding: 4px var(--pad);
-    font-size: var(--text-label);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ink-2);
-  }
-  .waiting ul {
-    min-height: 0;
-    overflow: auto;
-  }
-  .waiting li {
-    display: grid;
-    grid-template-columns: 1em minmax(0, 1fr);
-    gap: 0 8px;
-    padding: 3px var(--pad);
-    font-size: var(--text-small);
-    cursor: pointer;
-  }
-  .glyph {
-    display: inline-flex;
-    align-items: center;
-  }
-  .waiting li:hover {
-    background: var(--surface-group);
-  }
-  .waiting li.selected {
-    background: var(--selection);
-  }
-  .eval,
-  .where,
-  .meta {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .where,
-  .meta {
-    grid-column: 2;
-    color: var(--ink-2);
-    white-space: pre;
-    font-variant-numeric: tabular-nums;
   }
   .empty {
     color: var(--ink-2);

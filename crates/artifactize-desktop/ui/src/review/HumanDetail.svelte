@@ -29,6 +29,7 @@
     wide = false,
     onback,
     onsubmitted,
+    onopenreview,
   }: {
     review: Review;
     /** Its screen is shown: only then it offers palette commands. */
@@ -38,6 +39,8 @@
     onback: () => void;
     /** A submission settled the request, published or saved locally only. */
     onsubmitted?: (settled: Settled) => void;
+    /** Shown outside Review (a Human eval's tab in the Detail): open it there (D-INS-12). */
+    onopenreview?: () => void;
   } = $props();
   const { sections, monitor: m } = getAppState();
   const h = new HumanDetailState();
@@ -158,6 +161,9 @@
   <div class="head">
     {#if stage}<span class="stage" data-stage={view?.stage}>{stage}</span>{/if}
     {#if view?.claim && !view.claim.mine && !review.owned}<span class="claimant">{view.claim.reviewer}</span>{/if}
+    {#if onopenreview && view?.stage !== "completed"}
+      <button class="reference" onclick={onopenreview}><Icon name="open" />Open in Review</button>
+    {/if}
   </div>
 {/snippet}
 
@@ -324,6 +330,24 @@
   .stage[data-stage="review"] {
     background: var(--accent-soft);
     color: var(--accent);
+  }
+  /* A reference to another mode: a text button in the accent led by the open icon (D-REF-1). */
+  .reference {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 0 4px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: var(--text-small);
+    cursor: pointer;
+  }
+  .reference:hover {
+    background: var(--surface-group);
   }
   .claimant,
   .muted,

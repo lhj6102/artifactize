@@ -13,6 +13,7 @@ const WINDOW: Section = {
   title: "Window",
   keys: [
     ["Ctrl+K", "Command palette"],
+    ["Ctrl+1 / 2 / 3", "Show Chat, Verify or Review"],
     ["Ctrl+B", "Show or hide the Pane"],
     ["Ctrl+,", "Settings, and back"],
     ["Ctrl+O", "Open a request by ID"],
@@ -64,9 +65,9 @@ const KEYS: Record<Focused, Section[]> = {
     {
       title: "Pane",
       keys: [
-        ["↑ / ↓ · j / k", "Select a branch, a timeline entry or a waiting review"],
+        ["↑ / ↓ · j / k", "Select a branch or a timeline entry; in Review, a review"],
         ["← / →", "Fold or expand the branch, or step out of or into its timeline"],
-        ["Enter", "Go to the Main area, or open the waiting review"],
+        ["Enter", "Go to the Main area; in Review, open the selected review"],
       ],
     },
     {

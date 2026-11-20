@@ -1,22 +1,24 @@
 <script lang="ts">
-  // The window: its one screen over one state, the command palette, help, and what happens on
-  // quit.
+  // The window: three modes over one state, each a workspace of its own above the bottom bar,
+  // the command palette, help, Open by ID, and what happens on quit. Every mode stays mounted,
+  // the hidden ones out of sight and out of reach, so each keeps its place.
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { Dialog } from "bits-ui";
   import { onMount, tick } from "svelte";
-  import brandMark from "../../../../assets/brand/artifactize-icon-mark.svg";
   import { call, message, onCurrentChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
   import Monitor from "./monitor/Monitor.svelte";
+  import ReviewMode from "./review/ReviewMode.svelte";
+  import ChatMode from "./chat/ChatMode.svelte";
+  import BottomBar from "./shell/BottomBar.svelte";
   import LeaveDialog from "./review/LeaveDialog.svelte";
   import Palette from "./shell/Palette.svelte";
   import Help from "./shell/Help.svelte";
   import Settings from "./settings/Settings.svelte";
   import ReleaseDialog from "./shell/ReleaseDialog.svelte";
   import { useCommands } from "./shell/commands.svelte";
-  import { chord, composing, editable, label, plain } from "./shell/keys";
+  import { chord, composing, editable, plain } from "./shell/keys";
   import { help, type Focused } from "./shell/shortcuts";
-  import Icon from "./shell/Icon.svelte";
-  import { AppState, setAppState } from "./shell/app.svelte";
+  import { AppState, MODES, setAppState, type WindowMode } from "./shell/app.svelte";
   import { sourceOf } from "./monitor/monitor-state.svelte";
 
   import { exposeActivity, refreshed, setActivity } from "./ipc/activity.svelte";
@@ -25,7 +27,9 @@
   setActivity(app.activity);
   const commands = app.ipc;
   setAppState(app);
-  const { browse, current, leaving, monitor: m, release } = app;
+  const { browse, current, leaving, monitor: m, release, reviewMode: r } = app;
+  /** The ID typed into the Open by ID dialog. */
+  let wanted = $state("");
 
   onMount(() => {
     const hideActivity = exposeActivity(app.activity);
@@ -88,26 +92,51 @@
 
   async function search() {
     m.settings = false;
-    m.paneShown = true;
+    app.mode = "verify";
+    app.paneShown = true;
     await tick();
     m.panes.search?.focus();
     m.panes.search?.select();
   }
 
-  /** Hide the Pane and its divider, or show them again as they were; focus in a Pane that
-   * hides moves to the Main area. */
+  /** Hide every mode's Pane and its divider, or show them again as they were; focus in a Pane
+   * that hides moves to its mode's main area. */
   async function togglePane() {
-    const inside = m.panes.pane?.contains(document.activeElement) || m.panes.search === document.activeElement || m.focus === "pane";
-    m.paneShown = !m.paneShown;
-    if (m.paneShown || !inside) return;
-    m.focus = "main";
+    const verify = app.mode === "verify" && (m.panes.pane?.contains(document.activeElement) || m.panes.search === document.activeElement || m.focus === "pane");
+    const review = app.mode === "review" && (r.panes.pane?.contains(document.activeElement) || r.focus === "pane");
+    app.paneShown = !app.paneShown;
+    if (app.paneShown) return;
+    if (verify) m.focus = "main";
+    if (review) r.focus = "main";
+    if (!verify && !review) return;
     await tick();
-    m.panes.main?.focus();
+    (verify ? m.panes.main : r.panes.main)?.focus();
+  }
+
+  /** Show a mode: the workspace above the bar changes, each mode as it was left. */
+  function show(mode: WindowMode) {
+    m.settings = false;
+    app.mode = mode;
+  }
+
+  /** Open the request typed into Open by ID in Review. */
+  function openWanted(event: SubmitEvent) {
+    event.preventDefault();
+    const id = wanted.trim();
+    if (!id) return;
+    app.asking = false;
+    wanted = "";
+    void app.openRequest(id).then(async () => {
+      r.focus = "main";
+      await tick();
+      r.panes.main?.focus();
+    });
   }
 
   useCommands(() => [
     { id: "app.help", group: "App", label: "Keyboard shortcuts", keys: "?", run: () => (app.help = true) },
     { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => (m.settings = true) },
+    ...MODES.map((item) => ({ id: `app.mode.${item.mode}`, group: "App", label: `Show ${item.label}`, keys: item.keys, run: () => show(item.mode) })),
     { id: "app.pane", group: "App", label: "Show or hide the Pane", keys: "Ctrl+B", run: () => void togglePane() },
     { id: "app.search", group: "App", label: "Search the branches", keys: "/", run: () => void search() },
     { id: "app.open-id", group: "App", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
@@ -120,9 +149,13 @@
 
   function keydown(event: KeyboardEvent) {
     if (event.defaultPrevented || composing(event)) return;
+    const mode = MODES.find((item) => chord(event, item.keys.slice(-1)));
     if (chord(event, "k") || (event.key === "F1" && !event.ctrlKey)) {
       event.preventDefault();
       app.palette = true;
+    } else if (mode && free()) {
+      event.preventDefault();
+      show(mode.mode);
     } else if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === "," || event.code === "Comma")) {
       event.preventDefault();
       settings();
@@ -132,7 +165,7 @@
     } else if (chord(event, "b") && free()) {
       event.preventDefault();
       void togglePane();
-    } else if (chord(event, "f") && sourceOf(m.shown) !== null && m.focus !== "pane" && !editable(event.target) && free()) {
+    } else if (chord(event, "f") && app.mode === "verify" && sourceOf(m.shown) !== null && m.focus !== "pane" && !editable(event.target) && free()) {
       // Outside fields and the Pane, Ctrl+F finds in a graph. Otherwise it searches the Pane.
       event.preventDefault();
       m.finding = true;
@@ -152,12 +185,13 @@
     }
   }
 
-  /** What has focus, as Help lists its keys: Settings, the Pane, a Human review (in the Main
-   * area, or on the Detail's tab), or a graph with its Detail. */
+  /** What has focus, as Help lists its keys: Settings, Verify's Pane, a Human review (in
+   * Review, or on the Detail's tab), or a graph with its Detail. */
   const focused = $derived.by((): Focused => {
     if (m.settings) return "settings";
+    if (app.mode === "review") return r.focus === "pane" ? "pane" : "review";
     if (m.focus === "pane") return "pane";
-    if (m.shown.kind === "review" || (m.focus === "detail" && m.opened?.request !== undefined)) return "review";
+    if (m.focus === "detail" && m.opened?.request !== undefined) return "review";
     return m.shown.kind === "current" ? "current" : "graph";
   });
   const keys = $derived(help(focused));
@@ -166,30 +200,37 @@
 <svelte:window onkeydown={keydown} />
 
 <div class="app">
-  <header class="bar" class:raised={m.settings}>
-    <div class="brand"><img src={brandMark} alt="" width="16" height="16" />Artifactize</div>
-    <!-- The Pane switch: on (a line under it) while the Pane is shown. -->
-    <button class="switch" class:on={m.paneShown} aria-pressed={m.paneShown} aria-label="Pane (Ctrl+B)" aria-keyshortcuts="Control+B" onclick={() => void togglePane()}>
-      <Icon name="pane" />Pane
-    </button>
-    <div class="spacer"></div>
-    {#if app.launch}<span class="muted reviewer" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
-    {#if release.notice}
-      <button class="button" onclick={() => (release.open = true)}>{release.notice.latest} available</button>
-    {/if}
-    <button class="button" aria-pressed={m.settings} aria-label="Settings (Ctrl+,)" aria-keyshortcuts="Control+," data-settings-toggle onclick={settings}>Settings</button>
-    <button class="button" aria-keyshortcuts="Control+K" onclick={() => (app.palette = true)}>
-      Commands <kbd>{label("Ctrl+K")}</kbd>
-    </button>
-  </header>
   {#if app.failure}
     <p class="failure">{app.failure}</p>
   {:else if app.launch}
-    <main>
-      <Monitor />
-    </main>
+    <!-- The three workspaces share one place; the hidden ones keep their size and their place,
+         out of sight and out of reach. -->
+    <div class="workspaces">
+      <main class="workspace" aria-label="Chat" hidden={app.mode !== "chat"} inert={app.mode !== "chat"}><ChatMode /></main>
+      <main class="workspace" aria-label="Verify" hidden={app.mode !== "verify"} inert={app.mode !== "verify"}><Monitor /></main>
+      <main class="workspace" aria-label="Review" hidden={app.mode !== "review"} inert={app.mode !== "review"}><ReviewMode /></main>
+    </div>
+  {:else}
+    <div></div>
   {/if}
+  <BottomBar ontogglepane={() => void togglePane()} onsettings={settings} />
 </div>
+
+<Dialog.Root bind:open={app.asking}>
+  <Dialog.Portal>
+    <Dialog.Overlay class="overlay" />
+    <Dialog.Content class="dialog open-id">
+      <Dialog.Title class="dialog-title">Open a request by ID</Dialog.Title>
+      <form onsubmit={openWanted}>
+        <input class="input" placeholder="req-…" bind:value={wanted} aria-label="Request ID" />
+        <div class="dialog-actions">
+          <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
+          <button class="button primary" type="submit" aria-keyshortcuts="Enter">Open</button>
+        </div>
+      </form>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
 
 <!-- Settings opens over the screen; closing it leaves the screen beneath as it was. The bar
      stays above it, so its Settings button closes it again. -->
@@ -211,76 +252,44 @@
 />
 
 <style>
-  /* Nothing the screen shows widens the window's layout. */
+  /* Nothing the screen shows widens the window's layout: the workspace above, the bar below. */
   .app {
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
     grid-template-columns: minmax(0, 1fr);
     height: 100%;
   }
-  /* The global bar: the darkest surface, closed below by a panel line. */
-  .bar {
-    display: flex;
-    align-items: center;
-    gap: var(--gap);
-    height: var(--bar-height);
-    padding: 0 var(--pad);
-    border-bottom: 1px solid var(--line-panel);
-    background: var(--surface-bar);
+  /* The modes stack in one place; only the shown one is visible. A hidden one keeps its size,
+   * so its graph's camera and its scroll stay as they were. */
+  .workspaces {
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    min-height: 0;
   }
-  /* Above the Settings overlay and dialog. */
-  .raised {
-    position: relative;
-    z-index: 52;
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 8px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-  }
-  /* Borderless: ink over a 2px accent line while the Pane is shown, secondary ink without it. */
-  .switch {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: var(--control);
-    margin: 0 0 0 4px;
-    padding: 0 8px;
-    border: 0;
-    border-radius: var(--radius-control);
-    background: none;
-    color: var(--ink-2);
-    font: inherit;
-    cursor: pointer;
-    box-shadow: inset 0 -2px 0 transparent;
-  }
-  .switch.on {
-    color: var(--ink);
-    box-shadow: inset 0 -2px 0 var(--accent);
-  }
-  .switch:hover {
-    background: var(--surface-group);
-  }
-  .spacer {
-    flex: 1;
-  }
-  .muted {
-    color: var(--ink-2);
-  }
-  /* A long reviewer name is cut inside the bar; the buttons after it keep their place. */
-  .reviewer {
+  .workspace {
+    grid-area: 1 / 1;
+    min-height: 0;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  .bar :global(.button),
-  .brand {
-    flex: none;
+  .workspace[hidden] {
+    display: block;
+    visibility: hidden;
+  }
+  :global(.dialog.open-id) {
+    width: min(480px, 92vw);
+  }
+  .input::placeholder {
+    color: var(--ink-3);
+  }
+  .input {
+    width: 100%;
+    height: var(--control);
+    font: inherit;
+    padding: 0 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
   }
   main {
     min-height: 0;
