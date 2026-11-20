@@ -47,6 +47,9 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                     StateChanged { resync: false }.emit(&hub)
                 }
                 Change::Resync => StateChanged { resync: true }.emit(&hub),
+                Change::DraftInvalidated(id) => {
+                    crate::human::draft::HumanDraftChanged { id: id.into() }.emit(&hub)
+                }
                 Change::SessionInvalidated(id) => SessionChanged { session: id.into() }.emit(&hub),
             };
             // The app is closing; nobody listens any more.

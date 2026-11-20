@@ -27,6 +27,15 @@ impl From<Verdict> for runtime::Verdict {
     }
 }
 
+impl From<runtime::Verdict> for Verdict {
+    fn from(verdict: runtime::Verdict) -> Self {
+        match verdict {
+            runtime::Verdict::Green => Self::Green,
+            runtime::Verdict::Red => Self::Red,
+        }
+    }
+}
+
 /// How one owner field is entered.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -86,6 +95,56 @@ pub enum FieldValue {
     Groups(Vec<Vec<(String, FieldValue)>>),
 }
 
+impl From<FieldValue> for review::FieldValue {
+    fn from(value: FieldValue) -> Self {
+        match value {
+            FieldValue::Fixed => Self::Fixed,
+            FieldValue::Bool(value) => Self::Bool(value),
+            FieldValue::Choice(value) => Self::Choice(value),
+            FieldValue::Text(value) => Self::Text(value),
+            FieldValue::Integer(value) => Self::Integer(value),
+            FieldValue::Number(value) => Self::Number(value),
+            FieldValue::List(value) => Self::List(value),
+            FieldValue::Groups(groups) => Self::Groups(
+                groups
+                    .into_iter()
+                    .map(|fields| {
+                        fields
+                            .into_iter()
+                            .map(|(name, value)| (name, value.into()))
+                            .collect()
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl From<review::FieldValue> for FieldValue {
+    fn from(value: review::FieldValue) -> Self {
+        match value {
+            review::FieldValue::Fixed => Self::Fixed,
+            review::FieldValue::Bool(value) => Self::Bool(value),
+            review::FieldValue::Choice(value) => Self::Choice(value),
+            review::FieldValue::Text(value) => Self::Text(value),
+            review::FieldValue::Integer(value) => Self::Integer(value),
+            review::FieldValue::Number(value) => Self::Number(value),
+            review::FieldValue::List(value) => Self::List(value),
+            review::FieldValue::Groups(groups) => Self::Groups(
+                groups
+                    .into_iter()
+                    .map(|fields| {
+                        fields
+                            .into_iter()
+                            .map(|(name, value)| (name, value.into()))
+                            .collect()
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
 /// The frontend's draft of one verdict: field values by name.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -137,82 +196,40 @@ pub fn template(
         Some(kept) if kept.verdict == verdict => filled(request, kept)?,
         _ => new(request, verdict)?,
     };
-    Ok(FormView {
+    Ok(project(verdict, &form))
+}
+
+pub(super) fn project(verdict: Verdict, form: &Form) -> FormView {
+    FormView {
         verdict,
         fields: form.fields.iter().map(form_field).collect(),
-        draft: draft_of(verdict, &form),
-    })
+        draft: draft_of(verdict, form),
+    }
 }
 
 /// The review's form for `draft`: the recorded schema's fields with the draft's values.
 fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
-    let mut form = new(request, draft.verdict)?;
-    fill(&mut form.fields, &draft.fields);
-    Ok(form)
-}
-
-/// `fields` holding the draft `values` their kinds take, by name.
-fn fill(fields: &mut [Field], values: &[(String, FieldValue)]) {
-    for field in fields {
-        let Some((_, value)) = values.iter().find(|(name, _)| *name == field.name) else {
-            continue;
-        };
-        field.input = match (&field.input, value) {
-            (Input::Bool(_), FieldValue::Bool(value)) => Input::Bool(*value),
-            (Input::Choice(choice), FieldValue::Choice(index)) => {
-                let mut choice = choice.clone();
-                choice.select(index.map(|index| index as usize));
-                Input::Choice(choice)
-            }
-            (Input::Text(_), FieldValue::Text(text)) => Input::Text(text.clone()),
-            (Input::Integer(_), FieldValue::Integer(text)) => Input::Integer(text.clone()),
-            (Input::Number(_), FieldValue::Number(text)) => Input::Number(text.clone()),
-            (Input::List(_), FieldValue::List(items)) => Input::List(items.clone()),
-            (Input::Groups { fields, .. }, FieldValue::Groups(values)) => Input::Groups {
-                fields: fields.clone(),
-                items: values
-                    .iter()
-                    .map(|values| {
-                        let mut item = fields.clone();
-                        fill(&mut item, values);
-                        item
-                    })
-                    .collect(),
-            },
-            // A constant stays fixed; a value of another kind is not this field's.
-            (input, _) => input.clone(),
-        };
+    let verdict = draft.verdict.into();
+    let fields = draft
+        .fields
+        .into_iter()
+        .map(|(name, value)| (name, value.into()))
+        .collect();
+    let mut draft = review::Draft::default();
+    match verdict {
+        runtime::Verdict::Green => draft.green = fields,
+        runtime::Verdict::Red => draft.red = fields,
     }
+    draft.form(request, verdict).map_err(Failure::Action)
 }
 
-/// A field's draft value as the form holds it.
-fn value_of(input: &Input) -> FieldValue {
-    match input {
-        Input::Fixed(_) => FieldValue::Fixed,
-        Input::Bool(value) => FieldValue::Bool(*value),
-        Input::Choice(choice) => FieldValue::Choice(choice.selected().map(|index| index as u32)),
-        Input::Text(text) => FieldValue::Text(text.clone()),
-        Input::Integer(text) => FieldValue::Integer(text.clone()),
-        Input::Number(text) => FieldValue::Number(text.clone()),
-        Input::List(items) => FieldValue::List(items.clone()),
-        Input::Groups { items, .. } => {
-            FieldValue::Groups(items.iter().map(|item| values_of(item)).collect())
-        }
-    }
-}
-
-fn values_of(fields: &[Field]) -> Vec<(String, FieldValue)> {
-    fields
-        .iter()
-        .map(|field| (field.name.clone(), value_of(&field.input)))
-        .collect()
-}
-
-/// The draft a form holds: each field's value.
 fn draft_of(verdict: Verdict, form: &Form) -> Draft {
     Draft {
         verdict,
-        fields: values_of(&form.fields),
+        fields: review::values_of(&form.fields)
+            .into_iter()
+            .map(|(name, value)| (name, value.into()))
+            .collect(),
     }
 }
 

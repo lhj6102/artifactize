@@ -25,6 +25,22 @@ use crate::{
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
+/// The exact Verify Run and eval node behind a review receipt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    pub run: crate::types::RunId,
+    pub node: crate::monitor::NodeId,
+}
+
+impl From<&Request> for Target {
+    fn from(request: &Request) -> Self {
+        Self {
+            run: request.run_id.clone(),
+            node: crate::monitor::NodeId::eval(request.eval_id.clone()),
+        }
+    }
+}
+
 /// The refusal for reviewing a request nobody claimed.
 pub const CLAIM_FIRST: &str = "Claim this request before reviewing it.";
 /// The refusal for releasing a claim that is not this reviewer's.

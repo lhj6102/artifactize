@@ -234,6 +234,35 @@ pub struct Attention {
     pub text: String,
 }
 
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum RunOrigin {
+    Cli,
+    Mcp,
+    Chat {
+        session_id: crate::ids::SessionKey,
+        title: String,
+    },
+}
+
+impl From<&artifactize_core::runs::Origin> for RunOrigin {
+    fn from(origin: &artifactize_core::runs::Origin) -> Self {
+        use artifactize_core::runs::Origin;
+        match origin {
+            Origin::Cli => Self::Cli,
+            Origin::Mcp => Self::Mcp,
+            Origin::Chat { session_id, title } => Self::Chat {
+                session_id: session_id.clone().into(),
+                title: title.clone(),
+            },
+        }
+    }
+}
+
 /// The shown Run: its headline, the verdict and what needs attention; its tally, time and
 /// comment are its Detail's. Its rows come one at a time, as a Detail asks for them ([`row`]):
 /// a Run can hold tens of thousands.
@@ -241,6 +270,7 @@ pub struct Attention {
 #[serde(rename_all = "camelCase")]
 pub struct RunPanel {
     pub id: crate::ids::RunKey,
+    pub origin: Option<RunOrigin>,
     /// The Run's own row, whose Detail its headline opens.
     pub node: crate::ids::NodeKey,
     pub mark: Mark,
@@ -427,6 +457,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         let progress = monitor::progress(run, requests, now);
         RunPanel {
             id: run.run.id.clone().into(),
+            origin: run.run.origin.as_ref().map(Into::into),
             node: NodeId::run(&run.run.id).into(),
             mark: progress.status.into(),
             needs: progress
@@ -439,37 +470,31 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
                 .collect(),
         }
     });
-    let (branches, waiting_rows) = match &shown.query.parsed {
+    let branches = match &shown.query.parsed {
         Ok(query) => {
             let none = std::collections::BTreeSet::new();
             let starred = shown.starred.as_ref().unwrap_or(&none);
-            let (branches, waiting_rows) =
-                live::show(query, &shown.branches, &shown.waiting, starred);
-            (
-                branches
-                    .into_iter()
-                    .map(|shown_branch| {
-                        let limit = shown
-                            .chips
-                            .get(&shown_branch.place)
-                            .copied()
-                            .unwrap_or(CHIPS);
-                        branch(
-                            shown_branch,
-                            limit,
-                            starred.contains(&shown_branch.place),
-                            now,
-                        )
-                    })
-                    .collect(),
-                waiting_rows
-                    .into_iter()
-                    .map(|row| waiting(row, now))
-                    .collect(),
-            )
+            let (branches, _) = live::show(query, &shown.branches, &[], starred);
+            branches
+                .into_iter()
+                .map(|shown_branch| {
+                    let limit = shown
+                        .chips
+                        .get(&shown_branch.place)
+                        .copied()
+                        .unwrap_or(CHIPS);
+                    branch(
+                        shown_branch,
+                        limit,
+                        starred.contains(&shown_branch.place),
+                        now,
+                    )
+                })
+                .collect()
         }
-        Err(_) => (Vec::new(), Vec::new()),
+        Err(_) => Vec::new(),
     };
+    let waiting_rows = shown.waiting.iter().map(|row| waiting(row, now)).collect();
     let notice: Vec<String> = shown
         .error
         .iter()

@@ -50,7 +50,15 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             detail::detail,
             detail::detail_row,
             human::human_open,
+            human::search::human_open_reference,
+            human::search::human_search,
+            human::search::human_search_complete,
+            human::search::human_waiting_count,
             human::human_form,
+            human::draft::human_draft,
+            human::draft::human_draft_edit,
+            human::draft::human_draft_append,
+            human::draft::human_draft_submit,
             human::human_edit_field,
             human::human_add_item,
             human::human_remove_item,
@@ -117,9 +125,14 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             viewer::ActiveReviewChanged,
             watch::SessionChanged,
             human::log::HumanToolLog,
+            human::draft::HumanDraftChanged,
             graph::current::CurrentChanged
         ])
         .constant("PRECEDENCE", graph::precedence())
+        .constant(
+            "REVIEW_DEFAULT_QUERY",
+            artifactize_core::review::search::DEFAULT,
+        )
 }
 
 /// Write the TypeScript bindings to `path`.

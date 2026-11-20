@@ -411,6 +411,17 @@ impl Browse {
             .ok_or_else(|| Failure::Missing("This branch no longer exists; choose another.".into()))
     }
 
+    pub(crate) fn review_labels<'a>(&self, ids: impl Iterator<Item = &'a RunId>) -> Labels {
+        let shown = self.shown();
+        ids.filter_map(|id| {
+            shown
+                .labels
+                .get(id)
+                .map(|label| (id.clone(), label.clone()))
+        })
+        .collect()
+    }
+
     /// The waiting reviews' requests as the snapshot read them, and that read's number.
     fn waiting_views(&self) -> (u32, Vec<RequestView>) {
         let shown = self.shown();
@@ -425,7 +436,7 @@ impl Browse {
     /// The pane's completion of `query`'s last term, from what the snapshot lists.
     fn complete(&self, query: &str) -> artifactize_core::review::search::Completion {
         let shown = self.shown();
-        live::complete(query, &shown.branches, &shown.waiting)
+        live::complete(query, &shown.branches, &[])
     }
 }
 

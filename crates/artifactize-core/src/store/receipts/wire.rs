@@ -25,6 +25,7 @@ pub struct Run {
     pub modes: crate::runs::RunModes,
     pub control: Option<crate::runs::Control>,
     pub request_key: Option<crate::types::RequestKey>,
+    pub origin: Option<crate::runs::Origin>,
     /// What the requester said it is working on; for people only.
     pub comment: Option<crate::types::RunComment>,
     pub created_at: Timestamp,
@@ -67,6 +68,8 @@ struct RunWire {
     pub control: Option<crate::runs::Control>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_key: Option<crate::types::RequestKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<crate::runs::Origin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<crate::types::RunComment>,
     pub status: RunStatus,
@@ -117,6 +120,7 @@ impl TryFrom<RunWire> for Run {
             modes: wire.modes,
             control: wire.control,
             request_key: wire.request_key,
+            origin: wire.origin,
             comment: wire.comment,
             id: wire.id,
             repo_path: wire.repo_path,
@@ -147,6 +151,7 @@ impl From<Run> for RunWire {
             modes: record.modes.clone(),
             control: record.control.clone(),
             request_key: record.request_key.clone(),
+            origin: record.origin.clone(),
             comment: record.comment.clone(),
             status: record.status(),
             completed_at: record.completed_at(),

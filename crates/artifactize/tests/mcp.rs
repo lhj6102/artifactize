@@ -813,6 +813,7 @@ async fn b1_read_tools_match_cli_json_table() {
                 assert_eq!(actual[0]["status"], "GREEN");
             }
             "run_show" => {
+                assert_eq!(actual["origin"], json!({"kind":"mcp"}));
                 assert_eq!(actual["id"], json!(run));
                 assert_eq!(actual["status"], "GREEN");
                 assert_eq!(actual["requests"][0]["evalId"], "app/review");

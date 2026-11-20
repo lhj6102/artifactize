@@ -308,6 +308,18 @@ fn label(place: &Place) -> Label {
     }
 }
 
+impl Label {
+    /// Name a worktree whose Run is not in the current monitor snapshot.
+    pub fn at(repo: &Path) -> Self {
+        let (place, _) = place_of(
+            &crate::repository::identify(repo),
+            repo,
+            &mut DirectoryKeys::default(),
+        );
+        label(&place)
+    }
+}
+
 /// What the listing of the branches found.
 pub struct Listing {
     /// The live branches, the most recent Run first.

@@ -18,10 +18,16 @@ async fn reservation_retry_cancel_and_failed_launch_release_their_writer_before_
     .unwrap();
     let options = VerifyOptions::default();
     let key = "retry".parse().unwrap();
-    let (id, accepted) =
-        crate::project::verify::reserve(&repo, Some(&state), &Selection::All, &options, Some(&key))
-            .await
-            .unwrap();
+    let (id, accepted) = crate::project::verify::reserve(
+        &repo,
+        Some(&state),
+        &Selection::All,
+        &options,
+        Some(&key),
+        &super::Origin::Cli,
+    )
+    .await
+    .unwrap();
     assert!(accepted);
     let database = state.join(store::DATABASE);
     assert!(crate::test_os::database_released(&database).unwrap());

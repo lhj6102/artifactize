@@ -131,12 +131,29 @@ impl Control {
     }
 }
 
+/// The surface that accepted a new Run. Old receipts have no known origin.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum Origin {
+    Cli,
+    Mcp,
+    Chat {
+        session_id: crate::types::SessionId,
+        title: String,
+    },
+}
+
 /// Bound repository/state and trusted executable, resolved once by the interface at startup.
 #[derive(Debug, Clone)]
 pub struct Context {
     pub(crate) repo: PathBuf,
     pub(crate) state: PathBuf,
     executable: PathBuf,
+    origin: Origin,
 }
 impl Context {
     /// The canonical repository this endpoint serves.
@@ -155,8 +172,15 @@ impl Context {
             state: crate::workspace::canonical_target(&store::state_dir(state)?)
                 .map_err(|e| e.to_string())?,
             executable: executable.to_path_buf(),
+            origin: Origin::Cli,
         })
     }
+    /// Set the origin for new Runs started in this context, without changing read scope.
+    #[must_use]
+    pub fn with_origin(self, origin: Origin) -> Self {
+        Self { origin, ..self }
+    }
+
     /// Public-library convenience; packaged callers normally pass their own executable to `new`.
     pub fn discover(repo: &Path, state: Option<&Path>) -> Result<Self, String> {
         let executable = process::artifactize_executable()?;
@@ -199,6 +223,7 @@ pub async fn start_observing_launch(
         selection,
         options,
         request_key.as_ref(),
+        &context.origin,
     )
     .await?;
     if accepted {

@@ -59,7 +59,14 @@ fn keys_restrict_a_term_to_one_field_and_terms_and_together() {
 #[test]
 fn kinds_and_statuses_match_exactly_and_qualifiers_follow_claims() {
     let entry = entry();
-    assert!(matches(DEFAULT, &entry));
+    assert!(!matches(DEFAULT, &entry));
+    assert!(matches(
+        DEFAULT,
+        &Entry {
+            claim: Claim::Unclaimed,
+            ..entry.clone()
+        }
+    ));
     assert!(matches("KIND:Human Status:WAITING_HUMAN", &entry));
     assert!(!matches("kind:agent", &entry));
     assert!(!matches("status:green", &entry));
@@ -121,10 +128,10 @@ fn unknown_keys_values_and_empty_values_are_errors_that_name_the_choices() {
 
 #[test]
 fn a_repository_starts_from_the_default_query_with_its_term() {
-    assert_eq!(Query::text_for(None), "kind:human status:waiting_human");
+    assert_eq!(Query::text_for(None), "type:human waiting");
     assert_eq!(
         Query::text_for(Some(Path::new("work/my repo"))),
-        r#"kind:human status:waiting_human repo:"work/my repo""#
+        r#"type:human waiting repo:"work/my repo""#
     );
     assert!(
         Query::text_for(Some(Path::new("work/my repo")))
@@ -132,6 +139,7 @@ fn a_repository_starts_from_the_default_query_with_its_term() {
             .unwrap()
             .matches(&Entry {
                 repository: "work/my repo".into(),
+                claim: Claim::Unclaimed,
                 ..entry()
             })
     );
@@ -160,8 +168,10 @@ fn completion_offers_keys_then_values_of_the_listed_requests() {
             "reviewer:",
             "tag:",
             "kind:",
+            "type:",
             "status:",
-            "is:"
+            "is:",
+            "waiting"
         ]
     );
     let partial = complete("kind:human re", &entries);

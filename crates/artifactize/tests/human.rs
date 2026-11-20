@@ -44,6 +44,7 @@ async fn draft_fixture_writer() {
     )
     .await
     .unwrap();
+    artifactize_core::changes::drain().await;
 }
 
 #[tokio::test]
@@ -59,17 +60,26 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
     let state = &fixture.state;
     human::claim(&receipts, id, &alice).await.unwrap();
 
-    let output = Command::new(std::env::current_exe().unwrap())
+    let mut changes = artifactize_core::changes::Subscription::new(state).await;
+    let output = tokio::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "draft_fixture_writer"])
         .env(DRAFT_FIXTURE, state)
         .env(DRAFT_REQUEST, id.as_str())
         .output()
+        .await
         .unwrap();
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stdout)
     );
+    tokio::time::timeout(support::os::patience(Duration::from_secs(5)), async {
+        while changes.next().await
+            != artifactize_core::changes::Change::DraftInvalidated(id.clone())
+        {}
+    })
+    .await
+    .expect("draft invalidation from the separate writer");
     let initial = read_draft(state, id, &alice).await.unwrap().unwrap();
     assert_eq!(initial.notes, "Initial response");
     assert_eq!(read_draft(state, id, &bob).await.unwrap(), None);
@@ -119,6 +129,19 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
     let mut points = points.collect::<Vec<_>>();
     points.sort_unstable();
     assert_eq!(points, ["#checkout .total", "L42:C9"]);
+    let rebased = edit_draft(
+        state,
+        id,
+        &alice,
+        DraftEdit::Notes {
+            previous: initial.notes.clone(),
+            text: "Revised response".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let pointed = pointed.replacen("Initial response", "Revised response", 1);
+    assert_eq!(rebased.notes, pointed);
     assert!(
         edit_draft(
             state,
@@ -126,7 +149,7 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
             &alice,
             DraftEdit::Notes {
                 previous: initial.notes,
-                text: "Stale edit".into(),
+                text: "Incompatible edit".into(),
             }
         )
         .await
@@ -162,6 +185,50 @@ async fn schema_ten_reviews_keep_their_receipts_and_gain_drafts() {
         .await
         .unwrap();
     assert_eq!(draft.notes, "L3:C4");
+}
+
+#[tokio::test]
+async fn a_claimed_review_opens_by_its_exact_reference_outside_the_default_search() {
+    use artifactize_core::review::{Target, search};
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(returning()).await;
+    let id = &run.requests[0].id;
+    let alice = "alice".parse().unwrap();
+    let query = "type:human waiting".parse().unwrap();
+    let page = search::search(&fixture.state, &query, &alice, 0)
+        .await
+        .unwrap();
+    assert_eq!(page.requests.len(), 1);
+    assert_eq!(&page.requests[0].0.request.id, id);
+    let before = search::open(&fixture.state, id, &query, &alice)
+        .await
+        .unwrap();
+    assert!(!before.outside_filter());
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, id, &alice).await.unwrap();
+    assert!(
+        search::search(&fixture.state, &query, &alice, 0)
+            .await
+            .unwrap()
+            .requests
+            .is_empty()
+    );
+    let opened = search::open(&fixture.state, id, &query, &alice)
+        .await
+        .unwrap();
+    assert!(opened.outside_filter());
+    assert_eq!(opened.outside_reason.as_deref(), Some("Claimed by you."));
+    assert_eq!(&opened.view.request.id, id);
+    let target = Target::from(opened.view.request.as_ref());
+    assert_eq!(target.run, run.run.id);
+    assert_eq!(target.node.as_str(), "e:review/check");
+    let existing = "kind:human status:waiting_human is:mine".parse().unwrap();
+    assert!(
+        !search::open(&fixture.state, id, &existing, &alice)
+            .await
+            .unwrap()
+            .outside_filter()
+    );
 }
 
 struct Fixture {

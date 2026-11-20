@@ -67,7 +67,7 @@ pub enum DraftEdit {
         name: String,
         item: u32,
     },
-    /// Compare against the text the editor saw so it cannot silently erase a concurrent Point.
+    /// Rebase over Points appended since the editor read the saved text.
     Notes {
         previous: String,
         text: String,
@@ -100,10 +100,11 @@ impl Draft {
         match edit {
             DraftEdit::Verdict { verdict } => self.verdict = verdict,
             DraftEdit::Notes { previous, text } => {
-                if self.notes != previous {
-                    return Err("Review notes changed; reload the draft before saving.".into());
-                }
-                self.notes = text;
+                let suffix = self
+                    .notes
+                    .strip_prefix(&previous)
+                    .ok_or("Review notes changed; reload the draft before saving.")?;
+                self.notes = text + suffix;
             }
             DraftEdit::Field {
                 verdict,

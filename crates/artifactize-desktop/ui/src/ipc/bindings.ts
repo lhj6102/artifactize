@@ -54,6 +54,14 @@ export const commands = {
 	 *  (its waiting time) without reading the state.
 	 */
 	humanOpen: (id: string, reload: boolean) => typedError<HumanView, Failure>(__TAURI_INVOKE("human_open", { id, reload })),
+	/**  Open the exact review ID even when the saved filter would not list it. */
+	humanOpenReference: (id: string, query: string) => typedError<OpenReview, Failure>(__TAURI_INVOKE("human_open_reference", { id, query })),
+	/**  A page of Review results; `start` is the `next` cursor of the previous page of this query. */
+	humanSearch: (query: string, start: number | null) => typedError<ReviewPage, Failure>(__TAURI_INVOKE("human_search", { query, start })),
+	/**  Complete the current Review query term using the library's grammar and suggestions. */
+	humanSearchComplete: (query: string) => typedError<Completion, Failure>(__TAURI_INVOKE("human_search_complete", { query })),
+	/**  Number of unclaimed Human reviews, including deferred sign-offs, for the Review mode badge. */
+	humanWaitingCount: () => typedError<number, Failure>(__TAURI_INVOKE("human_waiting_count")),
 	/**
 	 *  The form for `verdict`, from the owner schema recorded with request `id`, holding the values
 	 *  of `kept` (the earlier draft of this verdict) when the schema still takes them.
@@ -62,6 +70,14 @@ export const commands = {
 	verdict: Verdict,
 	fields: ([string, FieldValue])[],
 } | null) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict, kept })),
+	/**  Read the saved response and both verdict forms. A released review retains its draft. */
+	humanDraft: (id: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft", { id })),
+	/**  Change one field, verdict or the common notes of the current reviewer's saved draft. */
+	humanDraftEdit: (id: string, change: DraftChange) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_edit", { id, change })),
+	/**  Append a line to the current reviewer's draft without submitting it. */
+	humanDraftAppend: (id: string, text: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_append", { id, text })),
+	/**  Submit the current reviewer's saved fields and notes. */
+	humanDraftSubmit: (id: string, job: JobId) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_draft_submit", { id, job })),
 	/**  `draft` of request `id` with field `name` set to `value`, as the library's form takes it. */
 	humanEditField: (id: string, draft: Draft, name: string, value: FieldValue) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_field", { id, draft, name, value })),
 	/**
@@ -266,6 +282,7 @@ export const commands = {
 export const events = {
 	activeReviewChanged: makeEvent<ActiveReviewChanged>("active-review-changed"),
 	currentChanged: makeEvent<CurrentChanged>("current-changed"),
+	humanDraftChanged: makeEvent<HumanDraftChanged>("human-draft-changed"),
 	humanToolLog: makeEvent<HumanToolLog>("human-tool-log"),
 	sessionChanged: makeEvent<SessionChanged>("session-changed"),
 	stateChanged: makeEvent<StateChanged>("state-changed"),
@@ -273,6 +290,8 @@ export const events = {
 
 /* Constants */
 export const PRECEDENCE = {"current":["run","checking","blocked","waiting","reused"],"run":["red","error","active","blocked","waiting","green"]} as const;
+
+export const REVIEW_DEFAULT_QUERY = "type:human waiting" as const;
 
 /* Types */
 /**  What a Human action left: its notice and the request as it now stands. */
@@ -547,6 +566,8 @@ export type Draft = {
 	fields: ([string, FieldValue])[],
 };
 
+export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number } | { kind: "notes"; previous: string; text: string };
+
 /**
  *  What the library says of an edit before it is made: the definition files it would write, by
  *  their paths relative to the project, or why it would refuse it.
@@ -691,6 +712,14 @@ export type GraphNode = {
 	parts: string[],
 };
 
+/**
+ *  A draft changed in this app, including in another window or through the viewer bridge.
+ *  Treat this as invalidation: re-read instead of applying possibly out-of-order snapshots.
+ */
+export type HumanDraftChanged = {
+	id: string,
+};
+
 /**  The Tool logs that changed, each whole. */
 export type HumanToolLog = {
 	logs: KeyedLog[],
@@ -698,8 +727,9 @@ export type HumanToolLog = {
 
 /**  One request in the shared Human Detail. */
 export type HumanView = {
-	/**  The request every action goes to: a waiting follower's original. */
 	id: string,
+	target: ReviewTarget,
+	notes: string | null,
 	title: string,
 	/**  The Artifact the reviewed eval belongs to: its tools come first. */
 	artifact: string,
@@ -889,6 +919,12 @@ export type Notice_Serialize = {
 	viewer?: ViewerLaunch | null,
 };
 
+export type OpenReview = {
+	view: HumanView,
+	outsideFilter: boolean,
+	outsideReason: string | null,
+};
+
 /**  The session behind a request, or why there is none to read. */
 export type Opened = { kind: "local"; handle: TranscriptHandle; 
 /**  The session id, which change hints name. */
@@ -987,6 +1023,37 @@ export type ResultItem = {
 	fields: Field[],
 };
 
+export type ReviewDraft = {
+	verdict: Verdict,
+	notes: string,
+	green: FormView,
+	red: FormView,
+};
+
+export type ReviewMatch = {
+	id: string,
+	target: ReviewTarget,
+	title: string,
+	eval: string,
+	worktree: PathKey,
+	project: string,
+	branch: string,
+	age: string,
+	mark: Mark,
+	claimant: string | null,
+	mine: boolean,
+};
+
+export type ReviewPage = {
+	reviews: ReviewMatch[],
+	next: number | null,
+};
+
+export type ReviewTarget = {
+	run: string,
+	node: string,
+};
+
 export type Row = {
 	text: string,
 	/**  A collapsed tool activity line; toggling it shows names, targets and states. */
@@ -994,6 +1061,8 @@ export type Row = {
 	/**  Under the subdued Thinking label. */
 	thinking: boolean,
 };
+
+export type RunOrigin = { kind: "cli" } | { kind: "mcp" } | { kind: "chat"; sessionId: string; title: string };
 
 /**  A Run's outcome as its Detail leads with it: what its header row leaves out. */
 export type RunOutcome = {
@@ -1015,6 +1084,7 @@ export type RunOutcome = {
  */
 export type RunPanel = {
 	id: string,
+	origin: RunOrigin | null,
 	/**  The Run's own row, whose Detail its headline opens. */
 	node: string,
 	mark: Mark,

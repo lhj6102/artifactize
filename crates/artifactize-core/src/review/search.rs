@@ -12,9 +12,12 @@
 //! | `request:` | a substring of the request ID |
 //! | `reviewer:` | a substring of the claimant; unclaimed requests never match |
 //! | `tag:` | a substring of a tag of the eval's Artifact |
-//! | `kind:` | the eval kind exactly: `runtime`, `agent` or `human` |
+//! | `kind:`, `type:` | the eval kind exactly: `runtime`, `agent` or `human` |
 //! | `status:` | the request status; `waiting_human` includes `deferred` sign-offs |
 //! | `is:` | `mine`, `claimed` or `unclaimed` (claims exist only on waiting Human requests) |
+//!
+//! The bare term `waiting` matches unclaimed waiting Human requests, including deferred
+//! sign-offs. It is the short spelling of `is:unclaimed`.
 //!
 //! Values with spaces are quoted: `repo:"/work/my repo"`. A quoted word is always free text, so
 //! `"type:style"` searches for that text rather than naming a key.
@@ -24,7 +27,7 @@ mod tests;
 use crate::{
     config::ProfileKind,
     store::{self, RequestView},
-    types::{RequestStatus, ReviewerId},
+    types::{RequestId, RequestStatus, ReviewerId},
 };
 use clap::ValueEnum;
 use std::{
@@ -34,7 +37,8 @@ use std::{
 };
 
 /// The query the review list starts with: the waiting Human sign-offs.
-pub const DEFAULT: &str = "kind:human status:waiting_human";
+pub const DEFAULT: &str = "type:human waiting";
+const WAITING: &str = "waiting";
 
 /// Requests read from the state per batch while a page is filled.
 const BATCH: u32 = 400;
@@ -66,18 +70,20 @@ impl TextField {
 enum Key {
     Text(TextField),
     Kind,
+    Type,
     Status,
     Is,
 }
 
 impl Key {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::Text(TextField::Repo),
         Self::Text(TextField::Eval),
         Self::Text(TextField::Request),
         Self::Text(TextField::Reviewer),
         Self::Text(TextField::Tag),
         Self::Kind,
+        Self::Type,
         Self::Status,
         Self::Is,
     ];
@@ -86,6 +92,7 @@ impl Key {
         match self {
             Self::Text(field) => field.name(),
             Self::Kind => "kind",
+            Self::Type => "type",
             Self::Status => "status",
             Self::Is => "is",
         }
@@ -258,6 +265,9 @@ impl std::str::FromStr for Query {
         let terms = words(text)
             .into_iter()
             .map(|(word, quoted)| {
+                if !quoted && word.eq_ignore_ascii_case(WAITING) {
+                    return Ok(Term::Is(Is::Unclaimed));
+                }
                 let Some((name, value)) = word.split_once(':').filter(|_| !quoted) else {
                     return Ok(Term::Text(word.to_lowercase()));
                 };
@@ -272,7 +282,7 @@ impl std::str::FromStr for Query {
                 }
                 let lower = value.to_lowercase();
                 match key {
-                    Key::Kind => ProfileKind::value_variants()
+                    Key::Kind | Key::Type => ProfileKind::value_variants()
                         .iter()
                         .copied()
                         .find(|kind| kind_name(*kind) == lower)
@@ -347,9 +357,13 @@ impl Query {
     /// Whether only waiting Human reviews can match, as with the default query.
     pub fn waiting_human(&self) -> bool {
         self.terms.contains(&Term::Kind(ProfileKind::Human))
-            && self
-                .terms
-                .contains(&Term::Status(RequestStatus::WaitingHuman))
+            && self.terms.iter().any(|term| {
+                matches!(
+                    term,
+                    Term::Status(RequestStatus::WaitingHuman | RequestStatus::Deferred)
+                        | Term::Is(_)
+                )
+            })
     }
 
     pub fn matches(&self, entry: &Entry) -> bool {
@@ -472,6 +486,7 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
             Key::ALL
                 .iter()
                 .map(|key| format!("{}:", key.name()))
+                .chain(std::iter::once(WAITING.to_owned()))
                 .filter(|key| key.starts_with(&lower))
                 .collect()
         }
@@ -503,7 +518,7 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
                         .iter()
                         .flat_map(|entry| entry.tags.iter().cloned())
                         .collect(),
-                    Key::Kind => kind_values().collect(),
+                    Key::Kind | Key::Type => kind_values().collect(),
                     Key::Status => status_values().collect(),
                     Key::Is => Is::ALL.iter().map(|is| is.name().to_owned()).collect(),
                 };
@@ -559,6 +574,54 @@ pub struct Found {
     pub requests: Vec<(RequestView, Entry)>,
     /// The position of the next page in the state's request order; `None` on the last page.
     pub next: Option<u64>,
+}
+
+/// The exact saved request and whether it appears in the current search, regardless of page.
+#[derive(Debug, Clone)]
+pub struct Opened {
+    pub view: RequestView,
+    pub outside_reason: Option<String>,
+}
+
+impl Opened {
+    pub fn outside_filter(&self) -> bool {
+        self.outside_reason.is_some()
+    }
+}
+
+/// Resolve a direct reference without changing its query or redirecting to an original request.
+pub async fn open(
+    state: &Path,
+    id: &RequestId,
+    query: &Query,
+    reviewer: &ReviewerId,
+) -> Result<Opened, String> {
+    let view = store::read_request_by_id(state, id, query.shown()).await?;
+    let repo = store::read_request_repo_by_id(state, id.clone()).await?;
+    let entry = Entry::new(&view, &repo, reviewer);
+    let outside_reason = if Box::pin(follows_waiting(state, &view)).await {
+        Some("This review shares the original request's sign-off.".into())
+    } else if query.matches(&entry) {
+        None
+    } else {
+        Some(outside_reason(&entry))
+    };
+    Ok(Opened {
+        view,
+        outside_reason,
+    })
+}
+
+fn outside_reason(entry: &Entry) -> String {
+    if entry.kind != ProfileKind::Human {
+        return "This is not a Human review.".into();
+    }
+    match (&entry.claim, entry.status) {
+        (Claim::Mine(_), _) => "Claimed by you.".into(),
+        (Claim::Other(reviewer), _) => format!("Claimed by {reviewer}."),
+        (_, RequestStatus::Green | RequestStatus::Red) => "This review was submitted.".into(),
+        _ => "This review does not match the current filter.".into(),
+    }
 }
 
 /// Up to [`PAGE`] requests matching `query` from position `start` on, read in bounded batches.

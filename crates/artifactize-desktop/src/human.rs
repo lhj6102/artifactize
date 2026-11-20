@@ -4,8 +4,10 @@
 //! Only these jobs write. Drafts live in the frontend; a submission sends their values and
 //! the review's own [`Form`] turns them into the result, so typed fields, coercion and local
 //! errors are the terminal's.
+pub(crate) mod draft;
 mod form;
 pub(crate) mod log;
+pub(crate) mod search;
 
 pub use form::{Draft, FormView, Verdict};
 
@@ -222,8 +224,9 @@ pub struct Claimant {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanView {
-    /// The request every action goes to: a waiting follower's original.
     pub id: RequestKey,
+    pub target: search::ReviewTarget,
+    pub notes: Option<String>,
     pub title: String,
     /// The Artifact the reviewed eval belongs to: its tools come first.
     pub artifact: String,
@@ -326,6 +329,8 @@ fn view(
     });
     HumanView {
         id: request.id.clone().into(),
+        target: review::Target::from(request.as_ref()).into(),
+        notes: request.review_notes.clone(),
         title: format!("{} · {}", request.eval_id, request.title),
         artifact: request.target.to_string(),
         meta: review::meta(view, reviewer, now),
@@ -394,6 +399,11 @@ async fn read(app: &App, id: &RequestId) -> Result<(u32, RequestView), Failure> 
         })
         .await;
     let view = view.map_err(Failure::Read)?;
+    Ok((number, loaded(app, number, id, view).await))
+}
+
+async fn loaded(app: &App, number: u32, id: &RequestId, view: RequestView) -> RequestView {
+    let state = &app.launch.state;
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
     let resolve = view.request.status().is_human_wait()
         && view.request.human_definition.is_some()
@@ -419,7 +429,7 @@ async fn read(app: &App, id: &RequestId) -> Result<(u32, RequestView), Failure> 
     }
     app.human
         .keep(number, &[id, &view.request.id], view.clone());
-    Ok((number, view))
+    view
 }
 
 /// The review of `request`, read as read number `read`.
@@ -671,8 +681,17 @@ pub async fn human_submit(
     let result = form::result(&request.request, draft)?
         .try_into()
         .map_err(Failure::Invalid)?;
+    submit(&app, id, result, job).await
+}
+
+async fn submit(
+    app: &App,
+    id: RequestId,
+    result: review::Submission,
+    job: JobId,
+) -> Result<Submitted, Failure> {
     let outcome = run_job(
-        &app,
+        app,
         job,
         Job::Submit {
             id: id.clone(),
@@ -697,7 +716,7 @@ pub async fn human_submit(
         .lock()
         .expect("logs lock")
         .remove(&review::log::Key::from(&id));
-    let Acted { notice, view } = acted(&app, &id, outcome).await?;
+    let Acted { notice, view } = acted(app, &id, outcome).await?;
     Ok(Submitted {
         settled,
         notice,

@@ -1,7 +1,10 @@
 //! Which Runs a connection's writes touched, so that its change hint names them. TEMP
 //! triggers note them in a TEMP table: both live only in the writing connection, and the
 //! state database never holds them.
-use crate::{changes::Change, types::RunId};
+use crate::{
+    changes::Change,
+    types::{RequestId, RunId},
+};
 use rusqlite::{Connection, OptionalExtension};
 
 /// `list` is set when a Run was created or removed: the list of Runs changed. The table has no
@@ -24,6 +27,12 @@ const TOUCHED: &str = "CREATE TEMP TABLE IF NOT EXISTS touched(run TEXT, list IN
         INSERT INTO touched SELECT DISTINCT run_id,0 FROM requests WHERE execution_id=OLD.id;
         INSERT INTO touched SELECT json_extract(OLD.data,'$.provenance.runId'),0 WHERE json_valid(OLD.data) AND json_extract(OLD.data,'$.provenance.runId') IS NOT NULL; END;";
 
+/// A draft can change without changing the associated request or its Run.
+const DRAFTS: &str = "CREATE TEMP TABLE IF NOT EXISTS touched_drafts(request TEXT NOT NULL);
+    CREATE TEMP TRIGGER IF NOT EXISTS touched_draft_insert AFTER INSERT ON main.review_drafts BEGIN INSERT INTO touched_drafts VALUES(NEW.request_id); END;
+    CREATE TEMP TRIGGER IF NOT EXISTS touched_draft_update AFTER UPDATE ON main.review_drafts BEGIN INSERT INTO touched_drafts VALUES(NEW.request_id); END;
+    CREATE TEMP TRIGGER IF NOT EXISTS touched_draft_delete AFTER DELETE ON main.review_drafts BEGIN INSERT INTO touched_drafts VALUES(OLD.request_id); END;";
+
 /// Start noting touched Runs once the database has this schema; until then every write is
 /// reported as a change of the state. Returns whether they are noted.
 pub(super) fn install(db: &Connection) -> rusqlite::Result<bool> {
@@ -32,40 +41,51 @@ pub(super) fn install(db: &Connection) -> rusqlite::Result<bool> {
         return Ok(false);
     }
     db.execute_batch(TOUCHED)?;
+    db.execute_batch(DRAFTS)?;
     Ok(true)
 }
 
 /// The hints for the writes since the last call, and forget them. A write no trigger tied to
 /// a Run, a Run created or removed, or a note that cannot be read is a change of the state.
 pub(super) fn take(db: &Connection) -> Vec<Change> {
-    let touched = || -> rusqlite::Result<Option<Vec<RunId>>> {
+    let touched = || -> rusqlite::Result<Vec<Change>> {
         let exists = db
             .query_row(
-                "SELECT 1 FROM temp.sqlite_master WHERE type='table' AND name='touched'",
+                "SELECT 1 FROM temp.sqlite_master WHERE type='table' AND name='touched_drafts'",
                 [],
                 |_| Ok(()),
             )
             .optional()?;
         if exists.is_none() {
-            return Ok(None);
+            return Ok(vec![Change::StateInvalidated]);
         }
-        let rows = db
+        let runs = db
             .prepare_cached("SELECT run,max(list) FROM temp.touched GROUP BY run")?
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
+                Ok((row.get::<_, RunId>(0)?, row.get::<_, bool>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        db.execute("DELETE FROM temp.touched", [])?;
-        if rows.is_empty() || rows.iter().any(|(_, list)| *list) {
-            return Ok(None);
-        }
-        Ok(rows
+        let drafts = db
+            .prepare_cached("SELECT DISTINCT request FROM temp.touched_drafts")?
+            .query_map([], |row| row.get::<_, RequestId>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        db.execute_batch("DELETE FROM temp.touched; DELETE FROM temp.touched_drafts;")?;
+        let run_hints = if runs.iter().any(|(_, list)| *list) {
+            vec![Change::StateInvalidated]
+        } else {
+            runs.into_iter()
+                .map(|(run, _)| Change::RunInvalidated(run))
+                .collect()
+        };
+        let hints = run_hints
             .into_iter()
-            .map(|(run, _)| run.parse().ok())
-            .collect::<Option<Vec<RunId>>>())
+            .chain(drafts.into_iter().map(Change::DraftInvalidated))
+            .collect::<Vec<_>>();
+        if hints.is_empty() {
+            Ok(vec![Change::StateInvalidated])
+        } else {
+            Ok(hints)
+        }
     };
-    match touched() {
-        Ok(Some(runs)) => runs.into_iter().map(Change::RunInvalidated).collect(),
-        Ok(None) | Err(_) => vec![Change::StateInvalidated],
-    }
+    touched().unwrap_or_else(|_| vec![Change::StateInvalidated])
 }

@@ -66,8 +66,13 @@ impl Server {
                     ..Default::default()
                 };
                 Output::Observation(
-                    runs::start(context, args.scope.selection(), &options, args.request_key)
-                        .await?,
+                    runs::start(
+                        &context.clone().with_origin(runs::Origin::Mcp),
+                        args.scope.selection(),
+                        &options,
+                        args.request_key,
+                    )
+                    .await?,
                 )
             }
             Verify::Status(run) => Output::Observation(runs::status(context, &run).await?),
