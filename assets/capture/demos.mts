@@ -218,28 +218,30 @@ function drawn(text: string): string {
 function encode(segments: Segment[], gif: string, work: string, at: { x: number; y: number }): void {
   const list: string[] = [];
   const captions: string[] = [];
-  /** A moment of the GIF to the millisecond, the concat list's resolution. */
-  const ms = (seconds: number) => Math.round(seconds * 1000) / 1000;
+  /** A moment of the GIF on its frame grid, where the concat input places each picture. */
+  const slot = (seconds: number) => Math.round(seconds * GIF.fps) / GIF.fps;
+  /** Half a frame: a caption switches between two frames of the grid, never on one. */
+  const half = 0.5 / GIF.fps;
   let clock = 0;
   for (const segment of segments) {
     const start = clock;
     // Each frame starts where its recorded moment falls at the segment's speed, counted from the
-    // segment's first frame, so the whole plays exactly that much faster: rounding to the
-    // millisecond never adds up. Frames that fall in the same millisecond keep the later one.
+    // segment's first frame, so the whole plays exactly that much faster: rounding to the grid
+    // never adds up. Frames that fall on the same frame of the grid keep the later one.
     const first = segment.frames[0].at;
     const placed: { file: string; at: number }[] = [];
     for (const frame of segment.frames) {
-      const moment = ms(start + (frame.at - first) / segment.speed);
+      const moment = slot(start + (frame.at - first) / segment.speed);
       if (placed.at(-1)?.at === moment) placed.pop();
       placed.push({ file: frame.file, at: moment });
     }
-    const end = ms(placed.at(-1)!.at + segment.hold);
+    const end = slot(placed.at(-1)!.at + Math.max(segment.hold, 1 / GIF.fps));
     placed.forEach((frame, index) => {
       const next = placed[index + 1]?.at ?? end;
       list.push(`file '${frame.file}'`, `duration ${(next - frame.at).toFixed(3)}`);
     });
     clock = end;
-    captions.push(`drawtext=font=DejaVu Sans:fontsize=40:fontcolor=white:box=1:boxcolor=0x262E3BE6:boxborderw=18:x=${at.x}:y=${at.y}:text='${drawn(segment.caption)}':enable='gte(t,${start.toFixed(3)})*lt(t,${clock.toFixed(3)})'`);
+    captions.push(`drawtext=font=DejaVu Sans:fontsize=40:fontcolor=white:box=1:boxcolor=0x262E3BE6:boxborderw=18:x=${at.x}:y=${at.y}:text='${drawn(segment.caption)}':enable='gte(t,${(start - half).toFixed(3)})*lt(t,${(clock - half).toFixed(3)})'`);
   }
   // The concat demuxer takes the last entry's duration only when its file is listed again.
   list.push(`file '${segments.at(-1)!.frames.at(-1)!.file}'`);
@@ -248,11 +250,12 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   // Drawn after fps and scaling, so it advances on every GIF frame and stays a crisp thin line;
   // laid over in RGB, since a subsampled overlay would wash out a status's thin strips.
   const { height, colour, track } = PROGRESS;
-  // The GIF's frames on the frame rate's grid: as many as fit in the planned length.
-  const count = Math.max(Math.floor(clock * GIF.fps), 1);
-  // The bar grows with the frame's number, so it is full on the last frame whatever its time.
+  // The GIF's frames: the planned length on the frame grid.
+  const count = Math.max(Math.round(clock * GIF.fps), 1);
+  // The bar grows with the frame's number, counted from 1 here, so it is empty on the first
+  // frame and full on the last whatever their times.
   const progress = `drawbox=x=0:y=ih-${height}:w=iw:h=${height}:color=${track}:t=fill[track];` +
-    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min(n/${Math.max(count - 1, 1)},1)':y=H-h:shortest=1:format=rgb`;
+    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min((n-1)/${Math.max(count - 1, 1)},1)':y=H-h:shortest=1:format=rgb`;
   // The repeated last entry would otherwise play its hold a second time: end at the planned length.
   const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=end_frame=${count},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
   // The bar's few pixels would not earn its colours a palette entry, nor would the statuses'
@@ -318,6 +321,17 @@ const LOOP: { name: string; uses: string[]; evals: [string, number][]; bug?: boo
 /** What each try fails, and so what the fix after it changes. */
 const FAILS = [["mcp", "site"], ["docs"], ["release"], []];
 
+/** How each Artifact of demo A ends while `bugs` still have their BUG, as its node's light: RED
+ * where its own code has the BUG and all it uses passed, blocked while something it uses did not
+ * pass, GREEN otherwise. LOOP lists what an Artifact uses before it. */
+function planned(bugs: ReadonlySet<string>): Map<string, "green" | "red" | "blocked"> {
+  const lights = new Map<string, "green" | "red" | "blocked">();
+  for (const artifact of LOOP) {
+    lights.set(artifact.name, artifact.uses.some((name) => lights.get(name) !== "green") ? "blocked" : bugs.has(artifact.name) ? "red" : "green");
+  }
+  return lights;
+}
+
 function loopProject(root: string, repo: string): void {
   const checker = join(root, "check.mjs");
   writeFileSync(checker, `import { readFileSync } from "node:fs";
@@ -381,9 +395,9 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         && canvas.querySelectorAll(".svelte-flow__edge").length === edges
         && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
     }, id, MAIN, EDGES());
-    /** The Run `id` ended and its graph is drawn and lit as it ended: every Artifact settled,
-     * exactly `fails` red, and every edge drawn. */
-    const ended = (id: string, fails: string[]) => browser.execute((id, main, fails, count, edges) => {
+    /** The Run `id` ended and its graph is drawn and lit as it ended: its headline says
+     * `verdict`, each Artifact is lit as `lights` plans, and every edge is drawn. */
+    const ended = (id: string, verdict: string, lights: [string, string][]) => browser.execute((id, main, verdict, planned, edges) => {
       const shown = document.querySelector(main);
       const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
       // Every edge drawn as a visible line, not only present in the page.
@@ -392,17 +406,19 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         return !/NaN/.test(line.getAttribute("d") ?? "NaN") && (box.width > 0 || box.height > 0) && getComputedStyle(line).visibility !== "hidden";
       });
       if (lines.length !== edges) return false;
-      const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => [node.dataset.id ?? "", node.dataset.light ?? ""]);
+      const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => `${node.dataset.id}=${node.dataset.light}`).sort();
       // The header row's headline names the Run's verdict once it ended.
-      const verdict = shown?.querySelector(":scope > header button.headline .status")?.textContent?.trim() ?? "";
-      return /^(GREEN|RED|YELLOW|ERROR|BLOCKED|INCOMPLETE)$/.test(verdict) && lights.length === count
-        && lights.every(([, light]) => light !== "waiting" && light !== "active")
-        && lights.filter(([, light]) => light === "red").map(([node]) => node.slice(2)).sort().join() === [...fails].sort().join();
-    }, id, MAIN, fails, LOOP.length, EDGES());
+      const said = shown?.querySelector(":scope > header button.headline .status")?.textContent?.trim() ?? "";
+      return said === verdict && lights.join() === planned.map(([name, light]) => `a:${name}=${light}`).sort().join();
+    }, id, MAIN, verdict, lights, EDGES());
     /** The evals whose saved GREEN result the next try reuses: those GREEN so far whose
      * Artifact, and every Artifact they use, the fixes left as they were. */
     const reusable = new Set<string>();
+    /** The Artifacts whose code still has its BUG. */
+    const bugs = new Set(LOOP.filter((artifact) => artifact.bug).map((artifact) => artifact.name));
     for (const [index, fails] of FAILS.entries()) {
+      const lights = planned(bugs);
+      const last = fails.length === 0;
       const frames = join(work, `loop-${index + 1}`);
       mkdirSync(frames);
       const started = run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], { env: { ...env } });
@@ -444,7 +460,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
         return [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].some((node) => node.dataset.light === "waiting" || node.dataset.light === "active");
       }, id, MAIN);
-      const recorded = await record(browser, frames, settled, () => ended(id, fails), live);
+      const recorded = await record(browser, frames, settled, () => ended(id, last ? "GREEN" : "RED", [...lights]), live);
       const area = await corner(browser, `${MAIN} .run .canvas`);
       at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
       const { code, text } = await settled;
@@ -456,19 +472,19 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         throw new Error(`try ${index + 1} reused ${reused.join(", ") || "nothing"}; planned ${[...reusable].sort().join(", ") || "nothing"}`);
       }
       segments.push({ frames: recorded, speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED} · ${reused.length} of ${view.requests.length} evals reused`, hold: GIF.hold });
-      const red = [...new Set(view.requests.filter((request) => request.status === "RED").map((request) => request.evalId.split("/")[0]))].sort();
-      const last = fails.length === 0;
-      // Every request settled as planned: GREEN, RED where the BUG still is, BLOCKED below it.
-      const unexpected = view.requests.filter((request) => !["GREEN", "RED", "BLOCKED"].includes(request.status));
-      if (red.join() !== [...fails].sort().join() || unexpected.length > 0 || view.status !== (last ? "GREEN" : "RED")
-        || view.validation?.satisfied !== last || (code === 0) !== last) {
-        throw new Error(`try ${index + 1} ended ${view.status} (exit ${code}) with RED ${red.join(", ") || "nothing"} and ${unexpected.map((request) => `${request.evalId} ${request.status}`).join(", ") || "no other states"}; planned RED ${fails.join(", ") || "nothing"}`);
+      // Every eval settled as planned, each once: GREEN, RED where the BUG still is, BLOCKED
+      // below it; and the Run with them.
+      const settledAs = view.requests.map((request) => `${request.evalId} ${request.status}`).sort();
+      const plan = LOOP.flatMap((artifact) => artifact.evals.map(([check]) => `${artifact.name}/${check} ${lights.get(artifact.name)!.toUpperCase()}`)).sort();
+      if (settledAs.join() !== plan.join() || view.status !== (last ? "GREEN" : "RED") || view.validation?.satisfied !== last || (code === 0) !== last) {
+        throw new Error(`try ${index + 1} ended ${view.status} (exit ${code}) with ${settledAs.join(", ")}; planned ${plan.join(", ")}`);
       }
       // The fix: remove the BUG from what just failed, as an AI would fix the code. What it
       // changes, and what uses it, is evaluated again; the rest of what passed is reused.
       for (const request of view.requests) if (request.status === "GREEN") reusable.add(request.evalId);
       for (const name of fails) {
         writeFileSync(join(fixture.repo, name, "code.txt"), "done\n");
+        bugs.delete(name);
         for (const artifact of LOOP.filter((each) => each.name === name || each.uses.includes(name))) {
           for (const [check] of artifact.evals) reusable.delete(`${artifact.name}/${check}`);
         }
