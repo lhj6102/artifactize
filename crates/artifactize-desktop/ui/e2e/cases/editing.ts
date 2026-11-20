@@ -161,7 +161,7 @@ export const scenarios: Scenario[] = [
     id: "layout-by-hand",
     // Its app is started again: the phases run one after the other, alone.
     alone: true,
-    title: "a node dragged on a Current is placed where it is released, every place of its level written into the files and kept when the app starts again, Reset layout lays it out automatically again, and a node dropped on a whole becomes its part",
+    title: "a node dragged on a Current is placed where it is released, every place of its level written into the files and kept when the app starts again, Reset layout lays it out automatically again, a node dropped on a whole becomes its part, and a part dragged onto another whole moves there",
     journeys: ["J-NODE-MOVE", "J-LAYOUT-RESET", "J-PARTS-DRAG"],
     prepare: async (own) => {
       const fixture = createEditing(own);
@@ -215,6 +215,15 @@ export const scenarios: Scenario[] = [
           && part.x >= whole.x && part.y >= whole.y && part.x + part.width <= whole.x + whole.width && part.y + part.height <= whole.y + whole.height;
       }, "docs drawn inside app's box, under kit");
       await app.graph.gone("a:docs");
+      // Dragged out of app's box onto bundle, docs moves: bundle's part, placed in its box, and
+      // gone from app's parts and from the places app's file holds.
+      await app.graph.dragOnto("a:app/a:docs", "a:bundle");
+      await app.eventually(() => /^parts = \[.*"docs".*\]/m.test(definitionText(fixture, "bundle") ?? "") && /^docs = \[/m.test(definitionText(fixture, "bundle") ?? ""),
+        "docs added to bundle's parts, its place in bundle's file");
+      await app.eventually(() => !/"docs"/.test(definitionText(fixture, "app")?.match(/^parts = .*$/m)?.[0] ?? "") && !/^docs = \[/m.test(definitionText(fixture, "app") ?? ""),
+        "docs left app's parts and app's file no longer places it");
+      await app.graph.node("a:bundle/a:docs");
+      await app.graph.gone("a:app/a:docs");
     },
   }),
 

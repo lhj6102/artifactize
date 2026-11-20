@@ -3,6 +3,7 @@
 // action waits for what it shows.
 import { fill, press, typeText } from "../keys.ts";
 import { dispatchInput, visibleCenter } from "../input.ts";
+import { drawsEdge } from "./graph.ts";
 import { holds, until } from "./wait.ts";
 
 const DETAIL = 'aside[aria-label="Detail"]';
@@ -155,6 +156,11 @@ export class Detail {
         return { id: node.dataset.id ?? "", side: side as "left" | "right" | "self" };
       });
     }, DETAIL);
+  }
+
+  /** Wait until the Neighbours drawing draws the edge from `from` to `to`. */
+  async neighbourEdge(from: string, to: string): Promise<void> {
+    await holds(this.browser, () => this.browser.execute(drawsEdge, `${DETAIL} [aria-label="Neighbours"]`, from, to), `the Neighbours draw the edge from ${from} to ${to}`);
   }
 
   /** Click the neighbour `id` in the Neighbours drawing: its Detail opens, titled `title`. */

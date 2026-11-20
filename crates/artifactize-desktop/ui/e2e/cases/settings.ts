@@ -13,7 +13,7 @@ const SAVED = "gm-saved-0123456789";
 const TOKEN = "azt_e2esettingstoken0123456789abcdef";
 
 /** The keys and custom providers this machine has set up, as `provider list --json` prints them. */
-async function providers(fixture: Fixture): Promise<{ keys: { provider: string; source: string }[]; custom: Record<string, unknown> }> {
+async function providers(fixture: Fixture): Promise<{ keys: { provider: string; source: string; saved: boolean }[]; custom: Record<string, unknown> }> {
   const listed = await artifactizeAsync(fixture, ["provider", "list", "--json"], { OPENAI_API_KEY: KEY });
   assert.equal(listed.status, 0, listed.stderr);
   return JSON.parse(listed.stdout);
@@ -56,6 +56,8 @@ export const scenarios: Scenario[] = [
       assert.ok((await providers(fixture)).keys.some((key) => key.provider === "gemini" && key.source === "saved"), "the CLI uses the saved key");
       await app.settings.button("Remove saved key");
       await app.settings.factUntil("key-gemini", (text) => text === "not set", "the saved key removed");
+      const gemini = (await providers(fixture)).keys.find((key) => key.provider === "gemini");
+      assert.deepEqual(gemini && { source: gemini.source, saved: gemini.saved }, { source: "absent", saved: false }, "the CLI has no Gemini key any more");
       // Each way of closing leaves the screen beneath as it was.
       await app.settings.close("Close");
       assert.equal(await app.graph.title(), beneath);

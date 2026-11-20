@@ -21,6 +21,20 @@ export type Found = { focused: boolean; value: string; entries: { name: string; 
 
 export const nodeAt = (id: string) => `${GRAPH} .svelte-flow__node[data-id="${id}"]`;
 
+/** In the page: whether the drawing in `scope` draws the edge from the Artifact `from` to `to`,
+ * the one it names `Edge from {from} to {to}`, drawn from the one node's middle to the other's. */
+export function drawsEdge(scope: string, from: string, to: string): boolean {
+  const root = document.querySelector(scope);
+  const middle = (id: string) => {
+    const box = root?.querySelector(`.svelte-flow__node[data-id="${id}"]`)?.getBoundingClientRect();
+    return box && box.width > 0 ? box.left + box.width / 2 : null;
+  };
+  const edge = [...(root?.querySelectorAll('[aria-roledescription="edge"]') ?? [])]
+    .find((each) => each.getAttribute("aria-label") === `Edge from ${from} to ${to}`)?.getBoundingClientRect();
+  const [start, end] = [middle(from), middle(to)];
+  return !!edge && edge.width > 0 && start !== null && end !== null && edge.left >= start && edge.right <= end;
+}
+
 export class Graph {
   private readonly browser: WebdriverIO.Browser;
 
@@ -124,6 +138,11 @@ export class Graph {
       light: node.dataset.light ?? "",
       comment: (node.querySelector<HTMLElement>(":scope > * > .comment, :scope .artifact > .comment, :scope .whole > .comment")?.innerText ?? "").trim(),
     })), GRAPH);
+  }
+
+  /** Wait until the graph draws the edge from `from` to `to`: `from`'s evals are used by `to`'s. */
+  async edge(from: string, to: string): Promise<void> {
+    await holds(this.browser, () => this.browser.execute(drawsEdge, GRAPH, from, to), `the graph draws the edge from ${from} to ${to}`);
   }
 
   /** The node `id` once it is drawn, hit-testable and `ok` holds for it. */

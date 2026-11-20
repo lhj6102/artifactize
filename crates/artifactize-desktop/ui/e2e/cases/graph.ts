@@ -82,6 +82,7 @@ export const scenarios: Scenario[] = [
       detail = await app.detail.toggleSection("Neighbours");
       const neighbours = await app.detail.neighbours();
       assert.equal(neighbours.find((node) => node.id === "a:release")?.side, "left", "ship's eval uses release: on its left");
+      await app.detail.neighbourEdge("a:release", "a:ship");
       // Folded again, the drawing goes and its header stays.
       detail = await app.detail.toggleSection("Neighbours");
       await app.until(async () => !(await app.detail.neighboursDrawn()), "the Neighbours drawing gone");
@@ -181,7 +182,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "graph-large",
-    title: "a graph too large to draw at once first shows whole, painted as blocks; zooming in draws the nodes it brings into view, the Navigator then shows and moves the camera to a place clicked in it, and Fit shows the whole again",
+    title: "a graph too large to draw at once first shows whole, painted as blocks; zooming in draws the nodes it brings into view, the Navigator then shows and moves the camera to a place clicked in it, drawing the Artifacts the move brings into view, and Fit shows the whole again",
     journeys: ["J-GRAPH-LARGE", "J-GRAPH-NAVIGATOR", "J-GRAPH-CAMERA"],
     timeout: 300000,
     prepare: async (own) => {
@@ -223,9 +224,23 @@ export const scenarios: Scenario[] = [
       // middle of the view.
       const place = await app.graph.navigatorFrame();
       const near = (at: { x: number; y: number } | null) => !!at && Math.hypot(at.x - middle.x, at.y - middle.y) <= place.step;
-      // A click elsewhere in the map moves the camera there, that Artifact out of the middle.
+      // A click elsewhere in the map moves the camera there, that Artifact out of the middle,
+      // and draws the Artifacts the move brings into view.
+      const before = new Set((await app.graph.nodes()).map((node) => node.id));
       await app.graph.navigate(0.3, 0.6);
       assert.ok(!near(await app.graph.offCentre(middle.id)), `${middle.id} left the middle of the view`);
+      /** The Artifact nearest the middle of the view of those not drawn before the move. */
+      const brought = async () => {
+        let nearest: { id: string; off: number } | undefined;
+        for (const node of (await app.graph.nodes()).filter((each) => !before.has(each.id))) {
+          const at = await app.graph.offCentre(node.id);
+          if (at && (!nearest || Math.hypot(at.x, at.y) < nearest.off)) nearest = { id: node.id, off: Math.hypot(at.x, at.y) };
+        }
+        return nearest?.id;
+      };
+      let shown: string | undefined;
+      await app.graph.until(async () => (shown = await brought()) !== undefined, "the move draws Artifacts it brought into view");
+      await app.graph.node(shown!, () => true, `${shown}, brought into view by the move, drawn where it shows`);
       // A click on its place in the map brings it back to the middle of the view, as near as
       // one pixel of the map says.
       await app.graph.navigate(place.fx, place.fy);

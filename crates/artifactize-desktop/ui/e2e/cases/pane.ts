@@ -1,7 +1,7 @@
 // The left pane: hiding and resizing it, starring a branch, searching, and the reviews waiting
 // for a person as other processes change them.
 import assert from "node:assert/strict";
-import { addRepository, addWorktrees, artifactize, createRelease, declareRelease, orderRuns, request, requests, signOff, verifyWaiting } from "../fixtures/repo.ts";
+import { addRepository, addWorktrees, artifactize, createProject, createRelease, declareRelease, orderRuns, request, requests, savedRuns, signOff, verify, verifyWaiting } from "../fixtures/repo.ts";
 import { nativePath } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -81,6 +81,29 @@ export const scenarios: Scenario[] = [
       await app.pane.listed(["repo  master", "other  master"], "still starred and first after the app started again");
       await app.pane.star("repo  master");
       await app.pane.listed(["other  master", "repo  master"], "in the search's order again");
+    },
+  }),
+
+  scenario({
+    id: "branch-older-runs",
+    title: "an expanded branch's timeline lists its newest Runs, newest first, and Older runs at its end brings the older ones in below the oldest",
+    journeys: ["J-BRANCH-RUNS"],
+    prepare: async (own) => {
+      // More Runs than a timeline lists at first.
+      const fixture = createProject(own, [[["app"], "app", "basis = true\n"]]);
+      const runs = [savedRuns(fixture)[0].id];
+      for (let more = 0; more < 24; more += 1) runs.push(verify(fixture));
+      orderRuns(fixture, runs);
+      return { fixture, data: { newest: [...runs].reverse() } };
+    },
+    run: async (app, { data: { newest } }) => {
+      const listed = (entries: { id: string }[]) => entries.map((entry) => entry.id).filter((id) => id !== "current");
+      await app.pane.selectBranch("repo  master");
+      const first = listed((await app.pane.branch("repo  master", (branch) => listed(branch.entries).length > 0, "its timeline listed")).entries);
+      assert.ok(first.length > 0 && first.length < newest.length, `the newest Runs listed, not all of them: ${first.length} of ${newest.length}`);
+      assert.deepEqual(first, newest.slice(0, first.length), "newest first");
+      const all = await app.pane.older("repo  master");
+      assert.deepEqual(listed(all.entries), newest, "the older Runs in below the oldest, newest first");
     },
   }),
 

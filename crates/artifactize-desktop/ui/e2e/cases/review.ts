@@ -3,8 +3,20 @@
 import assert from "node:assert/strict";
 import { artifactize, createRelease, request } from "../fixtures/repo.ts";
 import { processRunning } from "../platform.ts";
-import { nativePath, readTextIfExists, writeText } from "../portable.ts";
+import { nativePath, readTextIfExists, writeText, type NativePath } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import type { App } from "../views/app.ts";
+
+/** The process of the release's slow tool at its `run`th start, once it has started: the tool
+ * records each start's process in `pids`. */
+async function slowProcess(app: App, pids: NativePath, run: number): Promise<number> {
+  let pid = 0;
+  await app.until(async () => {
+    pid = Number((readTextIfExists(pids) ?? "").trim().split("\n")[run - 1] ?? 0);
+    return pid > 0;
+  }, `the tool's process ${run} started`);
+  return pid;
+}
 
 export const scenarios: Scenario[] = [
   scenario({
@@ -78,13 +90,13 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "human-green",
-    title: "after a claim GREEN opens the pass form, its required fields marked and its optional ones saying Optional, takes Korean composed by an input method and typed letters as text, and Submit saves it, the completed result staying open",
+    title: "after a claim GREEN opens the pass form, its required fields marked and its optional ones saying Optional, takes Korean composed by an input method and typed letters as text, and Submit saves it while a tool of the review runs, the tool stopped first and the completed result staying open",
     journeys: ["J-HUMAN-GREEN", "J-HUMAN-FORM", "J-HUMAN-TEXT"],
     prepare: async (own) => {
       const fixture = await createRelease(own, { scalars: true });
-      return { fixture, args: ["review"], data: null };
+      return { fixture, args: ["review"], data: { pids: nativePath(fixture.root, "slow.gate.pids") } };
     },
-    run: async (app, { fixture }) => {
+    run: async (app, { fixture, data: { pids } }) => {
       const review = app.review;
       await review.claim();
       await review.choose("GREEN");
@@ -100,7 +112,12 @@ export const scenarios: Scenario[] = [
       await review.enter("score", "4.5");
       await review.check("confirmed", "true");
       await review.select("channel", "\"preview\"");
+      // Submit while a tool of the review runs: the submission stops the tool first.
+      await review.runTool("slow");
+      await review.until((each) => each.running !== "", "the tool runs");
+      const tool = await slowProcess(app, pids, 1);
       const done = await review.submit();
+      await app.until(async () => !processRunning(tool), "the submission stopped the running tool's process");
       assert.match(done.completed, /확인 gu/, "the completed result stays open");
       assert.match(done.completed, /comment\s*확인 gu/, "its fields by name");
       assert.doesNotMatch(done.completed, /approved/, "the form's constant not shown");
@@ -159,15 +176,6 @@ export const scenarios: Scenario[] = [
     },
     run: async (app, { data: { pids } }) => {
       const review = app.detailReview;
-      /** The process of the tool's `run`th start, once it has started. */
-      const started = async (run: number): Promise<number> => {
-        let pid = 0;
-        await app.until(async () => {
-          pid = Number((readTextIfExists(pids) ?? "").trim().split("\n")[run - 1] ?? 0);
-          return pid > 0;
-        }, `the tool's process ${run} started`);
-        return pid;
-      };
       await app.graph.open("a:release", "Artifact release");
       await app.detail.openEval("release/signoff");
       await review.claim();
@@ -175,14 +183,14 @@ export const scenarios: Scenario[] = [
       await review.enter("comment", "kept while stepping back");
       await review.runTool("slow");
       await review.until((each) => each.running !== "", "the tool runs");
-      const first = await started(1);
+      const first = await slowProcess(app, pids, 1);
       await review.cancel();
       await review.runUntil("slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Cancel ended the run as cancelled");
       await app.until(async () => !processRunning(first), "Cancel stopped the tool's process");
       // Close steps back one thing at a time.
       await review.runTool("slow");
       await review.until((each) => each.running !== "", "the tool runs again");
-      const second = await started(2);
+      const second = await slowProcess(app, pids, 2);
       await app.detail.close();
       await review.runUntil("slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Close first cancelled the running tool");
       await app.until(async () => !processRunning(second), "Close stopped the tool's process");

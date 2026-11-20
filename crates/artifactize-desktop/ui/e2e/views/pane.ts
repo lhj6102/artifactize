@@ -82,6 +82,13 @@ export class Pane {
     return this.branch(name, (entry) => entry.expanded !== before.expanded, `${name} ${before.expanded ? "folded" : "expanded"}`);
   }
 
+  /** Click Older runs at the end of the branch's timeline: more entries are listed. */
+  async older(name: string): Promise<Branch> {
+    const before = (await this.branch(name)).entries.length;
+    await this.browser.$(await this.row(name)).$("button=Older runs").click();
+    return this.branch(name, (entry) => entry.entries.length > before, `${name} lists older Runs`);
+  }
+
   /** Click the timeline entry `id` (a Run's ID, or `current`) of the branch, expanding it first:
    * it is the one shown. */
   async choose(name: string, id: string): Promise<void> {
