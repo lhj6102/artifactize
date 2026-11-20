@@ -157,12 +157,15 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         ..selection.clone()
     };
     assert!(
-        chat.create(&worktree, wrong)
+        chat.create(&worktree, Some(wrong))
             .await
             .unwrap_err()
             .contains("does not list")
     );
-    let session = chat.create(&worktree, selection.clone()).await.unwrap();
+    let session = chat
+        .create(&worktree, Some(selection.clone()))
+        .await
+        .unwrap();
     assert!(chat.open(&session.id).await.unwrap().turns.is_empty());
     let mut changes = Subscription::new(&state).await;
     chat.send(&session.id, "Edit and verify the notes".into(), None)
@@ -172,6 +175,13 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         view.running && cards(view).len() == 1
     })
     .await;
+    let reader = Chat::new(state.clone(), cli.clone());
+    let entries = reader.list(Some(&worktree)).await.unwrap();
+    assert_eq!(entries[0].id, session.id);
+    assert!(
+        entries[0].running,
+        "a separately opened catalog sees the live owner"
+    );
     assert!(
         mid.turns[0]
             .blocks
@@ -201,9 +211,12 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     let restarted = Chat::new(state.clone(), cli);
     let restored = restarted.open(&session.id).await.unwrap();
     assert_eq!(cards(&restored), [run]);
+    let entries = restarted.list(Some(&worktree)).await.unwrap();
+    assert_eq!(entries[0].id, session.id);
+    assert!(!entries[0].running);
     assert_eq!(
-        restarted.list(Some(&worktree)).await.unwrap()[0].id,
-        session.id
+        restarted.default_model(&worktree).await.unwrap(),
+        Some(selection.clone())
     );
     assert_eq!(restored.session.title, "Edit and verify the notes");
     restarted
@@ -369,10 +382,10 @@ async fn chat_completions_anthropic_and_gemini_get_the_worktree_and_verify_tools
         let session = chat
             .create(
                 &repo,
-                Model {
+                Some(Model {
                     backend: "scripted".parse().unwrap(),
                     model: "model".parse().unwrap(),
-                },
+                }),
             )
             .await
             .unwrap();
@@ -410,16 +423,16 @@ async fn codex_chat_fixture() {
     let root = owned_run::Root::from(support::os::tempdir());
     let (repo, state) = worktree(&root);
     let chat = Chat::new(state.clone(), support::os::cli());
-    let session = chat
-        .create(
-            &repo,
-            Model {
-                backend: "codex".parse().unwrap(),
-                model: "fake-codex".parse().unwrap(),
-            },
-        )
-        .await
-        .unwrap();
+    let model = Model {
+        backend: "codex".parse().unwrap(),
+        model: "fake-codex".parse().unwrap(),
+    };
+    assert_eq!(
+        chat.default_model(&repo).await.unwrap(),
+        Some(model.clone())
+    );
+    let session = chat.create(&repo, None).await.unwrap();
+    assert_eq!(session.selection, model);
     let mut changes = Subscription::new(&state).await;
     chat.send(&session.id, "What can you do?".into(), None)
         .await
@@ -455,9 +468,12 @@ fn codex_account_transport_gets_the_worktree_and_verify_tools() {
         }
     });
     let output = support::os::run(
-        Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "codex_chat_fixture", "--nocapture"])
+        support::os::test_command("codex_chat_fixture", &[])
             .env(CODEX_FIXTURE, "1")
+            .env("PATH", support::os::isolated_path(root.path()))
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .env_remove("GEMINI_API_KEY")
             .env("ARTIFACTIZE_CODEX_AUTH_FILE", &fixture)
             .env("ARTIFACTIZE_CODEX_BASE_URL", provider.codex_base()),
     );
@@ -546,10 +562,10 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     let session = chat
         .create(
             &repo,
-            Model {
+            Some(Model {
                 backend: "scripted".parse().unwrap(),
                 model: "restart-model".parse().unwrap(),
-            },
+            }),
         )
         .await
         .unwrap();

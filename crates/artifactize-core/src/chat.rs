@@ -17,7 +17,8 @@ use crate::{
         self,
         session::{Answer, Conversation, Kind, Recorder, Send},
     },
-    config::{Backend, ModelId},
+    auth::providers,
+    config::{Backend, ModelId, Provider},
     llm, runs,
     store::{self, Receipts},
     types::{SessionId, Timestamp},
@@ -47,6 +48,9 @@ pub struct Session {
     pub selection: Model,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// Live ownership of a turn, read separately from the saved session.
+    #[serde(skip)]
+    pub running: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -94,12 +98,53 @@ impl Chat {
         }
     }
 
-    /// Persist a session in the selected workspace even before it has a message.
-    pub async fn create(&self, worktree: &Path, selection: Model) -> Result<Session, String> {
+    /// The starting model for a new session: the worktree's last choice, or the first
+    /// listed model in Settings order after every provider has answered.
+    pub async fn default_model(&self, worktree: &Path) -> Result<Option<Model>, String> {
+        let worktree =
+            crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
+        if let Some(selection) = store::chat::latest_model(&self.state, &worktree).await? {
+            return Ok(Some(selection));
+        }
+        let providers = providers::list(Some(&self.state), Some(&worktree))?;
+        let backends = Provider::ALL
+            .into_iter()
+            .map(Backend::from)
+            .chain(providers.custom.into_keys());
+        let listings = futures_util::future::join_all(
+            backends.map(|backend| llm::models::list(backend, Some(&self.state), Some(&worktree))),
+        )
+        .await;
+        Ok(listings
+            .into_iter()
+            .filter_map(Result::ok)
+            .find_map(|listing| {
+                listing.models.into_iter().next().map(|model| Model {
+                    backend: listing.backend,
+                    model: model.slug,
+                })
+            }))
+    }
+
+    /// Persist a session even before it has a message. An explicit selection must be listed.
+    pub async fn create(
+        &self,
+        worktree: &Path,
+        selection: Option<Model>,
+    ) -> Result<Session, String> {
         let context = self.context(worktree)?;
         let worktree = context.repo();
         crate::config::read_workspace_config(worktree).map_err(|error| error.to_string())?;
-        self.check_model(worktree, &selection).await?;
+        let selection = match selection {
+            Some(selection) => {
+                self.check_model(worktree, &selection).await?;
+                selection
+            }
+            None => self
+                .default_model(worktree)
+                .await?
+                .ok_or("No provider lists a model. Connect a provider first.")?,
+        };
         let now = crate::broker::now();
         let session = Session {
             id: format!("chat-{}", agent::uuid()?).parse()?,
@@ -108,6 +153,7 @@ impl Chat {
             selection,
             created_at: now,
             updated_at: now,
+            running: false,
         };
         let receipts = Receipts::open(&self.state, worktree).await?;
         let result = receipts.create_chat(&session).await;
@@ -122,11 +168,8 @@ impl Chat {
 
     /// The model's streamed text, tools, and current state of each referenced Run.
     pub async fn open(&self, id: &SessionId) -> Result<View, String> {
-        let (session, owner) = store::chat::load(&self.state, id).await?;
-        let running = owner
-            .map(|owner| owner.live())
-            .transpose()?
-            .unwrap_or(false);
+        let session = store::chat::load(&self.state, id).await?;
+        let running = session.running;
         let conversation = Conversation::load(&path(&self.state, id))?;
         let mut turns = transcript::turns(conversation.as_ref(), running);
         if let Ok(context) = self.context(&session.worktree) {
@@ -180,7 +223,7 @@ impl Chat {
         text: &str,
         selection: Option<Model>,
     ) -> Result<Prepared, String> {
-        let (mut session, _) = store::chat::load(&self.state, id).await?;
+        let mut session = store::chat::load(&self.state, id).await?;
         let context = self.context(&session.worktree)?;
         if let Some(selection) = selection.filter(|selection| *selection != session.selection) {
             self.check_model(context.repo(), &selection).await?;

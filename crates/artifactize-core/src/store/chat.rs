@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Receipts, receipts::Error};
 use crate::{
-    chat::Session,
+    chat::{Model, Session},
     process::{self, ChildIdentity},
     types::SessionId,
 };
@@ -62,27 +62,52 @@ pub(crate) async fn list(state: &Path, worktree: Option<&Path>) -> Result<Vec<Se
         .as_deref()
         .map(crate::platform::path_text);
     Ok(read(state, move |db| {
-        let rows = db.prepare(
-            "SELECT data FROM chat_sessions WHERE ?1 IS NULL OR worktree=?1 ORDER BY updated_at DESC,id DESC",
-        )?.query_map([worktree], |row| row.get::<_, String>(0))?
-            .map(|row| Ok(serde_json::from_str(&row?)?)).collect::<Result<Vec<_>, Error>>()?;
+        let mut statement = db.prepare(
+            "SELECT s.data, a.data FROM chat_sessions s LEFT JOIN chat_active_turns a ON a.session_id=s.id \
+             WHERE ?1 IS NULL OR s.worktree=?1 ORDER BY s.updated_at DESC,s.id DESC",
+        )?;
+        let rows = statement.query_map([worktree], session_row)?
+            .map(|row| session(row?)).collect::<Result<Vec<_>, Error>>()?;
         Ok(rows)
     }).await?.unwrap_or_default())
 }
 
-pub(crate) async fn load(state: &Path, id: &SessionId) -> Result<(Session, Option<Owner>), String> {
+pub(crate) async fn latest_model(state: &Path, worktree: &Path) -> Result<Option<Model>, String> {
+    let worktree = crate::platform::path_text(worktree);
+    Ok(read(state, move |db| {
+        let data: Option<String> = db.query_row(
+            "SELECT data FROM chat_sessions WHERE worktree=?1 ORDER BY updated_at DESC,id DESC LIMIT 1",
+            [worktree], |row| row.get(0),
+        ).optional()?;
+        data.map(|data| Ok(serde_json::from_str::<Session>(&data)?.selection)).transpose()
+    }).await?.flatten())
+}
+
+pub(crate) async fn load(state: &Path, id: &SessionId) -> Result<Session, String> {
     let id = id.clone();
     read(state, move |db| {
-        let data: String = db
-            .query_row("SELECT data FROM chat_sessions WHERE id=?", [&id], |row| {
-                row.get(0)
-            })
-            .optional()?
-            .ok_or_else(|| Error::Invalid(format!("No Chat session {id}.")))?;
-        Ok((serde_json::from_str(&data)?, owner(db, &id)?))
+        let row = db.query_row(
+            "SELECT s.data, a.data FROM chat_sessions s LEFT JOIN chat_active_turns a ON a.session_id=s.id WHERE s.id=?1",
+            [&id], session_row,
+        ).optional()?.ok_or_else(|| Error::Invalid(format!("No Chat session {id}.")))?;
+        session(row)
     })
     .await?
     .ok_or("No Chat sessions have been saved.".into())
+}
+
+fn session_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, Option<String>)> {
+    Ok((row.get(0)?, row.get(1)?))
+}
+
+fn session((data, owner): (String, Option<String>)) -> Result<Session, Error> {
+    let mut session: Session = serde_json::from_str(&data)?;
+    if let Some(owner) = owner {
+        session.running = serde_json::from_str::<Owner>(&owner)?
+            .live()
+            .map_err(Error::Invalid)?;
+    }
+    Ok(session)
 }
 
 fn owner(db: &Connection, id: &SessionId) -> Result<Option<Owner>, Error> {

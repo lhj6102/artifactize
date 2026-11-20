@@ -8,8 +8,19 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	launch: () => typedError<LaunchView, Failure>(__TAURI_INVOKE("launch")),
-	/**  Create an empty Chat session for the chosen worktree and a model its provider lists. */
-	chatCreate: (worktree: PathKey, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, selection })),
+	/**  Create an empty Chat session for the chosen worktree; `null` uses its default model. */
+	chatCreate: (worktree: PathKey, selection: {
+	backend: string,
+	model: string,
+} | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, selection })),
+	/**
+	 *  Read the starting model for a new session. The pending call is the loading state;
+	 *  `null` means no provider lists a model and the worktree has no previous session.
+	 */
+	chatDefaultModel: (worktree: PathKey) => typedError<{
+	backend: string,
+	model: string,
+} | null, Failure>(__TAURI_INVOKE("chat_default_model", { worktree })),
 	/**  List saved sessions newest first. `null` lists all worktrees. */
 	chatList: (worktree: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree })),
 	/**
@@ -441,6 +452,7 @@ export type ChatSession = {
 	selection: ChatModel,
 	createdAt: string,
 	updatedAt: string,
+	running: boolean,
 };
 
 export type ChatTurn = {
@@ -1151,6 +1163,8 @@ export type RunOutcome = {
  */
 export type RunPanel = {
 	id: string,
+	/**  The Run's branch if it still lives, independent of filtering and timeline paging. */
+	branch: BranchKey | null,
 	origin: RunOrigin | null,
 	/**  The Run's own row, whose Detail its headline opens. */
 	node: string,

@@ -31,6 +31,7 @@ const session: ChatSession = {
   selection: { backend: "claude-agent", model: "claude-opus-5-5" },
   createdAt: "2026-11-21T00:00:00Z",
   updatedAt: "2026-11-21T00:00:00Z",
+  running: false,
 };
 
 /** The library of one session: `turns` is what it holds, `running` whether a turn runs. */

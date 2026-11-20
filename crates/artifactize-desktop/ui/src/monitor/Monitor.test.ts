@@ -281,8 +281,10 @@ it("switches modes from the bottom bar, each kept as it was left, and lists and 
 });
 
 it("says a Run's verdict and what needs attention in the header row, which opens the Run's Detail", async () => {
+  const feature = branch("feat/x", [runChip("run-2", "RED", false, "Fixing the login form")]);
   const run: RunPanel = {
     id: "run-2",
+    branch: feature.key,
     origin: null,
     node: "run:run-2",
     mark: { status: "RED", glyph: "✗" },
@@ -291,7 +293,6 @@ it("says a Run's verdict and what needs attention in the header row, which opens
       { mark: { status: "DEFERRED", glyph: "?" }, text: "release/signoff" },
     ],
   };
-  const feature = branch("feat/x", [runChip("run-2", "RED", false, "Fixing the login form")]);
   backend(monitor(), () => browseView(1, { branches: [feature], run: { kind: "read", ...run } }));
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });

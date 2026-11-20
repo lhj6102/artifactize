@@ -323,7 +323,19 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     assert_eq!(view["waiting"][0]["branch"], branch["name"]);
 
     let run = chip["id"].as_str().unwrap().to_owned();
+    let key = branch["key"].clone();
+    invoke(
+        &window,
+        "browse",
+        json!({"navigate": search("repo:not-listed")}),
+    )
+    .unwrap();
     let view = invoke(&window, "browse", json!({"navigate": open_run(&run)})).unwrap();
+    assert_eq!(view["branches"], json!([]), "the branch is filtered out");
+    assert_eq!(
+        view["run"]["branch"], key,
+        "the Run still names its live branch"
+    );
     assert_eq!(
         tree_names(&window, &view),
         ["Run", "release", "signoff", "ship", "check"]

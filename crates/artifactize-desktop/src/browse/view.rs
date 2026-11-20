@@ -270,6 +270,8 @@ impl From<&artifactize_core::runs::Origin> for RunOrigin {
 #[serde(rename_all = "camelCase")]
 pub struct RunPanel {
     pub id: crate::ids::RunKey,
+    /// The Run's branch if it still lives, independent of filtering and timeline paging.
+    pub branch: Option<BranchKey>,
     pub origin: Option<RunOrigin>,
     /// The Run's own row, whose Detail its headline opens.
     pub node: crate::ids::NodeKey,
@@ -286,7 +288,7 @@ pub enum ShownRun {
     /// No Run is shown.
     None,
     /// The shown Run, read.
-    Read(RunPanel),
+    Read(Box<RunPanel>),
     /// The shown Run no longer exists or cannot be read.
     Missing,
 }
@@ -457,6 +459,18 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         let progress = monitor::progress(run, requests, now);
         RunPanel {
             id: run.run.id.clone().into(),
+            branch: shown
+                .branches
+                .iter()
+                .find(|branch| {
+                    branch
+                        .runs
+                        .binary_search_by(|chip| {
+                            (chip.created_at, &chip.id).cmp(&(run.run.created_at, &run.run.id))
+                        })
+                        .is_ok()
+                })
+                .map(|branch| BranchKey::new(&branch.place)),
             origin: run.run.origin.as_ref().map(Into::into),
             node: NodeId::run(&run.run.id).into(),
             mark: progress.status.into(),
@@ -517,7 +531,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         waiting: waiting_rows,
         launch: shown.launch.as_ref().map(BranchKey::new),
         run: match (run, &shown.opened) {
-            (Some(panel), _) => ShownRun::Read(panel),
+            (Some(panel), _) => ShownRun::Read(Box::new(panel)),
             (None, Opened::Missing(_)) => ShownRun::Missing,
             (None, _) => ShownRun::None,
         },

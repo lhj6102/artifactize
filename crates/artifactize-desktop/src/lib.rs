@@ -47,6 +47,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
         .commands(collect_commands![
             launch::launch,
             chat::chat_create,
+            chat::chat_default_model,
             chat::chat_list,
             chat::chat_open,
             chat::chat_send,

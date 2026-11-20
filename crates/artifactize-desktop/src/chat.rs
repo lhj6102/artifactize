@@ -27,6 +27,15 @@ impl TryFrom<ChatModel> for chat::Model {
     }
 }
 
+impl From<chat::Model> for ChatModel {
+    fn from(model: chat::Model) -> Self {
+        Self {
+            backend: model.backend.to_string(),
+            model: model.model.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSession {
@@ -36,6 +45,7 @@ pub struct ChatSession {
     pub selection: ChatModel,
     pub created_at: String,
     pub updated_at: String,
+    pub running: bool,
 }
 
 impl From<chat::Session> for ChatSession {
@@ -44,12 +54,10 @@ impl From<chat::Session> for ChatSession {
             id: session.id.into(),
             title: session.title,
             worktree: PathKey::new(&session.worktree),
-            selection: ChatModel {
-                backend: session.selection.backend.to_string(),
-                model: session.selection.model.to_string(),
-            },
+            selection: session.selection.into(),
             created_at: session.created_at.to_string(),
             updated_at: session.updated_at.to_string(),
+            running: session.running,
         }
     }
 }
@@ -179,16 +187,34 @@ pub struct ChatView {
     pub turns: Vec<ChatTurn>,
 }
 
-/// Create an empty Chat session for the chosen worktree and a model its provider lists.
+/// Read the starting model for a new session. The pending call is the loading state;
+/// `null` means no provider lists a model and the worktree has no previous session.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_default_model(
+    app: tauri::State<'_, App>,
+    worktree: PathKey,
+) -> Result<Option<ChatModel>, Failure> {
+    app.chat
+        .default_model(&worktree.to_path())
+        .await
+        .map(|model| model.map(Into::into))
+        .map_err(Failure::Read)
+}
+
+/// Create an empty Chat session for the chosen worktree; `null` uses its default model.
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_create(
     app: tauri::State<'_, App>,
     worktree: PathKey,
-    selection: ChatModel,
+    selection: Option<ChatModel>,
 ) -> Result<ChatSession, Failure> {
     app.chat
-        .create(&worktree.to_path(), selection.try_into()?)
+        .create(
+            &worktree.to_path(),
+            selection.map(TryInto::try_into).transpose()?,
+        )
         .await
         .map(Into::into)
         .map_err(Failure::Action)
