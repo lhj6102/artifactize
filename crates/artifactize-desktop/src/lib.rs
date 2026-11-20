@@ -78,6 +78,8 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             viewer::viewer_read_text,
             viewer::viewer_declarations,
             viewer::viewer_close,
+            viewer::viewer_point,
+            viewer::active_review_set,
             request::request_detail,
             release::release_notice,
             release::release_open,
@@ -112,6 +114,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
         ])
         .events(collect_events![
             watch::StateChanged,
+            viewer::ActiveReviewChanged,
             watch::SessionChanged,
             human::log::HumanToolLog,
             graph::current::CurrentChanged
@@ -203,6 +206,7 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
         })
         .setup(move |app| {
             specta.mount_events(app);
+            app.state::<App>().viewers.forward(app.handle().clone());
             let command_state = state.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 if let Err(error) =

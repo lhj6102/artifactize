@@ -37,7 +37,11 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
         let mut changes = Subscription::new(&state).await;
         loop {
             let change = changes.next().await;
-            hub.state::<App>().browse.invalidate(&change);
+            let state = hub.state::<App>();
+            state.browse.invalidate(&change);
+            if !matches!(change, Change::SessionInvalidated(_)) {
+                crate::viewer::refresh_active(&state).await;
+            }
             let sent = match change {
                 Change::StateInvalidated | Change::RunInvalidated(_) => {
                     StateChanged { resync: false }.emit(&hub)

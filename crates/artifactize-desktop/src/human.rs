@@ -690,6 +690,7 @@ pub async fn human_submit(
         other => unreachable!("a submit job ends in Submitted or SavedLocally, not {other:?}"),
     };
     app.human.took(&id, false);
+    crate::viewer::settled(&app, &id);
     // A submitted review's log ends here; what a launched program still prints is dropped.
     app.human
         .logs
@@ -734,6 +735,7 @@ pub async fn human_release(
         .filter(|id| !failed.iter().any(|(failed, _)| failed == *id))
     {
         app.human.took(id, false);
+        crate::viewer::settled(&app, id);
     }
     let notice = outcome.notice().into();
     let view = match ids.as_slice() {

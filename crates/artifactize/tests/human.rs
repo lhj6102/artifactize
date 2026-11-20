@@ -86,12 +86,33 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
     );
     assert!(append_draft(state, id, &alice, "#released").await.is_err());
     human::claim(&receipts, id, &alice).await.unwrap();
+    fs::write(fixture.repo.join("preview.md"), "# Preview").unwrap();
+    fs::write(
+        fixture.repo.join(".artifactize/preview.artf"),
+        "path = 'preview.md'\ntype = 'markdown'\nbasis = true\n",
+    )
+    .unwrap();
+    let viewer =
+        artifactize_core::viewer::Session::open(&fixture.repo, &"preview".parse().unwrap())
+            .unwrap();
+    let active = artifactize_core::viewer::Review {
+        id: id.clone(),
+        reviewer: alice.clone(),
+    };
     let (first, second) = tokio::join!(
-        append_draft(state, id, &alice, "#checkout .total"),
+        viewer.pointing(state, &active, "#checkout .total"),
         append_draft(state, id, &alice, "L42:C9"),
     );
     first.unwrap();
     second.unwrap();
+    assert!(
+        store::read_request(state, id.as_str())
+            .await
+            .unwrap()
+            .request
+            .status()
+            .is_human_wait()
+    );
     let pointed = read_draft(state, id, &alice).await.unwrap().unwrap().notes;
     let mut points = pointed.lines();
     assert_eq!(points.next(), Some("Initial response"));

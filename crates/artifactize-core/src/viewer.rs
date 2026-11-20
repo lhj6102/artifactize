@@ -24,7 +24,6 @@ pub struct Session {
     root: PathBuf,
     artifact: Artifact,
     entry: ViewerEntry,
-    review: Option<Review>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,19 +59,14 @@ pub struct FileEntry {
 }
 
 impl Session {
-    pub fn open(
-        repo: &Path,
-        artifact: &ArtifactName,
-        review: Option<Review>,
-    ) -> Result<Self, String> {
+    pub fn open(repo: &Path, artifact: &ArtifactName) -> Result<Self, String> {
         let config = config::read_workspace_config(repo).map_err(|error| error.to_string())?;
-        Self::from_config(&config, artifact, review)
+        Self::from_config(&config, artifact)
     }
 
     pub(crate) fn from_config(
         config: &RepoConfig,
         artifact: &ArtifactName,
-        review: Option<Review>,
     ) -> Result<Self, String> {
         let artifact = config
             .artifacts
@@ -100,7 +94,6 @@ impl Session {
             root: config.root.clone(),
             artifact: artifact.clone(),
             entry,
-            review,
         })
     }
 
@@ -108,7 +101,7 @@ impl Session {
         &self.entry
     }
 
-    pub fn context(&self) -> Context<'_> {
+    pub fn context<'a>(&'a self, review: Option<&'a Review>) -> Context<'a> {
         let plugin = self.artifact.plugin.as_ref().expect("viewer has a plugin");
         Context {
             artifact: &self.artifact.name,
@@ -116,12 +109,18 @@ impl Session {
             title: &plugin.info.title,
             target: &self.artifact.path,
             target_kind: self.artifact.kind(),
-            review: self.review.as_ref().map(|review| &review.id),
+            review: review.map(|review| &review.id),
         }
     }
 
-    pub fn review(&self) -> Option<&Review> {
-        self.review.as_ref()
+    /// Append a Point to the host-selected review; the store rechecks its claim atomically.
+    pub async fn pointing(
+        &self,
+        state: &Path,
+        review: &Review,
+        text: &str,
+    ) -> Result<crate::review::Draft, String> {
+        crate::review::append_draft(state, &review.id, &review.reviewer, text).await
     }
 
     pub fn read_text(&self, path: &InputPath) -> Result<String, String> {

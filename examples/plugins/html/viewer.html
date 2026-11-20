@@ -38,6 +38,13 @@
 
     window.addEventListener('message', async (event) => {
       if (event.source === parent && event.data?.channel === channel) {
+        if (event.data.event === 'activeReviewChanged') {
+          armed = false;
+          point.removeAttribute('aria-pressed');
+          page.contentWindow.postMessage({ type: 'point', armed: false }, '*');
+          checkingReview().catch(() => {});
+          return;
+        }
         const { id, result, error } = event.data;
         const call = pending.get(id);
         if (!call) return;

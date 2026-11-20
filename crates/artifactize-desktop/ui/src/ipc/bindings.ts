@@ -158,6 +158,9 @@ export const commands = {
 	/**  The exact scoped graph wire shape used by the library. Serialize at the IPC edge. */
 	viewerDeclarations: (session: number) => typedError<string, Failure>(__TAURI_INVOKE("viewer_declarations", { session })),
 	viewerClose: (session: number) => __TAURI_INVOKE<void>("viewer_close", { session }),
+	/**  Append to the shared draft and return the updated plain-text response. */
+	viewerPoint: (session: number, text: string) => typedError<string, Failure>(__TAURI_INVOKE("viewer_point", { session, text })),
+	activeReviewSet: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("active_review_set", { request })),
 	/**  The read-only Detail of request `id` in its Run. */
 	requestDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("request_detail", { id })),
 	/**
@@ -261,6 +264,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	activeReviewChanged: makeEvent<ActiveReviewChanged>("active-review-changed"),
 	currentChanged: makeEvent<CurrentChanged>("current-changed"),
 	humanToolLog: makeEvent<HumanToolLog>("human-tool-log"),
 	sessionChanged: makeEvent<SessionChanged>("session-changed"),
@@ -284,6 +288,11 @@ export type Acted_Deserialize = {
 export type Acted_Serialize = {
 	notice: Notice_Serialize,
 	view: HumanView | null,
+};
+
+/**  The last shown claimed review changed; open viewers read their context again. */
+export type ActiveReviewChanged = {
+	request: string | null,
 };
 
 export type Attention = {
