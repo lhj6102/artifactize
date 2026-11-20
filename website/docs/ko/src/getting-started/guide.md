@@ -95,7 +95,7 @@ artifactize verify --all --wait
 |---|---|
 | [`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) | 상위 Artifact와 `parts` 구성(`intro`, `usage`로 이루어진 `guide`), 지시문과 인자의 `{artifact}` 참조, `basis = true`, 그리고 선행 eval이 `RED`일 때 하위 eval이 막히는(`BLOCKED`) 동작. |
 | [`examples/posts`](https://github.com/lhj6102/artifactize/tree/main/examples/posts) | 여러 파일 Artifact가 하나의 공용 스타일 검사기(`{house-style}`)를 참조해 파일별로 결과를 재사용하는 구조와 `tags`. |
-| [`examples/agent-tools`](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) | 내장 도구(`read`, `grep`, `view_image`, `section`)와 사용자 지정 `json` 도구를 쓰는 Agent eval, `pass_schema`/`fail_schema`, 그리고 `open`·`read` 도구를 쓰는 Human 승인. |
+| [`examples/agent-tools`](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) | 내장 도구(`read`, `grep`, `view_image`, `section`)와 사용자 지정 `json` 도구를 사용해 우선순위별 지적 사항을 보고하는 Agent eval, 그리고 `open`·`read` 도구와 스키마로 검증하는 결과 필드를 쓰는 Human 승인. |
 | [`examples/live`](https://github.com/lhj6102/artifactize/tree/main/examples/live) | 외부 서비스 URI(`path = "https://..."`)를 `verify`할 때마다 읽기 전용 HTTP 명령으로 확인하는 Live Artifact. |
 
 ## 다음 단계 {#next-steps}

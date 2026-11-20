@@ -25,8 +25,8 @@ text = "Canvas note shown in the desktop app."
 
 | 필드 / 식별자 | 규칙 |
 |---|---|
-| 식별자 | 식별자에는 ASCII 영문자, 숫자, `_`, `-`를 쓸 수 있으며 첫 글자는 영문자나 숫자여야 합니다. Artifact 이름(파일 이름)은 `.artifactize/` 전체에서 대소문자를 무시하고 비교했을 때 같은 이름을 쓸 수 없으며, Windows 장치 이름(`con`, `nul`, `com1` 등)도 쓸 수 없습니다. eval ID는 해당 Artifact 안에서, 도구·세션·대체 실행 프로필 ID는 각 선언 테이블 안에서 유일해야 합니다. |
-| `path` | **필수.** 프로젝트 루트 기준 상대 경로나 Live URI를 지정합니다. 로컬 경로는 `/`를 쓰며, 폴더는 `"dir/"`나 `"./"`처럼 끝에 `/`를 붙여야 합니다. 일반 파일 하나를 지정할 때는 `"file.ext"`처럼 적습니다. Live URI는 영문 두 글자 이상으로 이루어진 스킴을 씁니다(예: `"https://example.com"`). HTTP(S)만 허용하는 내장 `open` 도구와 달리 Live 대상은 영문자로만 이루어진 다른 URI 스킴도 허용합니다. |
+| 식별자 | Artifact 이름은 `.artf` 파일 이름(확장자 제외)으로 정해지며 `.artifactize/` 전체에서 대소문자를 무시하고 비교했을 때 겹칠 수 없습니다(`con`, `nul` 같은 Windows 장치 이름은 피하세요). eval ID는 해당 Artifact 안에서, 도구·세션·대체 실행 프로필 ID는 각 선언 테이블 안에서 겹치지 않아야 합니다. |
+| `path` | **필수.** 프로젝트 루트 기준 상대 경로나 Live URI를 지정합니다. 로컬 경로는 `/`를 쓰며, 폴더는 `"dir/"`나 `"./"`처럼 끝에 `/`를 붙여야 합니다. 일반 파일 하나를 지정할 때는 `"file.ext"`처럼 적습니다. Live 대상은 URI로 적습니다(예: `"https://example.com"`). HTTP(S)만 허용하는 내장 `open` 도구와 달리 Live 대상에는 다른 URI 스킴도 쓸 수 있습니다. |
 | `select` | 폴더 `path` 안에서 고른 상대 경로 배열로 **Aspect**를 정의합니다. 파일이나 Live Artifact에는 쓸 수 없습니다. |
 | `parts` | 상위 Artifact를 구성하는 하위 Artifact의 이름을 배열로 적습니다. 이 Artifact의 이름을 `parts`에 넣을 수 없으며, `parts`만 따라 원래 Artifact로 돌아오는 순환 관계도 만들 수 없습니다. |
 | `basis` | 불리언 값입니다. `true`로 설정하면 이 Artifact 자체는 리뷰하지 않으며, `evals`가 있으면 이 값을 쓸 수 없습니다. |
@@ -48,14 +48,15 @@ text = "Canvas note shown in the desktop app."
 | `profile_variants` | 같은 `kind`의 대체 실행 프로필 매핑(`verify --profile NAME` 또는 `status --profile NAME`으로 선택). 직접 선택했거나 재귀 옵션으로 포함한 eval 중 실행 가능한 eval마다 대체 실행 프로필을 정의해야 합니다. Runtime 대체 실행 프로필의 `args`에 적은 참조 때문에 새로 포함된 선행 eval은 기본 프로필로 실행합니다. |
 | `mutex` | `runtime` 또는 `agent` eval에 지정하는 계층형 잠금 태그 배열(`"use-computer"` 또는 `"use-computer:display"` 같은 하위 경로). 태그가 같거나 상하위 관계에 있으면(`use-computer`는 모든 하위 태그와 충돌) 한 eval이 끝날 때까지 다른 eval은 대기합니다. |
 | `payload.instruction` | **필수.** 평가 기준 문자열. `payload.instruction`이나 Runtime `args`에서 다른 Artifact를 `{name}`으로 참조하면 그 Artifact가 해당 eval의 입력이 됩니다. 해당 eval의 검사 대상 자체를 참조할 때는 의존성을 추가하지 않습니다. |
-| `pass_schema`, `fail_schema` | `agent` 및 `human` eval의 결과 필드를 검증할 JSON Schema는 필요할 때만 지정합니다(`runtime` 선언에도 적을 수 있으며, 종료 코드 판정은 바꾸지 않고 eval 정의 해시에만 반영됩니다). |
+| `red_at` | `agent` eval에만 지정하는 선택적 우선순위 기준(`"P0"`, `"P1"`, `"P2"`, `"P3"` 중 하나이며 `P0`이 가장 높음). `red_at` 이상의 지적 사항이 있으면 `RED`로 판정하고, 생략하면 지적 사항이 하나만 있어도 `RED`로 판정합니다. 기준보다 낮은 지적 사항은 `GREEN` 판정에서도 결과에 남습니다. |
+| `pass_schema`, `fail_schema` | `human` eval의 결과 필드를 검증할 JSON Schema로, 필요할 때만 지정합니다(`agent` eval에서는 쓸 수 없습니다). `runtime` 선언에도 적을 수 있으며, 종료 코드 판정은 바꾸지 않고 eval 정의 해시에만 반영됩니다. |
 
 ## 결과 스키마 (`pass_schema`와 `fail_schema`) {#owner-result-schemas}
 
-Agent와 Human 결과에는 `"verdict": "GREEN" | "RED"`와 함께 사용자가 선언한 결과 필드가 저장됩니다.
+Human 결과에는 `"verdict": "GREEN" | "RED"`와 함께 사용자가 선언한 결과 필드가 저장됩니다.
 
-- **최상위 객체 규칙**: 최상위 `type = "object"`와 `additionalProperties = false`는 생략해도 자동으로 적용됩니다. 허용할 최상위 결과 필드는 모두 `properties`에 명시해야 합니다. `properties`에 없는 최상위 필드는 `$ref`나 `patternProperties`를 써도 허용할 수 없습니다. 최상위 `allOf`/`anyOf`/`oneOf`/`not`은 거부되므로 조합 키워드는 개별 속성 안에서만 쓰세요. 실행 기록에 쓰는 이름(`verdict`, `reference`, `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`, `stderr`, `durationMs`, `exitCode`)은 결과 필드에 사용할 수 없습니다. 특정 판정의 스키마를 생략하면 그 판정의 결과 필드에는 빈 객체(`{}`)만 허용합니다.
-- **Human 양식 형태** (`#human-result-schemas`): 사람은 UI 양식에 결과를 입력하므로 `human` eval의 `pass_schema`와 `fail_schema`에는 화면 양식에서 지원하는 필드 유형만 쓰세요.
+- **최상위 객체 규칙**: 최상위 `type = "object"`와 `additionalProperties = false`는 생략해도 자동으로 적용됩니다. 허용할 최상위 결과 필드는 모두 `properties`에 명시해야 합니다. `properties`에 없는 최상위 필드는 `$ref`나 `patternProperties`를 써도 허용할 수 없습니다. `allOf`/`anyOf`/`oneOf`/`not` 같은 스키마 조합 키워드는 최상위와 Human 개별 속성 모두에서 쓸 수 없습니다. 실행 기록에 쓰는 이름(`verdict`, `reference`, `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`, `stderr`, `durationMs`, `exitCode`)은 결과 필드에 사용할 수 없습니다. 특정 판정의 스키마를 생략하면 그 판정의 결과 필드에는 빈 객체(`{}`)만 허용합니다.
+- **Human 양식 형태** (`#human-result-schemas`): 사람은 UI 양식에 결과를 입력하므로 `human` eval의 `pass_schema`와 `fail_schema`에는 화면 양식에서 지원하는 아래 필드 형태만 쓰세요.
   - `{ type = "string", minLength?, maxLength? }` (텍스트 입력 칸)
   - `{ type = "integer" | "number", minimum?, maximum?, exclusiveMinimum?, exclusiveMaximum?, multipleOf? }` (숫자 입력 칸)
   - `{ type = "boolean" }` (참/거짓 선택)
@@ -66,7 +67,7 @@ Agent와 Human 결과에는 `"verdict": "GREEN" | "RED"`와 함께 사용자가 
 
 ## 선언 파일 이전과 Artifact 이름 변경 {#upgrading-an-in-tree-project}
 
-- **`artifactize config migrate [--repo PATH]`**: 기존 디렉터리 곳곳에 있던 `index.artf`, 개별 `.artf`, 루트 `.artf` 선언 파일을 `.artifactize/<name>.artf` 형식으로 옮기면서 `path`와 `parts`를 명시합니다. `.artfignore`에 따라 변환에서 제외한 하위 프로젝트를 알리고, 새 형식으로 옮긴 선언의 원본 파일과 `.artfignore`를 삭제합니다.
+- **`artifactize config migrate [--repo PATH]`**: 기존 디렉터리 곳곳에 있던 `index.artf`, 개별 `.artf`, 루트 `.artf` 선언 파일을 `.artifactize/<name>.artf` 형식으로 옮기면서 `path`와 `parts`를 명시합니다. 이때 `agent` eval에 남아 있던 기존 `pass_schema`와 `fail_schema` 선언은 제거하고 Human 스키마는 그대로 유지합니다. `.artfignore`에 따라 변환에서 제외한 하위 프로젝트를 알리고, 새 형식으로 옮긴 선언의 원본 파일과 `.artfignore`를 삭제합니다.
 - **`artifactize config rename OLD NEW`**: 프로젝트 유효성을 확인한 뒤 `.artifactize/**/<OLD>.artf` 파일 이름을 `<NEW>.artf`로 바꾸고 `parts`, `{OLD}` 참조, `[annotations.style]`에 저장한 하위 Artifact의 위치를 함께 갱신합니다.
 
 ## 운영체제별 규칙 {#operating-systems}
@@ -75,4 +76,4 @@ Agent와 Human 결과에는 `"verdict": "GREEN" | "RED"`와 함께 사용자가 
 
 - **프로그램 탐색**: `python3`, `cargo`처럼 경로 구분자가 없는 실행 파일 이름은 `PATH`에서 찾습니다. Windows에서는 `PATHEXT`도 확인하므로 `npx`를 지정하면 `npx.cmd`도 찾습니다. `/`가 들어 있는 상대 실행 경로(`./tools/check`)는 대상 종류에 따라 탐색 기준이 다릅니다. 폴더와 Aspect에서는 허용된 범위 안에서 찾고, 파일 Artifact에서는 파일이 들어 있는 폴더 아래에서, Live 대상에서는 프로젝트 루트 아래에서 찾습니다. 모든 대상에서 `..`와 심볼릭 링크는 허용하지 않습니다.
 - **경로 대소문자 구분**: 모든 OS에서 논리 경로의 대소문자를 구분하며, 대소문자를 구분하지 않는 macOS·Windows 볼륨에서도 실제 디스크에 저장된 파일 이름의 대소문자가 정확히 일치하는지 확인합니다.
-- **파일 및 브라우저 열기**: `login codex`는 [내장 `open` 도구](../guides/tools.md#builtin-tools)와 같은 방식으로 운영체제의 기본 브라우저를 엽니다.
+- **파일 및 브라우저 열기**: `artifactize login codex`를 실행하면 로그인을 마칠 수 있도록 운영체제의 기본 브라우저가 열립니다.

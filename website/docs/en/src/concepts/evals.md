@@ -5,7 +5,7 @@ An **eval** (`[evals.<id>]`, qualified as `<artifact>/<id>`) is a single check o
 | Kind | Reviewer | Verdict & result |
 |---|---|---|
 | `runtime` | A program (`command` + `args`) | Exit `0` is `GREEN`; any other exit code is `RED`. Operational failures (missing binary, timeout, unreadable output, or `INPUT_CHANGED`) record `ERROR`. |
-| `agent` | One exact LLM (`backend` + `model`) using declared read-only tools | Schema-validated `GREEN` or `RED` JSON object with owner fields (`pass_schema` / `fail_schema`). |
+| `agent` | One exact LLM (`backend` + `model`) using declared read-only tools | Engine-defined `findings` list of `{priority, reason}` objects (`P0`–`P3`); Artifactize derives `GREEN` or `RED` from `red_at`. |
 | `human` | A person who claims the waiting request and submits a form | Schema-validated `GREEN` or `RED` form fields. |
 
 ## Runtime evals
@@ -27,15 +27,14 @@ payload.instruction = "Run the tests of {library}."
 [evals.review]
 title = "The implementation satisfies the spec"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 240000, max_tokens = 100000, max_tool_calls = 100 }
-payload.instruction = "Review {app} against {spec}. Submit GREEN only when all requirements hold."
-pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
-fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
+red_at = "P1"
+payload.instruction = "Review {app} against {spec}. Report each unmet requirement as a finding."
 ```
 
 - **Backends and models**: `backend` names `openai`, `anthropic`, `gemini`, `codex`, `claude-agent`, or a custom provider configured with [`artifactize provider`](../reference/cli-and-mcp.md#command-reference) (or in the desktop app's **Settings → Providers**). There is no model catalog or automatic fallback; `model` must match the provider's exact model ID (`artifactize models BACKEND`).
 - **Reasoning and budgets**: `reasoning` is passed as-is (`openai` and `codex`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `claude-agent`: `low`, `medium`, `high`, `xhigh`, `max`; `anthropic`: `low`, `medium`, `high`, `max`; `gemini`: `minimal`, `low`, `medium`, `high`). Optional `max_tokens` and `max_tool_calls` cap total reported tokens and attempted tool calls across the review (exceeding either ends the review with `ERROR/PROVIDER_BUDGET_EXCEEDED`).
 - **Read-only review**: the Agent only reviews using the [tools](../guides/tools.md) declared on the target and referenced `{name}` Artifacts. For `claude-agent`, your local Claude Code hooks, skills, `CLAUDE.md`, memory, and MCP servers are isolated from the review.
-- **Validation**: the final response must match `pass_schema` (for `GREEN`) or `fail_schema` (for `RED`), or the review ends `ERROR/INVALID_RESULT` (inspect the saved conversation with `artifactize session show REF` to make the instruction and schema agree).
+- **Findings and verdict**: the Agent returns a JSON object with a `findings` list of `{priority, reason}` objects (`P0` highest to `P3` lowest; empty when there are no findings), or the review ends `ERROR/INVALID_RESULT` (inspect the saved conversation with `artifactize session show REF`). Artifactize derives `RED` when any finding is at `red_at` or higher (or any finding at all when `red_at` is omitted), and retains findings below `red_at` even when the eval is `GREEN`.
 - **Timeouts and backend stopping**: `timeout_ms` bounds the entire Agent review. If a provider fails with `AUTHENTICATION` or `QUOTA`, Artifactize stops starting further reviews on that backend for the rest of the Run (`BACKEND_STOPPED`); re-authenticate with `artifactize login` or restore quota before rerunning `verify`.
 - **Saved conversations**: each review's full transcript and tool calls are saved locally by default under `$STATE/agent-sessions/` (configured via [`agentSessions` in `limits.json`](../reference/cli-and-mcp.md#state-cache-and-limits)). Inspect them with `artifactize session show REF [--summary]` or ask a follow-up question without changing the recorded verdict using `artifactize session send REF "Question"`.
 

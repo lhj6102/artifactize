@@ -95,7 +95,7 @@ If you clone `https://github.com/lhj6102/artifactize`, the `examples/` directory
 |---|---|
 | [`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) | Parent and `parts` composition (`guide` made of `intro` and `usage`), `{artifact}` references in instructions and argv, `basis = true`, and how a `RED` dependency blocks downstream checks. |
 | [`examples/posts`](https://github.com/lhj6102/artifactize/tree/main/examples/posts) | Multiple file Artifacts sharing one style-checker Artifact (`{house-style}`), independent per-file reuse, and `tags`. |
-| [`examples/agent-tools`](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) | An Agent eval with built-in (`read`, `grep`, `view_image`, `section`) and custom `json` tools, `pass_schema`/`fail_schema`, and a Human sign-off with `open` and `read` tools. |
+| [`examples/agent-tools`](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) | An Agent eval with built-in (`read`, `grep`, `view_image`, `section`) and custom `json` tools returning prioritized findings, and a Human sign-off with `open` and `read` tools and schema-validated owner fields. |
 | [`examples/live`](https://github.com/lhj6102/artifactize/tree/main/examples/live) | A Live URI target (`path = "https://..."`) observed by a read-only HTTP runtime check on every `verify`. |
 
 ## Next steps

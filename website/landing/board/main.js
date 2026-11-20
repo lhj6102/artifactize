@@ -11,14 +11,20 @@ import { DEV, MAIN, REPO, buildModel, devState, events, lastNote, layout, sameCo
 /** @typedef {import('./model.js').Event} Event */
 
 const API = `https://api.github.com/repos/${REPO}`;
-const CACHE_KEY = 'artifactize-board-4';
-/** One load costs six requests plus one per open pull request; reusing a snapshot this young keeps reloads within the hourly limit. */
-const FRESH_MS = 5 * 60 * 1000;
+const CACHE_KEY = 'artifactize-board-9';
+/** Reusing a recent snapshot avoids asking GitHub again on every reload; it still counts toward the 60/hour unauthenticated limit. */
+const FRESH_MS = 10 * 60 * 1000;
+/** Timeout per GitHub API request (covering headers and response body) so a stalled connection never leaves Refresh stuck disabled. */
+const REQUEST_TIMEOUT_MS = 15 * 1000;
+/** Overall time budget for optional supplemental lookups (CI checks, tag objects) once core data arrives. */
+const SUPPLEMENTAL_TIMEOUT_MS = 12 * 1000;
 /** Open pull requests whose CI jobs are fetched, newest first; the rest link to GitHub for CI. */
-const CHECKED_PRS = 10;
+const CHECKED_PRS = 6;
 /** Pages of open pull requests followed (100 each). */
-const OPEN_PAGES = 5;
-/** Undated v* tags whose commit is looked up, newest first. */
+const OPEN_PAGES = 2;
+/** Pages of check runs, check suites, or commit statuses followed per open pull request (100 each). */
+const CHECK_PAGES = 1;
+/** Tag objects or commits looked up for v* tags, newest first. */
 const TAG_LOOKUPS = 10;
 /** Closed and merged pull requests listed under the open ones. */
 const RECENT_ROWS = 30;
@@ -34,120 +40,315 @@ class LimitError extends Error {
 }
 
 /**
- * @param {string} path a path under the repository, or a full API URL
- * @returns {Promise<Response>}
+ * Parses a Retry-After header (seconds or HTTP date) into a Date, or null if absent/invalid.
+ * @param {string | null} header
+ * @returns {Date | null}
  */
-async function request(path) {
-  const response = await fetch(path.startsWith('https://') ? path : API + path, { headers: { Accept: 'application/vnd.github+json' } });
-  if ((response.status === 403 || response.status === 429) && response.headers.get('x-ratelimit-remaining') === '0') {
-    const reset = Number(response.headers.get('x-ratelimit-reset'));
-    throw new LimitError(reset ? new Date(reset * 1000) : null);
+function parseRetryAfter(header) {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return new Date(Date.now() + seconds * 1000);
+  const date = new Date(header);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Fetches JSON from GitHub under an AbortController timeout that covers both the
+ * response headers and reading the full response body.
+ * @param {string} path a path under the repository, or a full API URL
+ * @param {boolean} [optional] a 404 returns null instead of failing
+ * @param {AbortSignal} [outerSignal] optional cancellation signal shared across a batch
+ * @returns {Promise<{ data: any, next: string | null } | null>}
+ */
+async function requestJson(path, optional = false, outerSignal = undefined) {
+  const controller = new AbortController();
+  const onOuterAbort = () => controller.abort();
+  if (outerSignal) {
+    if (outerSignal.aborted) controller.abort();
+    else outerSignal.addEventListener('abort', onOuterAbort, { once: true });
   }
-  return response;
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(path.startsWith('https://') ? path : API + path, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: controller.signal,
+    });
+    if (response.status === 403 || response.status === 429) {
+      const remaining = response.headers.get('x-ratelimit-remaining');
+      const retryAfter = parseRetryAfter(response.headers.get('retry-after'));
+      if (remaining === '0' || retryAfter || response.status === 429) {
+        const reset = Number(response.headers.get('x-ratelimit-reset'));
+        throw new LimitError(retryAfter ?? (reset ? new Date(reset * 1000) : null));
+      }
+      // Secondary rate limit may answer 403 with nonzero remaining and a message in JSON.
+      const text = await response.text().catch(() => '');
+      if (/rate limit/i.test(text)) throw new LimitError(null);
+      throw new Error(`GitHub answered ${response.status} for ${path}`);
+    }
+    if (optional && response.status === 404) return null;
+    if (!response.ok) throw new Error(`GitHub answered ${response.status} for ${path}`);
+    const next = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get('link') ?? '')?.[1] ?? null;
+    const data = await response.json();
+    return { data, next };
+  } finally {
+    clearTimeout(timer);
+    if (outerSignal) outerSignal.removeEventListener('abort', onOuterAbort);
+  }
 }
 
 /**
  * Every page of a list, following GitHub's Link header up to `pages` pages.
  * @param {string} path
  * @param {number} pages
- * @returns {Promise<any[]>}
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{ items: any[], truncated: boolean }>}
  */
-async function getAll(path, pages) {
+async function getAll(path, pages, signal = undefined) {
   /** @type {any[]} */
   const items = [];
   /** @type {string | null} */
   let next = path;
+  let truncated = false;
   for (let page = 0; next && page < pages; page += 1) {
-    const response = await request(next);
-    if (!response.ok) throw new Error(`GitHub answered ${response.status} for ${path}`);
-    items.push(...await response.json());
-    next = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get('link') ?? '')?.[1] ?? null;
+    const result = await requestJson(next, false, signal);
+    if (!result) break;
+    items.push(...result.data);
+    next = result.next;
+    if (next && page + 1 >= pages) truncated = true;
   }
-  return items;
+  return { items, truncated };
 }
 
 /**
  * @param {string} path
  * @param {boolean} [optional] a 404 returns null instead of failing
+ * @param {AbortSignal} [signal]
  * @returns {Promise<any>}
  */
-async function get(path, optional = false) {
-  const response = await request(path);
-  if (optional && response.status === 404) return null;
-  if (!response.ok) throw new Error(`GitHub answered ${response.status} for ${path}`);
-  return response.json();
+async function get(path, optional = false, signal = undefined) {
+  const result = await requestJson(path, optional, signal);
+  return result ? result.data : null;
+}
+
+/**
+ * Fetches check suites, check runs, and combined commit statuses (up to CHECK_PAGES pages each)
+ * for a PR head. Marks `suitePending: true` while any check suite is still queued or running
+ * (so a single finished job never makes CI look green before sibling jobs register), and marks
+ * `complete: false` if any endpoint fails, truncates, or reports only commit statuses without
+ * GitHub Actions check runs.
+ * @param {string} sha
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{ set: import('./model.js').ApiCheckSet, partial: boolean }>}
+ */
+async function fetchChecks(sha, signal = undefined) {
+  /** @type {import('./model.js').ApiCheck[]} */
+  const items = [];
+  let complete = true;
+  let partial = false;
+  let suitePending = false;
+  let checkRunCount = 0;
+
+  try {
+    const suites = await requestJson(`/commits/${sha}/check-suites?per_page=100`, false, signal);
+    if (suites) {
+      const list = suites.data.check_suites ?? [];
+      if (suites.next || (typeof suites.data.total_count === 'number' && list.length < suites.data.total_count)) {
+        complete = false;
+      }
+      if (list.some((/** @type {any} */ suite) => suite.status && suite.status !== 'completed')) {
+        suitePending = true;
+      }
+    }
+  } catch (error) {
+    if (error instanceof LimitError) throw error;
+    complete = false;
+    partial = true;
+  }
+
+  /** @type {string | null} */
+  let next = `/commits/${sha}/check-runs?per_page=100`;
+  for (let page = 0; next && page < CHECK_PAGES; page += 1) {
+    const result = await requestJson(next, false, signal);
+    if (!result) break;
+    const data = result.data;
+    for (const check of data.check_runs ?? []) {
+      checkRunCount += 1;
+      items.push({ name: check.name, status: check.status, conclusion: check.conclusion });
+    }
+    const nextUrl = result.next;
+    if (nextUrl && page + 1 >= CHECK_PAGES) complete = false;
+    if (!nextUrl && typeof data.total_count === 'number' && checkRunCount < data.total_count) complete = false;
+    next = nextUrl;
+  }
+  try {
+    let statusNext = `/commits/${sha}/status?per_page=100`;
+    let statusCount = 0;
+    let totalStatuses = 0;
+    for (let page = 0; statusNext && page < CHECK_PAGES; page += 1) {
+      const result = await requestJson(statusNext, false, signal);
+      if (!result) break;
+      const status = result.data;
+      if (typeof status.total_count === 'number') totalStatuses = status.total_count;
+      const pageStatuses = status.statuses ?? [];
+      statusCount += pageStatuses.length;
+      for (const ctx of pageStatuses) {
+        const done = ctx.state !== 'pending';
+        items.push({
+          name: ctx.context,
+          status: done ? 'completed' : 'in_progress',
+          conclusion: done ? (ctx.state === 'success' ? 'success' : 'failure') : null,
+        });
+      }
+      if (result.next && page + 1 >= CHECK_PAGES) complete = false;
+      statusNext = result.next;
+    }
+    if (totalStatuses > statusCount) complete = false;
+  } catch (error) {
+    if (error instanceof LimitError) throw error;
+    complete = false;
+    partial = true;
+  }
+  // If only commit statuses reported and no GitHub Actions check runs are present yet,
+  // do not report CI as passed before the workflow jobs appear.
+  if (checkRunCount === 0 && items.length > 0) complete = false;
+  return { set: { checks: items, complete, suitePending }, partial };
 }
 
 /**
  * Fetches everything the board shows and keeps only the fields it reads.
- * @returns {Promise<Raw>}
+ * Core pull-request and tag-ref endpoints must succeed so a partial outage never turns
+ * missing PRs or `dev-green` into empty lists. Supplemental lookups (releases, dev head,
+ * closed main PRs, CI checks, tag objects, dev-green PR lookup) run concurrently under a
+ * shared time budget and abort immediately if GitHub reports rate limiting.
+ * @returns {Promise<{ raw: Raw, warning: string | null }>}
  */
 async function fetchRaw() {
-  const [recent, updated, open, releases, tagRefs, dev] = await Promise.all([
+  const [recent, updated, openPage, tagRefs] = await Promise.all([
     get('/pulls?state=all&per_page=100&sort=created&direction=desc'),
     // Recently merged or edited ones too: a long-lived branch merges late, and dev-master
     // edits a merged pull request when it adds a green: line.
     get('/pulls?state=closed&per_page=100&sort=updated&direction=desc'),
-    // Open pull requests separately, so an old one still waiting is never cut off.
+    // Open pull requests (both dev and main) separately, so old waiting PRs and open release PRs are included.
     getAll('/pulls?state=open&per_page=100', OPEN_PAGES),
-    get('/releases?per_page=100'),
     get('/git/matching-refs/tags'),
-    get('/branches/dev', true),
   ]);
+  const open = openPage.items;
+  const openTruncated = openPage.truncated;
+  const historyTruncated = recent.length >= 100 || updated.length >= 100;
+
+  let partial = false;
+  const supplemental = new AbortController();
+  const supplementalTimer = setTimeout(() => supplemental.abort(), SUPPLEMENTAL_TIMEOUT_MS);
+  const onSupplementalError = (/** @type {unknown} */ error) => {
+    partial = true;
+    if (error instanceof LimitError) supplemental.abort();
+  };
+
+  /** @type {import('./model.js').ApiRelease[]} */
+  let releases = [];
+  /** @type {any} */
+  let dev = null;
   /** @type {Map<number, import('./model.js').ApiPull>} */
   const pulls = new Map();
   for (const pull of [...recent, ...updated, ...open]) pulls.set(pull.number, pull);
-  // The pull request that made the dev-green commit, should both lists have missed it.
-  const green = tagRefs.find((/** @type {import('./model.js').ApiRef} */ ref) => ref.ref === 'refs/tags/dev-green');
-  if (green && ![...pulls.values()].some((pull) => sameCommit(pull.merge_commit_sha, green.object.sha))) {
-    const made = await get(`/commits/${green.object.sha}/pulls`);
-    for (const pull of made) pulls.set(pull.number, pull);
+
+  /** @type {Record<string, import('./model.js').ApiCheckSet>} */
+  const checks = {};
+  /** @type {Record<string, { sha: string, at: string, kind: 'tag' | 'commit' }>} */
+  const tagCommits = {};
+
+  try {
+    const [releasesRes, devRes, mainPullsRes] = await Promise.allSettled([
+      get('/releases?per_page=100', false, supplemental.signal),
+      get('/branches/dev', true, supplemental.signal),
+      getAll('/pulls?state=closed&base=main&per_page=100&sort=updated&direction=desc', 2, supplemental.signal),
+    ]);
+    if (releasesRes.status === 'fulfilled') releases = releasesRes.value;
+    else onSupplementalError(releasesRes.reason);
+    if (devRes.status === 'fulfilled') dev = devRes.value;
+    else onSupplementalError(devRes.reason);
+    if (mainPullsRes.status === 'fulfilled') {
+      for (const pull of mainPullsRes.value.items) pulls.set(pull.number, pull);
+    } else {
+      onSupplementalError(mainPullsRes.reason);
+    }
+
+    const green = tagRefs.find((/** @type {import('./model.js').ApiRef} */ ref) => ref.ref === 'refs/tags/dev-green');
+    const needGreenPr = !supplemental.signal.aborted && green
+      && ![...pulls.values()].some((pull) => pull.base.ref === 'dev' && pull.merged_at && sameCommit(pull.merge_commit_sha, green.object.sha));
+    const waiting = [...open]
+      .filter((pull) => pull.base.ref === 'dev' || pull.base.ref === 'main')
+      .sort((a, b) => b.number - a.number)
+      .slice(0, CHECKED_PRS);
+    const lookups = undatedTags(tagRefs, releases, [...pulls.values()])
+      .sort((a, b) => b.ref.localeCompare(a.ref, 'en', { numeric: true }))
+      .slice(0, TAG_LOOKUPS);
+
+    const tasks = [];
+    if (needGreenPr && green) {
+      tasks.push(
+        get(`/commits/${green.object.sha}/pulls`, false, supplemental.signal)
+          .then((made) => { for (const pull of made) pulls.set(pull.number, pull); })
+          .catch(onSupplementalError),
+      );
+    }
+    for (const pull of waiting) {
+      tasks.push(
+        fetchChecks(pull.head.sha, supplemental.signal)
+          .then((res) => {
+            checks[String(pull.number)] = res.set;
+            if (res.partial) partial = true;
+          })
+          .catch(onSupplementalError),
+      );
+    }
+    for (const ref of lookups) {
+      tasks.push((async () => {
+        if (ref.object.type === 'tag') {
+          const tag = await get(`/git/tags/${ref.object.sha}`, false, supplemental.signal);
+          tagCommits[ref.ref.slice('refs/tags/'.length)] = { sha: tag.object.sha, at: tag.tagger.date, kind: 'tag' };
+        } else {
+          const commit = await get(`/git/commits/${ref.object.sha}`, false, supplemental.signal);
+          tagCommits[ref.ref.slice('refs/tags/'.length)] = { sha: commit.sha, at: commit.committer.date, kind: 'commit' };
+        }
+      })().catch(onSupplementalError));
+    }
+    await Promise.all(tasks);
+  } finally {
+    clearTimeout(supplementalTimer);
   }
-  const waiting = [...open].sort((a, b) => b.number - a.number).slice(0, CHECKED_PRS);
-  const lookups = undatedTags(tagRefs, releases, [...pulls.values()])
-    .sort((a, b) => b.ref.localeCompare(a.ref, 'en', { numeric: true }))
-    .slice(0, TAG_LOOKUPS);
-  const [checks, tagged] = await Promise.all([
-    Promise.all(waiting.map((pull) => get(`/commits/${pull.head.sha}/check-runs?per_page=100`))),
-    Promise.all(lookups.map(async (ref) => {
-      // An annotated tag is its own object with a date; a lightweight one is the commit.
-      if (ref.object.type === 'tag') {
-        const tag = await get(`/git/tags/${ref.object.sha}`);
-        return { sha: tag.object.sha, at: tag.tagger.date };
-      }
-      const commit = await get(`/git/commits/${ref.object.sha}`);
-      return { sha: commit.sha, at: commit.committer.date };
-    })),
-  ]);
   return {
-    pulls: [...pulls.values()].map((pull) => ({
-      number: pull.number,
-      title: pull.title,
-      html_url: pull.html_url,
-      state: pull.state,
-      draft: pull.draft,
-      // Only the note is read; the rest of the body would only fill the cache.
-      body: lastNote(pull.body),
-      created_at: pull.created_at,
-      closed_at: pull.closed_at,
-      merged_at: pull.merged_at,
-      merge_commit_sha: pull.merge_commit_sha,
-      head: { ref: pull.head.ref, sha: pull.head.sha },
-      base: { ref: pull.base.ref },
-    })),
-    releases: releases.map((/** @type {import('./model.js').ApiRelease} */ r) => ({
-      tag_name: r.tag_name, html_url: r.html_url, published_at: r.published_at, draft: r.draft,
-    })),
-    tagRefs: tagRefs.map((/** @type {import('./model.js').ApiRef} */ ref) => ({ ref: ref.ref, object: { sha: ref.object.sha, type: ref.object.type } })),
-    tagCommits: Object.fromEntries(lookups.map((ref, index) => [ref.ref.slice('refs/tags/'.length), tagged[index]])),
-    devHead: dev ? dev.commit.sha : null,
-    checks: Object.fromEntries(waiting.map((pull, index) => [String(pull.number), checks[index].check_runs.map(
-      (/** @type {import('./model.js').ApiCheck} */ check) => ({ name: check.name, status: check.status, conclusion: check.conclusion }),
-    )])),
+    raw: {
+      pulls: [...pulls.values()].map((pull) => ({
+        number: pull.number,
+        title: pull.title,
+        html_url: pull.html_url,
+        state: pull.state,
+        draft: pull.draft,
+        // Only the note is read; the rest of the body would only fill the cache.
+        body: lastNote(pull.body),
+        created_at: pull.created_at,
+        closed_at: pull.closed_at,
+        merged_at: pull.merged_at,
+        merge_commit_sha: pull.merge_commit_sha,
+        head: { ref: pull.head.ref, sha: pull.head.sha, repo: pull.head.repo ? { full_name: pull.head.repo.full_name } : null },
+        base: { ref: pull.base.ref },
+      })),
+      releases: releases.map((/** @type {import('./model.js').ApiRelease} */ r) => ({
+        tag_name: r.tag_name, html_url: r.html_url, published_at: r.published_at, draft: r.draft,
+      })),
+      tagRefs: tagRefs.map((/** @type {import('./model.js').ApiRef} */ ref) => ({ ref: ref.ref, object: { sha: ref.object.sha, type: ref.object.type } })),
+      tagCommits,
+      devHead: dev ? dev.commit.sha : null,
+      checks,
+      openTruncated,
+      historyTruncated,
+    },
+    warning: partial ? 'Some data (such as CI checks, releases, or tag details) could not be loaded from GitHub; links to GitHub show the rest.' : null,
   };
 }
 
-/** @returns {{ at: number, raw: Raw } | null} */
+/** @returns {{ at: number, raw: Raw, warning?: string | null } | null} */
 function readCache() {
   try {
     const saved = JSON.parse(localStorage.getItem(CACHE_KEY) ?? 'null');
@@ -157,10 +358,13 @@ function readCache() {
   }
 }
 
-/** @param {Raw} raw */
-function writeCache(raw) {
+/**
+ * @param {Raw} raw
+ * @param {string | null} warning
+ */
+function writeCache(raw, warning) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), raw }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), raw, warning }));
   } catch {
     // Storage full or blocked: the board still works, it just asks GitHub every time.
   }
@@ -232,20 +436,31 @@ function roleOf(pr) {
 
 // ---------- Summary ----------
 
-/** @param {Model} model */
-function renderStatus(model) {
+/**
+ * @param {Model} model
+ * @param {boolean} openTruncated
+ * @param {boolean} historyTruncated
+ */
+function renderStatus(model, openTruncated, historyTruncated) {
   const dev = devState(model);
   const green = model.devGreen;
   /** @type {(Node | string | null)[]} */
   let devBody;
   if (dev.kind === 'green' && green) {
-    devBody = [badge('good', 'GREEN'), h('p', {}, ['Its latest commit ', commitLink(green.sha), ' passed every check and is marked ', h('code', {}, ['dev-green']), '.'])];
-  } else if (dev.kind === 'converging' && green) {
-    const count = dev.since.length;
-    devBody = [badge('wait', 'Checking'), h('p', {}, [
-      `${count === 1 ? 'One change' : `${count} changes`} joined since the last GREEN commit `, commitLink(green.sha),
-      green.pr?.ended ? ` (${ago(green.pr.ended)})` : '', '. dev-master checks dev again and fixes what fails.',
+    devBody = [badge('good', 'GREEN'), h('p', {}, ['Its latest commit ', commitLink(green.sha), ' verified GREEN with blocking CI passed and is marked ', h('code', {}, ['dev-green']), '.'])];
+  } else if (dev.kind === 'ahead' && green) {
+    const count = dev.since ? dev.since.length : null;
+    const lead = count === null
+      ? 'Differs from the last GREEN commit '
+      : historyTruncated
+        ? `At least ${count === 1 ? 'one recent change' : `${count} recent changes`} joined since the last GREEN commit `
+        : `${count === 1 ? 'One change' : `${count} changes`} joined since the last GREEN commit `;
+    devBody = [badge('wait', 'Differs from dev-green'), h('p', {}, [
+      lead, commitLink(green.sha),
+      green.pr?.ended ? ` (${ago(green.pr.ended)})` : '', '. dev-master checks dev, fixes failures, or pauses at YELLOW for owner sign-offs.',
     ])];
+  } else if (green) {
+    devBody = [badge('none', 'Head unavailable'), h('p', {}, ['The last commit marked ', h('code', {}, ['dev-green']), ' is ', commitLink(green.sha), '; ', h('code', {}, ['dev']), ' could not be read.'])];
   } else {
     devBody = [badge('none', 'Not marked yet'), h('p', {}, ['No commit is marked ', h('code', {}, ['dev-green']), ' yet.'])];
   }
@@ -266,13 +481,19 @@ function renderStatus(model) {
     h('div', { class: 'card' }, [h('h3', {}, [h('code', {}, ['dev'])]), ...devBody]),
     h('div', { class: 'card' }, [
       h('h3', {}, ['Waiting to join dev']),
-      h('p', { class: 'card-figure' }, [String(waiting.length)]),
-      h('p', {}, [waiting.length ? `pull request${waiting.length === 1 ? '' : 's'}${ciParts.length ? `: ${ciParts.join(', ')}` : ''}.` : 'Nothing is waiting.']),
+      h('p', { class: 'card-figure' }, [`${waiting.length}${openTruncated ? '+' : ''}`]),
+      h('p', {}, [waiting.length
+        ? `pull request${waiting.length === 1 ? '' : 's'}${openTruncated ? ' (first pages shown)' : ''}${ciParts.length ? `: ${ciParts.join(', ')}` : ''}.`
+        : openTruncated ? 'Open pull requests truncated; see GitHub.' : 'Nothing is waiting.']),
     ]),
     h('div', { class: 'card' }, [
       h('h3', {}, ['Latest release']),
       latest ? h('p', { class: 'card-figure' }, [h('a', { href: latest.url }, [latest.tag])]) : h('p', { class: 'card-figure' }, ['–']),
-      latest ? h('p', {}, ['Released ', time(latest.at), ' from ', h('code', {}, ['dev']), ' through ', h('code', {}, ['main']), '.']) : null,
+      latest
+        ? h('p', {}, latest.fromDevMain
+          ? ['Released ', time(latest.at), ' from ', h('code', {}, ['dev']), ' through ', h('code', {}, ['main']), '.']
+          : ['Tagged ', time(latest.at), '.'])
+        : null,
     ]),
   );
 }
@@ -450,10 +671,13 @@ function ciCell(pr) {
   if (pr.ci === 'passed') return h('td', {}, [badge('good', 'passed')]);
   if (pr.ci === 'failed') return h('td', {}, [badge('bad', 'failed')]);
   if (pr.ci === 'running') return h('td', {}, [badge('wait', 'running')]);
+  if (pr.ci === 'skipped') return h('td', {}, [badge('none', 'skipped')]);
   if (pr.ci === 'unknown' && (pr.state === 'open' || pr.state === 'draft')) {
     return h('td', {}, [h('a', { href: `${pr.url}/checks` }, ['see GitHub'])]);
   }
-  if (pr.state === 'open' || pr.state === 'draft') return h('td', {}, [badge('none', 'no results yet')]);
+  if (pr.state === 'open' || pr.state === 'draft') {
+    return h('td', { title: 'No CI checks reported (website-only pull requests skip CI, or checks may still be starting)' }, [badge('none', 'no CI reported')]);
+  }
   return h('td', {}, [h('span', { class: 'cell-note' }, ['–'])]);
 }
 
@@ -521,11 +745,11 @@ function renderActivity(model) {
 /**
  * @param {Raw} raw
  * @param {number} at when the data was fetched
- * @param {string} [problem]
+ * @param {(Node | string)[] | string | null} [problem]
  */
-function render(raw, at, problem) {
+function render(raw, at, problem = null) {
   const model = buildModel(raw);
-  renderStatus(model);
+  renderStatus(model, Boolean(raw.openTruncated), Boolean(raw.historyTruncated));
   renderFlow(model);
   renderPrs(model);
   renderActivity(model);
@@ -534,18 +758,42 @@ function render(raw, at, problem) {
   showProblem(problem);
 }
 
-/** @param {string} [message] */
-function showProblem(message) {
+/** @param {(Node | string)[] | string | null} [message] */
+function showProblem(message = null) {
   const box = document.getElementById('board-problem');
   if (!box) return;
-  box.textContent = message ?? '';
-  box.hidden = !message;
+  if (!message || (Array.isArray(message) && message.length === 0)) {
+    box.replaceChildren();
+    box.hidden = true;
+    return;
+  }
+  box.replaceChildren(...(Array.isArray(message) ? message : [message]));
+  box.hidden = false;
+}
+
+/** Replaces "Loading…" placeholders when no cached or live snapshot is available. */
+function renderUnavailable() {
+  const pullsLink = () => h('a', { href: `https://github.com/${REPO}/pulls` }, ['pull requests on GitHub']);
+  const cards = document.getElementById('board-status');
+  if (cards) {
+    cards.replaceChildren(
+      h('div', { class: 'card' }, [h('h3', {}, [h('code', {}, ['dev'])]), h('p', {}, ['Unavailable right now.'])]),
+      h('div', { class: 'card' }, [h('h3', {}, ['Waiting to join dev']), h('p', {}, ['Unavailable right now.'])]),
+      h('div', { class: 'card' }, [h('h3', {}, ['Latest release']), h('p', {}, ['Unavailable right now.'])]),
+    );
+  }
+  const flow = document.getElementById('board-flow');
+  if (flow) flow.replaceChildren(h('p', { class: 'flow-empty' }, ['Branch flow unavailable. See the ', pullsLink(), '.']));
+  const prs = document.getElementById('board-prs');
+  if (prs) prs.replaceChildren(h('tr', {}, [h('td', { colspan: '5' }, ['Unavailable. See the ', pullsLink(), '.'])]));
+  const activity = document.getElementById('board-activity');
+  if (activity) activity.replaceChildren(h('li', {}, ['Recent work unavailable. See the ', pullsLink(), '.']));
 }
 
 /** @param {unknown} error */
 function explain(error) {
   if (error instanceof LimitError) {
-    const reset = error.reset ? ` until ${clockFormat.format(error.reset)}` : ' for up to an hour';
+    const reset = error.reset ? ` until ${clockFormat.format(error.reset)}` : ' for a while';
     return `GitHub limits how often one network address can ask for data, and that limit is used up${reset}.`;
   }
   return 'GitHub could not be reached just now.';
@@ -555,20 +803,29 @@ function explain(error) {
 async function load(force) {
   const cached = readCache();
   if (cached && !force && Date.now() - cached.at < FRESH_MS) {
-    render(cached.raw, cached.at);
+    render(cached.raw, cached.at, cached.warning ?? null);
     return;
   }
+  // Show any cached snapshot immediately while refreshing in the background so visitors never
+  // stare at "Loading…" while waiting for GitHub.
+  if (cached) render(cached.raw, cached.at, cached.warning ?? null);
   const button = /** @type {HTMLButtonElement | null} */ (document.getElementById('board-refresh'));
   if (button) button.disabled = true;
   try {
-    const raw = await fetchRaw();
-    writeCache(raw);
-    render(raw, Date.now());
+    const { raw, warning } = await fetchRaw();
+    // Avoid overwriting a complete cached snapshot with a degraded partial one.
+    if (!warning || !cached || cached.warning) writeCache(raw, warning);
+    render(raw, Date.now(), warning);
   } catch (error) {
     if (cached) {
       render(cached.raw, cached.at, `${explain(error)} Showing the data from ${timeFormat.format(new Date(cached.at))}.`);
     } else {
-      showProblem(`${explain(error)} Try again later, or see the pull requests on GitHub.`);
+      renderUnavailable();
+      showProblem([
+        `${explain(error)} Try again later, or see the `,
+        h('a', { href: `https://github.com/${REPO}/pulls` }, ['pull requests on GitHub']),
+        '.',
+      ]);
     }
   } finally {
     if (button) button.disabled = false;

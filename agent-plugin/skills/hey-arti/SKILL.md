@@ -125,7 +125,7 @@ is its own Artifact and which evals consume it; for an Artifact that grew, split
 along what is edited independently. Validate the edited declarations with `config_check`
 and compare `status` before and after: the edited
 input and its real consumers should need review; independent parts should still be
-reused. Changing an eval's instruction, result schema or runtime command changes
+reused. Changing an eval's instruction, `red_at` threshold, result schema or runtime command changes
 what it judges; a title, tags, execution options or tool declarations do not.
 
 **"Why did this run again?" or "verify is slow"**: read `status` for what changed and
@@ -186,7 +186,8 @@ credentials in its login flow, never in declarations. CI uses a read-only token 
 when cached) while Agent and Human verdicts must be reused rather than produced in CI.
 
 **At the Human boundary**: name the waiting requests (`request_list`,
-`request_show`), give the person the criteria and `artifactize review REQUEST_ID`,
+`request_show`), give the person the criteria and how to review (`artifactize review REQUEST_ID`
+when the desktop app is installed, or `artifactize request` commands on CLI-only installs),
 and never act for them. Do other independent work, or yield with a short handoff:
 
 ```text
@@ -247,8 +248,10 @@ loops.
   an Agent eval when it needs judgment, and a Human eval only where a person must add
   judgment or authority; a person is asked only after the Artifact's runtime and
   Agent evals pass (`GREEN` or `PROVISIONAL`). Criteria for one Artifact go inside its eval; rules many
-  Artifacts share go in a rule document their evals read. Keep result schemas
-  small: a summary on GREEN, concrete findings on RED. Give each Agent reviewer only the
+  Artifacts share go in a rule document their evals read. Agent evals always return the
+  engine's prioritized findings list and derive GREEN or RED from `red_at` (findings below
+  `red_at` stay recorded even on GREEN); keep Human result schemas (`pass_schema`/`fail_schema`)
+  small and form-friendly. Give each Agent reviewer only the
   tools it needs (built-in file tools are confined to the admitted Artifact scope; custom
   command tools and `help` are trusted programs without an OS sandbox).
 - **Steer away from** implicit dependencies, whole-repository reviews, evals added
@@ -262,7 +265,7 @@ Point the user at the example that matches their situation:
 | Situation | Reference |
 |---|---|
 | Content made of part sections, a basis input, references in instructions and arguments | [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) |
-| An Agent review with built-in and declared tools, result schemas, and a person's sign-off | [examples/agent-tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) |
+| An Agent review with built-in and declared tools returning prioritized findings, and a person's sign-off with result schemas | [examples/agent-tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) |
 | A read-only availability check on a URI target that runs every verify | [examples/live](https://github.com/lhj6102/artifactize/tree/main/examples/live) |
 | Many files reviewed one by one, with a shared checker | [examples/posts](https://github.com/lhj6102/artifactize/tree/main/examples/posts) |
 | A consumer checked against what it uses (a web page against the style tokens it uses) and independent parts that reuse | [website/demo/shop](https://github.com/lhj6102/artifactize/tree/main/website/demo/shop) |

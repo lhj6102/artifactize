@@ -56,10 +56,10 @@
   <p class="terms">A few words first: a <b>commit</b> is one saved version of the project, a <b>branch</b> is a separate line of work, and a <b>pull request</b> asks for a branch’s work to be added to another branch.</p>
 
   <ul class="flow-key">
-    <li><span class="key-line lane-main" aria-hidden="true"></span><b><code>main</code></b> holds the released versions.</li>
-    <li><span class="key-line lane-dev" aria-hidden="true"></span><b><code>dev</code></b> is where finished work comes together. Its latest commit that passes every check is marked <code>dev-green</code>.</li>
-    <li><span class="key-line role-worker" aria-hidden="true"></span><b>dev-worker</b> agents each take one task on their own branch, starting from <code>dev-green</code>, and ask to join <code>dev</code> once their checks pass.</li>
-    <li><span class="key-line role-master" aria-hidden="true"></span><b>dev-master</b> brings the waiting work into <code>dev</code>, then runs every check on the result and fixes what fails until all pass. The project’s owner decides each release.</li>
+    <li><span class="key-line lane-main" aria-hidden="true"></span><b><code>main</code></b> holds the released versions. Only the project’s owner releases: a <code>dev</code> → <code>main</code> pull request followed by a <code>v*</code> tag.</li>
+    <li><span class="key-line lane-dev" aria-hidden="true"></span><b><code>dev</code></b> is where finished work comes together. Only <b>dev-master</b> moves the <code>dev-green</code> tag to the latest commit that verified <code>GREEN</code> with blocking CI passed (leaving it in place while <code>dev</code> waits at <code>YELLOW</code>).</li>
+    <li><span class="key-line role-worker" aria-hidden="true"></span><b>dev-worker</b> agents each take one task on their own branch, starting from <code>dev-green</code>, and open a pull request into <code>dev</code> once checks pass (<code>GREEN</code>) or at <code>YELLOW</code> while owner sign-offs wait.</li>
+    <li><span class="key-line role-master" aria-hidden="true"></span><b>dev-master</b> merges ready pull requests (non-draft, conflict-free, <code>GREEN</code> on the latest commit, with blocking CI passed), checks <code>dev</code>, and opens fix branches from <code>dev</code> that return through pull requests under the same checks (no direct pushes to <code>dev</code>) until all pass, or pauses at <code>YELLOW</code> for owner sign-offs.</li>
   </ul>
 
   <p class="board-problem" id="board-problem" role="status" hidden></p>
@@ -75,7 +75,7 @@
 
   <section class="board-section" aria-labelledby="flow-title">
     <h2 id="flow-title">Branch flow</h2>
-    <p class="section-lede">One column per event, oldest on the left. Each line below <code>dev</code> is a branch: it leaves where it started and returns when it joins.</p>
+    <p class="section-lede">One column per event, oldest on the left. Each line below <code>dev</code> is a branch: it leaves where its base commit joined (or where the pull request opened if that base commit is older than the fetched history) and returns when it joins.</p>
     <ul class="legend" aria-label="Legend">
       <li><svg viewBox="0 0 26 12" aria-hidden="true"><path class="role-worker" d="M1 6h24"/></svg>dev-worker</li>
       <li><svg viewBox="0 0 26 12" aria-hidden="true"><path class="role-master" d="M1 6h24"/></svg>dev-master</li>
@@ -91,7 +91,7 @@
 
   <section class="board-section" aria-labelledby="prs-title">
     <h2 id="prs-title">Pull requests</h2>
-    <p class="section-lede">Open requests first, then the latest that joined or closed. Verify is the project’s own full check; CI builds it on Linux, macOS and Windows.</p>
+    <p class="section-lede">Open requests first, then the latest that joined or closed. Verify is the project’s own full check; CI builds it on Linux, macOS and Windows (website-only changes skip CI, and Desktop E2E does not block joins into <code>dev</code>).</p>
     <div class="table-scroll" tabindex="0" role="region" aria-labelledby="prs-title">
       <table class="prs">
         <thead><tr><th scope="col">Pull request</th><th scope="col">By</th><th scope="col">Verify</th><th scope="col">CI</th><th scope="col">State</th></tr></thead>
@@ -107,7 +107,7 @@
 
   <p class="board-meta">
     <span id="board-updated"></span>
-    This page gets its data straight from GitHub in your browser. GitHub answers 60 requests an hour from one network address; one visit uses about six, plus one for each open pull request.
+    This page gets its data straight from GitHub in your browser and caches each load for 10 minutes. GitHub answers 60 unauthenticated requests an hour per network address; each refresh fetches pull requests, branches, releases, tags, and CI checks for recent open pull requests.
     <button type="button" class="btn btn-ghost board-refresh" id="board-refresh">Refresh</button>
   </p>
   <noscript><p class="board-problem">The board needs JavaScript. The <a href="https://github.com/lhj6102/artifactize/pulls">pull requests on GitHub</a> show the same work.</p></noscript>

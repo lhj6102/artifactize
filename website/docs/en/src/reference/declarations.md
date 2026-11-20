@@ -25,8 +25,8 @@ text = "Canvas note shown in the desktop app."
 
 | Field / identifier | Rules |
 |---|---|
-| Identifiers | ASCII letters, digits, `_`, or `-` starting with a letter or digit. Artifact names (filename stems) are case-insensitively unique across `.artifactize/` and cannot be Windows device names (`con`, `nul`, `com1`, etc.); eval IDs are unique within their Artifact, and tool/session/variant IDs within their table. |
-| `path` | **Required.** Project-root-relative local path using `/` (`"dir/"` or `"./"` for a folder—trailing `/` required—or `"file.ext"` for a single regular file), or an opaque Live URI with an all-letter scheme of at least two letters (for example `"https://example.com"`; unlike the HTTP(S)-only built-in `open` tool, Live targets accept other all-letter URI schemes as well). |
+| Identifiers | Artifact names come from the `.artf` filename stem and must be case-insensitively unique across `.artifactize/` (avoid Windows device names such as `con` or `nul`); eval IDs are unique within their Artifact, and tool/session/variant IDs within their table. |
+| `path` | **Required.** Project-root-relative local path using `/` (`"dir/"` or `"./"` for a folder—trailing `/` required—or `"file.ext"` for a single regular file), or a Live URI (for example `"https://example.com"`; unlike the HTTP(S)-only built-in `open` tool, Live targets accept other URI schemes as well). |
 | `select` | Optional array of relative paths inside a folder `path`, defining an **aspect**. Not allowed on file or Live Artifacts. |
 | `parts` | Optional array of Artifact names composing this whole. Cannot contain self-references or cycles. |
 | `basis` | Optional boolean (`true` waives only this Artifact's own reviews; prohibited when `evals` is non-empty). |
@@ -48,14 +48,15 @@ Each `[evals.<id>]` table defines `<artifact>/<id>`:
 | `profile_variants` | Optional map of named alternative complete profiles of the same `kind` (selected via `verify --profile NAME` or `status --profile NAME`, which applies to every executable eval in the initial selection and recursion policy before applying variants; dependencies newly introduced only by a runtime variant's `args` keep their base profiles). |
 | `mutex` | Optional array of hierarchical lock tags on `runtime` or `agent` evals (`"use-computer"` or `"use-computer:<segment>..."`, such as `"use-computer:display"`). Two evals conflict if their tags are equal or one is an ancestor of the other (`use-computer` conflicts with all descendants); conflicting evals queue rather than running concurrently. |
 | `payload.instruction` | **Required.** Nonblank criteria string. `{name}` references to other Artifacts in `payload.instruction` or runtime `args` declare input Artifact dependencies (referencing the eval's own target Artifact adds no dependency). |
-| `pass_schema`, `fail_schema` | Optional JSON Schema for owner result fields on `agent` and `human` evals (accepted on `runtime` declarations too, where they participate in the Eval definition hash without changing the exit-code verdict). |
+| `red_at` | Optional priority threshold on `agent` evals only (`"P0"`, `"P1"`, `"P2"`, or `"P3"`, where `P0` is highest). Any finding at `red_at` or higher makes the eval `RED`; omitting `red_at` makes any finding count. Findings below `red_at` are kept even when the eval is `GREEN`. |
+| `pass_schema`, `fail_schema` | Optional JSON Schema for owner result fields on `human` evals (rejected on `agent` evals; accepted on `runtime` declarations too, where they participate in the Eval definition hash without changing the exit-code verdict). |
 
 ## Owner-result schemas (`pass_schema` and `fail_schema`) {#owner-result-schemas}
 
-Agent and Human results contain `"verdict": "GREEN" | "RED"` plus your declared owner fields.
+Human results contain `"verdict": "GREEN" | "RED"` plus your declared owner fields.
 
-- **Envelope rules**: root `type = "object"` and `additionalProperties = false` are supplied automatically when omitted. Every allowed top-level owner field must appear explicitly in `properties` (neither `$ref` nor `patternProperties` can admit undeclared top-level fields, and top-level `allOf`/`anyOf`/`oneOf`/`not` are rejected; compose schemas inside an owner property instead). Reserved audit field names (`verdict`, `reference`, `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`, `stderr`, `durationMs`, `exitCode`) cannot be declared. Omitting a verdict's schema allows no owner fields (`{}`) for that verdict.
-- **Human form shapes** (`#human-result-schemas`): because a person fills a Human schema in a UI form, `pass_schema` and `fail_schema` on a `human` eval allow only form-enterable property types:
+- **Envelope rules**: root `type = "object"` and `additionalProperties = false` are supplied automatically when omitted. Every allowed top-level owner field must appear explicitly in `properties` (neither `$ref` nor `patternProperties` can admit undeclared top-level fields, and schema composition keywords such as `allOf`/`anyOf`/`oneOf`/`not` are rejected at both the root and inside Human properties). Reserved audit field names (`verdict`, `reference`, `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`, `stderr`, `durationMs`, `exitCode`) cannot be declared. Omitting a verdict's schema allows no owner fields (`{}`) for that verdict.
+- **Human form shapes** (`#human-result-schemas`): because a person fills a Human schema in a UI form, `pass_schema` and `fail_schema` on a `human` eval allow only these form-enterable property shapes:
   - `{ type = "string", minLength?, maxLength? }` (text box)
   - `{ type = "integer" | "number", minimum?, maximum?, exclusiveMinimum?, exclusiveMaximum?, multipleOf? }` (number box)
   - `{ type = "boolean" }` (true/false selector)
@@ -66,7 +67,7 @@ Agent and Human results contain `"verdict": "GREEN" | "RED"` plus your declared 
 
 ## Migrating and renaming definitions {#upgrading-an-in-tree-project}
 
-- **`artifactize config migrate [--repo PATH]`**: converts legacy in-tree `index.artf`, sidecar `.artf`, and root `.artf` files into `.artifactize/<name>.artf` files with explicit `path` and `parts`, uses `.artfignore` to identify and skip excluded nested projects, and removes the converted legacy files and `.artfignore`.
+- **`artifactize config migrate [--repo PATH]`**: converts legacy in-tree `index.artf`, sidecar `.artf`, and root `.artf` files into `.artifactize/<name>.artf` files with explicit `path` and `parts`, removes legacy `pass_schema` and `fail_schema` declarations from `agent` evals while preserving Human schemas, uses `.artfignore` to identify and skip excluded nested projects, and removes the converted legacy files and `.artfignore`.
 - **`artifactize config rename OLD NEW`**: validates the project and updates `.artifactize/**/<OLD>.artf` to `<NEW>.artf` along with all `parts`, recognized `{OLD}` references, and saved `[annotations.style]` part positions.
 
 ## Operating system rules {#operating-systems}
@@ -75,4 +76,4 @@ Write declarations once using `/` for logical paths; Artifactize runs them acros
 
 - **Program lookup**: bare executable names (`python3`, `cargo`) resolve on `PATH` (using `PATHEXT` on Windows, so `npx` finds `npx.cmd`). Relative executables with `/` (`./tools/check`) resolve inside the Artifact's admitted scope for folders and aspects, beneath the containing folder for file Artifacts, and beneath the project root for Live targets (always rejecting `..` and symlinks).
 - **Path case sensitivity**: logical paths are matched case-sensitively on every OS; on macOS and Windows case-insensitive volumes, Artifactize also verifies that the entry's exact on-disk spelling matches.
-- **Opening files and URLs**: `login codex` opens the browser with the same system opener as the [built-in `open` tool](../guides/tools.md#builtin-tools).
+- **Opening files and URLs**: `artifactize login codex` opens the system browser to complete sign-in.

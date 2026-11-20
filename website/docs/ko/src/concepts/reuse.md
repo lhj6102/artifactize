@@ -15,14 +15,14 @@ Artifact를 선언할 때 상태를 식별하는 데 쓸 fingerprint를 지정�
   ```toml
   fingerprint = { script = { command = "python3", args = ["hash.py"], files = ["input.txt"], timeout_ms = 10000 } }
   ```
-  명령은 Artifact의 실행 기준 폴더에서 실행되며 표준 입력(`stdin`)으로 `{"version": 1, "artifactId": "<name>"}` JSON을 받습니다. 스크립트는 종료 코드 `0`으로 끝나야 하며 표준 출력(`stdout`)에 ASCII 영문자, 숫자, `.`, `_`, `:`, `-`로 이루어진 한 줄짜리 fingerprint 토큰 하나만 출력해야 합니다. `verify`와 `status` 모두 이 스크립트를 실행할 수 있습니다. `files`에는 스크립트를 실행하기 전에 필요한 파일을 적으며, 경로는 명령을 실행하는 폴더를 기준으로 지정합니다. 이 필드는 생략할 수 있으며, 여기에 적은 파일은 자동으로 해시하지 않습니다. **Live** Artifact에서 `fingerprint`를 생략하면 스냅샷이 없어 재사용 키를 만들지 않습니다. Live 대상의 현재 상태(예: 배포된 커밋 SHA)를 스냅샷으로 출력하는 스크립트를 선언할 수 있습니다. 스냅샷이 바뀌지 않으면 Agent나 Human 리뷰의 이전 결과를 재사용합니다. `runtime` eval의 대상이나 하위 `parts`, 직접 참조한 `{name}` 입력 가운데 Live Artifact가 있으면 재사용 키를 만들지 않습니다. 따라서 스냅샷 스크립트가 있어도 기존 판정을 재사용할 수 없습니다. 실행 대상으로 고른 eval은 선행 조건을 충족하고 `--reuse-only`의 적용 대상이 아닐 때만 새로 실행됩니다.
+  명령은 Artifact의 실행 기준 폴더에서 실행되며 표준 입력(`stdin`)으로 `{"version": 1, "artifactId": "<name>"}` JSON을 받습니다. 스크립트는 종료 코드 `0`으로 끝나야 하며 표준 출력(`stdout`)에 일관된 한 줄짜리 fingerprint 토큰 하나만 출력해야 합니다. `verify`와 `status` 모두 이 스크립트를 실행할 수 있습니다. `files`에는 스크립트를 실행하기 전에 필요한 파일을 적으며, 경로는 명령을 실행하는 폴더를 기준으로 지정합니다. 이 필드는 생략할 수 있으며, 여기에 적은 파일은 자동으로 해시하지 않습니다. **Live** Artifact에서 `fingerprint`를 생략하면 스냅샷이 없어 재사용 키를 만들지 않습니다. Live 대상의 현재 상태(예: 배포된 커밋 SHA)를 스냅샷으로 출력하는 스크립트를 선언할 수 있습니다. 스냅샷이 바뀌지 않으면 Agent나 Human 리뷰의 이전 결과를 재사용합니다. `runtime` eval의 대상이나 하위 `parts`, 직접 참조한 `{name}` 입력 가운데 Live Artifact가 있으면 재사용 키를 만들지 않습니다. 따라서 스냅샷 스크립트가 있어도 기존 판정을 재사용할 수 없습니다. 실행 대상으로 고른 eval은 선행 조건을 충족하고 `--reuse-only`의 적용 대상이 아닐 때만 새로 실행됩니다.
 - **재사용 끄기**: `fingerprint = false`를 선언하면 해당 Artifact와 이를 참조하는 모든 eval에서 캐시 저장 및 재사용을 끕니다. 이 eval들은 재사용 키가 없어 결과를 재사용할 수 없습니다. 선택한 eval은 선행 조건을 충족하고 `--reuse-only` 적용 대상이 아닐 때만 새로 실행됩니다.
 
 ## 재사용 키 (Reuse key) {#the-reuse-key}
 
 각 eval의 **재사용 키**는 다음 네 가지를 조합한 64자리 16진수 해시입니다.
 
-1. **eval 정의 해시**: eval의 `kind`(`runtime`, `agent`, `human`), `payload`(`instruction` 포함), `pass_schema`, `fail_schema`, 그리고 `runtime` eval의 `command`와 `args`.
+1. **eval 정의 해시**: eval의 `kind`(`runtime`, `agent`, `human`), `payload`(`instruction` 포함), `red_at`(`agent` eval), `pass_schema`, `fail_schema`, 그리고 `runtime` eval의 `command`와 `args`.
 2. **대상 Artifact**: 이름, 종류(`folder`, `file`, `aspect`, `live`), 현재 fingerprint.
 3. **대상 Artifact의 모든 하위 `parts`**(재귀 포함): 각 하위 Artifact의 이름, 종류, fingerprint. 하위 Artifact가 없던 대상에 하나를 추가하거나 하나만 남은 하위 Artifact를 제거하면 재사용 키가 바뀝니다. 그 하위 Artifact를 이미 입력으로 직접 참조하고 있었어도 마찬가지입니다. 따라서 하위 Artifact가 바뀌면 해당 하위 Artifact와 상위 Artifact의 eval을 다시 실행합니다. 상위 Artifact에 속한 파일만 바뀌었다면, 구성 관계만으로 하위 Artifact의 eval까지 다시 실행하지는 않습니다. 다만 하위 Artifact의 eval이 `{whole}`을 직접 참조하면 다시 실행합니다.
 4. **직접 참조한 `{name}` 의존성**: 재사용 키에는 eval의 지시문이나 Runtime `args`에서 직접 참조한 입력 Artifact의 이름, 종류, fingerprint만 넣습니다. 직접 참조한 입력 Artifact를 거쳐 간접적으로 연결된 Artifact는 재사용 키에 넣지 않고 Run 통과 요건을 확인할 때만 살핍니다.
