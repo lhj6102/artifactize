@@ -447,6 +447,7 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         .unwrap();
     // Back to schema 8, which kept a Run's definitions in its record, then back to schema 6.
     let db = rusqlite::Connection::open(&database).unwrap();
+    db.execute_batch(support::schema::TEN).unwrap();
     db.execute_batch(support::schema::EIGHT).unwrap();
     assert!(
         read()

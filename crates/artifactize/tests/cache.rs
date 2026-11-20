@@ -1008,11 +1008,12 @@ fn schema_seven_live_claim_upgrades_without_starting_a_duplicate() {
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute_batch(&format!("BEGIN IMMEDIATE;
         {}
+        {}
         DROP INDEX active_key;
         ALTER TABLE executions DROP COLUMN profile_identity;
         CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
         PRAGMA user_version=7;
-        COMMIT;", support::schema::EIGHT)).unwrap();
+        COMMIT;", support::schema::TEN, support::schema::EIGHT)).unwrap();
     assert_eq!(
         fixture.command(&target, &["status"], 1)["evals"][0]["action"],
         "wait"

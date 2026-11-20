@@ -124,6 +124,25 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
     assert!(append_draft(state, id, &alice, "#settled").await.is_err());
 }
 
+#[tokio::test]
+async fn schema_ten_reviews_keep_their_receipts_and_gain_drafts() {
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(returning()).await;
+    let id = &run.requests[0].id;
+    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    db.execute_batch(&format!("{} PRAGMA user_version=10;", support::schema::TEN))
+        .unwrap();
+    drop(db);
+    let alice = "alice".parse().unwrap();
+    let receipts = fixture.receipts().await;
+    assert_eq!(store::state_schema(&fixture.state).unwrap(), Some(11));
+    human::claim(&receipts, id, &alice).await.unwrap();
+    let draft = artifactize_core::review::append_draft(&fixture.state, id, &alice, "L3:C4")
+        .await
+        .unwrap();
+    assert_eq!(draft.notes, "L3:C4");
+}
+
 struct Fixture {
     _root: owned_run::Root,
     repo: PathBuf,
