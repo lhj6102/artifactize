@@ -14,10 +14,12 @@
   <span>Artifactize desktop / design / settings</span>
   <nav aria-label="Design pages">
     <a href="index.html">Overview</a>
-    <a href="monitor.html">Monitor</a>
+    <a href="chat.html">Chat</a>
+    <a href="monitor.html">Verify</a>
     <a href="current.html">Current</a>
     <a href="detail.html">Detail</a>
     <a href="review.html">Review</a>
+    <a href="viewers.html">Viewers</a>
     <a href="settings.html" aria-current="page">Settings</a>
     <a href="overlays.html">Overlays</a>
   </nav>
@@ -36,17 +38,14 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar" style="position: relative; z-index: 2">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
-    <span class="m-spacer"></span>
-    <span class="m-reviewer">alice</span>
-    <span class="m-button" style="outline: 2px solid var(--focus); outline-offset: -2px">Settings</span>
-    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button" style="outline: 2px solid var(--focus); outline-offset: -2px">Settings</span></span>
   </header>
   <div class="m-screen" style="position: relative">
     <section class="m-pane">
       <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
       <div class="m-branches"><div class="m-branch"><div class="m-branch-head"><span class="m-chevron"></span><span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span><span class="m-star on m-icon i-star-on"></span></div><div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">3h ago</span></div></div></div>
-      <section class="m-waiting"><h2>(0)</h2></section>
     </section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
@@ -56,6 +55,8 @@
         <h2>Settings</h2>
         <div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div>
         <span class="m-spacer"></span>
+        <span class="m-reviewer">Reviewer alice</span>
+        <span class="m-button">0.22.0 available</span>
         <span class="m-button">Close</span>
       </div>
       <div class="m-providers">
@@ -84,10 +85,10 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 150px; top: 120px">1</span>
-<span class="callout" style="left: 560px; top: 96px">2</span>
-<span class="callout" style="left: 150px; top: 200px">3</span>
-<span class="callout" style="left: 1140px; top: 190px">4</span>
+<span class="callout" style="left: 150px; top: 84px">1</span>
+<span class="callout" style="left: 560px; top: 60px">2</span>
+<span class="callout" style="left: 150px; top: 164px">3</span>
+<span class="callout" style="left: 1140px; top: 154px">4</span>
 </div>
 <figcaption>Stage 1280 × 800. The Providers tab with Claude Agent chosen.</figcaption>
 </figure>
@@ -96,14 +97,18 @@
 <div class="stage" style="--w: 1280; --h: 560">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-providers">
         <div>
           <div class="m-choice current">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
@@ -130,8 +135,8 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 640px; top: 142px">5</span>
-<span class="callout" style="left: 640px; top: 342px">6</span>
+<span class="callout" style="left: 640px; top: 106px">5</span>
+<span class="callout" style="left: 640px; top: 306px">6</span>
 </div>
 <figcaption>Stage 1280 × 560. Provider setups: Codex signing in (what finishes it by hand folded), an API key read from the environment, and the form of sol-proxy, a saved custom provider. The figure stacks three setups that the app shows one at a time, as excerpts: each also has its Models, with List models, below what is drawn here (shown in the first figure).</figcaption>
 </figure>
@@ -140,14 +145,18 @@
 <div class="stage" style="--w: 1280; --h: 490">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab active">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab active">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-setup" style="margin-top: 12px; max-width: 640px">
         <section>
           <h3>Shared review store</h3>
@@ -164,8 +173,8 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 700px; top: 320px">7</span>
-<span class="callout" style="left: 700px; top: 160px">9</span>
+<span class="callout" style="left: 700px; top: 284px">7</span>
+<span class="callout" style="left: 700px; top: 124px">9</span>
 </div>
 <figcaption>Stage 1280 × 490. The Remote tab signed out, after a sign-in that failed (top), and signed in (bottom): the figure stacks the two states that the app shows one at a time.</figcaption>
 </figure>
@@ -174,14 +183,18 @@
 <div class="stage" style="--w: 1280; --h: 260">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab">Remote</span><span class="m-tab active">Limits</span></div><span class="m-spacer"></span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab">Remote</span><span class="m-tab active">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-setup" style="margin-top: 12px; max-width: 640px">
         <section>
           <h3>Sign-off idle grace</h3>
@@ -192,13 +205,13 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 520px; top: 164px">8</span>
+<span class="callout" style="left: 520px; top: 128px">8</span>
 </div>
 <figcaption>Stage 1280 × 260. The Limits tab: the sign-off idle grace, in the field that changes it.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>Dialog</b><span>A raised surface with a panel line over a scrim; the bar stays above the scrim so its Settings button closes the dialog again.</span></div></li>
+  <li><span class="n">1</span><div><b>Dialog</b><span>A raised surface with a panel line over a scrim; the bar stays above the scrim so its Settings button closes the dialog again. Its header names this machine's reviewer and, while a newer release is out, holds the release notice, which opens the Update dialog.</span></div></li>
   <li><span class="n">2</span><div><b>Text tabs</b><span>Providers, Remote, Limits as text with a 2px accent line under the active one; a tab focused from the keyboard shows the focus ring.</span></div></li>
   <li><span class="n">3</span><div><b>Provider list</b><span>24px rows: the built-in providers, then custom ones by name, then <i>Custom provider</i> led by the add icon; the chosen row has the selection background and is semibold.</span></div></li>
   <li><span class="n">4</span><div><b>Setup</b><span>Sections separated by group lines: a title, facts as a key/value grid, then the actions in one row of 24px buttons; no line of description: labels and facts say what a section is. Models has List models and, under it, each model by its name with its ID beside it (<i>No models listed.</i> when there are none, a failure in red; J-SET-MODELS). Claude Agent's facts say what Claude Code reports: <code>claude</code> not found, not signed in, signed in with its method and plan, or its error. An API-key provider's Key fact says where its key comes from, never its value: the environment variable by name, saved here, or not set; with both an environment variable and a saved key, the environment variable, used first, as the key in use, and the saved key as also saved here.</span></div></li>
@@ -212,7 +225,7 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-SET-1">D-SET-1</dt>
-  <dd>Settings is a <code>--surface-raised</code> dialog with a 1px <code>--line-panel</code> border and <code>--radius-chip</code> corners over a <code>--scrim</code>, at most 900px wide and the window's height less 80px, 12–16px padding; the bar stays above the scrim. Its header row holds the title at <code>--text-title</code> semibold, the tabs, and Close at the end; the tab's content follows right under it. It opens on Providers. <span class="avoid">a full-screen page; a 20px radius; a line that explains the dialog; a key cap on Close.</span></dd>
+  <dd>Settings is a <code>--surface-raised</code> dialog with a 1px <code>--line-panel</code> border and <code>--radius-chip</code> corners over a <code>--scrim</code>, at most 900px wide and the window's height less 80px, 12–16px padding; the bar stays above the scrim. Its header row holds the title at <code>--text-title</code> semibold, the tabs, then at the right this machine's reviewer as <i>Reviewer {name}</i> in <code>--ink-2</code>, the name the app claims reviews as, the release notice while a newer release is out, and Close at the end. The release notice, <i>{version} available</i> as a button before Close, shows only while the app's release lookup (at start and once a day) has found a stable release newer than the running one, and never on a Microsoft Store install, which the Store updates; a click on it opens the Update dialog (D-OVL-5), and it stays after that dialog closes; the tab's content follows right under it. It opens on Providers. <span class="avoid">a full-screen page; a 20px radius; a line that explains the dialog; a key cap on Close; a release notice for the running version, a pre-release or a Store install; a badge or dot standing in for it.</span></dd>
   <dt id="D-SET-2">D-SET-2</dt>
   <dd>The tabs are text: <code>--ink-2</code>, the active one <code>--ink</code> semibold with a 2px <code>--accent</code> line below; a click on one shows that tab; they are a tab list: the active tab takes keyboard focus as a control, with the 2px <code>--focus</code> ring (D-SYS-7), and the active one is read aloud as selected. <span class="avoid">pill tabs; the active tab filled.</span></dd>
   <dt id="D-SET-3">D-SET-3</dt>

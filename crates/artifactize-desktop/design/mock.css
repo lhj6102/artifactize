@@ -4,7 +4,7 @@
 
 .m-window {
   display: grid;
-  grid-template-rows: var(--bar-height) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) var(--bar-height);
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -43,6 +43,18 @@
   --i-fit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4.5V2h2.5M7.5 2H10v2.5M10 7.5V10H7.5M4.5 10H2V7.5'/%3E%3C/svg%3E");
   --i-find: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='5.25' cy='5.25' r='3.25'/%3E%3Cpath d='M7.75 7.75 10.5 10.5'/%3E%3C/svg%3E");
   --i-pane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='2.25' width='8.5' height='7.5' rx='1'/%3E%3Cpath d='M4.75 2.25v7.5'/%3E%3C/svg%3E");
+  --i-chat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 2.5h6.5a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5.5L3.25 10.25V8.5h-.5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z'/%3E%3C/svg%3E");
+  --i-verify: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 2.25h3.5v2.5h-3.5zM6.75 7.25h3.5v2.5h-3.5zM3.5 4.75V8.5h3.25'/%3E%3C/svg%3E");
+  --i-review: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.75h4.25L9.25 3.75v6.5H3zM4.75 6.75 5.9 7.9 7.75 5.5'/%3E%3C/svg%3E");
+  --i-point: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='3.25'/%3E%3Cpath d='M6 1v1.5M6 9.5V11M1 6h1.5M9.5 6H11'/%3E%3Ccircle cx='6' cy='6' r='.9' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-send: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 10V2.5M2.75 5.75 6 2.5l3.25 3.25'/%3E%3C/svg%3E");
+  --i-stop: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3h6v6H3z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-back: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 2.25 2 4.75l2.5 2.5M2 4.75h5.25a2.75 2.75 0 0 1 0 5.5H6'/%3E%3C/svg%3E");
+  --i-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 1.75h3.25V5M10.25 1.75 5.75 6.25M8.75 7.5v2a.75.75 0 0 1-.75.75H2.5a.75.75 0 0 1-.75-.75V4a.75.75 0 0 1 .75-.75h2'/%3E%3C/svg%3E");
+  --i-file: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.75h4L9.25 4v6.25H3zM7 1.75V4h2.25'/%3E%3C/svg%3E");
+  --i-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75z'/%3E%3C/svg%3E");
+  --i-edit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.25 9.75l.5-2.25 5.5-5.5 1.75 1.75-5.5 5.5zM7 3.25 8.75 5'/%3E%3C/svg%3E");
+  --i-command: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 3.25 5 5.75 2.5 8.25M6.5 8.75h3'/%3E%3C/svg%3E");
   --i-reset: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 4.25A3.75 3.75 0 1 1 2.25 6.5'/%3E%3Cpath d='M2.5 1.75v2.5H5'/%3E%3C/svg%3E");
 }
 .m-icon,
@@ -80,20 +92,83 @@
 .i-find { --icon-src: var(--i-find); }
 .i-pane { --icon-src: var(--i-pane); }
 .i-reset { --icon-src: var(--i-reset); }
+.i-chat { --icon-src: var(--i-chat); }
+.i-verify { --icon-src: var(--i-verify); }
+.i-review { --icon-src: var(--i-review); }
+.i-point { --icon-src: var(--i-point); }
+.i-send { --icon-src: var(--i-send); }
+.i-stop { --icon-src: var(--i-stop); }
+.i-back { --icon-src: var(--i-back); }
+.i-open { --icon-src: var(--i-open); }
+.i-file { --icon-src: var(--i-file); }
+.i-folder { --icon-src: var(--i-folder); }
+.i-edit { --icon-src: var(--i-edit); }
+.i-command { --icon-src: var(--i-command); }
 .m-light {
   background: var(--light);
   -webkit-mask-image: var(--light-icon);
   mask-image: var(--light-icon);
 }
 
-/* The global bar: brand left, the window's own controls right. */
+/* The bottom bar: the window's one bar, along its bottom in every mode. Brand and the Pane
+   switch at its left, the modes in its middle, the window's own controls at its right. It
+   comes first in a figure's markup and is placed in the window's last row. */
 .m-bar {
-  display: flex;
-  align-items: center;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
   gap: var(--gap);
   padding: 0 var(--pad);
   background: var(--surface-bar);
-  border-bottom: 1px solid var(--line-panel);
+  border-top: 1px solid var(--line-panel);
+}
+.m-bar > .m-bar-side {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  min-width: 0;
+}
+.m-bar > .m-bar-side.end {
+  justify-content: flex-end;
+}
+.m-window > .m-screen {
+  grid-row: 1;
+}
+/* The modes: borderless, each its icon and word; the shown one on the group surface in ink
+   under a 2px accent line along its top, the others in the quieter ink. */
+.m-modes {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.m-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  color: var(--ink-2);
+  box-shadow: inset 0 2px 0 transparent;
+}
+.m-mode.on {
+  background: var(--surface-group);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+/* The count of Human reviews waiting for a person, after Review's word. */
+.m-count-pill {
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  color: var(--human);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 .m-brand {
   display: flex;
@@ -115,9 +190,11 @@
 .m-reviewer {
   color: var(--ink-2);
 }
-/* A switch of the bar: it shows or hides a panel and reads as on, in ink over a 2px accent
-   line, while that panel is shown. */
+/* A switch of the bar: it shows or hides the Panes and reads as on, in ink under a 2px accent
+   line along its top, the bar's edge toward the workspace, while they are shown. */
 .m-button.m-switch {
+  align-self: stretch;
+  height: auto;
   background: transparent;
   border-color: transparent;
   border-radius: 0;
@@ -125,7 +202,7 @@
 }
 .m-button.m-switch.on {
   color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 /* Controls: a quiet button, the one primary button, and a key cap. */
@@ -1573,4 +1650,667 @@
   white-space: pre-wrap;
   outline: 2px solid var(--focus);
   outline-offset: -1px;
+}
+
+/* A reference's way back or onward: a link chip, its icon and words in the accent inside a
+   group line; it shows another mode's exact target (a Chat session, a Run and its Artifact). */
+.m-ref {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  max-width: 320px;
+  padding: 0 8px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  color: var(--accent);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-ref .m-mono {
+  font-family: var(--mono);
+}
+.m-mono {
+  font-family: var(--mono);
+}
+/* A Human eval's review in an Artifact's Evals: its stage beside the row, its actions under it. */
+.m-row-review {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 2px var(--pad) 6px calc(var(--pad) + var(--icon) + 8px);
+  font-size: var(--text-small);
+}
+.m-row-stage {
+  color: var(--ink-2);
+}
+.m-row-stage.yours {
+  color: var(--accent);
+}
+
+/* A mode's Pane holding a list: a head row (Chat's New, Review's filter), then the rows. */
+.m-pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  min-height: 40px;
+  padding: 8px var(--pad);
+  border-bottom: 1px solid var(--line-group);
+}
+.m-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+/* A two-line row: a name, and under it where it belongs and its age in the quieter ink. */
+.m-item {
+  display: grid;
+  grid-template-columns: var(--icon) minmax(0, 1fr);
+  column-gap: 8px;
+  padding: 4px var(--pad);
+}
+.m-item.plain {
+  grid-template-columns: minmax(0, 1fr);
+}
+.m-item > .m-icon {
+  margin-top: 4px;
+}
+.m-item .m-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-item .m-item-sub {
+  grid-column: -2;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-item.selected {
+  background: var(--selection);
+}
+.m-item.selected.keyed {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.m-empty {
+  margin: 0;
+  padding: 8px var(--pad);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* A filter field holding its terms as chips, then the text being typed. */
+.m-filter {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--control);
+  padding: 2px 4px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  font: var(--text-small) var(--mono);
+}
+.m-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 4px 0 6px;
+  border-radius: var(--radius-chip);
+  background: var(--surface-group);
+  color: var(--ink);
+}
+.m-term .m-icon {
+  color: var(--ink-2);
+}
+/* The line under a review's header that says it is open outside the filter, and why. */
+.m-outside {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--row-dense);
+  padding: 0 var(--pad);
+  border-top: 1px solid var(--line-group);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+
+/* Chat: the conversation in a column of the reading measure, newest at the bottom, and the
+   composer under it. */
+.m-chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line-panel);
+  background: var(--surface-app);
+}
+.m-convo {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 16px var(--pad) 12px;
+  box-sizing: border-box;
+}
+.m-msg {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: 6px 10px;
+  border-radius: var(--radius-chip);
+  background: var(--surface-group);
+  white-space: pre-wrap;
+}
+.m-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.m-turn p {
+  margin: 2px 0;
+}
+.m-turn-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* A tool the agent used: one dense row on the input surface, its icon, the tool's name, what it
+   acts on, then its outcome at the right. */
+.m-call {
+  display: grid;
+  grid-template-columns: var(--icon) max-content minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  min-height: var(--row-dense);
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  font: var(--text-small) var(--mono);
+}
+.m-call > .m-icon {
+  color: var(--ink-2);
+}
+.m-call .m-target {
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-call .m-outcome {
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.m-call .m-failed {
+  grid-column: 2 / -1;
+  color: var(--red);
+  font-family: var(--font);
+}
+/* A Run reference: a row inside a group line, the Run's status icon, Verify, the Run ID, its
+   status word and what needs attention, then Open in Verify. */
+.m-runref {
+  display: grid;
+  grid-template-columns: var(--icon) max-content max-content max-content minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+  font-size: var(--text-small);
+}
+.m-runref .m-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+}
+.m-composer {
+  width: 100%;
+  max-width: var(--measure);
+  margin: 0 auto 12px;
+  padding: 0 var(--pad);
+  box-sizing: border-box;
+}
+.m-composer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-chip);
+  background: var(--surface-input);
+}
+.m-composer-text {
+  min-height: 36px;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.m-composer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+.m-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control);
+  padding: 0 8px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  font-size: var(--text-small);
+}
+.m-picker .m-provider {
+  color: var(--ink-2);
+}
+.m-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--control);
+  height: var(--control);
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  color: var(--ink);
+}
+.m-icon-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--ink-on-accent);
+}
+/* The model menu: raised, opening upward from the selector; a group label per provider, a row
+   per model, the session's on the selection; Connect provider after a group line. */
+.m-menu {
+  position: absolute;
+  width: 300px;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-control);
+  box-shadow: 0 2px 8px var(--scrim);
+}
+.m-menu .m-label {
+  padding: 6px 8px 2px;
+}
+.m-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row);
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+}
+.m-menu-item.chosen {
+  background: var(--selection);
+  font-weight: 600;
+}
+.m-menu-item .m-right {
+  margin-left: auto;
+  color: var(--ink-2);
+  font: var(--text-small) var(--mono);
+}
+.m-menu-note {
+  padding: 0 8px 4px;
+  color: var(--red);
+  font-size: var(--text-small);
+}
+.m-menu-sep {
+  margin: 4px 0;
+  border-top: 1px solid var(--line-group);
+}
+
+/* An Artifact Viewer: a window of the app of its own. The host's strip runs along its top: the
+   Artifact's name, the viewer's name, the active review and Point; the viewer fills the rest. */
+.m-vwindow {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-app);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 2px 8px var(--scrim);
+  color: var(--ink);
+  font: var(--text-body) / 1.45 var(--font);
+  text-align: left;
+}
+.m-frame {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--surface-bar);
+  border-bottom: 1px solid var(--line-panel);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-frame b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.m-vstrip {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  min-height: var(--row-head);
+  padding: 0 var(--pad);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line-panel);
+  font-size: var(--text-small);
+}
+.m-vstrip .m-vname {
+  font-weight: 600;
+}
+.m-vstrip .m-vkind {
+  color: var(--ink-2);
+}
+.m-vstrip .m-vreview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+}
+.m-button.pointing {
+  border-color: var(--accent);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.m-vbody {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--tree-width, 240px) minmax(0, 1fr);
+}
+.m-vbody.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.m-vbody.graph {
+  grid-template-columns: minmax(0, 1fr) var(--detail-width, 340px);
+}
+/* The File Explorer's tree: dense rows, a fold icon before a folder, the file icon before a
+   file, the shown file on the selection. */
+.m-tree {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--surface-panel);
+  border-right: 1px solid var(--line-panel);
+  font-size: var(--text-small);
+}
+.m-tree li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--row-dense);
+  padding: 0 var(--pad) 0 calc(var(--pad) + var(--depth, 0) * 14px);
+  white-space: nowrap;
+}
+.m-tree li .m-icon {
+  color: var(--ink-2);
+}
+.m-tree li.selected {
+  background: var(--selection);
+}
+/* The document view: a head row with the file's path, then its text with line numbers. */
+.m-doc {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-input);
+}
+.m-doc-head {
+  display: flex;
+  align-items: center;
+  min-height: var(--row-head);
+  padding: 0 var(--pad);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line-group);
+  font: var(--text-small) var(--mono);
+}
+.m-doc .m-source {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 0;
+}
+/* The Markdown viewer: the rendered document in a column of the reading measure. */
+.m-md {
+  min-width: 0;
+  padding: 16px 24px;
+  overflow: hidden;
+  background: var(--surface-panel);
+}
+.m-md > * {
+  max-width: var(--measure);
+}
+.m-md h1 {
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-group);
+  font-size: var(--text-heading);
+}
+.m-md h2 {
+  margin: 14px 0 6px;
+  font-size: var(--text-title);
+}
+.m-md p,
+.m-md ul {
+  margin: 0 0 8px;
+}
+.m-md code {
+  padding: 0 4px;
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  font: var(--text-small) var(--mono);
+}
+.m-md .pointed {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* The Artifactize Viewer: Artifacts as nodes without a verdict, their type at the right;
+   references as plain neutral connections; the Artifact's panel docked at the right. */
+.m-dnode {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 168px;
+  height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-node);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+}
+.m-dnode.selected {
+  border: 2px solid var(--outline-selected);
+}
+.m-dnode.pointed {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.m-dnode .m-name {
+  flex: 1;
+}
+.m-type {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  color: var(--ink-2);
+  font: var(--text-label) var(--mono);
+}
+.m-dpanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-panel);
+  border-left: 1px solid var(--line-panel);
+  overflow: hidden;
+}
+.m-deval {
+  padding: 6px var(--pad) 10px;
+  border-top: 1px solid var(--line-group);
+}
+.m-deval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row-dense);
+  font-family: var(--mono);
+  font-size: var(--text-small);
+}
+.m-deval-head.pointed {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-control);
+}
+.m-deval dl {
+  margin: 4px 0 0;
+}
+.m-deval dt {
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-deval dd {
+  margin: 0;
+}
+.m-reads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* The pet overlay: a small window of its own, above every window at the screen's bottom right.
+   A raised card, the pet sitting on its top edge; the review's eval and Run, the verdict
+   choice, the open form of the draft, then Point and Submit. */
+.m-pet {
+  position: absolute;
+  width: 320px;
+  padding: 10px 12px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-chip);
+  box-shadow: 0 2px 8px var(--scrim);
+  color: var(--ink);
+  font: var(--text-body) / 1.45 var(--font);
+  text-align: left;
+}
+.m-pet-sprite {
+  position: absolute;
+  left: 8px;
+  top: -34px;
+  width: 56px;
+  height: 56px;
+}
+.m-pet-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  padding-left: 60px;
+  font: var(--text-small) var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.m-pet-head .m-run {
+  color: var(--ink-2);
+}
+.m-pet .m-verdicts {
+  margin-top: 10px;
+}
+.m-pet .m-field {
+  margin-top: 8px;
+}
+.m-pet-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  margin-top: 10px;
+}
+.m-pointed {
+  padding: 0 3px;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  font-family: var(--mono);
+}
+.m-why {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* A screen's backdrop where an Artifact Viewer and the pet float over another application. */
+.m-desktop {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--surface-bar);
+  overflow: hidden;
+}
+
+/* A review's evaluation space with room: the review at the left (instruction, Tools, the Tool
+   log taking the rest, Debug), the Evaluation at the right, of the Detail's width: its head row
+   with the stage, Notes growing into the free height, the verdict choice and its form, and the
+   actions along the column's bottom. */
+.m-review-split > .m-review:first-child {
+  border-left: 0;
+  background: var(--surface-panel);
+}
+.m-eval {
+  display: flex;
+  flex-direction: column;
+}
+.m-eval-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 10px;
+}
+.m-eval .m-notes {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 10px;
+}
+.m-eval .m-notes .m-input {
+  flex: 1;
+}
+.m-review.m-eval .m-actions {
+  margin: 0;
+  padding: 8px var(--pad);
+  border-top: 1px solid var(--line-group);
+}
+.m-eval .m-notes > .m-name {
+  flex: none;
 }

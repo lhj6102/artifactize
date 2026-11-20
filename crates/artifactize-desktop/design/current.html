@@ -14,10 +14,12 @@
   <span>Artifactize desktop / design / current</span>
   <nav aria-label="Design pages">
     <a href="index.html">Overview</a>
-    <a href="monitor.html">Monitor</a>
+    <a href="chat.html">Chat</a>
+    <a href="monitor.html">Verify</a>
     <a href="current.html" aria-current="page">Current</a>
     <a href="detail.html">Detail</a>
     <a href="review.html">Review</a>
+    <a href="viewers.html">Viewers</a>
     <a href="settings.html">Settings</a>
     <a href="overlays.html">Overlays</a>
   </nav>
@@ -38,11 +40,9 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
-    <span class="m-spacer"></span>
-    <span class="m-reviewer">alice</span>
-    <span class="m-button">Settings</span>
-    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
   </header>
   <div class="m-screen">
     <section class="m-pane">
@@ -74,7 +74,6 @@
           <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
         </div>
       </div>
-      <section class="m-waiting"><h2>(0)</h2></section>
     </section>
     <div class="m-divider"></div>
     <section class="m-main focused">
@@ -97,9 +96,9 @@
     </section>
   </div>
 </div>
-<span class="callout" style="left: 645px; top: 43px">1</span>
-<span class="callout" style="left: 560px; top: 240px">2</span>
-<span class="callout" style="left: 660px; top: 74px">3</span>
+<span class="callout" style="left: 645px; top: 7px">1</span>
+<span class="callout" style="left: 560px; top: 204px">2</span>
+<span class="callout" style="left: 660px; top: 38px">3</span>
 </div>
 <figcaption>Stage 1280 × 800. A Current's lights say what verify would do: reused, would run, waiting, blocked, checking.</figcaption>
 </figure>

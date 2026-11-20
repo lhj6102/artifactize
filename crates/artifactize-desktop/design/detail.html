@@ -14,10 +14,12 @@
   <span>Artifactize desktop / design / detail</span>
   <nav aria-label="Design pages">
     <a href="index.html">Overview</a>
-    <a href="monitor.html">Monitor</a>
+    <a href="chat.html">Chat</a>
+    <a href="monitor.html">Verify</a>
     <a href="current.html">Current</a>
     <a href="detail.html" aria-current="page">Detail</a>
     <a href="review.html">Review</a>
+    <a href="viewers.html">Viewers</a>
     <a href="settings.html">Settings</a>
     <a href="overlays.html">Overlays</a>
   </nav>
@@ -39,11 +41,9 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
-    <span class="m-spacer"></span>
-    <span class="m-reviewer">alice</span>
-    <span class="m-button">Settings</span>
-    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
   </header>
   <div class="m-screen">
     <section class="m-pane">
@@ -61,9 +61,6 @@
           </div>
         </div>
       </div>
-      <section class="m-waiting"><h2>Waiting (1)</h2>
-        <div class="m-waiting-row"><span class="m-icon i-human tone-human"></span><span>release/signoff</span><span class="m-where">artifactize  dev</span><span class="m-meta">2m</span></div>
-      </section>
     </section>
     <div class="m-divider"></div>
     <section class="m-main">
@@ -123,12 +120,12 @@
     </section>
   </div>
 </div>
-<span class="callout" style="left: 740px; top: 372px">1</span>
-<span class="callout" style="left: 840px; top: 90px">2</span>
-<span class="callout" style="left: 840px; top: 228px">4</span>
-<span class="callout" style="left: 840px; top: 170px">5</span>
-<span class="callout" style="left: 1130px; top: 392px">6</span>
-<span class="callout" style="left: 650px; top: 690px">20</span>
+<span class="callout" style="left: 740px; top: 336px">1</span>
+<span class="callout" style="left: 840px; top: 54px">2</span>
+<span class="callout" style="left: 840px; top: 192px">4</span>
+<span class="callout" style="left: 840px; top: 134px">5</span>
+<span class="callout" style="left: 1130px; top: 356px">6</span>
+<span class="callout" style="left: 650px; top: 654px">20</span>
 </div>
 <figcaption>Stage 1280 × 800. The Artifact's tab: Evals, Neighbours, Tools, Path and Debug, each a section under its header row, those asked for now and then folded to their names. The graph is where it was before the Detail opened, the camera untouched (the Monitor page's first figure): the Detail covers its right part, cli in part and docs and site whole, so the Navigator shows at the bottom right of the graph's visible part.</figcaption>
 </figure>
@@ -323,6 +320,43 @@ ok   concepts/reuse.html</div></div>
 </ol>
 
 <figure class="figure">
+<div class="stage" style="--w: 520; --h: 220; max-width: 540px">
+<div class="stage-inner">
+<div class="m-window" style="background: var(--surface-app)">
+  <div style="position: absolute; inset: 0">
+    <aside class="m-dock focused" style="top: 0; width: 500px">
+      <div class="m-main-head"><div class="m-dock-title"><h2>Artifact release</h2><span class="m-star m-icon i-star"></span></div><span class="m-button small">Close</span></div>
+      <div class="m-body">
+        <div class="m-sec">
+          <div class="m-sec-head"><span class="m-icon i-unfold"></span>Evals</div>
+          <ul class="m-rows">
+            <li class="m-row"><span class="m-icon i-green tone-green"></span><span>notes-exist</span><span class="tone-green">GREEN</span><span class="m-right">2s</span></li>
+            <li class="m-row"><span class="m-icon i-human tone-human"></span><span>signoff</span><span class="tone-human">waiting Human <span class="m-row-stage yours">· yours</span></span><span class="m-right">12m</span></li>
+          </ul>
+          <div class="m-row-review"><span class="m-button small">Release claim</span><span class="m-go"><span class="m-icon i-open"></span>Open in Review</span></div>
+        </div>
+        <div class="m-sec">
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>Neighbours</div>
+        </div>
+        <div class="m-sec">
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>Debug</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+<span class="callout" style="left: 440px; top: 70px">27</span>
+<span class="callout" style="left: 300px; top: 96px">28</span>
+</div>
+<figcaption>Stage 520 × 220. An Artifact's tab on a Run's graph whose Human eval waits for a person and is claimed by this reviewer: its stage beside its verdict, Release claim and Open in Review under its row.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">27</span><div><b>A Human eval's stage</b><span>A Human eval that waits says so in its row's status words, then its stage in secondary ink: nothing more while it can be claimed, <i>· yours</i> in the accent once this reviewer holds it, <i>· {claimant}</i> while another reviewer holds it.</span></div></li>
+  <li><span class="n">28</span><div><b>The review's actions</b><span>Under the row, indented to its name: Claim to review while it can be claimed, or Release claim while it is yours, as a small button; then Open in Review, a reference in the accent led by the open icon, which shows the review in Review. A review taken by another reviewer offers Open in Review alone.</span></div></li>
+</ol>
+
+<figure class="figure">
 <div class="stage" style="--w: 520; --h: 300; max-width: 540px">
 <div class="stage-inner">
 <div class="m-window" style="background: var(--surface-app)">
@@ -488,7 +522,9 @@ ok   concepts/reuse.html</div></div>
   <dt id="D-INS-5">D-INS-5</dt>
   <dd>An eval's tab: for an eval with a log, the view switch as plain text under the chips, <i>Summary</i> then the log (<i>Agent log</i>, the transcript, for an Agent eval; <i>Runtime log</i>, the saved output, for a runtime eval), Summary chosen when the tab opens; the chosen view bold in the strong text colour, <code>--ink</code> at weight 700, and the other in the quieter one, <code>--ink-2</code> at weight 400, both readable on the panel; no radius, no fill; an eval without a log has no switch; then the status line (the verdict's icon and word bold in the status colour; beside it in <code>--ink-2</code> what running it took and spent, the time, the tokens in <code>k</code> or <code>M</code> and the model when there was one, or, for a reused result, what reuse saved, and how it ended; the line wraps rather than drop any of them), the instruction, then Result, unfolded: each field the eval's owner set in its schema, by its name as a key/value grid (keys right-aligned in <code>--ink-2</code>), a list's value as numbered items; then Execution options, Execution metadata and Fingerprint, each folded to its name (D-INS-9), their facts, once unfolded, in a key/value grid with keys right-aligned in <code>--ink-2</code> and values in tabular figures; Debug folded last: unfolded as any section is, by a click on its row (D-INS-9), it holds every other fact of the eval as the same key/value grid, values selectable and in <code>--mono</code>: its request (the request ID), its source (the definition file and the eval's name), what it waits for, and the rest of its record; then its raw result whole, as <code>--mono</code> text at <code>--text-small</code> on <code>--surface-input</code> with a <code>--line-input</code> border, wrapping and scrolling in its own box. What the status line says (the duration, the exit) is not said again below it. A log replaces the body below the switch in <code>--mono</code> at <code>--text-small</code>, wrapping and scrolling in its own box. <span class="avoid">a JSON dump as the Summary; costs in the status colour; the exit code or the duration repeated in the Result or the metadata; a switch with a single view; a log chosen first.</span></dd>
   <dt id="D-INS-7">D-INS-7</dt>
-  <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row. It holds what the header row leaves out. Outcome, unfolded: the status, its icon and word said once, the evals that failed by name, the tally (each status's icon in its colour, its count and its word), what the Run took, and its comment in full. Waits for, unfolded: what the Run waits for, then its pending evals in <code>--ink-2</code>. Then What, Provenance and, last, Technical, folded to their names. Facts are key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), and every section folds and unfolds by its header row (D-INS-9). <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it; a sentence that says the status again (<i>NOT SATISFIED at Run end</i> beside RED).</span></dd>
+  <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row. It holds what the header row leaves out. Outcome, unfolded: the status, its icon and word said once, the evals that failed by name, the tally (each status's icon in its colour, its count and its word), what the Run took, and its comment in full. Waits for, unfolded: what the Run waits for, then its pending evals in <code>--ink-2</code>. Then What, Provenance and, last, Technical, folded to their names; Provenance says what started the Run: the CLI, an MCP client, or a Chat session as its reference chip (D-REF-1), the same way back the header row offers (D-MAIN-4). Facts are key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), and every section folds and unfolds by its header row (D-INS-9). <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it; a sentence that says the status again (<i>NOT SATISFIED at Run end</i> beside RED).</span></dd>
+  <dt id="D-INS-12">D-INS-12</dt>
+  <dd>On a Run's graph, an Artifact's tab offers each Human eval's review where its row is: the row's status words say <i>waiting Human</i> in <code>--human</code>, followed in <code>--ink-2</code> by the stage, <i>· yours</i> in <code>--accent</code> while this reviewer holds the claim, <i>· {claimant}</i> while another does, nothing while it can be claimed; under the row, indented to the eval's name, one row of <code>--control</code> holds Claim to review (while it can be claimed) or Release claim (while it is yours) as a small quiet button, then <i>Open in Review</i>, a text reference in <code>--accent</code> led by the open icon (D-REF-1). A claim in progress or its failure shows in that row as the review's actions row does (D-REV-5). A review taken by another reviewer offers Open in Review alone; a submitted one offers neither, its row saying its verdict. The Human eval's tab, which holds the review itself (D-REV-1), shows Open in Review in its head row after the stage pill. <span class="avoid">the claim actions as a menu or on hover; Open in Review as a primary button; the stage repeated as a pill in the row; Claim to review offered on a review taken by another reviewer.</span></dd>
   <dt id="D-INS-8">D-INS-8</dt>
   <dd>Over a Current the Detail keeps its anatomy and changes what the marks say: each eval chip leads its eval's name with what verify would do with that eval, one of three: would run, would be reused, or still being checked, as that plan's icon alone, in its one colour, with no words on the chip; each eval row leads with the same icon and says the same plan in words in that colour, as the Summary's plan line does (would run <code>--running</code>, would be reused <code>--reused</code>, checking <code>--checking</code>, the colours of the nodes' same plans). Waiting and blocked are marks of an Artifact's node, not of its evals: an eval of a waiting or blocked Artifact still says whether it would run or be reused; an eval's tab shows, in place of the verdict line, the plan (what would happen, bold in its colour) with its reason beside it in <code>--ink-2</code>, then the instruction, the result it would reuse as a Result section under its header row when there is one, laid out as a Run's (each owner field by name, a list as numbered items, D-INS-5) (the plan line already says why an eval would run), then Execution options, Execution metadata and Fingerprint, each a section folded to its name when its facts are present, and Debug, folded, last; when the eval has a log (the Agent log or Runtime log of the result it would reuse), the view switch of D-INS-5 stands under the chips as on a Run, Summary first; an eval without one, such as one that would run or is still being checked, has no switch; and a Current has no Human review. A node still being checked recolours its chips and rows in place as the scan learns. <span class="avoid">a Run's verdict words on a Current; a log switch that has nothing to show; a waiting or blocked mark on an eval's chip, row or Summary.</span></dd>
   <dt id="D-INS-9">D-INS-9</dt>

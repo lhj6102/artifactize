@@ -14,10 +14,12 @@
   <span>Artifactize desktop / design / overlays</span>
   <nav aria-label="Design pages">
     <a href="index.html">Overview</a>
-    <a href="monitor.html">Monitor</a>
+    <a href="chat.html">Chat</a>
+    <a href="monitor.html">Verify</a>
     <a href="current.html">Current</a>
     <a href="detail.html">Detail</a>
     <a href="review.html">Review</a>
+    <a href="viewers.html">Viewers</a>
     <a href="settings.html">Settings</a>
     <a href="overlays.html" aria-current="page">Overlays</a>
   </nav>
@@ -36,11 +38,13 @@
 <div class="stage" style="--w: 1280; --h: 560">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode on"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>Waiting (1)</h2>
-        <div class="m-waiting-row selected"><span class="m-icon i-human tone-human"></span><span>release/signoff</span><span class="m-where">artifactize  dev</span><span class="m-meta">2m · alice</span></div>
-      </section></section>
+    <section class="m-pane"><div class="m-pane-head"><div class="m-filter"><span class="m-term">type:human<span class="m-icon i-remove"></span></span><span class="m-term">waiting<span class="m-icon i-remove"></span></span></div></div><ul class="m-list"></ul></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>Review</h2><span class="m-headline"><span class="m-text">release/signoff · A person approves the release notes</span></span></div></section>
     <div class="m-scrim"></div>
@@ -50,8 +54,13 @@
         <div class="m-palette-heading">App</div>
         <div class="m-palette-item selected"><span>Keyboard shortcuts</span><span class="m-kbd">?</span></div>
         <div class="m-palette-item"><span>Show Settings</span><span class="m-kbd">Ctrl+,</span></div>
+        <div class="m-palette-item"><span>Show Chat</span><span class="m-kbd">Ctrl+1</span></div>
+        <div class="m-palette-item"><span>Show Verify</span><span class="m-kbd">Ctrl+2</span></div>
+        <div class="m-palette-item"><span>Show Review</span><span class="m-kbd">Ctrl+3</span></div>
         <div class="m-palette-item"><span>Show or hide the Pane</span><span class="m-kbd">Ctrl+B</span></div>
+        <div class="m-palette-item"><span>New chat</span></div>
         <div class="m-palette-item"><span>Search the branches</span><span class="m-kbd">/</span></div>
+        <div class="m-palette-item"><span>Filter the reviews</span></div>
         <div class="m-palette-item"><span>Open a request by ID</span><span class="m-kbd">Ctrl+O</span></div>
         <div class="m-palette-item"><span>Refresh</span><span class="m-kbd">Ctrl+R</span></div>
         <div class="m-palette-item"><span>Quit</span><span class="m-kbd">q</span></div>
@@ -65,8 +74,8 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 300px; top: 70px">1</span>
-<span class="callout" style="left: 300px; top: 150px">2</span>
+<span class="callout" style="left: 300px; top: 34px">1</span>
+<span class="callout" style="left: 300px; top: 114px">2</span>
 </div>
 <figcaption>Stage 1280 × 560. The command palette, opened over a review whose form is being edited: the app's commands, then the review's.</figcaption>
 </figure>
@@ -75,9 +84,13 @@
 <div class="stage" style="--w: 1280; --h: 660">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
@@ -105,7 +118,7 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 130px; top: 70px">3</span>
+<span class="callout" style="left: 130px; top: 34px">3</span>
 </div>
 <figcaption>Stage 1280 × 660. Help with a Run's graph and its Detail focused (left) and with a review focused (right), shown side by side here; the app opens one, for what has focus. A Current's Help adds its editing keys and its marks. Which keys the app offers is the app's to choose; the figures show how Help looks.</figcaption>
 </figure>
@@ -114,16 +127,20 @@
 <div class="stage" style="--w: 1280; --h: 460">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog" style="top: 32px; left: 28%; width: 480px">
       <h2>Keyboard shortcuts</h2>
       <p class="m-section-label" style="margin: 0 0 6px">Pane</p>
-      <dl class="m-kv" style="grid-template-columns: max-content 1fr"><dt style="text-align: left"><span class="m-kbd">↑</span> <span class="m-kbd">↓</span></dt><dd>Move through the branches, the timelines of expanded branches, then the waiting reviews</dd><dt style="text-align: left"><span class="m-kbd">j</span> <span class="m-kbd">k</span></dt><dd>The same as ↓ and ↑</dd><dt style="text-align: left"><span class="m-kbd">→</span></dt><dd>Expand the selected branch, or enter its timeline</dd><dt style="text-align: left"><span class="m-kbd">←</span></dt><dd>Step back out of the timeline, or fold the branch</dd><dt style="text-align: left"><span class="m-kbd">↓</span></dt><dd>Past a timeline's oldest entry, bring older Runs</dd><dt style="text-align: left"><span class="m-kbd">Enter</span></dt><dd>Move into the Main area; on a waiting review, open it</dd><dt style="text-align: left"><span class="m-kbd">/</span> <span class="m-kbd">Ctrl+F</span></dt><dd>Focus the Search</dd><dt style="text-align: left"><span class="m-kbd">↑</span> <span class="m-kbd">↓</span></dt><dd>In the Search: choose a suggestion</dd><dt style="text-align: left"><span class="m-kbd">Tab</span> <span class="m-kbd">Enter</span></dt><dd>In the Search: take the chosen suggestion, or the first</dd><dt style="text-align: left"><span class="m-kbd">Esc</span></dt><dd>In the Search: close the suggestions, then put back <code>sort:recent</code>, then return to the list</dd></dl>
+      <dl class="m-kv" style="grid-template-columns: max-content 1fr"><dt style="text-align: left"><span class="m-kbd">↑</span> <span class="m-kbd">↓</span></dt><dd>Move through the branches and the timelines of expanded branches</dd><dt style="text-align: left"><span class="m-kbd">j</span> <span class="m-kbd">k</span></dt><dd>The same as ↓ and ↑</dd><dt style="text-align: left"><span class="m-kbd">→</span></dt><dd>Expand the selected branch, or enter its timeline</dd><dt style="text-align: left"><span class="m-kbd">←</span></dt><dd>Step back out of the timeline, or fold the branch</dd><dt style="text-align: left"><span class="m-kbd">↓</span></dt><dd>Past a timeline's oldest entry, bring older Runs</dd><dt style="text-align: left"><span class="m-kbd">Enter</span></dt><dd>Move into the Main area</dd><dt style="text-align: left"><span class="m-kbd">/</span> <span class="m-kbd">Ctrl+F</span></dt><dd>Focus the Search</dd><dt style="text-align: left"><span class="m-kbd">↑</span> <span class="m-kbd">↓</span></dt><dd>In the Search: choose a suggestion</dd><dt style="text-align: left"><span class="m-kbd">Tab</span> <span class="m-kbd">Enter</span></dt><dd>In the Search: take the chosen suggestion, or the first</dd><dt style="text-align: left"><span class="m-kbd">Esc</span></dt><dd>In the Search: close the suggestions, then put back <code>sort:recent</code>, then return to the list</dd></dl>
       <div class="m-dialog-actions"><span class="m-button">Close</span></div>
     </div>
     <div class="m-dialog" style="top: 32px; left: 74%; width: 320px">
@@ -134,7 +151,7 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 130px; top: 70px">17</span>
+<span class="callout" style="left: 130px; top: 34px">17</span>
 </div>
 <figcaption>Stage 1280 × 460. Help with the Pane focused (left) and with Settings focused (right), shown side by side here; the app opens one, for what has focus.</figcaption>
 </figure>
@@ -143,7 +160,11 @@
 <div class="stage" style="--w: 1280; --h: 480">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen pane-hidden">
     <section class="m-main focused">
       <div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div>
@@ -196,10 +217,10 @@
     </section>
   </div>
 </div>
-<span class="callout" style="left: 370px; top: 112px">5</span>
-<span class="callout" style="left: 792px; top: 112px">11</span>
-<span class="callout" style="left: 1214px; top: 112px">12</span>
-<span class="callout" style="left: 1214px; top: 216px">13</span>
+<span class="callout" style="left: 370px; top: 76px">5</span>
+<span class="callout" style="left: 792px; top: 76px">11</span>
+<span class="callout" style="left: 1214px; top: 76px">12</span>
+<span class="callout" style="left: 1214px; top: 180px">13</span>
 </div>
 <figcaption>Stage 1280 × 480. The find field over a Run's graph (run-5K2QXA, every Artifact GREEN), with the Pane hidden, in its four states, shown side by side here; the app opens one, over the graph's top left, and the graph behind it does not move while typing. From the left: nothing typed, listing the graph's starred Artifacts; text typed, listing what matches; nothing typed and nothing starred; text typed and nothing matching.</figcaption>
 </figure>
@@ -215,9 +236,13 @@
 <div class="stage" style="--w: 1280; --h: 300">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">0.22.0 available</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
@@ -242,21 +267,25 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 968px; top: 34px">14</span>
-<span class="callout" style="left: 396px; top: 108px">6</span>
-<span class="callout" style="left: 806px; top: 108px">15</span>
-<span class="callout" style="left: 1216px; top: 108px">16</span>
+<span class="callout" style="left: 968px; top: 298px">14</span>
+<span class="callout" style="left: 396px; top: 72px">6</span>
+<span class="callout" style="left: 806px; top: 72px">15</span>
+<span class="callout" style="left: 1216px; top: 72px">16</span>
 </div>
-<figcaption>Stage 1280 × 300. The Update dialog, opened from the bar's release notice, for the three ways an install can be updated: a command to run (left), a file to download and install by hand (middle), and the release page when the way is unknown (right). The app opens the one that fits this install.</figcaption>
+<figcaption>Stage 1280 × 300. The Update dialog, opened from the release notice in Settings' header (D-SET-1), for the three ways an install can be updated: a command to run (left), a file to download and install by hand (middle), and the release page when the way is unknown (right). The app opens the one that fits this install.</figcaption>
 </figure>
 
 <figure class="figure">
 <div class="stage" style="--w: 1280; --h: 300">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
@@ -272,8 +301,8 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 130px; top: 70px">7</span>
-<span class="callout" style="left: 730px; top: 70px">4</span>
+<span class="callout" style="left: 130px; top: 34px">7</span>
+<span class="callout" style="left: 730px; top: 34px">4</span>
 </div>
 <figcaption>Stage 1280 × 300. Open a request by ID (left): a waiting Human review opens actionable, any other request read-only. The Leave dialog (right), asked when quitting while claims are held. The app opens one at a time.</figcaption>
 </figure>
@@ -283,9 +312,13 @@
 <div class="stage" style="--w: 1280; --h: 320">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-bar-side end"><span class="m-button">Settings</span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
     <section class="m-main"><div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:02:11</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span><span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
@@ -309,9 +342,9 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 18px; top: 50px">8</span>
-<span class="callout" style="left: 474px; top: 50px">9</span>
-<span class="callout" style="left: 860px; top: 50px">10</span>
+<span class="callout" style="left: 18px; top: 14px">8</span>
+<span class="callout" style="left: 474px; top: 14px">9</span>
+<span class="callout" style="left: 860px; top: 14px">10</span>
 </div>
 <figcaption>Stage 1280 × 320. On a Current: New Artifact with a name already used (left), Rename refused because a file it would write changed on disk (middle), and Delete refused because desktop-ui names the Artifact (right). The app opens one at a time.</figcaption>
 </figure>
@@ -322,7 +355,7 @@
   <li><span class="n">3</span><div><b>Help</b><span>The keys the app has for what has focus, as a key-cap / action grid under a group label, and Close. For a graph it adds the marks: each status's icon beside its word, the one place that spells them out.</span></div></li>
   <li><span class="n">17</span><div><b>Help in the Pane and in Settings</b><span>With the Pane focused, Help lists the keys the app has for the Pane and its Search; with Settings focused, those for Settings. No marks: neither shows a graph.</span></div></li>
   <li><span class="n">4</span><div><b>Leave dialog</b><span>Says what is held; Stay and the primary Release and quit (J-QUIT), each of which may show its key as a hint at the end of its label (here Esc and <kbd>u</kbd>). The one dialog whose buttons may show keys.</span></div></li>
-  <li><span class="n">7</span><div><b>Open by ID</b><span>One text field for the request ID (placeholder <code>req-…</code>) and two actions, Cancel and the primary Open. A waiting Human review opens in the Main area as the actionable review; any other request opens there as the read-only Request view.</span></div></li>
+  <li><span class="n">7</span><div><b>Open by ID</b><span>One text field for the request ID (placeholder <code>req-…</code>) and two actions, Cancel and the primary Open. Review shows what opens, as a reference opens it: a waiting Human review actionable; any other request as the read-only Request view.</span></div></li>
   <li><span class="n">8</span><div><b>New Artifact</b><span>Name and Path, then Cancel and the primary Create; a refusal under the field it concerns, the text kept.</span></div></li>
   <li><span class="n">9</span><div><b>Rename</b><span>The name in one field, then Cancel and the primary Rename; the parts, references and places that name the Artifact follow in the same edit. Here a file it would write, desktop's, changed on disk since the Current read it: the refusal names that file, nothing is written, the name typed stays, and the Current is scanned again.</span></div></li>
   <li><span class="n">10</span><div><b>Delete</b><span>Says which file Delete would remove, the one sentence a decision that cannot be undone here gets. Done, it closes with the Detail and the node goes from the graph. Refused while another Artifact names it: the red line says the file was not removed and which Artifact names it, as here; nothing was written.</span></div></li>
@@ -337,15 +370,15 @@
   <dt id="D-OVL-1">D-OVL-1</dt>
   <dd>A dialog is a <code>--surface-raised</code> panel with a 1px <code>--line-panel</code> border, <code>--radius-chip</code> corners, 16px padding and a shadow no stronger than 8px offset, 24px blur in <code>--scrim</code>, over a <code>--scrim</code> overlay; its title is <code>--text-title</code> semibold; its actions are right-aligned 24px buttons, at most one primary. A dialog's buttons carry no key cap (D-SYS-12), but for the Leave dialog's two, which may show their keys as hints at the end of their labels. <span class="avoid">a 12px radius; a borderless card floating on a blur; a key cap on any other dialog's button.</span></dd>
   <dt id="D-OVL-2">D-OVL-2</dt>
-  <dd>The command palette is 640px wide near the top: an input of 36px closed below by <code>--line-group</code>, group headings at <code>--text-label</code> uppercase in <code>--ink-2</code>, items of <code>--row</code> with the label left and its key cap, if it has one, right, the selected item on <code>--selection</code>; typing filters the rows: only the commands whose names contain the typed text stay, in their order, each group heading kept only while one of its commands does (typing <i>rel</i> here would leave Release the claim alone, under Human review), and the selected row among them on <code>--selection</code>. It lists every command that is enabled now, each with its key cap where the app offers a key (J-PALETTE): the app's first, under App, then those of what is shown, each under its group (Graph, Human review, and Settings while Settings is open); the Graph group holds a graph's commands that can run now, <i>Minimize or expand the whole</i> among them while a whole's Detail is open (J-GRAPH-MINIMIZE); while a graph's Detail shows a Human review on a Human eval's tab, that review's commands are listed too, under the review's group, as they are for a review in the Main area. <span class="avoid">icons per command; the selection shown by colour alone; a command that opens the palette itself.</span></dd>
+  <dd>The command palette, which a click on the bar's brand opens (D-BAR-1), is 640px wide near the top: an input of 36px closed below by <code>--line-group</code>, group headings at <code>--text-label</code> uppercase in <code>--ink-2</code>, items of <code>--row</code> with the label left and its key cap, if it has one, right, the selected item on <code>--selection</code>; typing filters the rows: only the commands whose names contain the typed text stay, in their order, each group heading kept only while one of its commands does (typing <i>rel</i> here would leave Release the claim alone, under Human review), and the selected row among them on <code>--selection</code>. It lists every command that is enabled now, each with its key cap where the app offers a key (J-PALETTE): the app's first, under App, then those of what is shown, each under its group (Graph, Human review, and Settings while Settings is open); the Graph group holds a graph's commands that can run now, <i>Minimize or expand the whole</i> among them while a whole's Detail is open (J-GRAPH-MINIMIZE); while a graph's Detail shows a Human review on a Human eval's tab, that review's commands are listed too, under the review's group, as they are for a review in the Main area. <span class="avoid">icons per command; the selection shown by colour alone; a command that opens the palette itself.</span></dd>
   <dt id="D-OVL-3">D-OVL-3</dt>
-  <dd>A key cap is the one <code>kbd</code> style: <code>--mono</code> at <code>--text-label</code>, <code>--ink-2</code>, a 1px <code>--line-input</code> border, <code>--radius-control</code>, <code>--surface-group</code>. It shows where keys are looked up, in the palette and in Help, on the bar's Commands button, which opens the palette, and on the Leave dialog's two buttons (D-OVL-1); nowhere else, other dialogs' buttons included (D-SYS-12). On the primary button its text and border take <code>--ink-on-accent</code> over the button's fill. <span class="avoid">a second kbd style; a key cap on any control other than Commands and the Leave dialog's two buttons.</span></dd>
+  <dd>A key cap is the one <code>kbd</code> style: <code>--mono</code> at <code>--text-label</code>, <code>--ink-2</code>, a 1px <code>--line-input</code> border, <code>--radius-control</code>, <code>--surface-group</code>. It shows where keys are looked up, in the palette and in Help, and on the Leave dialog's two buttons (D-OVL-1); nowhere else, other dialogs' buttons included (D-SYS-12). On the primary button its text and border take <code>--ink-on-accent</code> over the button's fill. <span class="avoid">a second kbd style; a key cap on any control other than Commands and the Leave dialog's two buttons.</span></dd>
   <dt id="D-OVL-4">D-OVL-4</dt>
   <dd>The find field is opened by the tool strip's Find button (D-GRAPH-4, J-GRAPH-FIND). It floats over the canvas's top left (8px in, under the strip), 380px wide on <code>--surface-raised</code> with a <code>--line-panel</code> border: a <code>--mono</code> input, empty and focused when it opens, then result rows of <code>--row-dense</code> in <code>--mono</code> at <code>--text-small</code> led by the verdict's icon in its colour (on a Current, what verify would do), each showing the whole name, wrapping within the field's width rather than cut with an ellipsis, the chosen row on <code>--selection</code> with a 2px inset bar, a hovered row on <code>--surface-group</code>. It has four states. Nothing typed, with starred Artifacts on the graph: those Artifacts as rows, as if found, in the graph's order. Text typed with matches: the Artifacts and evals whose names contain the text, ignoring case, as rows in the graph's order, the list no taller than the canvas below the field and scrolling inside the field, so all 50 listed rows and the line after them stay reachable, an eval as <i>{Artifact} / {eval}</i>, and past the first 50 one <code>--ink-2</code> line under them saying how many more match. Nothing typed and nothing starred: no rows, one <code>--ink-2</code> line saying how to star one. Text typed and nothing matching: no rows, one <code>--ink-2</code> line saying that none does. Typing moves nothing on the graph. No row shows as chosen when the list appears. A click on a row closes the field, opens and focuses the Detail on that Artifact's tab or that eval's tab, and moves the camera so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable (J-GRAPH-FIND). A part of several wholes is listed once, and the camera goes to its copy in the first of its wholes. An Artifact hidden in a minimized whole, or an eval of one, is listed as any other; chosen, the Detail opens on that Artifact or eval, and the camera centres the minimized whole that hides it, which takes the selection's outline (J-GRAPH-MINIMIZE), the whole staying minimized. A click outside closes the field and does nothing else: the click neither acts on the graph nor opens, switches or closes the Detail, and the graph, its camera and the Detail stay as they were. <span class="avoid">a modal find; a camera that moves while typing or choosing a row; an empty list with no line under it; the starred list and the how-to-star line together; a no-match line that reads like the how-to-star line.</span></dd>
   <dt id="D-OVL-6">D-OVL-6</dt>
-  <dd>Open a request by ID (from the palette) is a dialog of D-OVL-1 at most 480px wide: its title, one <code>--surface-input</code> text field taking the request ID with <code>req-…</code> in <code>--ink-3</code> as its placeholder, and the actions Cancel and the primary Open, without key caps; what opens is in the Main area: a waiting Human review as the Review screen, actionable (D-REV-1); any other request as the Request view, read-only (D-REV-6), which is not a Human review and offers none of its actions. <span class="avoid">a list of recent IDs; a second field.</span></dd>
+  <dd>Open a request by ID (from the palette) is a dialog of D-OVL-1 at most 480px wide: its title, one <code>--surface-input</code> text field taking the request ID with <code>req-…</code> in <code>--ink-3</code> as its placeholder, and the actions Cancel and the primary Open, without key caps; what opens is shown in Review as a reference opens it (D-REV-8): a waiting Human review actionable (D-REV-1); any other request as the Request view, read-only (D-REV-6), which is not a Human review and offers none of its actions. <span class="avoid">a list of recent IDs; a second field.</span></dd>
   <dt id="D-OVL-5">D-OVL-5</dt>
-  <dd>Help lists the keys the app has for what has focus (the Pane, a graph with its Detail, a review, Settings) as a key cap / action grid under an 11px group label, each key cap beside what it does, and Close as its one action (J-HELP); which keys there are is the app's to choose, and a Run's Help lists none that only a Current has. For a graph it adds the graph's marks under their own label, each status's icon in its colour beside its word (a Run's: GREEN, running or waiting for a Human (on a node, one mark for both), waiting, RED, ERROR, blocked by upstream, and the Human icon that the Run's headline and a Human eval's chip and row use for a sign-off that waits; a Current's: reused, would run, waiting, blocked, checking), the one place that spells them out; the Leave dialog says which claims are held and offers Stay and Release and quit (D-OVL-1); the Update dialog, opened from the bar's release notice (D-BAR-1), shows the running and the new version as two numbers, then the one way to update that fits how the app was installed: a command to run, as selectable <code>--mono</code> text on <code>--surface-input</code> with a <code>--line-input</code> border and no link; a file to download, as a <code>--accent</code> link that opens in the browser, followed by the command that installs it by hand when there is one; or, when the way is unknown, the release page as a link; Close closes it. It never downloads or installs anything itself. <span class="avoid">a Current's editing keys in a Run's Help; a Help page outside the app; a legend on a working screen; an update that starts on its own; a link and a command for the same thing; an Install or Update button.</span></dd>
+  <dd>Help lists the keys the app has for what has focus (a Pane, a Chat, a graph with its Detail, a review, Settings) as a key cap / action grid under an 11px group label, each key cap beside what it does, and Close as its one action (J-HELP); which keys there are is the app's to choose, and a Run's Help lists none that only a Current has. For a graph it adds the graph's marks under their own label, each status's icon in its colour beside its word (a Run's: GREEN, running or waiting for a Human (on a node, one mark for both), waiting, RED, ERROR, blocked by upstream, and the Human icon that the Run's headline and a Human eval's chip and row use for a sign-off that waits; a Current's: reused, would run, waiting, blocked, checking), the one place that spells them out; the Leave dialog says which claims are held and offers Stay and Release and quit (D-OVL-1); the Update dialog, opened from the release notice in Settings' header (D-SET-1), shows the running and the new version as two numbers, then the one way to update that fits how the app was installed: a command to run, as selectable <code>--mono</code> text on <code>--surface-input</code> with a <code>--line-input</code> border and no link; a file to download, as a <code>--accent</code> link that opens in the browser, followed by the command that installs it by hand when there is one; or, when the way is unknown, the release page as a link; Close closes it. It never downloads or installs anything itself. <span class="avoid">a Current's editing keys in a Run's Help; a Help page outside the app; a legend on a working screen; an update that starts on its own; a link and a command for the same thing; an Install or Update button.</span></dd>
   <dt id="D-OVL-7">D-OVL-7</dt>
   <dd>The edit dialogs of a Current are dialogs of D-OVL-1 at most 400px wide, opened by the tool strip's New Artifact (D-CUR-3) and the Definition's Rename and Delete (D-INS-10). New Artifact: two fields under their names, Name (focused) and Path in <code>--mono</code>, then Cancel and the primary Create. A Create that succeeds writes <code>.artifactize/{name}.artf</code> with that path and closes the dialog; the new node is drawn on the Current, in free space when the top level is placed by hand, its Detail opens on its Artifact tab, and the camera moves to it as to a found Artifact, centred on the graph left of the Detail (D-OVL-4). Rename: titled <i>Rename {name}</i>, one field holding the name, then Cancel and the primary Rename. Delete: titled <i>Delete {name}?</i>, one sentence naming the file it removes, then Cancel and the primary Delete; a Delete that succeeds removes that file, with its place, its parts' places and its comment, and closes both the dialog and the Detail, the node going from the graph (J-NODE-DELETE). Their buttons carry no key cap; Delete is done only by its button. A refusal shows in <code>--red</code> at <code>--text-small</code> under the field it concerns, or under Delete's sentence, and the dialog stays with what was typed: a name already used or not valid, or a path not valid, says why; Delete refused while other Artifacts name it says that the file was not removed and which Artifacts name it; and a Rename or Delete whose file (the Artifact's own, or a whole's or a referrer's that the edit would change) changed on disk since the Current read it names that file, <i>{file} changed on disk; nothing written</i>, without a line or column, and the Current is scanned again. <span class="avoid">a folder or kind chooser in New Artifact; a sentence that explains what Rename changes; Delete in red; a refusal that closes the dialog.</span></dd>
 </dl>
