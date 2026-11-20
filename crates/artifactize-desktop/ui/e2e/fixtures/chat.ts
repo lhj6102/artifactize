@@ -7,6 +7,7 @@ export const CHAT_MODEL = "fixture-chat";
 const DEFAULT_MODEL = "fixture-small";
 export const WORK_PROMPT = "Read the release notes and verify the worktree";
 export const STOP_PROMPT = "Wait for my next instruction";
+export const QUIT_PROMPT = "Keep working until I quit";
 export const CONTINUE_PROMPT = "Continue after the stopped turn";
 export const CONTINUE_ANSWER = "The conversation can continue.";
 export const CHAT_ANSWER = "The notes were read and Verify was started.";
@@ -35,6 +36,7 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
         response.end(JSON.stringify({ error: { message: `Expected the selected model ${CHAT_MODEL}, got ${selection ?? "no model"}` } }));
         return;
       }
+      if (body.includes(QUIT_PROMPT)) return; // Quitting the app ends this response.
       const resumed = body.includes(CONTINUE_PROMPT);
       if (!resumed && body.includes(STOP_PROMPT)) return; // The user owns cancellation of this response.
       let number = 1;

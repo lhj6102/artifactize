@@ -42,12 +42,20 @@ export const scenarios: Scenario[] = [
       await w.pointedUntil((lines) => lines.length === 1 && lines[0] === notes.trim().split("\n").at(-1), "the pointed line marked in the Notes");
       // Away from Review the pet overlay holds the review, its Notes the same draft's.
       await w.mode("Verify");
-      const pet = await w.pet();
+      await w.pet();
+      assert.equal(await w.title(), "Artifactize review");
+      const pet = await w.petUntil((shown) => shown.choices.length > 0, "the pet offers the verdicts of the claimed review");
       assert.match(pet.head, /^notes\/signoff · run-/);
       assert.equal(pet.notes, notes);
       assert.equal(pet.point, true, "Point while the notes' viewer is open");
+      // The claimed review's form is open, as in Review: its Verdict radios are the pet's one
+      // GREEN and RED choice, and a click on one switches the form.
+      assert.deepEqual([pet.choices, pet.radios, pet.verdict], [["GREEN", "RED"], 2, "GREEN"]);
       await w.petNotes(`${pet.notes.trim()}\nThe rounding reads right.`);
+      await w.petChoose("RED");
       await w.petChoose("GREEN");
+      const chosen = await w.readPet();
+      assert.deepEqual([chosen.choices, chosen.radios], [["GREEN", "RED"], 2], "one verdict choice, the form's radios");
       await w.petEnter("comment", "Checked the totals.");
       const done = await w.petSubmit();
       assert.equal(done.refusal, "", "submitted");
@@ -97,8 +105,11 @@ export const scenarios: Scenario[] = [
       const frame = await w.frameUntil((shown) => shown !== null, "the plugin's page framed");
       assert.equal(frame?.sandbox, "allow-scripts", "the page runs sandboxed, without the app's origin");
       assert.match(frame?.src ?? "", /viewer/, "served from the viewer's own scheme");
-      const strip = await w.stripUntil((shown) => shown.items.includes("checkout/index.html · Checkout")
-        && !shown.items.some((item) => item.startsWith("Loading") || item.includes("did not connect") || item.includes("did not load")), "the HTML Viewer shows the loaded Checkout document");
+      // The page reached the bridge and, once its inner page loaded, reported the page and its
+      // title: the strip's one status line says so, in place of Loading, a page that did not
+      // connect or a page that did not load.
+      const strip = await w.stripUntil((shown) => shown.page === "checkout/index.html · Checkout", "the HTML Viewer reports the loaded Checkout document");
+      assert.ok(!strip.items.some((item) => item.startsWith("Loading") || item.includes("did not connect") || item.includes("did not load")), "no connection or load failure in the strip");
       assert.equal(strip.point, true, "the claimed review can Point in the plugin");
       await w.main();
     },

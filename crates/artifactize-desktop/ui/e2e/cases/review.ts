@@ -37,7 +37,7 @@ export const scenarios: Scenario[] = [
       assert.match(await review.debugState(), new RegExp(`^Request ${id} · DEFERRED · unclaimed`), "its facts under Debug");
       // Another reviewer's claim shows as taken, the review read-only.
       assert.equal(artifactize(fixture, ["request", "claim", id, "--reviewer", "bob"]).status, 0);
-      await review.until((each) => each.claimant === "bob" && each.readOnly, "bob's claim shows, read-only");
+      await review.until((each) => each.stage === "TAKEN" && each.claimant === "bob" && each.readOnly, "bob's claim shows as TAKEN, read-only");
       assert.equal(artifactize(fixture, ["request", "unclaim", id, "--reviewer", "bob"]).status, 0);
       await review.until((each) => each.stage === "CLAIM" && each.claimant === "", "released by bob, it waits for a claim again");
       await review.claim();

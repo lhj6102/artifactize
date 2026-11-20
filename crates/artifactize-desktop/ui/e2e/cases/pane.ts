@@ -157,11 +157,18 @@ export const scenarios: Scenario[] = [
       await app.waitingBadge(2);
       assert.equal(await app.review.filter(), "type:human waiting");
       await app.until(async () => (await app.review.list()).length === 2, "both waiting reviews listed");
-      await app.review.filterFor(`type:human request:${newer}`);
-      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "only the requested review matches the new filter");
+      // A filter the library cannot read lists nothing and says why.
+      await app.review.filterFor("type:robot");
+      await app.until(async () => (await app.review.list()).length === 0 && /Unknown kind `robot`/.test(await app.review.notice()), "the unreadable filter lists nothing and says why");
+      assert.equal(await app.review.listEmpty(), "No review matches the filter.");
+      await app.review.filterFor("type:human repo:other");
+      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "only the other repository's review matches the new filter");
       await app.waitingBadge(2);
       assert.equal(artifactize(fixture, ["request", "claim", older, "--reviewer", "bob"]).status, 0);
       await app.waitingBadge(1);
+      // Edited back to the waiting reviews, the one bob claimed is no longer listed.
+      await app.review.filterFor("type:human waiting");
+      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "the claimed review no longer waits");
       await app.review.openListed(newer);
       assert.match(await app.review.debugState(), new RegExp(`^Request ${newer} `));
     },

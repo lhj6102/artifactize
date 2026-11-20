@@ -1,7 +1,7 @@
 // Mode references as a person follows them across Verify, Review and Chat.
 import assert from "node:assert/strict";
-import { CHAT_ANSWER, CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
-import { createRelease, request } from "../fixtures/repo.ts";
+import { CHAT_ANSWER, CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
+import { artifactize, createRelease, request } from "../fixtures/repo.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
@@ -16,7 +16,15 @@ export const scenarios: Scenario[] = [
     },
     run: async (app, { fixture, data: { id, runId } }) => {
       await app.graph.open("a:release", "Artifact release");
+      const stage = (shown: string) => app.detail.until((detail) => detail.evals.find((row) => row.id === "e:release/signoff")?.stage === shown, `the sign-off's row reads ${shown}`);
+      await stage("claimable");
+      // Another reviewer's claim shows on the row, named; released, the review is claimable again.
+      assert.equal(artifactize(fixture, ["request", "claim", id, "--reviewer", "bob"]).status, 0);
+      await stage("taken by bob");
+      assert.equal(artifactize(fixture, ["request", "unclaim", id, "--reviewer", "bob"]).status, 0);
+      await stage("claimable");
       await app.detail.reviewAction("Claim to review");
+      await stage("yours");
       await app.waitingBadge(0);
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
@@ -52,7 +60,12 @@ export const scenarios: Scenario[] = [
     run: async (app, { data: { firstRun } }) => {
       await app.graph.titled(firstRun);
       await app.mode("Chat");
-      await app.chat.create();
+      // The branch has no session yet: it starts on the first model listed, not the one chosen
+      // next, which the fixture provider lists second.
+      const starting = await app.chat.create();
+      assert.match(starting, /^\S.* · \S+$/, "the dialog names the starting provider and model");
+      assert.notEqual(starting, `fixture · ${CHAT_MODEL}`, "the session does not start on the model chosen next");
+      // Only the fixture provider answers, and it refuses a turn on any other model than this.
       await app.chat.model(CHAT_MODEL);
       await app.chat.send(WORK_PROMPT);
       await app.chat.says("release/notes.md");
@@ -66,7 +79,9 @@ export const scenarios: Scenario[] = [
       await app.chat.openRun(run);
       await app.graph.titled(run);
       await app.mode("Chat");
-      await app.chat.create();
+      // A new session on the branch starts with the model its last session used.
+      assert.equal(await app.chat.create(), `fixture · ${CHAT_MODEL}`);
+      assert.equal(await app.chat.selected(), CHAT_MODEL);
       await app.chat.emptySession();
       await app.mode("Verify");
       await app.graph.titled(run);
@@ -81,6 +96,32 @@ export const scenarios: Scenario[] = [
       await app.mode("Chat");
       await app.chat.openSaved(WORK_PROMPT);
       await app.chat.says(CONTINUE_ANSWER);
+    },
+  }),
+  scenario({
+    id: "chat-quit-while-working",
+    title: "the palette's Quit while a Chat turn runs and no claim is held asks first, naming the turn: Stay keeps the turn running, Quit stops it and the app exits",
+    journeys: ["J-QUIT"],
+    prepare: async (owned) => {
+      const fixture = await createRelease(owned);
+      await installChatProvider(owned, fixture);
+      return { fixture, args: ["--repo", fixture.repo], data: null };
+    },
+    run: async (app, { port }) => {
+      await app.mode("Chat");
+      await app.chat.create();
+      await app.chat.model(CHAT_MODEL);
+      await app.chat.send(QUIT_PROMPT);
+      await app.chat.working();
+      await app.command("Quit");
+      const asked = await app.dialogTitled("Quit while the agent works?");
+      assert.ok(asked.text.includes(`A Chat turn is running in ${QUIT_PROMPT}; quitting stops it.`), asked.text);
+      assert.ok(!asked.text.includes("review claim"), "no claim is named");
+      await app.dialogButton("Stay");
+      await app.dialogClosed();
+      await app.command("Quit");
+      await app.dialogTitled("Quit while the agent works?");
+      await app.exitsBy(() => app.dialogButton("Quit"), port);
     },
   }),
 ];

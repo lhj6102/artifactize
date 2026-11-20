@@ -5,7 +5,7 @@ import { fill, press, typeText } from "../keys.ts";
 import { nativeInput } from "../input.ts";
 import { chooseOption, holds, until } from "./wait.ts";
 
-/** The review as read: its stage (`CLAIM`, `REVIEW (yours)`), who else claimed it, what its
+/** The review as read: its stage (`CLAIM`, `REVIEW (yours)`, `TAKEN`), who else claimed it, what its
  * sections are in order, what its Result says (a form's verdict, or the completed result),
  * the request's state under Debug once unfolded, and whether work of it runs. */
 export type Shown = {
@@ -85,6 +85,16 @@ export class Review {
   async list(): Promise<{ id: string; name: string }[]> {
     return this.browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Human reviews"] [role="option"]')]
       .map((row) => ({ id: row.dataset.key ?? "", name: row.innerText })));
+  }
+
+  /** What Review's list says in place of reviews (`No review matches the filter.`), or "". */
+  listEmpty(): Promise<string> {
+    return this.browser.execute(() => document.querySelector('[aria-label="Human reviews"] li.empty')?.textContent?.trim() ?? "");
+  }
+
+  /** The notice in the header row of Review's main area, or "". */
+  notice(): Promise<string> {
+    return this.browser.execute(() => document.querySelector(`section.panel[aria-label="Review's main area"] .notice[role="status"]`)?.textContent?.trim() ?? "");
   }
 
   filter(): Promise<string> { return this.browser.$('input[aria-label="Filter the reviews"]').getValue(); }

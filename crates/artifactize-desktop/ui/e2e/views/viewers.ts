@@ -11,9 +11,10 @@ const PET = "pet";
 const VIEWER = "viewer-";
 const REVIEW = `[aria-label="Review's main area"] section[aria-label="Human review"]`;
 
-/** The pet overlay as read: its head row, its Notes, the verdict whose form is open, Point and
- * why it is off, and what it says went wrong. */
-export type Pet = { head: string; notes: string; verdict: string; point: boolean; why: string; refusal: string };
+/** The pet overlay as read: its head row, its Notes, its GREEN and RED buttons as they read in
+ * order, how many of them are the open form's Verdict radios, the verdict whose form is open,
+ * Point and why it is off, and what it says went wrong. */
+export type Pet = { head: string; notes: string; choices: string[]; radios: number; verdict: string; point: boolean; why: string; refusal: string };
 
 export class Windows {
   private readonly browser: WebdriverIO.Browser;
@@ -104,13 +105,15 @@ export class Windows {
     return String(await callWindow(this.browser, "title"));
   }
 
-  /** The strip's text and controls, left to right. */
-  strip(): Promise<{ items: string[]; point: boolean; pointing: boolean }> {
+  /** The strip's text and controls, left to right, and the one status line it shows for a
+   * plugin's page: how the page connects, or the latest status the page reported. */
+  strip(): Promise<{ items: string[]; page: string; point: boolean; pointing: boolean }> {
     return this.browser.execute(() => {
       const strip = document.querySelector("header.strip");
       const point = strip?.querySelector("button");
       return {
         items: [...(strip?.children ?? [])].map((item) => item.textContent?.replace(/\s+/g, " ").trim() ?? "").filter(Boolean),
+        page: strip?.querySelector('span.page[role="status"]')?.textContent?.replace(/\s+/g, " ").trim() ?? "",
         point: !!point,
         pointing: point?.getAttribute("aria-pressed") === "true",
       };
@@ -222,6 +225,11 @@ export class Windows {
     return this.petUntil((pet) => pet.head !== "", "the pet overlay shows its review");
   }
 
+  /** The native title of the window reached last, as Tauri's window API says it. */
+  async title(): Promise<string> {
+    return String(await callWindow(this.browser, "title"));
+  }
+
   /** Whether the pet overlay's window shows. */
   async petShown(): Promise<boolean> {
     if (!(await this.handles()).includes(PET)) return false;
@@ -238,6 +246,8 @@ export class Windows {
       return {
         head: [...(card?.querySelector(".head")?.children ?? [])].map((part) => part.textContent?.trim() ?? "").filter(Boolean).join(" "),
         notes: card?.querySelector<HTMLTextAreaElement>(".notes textarea")?.value ?? "",
+        choices: [...(card?.querySelectorAll("button") ?? [])].map((button) => button.textContent?.trim() ?? "").filter((text) => text === "GREEN" || text === "RED"),
+        radios: card?.querySelectorAll('[role="radiogroup"][aria-label="Verdict"] [role="radio"]').length ?? 0,
         verdict: card?.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
         point: !!point && !point.hasAttribute("disabled"),
         why: card?.querySelector(".why")?.textContent?.trim() ?? "",

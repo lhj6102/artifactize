@@ -10,12 +10,14 @@ const DETAIL = 'aside[aria-label="Detail"]';
 const DIALOG = '[role="dialog"]';
 
 /** The Detail as read: its title, its chips (on an eval's tab), the evals its Artifact's tab
- * lists with their status, its sections' names with whether each is unfolded, and whether it
- * is docked at the graph's right edge from the graph's top to the main area's bottom. */
+ * lists with their status and, for a Human eval waiting for a person, its stage under it
+ * (`claimable`, `yours`, `taken by {reviewer}`), its sections' names with whether each is
+ * unfolded, and whether it is docked at the graph's right edge from the graph's top to the
+ * main area's bottom. */
 export type Shown = {
   title: string;
   tabs: { name: string; selected: boolean }[];
-  evals: { id: string; name: string; status: string }[];
+  evals: { id: string; name: string; status: string; stage: string }[];
   sections: { name: string; open: boolean }[];
   docked: boolean;
   starred: boolean;
@@ -49,6 +51,7 @@ export class Detail {
           id: row.dataset.eval ?? "",
           name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
           status: row.querySelector(".status")?.textContent?.trim() ?? "",
+          stage: row.closest("li")?.querySelector(".review .stage")?.textContent?.trim() ?? "",
         })),
         sections: [...aside.querySelectorAll<HTMLElement>("section.section")].map((section) => ({
           name: section.getAttribute("aria-label") ?? "",
