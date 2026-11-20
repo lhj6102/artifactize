@@ -10,7 +10,7 @@ import { inspect } from "node:util";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { appsAtOnce, assertHeadless, desktopResources, nodeProgram, runnerCommand, systemName, variable } from "./platform.ts";
+import { appsAtOnce, assertHeadless, desktopResources, nodeProgram, packageCommand, runnerCommand, systemName, variable } from "./platform.ts";
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
 import type { Scenario } from "./scenario.ts";
 
@@ -63,7 +63,13 @@ async function printed(): Promise<void> {
 async function suite(ids: string[]): Promise<void> {
   checkSuite();
   const { selectedScenarios } = await import("./catalog.ts");
-  const groups = batches(selectedScenarios(ids), appsAtOnce);
+  const scenarios = selectedScenarios(ids);
+  if (scenarios.some(({ id }) => id === "viewer-builtins-plugin")) {
+    // WebDriver checks the outer sandbox in the app; a DOM test checks Point inside it.
+    const command = packageCommand(["-C", suitePath(".."), "test", "src/viewers/HtmlExample.test.ts"]);
+    if (await child(command.program, command.args, process.env) !== 0) throw new Error("the HTML viewer example test failed");
+  }
+  const groups = batches(scenarios, appsAtOnce);
   const declared = variable("ARTIFACTIZE_OUTPUT_DIR");
   // Logs of this run's batches, in a folder of their own also in a declared output.
   const output = newDirectory(declared ? asNativePath(declared) : scratchDirectory(), "desktop-e2e-");

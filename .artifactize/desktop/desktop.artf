@@ -103,7 +103,7 @@ profile = { kind = "runtime", command = "pnpm", args = ["-C", "ui", "e2e"], time
 
 [evals.suite-passes.payload]
 instruction = """
-Build the E2E test app of {desktop} from {desktop-backend} and {desktop-ui} (the test-only Cargo feature and its frontend build) and the CLI from {engine-cli}, {engine-core} and {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} into build output this run owns, then run the WebdriverIO suite {desktop-e2e} against it on a headless display."""
+Run the HTML example's Point test in {desktop-ui}, then build the E2E test app of {desktop} from {desktop-backend} and {desktop-ui} (the test-only Cargo feature and its frontend build) and the CLI from {engine-cli}, {engine-core} and {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} into build output this run owns, and run the WebdriverIO suite {desktop-e2e} against it on a headless display."""
 
 [evals.fmt]
 title = "The Rust formatting check passes"
