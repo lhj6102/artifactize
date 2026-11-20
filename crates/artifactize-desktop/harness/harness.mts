@@ -111,7 +111,10 @@ async function rendered(browser: WebdriverIO.Browser, screen: Screen) {
       return [...document.querySelectorAll('[aria-label="Branches"] [role="treeitem"]')].some((row) => row.textContent?.includes("repo"))
         && main?.querySelector(":scope > header h2")?.textContent?.trim() === "Nothing chosen";
     }
-    if (entry === "review") return !!main?.querySelector('[aria-label="Human review"] .instruction');
+    if (entry === "review") {
+      const review = document.querySelector(`[aria-label="Review's main area"]`);
+      return !!review?.querySelector('[aria-label="Human review"] .instruction');
+    }
     // The branch's Run graph and its Current both draw the fixture's release.
     const shown = entry === "repo" ? ".graph" : ".current";
     return !!main?.querySelector(`${shown} .svelte-flow__node[data-id="a:release"]`);

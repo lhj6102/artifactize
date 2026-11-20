@@ -7,7 +7,7 @@ export type Checkpoint = { activity: CommandActivity; query: string | null; quer
 
 export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
   return browser.execute(() => {
-    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search branches and reviews"]');
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search the branches"]');
     const shown = !!input && input.getBoundingClientRect().height > 0;
     return {
       activity: window.artifactizeCommands,
