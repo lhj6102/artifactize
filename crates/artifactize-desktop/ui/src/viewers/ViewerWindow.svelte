@@ -31,6 +31,8 @@
     if (!frame || event.source !== frame.contentWindow) return;
     const data = event.data as { channel?: string; id?: number; method?: string; args?: { path?: string; text?: string } } | null;
     if (data?.channel !== CHANNEL || typeof data.id !== "number") return;
+    // The page reached the bridge: it runs, whatever it asks first.
+    v.page = "connected";
     const reply = (body: { result: unknown } | { error: string }) => frame?.contentWindow?.postMessage({ channel: CHANNEL, id: data.id, ...body }, "*");
     try {
       const args = data.args ?? {};
@@ -51,6 +53,12 @@
     frame = element;
     element.src = convertFileSrc(String(session), "viewer");
   };
+
+  /** The page finished loading: one that has not asked the bridge for anything yet did not
+   * connect, until it does. */
+  function loaded() {
+    if (v.page === "loading") v.page = "silent";
+  }
 
   function keydown(event: KeyboardEvent) {
     if (event.key === "Escape" && v.pointing) {
@@ -90,6 +98,11 @@
   <header class="strip">
     <span class="name">{context?.artifact ?? ""}</span>
     <span class="kind">{context?.title ?? ""}</span>
+    {#if entry?.kind === "web" && v.page !== "connected"}
+      <span class="page" class:silent={v.page === "silent"} role="status">
+        {v.page === "loading" ? `Loading ${context?.title ?? "the viewer"}…` : `${context?.title ?? "The viewer"} did not connect: its page never asked the viewer for its context.`}
+      </span>
+    {/if}
     <span class="spacer"></span>
     {#if context?.review}
       <span class="review"><span class="tone-human"><Icon name="human" /></span>{v.evalId ?? context.review}</span>
@@ -101,7 +114,7 @@
   {#if v.error}<p class="error" role="status">{v.error}</p>{/if}
   <div class="body">
     {#if entry?.kind === "web"}
-      <iframe title="{context?.artifact ?? 'Artifact'} — {context?.title ?? 'viewer'}" sandbox="allow-scripts" {@attach page}></iframe>
+      <iframe title="{context?.artifact ?? 'Artifact'} — {context?.title ?? 'viewer'}" sandbox="allow-scripts" onload={loaded} {@attach page}></iframe>
     {:else if entry?.kind === "builtin" && context}
       {#if entry.viewer === "files"}
         <FilesViewer />
@@ -140,6 +153,17 @@
   }
   .kind {
     color: var(--ink-2);
+  }
+  /* The plugin page's state until it reaches the bridge (D-VIEW-6). */
+  .page {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-2);
+  }
+  .page.silent {
+    color: var(--red);
   }
   .spacer {
     flex: 1;

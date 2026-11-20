@@ -178,6 +178,8 @@ describe("a plugin's page", () => {
     expect(frame.src).toContain("4");
     // The app's Point is not drawn over a plugin's page: the page draws its own.
     expect(screen.queryByRole("button", { name: "Point" })).toBeNull();
+    // Until the page reaches the bridge, the strip says it is loading.
+    expect((await screen.findByRole("status")).textContent?.trim()).toBe("Loading HTML Viewer…");
     const reply = vi.spyOn(frame.contentWindow!, "postMessage");
     const ask = { channel: "artifactize-viewer/v1", id: 1, method: "readText", args: { path: "index.html" } };
     // Another window's message is not answered.
@@ -186,7 +188,24 @@ describe("a plugin's page", () => {
     await waitFor(() => expect(reply).toHaveBeenCalledWith({ channel: "artifactize-viewer/v1", id: 1, result: "<h1>Hi</h1>" }, "*"));
     expect(reply).toHaveBeenCalledTimes(1);
     expect(calls.filter((call) => call.cmd === "viewer_read_text")).toHaveLength(1);
+    // Connected, the strip says nothing more of the page.
+    expect(screen.queryByRole("status")).toBeNull();
     window.dispatchEvent(new MessageEvent("message", { data: { ...ask, id: 2, method: "invoke" }, source: frame.contentWindow }));
     await waitFor(() => expect(reply).toHaveBeenCalledWith({ channel: "artifactize-viewer/v1", id: 2, error: "The viewer bridge has no invoke." }, "*"));
+  });
+
+  it("says the page did not connect when it finished loading without reaching the bridge, until it does", async () => {
+    mockConvertFileSrc("linux");
+    backend({ kind: "web", html: "<p>page</p>" }, {}, context({ type: "html", title: "HTML Viewer" }));
+    const { container } = render(ViewerWindow, { session: 5 });
+    const frame = await waitFor(() => {
+      const found = container.querySelector("iframe");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    frame.dispatchEvent(new Event("load"));
+    await waitFor(() => expect(screen.getByRole("status").textContent?.trim()).toBe("HTML Viewer did not connect: its page never asked the viewer for its context."));
+    window.dispatchEvent(new MessageEvent("message", { data: { channel: "artifactize-viewer/v1", id: 1, method: "context" }, source: frame.contentWindow }));
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
 });

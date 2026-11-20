@@ -21,6 +21,9 @@ export class ViewerState {
   /** Pointing: the next click on a place in the Artifact appends it to the draft. */
   pointing = $state(false);
   error = $state<string | null>(null);
+  /** A plugin's page: loading until it first reaches the bridge (it asks for `context` when it
+   * starts), or silent when it finished loading without having asked for anything yet. */
+  page = $state<"loading" | "connected" | "silent">("loading");
   /** The active review's eval, `{Artifact}/{eval}`, once read. */
   evalId = $state<string | null>(null);
 
