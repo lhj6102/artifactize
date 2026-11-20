@@ -21,7 +21,7 @@
 | `plugin list` | `--repo PATH` | 내장 유형과 프로젝트에 설치한 플러그인 유형을 나열합니다. | `0` |
 | `config rename OLD NEW` | — | 선언 파일, `parts`, `{OLD}` 참조에서 Artifact 이름을 `OLD`에서 `NEW`로 바꿉니다. | `0` |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | 기본 설정(`--repo-only`)에서는 현재 저장소의 Run을 보여 주며, `--repo`를 지정하면 해당 저장소의 Run을 보여 줍니다. `--all`을 쓰면 상태 디렉터리에 기록된 Run을 저장소 구분 없이 모두 보여 줍니다. 목록은 최신순으로 정렬하며 상태, 개수, 메모를 함께 표시합니다. | `0` |
-| `run show RUN_ID` | `--wait [--timeout-ms MS]` | 저장된 Run 전체 JSON(`evidence`, `requests`, `usage`, `validation`)을 출력합니다. `--wait`를 지정하면 Run이 끝날 때까지 명령이 종료되지 않습니다(기본 대기 제한 시간 10분, `--timeout-ms`는 `--wait`와 함께 사용). | `0` (`--wait` 시 Run 결과 코드; 대기 제한 시간이 지나면 Run은 계속 실행되고 CLI 명령만 `3`으로 종료) |
+| `run show RUN_ID` | `--wait [--timeout-ms MS]` | 저장된 Run 전체 JSON(`origin`, `evidence`, `requests`, `usage`, `validation`)을 출력합니다. `--wait`를 지정하면 Run이 끝날 때까지 명령이 종료되지 않습니다(기본 대기 제한 시간 10분, `--timeout-ms`는 `--wait`와 함께 사용). | `0` (`--wait` 시 Run 결과 코드; 대기 제한 시간이 지나면 Run은 계속 실행되고 CLI 명령만 `3`으로 종료) |
 | `run watch RUN_ID` | — | Run이 끝날 때까지 진행 상태(`update`, `eval_result`, `outcome`)를 이벤트마다 JSON 한 줄로 출력합니다. | Run 결과 코드 |
 | `run cancel RUN_ID` | — | 아직 끝나지 않은 Run(`RUNNING` 또는 `WAITING_HUMAN`)에 대한 취소 요청을 기록·확인하고 이미 저장된 결과는 유지합니다. | `0` |
 | `request list` | `--run RUN_ID` | 저장된 요청 목록과 상태, 각 요청을 맡은 리뷰어를 보여 줍니다(텍스트 출력 기준이며, JSON에는 `claim`과 `summary` 포함). | `0` |
@@ -46,8 +46,10 @@
 | `doctor` | `--repo PATH` | 상태 디렉터리, 스키마, 제한 설정, 자격 증명, 팀 리뷰 저장소, 데스크톱 앱, 새 릴리스를 점검합니다. | `0` 준비됨, `1` 심각한 오류 |
 | `limits` | `--signoff-idle-grace SECONDS` | 같은 상태 디렉터리를 쓰는 Run에 공통으로 적용할 한도를 `$STATE/limits.json`에서 조회하거나 설정합니다. | `0` |
 | `prune` | `[--older-than DURATION]`, `[--dry-run]` | 처리할 요청이 남아 있지 않은 Run(`GREEN`/`RED`/`ERROR`/`INCOMPLETE`)의 임시 출력 폴더를 삭제하고 Agent 세션을 정리합니다. `--older-than`을 생략하면 정리 대상인 Run은 완료된 시점과 관계없이 모두 정리하며, `YELLOW` 및 실행 중 Run은 건너뜁니다. | `0` |
-| `monitor [PATH \| --repo PATH \| --all]` | 시작 범위는 하나만 지정할 수 있습니다 | 데스크톱 앱을 열어 전체 프로젝트 목록을 보여 주거나 `PATH`에 해당하는 브랜치를 바로 표시합니다. | `0` |
-| `review [REQUEST_ID]` | `--repo PATH` \| `--all`, `--reviewer NAME` | 데스크톱 앱에서 대기 중인 Human 승인 요청을 엽니다. `REQUEST_ID`를 지정하면 그 ID에 해당하는 요청을 엽니다. | `0` |
+| `monitor [PATH \| --repo PATH \| --all]` | 시작 범위는 하나만 지정할 수 있습니다 | 데스크톱 앱의 **Verify**를 열어 전체 프로젝트 목록을 보여 주거나 `PATH`의 브랜치를 선택합니다. | `0` |
+| `review [REQUEST_ID]` | `--repo PATH` \| `--all`, `--reviewer NAME` | **Review**에서 대기 중인 가장 최근 Human 리뷰를 엽니다. `REQUEST_ID`를 지정하면 필터에 해당하지 않아도 그 요청을 바로 엽니다. | `0` |
+
+Run을 시작한 곳의 기록이 있으면 `run show`와 `run_show`가 `origin`을 반환합니다. 값은 `{"kind":"cli"}`, `{"kind":"mcp"}`, `{"kind":"chat","sessionId":"...","title":"..."}` 중 하나입니다. Run과 대화를 오가는 방법은 [Chat](../guides/interfaces.md#chat)을 참고하세요.
 
 ## 상태 디렉터리, 캐시, `limits.json` {#state-cache-and-limits}
 
@@ -110,7 +112,7 @@ codex mcp add artifactize -- artifactize mcp                                    
 | `config_graph` | 선택적 `scope` (Selection 객체), `impact` (불리언, 기본 `false`) | Artifact, eval, 순환 참조로 묶인 항목, 각 입력을 사용하는 eval을 조회합니다(`impact: true`를 지정하면 해당 Artifact에 의존하는 하위 항목도 표시). |
 | `request_logs` | **`id`**, 선택적 `stream` (`"stdout"\|"stderr"\|"both"`), `tail`, `start`, `end`, `search` | 요청 `id`의 Runtime 출력 줄을 조회합니다. |
 | `run_list` | 선택적 `limit` (기본 20), `offset` (기본 0) | 이 프로젝트에서 실행한 Run의 기록을 최신순으로 보여 줍니다. |
-| `run_show` | **`run`** | 저장된 Run의 전체 JSON을 조회합니다. |
+| `run_show` | **`run`** | Run을 시작한 곳을 포함해 저장된 Run의 전체 JSON을 조회합니다. |
 | `request_list` | 선택적 `run` | 이 프로젝트의 요청 목록을 조회하며, `run`을 지정하면 해당 Run의 요청만 보여 줍니다. |
 | `request_show` | **`id`** | 저장된 요청의 전체 JSON을 조회합니다. |
 | `session_show` | **`reference`**, 선택적 `summary` (불리언, 기본 `false`) | 저장된 Agent 리뷰 대화(또는 요약)를 조회합니다. |
