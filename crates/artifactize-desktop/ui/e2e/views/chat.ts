@@ -27,6 +27,13 @@ export class Chat {
     await holds(this.browser, async () => (await this.browser.$(`${MAIN} button[aria-haspopup="menu"]`).getText()) === name, `${name} selected`);
   }
 
+  async openSaved(title: string): Promise<void> {
+    const saved = this.browser.$('[aria-label="Chats"]').$(`button.session*=${title}`);
+    await saved.waitForDisplayed();
+    await saved.click();
+    await holds(this.browser, async () => (await saved.getAttribute("aria-current")) === "true", `the saved session ${title} is selected`);
+  }
+
   async send(text: string): Promise<void> {
     await fill(this.browser, `${MAIN} textarea[aria-label="Message"]`, text);
     await this.browser.$(`${MAIN} button[aria-label="Send (Enter)"]`).click();

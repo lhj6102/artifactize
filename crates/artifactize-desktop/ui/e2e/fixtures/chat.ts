@@ -6,6 +6,8 @@ import { artifactize, type Fixture } from "./repo.ts";
 export const CHAT_MODEL = "fixture-chat";
 export const WORK_PROMPT = "Read the release notes and verify the worktree";
 export const STOP_PROMPT = "Wait for my next instruction";
+export const CONTINUE_PROMPT = "Continue after the stopped turn";
+export const CONTINUE_ANSWER = "The conversation can continue.";
 export const CHAT_ANSWER = "The notes were read and Verify was started.";
 
 function call(id: string, name: string, args: object) {
@@ -26,12 +28,13 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
     let body = "";
     request.setEncoding("utf8").on("data", (chunk: string) => { body += chunk; });
     request.once("end", () => {
-      if (body.includes(STOP_PROMPT)) return; // The user owns cancellation of this response.
+      const resumed = body.includes(CONTINUE_PROMPT);
+      if (!resumed && body.includes(STOP_PROMPT)) return; // The user owns cancellation of this response.
       let number = 1;
       let output: object[];
-      if (body.includes('"call_id":"verify-notes"')) {
+      if (resumed || body.includes('"call_id":"verify-notes"')) {
         number = 3;
-        output = [{ type: "message", id: "msg_notes", role: "assistant", status: "completed", content: [{ type: "output_text", text: CHAT_ANSWER, annotations: [] }] }];
+        output = [{ type: "message", id: "msg_notes", role: "assistant", status: "completed", content: [{ type: "output_text", text: resumed ? CONTINUE_ANSWER : CHAT_ANSWER, annotations: [] }] }];
       } else if (body.includes('"call_id":"read-notes"')) {
         number = 2;
         output = [call("verify-notes", "verify_start", { scope: { kind: "artifact", artifactId: "docs" } })];
