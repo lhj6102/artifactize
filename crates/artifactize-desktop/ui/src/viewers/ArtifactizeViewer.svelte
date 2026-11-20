@@ -33,14 +33,14 @@
           id: name,
           type: "declared",
           position: places.get(name) ?? { x: 0, y: 0 },
-          data: { name, kind: artifact.kind, selected: selected === name, pointing: v.pointing },
+          data: { name, kind: artifact.type ?? "", selected: selected === name, pointing: v.pointing },
           width: SIZE.width,
           height: SIZE.height,
         }))
       : [],
   );
   let edges = $derived<Edge[]>(graph ? connections(graph).map(({ source, target }) => ({ id: `${source}->${target}`, source, target, style: "stroke: var(--edge)" })) : []);
-  const shown = $derived(graph && selected ? { name: selected, kind: graph.artifacts[selected]?.kind ?? "", evals: evalsOf(graph, selected) } : null);
+  const shown = $derived(graph && selected ? { name: selected, kind: graph.artifacts[selected]?.type ?? "", evals: evalsOf(graph, selected) } : null);
 
   function clicked(name: string) {
     if (v.pointing) void v.point(name);

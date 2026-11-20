@@ -1,6 +1,6 @@
 <script lang="ts">
-  // A declared Artifact in the Artifactize Viewer (D-VIEW-5): its name and its kind as a small
-  // tag, no status. Selected, it carries the selected outline; while pointing, the accent.
+  // A declared Artifact in the Artifactize Viewer (D-VIEW-5): its name and its type as a small
+  // tag (`custom` for a Custom Artifact), no status. Selected, it carries the selected outline; while pointing, the accent.
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
 
   type Data = { name: string; kind: string; selected: boolean; pointing: boolean };

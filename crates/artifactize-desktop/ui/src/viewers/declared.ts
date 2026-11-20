@@ -1,7 +1,8 @@
 // What a project declares under an `artifactize` Artifact, as the library's declared graph reads
 // (its scoped wire shape): the Artifacts, their evals and the references between them.
 
-export type DeclaredArtifact = { kind: string };
+/** A declared Artifact: its file or folder kind, and its type (`null` for a Custom one). */
+export type DeclaredArtifact = { kind: string; type?: string | null };
 export type DeclaredEval = {
   target: string;
   title: string;

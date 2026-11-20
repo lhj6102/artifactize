@@ -128,7 +128,7 @@ describe("Markdown", () => {
 
 describe("Artifactize Viewer", () => {
   const graph = JSON.stringify({
-    artifacts: { "front-design": { kind: "folder" }, front: { kind: "folder" } },
+    artifacts: { "front-design": { kind: "folder", type: "html" }, front: { kind: "folder", type: null } },
     evals: {
       "front-design/matches-layout": { target: "front-design", title: "The page matches the layout", criteria: { kind: "agent" }, payload: { instruction: "Compare the page with the layout." }, reads: ["front"] },
     },
@@ -140,7 +140,9 @@ describe("Artifactize Viewer", () => {
     const { container } = render(ViewerWindow, { session: 3 });
     await waitFor(() => expect(container.querySelectorAll(".svelte-flow__node")).toHaveLength(2));
     const node = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((each) => each.textContent?.includes("front-design"))!;
-    expect(node.textContent).toContain("folder");
+    expect(node.textContent).toContain("html");
+    const other = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((each) => !each.textContent?.includes("front-design"))!;
+    expect(other.textContent).toContain("custom");
     await fireEvent.click(node);
     const panel = await screen.findByRole("region", { name: "Artifact front-design" });
     const evaluation = within(panel).getByRole("region", { name: "front-design/matches-layout" });
