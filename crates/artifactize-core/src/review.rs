@@ -93,6 +93,13 @@ pub fn release_refusal(
     }
 }
 
+/// The answer a review submits: explicit fields or the shared draft at submission time.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Answer {
+    Explicit(Submission),
+    SavedDraft,
+}
+
 /// Lifecycle work with owned inputs, so the screen keeps drawing while it runs.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Job {
@@ -107,7 +114,7 @@ pub enum Job {
     /// Claim first when `claim`, then submit and publish like `request submit`.
     Submit {
         id: RequestId,
-        result: Submission,
+        answer: Answer,
         claim: bool,
     },
     /// Release the reviewer's remaining claims; quit afterwards when `quit`.
@@ -305,7 +312,7 @@ impl Job {
             }
             Job::Submit {
                 id,
-                result,
+                answer,
                 claim: first,
             } => {
                 let mut claimed = None;
@@ -316,9 +323,15 @@ impl Job {
                         let closed = receipts.close().await;
                         claimed = Some(result.and_then(|claim| closed.map(|()| claim))?);
                     }
-                    human::submit_and_publish(&state, &id, &reviewer, &result, cancel)
-                        .await
-                        .map(Box::new)
+                    match answer {
+                        Answer::Explicit(result) => {
+                            human::submit_and_publish(&state, &id, &reviewer, &result, cancel).await
+                        }
+                        Answer::SavedDraft => {
+                            human::publish_saved_draft(&state, &id, &reviewer, cancel).await
+                        }
+                    }
+                    .map(Box::new)
                 }
                 .await;
                 if let Err(error) = &result

@@ -767,6 +767,100 @@ payload.instruction = "Review the fixture."
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn an_edit_during_submission_is_saved_without_settling_the_older_answer() {
+    let inputs = os::tempdir();
+    let steps = inputs.path().join("fingerprint-steps");
+    let started = inputs.path().join("started");
+    let release = inputs.path().join("finish");
+    fs::write(&steps, "print\nstable-fingerprint\n").unwrap();
+    let command = json!(os::steps_program(inputs.path()));
+    let args = json!(["from", steps]);
+    let declaration = format!(
+        r#"name = "editable"
+type = "files"
+fingerprint = {{ script = {{ command = {command}, args = {args}, timeout_ms = 45000 }} }}
+
+[evals.approve]
+title = "Approve the fixture"
+profile = {{ kind = "human" }}
+payload.instruction = "Review the fixture."
+
+[evals.approve.pass_schema]
+type = "object"
+properties.comment = {{ type = "string", minLength = 1 }}
+required = ["comment"]
+additionalProperties = false
+"#
+    );
+    let fixture = fixture_with(&[("editable", &declaration)]);
+    let window = window(&fixture, Mode::Review);
+    let other = tauri::WebviewWindowBuilder::new(&window.app, "other", Default::default())
+        .build()
+        .unwrap();
+    let id = saved(&fixture, "editable/approve").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+    )
+    .unwrap();
+    let edit = |comment: &str| json!({"id": id, "change": {"kind": "field", "verdict": "GREEN", "name": "comment", "value": {"kind": "text", "value": comment}}});
+    invoke(&window, "human_draft_edit", edit("Before Submit")).unwrap();
+    fs::write(
+        &steps,
+        format!(
+            "touch\n{}\nwait\n{}\nprint\nstable-fingerprint\n",
+            started.to_str().unwrap(),
+            release.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+
+    struct OpenGate<'a>(&'a Path);
+    impl Drop for OpenGate<'_> {
+        fn drop(&mut self) {
+            let _ = fs::write(self.0, "");
+        }
+    }
+    std::thread::scope(|scope| {
+        let first = &window.window;
+        let id = &id;
+        let submitted =
+            scope.spawn(move || invoke(first, "human_draft_submit", json!({"id": id, "job": 2})));
+        let gate = OpenGate(&release);
+        os::wait_until(std::time::Duration::from_secs(15), || started.is_file());
+        invoke(&other, "human_draft_edit", edit("Saved during Submit")).unwrap();
+        drop(gate);
+        let rejected = submitted.join().unwrap().unwrap_err();
+        assert_eq!(rejected["kind"], "invalid");
+        assert!(
+            rejected["message"]
+                .as_str()
+                .unwrap()
+                .contains("changed while submitting")
+        );
+    });
+    assert!(
+        saved(&fixture, "editable/approve")
+            .request
+            .status()
+            .is_human_wait()
+    );
+    let submitted = invoke(&other, "human_draft_submit", json!({"id": id, "job": 3})).unwrap();
+    assert_eq!(submitted["settled"], "published");
+    assert_eq!(
+        saved(&fixture, "editable/approve")
+            .request
+            .result()
+            .unwrap()
+            .owner_fields()["comment"],
+        "Saved during Submit"
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_shared_review_opens_the_original_artifact_viewer_not_the_followers() {
     const PAGE: &str = r#"name = "page"
 type = "files"

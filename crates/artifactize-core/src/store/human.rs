@@ -347,6 +347,15 @@ impl Receipts {
         request: &Request,
         reviewer: &crate::types::ReviewerId,
     ) -> Result<Request, String> {
+        self.settle_human_if_draft(request, reviewer, None).await
+    }
+
+    pub(crate) async fn settle_human_if_draft(
+        &self,
+        request: &Request,
+        reviewer: &crate::types::ReviewerId,
+        expected: Option<crate::review::Draft>,
+    ) -> Result<Request, String> {
         let mut request = request.clone();
         let reviewer = reviewer.to_owned();
         self.connection
@@ -357,9 +366,13 @@ impl Receipts {
                 claimant(&transaction, &current.id, &reviewer)?;
                 request.state = match request.state {
                     super::RequestState::Completed { result, .. } => {
-                        request.review_notes = draft::read(&transaction, &current.id, &reviewer)?
-                            .map(|draft| draft.notes)
-                            .filter(|notes| !notes.is_empty());
+                        let latest = draft::read(&transaction, &current.id, &reviewer)?;
+                        if let Some(expected) = &expected
+                            && !latest.as_ref().is_some_and(|draft| draft.same_answer(expected))
+                        {
+                            return Err(Error::Invalid("The review's verdict or fields changed while submitting. Review the saved draft and submit again.".into()));
+                        }
+                        request.review_notes = latest.map(|draft| draft.notes).filter(|notes| !notes.is_empty());
                         draft::clear(&transaction, &current.id)?;
                         super::RequestState::completed(result, crate::broker::now())
                     }

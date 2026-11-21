@@ -187,6 +187,16 @@ pub async fn submit(
     submission: &Submission,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
+    submit_answer(receipts, request, reviewer, Some(submission), cancellation).await
+}
+
+async fn submit_answer(
+    receipts: &Receipts,
+    request: &crate::types::RequestId,
+    reviewer: &crate::types::ReviewerId,
+    explicit: Option<&Submission>,
+    cancellation: CancellationToken,
+) -> Result<Request, String> {
     let (mut request, _) = receipts.human_request(request, reviewer).await?;
     let config = reconnect(receipts, &request).await?;
     let eval = config
@@ -194,10 +204,24 @@ pub async fn submit(
         .iter()
         .find(|eval| eval.id == request.eval_id)
         .expect("reconnected eval");
-    let result = submission.validate(&eval.declaration)?;
+    let (answer, expected) = match explicit {
+        Some(submission) => (submission.validate(&eval.declaration)?, None),
+        None => {
+            let draft = receipts
+                .read_review_draft(&request.id, reviewer)
+                .await?
+                .unwrap_or_default();
+            (
+                draft.submission(&request)?.validate(&eval.declaration)?,
+                Some(draft),
+            )
+        }
+    };
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;
-    request.state = crate::store::RequestState::completed(result.into(), crate::broker::now());
-    receipts.settle_human(&request, reviewer).await
+    request.state = crate::store::RequestState::completed(answer.into(), crate::broker::now());
+    receipts
+        .settle_human_if_draft(&request, reviewer, expected)
+        .await
 }
 
 /// `submit`, then publish the settled result to the configured remote review store.
@@ -208,10 +232,31 @@ pub async fn submit_and_publish(
     submission: &Submission,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
+    publish_answer(state, request, reviewer, Some(submission), cancellation).await
+}
+
+/// Submit the saved answer, refusing to settle if another surface changes its verdict or
+/// form while its inputs are checked. Notes are read at settlement in either case.
+pub(crate) async fn publish_saved_draft(
+    state: &Path,
+    request: &crate::types::RequestId,
+    reviewer: &crate::types::ReviewerId,
+    cancellation: CancellationToken,
+) -> Result<Request, String> {
+    publish_answer(state, request, reviewer, None, cancellation).await
+}
+
+async fn publish_answer(
+    state: &Path,
+    request: &crate::types::RequestId,
+    reviewer: &crate::types::ReviewerId,
+    explicit: Option<&Submission>,
+    cancellation: CancellationToken,
+) -> Result<Request, String> {
     let (receipts, repo) = open(state, request).await?;
     let result = async {
         let remote = Session::open(Some(state), Some(&repo))?;
-        let request = submit(&receipts, request, reviewer, submission, cancellation).await?;
+        let request = submit_answer(&receipts, request, reviewer, explicit, cancellation).await?;
         if let Some(remote) = remote {
             remote
                 .publish_request(&receipts, &request)

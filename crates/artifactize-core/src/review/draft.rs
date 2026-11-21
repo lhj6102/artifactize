@@ -71,6 +71,18 @@ impl Draft {
         Ok(form)
     }
 
+    pub(crate) fn submission(&self, request: &Request) -> Result<super::Submission, String> {
+        let verdict = self
+            .verdict
+            .ok_or("Choose GREEN or RED before submitting.")?;
+        self.form(request, verdict)?.submission()
+    }
+
+    /// Notes can keep changing until settlement; a different answer must be submitted again.
+    pub(crate) fn same_answer(&self, other: &Self) -> bool {
+        self.verdict == other.verdict && self.green == other.green && self.red == other.red
+    }
+
     pub fn fields(&self, verdict: Verdict) -> &DraftFields {
         match verdict {
             Verdict::Green => &self.green,

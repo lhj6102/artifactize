@@ -714,7 +714,15 @@ pub async fn human_submit(
     let result = form::result(&request.request, draft)?
         .try_into()
         .map_err(Failure::Invalid)?;
-    submit(&app, caller, id, request.request.id.clone(), result, job).await
+    submit(
+        &app,
+        caller,
+        id,
+        request.request.id.clone(),
+        review::Answer::Explicit(result),
+        job,
+    )
+    .await
 }
 
 async fn submit(
@@ -722,7 +730,7 @@ async fn submit(
     caller: Caller,
     id: RequestId,
     owner: RequestId,
-    result: review::Submission,
+    answer: review::Answer,
     job: JobId,
 ) -> Result<Submitted, Failure> {
     let work = app
@@ -734,7 +742,7 @@ async fn submit(
         app,
         Job::Submit {
             id: owner.clone(),
-            result,
+            answer,
             claim: false,
         },
         work.cancel.clone(),

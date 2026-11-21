@@ -166,16 +166,13 @@ pub async fn human_draft_submit(
 ) -> Result<super::Submitted, Failure> {
     let id = id.into_inner();
     let request = super::guard(&app, &id, review::review_refusal).await?;
-    let draft = review::read_draft(&app.launch.state, &request.request.id, &app.launch.reviewer)
-        .await
-        .map_err(Failure::Read)?
-        .unwrap_or_default();
-    let verdict = draft
-        .verdict
-        .ok_or_else(|| Failure::Invalid("Choose GREEN or RED before submitting.".into()))?;
-    let result = draft
-        .form(&request.request, verdict)
-        .and_then(|form| form.submission())
-        .map_err(Failure::Invalid)?;
-    super::submit(&app, caller, id, request.request.id.clone(), result, job).await
+    super::submit(
+        &app,
+        caller,
+        id,
+        request.request.id.clone(),
+        review::Answer::SavedDraft,
+        job,
+    )
+    .await
 }
