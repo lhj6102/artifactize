@@ -9,6 +9,7 @@ mod form;
 mod jobs;
 pub(crate) mod log;
 pub(crate) mod search;
+mod searches;
 
 pub use form::{Draft, FormView, Verdict};
 pub(crate) use jobs::Caller;
@@ -74,6 +75,7 @@ pub struct Reviews {
     views: Mutex<BTreeMap<RequestId, (u32, ReadReview)>>,
     /// Numbers every read of requests.
     pub(crate) reads: Reads,
+    searches: searches::Searches,
     /// Resolved tool command lines, resolved once per request and again after each run.
     commands: Mutex<BTreeMap<RequestId, Resolved>>,
     jobs: Jobs,
@@ -93,6 +95,7 @@ impl Default for Reviews {
         Self {
             views: Mutex::default(),
             reads: Reads::default(),
+            searches: searches::Searches::default(),
             commands: Mutex::default(),
             jobs: Jobs::default(),
             taken: Mutex::default(),

@@ -459,18 +459,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         let progress = monitor::progress(run, requests, now);
         RunPanel {
             id: run.run.id.clone().into(),
-            branch: shown
-                .branches
-                .iter()
-                .find(|branch| {
-                    branch
-                        .runs
-                        .binary_search_by(|chip| {
-                            (chip.created_at, &chip.id).cmp(&(run.run.created_at, &run.run.id))
-                        })
-                        .is_ok()
-                })
-                .map(|branch| BranchKey::new(&branch.place)),
+            branch: shown.opened_branch.as_ref().map(BranchKey::new),
             origin: run.run.origin.as_ref().map(Into::into),
             node: NodeId::run(&run.run.id).into(),
             mark: progress.status.into(),

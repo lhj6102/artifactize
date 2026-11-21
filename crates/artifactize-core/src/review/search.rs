@@ -660,7 +660,9 @@ pub async fn open(
     let repo = store::read_request_repo_by_id(state, id.clone()).await?;
     let mut entry = Entry::new(&view, &repo, reviewer);
     if query.wants_labels() {
-        entry.label = labels(state).await?.remove(&view.request.run_id);
+        entry.label = labels(state, vec![view.request.run_id.clone()])
+            .await?
+            .remove(&view.request.run_id);
     }
     let outside_reason = if Box::pin(follows_waiting(state, &view)).await {
         Some("This review shares the original request's sign-off.".into())
@@ -758,15 +760,19 @@ async fn read_matching(
     mut found: impl FnMut(RequestView, Entry, u64) -> ControlFlow<()>,
 ) -> Result<(), String> {
     let statuses = query.statuses();
-    let labels = if query.wants_labels() {
-        labels(state).await?
-    } else {
-        Labels::new()
-    };
     let mut position = start;
     loop {
         let batch = store::read_request_batch(state, &statuses, position, BATCH, shown).await?;
         let read = batch.len() as u64;
+        let labels = if query.wants_labels() {
+            let ids: BTreeSet<_> = batch
+                .iter()
+                .map(|(view, _)| view.request.run_id.clone())
+                .collect();
+            labels(state, ids.into_iter().collect()).await?
+        } else {
+            Labels::new()
+        };
         for (offset, (view, repo)) in batch.into_iter().enumerate() {
             if Box::pin(follows_waiting(state, &view)).await {
                 continue;
@@ -784,14 +790,14 @@ async fn read_matching(
     }
 }
 
-async fn labels(state: &Path) -> Result<Labels, String> {
-    let catalog = store::read_catalog(state).await?;
+async fn labels(state: &Path, ids: Vec<crate::types::RunId>) -> Result<Labels, String> {
+    let catalog = store::read_run_places(state, ids).await?;
     crate::task::joined(
         tokio::task::spawn_blocking(move || {
             let mut legacy = std::collections::BTreeMap::new();
             catalog
                 .into_iter()
-                .map(|run| {
+                .map(|(id, run)| {
                     let label = if run.repository.common_dir.is_some() {
                         Label::for_identity(&run.repo_path, &run.repository)
                     } else {
@@ -800,7 +806,7 @@ async fn labels(state: &Path) -> Result<Labels, String> {
                             .or_insert_with(|| Label::at(&run.repo_path))
                             .clone()
                     };
-                    (run.id, label)
+                    (id, label)
                 })
                 .collect()
         })

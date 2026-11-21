@@ -82,6 +82,7 @@ struct Shown {
     query: Search,
     /// The Run the Main area shows.
     opened: Opened,
+    opened_branch: Option<Place>,
     /// Chips shown of each branch whose row reached further back than [`CHIPS`].
     chips: BTreeMap<Place, usize>,
     /// The starred branches, once read from the state directory.
@@ -177,6 +178,7 @@ impl Browse {
                 unreadable: Vec::new(),
                 query: Search::new(live::DEFAULT.into()),
                 opened: Opened::None,
+                opened_branch: None,
                 chips: BTreeMap::new(),
                 starred: None,
                 unstarred: None,
@@ -250,6 +252,65 @@ impl Browse {
             shown.chips.insert(place, more);
         }
         shown.revision += 1;
+    }
+
+    /// Open the named Run without waiting for the Pane's next catalog or Review refresh.
+    async fn open_reference(&self, state: &Path, id: RunId) -> Result<Option<Origin>, Failure> {
+        let mut loader = self.loader.lock().await;
+        let worker = std::mem::take(&mut *loader);
+        let path = state.to_owned();
+        let wanted = id.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            let mut worker = worker;
+            let read = worker.open(&path, &wanted).map(|reference| {
+                let opened = reference.opened.map(|opened| {
+                    let (run, requests, tree, footprint) = *opened;
+                    let graph = monitor::graph(&tree);
+                    (run, requests, tree, graph, footprint)
+                });
+                (reference.origin, opened, reference.branch)
+            });
+            (worker, read)
+        });
+        let (worker, read) = crate::failure::joined(task.await)?;
+        *loader = worker;
+        let mut shown = self.shown();
+        if shown.opened.id() != Some(&id) {
+            return Ok(None);
+        }
+        let (origin, opened, branch) = match read {
+            Ok(read) => read,
+            Err(error) => {
+                shown.error = Some(format!("read failed: {error}"));
+                return Err(Failure::Read(error));
+            }
+        };
+        if origin.replaces(&shown.origin) {
+            shown.replaced = true;
+        }
+        shown.origin = origin.clone();
+        shown.opened_branch = branch;
+        shown.opened = if let Some((run, requests, tree, graph, footprint)) = opened {
+            let shape = shown
+                .opened
+                .loaded()
+                .filter(|kept| kept.graph.same_shape(&graph))
+                .map(|kept| kept.shape)
+                .unwrap_or_else(|| shown.shapes.next());
+            Opened::Loaded(Arc::new(Selected {
+                run,
+                requests,
+                tree,
+                graph,
+                shape,
+                _footprint: footprint,
+            }))
+        } else {
+            Opened::Missing(id)
+        };
+        shown.error = None;
+        shown.revision += 1;
+        Ok(Some(origin))
     }
 
     /// Read a snapshot for the shown selection on a blocking thread and accept it, unless the
@@ -347,6 +408,13 @@ impl Browse {
         }
         let origin = snapshot.origin.clone();
         shown.origin = snapshot.origin;
+        shown.opened_branch = open.as_ref().and_then(|id| {
+            snapshot
+                .branches
+                .iter()
+                .find(|branch| branch.runs.iter().any(|chip| &chip.id == id))
+                .map(|branch| branch.place.clone())
+        });
         shown.branches = snapshot.branches;
         shown.launch = snapshot.launch;
         shown.unreadable = snapshot.unreadable;
@@ -445,15 +513,23 @@ pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<Br
         // A refresh scans the branches again too.
         rescan: navigate.resync,
     };
-    let accepted = app
-        .browse
-        .load(
-            &app.launch.state,
-            &app.launch.reviewer,
-            &app.human.reads,
-            read,
-        )
-        .await?;
+    let accepted = match navigate.run {
+        RunStep::Open { id } if !read.full && !read.resync => {
+            app.browse
+                .open_reference(&app.launch.state, id.into_inner())
+                .await?
+        }
+        _ => {
+            app.browse
+                .load(
+                    &app.launch.state,
+                    &app.launch.reviewer,
+                    &app.human.reads,
+                    read,
+                )
+                .await?
+        }
+    };
     if let Some(origin) = accepted {
         app.observe(origin);
         // A review opened from the Waiting stack shows the claims and states it lists, unless

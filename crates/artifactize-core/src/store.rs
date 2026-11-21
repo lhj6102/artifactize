@@ -37,6 +37,7 @@ pub use snapshots::{
     ValidationSnapshot,
 };
 mod wait_timeout;
+pub(crate) use catalog::places as read_run_places;
 pub use catalog::{CatalogRun, Signoff, read_catalog};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
 pub(crate) mod reader;

@@ -84,6 +84,13 @@ impl<T> Snapshot<T> {
     }
 }
 
+/// The retained graph and branch of one explicitly opened Run.
+pub struct RunReference {
+    pub origin: Origin,
+    pub opened: Option<Box<Opened>>,
+    pub branch: Option<Place>,
+}
+
 /// A persistent read-only worker with its caches.
 #[derive(Default)]
 pub struct Loader {
@@ -94,6 +101,42 @@ pub struct Loader {
 }
 
 impl Loader {
+    /// Open one Run directly, without constructing a catalog or scanning other repositories.
+    pub fn open(&mut self, state: &std::path::Path, id: &RunId) -> Result<RunReference, String> {
+        let (identity, records, catalog_dirty) =
+            self.reader.snapshot(state, |db, cache, state| {
+                let catalog_dirty = cache.changed();
+                let records = match cache.selected(db, state, id, true) {
+                    Ok(Some((run, requests))) => Some((
+                        run,
+                        requests,
+                        cache.footprint().expect("the Run just read is held"),
+                    )),
+                    Ok(None) => unreachable!("a forced reading returns the Run"),
+                    Err(store::receipts::Error::Unreadable(_)) => None,
+                    Err(error) => return Err(error),
+                };
+                Ok((cache.identity(db)?, records, catalog_dirty))
+            })?;
+        if catalog_dirty {
+            self.facts = None;
+        }
+        let (opened, branch) = match records {
+            Some((run, requests, footprint)) => {
+                let branch = super::branch_for(&run.run, &mut self.discovery);
+                let nodes = Arc::new(model::tree(&run, &requests, OffsetDateTime::now_utc()));
+                (Some(Box::new((run, requests, nodes, footprint))), branch)
+            }
+            None => (None, None),
+        };
+        self.reader.require_current(state)?;
+        Ok(RunReference {
+            origin: Origin::new(identity, self.reader.database()),
+            opened,
+            branch,
+        })
+    }
+
     pub fn load(&mut self, input: Input) -> Result<Snapshot, String> {
         if input.rescan {
             self.discovery.rescan();

@@ -58,15 +58,23 @@ pub async fn human_search(
     query: String,
     start: Option<u32>,
 ) -> Result<ReviewPage, Failure> {
+    let start = start.unwrap_or(0);
     let parsed = query
         .parse::<search::Query>()
         .map_err(Failure::Invalid)?
         .for_places();
+    app.human
+        .searches
+        .read(query, start, search_page(&app, &parsed, start))
+        .await
+}
+
+async fn search_page(app: &App, parsed: &search::Query, start: u32) -> Result<ReviewPage, Failure> {
     let found = search::search(
         &app.launch.state,
-        &parsed,
+        parsed,
         &app.launch.reviewer,
-        u64::from(start.unwrap_or(0)),
+        u64::from(start),
     )
     .await
     .map_err(Failure::Read)?;

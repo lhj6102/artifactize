@@ -333,6 +333,27 @@ pub struct Listing {
 /// A branch's Runs so far, and when its newest started with its workspace in the worktree.
 type Grouped = (Vec<Chip>, Option<(Timestamp, PathBuf)>);
 
+/// Resolve only one Run's live branch using the same identities as the timeline listing.
+fn branch_for(run: &crate::store::Run, discovery: &mut Discovery) -> Option<Place> {
+    let row = CatalogRun {
+        id: run.id.clone(),
+        created_at: run.created_at,
+        completed_at: run.completed_at(),
+        repo_path: run.repo_path.clone(),
+        repository: run.repository.clone(),
+        status: run.status(),
+        comment: run.comment.clone(),
+        red: 0,
+        error: 0,
+        waiting: Vec::new(),
+    };
+    branches(&[row], None, discovery)
+        .branches
+        .into_iter()
+        .find(|branch| branch.runs.iter().any(|chip| chip.id == run.id))
+        .map(|branch| branch.place)
+}
+
 /// The live branches of the projects of `runs`, with their Runs, and the branch of `launch`
 /// (the folder the app was started for) even before its project has a Run.
 pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Discovery) -> Listing {

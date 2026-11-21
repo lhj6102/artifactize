@@ -75,6 +75,42 @@ fn loaded(snapshot: Snapshot) -> Opened {
 }
 
 #[tokio::test]
+async fn a_cold_reference_reads_only_the_named_run_even_with_unrelated_history() {
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&repo).unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
+    std::fs::create_dir(repo.join(".artifactize")).unwrap();
+    std::fs::write(repo.join(".artifactize/root.artf"), "path = './'\nbasis = true\n").unwrap();
+    let (selected, requests) = run("run-selected", &repo, &state, 1);
+    receipts.create_run(&selected, &requests).await.unwrap();
+    let read = || {
+        let mut loader = Loader::default();
+        loader.reader.traced_statements();
+        let reference = loader.open(&state, &selected.id).unwrap();
+        assert_eq!(reference.opened.unwrap().1.len(), 1);
+        assert!(reference.branch.is_some());
+        loader.reader.traced_statements()
+    };
+    let before = read();
+    for index in 0..40 {
+        let (old, requests) = run(&format!("run-other{index}"), &repo, &state, 10);
+        receipts.create_run(&old, &requests).await.unwrap();
+    }
+    let after = read();
+    assert_eq!(before, after);
+    for sql in &after {
+        if sql.contains("FROM runs") || sql.contains("FROM requests") {
+            assert!(
+                sql.contains("'run-selected'"),
+                "unscoped history read: {sql}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn a_large_run_is_listed_opened_and_refreshed_with_its_saved_definitions() {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
