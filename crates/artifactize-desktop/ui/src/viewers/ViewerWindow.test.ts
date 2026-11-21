@@ -1,7 +1,7 @@
 // An Artifact Viewer window against a mocked command boundary: each built-in viewer reads the
 // Artifact through its viewer session and Point appends the place clicked; a plugin's page
 // reaches the Artifact only through the bridge, answered for its own frame alone.
-import { clearMocks, mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
+import { clearMocks, mockConvertFileSrc, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit, listen } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -42,13 +42,14 @@ const context = (overrides: Partial<ViewerContext> = {}): ViewerContext => ({
   target: "checkout",
   targetKind: "folder",
   review: "run-a-2",
+  petMatch: true,
   ...overrides,
 });
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
 /** A viewer session of `entry` over `files` (path → text; a path ending in `/` a folder). */
-function backend(entry: ViewerEntry, files: Record<string, string>, shown: ViewerContext = context(), declarations = "{}") {
+function backend(entry: ViewerEntry, files: Record<string, string>, shown: ViewerContext | ((session: number) => ViewerContext) = context(), declarations = "{}") {
   const calls: Call[] = [];
   mockIPC((cmd, args) => {
     const given = args as Record<string, unknown>;
@@ -57,7 +58,7 @@ function backend(entry: ViewerEntry, files: Record<string, string>, shown: Viewe
       case "viewer_entry":
         return entry;
       case "viewer_context":
-        return shown;
+        return typeof shown === "function" ? shown(Number(given.session)) : shown;
       case "viewer_files": {
         const under = given.path ? `${String(given.path)}/` : "";
         return Object.keys(files)
@@ -137,6 +138,34 @@ describe("File Explorer", () => {
     await fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false");
     expect(pointed(calls)).toEqual([]);
+  });
+
+  it("arms from the pet only in the viewer matched to the review's original request, not a same-named Artifact elsewhere", async () => {
+    // Session 1 shows `checkout` in another worktree; session 2 in the review's own.
+    backend({ kind: "builtin", viewer: "files" }, { "a.txt": "a" }, (session) => context({ petMatch: session === 2 }));
+    mockWindows("viewer-1", "viewer-2");
+    const present: unknown[] = [];
+    await listen("viewer-presence", (event) => present.push(event.payload));
+    const elsewhere = render(ViewerWindow, { session: 1 }).container;
+    const original = render(ViewerWindow, { session: 2 }).container;
+    const strip = (container: HTMLElement) => within(container.querySelector("header.strip") as HTMLElement);
+    await strip(elsewhere).findByRole("button", { name: "Point" });
+    await strip(original).findByRole("button", { name: "Point" });
+    // Each says which session it is, whether it matches, and for which review.
+    await waitFor(() =>
+      expect(present).toEqual(
+        expect.arrayContaining([
+          { session: 1, artifact: "checkout", review: "run-a-2", open: true, pointable: true, petMatch: false },
+          { session: 2, artifact: "checkout", review: "run-a-2", open: true, pointable: true, petMatch: true },
+        ]),
+      ),
+    );
+    await emit("point-arm", { session: 2 });
+    await waitFor(() => expect(strip(original).getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("true"));
+    expect(strip(elsewhere).getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false");
+    // Even asked by its own session, a viewer the library does not match stays unarmed.
+    await emit("point-arm", { session: 1 });
+    expect(strip(elsewhere).getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false");
   });
 });
 

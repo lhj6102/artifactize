@@ -7,8 +7,10 @@ import { emit } from "@tauri-apps/api/event";
 import { call, commands, message, type Commands, type ViewerContext, type ViewerEntry } from "../ipc/client";
 import { announcePointed } from "../review/pointed";
 
-/** What a viewer window tells the others about itself: the pet overlay points through it. */
-export type Presence = { session: number; artifact: string; review: string | null; open: boolean; pointable: boolean };
+/** What a viewer window tells the others about itself: the pet overlay points through the one
+ * whose session the library matches to the active review's original request (`petMatch`: that
+ * request's worktree and Artifact), never through a same-named Artifact elsewhere. */
+export type Presence = { session: number; artifact: string; review: string | null; open: boolean; pointable: boolean; petMatch: boolean };
 
 /** The app-wide events between the windows. */
 export const PRESENCE = "viewer-presence";
@@ -78,6 +80,7 @@ export class ViewerState {
       review: this.context?.review ?? null,
       open,
       pointable: this.pointable,
+      petMatch: this.context?.petMatch ?? false,
     };
     await emit(PRESENCE, presence).catch(() => {});
   }

@@ -51,7 +51,7 @@ it("writes the review's Notes and opens the verdict the draft holds", async () =
   await waitFor(() => expect(calls.some((call) => call.cmd === "human_draft_submit")).toBe(true));
 });
 
-it("points only in an open viewer of the review's Artifact, saying why otherwise", async () => {
+it("points only in the open viewer matched to the review's original request, saying why otherwise", async () => {
   backend();
   const armed: unknown[] = [];
   await listen("point-arm", (event) => armed.push(event.payload));
@@ -59,14 +59,19 @@ it("points only in an open viewer of the review's Artifact, saying why otherwise
   const point = await screen.findByRole("button", { name: "Point" });
   expect(point.hasAttribute("disabled")).toBe(true);
   screen.getByText("Open release in a viewer to point.");
-  await emit("viewer-presence", { session: 3, artifact: "other", review: "run-a-2", open: true, pointable: true });
+  await emit("viewer-presence", { session: 3, artifact: "other", review: "run-a-2", open: true, pointable: true, petMatch: false });
+  // The same-named Artifact in another worktree: the library does not match it.
+  await emit("viewer-presence", { session: 5, artifact: "release", review: "run-a-2", open: true, pointable: true, petMatch: false });
+  // Matched, but for a review that is no longer the active one.
+  await emit("viewer-presence", { session: 6, artifact: "release", review: "run-b-3", open: true, pointable: true, petMatch: true });
   expect(point.hasAttribute("disabled")).toBe(true);
-  await emit("viewer-presence", { session: 4, artifact: "release", review: "run-a-2", open: true, pointable: true });
+  await emit("viewer-presence", { session: 4, artifact: "release", review: "run-a-2", open: true, pointable: true, petMatch: true });
   await waitFor(() => expect(point.hasAttribute("disabled")).toBe(false));
   await fireEvent.click(point);
-  await waitFor(() => expect(armed).toEqual([{ artifact: "release" }]));
+  // Point arms that viewer's session alone.
+  await waitFor(() => expect(armed).toEqual([{ session: 4 }]));
   // The viewer closed: Point is disabled again.
-  await emit("viewer-presence", { session: 4, artifact: "release", review: "run-a-2", open: false, pointable: true });
+  await emit("viewer-presence", { session: 4, artifact: "release", review: "run-a-2", open: false, pointable: true, petMatch: true });
   await waitFor(() => expect(point.hasAttribute("disabled")).toBe(true));
 });
 

@@ -91,9 +91,10 @@
       void v.refresh();
       frame?.contentWindow?.postMessage({ channel: CHANNEL, event: "activeReviewChanged" }, "*");
     });
-    // The pet overlay's Point points here, and asks which viewers are open.
-    const unarm = subscribe<{ artifact: string }>((handler) => listen(ARM, handler), (asked) => {
-      if (!v.pointable || asked.artifact !== context?.artifact) return;
+    // The pet overlay's Point points in this session only (the library matched it to the active
+    // review's original request), and asks which viewers are open.
+    const unarm = subscribe<{ session: number }>((handler) => listen(ARM, handler), (asked) => {
+      if (!v.pointable || asked.session !== session || !context?.petMatch) return;
       point(true);
       void getCurrentWindow().setFocus().catch(() => {});
     });

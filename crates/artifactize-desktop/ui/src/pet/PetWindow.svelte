@@ -25,7 +25,8 @@
   const view = $derived(review.view);
   /** The viewers open, by session, as they announce themselves. */
   const viewers = new SvelteMap<number, Presence>();
-  const pointable = $derived(view !== null && [...viewers.values()].some((each) => each.open && each.pointable && each.artifact === view.artifact));
+  /** The open viewer Point arms: the one the library matches to this review's original request. */
+  const pointer = $derived(view === null ? null : ([...viewers.values()].find((each) => each.open && each.pointable && each.petMatch && each.review === review.id) ?? null));
   const run = $derived(view?.target.run ?? "");
   const evalId = $derived(view?.target.node.replace(/^e:/, "") ?? "");
 
@@ -100,8 +101,8 @@
       </div>
       {#if review.form?.error}<p class="error" role="status">{review.form.error}</p>{:else if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
       <div class="row">
-        <button class="button small" disabled={!pointable} onclick={() => void emit(ARM, { artifact: view.artifact })}><Icon name="point" />Point</button>
-        {#if !pointable}<span class="why">Open {view.artifact} in a viewer to point.</span>{/if}
+        <button class="button small" disabled={pointer === null} onclick={() => pointer && void emit(ARM, { session: pointer.session })}><Icon name="point" />Point</button>
+        {#if pointer === null}<span class="why">Open {view.artifact} in a viewer to point.</span>{/if}
         <span class="spacer"></span>
         {#if review.form}
           <button class="button small primary" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
