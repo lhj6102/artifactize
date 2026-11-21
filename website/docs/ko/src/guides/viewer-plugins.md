@@ -20,7 +20,7 @@ Agent eval의 대상과 `{name}`으로 참조한 Artifact에는 각각 **Agent �
 |---|---|---|
 | `files` | `list`, `glob`, `grep`, `read` | **File Explorer**: Artifact의 파일을 찾아 문서를 읽습니다. |
 | `markdown` | `read` | **Markdown**: 전용 뷰어에서 Markdown을 읽습니다. |
-| `artifactize` | `declarations` | **Artifactize Viewer**: Artifact 노드와 참조 관계, 각 노드 안의 eval을 살펴봅니다. |
+| `artifactize` | `declarations` | **Artifactize Viewer**: Artifact 노드와 참조 관계를 살펴봅니다. 노드를 클릭하면 그래프 오른쪽에 Artifact 패널이 겹쳐 열리고 해당 eval을 읽을 수 있습니다. |
 
 `.artifactize/front-design/` 같은 폴더를 대상으로 `type = "artifactize"`를 지정하면 그 폴더에 있는 선언을 리뷰할 수 있습니다. Agent와 Human 리뷰어가 보는 범위는 같습니다. 뷰어는 eval의 기준과 참조하는 Artifact 등 프로젝트에 **선언한 내용**을 보여 줍니다. Run 결과를 보여 주는 화면은 아닙니다. 기존 내장 `graph` 도구는 여전히 프로젝트 전체를 다룹니다.
 

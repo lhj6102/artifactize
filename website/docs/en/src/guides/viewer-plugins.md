@@ -20,7 +20,7 @@ You don't have to install the built-ins. In the desktop app, run a viewer tool f
 |---|---|---|
 | `files` | `list`, `glob`, `grep`, `read` | **File Explorer**: browse the Artifact's files and read a document. |
 | `markdown` | `read` | **Markdown**: read Markdown in a dedicated viewer. |
-| `artifactize` | `declarations` | **Artifactize Viewer**: inspect Artifact nodes, their references, and the evals inside each node. |
+| `artifactize` | `declarations` | **Artifactize Viewer**: inspect Artifact nodes and their references. Click a node to open its Artifact panel over the right side of the graph and read its evals. |
 
 Use `type = "artifactize"` with a target like `.artifactize/front-design/` to review the declarations in that folder. Agent and Human reviewers see the same scope. The viewer shows what the project **declares**, including an eval's criteria and which Artifacts it reads. It doesn't show the results of a Run. The older `graph` builtin is still project-wide.
 
