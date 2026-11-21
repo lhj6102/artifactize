@@ -78,9 +78,9 @@ fn act<R: Runtime>(handle: &tauri::AppHandle<R>, app: &App, action: Action) -> t
     }
 }
 
-/// A window already showing the same Artifact in the same viewer comes to the front, and the new
-/// session ends; else a new window opens for the session.
-fn viewer<R: Runtime>(
+/// A window already showing the same Artifact target in the same viewer comes to the front, and
+/// the new session ends; else a new window opens for the session.
+pub(super) fn viewer<R: Runtime>(
     handle: &tauri::AppHandle<R>,
     app: &App,
     session: u32,

@@ -6,13 +6,19 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use artifactize_core::{config::plugins, review::Outcome, store, tools::human::Content, viewer};
+use artifactize_core::{
+    config::{Target, plugins},
+    review::Outcome,
+    store,
+    tools::human::Content,
+    types::{ArtifactName, RequestId},
+    viewer,
+};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
 
 use crate::{App, Failure, ids::RequestKey};
-use artifactize_core::types::RequestId;
 
 type ActiveEvent = Box<dyn Fn(ActiveReviewChanged) + Send + Sync>;
 
@@ -33,8 +39,7 @@ struct SessionsInner {
 struct ActiveReview {
     shown: RequestId,
     owner: RequestId,
-    worktree: PathBuf,
-    artifact: String,
+    address: Option<Address>,
 }
 
 impl ActiveReview {
@@ -51,11 +56,19 @@ impl ActiveReview {
 
 /// What a viewer session shows. Two sessions of the same place show the same thing, whatever
 /// their titles: a window already showing it is brought to the front instead of a second one.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Place {
-    worktree: PathBuf,
-    artifact: String,
+#[derive(Debug, PartialEq, Eq)]
+struct Place {
+    address: Address,
     viewer: String,
+}
+
+/// Where the Artifact's scope points, not just the name by which it was found. A checkout can
+/// change the resolved target without changing the worktree or the Artifact's name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Address {
+    worktree: PathBuf,
+    artifact: ArtifactName,
+    target: Target,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -82,8 +95,11 @@ impl Sessions {
         let context = viewer.context(None);
         let title = format!("{} — {}", context.artifact, context.title);
         let place = Place {
-            worktree,
-            artifact: context.artifact.to_string(),
+            address: Address {
+                worktree,
+                artifact: context.artifact.clone(),
+                target: context.target.clone(),
+            },
             viewer: context.type_name.to_string(),
         };
         let session = self.remember(place);
@@ -104,7 +120,7 @@ impl Sessions {
         session
     }
 
-    /// Sessions `one` and `other` show the same Artifact of the same worktree in the same viewer.
+    /// Sessions `one` and `other` show the same Artifact target in the same worktree and viewer.
     pub(crate) fn same_place(&self, one: u32, other: u32) -> bool {
         let sessions = self.0.lock().expect("viewer sessions");
         match (sessions.places.get(&one), sessions.places.get(&other)) {
@@ -201,7 +217,7 @@ pub struct ViewerContext {
     pub target: String,
     pub target_kind: crate::definitions::DefinitionKind,
     pub review: Option<RequestKey>,
-    /// This session shows the active review's own Artifact in its original worktree.
+    /// This session shows the Artifact target recorded by the active review in its original worktree.
     pub pet_match: bool,
 }
 
@@ -217,9 +233,10 @@ pub async fn viewer_context(
         let sessions = app.viewers.0.lock().expect("viewer sessions");
         let active = active.filter(|review| sessions.active.as_ref() == Some(review));
         active.map_or((None, false), |review| {
-            let matches = sessions.places.get(&session).is_some_and(|place| {
-                place.worktree == review.worktree && place.artifact == review.artifact
-            });
+            let matches = sessions
+                .places
+                .get(&session)
+                .is_some_and(|place| review.address.as_ref() == Some(&place.address));
             (Some(review.shown.into()), matches)
         })
     };
@@ -421,14 +438,30 @@ pub async fn active_review_set(
         {
             return Err(Failure::Action(error));
         }
-        let worktree = store::read_request_repo(state, owner.request.id.as_str())
-            .await
-            .map_err(Failure::Read)?;
+        let artifact = &owner.request.target;
+        let target = owner
+            .request
+            .human_definition
+            .as_ref()
+            .and_then(|definition| definition.artifacts.value())
+            .and_then(|artifacts| artifacts.get(artifact))
+            .and_then(|saved| saved.path.value());
+        let address = if let Some(target) = target {
+            let worktree = store::read_request_repo(state, owner.request.id.as_str())
+                .await
+                .map_err(Failure::Read)?;
+            Some(Address {
+                worktree,
+                artifact: artifact.clone(),
+                target: target.clone(),
+            })
+        } else {
+            None
+        };
         Some(ActiveReview {
             shown,
             owner: owner.request.id.clone(),
-            worktree,
-            artifact: owner.request.target.to_string(),
+            address,
         })
     } else {
         None
@@ -464,16 +497,19 @@ pub(crate) async fn refresh_active(app: &App) {
 mod tests {
     use super::*;
 
-    fn place(worktree: &str, artifact: &str, viewer: &str) -> Place {
+    fn place(worktree: &str, target: &str, viewer: &str) -> Place {
         Place {
-            worktree: PathBuf::from(worktree),
-            artifact: artifact.into(),
+            address: Address {
+                worktree: PathBuf::from(worktree),
+                artifact: "checkout".parse().unwrap(),
+                target: serde_json::from_value(serde_json::json!(target)).unwrap(),
+            },
             viewer: viewer.into(),
         }
     }
 
     #[test]
-    fn a_session_shows_the_same_place_only_for_the_same_worktree_artifact_and_viewer() {
+    fn a_session_shows_the_same_place_only_for_the_same_worktree_target_and_viewer() {
         let sessions = Sessions::default();
         let first = sessions.remember(place("/work/one", "checkout", "files"));
         let other_worktree = sessions.remember(place("/work/two", "checkout", "files"));
@@ -490,5 +526,40 @@ mod tests {
             !sessions.same_place(first, again),
             "an ended session shows nothing"
         );
+    }
+
+    #[test]
+    fn opening_a_different_target_creates_a_window_instead_of_reusing_the_old_one() {
+        use tauri::Manager;
+
+        let mock = tauri::test::mock_app();
+        let app = App::new(crate::Launch {
+            mode: crate::Mode::Monitor,
+            state: PathBuf::new(),
+            repo: None,
+            reviewer: "alice".parse().unwrap(),
+            request: None,
+        });
+        let first = app
+            .viewers
+            .remember(place("/work/one", "checkout", "files"));
+        let same = app
+            .viewers
+            .remember(place("/work/one", "checkout", "files"));
+        let new = app
+            .viewers
+            .remember(place("/work/one", "alternate", "files"));
+        for session in [first, same, new] {
+            crate::windows::viewer(mock.handle(), &app, session, "Checkout".into()).unwrap();
+        }
+        assert!(
+            mock.get_webview_window(&format!("viewer-{first}"))
+                .is_some()
+        );
+        assert!(mock.get_webview_window(&format!("viewer-{same}")).is_none());
+        assert!(mock.get_webview_window(&format!("viewer-{new}")).is_some());
+        for window in mock.webview_windows().into_values() {
+            window.destroy().unwrap();
+        }
     }
 }

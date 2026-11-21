@@ -1030,6 +1030,85 @@ payload.instruction = "Read the page separately."
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_new_branch_target_matches_the_pet_instead_of_the_old_viewer() {
+    let root = os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir_all(repo.join(".artifactize")).unwrap();
+    os::git(&repo, &["init", "-q", "-b", "primary"]);
+    let declare = |target: &str| {
+        fs::create_dir_all(repo.join(target)).unwrap();
+        fs::write(repo.join(target).join("content.txt"), target).unwrap();
+        fs::write(
+            repo.join(".artifactize/page.artf"),
+            format!(
+                r#"path = "{target}/"
+type = "files"
+fingerprint = {{ files = ["content.txt"] }}
+
+[evals.approve]
+title = "Review the page"
+profile = {{ kind = "human" }}
+payload.instruction = "Read the page."
+"#,
+            ),
+        )
+        .unwrap();
+        os::git(&repo, &["add", ".artifactize/page.artf", target]);
+        os::git(
+            &repo,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                target,
+            ],
+        );
+    };
+    declare("primary");
+    let fixture = Fixture {
+        _root: run_fixture::RepoLease::new(root, &state, &repo),
+        repo: repo.clone(),
+        state,
+    };
+    let window = window(&fixture, Mode::Review);
+    let open_review_viewer = |job: u32| {
+        verify(&fixture.repo, &fixture.state);
+        let id = saved(&fixture, "page/approve").request.id.to_string();
+        invoke(&window, "human_claim", json!({"id": id, "job": job})).unwrap();
+        invoke(&window, "active_review_set", json!({"request": id})).unwrap();
+        let ran = invoke(
+            &window,
+            "human_run",
+            json!({"id": id, "tool": "view_page", "job": job + 1}),
+        )
+        .unwrap();
+        ran["viewer"]["session"].clone()
+    };
+    let context =
+        |session: &Value| invoke(&window, "viewer_context", json!({"session": session})).unwrap();
+    let old = open_review_viewer(1);
+    assert_eq!(context(&old)["petMatch"], true);
+
+    os::git(&repo, &["switch", "-qc", "alternate"]);
+    declare("alternate");
+    let new = open_review_viewer(3);
+    let old = context(&old);
+    let new = context(&new);
+    assert_eq!(old["review"], new["review"]);
+    assert_eq!(old["artifact"], new["artifact"]);
+    assert_eq!(old["type"], new["type"]);
+    assert_eq!(old["target"], "primary");
+    assert_eq!(new["target"], "alternate");
+    assert_eq!(old["petMatch"], false);
+    assert_eq!(new["petMatch"], true);
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_review_never_goes_back_to_a_view_read_before_its_newest() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);

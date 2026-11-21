@@ -1435,7 +1435,7 @@ export type ViewerContext = {
 	target: string,
 	targetKind: DefinitionKind,
 	review: string | null,
-	/**  This session shows the active review's own Artifact in its original worktree. */
+	/**  This session shows the Artifact target recorded by the active review in its original worktree. */
 	petMatch: boolean,
 };
 
