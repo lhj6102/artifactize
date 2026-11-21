@@ -41,7 +41,26 @@ pub async fn claim(
     request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
 ) -> Result<HumanClaim, String> {
+    claim_acquisition(receipts, request, reviewer)
+        .await
+        .map(|(claim, _)| claim)
+}
+
+/// The saved claim and whether this action created it, rather than finding an existing claim.
+pub async fn claim_acquisition(
+    receipts: &Receipts,
+    request: &crate::types::RequestId,
+    reviewer: &crate::types::ReviewerId,
+) -> Result<(HumanClaim, bool), String> {
     receipts.claim_human(request, reviewer).await
+}
+
+/// Release this particular claim, leaving any later claim on the same request untouched.
+pub async fn release_exact_claim(state: &Path, claim: HumanClaim) -> Result<(), String> {
+    let (receipts, _) = open(state, &claim.request_id).await?;
+    let result = receipts.release_exact_claim(claim).await;
+    let closed = receipts.close().await;
+    result.and(closed)
 }
 
 /// Release the reviewer lock without a verdict, so another reviewer can claim the request.

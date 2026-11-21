@@ -11,7 +11,7 @@ use artifactize_core::{
     changes::{Change, Changed},
     monitor::{
         self, Node, Origin,
-        live::{self, Branch, Labels, Loader, Place, Query, Waiting},
+        live::{self, Branch, Loader, Place, Query, Waiting},
     },
     store::{RequestView, RunView, Unreadable},
     types::RunId,
@@ -73,7 +73,6 @@ struct Shown {
     initialized: bool,
     origin: Origin,
     branches: Vec<Branch>,
-    labels: Labels,
     launch: Option<Place>,
     waiting: Vec<Waiting>,
     /// The number of the request read that read `waiting` ([`crate::human::Reads`]).
@@ -172,7 +171,6 @@ impl Browse {
                 initialized: false,
                 origin: Origin::default(),
                 branches: Vec::new(),
-                labels: Labels::new(),
                 launch: None,
                 waiting: Vec::new(),
                 waiting_read: 0,
@@ -350,7 +348,6 @@ impl Browse {
         let origin = snapshot.origin.clone();
         shown.origin = snapshot.origin;
         shown.branches = snapshot.branches;
-        shown.labels = snapshot.labels;
         shown.launch = snapshot.launch;
         shown.unreadable = snapshot.unreadable;
         if let Some((number, waiting)) = waiting {
@@ -409,17 +406,6 @@ impl Browse {
             .find(|branch| &branch.place == place)
             .cloned()
             .ok_or_else(|| Failure::Missing("This branch no longer exists; choose another.".into()))
-    }
-
-    pub(crate) fn review_labels<'a>(&self, ids: impl Iterator<Item = &'a RunId>) -> Labels {
-        let shown = self.shown();
-        ids.filter_map(|id| {
-            shown
-                .labels
-                .get(id)
-                .map(|label| (id.clone(), label.clone()))
-        })
-        .collect()
     }
 
     /// The waiting reviews' requests as the snapshot read them, and that read's number.

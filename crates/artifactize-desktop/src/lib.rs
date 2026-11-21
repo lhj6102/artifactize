@@ -103,6 +103,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             release::release_notice,
             release::release_open,
             human::human_taken,
+            human::human_release_taken,
             transcript::transcript_open,
             transcript::transcript_window,
             transcript::transcript_close,

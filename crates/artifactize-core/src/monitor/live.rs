@@ -311,11 +311,12 @@ fn label(place: &Place) -> Label {
 impl Label {
     /// Name a worktree whose Run is not in the current monitor snapshot.
     pub fn at(repo: &Path) -> Self {
-        let (place, _) = place_of(
-            &crate::repository::identify(repo),
-            repo,
-            &mut DirectoryKeys::default(),
-        );
+        Self::for_identity(repo, &crate::repository::identify(repo))
+    }
+
+    /// Name the saved Git head of a worktree, not the branch checked out there today.
+    pub fn for_identity(repo: &Path, identity: &crate::repository::Identity) -> Self {
+        let (place, _) = place_of(identity, repo, &mut DirectoryKeys::default());
         label(&place)
     }
 }

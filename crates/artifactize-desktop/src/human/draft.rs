@@ -107,7 +107,7 @@ pub async fn human_draft(
     app: tauri::State<'_, App>,
     id: RequestKey,
 ) -> Result<ReviewDraft, Failure> {
-    let (_, request) = read(&app, &id.into_inner()).await?;
+    let request = read(&app, &id.into_inner()).await?.1.owner;
     let draft = review::read_draft(&app.launch.state, &request.request.id, &app.launch.reviewer)
         .await
         .map_err(Failure::Read)?
@@ -123,7 +123,7 @@ pub async fn human_draft_edit(
     id: RequestKey,
     change: DraftChange,
 ) -> Result<ReviewDraft, Failure> {
-    let (_, request) = read(&app, &id.into_inner()).await?;
+    let request = read(&app, &id.into_inner()).await?.1.owner;
     let draft = review::edit_draft(
         &app.launch.state,
         &request.request.id,
@@ -143,7 +143,7 @@ pub async fn human_draft_append(
     id: RequestKey,
     text: String,
 ) -> Result<ReviewDraft, Failure> {
-    let (_, request) = read(&app, &id.into_inner()).await?;
+    let request = read(&app, &id.into_inner()).await?.1.owner;
     let draft = review::append_draft(
         &app.launch.state,
         &request.request.id,

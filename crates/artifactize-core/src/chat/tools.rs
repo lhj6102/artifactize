@@ -35,6 +35,7 @@ const READ_TOOLS: [(Builtin, &str); 4] = [
 pub(crate) struct Tools<'a> {
     context: &'a runs::Context,
     output: &'a Path,
+    checkout: Option<Option<&'a crate::repository::Identity>>,
     owner: ArtifactId,
     scope: Scope,
     definitions: Vec<ToolDefinition>,
@@ -111,10 +112,19 @@ impl<'a> Tools<'a> {
         Self {
             context,
             output,
+            checkout: None,
             owner,
             scope,
             definitions,
         }
+    }
+
+    pub(crate) fn guard_checkout(
+        mut self,
+        identity: Option<&'a crate::repository::Identity>,
+    ) -> Self {
+        self.checkout = Some(identity);
+        self
     }
 
     pub(crate) fn output(&self) -> &Path {
@@ -147,6 +157,12 @@ impl<'a> Tools<'a> {
             return Err("The Chat turn was stopped.".into());
         }
         let root = self.context.repo();
+        if let Some(identity) = self.checkout {
+            let path = root.to_owned();
+            let identity = identity.cloned();
+            crate::task::blocking(move || super::verify_checkout(&path, identity.as_ref()))
+                .await??;
+        }
         if let Some((builtin, _)) = READ_TOOLS.iter().find(|(_, tool)| *tool == name) {
             let input = builtin::Input::parse(*builtin, arguments)?;
             return Ok(builtin::call(input, root, &self.scope, &self.owner, &cancellation).into());

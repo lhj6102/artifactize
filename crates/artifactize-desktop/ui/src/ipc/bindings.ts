@@ -226,7 +226,9 @@ export const commands = {
 	/**  Open the newer release's download or page in the browser. */
 	releaseOpen: () => typedError<null, Failure>(__TAURI_INVOKE("release_open")),
 	/**  Claims this window took and has neither submitted nor released, for the quit prompt. */
-	humanTaken: () => __TAURI_INVOKE<string[]>("human_taken"),
+	humanTaken: () => typedError<string[], Failure>(__TAURI_INVOKE("human_taken")),
+	/**  Release and quit only releases claims this app took and still owns. */
+	humanReleaseTaken: (ids: string[], job: JobId) => typedError<Acted_Serialize, Failure>(__TAURI_INVOKE("human_release_taken", { ids, job })),
 	/**
 	 *  Resolve request `id`'s session and open a reader for it. With the `handle` already open
 	 *  for it, resolve again only when the request's session facts changed, as the terminal
@@ -449,6 +451,9 @@ export type ChatSession = {
 	id: string,
 	title: string,
 	worktree: PathKey,
+	project: string,
+	branch: string,
+	unavailable: string | null,
 	selection: ChatModel,
 	createdAt: string,
 	updatedAt: string,

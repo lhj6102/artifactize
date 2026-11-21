@@ -117,7 +117,7 @@ pub enum Job {
 #[derive(Debug)]
 pub enum Outcome {
     Claimed {
-        result: Result<HumanClaim, String>,
+        result: Result<(HumanClaim, bool), String>,
     },
     /// Publishing failed after settlement; never offer to submit the verdict twice.
     SavedLocally {
@@ -244,7 +244,7 @@ impl Job {
             Job::Claim { id } => {
                 let result = async {
                     let (receipts, _) = human::open(&state, &id).await?;
-                    let result = human::claim(&receipts, &id, &reviewer).await;
+                    let result = human::claim_acquisition(&receipts, &id, &reviewer).await;
                     let closed = receipts.close().await;
                     result.and_then(|claim| closed.map(|()| claim))
                 }

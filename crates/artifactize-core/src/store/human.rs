@@ -8,7 +8,7 @@ use super::{
     receipts::{Error, update_request},
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanClaim {
     pub request_id: crate::types::RequestId,
@@ -229,7 +229,7 @@ impl Receipts {
         &self,
         id: &crate::types::RequestId,
         reviewer: &crate::types::ReviewerId,
-    ) -> Result<HumanClaim, String> {
+    ) -> Result<(HumanClaim, bool), String> {
         let id = id.to_owned();
         let reviewer = reviewer.to_owned();
         self.connection
@@ -237,17 +237,26 @@ impl Receipts {
                 let transaction =
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 let (request, _) = waiting(&transaction, &id)?;
-                transaction.execute(
+                let changed = transaction.execute(
                     "UPDATE requests SET claimed_by=?,claimed_at=? WHERE id=? AND claimed_by IS NULL",
                     params![reviewer, crate::broker::now(), request.id],
                 )?;
                 claimant(&transaction, &request.id, &reviewer)?;
                 let claim = claim(&transaction, &request.id)?;
                 transaction.commit()?;
-                Ok(claim)
+                Ok((claim, changed != 0))
             })
             .await
             .map_err(|e| e.to_string())
+    }
+
+    /// Release only the exact claim this caller took; a replacement is left alone.
+    pub(crate) async fn release_exact_claim(&self, expected: HumanClaim) -> Result<(), String> {
+        self.connection.call(move |db| {
+            db.execute("UPDATE requests SET claimed_by=NULL,claimed_at=NULL WHERE id=?1 AND claimed_by=?2 AND claimed_at=?3 AND status IN ('WAITING_HUMAN','DEFERRED')",
+                params![expected.request_id, expected.reviewer, expected.claimed_at])?;
+            Ok::<_, Error>(())
+        }).await.map_err(|error| error.to_string())
     }
 
     /// Only the claimant releases, and only while the original request still waits.

@@ -59,19 +59,26 @@ impl Reads {
     }
 }
 
+/// Keep the referenced request for the header and Back link, and its owner for review actions.
+#[derive(Clone)]
+struct ReadReview {
+    exact: RequestView,
+    owner: RequestView,
+}
+
 /// Per-app review state: what is cached for drawing, running jobs, claims taken here, and
 /// the Tool log every run logs to.
 pub struct Reviews {
     /// The newest read view of each opened request and its read's number, for redraws
     /// without a read.
-    views: Mutex<BTreeMap<RequestId, (u32, RequestView)>>,
+    views: Mutex<BTreeMap<RequestId, (u32, ReadReview)>>,
     /// Numbers every read of requests.
     pub(crate) reads: Reads,
     /// Resolved tool command lines, resolved once per request and again after each run.
     commands: Mutex<BTreeMap<RequestId, Resolved>>,
     jobs: Jobs,
     /// Claims this app took and has neither submitted nor released.
-    taken: Mutex<BTreeSet<RequestId>>,
+    taken: Mutex<BTreeMap<RequestId, store::HumanClaim>>,
     log: review::log::Sink,
     /// The Tool log of each review a run logged to, until it is submitted, and of each
     /// Artifact whose tool ran without a review, while the app runs.
@@ -147,28 +154,33 @@ impl Reviews {
     pub(crate) fn remember(&self, read: u32, views: impl IntoIterator<Item = RequestView>) {
         for view in views {
             let id = view.request.id.clone();
-            self.keep(read, &[&id], view);
+            self.keep(
+                read,
+                id,
+                ReadReview {
+                    exact: view.clone(),
+                    owner: view,
+                },
+            );
         }
     }
 
-    /// Cache `view`, read as read number `read`, under each of `ids`, unless a newer read is
-    /// cached there: a stack read before a claim never brings back the unclaimed request.
-    fn keep(&self, read: u32, ids: &[&RequestId], view: RequestView) {
+    fn keep(&self, read: u32, id: RequestId, view: ReadReview) {
         let mut cached = self.views.lock().expect("views lock");
-        for id in ids {
-            if cached.get(*id).is_none_or(|(newest, _)| *newest < read) {
-                cached.insert((*id).clone(), (read, view.clone()));
-            }
+        if cached.get(&id).is_none_or(|(newest, _)| *newest < read) {
+            cached.insert(id, (read, view));
         }
     }
 
-    fn took(&self, id: &RequestId, taken: bool) {
-        let mut set = self.taken.lock().expect("taken lock");
-        if taken {
-            set.insert(id.clone());
-        } else {
-            set.remove(id);
-        }
+    fn took(&self, claim: store::HumanClaim) {
+        self.taken
+            .lock()
+            .expect("taken lock")
+            .insert(claim.request_id.clone(), claim);
+    }
+
+    fn forget_claim(&self, id: &RequestId) {
+        self.taken.lock().expect("taken lock").remove(id);
     }
 }
 
@@ -375,29 +387,34 @@ fn view(
     }
 }
 
-/// Read `id` afresh, with the read's number: a waiting follower resolves to its original,
-/// which records the Human definition and receives every action. The request records all the
-/// review shows, so its Run's definitions, which can hold a large Run's whole graph, are not
-/// read.
-async fn read(app: &App, id: &RequestId) -> Result<(u32, RequestView), Failure> {
+/// Read the exact request and its actionable owner under the same read sequence number.
+async fn read(app: &App, id: &RequestId) -> Result<(u32, ReadReview), Failure> {
     let state = &app.launch.state;
-    let (number, view) = app
+    let (number, views) = app
         .human
         .reads
         .numbered(async {
-            let view = store::read_request_as(state, id, store::Shown::Requests).await?;
-            if view.request.status().is_human_wait() {
-                store::read_original_as(state, &view, store::Shown::Requests).await
-            } else {
-                Ok(view)
-            }
+            let exact = store::read_request_as(state, id, store::Shown::Requests).await?;
+            resolve(app, exact).await
         })
         .await;
-    let view = view.map_err(Failure::Read)?;
-    Ok((number, loaded(app, number, id, view).await))
+    Ok((
+        number,
+        loaded(app, number, views.map_err(Failure::Read)?).await,
+    ))
 }
 
-async fn loaded(app: &App, number: u32, id: &RequestId, view: RequestView) -> RequestView {
+async fn resolve(app: &App, exact: RequestView) -> Result<ReadReview, String> {
+    let owner = if exact.request.status().is_human_wait() {
+        store::read_original_as(&app.launch.state, &exact, store::Shown::Requests).await?
+    } else {
+        exact.clone()
+    };
+    Ok(ReadReview { exact, owner })
+}
+
+async fn loaded(app: &App, number: u32, read: ReadReview) -> ReadReview {
+    let view = &read.owner;
     let state = &app.launch.state;
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
     let resolve = view.request.status().is_human_wait()
@@ -423,21 +440,25 @@ async fn loaded(app: &App, number: u32, id: &RequestId, view: RequestView) -> Re
             .insert(view.request.id.clone(), commands);
     }
     app.human
-        .keep(number, &[id, &view.request.id], view.clone());
-    view
+        .keep(number, read.exact.request.id.clone(), read.clone());
+    read
 }
 
 /// The review of `request`, read as read number `read`.
-fn show(app: &App, read: u32, request: &RequestView) -> HumanView {
+fn show(app: &App, read: u32, request: &ReadReview) -> HumanView {
     let commands = app.human.commands.lock().expect("commands lock");
-    view(
-        request,
+    let mut shown = view(
+        &request.owner,
         app.launch.reviewer.as_str(),
-        commands.get(&request.request.id),
+        commands.get(&request.owner.request.id),
         app.generation.current(),
         read,
         OffsetDateTime::now_utc(),
-    )
+    );
+    shown.id = request.exact.request.id.clone().into();
+    shown.target = review::Target::from(request.exact.request.as_ref()).into();
+    shown.shared = review::shared(&request.exact);
+    shown
 }
 
 /// Open request `id` in the shared Human Detail. `reload: false` redraws the last read view
@@ -504,7 +525,8 @@ pub async fn human_claim(
 ) -> Result<Acted, Failure> {
     let id = id.into_inner();
     // Someone else's claim, or a settled request, is refused in the library's words.
-    let (_, view) = read(&app, &id).await?;
+    let (_, views) = read(&app, &id).await?;
+    let view = views.owner;
     review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
     let owner = view.request.id.clone();
     let work = app
@@ -512,8 +534,11 @@ pub async fn human_claim(
         .jobs
         .begin(caller, job, vec![owner.clone()], Action::Ordinary)?;
     let outcome = run_job(&app, Job::Claim { id: owner.clone() }, work.cancel.clone()).await;
-    if let Outcome::Claimed { result: Ok(_) } = &outcome {
-        app.human.took(&owner, true);
+    if let Outcome::Claimed {
+        result: Ok((claim, true)),
+    } = &outcome
+    {
+        app.human.took(claim.clone());
     }
     acted(&app, &id, outcome).await
 }
@@ -609,7 +634,8 @@ async fn guard(
     id: &RequestId,
     rule: fn(Option<&RequestView>, &artifactize_core::types::ReviewerId) -> Option<String>,
 ) -> Result<RequestView, Failure> {
-    let (_, view) = read(app, id).await?;
+    let (_, views) = read(app, id).await?;
+    let view = views.owner;
     match rule(Some(&view), &app.launch.reviewer) {
         Some(refusal) => Err(Failure::Action(refusal)),
         None => Ok(view),
@@ -622,7 +648,7 @@ fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
         .lock()
         .expect("views lock")
         .get(id)
-        .map(|(_, view)| view.clone())
+        .map(|(_, view)| view.owner.clone())
         .ok_or_else(|| Failure::Missing("Open the request first.".into()))
 }
 
@@ -719,7 +745,7 @@ async fn submit(
         Outcome::Submitted { result: Ok(_), .. } => Settled::Published,
         other => unreachable!("a submit job ends in Submitted or SavedLocally, not {other:?}"),
     };
-    app.human.took(&owner, false);
+    app.human.forget_claim(&owner);
     crate::viewer::settled(app, &owner);
     if id != owner {
         crate::viewer::settled(app, &id);
@@ -753,7 +779,7 @@ pub async fn human_release(
         let view = if ids.len() == 1 {
             guard(&app, id, review::release_refusal).await?
         } else {
-            read(&app, id).await?.1
+            read(&app, id).await?.1.owner
         };
         owners.insert(view.request.id.clone());
     }
@@ -779,7 +805,7 @@ pub async fn human_release(
         .iter()
         .filter(|id| !failed.iter().any(|(failed, _)| failed == *id))
     {
-        app.human.took(id, false);
+        app.human.forget_claim(id);
         crate::viewer::settled(&app, id);
     }
     let notice = outcome.notice().into();
@@ -796,13 +822,65 @@ pub async fn human_release(
 /// Claims this window took and has neither submitted nor released, for the quit prompt.
 #[tauri::command]
 #[specta::specta]
-pub fn human_taken(app: tauri::State<'_, App>) -> Vec<RequestKey> {
-    app.human
-        .taken
-        .lock()
-        .expect("taken lock")
+pub async fn human_taken(app: tauri::State<'_, App>) -> Result<Vec<RequestKey>, Failure> {
+    let claims = app.human.taken.lock().expect("taken lock").clone();
+    let mut live = Vec::new();
+    for (id, claim) in claims {
+        if store::read_request_as(&app.launch.state, &id, store::Shown::Requests)
+            .await
+            .map_err(Failure::Read)?
+            .claim
+            .as_ref()
+            == Some(&claim)
+        {
+            live.push(id.into());
+        }
+    }
+    Ok(live)
+}
+
+/// Release and quit only releases claims this app took and still owns.
+#[tauri::command]
+#[specta::specta]
+pub async fn human_release_taken(
+    app: tauri::State<'_, App>,
+    caller: Caller,
+    ids: Vec<RequestKey>,
+    job: JobId,
+) -> Result<Acted, Failure> {
+    let claims: Vec<_> = {
+        let taken = app.human.taken.lock().expect("taken lock");
+        ids.into_iter()
+            .filter_map(|id| taken.get(&id.into_inner()).cloned())
+            .collect()
+    };
+    let ids: Vec<_> = claims
         .iter()
-        .cloned()
-        .map(RequestKey::from)
-        .collect()
+        .map(|claim| claim.request_id.clone())
+        .collect();
+    let work = app
+        .human
+        .jobs
+        .begin(caller, job, ids.clone(), Action::Ordinary)?;
+    let mut failed = Vec::new();
+    for claim in claims {
+        let id = claim.request_id.clone();
+        match artifactize_core::human::release_exact_claim(&app.launch.state, claim).await {
+            Ok(()) => {
+                app.human.forget_claim(&id);
+                crate::viewer::settled(&app, &id);
+            }
+            Err(error) => failed.push((id, error)),
+        }
+    }
+    drop(work);
+    let outcome = Outcome::Released {
+        ids,
+        quit: true,
+        failed,
+    };
+    Ok(Acted {
+        notice: outcome.notice().into(),
+        view: None,
+    })
 }

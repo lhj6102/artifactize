@@ -19,7 +19,7 @@ use crate::{
     },
     auth::providers,
     config::{Backend, ModelId, Provider},
-    llm, runs,
+    llm, repository, runs,
     store::{self, Receipts},
     types::{SessionId, Timestamp},
 };
@@ -45,12 +45,58 @@ pub struct Session {
     pub title: String,
     #[serde(with = "crate::platform::path_serde")]
     pub worktree: PathBuf,
+    #[serde(default)]
+    pub repository: Option<repository::Identity>,
     pub selection: Model,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     /// Live ownership of a turn, read separately from the saved session.
     #[serde(skip)]
     pub running: bool,
+    #[serde(skip)]
+    pub unavailable: Option<String>,
+}
+
+impl Session {
+    pub fn label(&self) -> crate::monitor::live::Label {
+        crate::monitor::live::Label::for_identity(
+            &self.worktree,
+            &self.repository.clone().unwrap_or_default(),
+        )
+    }
+
+    fn check_checkout(&self) -> Result<(), String> {
+        if !self.worktree.is_dir() {
+            return Err("This Chat's worktree no longer exists.".into());
+        }
+        verify_checkout(&self.worktree, self.repository.as_ref())
+    }
+
+    fn with_checkout(mut self) -> Self {
+        self.unavailable = self.check_checkout().err();
+        self
+    }
+}
+
+fn verify_checkout(worktree: &Path, saved: Option<&repository::Identity>) -> Result<(), String> {
+    checkout_refusal(saved, &repository::identify(worktree)).map_or(Ok(()), Err)
+}
+
+fn checkout_refusal(
+    saved: Option<&repository::Identity>,
+    current: &repository::Identity,
+) -> Option<String> {
+    match saved {
+        Some(saved) if saved == current => None,
+        Some(saved) => Some(match &saved.branch {
+            Some(branch) => format!("Check out {branch} in this worktree to continue this Chat."),
+            None => "Restore this Chat's original checkout to continue.".into(),
+        }),
+        None if *current == repository::Identity::default() => None,
+        None => {
+            Some("This Chat was saved without a branch. Start a new Chat for this checkout.".into())
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -103,16 +149,29 @@ impl Chat {
     pub async fn default_model(&self, worktree: &Path) -> Result<Option<Model>, String> {
         let worktree =
             crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
-        if let Some(selection) = store::chat::latest_model(&self.state, &worktree).await? {
+        let identity = crate::task::blocking({
+            let worktree = worktree.clone();
+            move || repository::identify(&worktree)
+        })
+        .await?;
+        self.starting_model(&worktree, &identity).await
+    }
+
+    async fn starting_model(
+        &self,
+        worktree: &Path,
+        identity: &repository::Identity,
+    ) -> Result<Option<Model>, String> {
+        if let Some(selection) = store::chat::latest_model(&self.state, worktree, identity).await? {
             return Ok(Some(selection));
         }
-        let providers = providers::list(Some(&self.state), Some(&worktree))?;
+        let providers = providers::list(Some(&self.state), Some(worktree))?;
         let backends = Provider::ALL
             .into_iter()
             .map(Backend::from)
             .chain(providers.custom.into_keys());
         let listings = futures_util::future::join_all(
-            backends.map(|backend| llm::models::list(backend, Some(&self.state), Some(&worktree))),
+            backends.map(|backend| llm::models::list(backend, Some(&self.state), Some(worktree))),
         )
         .await;
         Ok(listings
@@ -135,13 +194,18 @@ impl Chat {
         let context = self.context(worktree)?;
         let worktree = context.repo();
         crate::config::read_workspace_config(worktree).map_err(|error| error.to_string())?;
+        let repository = crate::task::blocking({
+            let worktree = worktree.to_owned();
+            move || repository::identify(&worktree)
+        })
+        .await?;
         let selection = match selection {
             Some(selection) => {
                 self.check_model(worktree, &selection).await?;
                 selection
             }
             None => self
-                .default_model(worktree)
+                .starting_model(worktree, &repository)
                 .await?
                 .ok_or("No provider lists a model. Connect a provider first.")?,
         };
@@ -150,11 +214,17 @@ impl Chat {
             id: format!("chat-{}", agent::uuid()?).parse()?,
             title: "New chat".into(),
             worktree: worktree.into(),
+            repository: Some(repository),
             selection,
             created_at: now,
             updated_at: now,
             running: false,
+            unavailable: None,
         };
+        let session = crate::task::blocking(move || session.with_checkout()).await?;
+        if let Some(reason) = &session.unavailable {
+            return Err(reason.clone());
+        }
         let receipts = Receipts::open(&self.state, worktree).await?;
         let result = receipts.create_chat(&session).await;
         let closed = receipts.close().await;
@@ -163,12 +233,36 @@ impl Chat {
     }
 
     pub async fn list(&self, worktree: Option<&Path>) -> Result<Vec<Session>, String> {
-        store::chat::list(&self.state, worktree).await
+        let sessions = store::chat::list(&self.state, worktree).await?;
+        crate::task::blocking(move || {
+            let mut identities = BTreeMap::new();
+            sessions
+                .into_iter()
+                .map(|mut session| {
+                    let checkout =
+                        identities
+                            .entry(session.worktree.clone())
+                            .or_insert_with(|| {
+                                session
+                                    .worktree
+                                    .is_dir()
+                                    .then(|| repository::identify(&session.worktree))
+                            });
+                    session.unavailable = match checkout {
+                        Some(current) => checkout_refusal(session.repository.as_ref(), current),
+                        None => Some("This Chat's worktree no longer exists.".into()),
+                    };
+                    session
+                })
+                .collect()
+        })
+        .await
     }
 
     /// The model's streamed text, tools, and current state of each referenced Run.
     pub async fn open(&self, id: &SessionId) -> Result<View, String> {
         let session = store::chat::load(&self.state, id).await?;
+        let session = crate::task::blocking(move || session.with_checkout()).await?;
         let running = session.running;
         let conversation = Conversation::load(&path(&self.state, id))?;
         let mut turns = transcript::turns(conversation.as_ref(), running);
@@ -224,6 +318,10 @@ impl Chat {
         selection: Option<Model>,
     ) -> Result<Prepared, String> {
         let mut session = store::chat::load(&self.state, id).await?;
+        session = crate::task::blocking(move || session.with_checkout()).await?;
+        if let Some(reason) = session.unavailable.take() {
+            return Err(reason);
+        }
         let context = self.context(&session.worktree)?;
         if let Some(selection) = selection.filter(|selection| *selection != session.selection) {
             self.check_model(context.repo(), &selection).await?;
@@ -311,7 +409,8 @@ impl Chat {
             });
         let result = match output {
             Ok(output) => {
-                let tools = tools::Tools::new(&context, output.path());
+                let tools = tools::Tools::new(&context, output.path())
+                    .guard_checkout(session.repository.as_ref());
                 agent::chat_turn(
                     &session.selection,
                     &context,

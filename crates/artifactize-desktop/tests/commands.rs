@@ -414,6 +414,44 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn quit_never_releases_a_replacement_claim_of_the_same_reviewer() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let offered = invoke(&window, "human_taken", json!({})).unwrap();
+    assert_eq!(offered, json!([id]));
+    let replacement = tauri::async_runtime::block_on(async {
+        let request = id.parse().unwrap();
+        let reviewer = "alice".parse().unwrap();
+        let (receipts, _) = artifactize_core::human::open(&fixture.state, &request)
+            .await
+            .unwrap();
+        let old = artifactize_core::human::unclaim(&receipts, &request, &reviewer)
+            .await
+            .unwrap();
+        let current = artifactize_core::human::claim(&receipts, &request, &reviewer)
+            .await
+            .unwrap();
+        assert_ne!(old, current);
+        receipts.close().await.unwrap();
+        current
+    });
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([])
+    );
+    invoke(
+        &window,
+        "human_release_taken",
+        json!({"ids": offered, "job": 2}),
+    )
+    .unwrap();
+    assert_eq!(saved(&fixture, "release/signoff").claim, Some(replacement));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn verify_browse_and_review_search_are_independent() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
@@ -432,6 +470,32 @@ fn verify_browse_and_review_search_are_independent() {
         json!({"text": "sort:recent", "error": null, "start": "sort:recent"})
     );
     assert_eq!(shown("repo:rep").0, 1);
+    let branch = artifactize_core::repository::identify(&fixture.repo)
+        .branch
+        .unwrap();
+    let reviews = |query: &str| {
+        invoke(
+            &window,
+            "human_search",
+            json!({"query": query, "start": null}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        reviews(&format!("type:human repo:repo branch:{branch}"))["reviews"][0]["branch"],
+        branch
+    );
+    assert_eq!(
+        reviews("type:human branch:no-such-branch")["reviews"],
+        json!([])
+    );
+    let complete = invoke(
+        &window,
+        "human_search_complete",
+        json!({"query": "type:human branch:"}),
+    )
+    .unwrap();
+    assert_eq!(complete["candidates"], json!([format!("branch:{branch}")]));
     // Neither a free-text branch query nor a scoped one changes the waiting review count.
     let (branches, waiting, _) = shown("signoff");
     assert_eq!((branches, waiting), (0, 1));
@@ -746,6 +810,7 @@ payload.instruction = "Read the page."
     let follower = saved(&fixture, "page/approve");
     let id = follower.request.id.to_string();
     assert_ne!(id, original);
+    let follower_run = follower.request.run_id.to_string();
     assert_eq!(
         follower.execution.unwrap().provenance.request_id.as_str(),
         original
@@ -754,6 +819,11 @@ payload.instruction = "Read the page."
     let window = window(&fixture, Mode::Review);
     let claim = invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
     assert_eq!(claim["view"]["stage"], "review");
+    assert_eq!(claim["view"]["id"], id);
+    assert_eq!(claim["view"]["target"]["run"], follower_run);
+    let reopened = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
+    assert_eq!(reopened["target"], claim["view"]["target"]);
+    assert_eq!(reopened["id"], id);
     let launched = invoke(
         &window,
         "human_run",

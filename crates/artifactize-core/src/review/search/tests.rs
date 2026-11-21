@@ -7,6 +7,7 @@ const PAGE_REQUESTS: usize = 100;
 fn entry() -> Entry {
     Entry {
         repository: "work/artifactize".into(),
+        label: None,
         eval: "release/signoff".into(),
         request: "run-a-2".into(),
         claim: Claim::Other("bob".into()),
@@ -163,6 +164,7 @@ fn completion_offers_keys_then_values_of_the_listed_requests() {
         keys.candidates,
         [
             "repo:",
+            "branch:",
             "eval:",
             "request:",
             "reviewer:",

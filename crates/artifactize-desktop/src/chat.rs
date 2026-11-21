@@ -42,6 +42,9 @@ pub struct ChatSession {
     pub id: SessionKey,
     pub title: String,
     pub worktree: PathKey,
+    pub project: String,
+    pub branch: String,
+    pub unavailable: Option<String>,
     pub selection: ChatModel,
     pub created_at: String,
     pub updated_at: String,
@@ -50,10 +53,14 @@ pub struct ChatSession {
 
 impl From<chat::Session> for ChatSession {
     fn from(session: chat::Session) -> Self {
+        let label = session.label();
         Self {
             id: session.id.into(),
             title: session.title,
             worktree: PathKey::new(&session.worktree),
+            project: label.project,
+            branch: label.branch,
+            unavailable: session.unavailable,
             selection: session.selection.into(),
             created_at: session.created_at.to_string(),
             updated_at: session.updated_at.to_string(),

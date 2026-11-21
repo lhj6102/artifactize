@@ -72,15 +72,33 @@ pub(crate) async fn list(state: &Path, worktree: Option<&Path>) -> Result<Vec<Se
     }).await?.unwrap_or_default())
 }
 
-pub(crate) async fn latest_model(state: &Path, worktree: &Path) -> Result<Option<Model>, String> {
+pub(crate) async fn latest_model(
+    state: &Path,
+    worktree: &Path,
+    identity: &crate::repository::Identity,
+) -> Result<Option<Model>, String> {
     let worktree = crate::platform::path_text(worktree);
+    let identity = identity.clone();
     Ok(read(state, move |db| {
-        let data: Option<String> = db.query_row(
-            "SELECT data FROM chat_sessions WHERE worktree=?1 ORDER BY updated_at DESC,id DESC LIMIT 1",
-            [worktree], |row| row.get(0),
-        ).optional()?;
-        data.map(|data| Ok(serde_json::from_str::<Session>(&data)?.selection)).transpose()
-    }).await?.flatten())
+        let mut statement = db.prepare(
+            "SELECT data FROM chat_sessions WHERE worktree=?1 ORDER BY updated_at DESC,id DESC",
+        )?;
+        let rows = statement.query_map([worktree], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            let session: Session = serde_json::from_str(&row?)?;
+            if session
+                .repository
+                .as_ref()
+                .unwrap_or(&crate::repository::Identity::default())
+                == &identity
+            {
+                return Ok(Some(session.selection));
+            }
+        }
+        Ok(None)
+    })
+    .await?
+    .flatten())
 }
 
 pub(crate) async fn load(state: &Path, id: &SessionId) -> Result<Session, String> {

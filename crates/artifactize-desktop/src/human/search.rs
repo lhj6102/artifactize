@@ -58,7 +58,10 @@ pub async fn human_search(
     query: String,
     start: Option<u32>,
 ) -> Result<ReviewPage, Failure> {
-    let parsed = query.parse().map_err(Failure::Invalid)?;
+    let parsed = query
+        .parse::<search::Query>()
+        .map_err(Failure::Invalid)?
+        .for_places();
     let found = search::search(
         &app.launch.state,
         &parsed,
@@ -67,40 +70,28 @@ pub async fn human_search(
     )
     .await
     .map_err(Failure::Read)?;
-    let labels = app
-        .browse
-        .review_labels(found.requests.iter().map(|(view, _)| &view.request.run_id));
     let now = time::OffsetDateTime::now_utc();
-    let reviews = tokio::task::spawn_blocking(move || {
-        let mut fallback = std::collections::BTreeMap::new();
-        found
-            .requests
-            .into_iter()
-            .map(|(view, entry)| {
-                let request = &view.request;
-                let label = labels.get(&request.run_id).unwrap_or_else(|| {
-                    fallback
-                        .entry(entry.repository.clone())
-                        .or_insert_with(|| monitor::live::Label::at(&entry.repository))
-                });
-                ReviewMatch {
-                    id: request.id.clone().into(),
-                    target: artifactize_core::review::Target::from(request.as_ref()).into(),
-                    title: request.title.clone(),
-                    eval: entry.eval,
-                    worktree: PathKey::new(&entry.repository),
-                    project: label.project.clone(),
-                    branch: label.branch.clone(),
-                    age: monitor::duration(now - request.created_at.time()),
-                    mark: monitor::Status::from(entry.status).into(),
-                    claimant: entry.claim.reviewer().map(str::to_owned),
-                    mine: matches!(entry.claim, search::Claim::Mine(_)),
-                }
-            })
-            .collect()
-    })
-    .await
-    .map_err(|error| Failure::Read(error.to_string()))?;
+    let reviews = found
+        .requests
+        .into_iter()
+        .map(|(view, entry)| {
+            let request = &view.request;
+            let label = entry.label.unwrap_or_default();
+            ReviewMatch {
+                id: request.id.clone().into(),
+                target: artifactize_core::review::Target::from(request.as_ref()).into(),
+                title: request.title.clone(),
+                eval: entry.eval,
+                worktree: PathKey::new(&entry.repository),
+                project: label.project,
+                branch: label.branch,
+                age: monitor::duration(now - request.created_at.time()),
+                mark: monitor::Status::from(entry.status).into(),
+                claimant: entry.claim.reviewer().map(str::to_owned),
+                mine: matches!(entry.claim, search::Claim::Mine(_)),
+            }
+        })
+        .collect();
     Ok(ReviewPage {
         reviews,
         next: found
@@ -131,7 +122,7 @@ pub async fn human_search_complete(
     app: tauri::State<'_, App>,
     query: String,
 ) -> Result<Completion, Failure> {
-    let reply = search::suggest(&app.launch.state, &query, &app.launch.reviewer)
+    let reply = search::suggest_places(&app.launch.state, &query, &app.launch.reviewer)
         .await
         .map_err(Failure::Invalid)?;
     Ok(Completion {
@@ -157,23 +148,37 @@ pub async fn human_open_reference(
     query: String,
 ) -> Result<OpenReview, Failure> {
     let id = id.into_inner();
-    let query = query.parse().map_err(Failure::Invalid)?;
+    let query = query
+        .parse::<search::Query>()
+        .map(search::Query::for_places);
     let (number, opened) = app
         .human
         .reads
-        .numbered(search::open(
-            &app.launch.state,
-            &id,
-            &query,
-            &app.launch.reviewer,
-        ))
+        .numbered(async {
+            let (exact, reason) = match query {
+                Ok(query) => {
+                    let opened =
+                        search::open(&app.launch.state, &id, &query, &app.launch.reviewer).await?;
+                    (opened.view, opened.outside_reason)
+                }
+                Err(_) => (
+                    artifactize_core::store::read_request_as(
+                        &app.launch.state,
+                        &id,
+                        artifactize_core::store::Shown::Requests,
+                    )
+                    .await?,
+                    Some("The current filter is incomplete or invalid.".into()),
+                ),
+            };
+            Ok::<_, String>((super::resolve(&app, exact).await?, reason))
+        })
         .await;
-    let opened = opened.map_err(Failure::Read)?;
-    let outside_filter = opened.outside_filter();
-    let view = super::loaded(&app, number, &id, opened.view).await;
+    let (views, outside_reason) = opened.map_err(Failure::Read)?;
+    let view = super::loaded(&app, number, views).await;
     Ok(OpenReview {
         view: super::show(&app, number, &view),
-        outside_filter,
-        outside_reason: opened.outside_reason,
+        outside_filter: outside_reason.is_some(),
+        outside_reason,
     })
 }

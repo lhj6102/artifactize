@@ -67,6 +67,21 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             "payload":{"instruction":"Check the fixture."}
         }]
     }).to_string()).unwrap();
+    support::os::git(&worktree, &["init", "-q", "--initial-branch=first"]);
+    support::os::git(
+        &worktree,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "Fixture",
+        ],
+    );
     root.track(&state, &worktree);
     let final_answer = Gate::default();
     let interrupted = Gate::default();
@@ -283,6 +298,51 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     ] {
         assert!(names.contains(name), "missing {name}: {names:?}");
     }
+    support::os::git(&worktree, &["checkout", "-q", "-b", "second"]);
+    let second = Model {
+        model: "scripted-model".parse().unwrap(),
+        ..changed.clone()
+    };
+    restarted
+        .create(&worktree, Some(second.clone()))
+        .await
+        .unwrap();
+    assert_eq!(
+        restarted.default_model(&worktree).await.unwrap(),
+        Some(second)
+    );
+    let previous = restarted.open(&session.id).await.unwrap();
+    assert_eq!(previous.session.label().branch, "first");
+    assert!(
+        previous
+            .session
+            .unavailable
+            .as_deref()
+            .unwrap()
+            .contains("first")
+    );
+    assert!(
+        restarted
+            .send(&session.id, "Must not run here".into(), None)
+            .await
+            .unwrap_err()
+            .contains("Check out first")
+    );
+    assert_eq!(restarted.open(&session.id).await.unwrap().turns.len(), 3);
+    support::os::git(&worktree, &["checkout", "-q", "first"]);
+    assert_eq!(
+        restarted.default_model(&worktree).await.unwrap(),
+        Some(changed)
+    );
+    assert!(
+        restarted
+            .open(&session.id)
+            .await
+            .unwrap()
+            .session
+            .unavailable
+            .is_none()
+    );
     changes.close().await.unwrap();
 }
 
