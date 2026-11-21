@@ -242,12 +242,17 @@ pub(crate) fn resolve_system_aliases(path: &Path) -> io::Result<std::path::PathB
     std::path::absolute(path)
 }
 
-/// Register for SIGINT and SIGTERM now; the future completes at the first of them.
+/// Register now: an interrupt, termination request or controlling-terminal hangup stops work.
 pub fn stop_requested() -> io::Result<impl Future<Output = ()> + Send + 'static> {
     let mut interrupt = signal(SignalKind::interrupt())?;
     let mut terminate = signal(SignalKind::terminate())?;
+    let mut hangup = signal(SignalKind::hangup())?;
     Ok(async move {
-        tokio::select! { _ = interrupt.recv() => {}, _ = terminate.recv() => {} }
+        tokio::select! {
+            _ = interrupt.recv() => {},
+            _ = terminate.recv() => {},
+            _ = hangup.recv() => {},
+        }
     })
 }
 
@@ -284,6 +289,31 @@ impl Drop for HiddenInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const HANGUP_PROBE: &str = "ARTIFACTIZE_TEST_TERMINAL_HANGUP";
+
+    #[test]
+    fn terminal_hangup_completes_the_portable_stop_future() {
+        // Isolate the signal so a missing subscription cannot terminate the test runner.
+        let mut child = crate::test_os::test_command(
+            "platform::unix::tests::terminal_hangup_probe",
+            &[(HANGUP_PROBE, "1".into())],
+        );
+        let output =
+            crate::test_os::finish(crate::test_os::start(&mut child), "terminal hangup probe");
+        assert!(output.status.success(), "{output:?}");
+    }
+
+    #[tokio::test]
+    async fn terminal_hangup_probe() {
+        if std::env::var_os(HANGUP_PROBE).is_none() {
+            return;
+        }
+        let stop = stop_requested().unwrap();
+        // SAFETY: Deliver SIGHUP to this isolated child, after it has registered the handler.
+        assert_eq!(unsafe { libc::raise(libc::SIGHUP) }, 0);
+        stop.await;
+    }
 
     /// Unlike Windows, no error here is ever transient in this sense; the predicate is a
     /// permanent no-op, not a gap in detecting a race that would need retrying.
