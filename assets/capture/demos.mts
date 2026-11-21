@@ -54,7 +54,7 @@ const VERIFY_MODE = '[aria-label="Bottom bar"] [aria-label="Modes"] button[aria-
 /** Demo A plays back this many times faster than it ran. */
 const SPEED = 8;
 /** The GIFs' width, frame rate and palette; one step of demo B stays this long. */
-const GIF = { width: 1280, fps: 25, colours: 128, step: 1.6, hold: 1.5 };
+const GIF = { width: WIDTH, fps: 25, colours: 128, step: 1.6, hold: 1.5 };
 /** The progress bar: its height in GIF pixels and its colour, the introduction video's. */
 const PROGRESS = { height: 4, colour: "0x3EE08F", track: "0xE3E8EE" };
 /** The statuses' colours as the app's theme sets them: GREEN, RED, running and waiting. */
@@ -633,8 +633,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   const frames = join(work, "growth");
   mkdirSync(frames);
   const segments: Segment[] = [];
-  // 0.1.0–0.6.0 had no graph to draw, and the app opens only on a project with an Artifact:
-  // their one step is a blank card in the app's background colour, with its caption.
+  // 0.1.0–0.6.0 had no graph to draw: their one step is a blank card with its caption.
   const blank = join(frames, "before.png");
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-frames:v", "1", blank]);
   segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: `${tags[0].slice(1)}–${tags[first - 1].slice(1)} · no Artifacts yet`, hold: GIF.step });
@@ -673,17 +672,6 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
         return at !== "" && at !== before;
       }, { timeout: WAIT, timeoutMsg: `${step.caption}'s Current scan ended` });
-      // Names read from about half size on: every Artifact of a graph this size is then drawn as
-      // an element, so its nodes and edges can be compared below; Fit zooms out again after. The
-      // zoom is read once the graph's tools work, its layout done: until then the strip shows no
-      // zoom of its own. Each wait for the drawing below zooms in again while it is less.
-      const legible = async () => {
-        const zoomIn = browser.$('[aria-label="Graph tools"] [aria-label="Zoom in"]');
-        if (!(await zoomIn.isEnabled())) return false;
-        if (Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10) >= 50) return true;
-        await zoomIn.click();
-        return false;
-      };
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them but a part's, which the Current draws as
       // the part inside its whole. A part of several wholes is drawn once in each, so the
@@ -714,55 +702,55 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         [...new Set(graph.relations.filter(({ source, target, kind }) => kind !== "part" && source !== target && names.has(source) && names.has(target))
           .map(({ source, target }) => `a:${source}>a:${target}`))].sort().join(" "),
       ].join("\n");
-      await browser.waitUntil(async () => await legible() && browser.execute((expected) => {
-        const set = (values: string[]) => [...new Set(values)].sort().join(" ");
-        const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
-        // Every copy by its key, the wholes it is drawn inside included: a previous release's
-        // drawing with the same Artifacts nested otherwise does not pass.
-        const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.id ?? ""));
-        const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
-        const refresh = document.querySelector<HTMLButtonElement>('section.panel[aria-label="Main area"] > header .actions button');
-        // The graph shown was read at the scan that just ended, not kept from the one before.
-        const host = document.querySelector<HTMLElement>('section.panel[aria-label="Main area"] .host');
-        const current = !!host && host.dataset.read !== undefined && host.dataset.read === host.dataset.drawn;
-        return !!refresh && !refresh.disabled && current && `${artifacts}\n${edges}` === expected;
-      }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
-      const failure = await browser.execute(() => document.querySelector('section.panel[aria-label="Main area"] > header .failure')?.textContent ?? "");
-      if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Complete and still: exactly this release's Artifact nodes and edges, every node drawn
-      // inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
-      // over 300 ms.
-      const drawn = (inside: boolean) => browser.waitUntil(async () => (inside || await legible()) && browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
+      // Observe the revision that Current rendered, not the previous checkout's graph.
+      const fit = browser.$('main[aria-label="Verify"] [aria-label="Graph tools"]').$("button=Fit");
+      await browser.waitUntil(() => browser.execute((main) => {
+        const host = document.querySelector<HTMLElement>(`${main} .current .host`);
+        return !!host?.dataset.read && host.dataset.read === host.dataset.drawn;
+      }, VERIFY_MAIN), { timeout: WAIT, timeoutMsg: `${step.caption}'s Current graph is drawn` });
+      await fit.waitForEnabled({ timeout: WAIT });
+      await fit.click();
+      // Once fitted, the Navigator is gone: it shows whenever any part is outside the canvas.
+      // At a readable zoom, check the Artifact copies and visible SVG connections too. At lower
+      // zoom, or when a large graph paints edges, verify the actual canvas has painted pixels.
+      await browser.waitUntil(() => browser.executeAsync<boolean, [string, string]>((main, expected, done) => {
         const shown = () => {
-          const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
-          const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
+          const current = document.querySelector(`${main} .current`);
+          const host = current?.querySelector<HTMLElement>(".host");
+          const area = host?.querySelector<HTMLElement>("[data-graph-area]");
+          if (!host?.dataset.read || host.dataset.read !== host.dataset.drawn || !area || area.querySelector("[data-navigator]")) return null;
+          const rect = area.getBoundingClientRect();
+          if (!rect.width || !rect.height) return null;
+          const nodes = [...area.querySelectorAll<HTMLElement>(".svelte-flow__node[data-artifact]")];
           const set = (values: string[]) => [...new Set(values)].sort().join(" ");
+          const [copies, connections] = expected.split("\n");
           const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
-          const artifacts = set(nodes.filter((node) => node.dataset.artifact !== undefined).map((node) => node.dataset.id ?? ""));
-          // The camera, the revision drawn and every node's light: none may change while it holds.
-          const camera = `${document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style")} ${document.querySelector<HTMLElement>('section.panel[aria-label="Main area"] .host')?.dataset.drawn} ${nodes.map((node) => `${node.dataset.id}=${node.dataset.light}`).join(",")}`;
-          // Fitted out until names do not read, the graph checked above is painted as blocks.
-          if (inside && nodes.length === 0 && document.querySelector(".current canvas.paint")) return `painted ${camera}`;
-          if (`${artifacts}\n${set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")))}` !== expected) return null;
-          const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
-          const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
-            const box = line.getBoundingClientRect();
-            return !/NaN/.test(line.getAttribute("d") ?? "NaN") && (box.width > 0 || box.height > 0) && getComputedStyle(line).visibility !== "hidden";
-          }).length;
-          const within = !!canvas && nodes.every((node) => {
+          if (nodes.length > 0 && (set(nodes.map((node) => node.dataset.id ?? "")) !== copies || nodes.some((node) => {
             const box = node.getBoundingClientRect();
-            return box.width > 0 && (!inside || (box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom));
-          });
-          return within && nodes.length > 0 && lines === edges ? `${nodes.length} ${edges} ${camera}` : null;
+            return box.width <= 0 || box.left < rect.left - 1 || box.right > rect.right + 1 || box.top < rect.top - 1 || box.bottom > rect.bottom + 1;
+          }))) return null;
+          const paint = area.querySelector<HTMLCanvasElement>("canvas.paint");
+          if (paint) {
+            const context = paint.getContext("2d");
+            if (!context || !paint.width || !paint.height) return null;
+            const pixels = context.getImageData(0, 0, paint.width, paint.height).data;
+            const painted = pixels.some((byte, at) => at % 4 === 3 && byte > 0);
+            if (!painted) return null;
+          } else {
+            if (nodes.length === 0) return null;
+            const edges = [...area.querySelectorAll<HTMLElement>(".svelte-flow__edge")];
+            if (set(edges.map((edge) => ends(edge.dataset.id ?? ""))) !== connections || edges.some((edge) => {
+              const path = edge.querySelector("path.svelte-flow__edge-path");
+              const box = path?.getBoundingClientRect();
+              return !path || !box || /NaN/.test(path.getAttribute("d") ?? "NaN") || (!box.width && !box.height) || getComputedStyle(path).visibility === "hidden";
+            })) return null;
+          }
+          const camera = area.querySelector(".svelte-flow__viewport")?.getAttribute("style");
+          return `${host.dataset.drawn} ${camera} ${nodes.map((node) => `${node.dataset.id}=${node.dataset.light}`).join(",")}`;
         };
         const before = shown();
         setTimeout(() => done(before !== null && before === shown()), 300);
-      }, inside, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is drawn${inside ? " in view" : ""}` });
-      // Refresh keeps the camera: once the grown graph is drawn, fit it into view the way a
-      // person would.
-      await drawn(false);
-      await browser.$('[aria-label="Graph tools"]').$("button=Fit").click();
-      await drawn(true);
+      }, VERIFY_MAIN, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is in view` });
       at = await corner(browser, ".current .canvas");
       const file = join(frames, `${step.caption}.png`);
       writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
