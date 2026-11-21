@@ -36,6 +36,8 @@ function backend() {
 
 it("writes the review's Notes and opens the verdict the draft holds", async () => {
   const { calls, library } = backend();
+  // Saved before (another window, an earlier run of the app): GREEN was chosen.
+  library.draft.verdict = "GREEN";
   render(PetWindow, { request: "run-a-2" });
   await screen.findByRole("button", { name: "Show release/signoff in Review" });
   // The draft holds GREEN: its form is open, Submit names it.
@@ -80,6 +82,7 @@ it("leads back to the review in the main window", async () => {
 
 it("marks what a viewer's Point appended in the Notes until they are next edited", async () => {
   const { library } = backend();
+  library.draft.verdict = "GREEN";
   const { container } = render(PetWindow, { request: "run-a-2" });
   await screen.findByRole("button", { name: "Submit GREEN" });
   // A viewer's Point appended a line through the library, and says so.
@@ -90,4 +93,25 @@ it("marks what a viewer's Point appended in the Notes until they are next edited
   // Edited, the Notes read as one text again.
   await fireEvent.input(screen.getByLabelText("Notes"), { target: { value: "Read it.\nrelease.md L2:C4\nFine." } });
   await waitFor(() => expect(container.querySelector(".backdrop")).toBeNull());
+});
+
+it("shows a saved verdict's form with what was entered, sending nothing; a fresh draft opens none", async () => {
+  const fresh = backend();
+  render(PetWindow, { request: "run-a-2" });
+  await screen.findByRole("button", { name: "Show release/signoff in Review" });
+  // No verdict chosen yet: the choice waits, no form is open.
+  await screen.findByRole("button", { name: "GREEN" });
+  expect(screen.queryByRole("radiogroup", { name: "Verdict" })).toBeNull();
+  expect(fresh.calls.some((call) => call.cmd === "human_draft_edit")).toBe(false);
+  cleanup();
+  clearMocks();
+  // Saved with RED and a reason, as before a restart.
+  const saved = backend();
+  saved.library.draft.verdict = "RED";
+  saved.library.draft.red.draft.fields = [["reason", { kind: "text", value: "The total is wrong." }]];
+  render(PetWindow, { request: "run-a-2" });
+  const chosen = await screen.findByRole("radio", { name: "RED" });
+  expect(chosen.getAttribute("aria-checked")).toBe("true");
+  expect((await screen.findByDisplayValue("The total is wrong.")).tagName).toMatch(/INPUT|TEXTAREA/);
+  expect(saved.calls.some((call) => call.cmd === "human_draft_edit")).toBe(false);
 });

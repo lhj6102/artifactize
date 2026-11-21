@@ -29,13 +29,11 @@
   const run = $derived(view?.target.run ?? "");
   const evalId = $derived(view?.target.node.replace(/^e:/, "") ?? "");
 
-  /** Read review `id`, and reopen the form of the verdict its draft holds. */
+  /** Read review `id`; a verdict its draft holds comes back as that verdict's open form. */
   async function show(id: string) {
     if (review.id !== id) review = new Review(id, jobs);
     await review.load();
     if (review.owned) await review.readDraft();
-    const verdict = review.draft?.verdict;
-    if (verdict && !review.form) await review.choose(verdict);
   }
 
   async function submit() {

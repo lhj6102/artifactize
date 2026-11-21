@@ -132,6 +132,9 @@ class ReviewState {
   pending: string | null = null;
   base: string | null = null;
   sending = false;
+  /** The saved draft's verdict was brought back as its open form: once per review shown, so
+   * leaving the form is not undone by the next read. */
+  restored = false;
 
   constructor(id: string) { this.id = id; }
 }
@@ -228,9 +231,24 @@ export class Review {
 
   /** The library's answer: the draft whole, the open form following it. */
   #take(draft: ReviewDraft): void {
-    this.#state.draft = draft;
-    this.#state.base = draft.notes;
+    const state = this.#state;
+    state.draft = draft;
+    state.base = draft.notes;
     this.form?.adopt(this.form.verdict === "GREEN" ? draft.green : draft.red);
+    // A draft saved with a verdict (before a restart, in another window) shows that verdict
+    // chosen, its form open with what was entered; nothing is sent (J-HUMAN-DRAFT).
+    if (!state.restored && this.owned) {
+      state.restored = true;
+      if (draft.verdict !== null && !this.form) this.#open(draft.verdict, draft);
+    }
+  }
+
+  /** Open verdict `verdict`'s form on the library's draft `draft`. */
+  #open(verdict: Verdict, draft: ReviewDraft): void {
+    const state = this.#state;
+    this.form = new FormDraft(this.id, verdict === "GREEN" ? draft.green : draft.red, this.ipc, (answer) => {
+      if (state === this.#state && !state.sending) state.draft = answer;
+    });
   }
 
   /** Write the Notes: what is typed shows at once and is sent in order, one edit at a time, each
@@ -337,9 +355,8 @@ export class Review {
     // Another verdict was chosen, or editing stopped, while this form was on its way.
     if (state !== this.#state || choice !== state.choice) return;
     if (!state.sending) state.draft = answer;
-    this.form = new FormDraft(this.id, verdict === "GREEN" ? answer.green : answer.red, this.ipc, (draft) => {
-      if (state === this.#state && !state.sending) state.draft = draft;
-    });
+    state.restored = true;
+    this.#open(verdict, answer);
   }
 
   /** Leave the form; the library keeps its draft, and the same verdict reopens it. */

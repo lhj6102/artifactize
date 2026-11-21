@@ -31,6 +31,32 @@ function backend() {
 afterEach(() => clearMocks());
 
 describe("Review", () => {
+  it("brings a saved verdict back as its open form, once, without sending it again", async () => {
+    const { pending, library } = backend();
+    library.draft.verdict = "GREEN";
+    library.draft.green.draft.fields = library.draft.green.draft.fields.map(([name, value]) =>
+      name === "comment" ? [name, { kind: "text", value: "Read it all." }] : [name, value],
+    );
+    const review = new Review("run-a-2", new Jobs());
+    await review.load();
+    await waitFor(() => expect(review.form?.verdict).toBe("GREEN"));
+    expect(review.form?.values.comment).toEqual({ kind: "text", value: "Read it all." });
+    expect(pending).toEqual([]);
+    // Left, the form stays closed when the draft is read again.
+    review.stopEditing();
+    await review.readDraft();
+    expect(review.form).toBeNull();
+  });
+
+  it("opens no form for a draft whose verdict is not chosen yet", async () => {
+    backend();
+    const review = new Review("run-a-2", new Jobs());
+    await review.load();
+    await review.readDraft();
+    expect(review.draft?.verdict).toBeNull();
+    expect(review.form).toBeNull();
+  });
+
   it("shows the verdict chosen last when its form arrives before the earlier one", async () => {
     const { pending } = backend();
     const review = new Review("run-a-2", new Jobs());

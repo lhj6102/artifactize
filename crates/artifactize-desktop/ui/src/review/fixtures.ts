@@ -5,7 +5,7 @@ import type { DraftChange, FieldValue, FormView, HumanView, ReviewDraft, Verdict
  * commands (`human_draft`, `human_draft_edit`, `human_draft_append`) and returns what the backend
  * would, `undefined` for any other command. A list item added is `empty` of that list. */
 export function draftLibrary(green: FormView = greenForm, red: FormView = redForm, empty: Record<string, unknown> = {}) {
-  const draft: ReviewDraft = { verdict: "GREEN", notes: "", green: structuredClone(green), red: structuredClone(red) };
+  const draft: ReviewDraft = { verdict: null, notes: "", green: structuredClone(green), red: structuredClone(red) };
   const form = (verdict: Verdict) => (verdict === "GREEN" ? draft.green : draft.red);
   const edit = (verdict: Verdict, name: string, change: (value: FieldValue) => FieldValue) => {
     const fields = form(verdict).draft.fields;
