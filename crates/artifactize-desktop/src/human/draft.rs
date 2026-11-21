@@ -168,7 +168,7 @@ pub async fn human_draft_submit(
     let work = app
         .human
         .jobs
-        .register(caller, job, super::jobs::Action::Submit)?;
+        .register(caller, job, super::jobs::Action::Finish)?;
     let request = super::guard(&app, &id, review::review_refusal).await?;
     super::submit(
         &app,

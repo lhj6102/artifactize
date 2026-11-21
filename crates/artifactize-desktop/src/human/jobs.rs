@@ -29,7 +29,8 @@ type Key = (String, JobId);
 pub(super) enum Action {
     Ordinary,
     Tool,
-    Submit,
+    /// Submit or quit after stopping tools on the affected reviews.
+    Finish,
 }
 
 struct Running {
@@ -121,7 +122,7 @@ impl Lease<'_> {
             if key == &self.key || !work.ids.iter().any(|id| ids.contains(id)) {
                 continue;
             }
-            if action == Action::Submit && work.action == Action::Tool {
+            if action == Action::Finish && work.action == Action::Tool {
                 tools.push((work.cancel.clone(), work.done.clone()));
             } else {
                 return Err(Failure::Action(
@@ -180,7 +181,7 @@ mod tests {
             )
             .unwrap();
         let mut submit = jobs
-            .register(Caller("pet".into()), submit_job, Action::Submit)
+            .register(Caller("pet".into()), submit_job, Action::Finish)
             .unwrap();
         jobs.cancel(Caller("pet".into()), submit_job);
         assert!(submit.admit(vec![id.clone()]).is_err());
@@ -188,7 +189,7 @@ mod tests {
         drop(submit);
         drop(tool);
         let next = jobs
-            .begin(Caller("pet".into()), submit_job, vec![id], Action::Submit)
+            .begin(Caller("pet".into()), submit_job, vec![id], Action::Finish)
             .unwrap();
         assert!(next.ready().await.is_ok());
     }

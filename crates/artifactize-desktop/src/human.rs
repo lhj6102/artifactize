@@ -744,7 +744,7 @@ pub async fn human_submit(
     job: JobId,
 ) -> Result<Submitted, Failure> {
     let id = id.into_inner();
-    let work = app.human.jobs.register(caller, job, Action::Submit)?;
+    let work = app.human.jobs.register(caller, job, Action::Finish)?;
     let request = guard(&app, &id, review::review_refusal).await?;
     let result = form::result(&request.request, draft)?
         .try_into()
@@ -902,7 +902,8 @@ pub async fn human_release_taken(
     let work = app
         .human
         .jobs
-        .begin(caller, job, ids.clone(), Action::Ordinary)?;
+        .begin(caller, job, ids.clone(), Action::Finish)?;
+    work.ready().await?;
     let mut failed = Vec::new();
     for claim in claims {
         let id = claim.request_id.clone();

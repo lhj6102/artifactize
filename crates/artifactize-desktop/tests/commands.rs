@@ -674,6 +674,16 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_review_cancels_its_tool_before_a_submission_from_another_window() {
+    finish_a_review_with_a_running_tool(true);
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn release_and_quit_cancels_a_claimed_reviews_tool_before_releasing_it() {
+    finish_a_review_with_a_running_tool(false);
+}
+
+fn finish_a_review_with_a_running_tool(submit: bool) {
     let inputs = os::tempdir();
     let started = inputs.path().join("started");
     let release = inputs.path().join("finish");
@@ -746,8 +756,19 @@ payload.instruction = "Review the fixture."
         )
         .unwrap_err();
         assert_eq!(rejected["kind"], "action");
-        let submitted = invoke(&other, "human_draft_submit", json!({"id": id, "job": 2})).unwrap();
-        assert_eq!(submitted["settled"], "published");
+        if submit {
+            let submitted =
+                invoke(&other, "human_draft_submit", json!({"id": id, "job": 2})).unwrap();
+            assert_eq!(submitted["settled"], "published");
+        } else {
+            let released = invoke(
+                &other,
+                "human_release_taken",
+                json!({"ids": [id], "job": 2}),
+            )
+            .unwrap();
+            assert_eq!(released["notice"]["error"], false);
+        }
         let ran = running.join().unwrap().unwrap();
         assert_eq!(
             ran["error"], true,
@@ -759,10 +780,18 @@ payload.instruction = "Review the fixture."
         );
         drop(gate);
     });
-    assert_eq!(
-        saved(&fixture, "busy/approve").request.status(),
-        artifactize_core::types::RequestStatus::Green
-    );
+    let saved = saved(&fixture, "busy/approve");
+    assert!(saved.claim.is_none());
+    if submit {
+        assert_eq!(
+            saved.request.status(),
+            artifactize_core::types::RequestStatus::Green
+        );
+    } else {
+        assert!(saved.request.status().is_human_wait());
+        let draft = invoke(&other, "human_draft", json!({"id": id})).unwrap();
+        assert_eq!(draft["verdict"], "GREEN");
+    }
 }
 
 #[test]
