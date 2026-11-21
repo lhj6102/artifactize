@@ -259,9 +259,19 @@ pub(crate) fn path_kind(path: &std::path::Path) -> std::io::Result<FileKind> {
     }
 }
 
-/// A declared program as text: a path among its spellings is written with `/`.
+/// Decode an authored program before path inspection or native lookup. Legacy declarations
+/// can use a native Windows verbatim spelling, whose literal slashes must not be translated.
+pub(crate) fn program_path(command: &str) -> std::io::Result<std::path::PathBuf> {
+    #[cfg(windows)]
+    if command.starts_with(r"\\?\") {
+        return Ok(command.into());
+    }
+    artifactize_tools::files::path_from_text(command)
+}
+
+/// A declared program as reversible path text, using `/` in its readable spelling.
 pub(crate) fn program_text(command: &str) -> String {
-    path_text(std::path::Path::new(command))
+    program_path(command).map_or_else(|_| command.to_owned(), |path| path_text(&path))
 }
 
 /// Serialize a declared program as [`program_text`].

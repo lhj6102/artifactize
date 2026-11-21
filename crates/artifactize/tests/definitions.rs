@@ -366,6 +366,36 @@ fn migration_keeps_comments_makes_parts_explicit_and_leaves_nested_project() {
 }
 
 #[test]
+fn migrated_program_text_is_decoded_for_native_lookup_and_execution() {
+    let project = Project::new();
+    fs::remove_dir(project.repo.join(".artifactize")).unwrap();
+    let (directory, executable) = support::os::program_with_special_path(project.root.path());
+    let portable = artifactize_core::platform::path_text(&executable);
+    let command = serde_json::to_string(executable.to_str().unwrap_or(&portable)).unwrap();
+    project.write(
+        "index.artf",
+        &format!(
+            r#"name = "root"
+[evals.check]
+title = "Run the native executable"
+profile = {{ kind = "runtime", command = {command}, args = [] }}
+payload.instruction = "Check the executable."
+"#
+        ),
+    );
+    project.json(&["config", "migrate", "--json"], 0);
+    let migrated = fs::read_to_string(project.repo.join(".artifactize/root.artf")).unwrap();
+    let doc: toml::Value = toml::from_str(&migrated).unwrap();
+    assert_eq!(
+        doc["evals"]["check"]["profile"]["command"].as_str(),
+        Some(portable.as_str())
+    );
+    project.json(&["verify", "--all", "--wait", "--json"], 0);
+    // Keep tempdir cleanup independent of the legacy Win32 alias for this directory name.
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
 fn migration_drops_agent_result_schemas_and_keeps_human_ones() {
     let project = Project::new();
     fs::remove_dir(project.repo.join(".artifactize")).unwrap();

@@ -549,7 +549,7 @@ fn preflight_executable(
         .map_err(|_| {
             format!(
                 "Tool executable is unavailable: {}",
-                crate::platform::path_text(Path::new(command))
+                crate::platform::program_text(command)
             )
         })
 }

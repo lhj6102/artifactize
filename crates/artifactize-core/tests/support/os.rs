@@ -505,6 +505,23 @@ pub fn working_directory_program(directory: &Path, name: &str) -> std::path::Pat
     )
 }
 
+/// Make an executable whose native directory cannot be reopened with ordinary path spelling.
+/// The caller removes the returned directory explicitly after tests finish using it.
+pub fn program_with_special_path(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let program = working_directory_program(root, "worker");
+    #[cfg(windows)]
+    let directory = std::fs::canonicalize(root).unwrap().join("programs.");
+    #[cfg(unix)]
+    let directory = {
+        use std::os::unix::ffi::OsStrExt;
+        root.join(std::ffi::OsStr::from_bytes(b"programs-\xff"))
+    };
+    fs::create_dir(&directory).unwrap();
+    let target = directory.join(program.file_name().unwrap());
+    fs::copy(program, &target).unwrap();
+    (directory, target)
+}
+
 /// Build a program named `name` in `directory` that appends its argument count and first
 /// argument, one per line, to the file named by `RECORD`.
 pub fn recording_program(directory: &Path, name: &str) -> std::path::PathBuf {

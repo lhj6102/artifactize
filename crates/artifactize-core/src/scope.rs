@@ -223,7 +223,8 @@ pub(crate) fn executable(
 ) -> Result<std::ffi::OsString, String> {
     let artifact = scope.artifacts[owner];
     let cwd = scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
-    let relative = crate::platform::program::folder_relative(command)?;
+    let command = crate::platform::program_path(command).map_err(|error| error.to_string())?;
+    let relative = crate::platform::program::folder_relative(&command)?;
     let program = if let Some(relative) = relative.as_deref() {
         let physical = if artifact.file_name().is_some()
             || artifact.kind() == crate::config::ArtifactKind::Live
@@ -254,7 +255,7 @@ pub(crate) fn executable(
         };
         crate::platform::program::resolve_scoped(Path::new(relative), resolve)?
     } else {
-        PathBuf::from(command)
+        command
     };
     Ok(program.into_os_string())
 }

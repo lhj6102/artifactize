@@ -154,7 +154,7 @@ impl From<&Profile> for StoredProfile {
                 timeout_ms,
             } => Self::Runtime {
                 // A program path is saved with `/`, as every stored path is.
-                command: crate::platform::path_text(std::path::Path::new(command)),
+                command: crate::platform::program_text(command),
                 args: args.iter().map(ToString::to_string).collect(),
                 timeout_ms: (*timeout_ms).into(),
             },
