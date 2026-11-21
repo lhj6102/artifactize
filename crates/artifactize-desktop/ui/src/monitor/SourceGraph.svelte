@@ -120,12 +120,22 @@ import { NO_ANNOTATIONS } from "./annotations";
       if (still()) g.error = message(failure);
     });
   }
+
+  /** The graph's read failure, told to the Main area's header notice while it lasts (D-MAIN-3). */
+  const report: Attachment = () => {
+    const error = g.error;
+    m.graphError = error;
+    return () => {
+      if (m.graphError === error) m.graphError = null;
+    };
+  };
 </script>
 
 <!-- The revision the graph was read at, and the one drawn: equal once the newest read shows. -->
-<div class="host" data-read={revision} data-drawn={g.drawn} {@attach reread} {@attach replace}>
+<div class="host" data-read={revision} data-drawn={g.drawn} {@attach reread} {@attach replace} {@attach report}>
 {#if g.error}
-  <div class="pending"><GraphTools /><p class="note error">{g.error}</p></div>
+  <!-- Why stands in the header's notice; the graph's place says only that it is not drawn. -->
+  <div class="pending"><GraphTools /><p class="note">The graph could not be read.</p></div>
 {:else if !g.shown}
   <div class="pending"><GraphTools /><p class="note">Laying out…</p></div>
 {:else}
@@ -164,8 +174,5 @@ import { NO_ANNOTATIONS } from "./annotations";
     margin: 0;
     padding: 6px var(--pad);
     color: var(--ink-2);
-  }
-  .note.error {
-    color: var(--red);
   }
 </style>

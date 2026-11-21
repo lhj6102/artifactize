@@ -45,6 +45,8 @@ export class MonitorState {
   /** The branches expanded to their timelines, by key; any number, for this window. */
   readonly expanded = new SvelteSet<string>();
   shown = $state.raw<Shown>({ kind: "none" });
+  /** Why the shown graph could not be read: the header notice says it (D-MAIN-3). */
+  graphError = $state<string | null>(null);
   /** Settings show in the Main area over what it showed before. */
   settings = $state(false);
   /** The graph's find field is open over the shown Run's or Current's graph. */

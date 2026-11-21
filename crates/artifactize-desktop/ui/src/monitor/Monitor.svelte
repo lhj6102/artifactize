@@ -287,7 +287,7 @@
   });
   // A refused edit on a Current's graph says why here, before what else went wrong: it is what
   // the person just did (D-CUR-7).
-  const notice = $derived((shown.kind === "current" ? definitions.notice : null) ?? browse.error ?? view?.notice ?? null);
+  const notice = $derived((shown.kind === "current" ? definitions.notice : null) ?? m.graphError ?? browse.error ?? view?.notice ?? null);
 
   useCommands(() => [
     { id: "main.run", group: "Graph", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },

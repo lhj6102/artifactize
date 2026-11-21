@@ -30,7 +30,7 @@
   // Artifact without one; a click on it opens its field. A drag on a whole's face pans, as one on
   // the background does. A Run's graph is a record: nothing on it moves.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { SvelteFlow, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import { PRECEDENCE, type Found, type Light, type Shape, type Source } from "../ipc/client";
@@ -704,6 +704,20 @@
     }
   }
 
+  /** A comment field opened from the Definition's Comment button stands under its Artifact,
+   * which zoomed out to blocks is not an element: the Artifact is brought to the middle at a
+   * readable zoom, so its field shows (D-CUR-8). */
+  const fieldShown: Attachment<HTMLElement> = () => {
+    const field = defs.field;
+    if (!field || !untrack(() => painted)) return;
+    const first = keys.get(idOf(field.name) ?? "")?.[0];
+    const [at, canvas] = [first === undefined ? undefined : rects.get(first), v.canvas];
+    if (!at || !canvas) return;
+    const point = { x: at.x + at.width / 2, y: at.y + at.height / 2 };
+    const cover = m.panes.detail?.getBoundingClientRect() ?? null;
+    void flow.setViewport(centred(point, canvas.getBoundingClientRect(), cover, untrack(() => flow.getViewport().zoom), READABLE, MAX_ZOOM), { duration: 0 });
+  };
+
   /** An Artifact just created or renamed: once the scan draws it, its Detail opens; a created
    * one is brought to the middle of the graph left of the Detail, as a found Artifact is. */
   const created: Attachment<HTMLElement> = () => {
@@ -773,6 +787,7 @@
     {@attach docked}
     {@attach grid}
     {@attach created}
+    {@attach fieldShown}
     {@attach escaping}
     {@attach measuring}
     onkeydown={keydown}
