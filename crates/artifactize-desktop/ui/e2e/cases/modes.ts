@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { CHAT_ANSWER, CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
 import { artifactize, createRelease, request } from "../fixtures/repo.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { windows } from "../views/viewers.ts";
 
 export const scenarios: Scenario[] = [
   scenario<{ id: string; runId: string }>({
@@ -34,6 +35,8 @@ export const scenarios: Scenario[] = [
       await app.review.writeNotes("Keep the checked selector.");
       await app.review.choose("GREEN");
       await app.review.enter("comment", "Release notes checked");
+      await app.review.choose("RED");
+      await app.review.enter("reason", "Check the linked notes again");
       await app.review.release();
       await app.waitingBadge(1);
     },
@@ -41,6 +44,14 @@ export const scenarios: Scenario[] = [
       await app.mode("Review");
       await app.review.openListed(id);
       await app.review.claim();
+      // The pet opens the draft's last verdict without selecting a verdict in this process.
+      const w = windows();
+      await w.mode("Verify");
+      await w.pet();
+      await w.petUntil((shown) => shown.verdict === "RED" && shown.notes === "Keep the checked selector.", "the pet opens the persisted RED verdict and Notes after restart");
+      await w.mode("Review");
+      await app.review.choose("RED");
+      assert.equal(await app.review.value("reason"), "Check the linked notes again");
       await app.review.choose("GREEN");
       await app.until(async () => (await app.review.notes()) === "Keep the checked selector." && (await app.review.value("comment")) === "Release notes checked", "reclaim after restart restored the Notes and GREEN draft");
       const completed = await app.review.submit();
