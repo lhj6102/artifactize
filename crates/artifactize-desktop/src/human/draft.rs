@@ -9,7 +9,7 @@ use crate::{App, Failure, ids::RequestKey};
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewDraft {
-    pub verdict: Verdict,
+    pub verdict: Option<Verdict>,
     pub notes: String,
     pub green: FormView,
     pub red: FormView,
@@ -93,7 +93,7 @@ fn view(
         .form(request, Verdict::Red.into())
         .map_err(Failure::Invalid)?;
     Ok(ReviewDraft {
-        verdict: draft.verdict.into(),
+        verdict: draft.verdict.map(Into::into),
         notes: draft.notes,
         green: super::form::project(Verdict::Green, &green),
         red: super::form::project(Verdict::Red, &red),
@@ -170,10 +170,12 @@ pub async fn human_draft_submit(
         .await
         .map_err(Failure::Read)?
         .unwrap_or_default();
+    let verdict = draft
+        .verdict
+        .ok_or_else(|| Failure::Invalid("Choose GREEN or RED before submitting.".into()))?;
     let result = draft
-        .form(&request.request, draft.verdict)
-        .and_then(|form| form.result())
-        .and_then(TryInto::try_into)
+        .form(&request.request, verdict)
+        .and_then(|form| form.submission())
         .map_err(Failure::Invalid)?;
     super::submit(&app, caller, id, request.request.id.clone(), result, job).await
 }

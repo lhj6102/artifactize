@@ -1103,7 +1103,7 @@ export type ResultItem = {
 };
 
 export type ReviewDraft = {
-	verdict: Verdict,
+	verdict: Verdict | null,
 	notes: string,
 	green: FormView,
 	red: FormView,

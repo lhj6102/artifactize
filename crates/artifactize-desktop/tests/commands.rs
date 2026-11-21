@@ -635,6 +635,19 @@ payload.instruction = "Review the fixture."
         .unwrap();
     let id = saved(&fixture, "busy/approve").request.id.to_string();
     invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let fresh = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert!(fresh["verdict"].is_null());
+    let no_verdict =
+        invoke(&window, "human_draft_submit", json!({"id": id, "job": 2})).unwrap_err();
+    assert_eq!(no_verdict["kind"], "invalid");
+    invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+    )
+    .unwrap();
+    let saved_draft = invoke(&other, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(saved_draft["verdict"], "GREEN");
 
     struct FinishOnDrop<'a>(&'a Path);
     impl Drop for FinishOnDrop<'_> {

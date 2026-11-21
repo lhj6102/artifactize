@@ -26,24 +26,13 @@ pub enum FieldValue {
 
 pub type DraftFields = Vec<(String, FieldValue)>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Draft {
-    pub verdict: Verdict,
+    pub verdict: Option<Verdict>,
     pub green: DraftFields,
     pub red: DraftFields,
     pub notes: String,
-}
-
-impl Default for Draft {
-    fn default() -> Self {
-        Self {
-            verdict: Verdict::Green,
-            green: Vec::new(),
-            red: Vec::new(),
-            notes: String::new(),
-        }
-    }
 }
 
 /// Changes are applied to the saved draft, not a caller's potentially stale snapshot.
@@ -98,7 +87,7 @@ impl Draft {
 
     pub(crate) fn edit(&mut self, request: &Request, edit: DraftEdit) -> Result<(), String> {
         match edit {
-            DraftEdit::Verdict { verdict } => self.verdict = verdict,
+            DraftEdit::Verdict { verdict } => self.verdict = Some(verdict),
             DraftEdit::Notes { previous, text } => {
                 let suffix = self
                     .notes
