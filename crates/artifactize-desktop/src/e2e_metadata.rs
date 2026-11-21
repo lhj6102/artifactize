@@ -51,6 +51,33 @@ pub fn check_build(context: &mut tauri::Context<tauri::Wry>) -> std::process::Ex
     std::process::ExitCode::SUCCESS
 }
 
+/// Recover an app started by the service when its ordinary shutdown failed. Its owner file
+/// is created before the WebDriver starts; never send a signal based on a PID alone.
+pub fn stop_owner(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Owner {
+        pid: artifactize_core::process::ProcessId,
+        start_time: String,
+    }
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        // A service startup can fail before it creates the app. Without an owner receipt
+        // it did not reach WebDriver initialization and there is no fixture session to stop.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let owner: Owner = serde_json::from_reader(file)?;
+    // Leave time to finish native process exit, but do not block fixture teardown forever.
+    const EXIT_BOUND: std::time::Duration = std::time::Duration::from_secs(10);
+    observation::stop_owned(
+        owner.pid.get(),
+        owner.start_time.parse()?,
+        false,
+        EXIT_BOUND,
+    )?;
+    Ok(())
+}
+
 /// Evidence of a zero-status return from the normal Tauri event loop.
 pub struct ExitReceipt {
     file: Option<std::path::PathBuf>,

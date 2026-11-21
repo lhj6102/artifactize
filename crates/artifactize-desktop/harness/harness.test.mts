@@ -11,7 +11,7 @@ import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { it, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { commandStream, forwardReadiness } from "./harness.mts";
+import { commandStream, forwardReadiness, superviseSession } from "./harness.mts";
 import { embeddedPorts } from "../ui/e2e/portable.ts";
 
 const harness = fileURLToPath(new URL("./harness.mts", import.meta.url));
@@ -269,3 +269,23 @@ it("a failed service release cannot proceed to fixture deletion or retry ownersh
   await assert.rejects(commands.run(async () => { events.push("remove inputs"); }), /session is stopping/);
   assert.deepEqual(events, ["service cleanup"]);
 });
+
+for (const gotBrowser of [false, true]) {
+  it(`keeps an app owner ${gotBrowser ? "after service shutdown fails" : "before a browser is available"}`, async () => {
+    let canReap = false;
+    let released = false;
+    const recovery = superviseSession(() => {
+      if (!canReap) throw new Error("native stop failed");
+    }, async () => { released = true; });
+    const stop = () => recovery.stop(gotBrowser ? async () => { throw new Error("service stop failed"); } : undefined);
+    await assert.rejects(stop());
+    assert.equal(recovery.stopped, false);
+    assert.equal(released, false);
+    canReap = true;
+    if (gotBrowser) await assert.rejects(stop(), /service stop failed/);
+    else await stop();
+    assert.equal(recovery.stopped, true);
+    assert.equal(released, true);
+    await stop();
+  });
+}

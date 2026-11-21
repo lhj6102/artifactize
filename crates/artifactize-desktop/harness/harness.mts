@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { own, type Owned } from "../ui/e2e/fixtures/owned.ts";
 import { cancelRuns, createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
 import { assertHeadless, displayEnvironment, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
-import { asNativePath, embeddedPorts, nativePath } from "../ui/e2e/portable.ts";
+import { asNativePath, embeddedPorts, nativePath, newDirectory, runProgramOk } from "../ui/e2e/portable.ts";
 import { page, press, recordKeys, typeText } from "../ui/e2e/keys.ts";
 import { adopt, cargoGate, cleanup, prepare, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "./commands.mts";
@@ -28,6 +28,30 @@ const LAUNCH_TIMEOUT = 60000;
 const REQUEST_TIMEOUT = 45 * 60000; // Includes the standalone API's bounded startup retries.
 const ENDPOINT = "control.json";
 type Session = { browser: WebdriverIO.Browser; stop: () => Promise<void> };
+
+/** Register a fixture app's recovery before asking the service to start it. */
+export function superviseSession(recover: () => void, releasePort: () => Promise<void>) {
+  let stopped = false;
+  return {
+    get stopped() { return stopped; },
+    async stop(cleanup?: () => Promise<void>): Promise<void> {
+      if (stopped) return;
+      let serviceFailure: { cause: unknown } | undefined;
+      try { await cleanup?.(); } catch (cause) { serviceFailure = { cause }; }
+      try {
+        if (!cleanup || serviceFailure !== undefined) recover();
+      } catch (error) {
+        if (serviceFailure !== undefined) throw new AggregateError([serviceFailure.cause, error], "service shutdown and app recovery failed");
+        throw error;
+      }
+      await releasePort();
+      stopped = true;
+      if (serviceFailure !== undefined) throw serviceFailure.cause;
+    },
+  };
+}
+
+type AppOwner = { stopped: boolean; stop: () => Promise<void> };
 /** The app's launch modes: none, `--repo`, `review` and `graph --repo`. */
 const SCREENS = ["monitor", "repo", "review", "graph"] as const;
 type Screen = (typeof SCREENS)[number];
@@ -141,8 +165,9 @@ async function pressKey(browser: WebdriverIO.Browser, key: string): Promise<void
 }
 
 /** The service merges process.env into the app environment, so sanitize that source too. */
-async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Environment, args: string[] = []): Promise<Session> {
-  const env: Environment = { ...environment(fixture), ...platformEnv };
+async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Environment, register: (owner: AppOwner) => void, args: string[] = []): Promise<Session> {
+  const receipt = nativePath(newDirectory(asNativePath(candidate.root), "app-owner-"), "process.json");
+  const env: Environment = { ...environment(fixture), ...platformEnv, ARTIFACTIZE_E2E_OWNER_FILE: receipt };
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   for (const [name, value] of Object.entries(env)) if (value !== undefined) process.env[name] = value;
   const capabilities = createTauriCapabilities(candidate.app, {
@@ -159,23 +184,23 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Envir
     embeddedPort: port,
     logDir: join(candidate.root, "logs"),
   };
-  const browser = await startWdioSession(capabilities).catch(async (error: unknown) => {
-    await close();
-    throw error;
-  });
+  // Emergency recovery is for this private app birth identity only. The service still owns
+  // ordinary startup and cleanup, even when startup fails before returning a browser.
+  const ownership = superviseSession(() => {
+    runProgramOk(candidate.app, ["--stop-e2e-owner", receipt], { cwd: asNativePath(candidate.root), env, timeout: LAUNCH_TIMEOUT });
+  }, close);
+  const session: { cleanup?: () => Promise<void> } = {};
+  const owner = {
+    get stopped() { return ownership.stopped; },
+    stop: () => ownership.stop(session.cleanup),
+  };
+  register(owner);
+  const browser = await startWdioSession(capabilities);
+  session.cleanup = () => cleanupWdioSession(browser);
   // Commands must fail within one attempt rather than replaying actions after transport loss.
   browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
   browser.options.connectionRetryCount = 0;
-
-  // One stop at a time; a stop that failed is tried again by the next, rather than reported done.
-  let ending: Promise<void> | undefined;
-  return {
-    browser,
-    stop: () => ending ??= cleanupWdioSession(browser).then(close).catch((error: unknown) => {
-      ending = undefined;
-      throw error;
-    }),
-  };
+  return { browser, stop: owner.stop };
 }
 
 async function handle(candidate: Candidate, session: Session, fixture: Fixture, request: Request): Promise<unknown> {
@@ -331,13 +356,14 @@ async function serve(): Promise<void> {
   let shown: { session: Session; fixture: Fixture } | undefined;
   let fixture: Fixture;
   let scope: Owned | undefined;
-  let startupFailure: unknown;
-  const acquire = async (...args: Parameters<typeof launch>): Promise<Session> => {
-    if (startupFailure instanceof AggregateError) {
-      throw new Error("Cannot launch again before the previous app's exit is confirmed.", { cause: startupFailure });
+  let owner: AppOwner | undefined;
+  const acquire = async (input: Candidate, target: Fixture, env: Environment, args?: string[]): Promise<Session> => {
+    if (owner && !owner.stopped) throw new Error("Cannot launch again before the previous app has stopped.");
+    try {
+      return await launch(input, target, env, (started) => { owner = started; }, args);
+    } catch (error) {
+      return throwAfterCleanup(error, async () => { await owner?.stop(); });
     }
-    try { return await launch(...args); }
-    catch (error) { startupFailure = error; throw error; }
   };
   let stopping = false;
   let phase: "startup" | "ready" = "startup";
@@ -349,20 +375,15 @@ async function serve(): Promise<void> {
   const release = async () => {
     if (server.listening) server.close();
     const failures: unknown[] = [];
-    // A stop that failed is tried once more: the app must be gone before its files are.
-    for (let tries = 0; shown && tries < 2; tries += 1) {
-      try {
-        await shown.session.stop();
-        shown = undefined;
-      } catch (error) { failures.push(error); }
+    // Retry the recorded owner, even after startup returned no browser handle. The service
+    // can fail twice without losing the independent native identity needed to reap the app.
+    for (let tries = 0; owner && !owner.stopped && tries < 2; tries += 1) {
+      try { await owner.stop(); } catch (error) { failures.push(error); }
     }
-    if (startupFailure !== undefined) failures.push(new Error("App startup failed", { cause: startupFailure }));
-    // The service rejects with an AggregateError if startup and cleanup both fail. No
-    // browser handle is returned in that case, but the app may still hold these inputs.
-    if (shown || startupFailure instanceof AggregateError) {
-      failures.push(new Error(`The app's exit was not confirmed; its fixture and build are kept at ${candidate?.root ?? "the build folder"}`));
+    if (owner && !owner.stopped) {
+      failures.push(new Error(`The owned app could not be reaped; its inputs are kept at ${candidate?.root}`));
     } else {
-      // The fixture's Runs end and its files go, then the build.
+      shown = undefined;
       try { await scope?.close(); } catch (error) { failures.push(error); }
       try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
     }

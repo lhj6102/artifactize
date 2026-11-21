@@ -16,6 +16,22 @@ fn main() -> std::process::ExitCode {
     {
         return e2e_metadata::check_build(&mut context);
     }
+    #[cfg(feature = "e2e")]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--stop-e2e-owner")
+    {
+        let Some(path) = std::env::args_os().nth(2) else {
+            return std::process::ExitCode::from(USAGE_ERROR);
+        };
+        return match e2e_metadata::stop_owner(std::path::Path::new(&path)) {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("cannot stop the E2E fixture app: {error}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
     let launch = match artifactize_desktop::Launch::parse(std::env::args_os()) {
         Ok(launch) => launch,
         Err(error) => {
