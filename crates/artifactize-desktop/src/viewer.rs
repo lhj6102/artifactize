@@ -25,7 +25,28 @@ struct SessionsInner {
     live: BTreeMap<u32, Arc<viewer::Session>>,
     /// What each live session shows: an Artifact of a worktree in one viewer.
     places: BTreeMap<u32, Place>,
-    active: Option<RequestId>,
+    active: Option<ActiveReview>,
+}
+
+/// The review as shown, and the original request whose claim, Artifact and draft it uses.
+#[derive(Clone, PartialEq, Eq)]
+struct ActiveReview {
+    shown: RequestId,
+    owner: RequestId,
+    worktree: PathBuf,
+    artifact: String,
+}
+
+impl ActiveReview {
+    async fn claimed(&self, app: &App) -> Result<bool, String> {
+        let view = store::read_request_as(
+            &app.launch.state,
+            self.owner.as_str(),
+            store::Shown::Requests,
+        )
+        .await?;
+        Ok(artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer).is_none())
+    }
 }
 
 /// What a viewer session shows. Two sessions of the same place show the same thing, whatever
@@ -124,6 +145,10 @@ impl Sessions {
         }
     }
 
+    fn active(&self) -> Option<ActiveReview> {
+        self.0.lock().expect("viewer sessions").active.clone()
+    }
+
     pub(crate) fn reset(&self) {
         let mut sessions = self.0.lock().expect("viewer sessions");
         sessions.active = None;
@@ -176,6 +201,8 @@ pub struct ViewerContext {
     pub target: String,
     pub target_kind: crate::definitions::DefinitionKind,
     pub review: Option<RequestKey>,
+    /// This session shows the active review's own Artifact in its original worktree.
+    pub pet_match: bool,
 }
 
 #[tauri::command]
@@ -185,9 +212,18 @@ pub async fn viewer_context(
     session: u32,
 ) -> Result<ViewerContext, Failure> {
     let viewer = app.viewers.get(session)?;
-    let review = active(&app).await;
-    let context = viewer.context(review.as_ref());
-    let review = context.review.cloned().map(RequestKey::from);
+    let active = active(&app).await;
+    let (review, pet_match) = {
+        let sessions = app.viewers.0.lock().expect("viewer sessions");
+        let active = active.filter(|review| sessions.active.as_ref() == Some(review));
+        active.map_or((None, false), |review| {
+            let matches = sessions.places.get(&session).is_some_and(|place| {
+                place.worktree == review.worktree && place.artifact == review.artifact
+            });
+            (Some(review.shown.into()), matches)
+        })
+    };
+    let context = viewer.context(None);
     Ok(ViewerContext {
         artifact: context.artifact.to_string(),
         type_name: context.type_name.to_string(),
@@ -195,6 +231,7 @@ pub async fn viewer_context(
         target: context.target.to_string(),
         target_kind: context.target_kind.into(),
         review,
+        pet_match,
     })
 }
 
@@ -320,12 +357,16 @@ pub async fn viewer_point(
 ) -> Result<String, Failure> {
     let viewer = app.viewers.get(session)?;
     let expected = review.into_inner();
-    let review = active(&app)
+    let active = active(&app)
         .await
-        .filter(|review| review.id == expected)
+        .filter(|review| review.shown == expected && app.viewers.active().as_ref() == Some(review))
         .ok_or_else(|| Failure::Action("The active review changed. Start Point again.".into()))?;
+    let owner = viewer::Review {
+        id: active.owner,
+        reviewer: app.launch.reviewer.clone(),
+    };
     viewer
-        .pointing(&app.launch.state, &review, &text)
+        .pointing(&app.launch.state, &owner, &text)
         .await
         .map(|draft| draft.notes)
         .map_err(Failure::Action)
@@ -338,28 +379,18 @@ pub struct ActiveReviewChanged {
     pub request: Option<RequestKey>,
 }
 
-async fn active(app: &App) -> Option<viewer::Review> {
-    let id = app
-        .viewers
-        .0
-        .lock()
-        .expect("viewer sessions")
-        .active
-        .clone()?;
-    let view = store::read_request(&app.launch.state, id.as_str())
-        .await
-        .ok()?;
-    artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer)
-        .is_none()
-        .then(|| viewer::Review {
-            id,
-            reviewer: app.launch.reviewer.clone(),
-        })
+async fn active(app: &App) -> Option<ActiveReview> {
+    let review = app.viewers.active()?;
+    review.claimed(app).await.ok()?.then_some(review)
 }
 
 pub(crate) fn settled(app: &App, id: &RequestId) {
     let mut sessions = app.viewers.0.lock().expect("viewer sessions");
-    if sessions.active.as_ref() == Some(id) {
+    if sessions
+        .active
+        .as_ref()
+        .is_some_and(|review| &review.shown == id || &review.owner == id)
+    {
         sessions.active = None;
         app.viewers.notify(None);
     }
@@ -371,43 +402,61 @@ pub async fn active_review_set(
     app: tauri::State<'_, App>,
     request: Option<RequestKey>,
 ) -> Result<(), Failure> {
-    let id = if let Some(request) = &request {
-        let id = request.clone().into_inner();
-        let view = store::read_request(&app.launch.state, id.as_str())
+    let generation = app.generation.current();
+    let active = if let Some(request) = &request {
+        let state = &app.launch.state;
+        let shown = request.clone().into_inner();
+        let exact = store::read_request_as(state, shown.as_str(), store::Shown::Requests)
             .await
             .map_err(Failure::Read)?;
+        let owner = if exact.request.status().is_human_wait() {
+            store::read_original_as(state, &exact, store::Shown::Requests)
+                .await
+                .map_err(Failure::Read)?
+        } else {
+            exact
+        };
         if let Some(error) =
-            artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer)
+            artifactize_core::review::review_refusal(Some(&owner), &app.launch.reviewer)
         {
             return Err(Failure::Action(error));
         }
-        Some(id)
+        let worktree = store::read_request_repo(state, owner.request.id.as_str())
+            .await
+            .map_err(Failure::Read)?;
+        Some(ActiveReview {
+            shown,
+            owner: owner.request.id.clone(),
+            worktree,
+            artifact: owner.request.target.to_string(),
+        })
     } else {
         None
     };
-    let mut sessions = app.viewers.0.lock().expect("viewer sessions");
-    if sessions.active != id {
-        sessions.active = id;
-        app.viewers.notify(request);
-    }
-    Ok(())
+    app.generation
+        .if_current(generation, || {
+            let mut sessions = app.viewers.0.lock().expect("viewer sessions");
+            if sessions.active != active {
+                sessions.active = active;
+                app.viewers.notify(request);
+            }
+        })
+        .ok_or_else(|| {
+            Failure::Read("The state was replaced while reading the review; reopen it.".into())
+        })
 }
 
 /// A submission or release from another surface must also hide pointing. Watch hints never
 /// decide the state; only a successfully read, no-longer-active review does.
 pub(crate) async fn refresh_active(app: &App) {
-    let id = app
-        .viewers
-        .0
-        .lock()
-        .expect("viewer sessions")
-        .active
-        .clone();
-    if let Some(id) = id
-        && let Ok(view) = store::read_request(&app.launch.state, id.as_str()).await
-        && artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer).is_some()
+    if let Some(review) = app.viewers.active()
+        && let Ok(false) = review.claimed(app).await
     {
-        settled(app, &id);
+        let mut sessions = app.viewers.0.lock().expect("viewer sessions");
+        if sessions.active.as_ref() == Some(&review) {
+            sessions.active = None;
+            app.viewers.notify(None);
+        }
     }
 }
 

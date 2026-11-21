@@ -1435,6 +1435,8 @@ export type ViewerContext = {
 	target: string,
 	targetKind: DefinitionKind,
 	review: string | null,
+	/**  This session shows the active review's own Artifact in its original worktree. */
+	petMatch: boolean,
 };
 
 export type ViewerEntry = { kind: "builtin"; viewer: BuiltinViewer } | { kind: "web"; html: string };

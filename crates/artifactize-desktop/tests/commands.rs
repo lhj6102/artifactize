@@ -967,22 +967,57 @@ payload.instruction = "Read the page separately."
     assert_eq!(contents, "original");
 
     let session = &launched["viewer"]["session"];
+    let pane = invoke(&window, "browse", json!({"navigate": STILL()})).unwrap();
+    let follower_branch = pane["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["project"] == "follower")
+        .unwrap();
+    let same_name = invoke(
+        &window,
+        "artifact_tool_run",
+        json!({"branch": follower_branch["key"], "artifact": "page", "tool": "view_page", "job": 3}),
+    )
+    .unwrap();
+    let same_name_session = &same_name["viewer"]["session"];
+    let context =
+        |session: &Value| invoke(&window, "viewer_context", json!({"session": session})).unwrap();
+    assert_eq!(context(session)["petMatch"], false);
+    // The follower is what the pet shows; only the original worktree can receive its Point.
+    invoke(&window, "active_review_set", json!({"request": id})).unwrap();
+    let active = context(session);
+    let wrong_worktree = context(same_name_session);
+    assert_eq!(active["review"], id);
+    assert_eq!(wrong_worktree["review"], id);
+    assert_eq!(wrong_worktree["artifact"], active["artifact"]);
+    assert_eq!(active["petMatch"], true);
+    assert_eq!(wrong_worktree["petMatch"], false);
+
+    let notes = invoke(
+        &window,
+        "viewer_point",
+        json!({"session": session, "review": id, "text": "Original worktree"}),
+    )
+    .unwrap();
+    assert_eq!(notes, "Original worktree");
     let other = saved(&fixture, "page/another").request.id.to_string();
-    invoke(&window, "human_claim", json!({"id": other, "job": 3})).unwrap();
-    invoke(&window, "active_review_set", json!({"request": original})).unwrap();
-    let context = invoke(&window, "viewer_context", json!({"session": session})).unwrap();
-    assert_eq!(context["review"], original);
+    invoke(&window, "human_claim", json!({"id": other, "job": 4})).unwrap();
     invoke(&window, "active_review_set", json!({"request": other})).unwrap();
     let refused = invoke(
         &window,
         "viewer_point",
-        json!({"session": session, "review": context["review"], "text": "Delayed Point"}),
+        json!({"session": session, "review": active["review"], "text": "Delayed Point"}),
     )
     .unwrap_err();
     assert_eq!(refused["kind"], "action");
-    for review in [&original, &other] {
+    for (review, expected) in [
+        (&original, "Original worktree"),
+        (&id, "Original worktree"),
+        (&other, ""),
+    ] {
         let draft = invoke(&window, "human_draft", json!({"id": review})).unwrap();
-        assert_eq!(draft["notes"], "");
+        assert_eq!(draft["notes"], expected);
     }
     let notes = invoke(
         &window,
