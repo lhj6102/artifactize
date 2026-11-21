@@ -9,7 +9,7 @@
 mod observation;
 
 /// Check the settings and frontend of this actual binary, without opening a window.
-pub fn check_build(context: &tauri::Context<tauri::Wry>) -> std::process::ExitCode {
+pub fn check_build(context: &mut tauri::Context<tauri::Wry>) -> std::process::ExitCode {
     let plugin_path = b"/@wdio/tauri-plugin/";
     let test_frontend = context
         .assets()
@@ -19,12 +19,24 @@ pub fn check_build(context: &tauri::Context<tauri::Wry>) -> std::process::ExitCo
                 .windows(plugin_path.len())
                 .any(|part| part == plugin_path)
         });
+    // External setup may need the native window API before the scenario can act. Ask the
+    // same resolved authority that will serve the main window, not a declaration on disk.
+    let main_window_focus = context
+        .runtime_authority_mut()
+        .resolve_access(
+            "plugin:window|set_focus",
+            "main",
+            "main",
+            &tauri::ipc::Origin::Local,
+        )
+        .is_some();
     println!(
         "{}",
         serde_json::json!({
             "embeddedDriver": true,
             "globalTauri": context.config().app.with_global_tauri,
             "testFrontend": test_frontend,
+            "mainWindowFocus": main_window_focus,
         })
     );
     std::process::ExitCode::SUCCESS

@@ -5,16 +5,16 @@ import { artifactize, createRelease, request } from "../fixtures/repo.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
-  scenario({
+  scenario<{ id: string; runId: string }>({
     id: "review-reference",
-    title: "Claim from Verify; open the claimed review outside the default filter, keep its draft on release, submit it and go back to its Run and Artifact",
+    title: "Claim from Verify; open the claimed review outside the default filter, keep its draft on release and restart, submit it and go back to its Run and Artifact",
     journeys: ["J-DETAIL-REVIEW", "J-REVIEW-REF", "J-REVIEW-BACK", "J-HUMAN-DRAFT", "J-HUMAN-NOTES"],
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
       const { id, runId } = request(fixture);
       return { fixture, args: ["--repo", fixture.repo], data: { id, runId } };
     },
-    run: async (app, { fixture, data: { id, runId } }) => {
+    run: async (app, { fixture, data: { id } }) => {
       await app.graph.open("a:release", "Artifact release");
       const stage = (shown: string) => app.detail.until((detail) => detail.evals.find((row) => row.id === "e:release/signoff")?.stage === shown, `the sign-off's row reads ${shown}`);
       await stage("claimable");
@@ -36,9 +36,13 @@ export const scenarios: Scenario[] = [
       await app.review.enter("comment", "Release notes checked");
       await app.review.release();
       await app.waitingBadge(1);
+    },
+    restarted: async (app, { fixture, data: { id, runId } }) => {
+      await app.mode("Review");
+      await app.review.openListed(id);
       await app.review.claim();
       await app.review.choose("GREEN");
-      await app.until(async () => (await app.review.notes()) === "Keep the checked selector." && (await app.review.value("comment")) === "Release notes checked", "reclaim restored the Notes and GREEN draft");
+      await app.until(async () => (await app.review.notes()) === "Keep the checked selector." && (await app.review.value("comment")) === "Release notes checked", "reclaim after restart restored the Notes and GREEN draft");
       const completed = await app.review.submit();
       assert.match(completed.completed, /Keep the checked selector\./);
       const saved = request(fixture);

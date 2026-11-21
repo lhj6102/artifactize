@@ -36,7 +36,7 @@ export type Scenario = {
   restarted?: (app: App, input: Context, carried: unknown) => Promise<void>;
 };
 
-export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
+export function scenario<T>(definition: Omit<Scenario, "prepare" | "run" | "restarted"> & {
   prepare: (own: Owned) => Promise<Prepared<T>>;
   run: (app: App, input: Context<T>) => Promise<unknown>;
   restarted?: (app: App, input: Context<T>, carried: unknown) => Promise<void>;

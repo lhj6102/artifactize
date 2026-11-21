@@ -110,8 +110,8 @@ export function readCandidate(manifest = variable("DESKTOP_TEST_CANDIDATE")): Ca
   // This is not a manifest field or a caller-provided stamp. The E2E-only binary's
   // `check_build` (desktop src/e2e_metadata.rs) reads the compiled Tauri context and its
   // embedded asset manifest, before the window builder runs.
-  const facts = checked.status === 0 ? JSON.parse(checked.stdout) as { embeddedDriver?: boolean; globalTauri?: boolean; testFrontend?: boolean } : null;
-  if (!facts || facts.embeddedDriver !== true || facts.globalTauri !== true || facts.testFrontend !== true) {
+  const facts = checked.status === 0 ? JSON.parse(checked.stdout) as { embeddedDriver?: boolean; globalTauri?: boolean; testFrontend?: boolean; mainWindowFocus?: boolean } : null;
+  if (!facts || facts.embeddedDriver !== true || facts.globalTauri !== true || facts.testFrontend !== true || facts.mainWindowFocus !== true) {
     throw new Error(`the candidate is not an E2E test app: ${checked.stderr.trim()}`);
   }
   verifiedCandidates.set(manifest, candidate);
