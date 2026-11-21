@@ -50,6 +50,18 @@ impl Jobs {
         ids: Vec<RequestId>,
         action: Action,
     ) -> Result<Lease<'_>, Failure> {
+        let mut lease = self.register(caller, job, action)?;
+        lease.admit(ids)?;
+        Ok(lease)
+    }
+
+    /// Register before the first asynchronous read, so cancellation can reach preparation.
+    pub(super) fn register(
+        &self,
+        caller: Caller,
+        job: JobId,
+        action: Action,
+    ) -> Result<Lease<'_>, Failure> {
         let key = (caller.0, job);
         let mut live = self.0.lock().expect("jobs lock");
         if live.contains_key(&key) {
@@ -57,39 +69,21 @@ impl Jobs {
                 "That job is already running in this window.".into(),
             ));
         }
-        let mut tools = Vec::new();
-        for work in live
-            .values()
-            .filter(|work| work.ids.iter().any(|id| ids.contains(id)))
-        {
-            if action == Action::Submit && work.action == Action::Tool {
-                tools.push((work.cancel.clone(), work.done.clone()));
-            } else {
-                return Err(Failure::Action(
-                    "This review already has work in progress.".into(),
-                ));
-            }
-        }
         let cancel = CancellationToken::new();
         live.insert(
             key.clone(),
             Running {
-                ids,
+                ids: Vec::new(),
                 action,
                 cancel: cancel.clone(),
                 done: CancellationToken::new(),
             },
         );
-        // Reserve the submit so no other window can start a tool between cancellation and the
-        // write. Do not cancel anything if admission itself failed.
-        for (cancel, _) in &tools {
-            cancel.cancel();
-        }
         Ok(Lease {
             jobs: self,
             key,
             cancel,
-            tools: tools.into_iter().map(|(_, done)| done).collect(),
+            tools: Vec::new(),
         })
     }
 
@@ -115,6 +109,38 @@ pub(crate) struct Lease<'a> {
 }
 
 impl Lease<'_> {
+    /// After resolving the exact owner, reserve it against the other review surfaces.
+    pub(super) fn admit(&mut self, ids: Vec<RequestId>) -> Result<(), Failure> {
+        let mut live = self.jobs.0.lock().expect("jobs lock");
+        if self.cancel.is_cancelled() {
+            return Err(Failure::Action("Review action cancelled.".into()));
+        }
+        let action = live[&self.key].action;
+        let mut tools = Vec::new();
+        for (key, work) in &*live {
+            if key == &self.key || !work.ids.iter().any(|id| ids.contains(id)) {
+                continue;
+            }
+            if action == Action::Submit && work.action == Action::Tool {
+                tools.push((work.cancel.clone(), work.done.clone()));
+            } else {
+                return Err(Failure::Action(
+                    "This review already has work in progress.".into(),
+                ));
+            }
+        }
+        live.get_mut(&self.key).expect("live lease").ids = ids;
+        // Reserve the submit before cancellation; no other tool can start in the gap.
+        self.tools = tools
+            .into_iter()
+            .map(|(cancel, done)| {
+                cancel.cancel();
+                done
+            })
+            .collect();
+        Ok(())
+    }
+
     pub(super) async fn ready(&self) -> Result<(), Failure> {
         for tool in &self.tools {
             tool.cancelled().await;
@@ -132,5 +158,38 @@ impl Drop for Lease<'_> {
         if let Some(work) = live.remove(&self.key) {
             work.done.cancel();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancel_during_owner_lookup_prevents_admission_and_leaves_the_tool_running() {
+        let jobs = Jobs::default();
+        let id: RequestId = "run-a-1".parse().unwrap();
+        let tool_job: JobId = serde_json::from_str("1").unwrap();
+        let submit_job: JobId = serde_json::from_str("2").unwrap();
+        let tool = jobs
+            .begin(
+                Caller("detail".into()),
+                tool_job,
+                vec![id.clone()],
+                Action::Tool,
+            )
+            .unwrap();
+        let mut submit = jobs
+            .register(Caller("pet".into()), submit_job, Action::Submit)
+            .unwrap();
+        jobs.cancel(Caller("pet".into()), submit_job);
+        assert!(submit.admit(vec![id.clone()]).is_err());
+        assert!(!tool.cancel.is_cancelled());
+        drop(submit);
+        drop(tool);
+        let next = jobs
+            .begin(Caller("pet".into()), submit_job, vec![id], Action::Submit)
+            .unwrap();
+        assert!(next.ready().await.is_ok());
     }
 }

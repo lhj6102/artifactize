@@ -165,14 +165,17 @@ pub async fn human_draft_submit(
     job: crate::ids::JobId,
 ) -> Result<super::Submitted, Failure> {
     let id = id.into_inner();
+    let work = app
+        .human
+        .jobs
+        .register(caller, job, super::jobs::Action::Submit)?;
     let request = super::guard(&app, &id, review::review_refusal).await?;
     super::submit(
         &app,
-        caller,
+        work,
         id,
         request.request.id.clone(),
         review::Answer::SavedDraft,
-        job,
     )
     .await
 }

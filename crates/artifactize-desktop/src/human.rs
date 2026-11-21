@@ -572,12 +572,11 @@ pub async fn human_run(
 ) -> Result<Notice, Failure> {
     let id = id.into_inner();
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
+    let mut work = app.human.jobs.register(caller, job, Action::Tool)?;
     let request = guard(&app, &id, review::review_refusal).await?;
     let owner = request.request.id.clone();
-    let work = app
-        .human
-        .jobs
-        .begin(caller, job, vec![owner.clone()], Action::Tool)?;
+    work.admit(vec![owner.clone()])?;
+    work.ready().await?;
     let outcome = run_job(
         &app,
         Job::Run {
@@ -710,33 +709,29 @@ pub async fn human_submit(
     job: JobId,
 ) -> Result<Submitted, Failure> {
     let id = id.into_inner();
+    let work = app.human.jobs.register(caller, job, Action::Submit)?;
     let request = guard(&app, &id, review::review_refusal).await?;
     let result = form::result(&request.request, draft)?
         .try_into()
         .map_err(Failure::Invalid)?;
     submit(
         &app,
-        caller,
+        work,
         id,
         request.request.id.clone(),
         review::Answer::Explicit(result),
-        job,
     )
     .await
 }
 
 async fn submit(
     app: &App,
-    caller: Caller,
+    mut work: jobs::Lease<'_>,
     id: RequestId,
     owner: RequestId,
     answer: review::Answer,
-    job: JobId,
 ) -> Result<Submitted, Failure> {
-    let work = app
-        .human
-        .jobs
-        .begin(caller, job, vec![owner.clone()], Action::Submit)?;
+    work.admit(vec![owner.clone()])?;
     work.ready().await?;
     let outcome = run_job(
         app,
