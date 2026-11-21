@@ -152,6 +152,14 @@ function run(program: string, args: string[], options: { cwd?: string; env?: Nod
   return done.stdout;
 }
 
+/** Give concat the same RGB24 PNG stream even when a platform's WebDriver returns RGBA. */
+async function writeFrame(browser: WebdriverIO.Browser, file: string): Promise<void> {
+  const fromUi = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"));
+  const { PNG } = fromUi("pngjs") as typeof import("../../crates/artifactize-desktop/ui/node_modules/pngjs");
+  const frame = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), "base64"));
+  writeFileSync(file, PNG.sync.write(frame, { colorType: 2 }));
+}
+
 /** Frames as they were taken: each PNG and the moment it was taken, in seconds. */
 type Frame = { file: string; at: number };
 /** A stretch of the GIF: its frames, how much faster than recorded they play, the caption
@@ -180,7 +188,7 @@ async function record(browser: WebdriverIO.Browser, directory: string, done: Pro
   done.then(() => { finished = true; }, () => { finished = true; });
   const take = async () => {
     const file = join(directory, `${String(frames.length).padStart(5, "0")}.png`);
-    writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
+    await writeFrame(browser, file);
     frames.push({ file, at: performance.now() / 1000 });
   };
   // Frames that show the Run still in progress: the loop must be seen running, not only ended.
@@ -277,6 +285,17 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, "-i", palette,
     "-filter_complex", `${frames}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
     gif]);
+  const framesWritten = Number(run("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0",
+    "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", gif]).trim());
+  if (framesWritten !== count) throw new Error(`${gif} has ${framesWritten} frames; expected ${count}`);
+  // Read the first and last progress rows from the encoded GIF, not the filter inputs.
+  const barRows = spawnSync("ffmpeg", ["-v", "error", "-i", gif, "-vf",
+    `select='eq(n,0)+eq(n,${count - 1})',format=rgb24,crop=iw:1:0:ih-2`, "-fps_mode", "passthrough", "-f", "rawvideo", "-"],
+    { maxBuffer: GIF.width * 3 * 4 });
+  const row = (hex: string) => Buffer.alloc(GIF.width * 3, Buffer.from(hex.slice(2), "hex"));
+  if (barRows.status !== 0 || !barRows.stdout.equals(Buffer.concat([row(track), row(colour)]))) {
+    throw new Error(`${gif} must start with an empty progress bar and end with a full one`);
+  }
 }
 
 /** Launch the app on `args` in `env`, at the demo's size. */
@@ -635,7 +654,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   const segments: Segment[] = [];
   // 0.1.0–0.6.0 had no graph to draw: their one step is a blank card with its caption.
   const blank = join(frames, "before.png");
-  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-frames:v", "1", blank]);
+  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-pix_fmt", "rgb24", "-frames:v", "1", blank]);
   segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: `${tags[0].slice(1)}–${tags[first - 1].slice(1)} · no Artifacts yet`, hold: GIF.step });
   // Each step is committed to the checkout's main branch, whose Current the app shows.
   mkdirSync(fixture.repo, { recursive: true });
@@ -753,7 +772,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       }, VERIFY_MAIN, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is in view` });
       at = await corner(browser, ".current .canvas");
       const file = join(frames, `${step.caption}.png`);
-      writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
+      await writeFrame(browser, file);
       segments.push({ frames: [{ file, at: 0 }], speed: 1, caption: step.caption, hold: GIF.step });
     }
   } finally {
