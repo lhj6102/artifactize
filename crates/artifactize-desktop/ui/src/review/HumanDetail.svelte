@@ -332,11 +332,22 @@
     flex-direction: column;
     min-height: 0;
     min-width: 0;
-    overflow: hidden;
+    /* Many tools under the instruction still reach the Tool log: the column scrolls. */
+    overflow: auto;
     background: var(--surface-panel);
   }
+  /* Nothing is cut off: the Tools and Debug keep their height, a long instruction scrolls in its
+     own box, and the Tool log takes what is left, never less than a few lines. */
+  .reviewing > :global(*) {
+    flex: none;
+  }
+  .reviewing > .instruction {
+    flex: 0 1 auto;
+    min-height: 4em;
+    overflow: auto;
+  }
   .reviewing > :global(section:has(.fill)) {
-    flex: 1 1 auto;
+    flex: 1 1 120px;
     display: flex;
     flex-direction: column;
     min-height: 0;
