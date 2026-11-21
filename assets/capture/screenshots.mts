@@ -196,6 +196,7 @@ async function capture(output: string, work: string): Promise<void> {
   const root = join(candidate.root, "fixtures", "fixture-screenshots");
   const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
   let browser: WebdriverIO.Browser | undefined;
+  let closePort: (() => Promise<void>) | undefined;
   try {
     mkdirSync(fixture.repo, { recursive: true });
     project(fixture.repo);
@@ -222,7 +223,8 @@ async function capture(output: string, work: string): Promise<void> {
     });
     capabilities["wdio:enforceWebDriverClassic"] = true;
     // A free WebDriver port of its own, so a capture running beside this one drives its own app.
-    const [embeddedPort] = await embeddedPorts(1);
+    const { ports: [embeddedPort], close } = await embeddedPorts(1);
+    closePort = close;
     capabilities["wdio:tauriServiceOptions"] = { ...capabilities["wdio:tauriServiceOptions"], embeddedPort };
     browser = await service.startWdioSession(capabilities) as WebdriverIO.Browser;
     const app = browser;
@@ -253,7 +255,8 @@ async function capture(output: string, work: string): Promise<void> {
     // core → cli, core → release and cli → docs, with the fixture's four different verdicts.
     await app.waitUntil(() => app.execute((main) => {
       const graph = document.querySelector(`${main} .run`);
-      const lights = { core: "green", cli: "red", docs: "blocked", release: "waiting" };
+      // Human sign-off is an active node; its waiting reason is in the Run header and bar.
+      const lights = { core: "green", cli: "red", docs: "blocked", release: "active" };
       return graph?.querySelectorAll(".svelte-flow__edge").length === 3
         && Object.entries(lights).every(([name, light]) =>
           graph.querySelector(`.svelte-flow__node[data-id="a:${name}"][data-light="${light}"]`));
@@ -325,6 +328,7 @@ async function capture(output: string, work: string): Promise<void> {
       if (browser) await service.cleanupWdioSession(browser);
       await cleanup(candidate.root);
     } finally {
+      await closePort?.();
       rmSync(work, { recursive: true, force: true });
     }
   }

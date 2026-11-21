@@ -280,7 +280,7 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
 }
 
 /** Launch the app on `args` in `env`, at the demo's size. */
-async function launch(service: any, app: string, args: string[], env: NodeJS.ProcessEnv): Promise<WebdriverIO.Browser> {
+async function launch(service: any, app: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ browser: WebdriverIO.Browser; stop: () => Promise<void> }> {
   const { embeddedPorts } = await import("../../crates/artifactize-desktop/ui/e2e/portable.ts");
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   Object.assign(process.env, env);
@@ -289,19 +289,26 @@ async function launch(service: any, app: string, args: string[], env: NodeJS.Pro
   });
   capabilities["wdio:enforceWebDriverClassic"] = true;
   // A free WebDriver port of its own, so a capture running beside this one drives its own app.
-  const [embeddedPort] = await embeddedPorts(1);
+  const { ports: [embeddedPort], close } = await embeddedPorts(1);
   capabilities["wdio:tauriServiceOptions"] = { ...capabilities["wdio:tauriServiceOptions"], embeddedPort };
-  const browser = await service.startWdioSession(capabilities) as WebdriverIO.Browser;
+  const browser = await Promise.resolve(service.startWdioSession(capabilities)).catch(async (error: unknown) => {
+    await close();
+    throw error;
+  }) as WebdriverIO.Browser;
+  const stop = async () => {
+    try { await service.cleanupWdioSession(browser); }
+    finally { await close(); }
+  };
   try {
     await browser.setWindowSize(WIDTH, HEIGHT);
     await browser.waitUntil(() => browser.execute(() => [innerWidth, innerHeight].join("x")).then((size) => size === `${WIDTH}x${HEIGHT}`),
       { timeout: WAIT, timeoutMsg: `the window is ${WIDTH}x${HEIGHT}` });
   } catch (error) {
     // The app runs already: end it before the caller removes what it runs from.
-    await service.cleanupWdioSession(browser);
+    await stop();
     throw error;
   }
-  return browser;
+  return { browser, stop };
 }
 
 /** How long one try's Run may take: its longest chain of checks takes 16 s. */
@@ -378,7 +385,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   /** The `run show --wait` watchers still running. */
   const watchers = new Set<ChildProcess>();
   // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
-  const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
+  const { browser, stop } = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
   const segments: Segment[] = [];
   // The graph's top-left corner, below the Main area's header row and the graph's tool strip.
   let at = { x: 0, y: 0 };
@@ -495,7 +502,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   } finally {
     try {
       for (const watcher of watchers) await stopped(watcher);
-      await service.cleanupWdioSession(browser);
+      await stop();
     } finally {
       // The Runs this demo started end before its project, its state and the build go.
       e2e.cancelRuns(fixture);
@@ -640,7 +647,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
     e2e.git(fixture, fixture.repo, "commit", "-q", "--allow-empty", "-m", step.caption);
   };
   commit(steps[0]);
-  const browser = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
+  const { browser, stop } = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
   let at = { x: 0, y: 0 };
   try {
     await browser.$(VERIFY_MODE).waitForDisplayed({ timeout: WAIT });
@@ -763,7 +770,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
     }
   } finally {
     try {
-      await service.cleanupWdioSession(browser);
+      await stop();
     } finally {
       // Nothing of its state keeps running once its project and the build go.
       e2e.cancelRuns(fixture);
