@@ -23,19 +23,18 @@
   const { browse, chat: c } = app;
 
   const branches = $derived(browse.view?.branches ?? []);
-  /** Where a session works: its worktree's branch, as Verify lists it. */
-  const placeOf = (session: ChatSession) => branches.find((branch) => branch.workspace === session.worktree);
-  const projectOf = (session: ChatSession) => placeOf(session)?.project ?? session.worktree.split(/[\\/]/).filter(Boolean).at(-1) ?? session.worktree;
-  /** The sessions grouped by project, the groups and their sessions newest first. */
+  /** Where a session works, as the library names it: its project and branch. */
+  const placeOf = (session: ChatSession) => (session.branch ? `${session.project} / ${session.branch}` : session.project);
+  /** The sessions grouped by project and branch, the groups and their sessions newest first. */
   const groups = $derived.by(() => {
-    const byProject: [string, ChatSession[]][] = [];
+    const byPlace: [string, ChatSession[]][] = [];
     for (const session of c.sessions) {
-      const project = projectOf(session);
-      const group = byProject.find(([name]) => name === project);
+      const place = placeOf(session);
+      const group = byPlace.find(([name]) => name === place);
       if (group) group[1].push(session);
-      else byProject.push([project, [session]]);
+      else byPlace.push([place, [session]]);
     }
-    return byProject;
+    return byPlace;
   });
   const view = $derived(c.view);
   const session = $derived(view?.session ?? null);
@@ -147,7 +146,8 @@
     void c.list();
     const unsession = onSessionChanged((id) => void c.changed(id));
     // A Run a session started moves on: its card follows.
-    const unstate = onStateChanged(() => void c.read());
+    // A Run a session started moves on, or a checkout changed: the cards and sessions follow.
+    const unstate = onStateChanged(() => void c.changed(c.selected ?? ""));
     return () => {
       unsession();
       unstate();
@@ -194,7 +194,7 @@
     <Split id="chat-main" order={2} defaultSize={app.paneShown ? 80 : 100} minSize={30}>
       <Panel title={session ? session.title || "New chat" : "Chat"} label="Chat's main area" focused={false} notice={c.error} bind:noticeOpen={c.noticeOpen} bind:element={c.panes.main}>
         {#snippet headline()}
-          {#if session}<span class="branch mono">{placeOf(session)?.name ?? session.worktree}</span>{/if}
+          {#if session}<span class="branch mono">{session.branch || session.project}</span>{/if}
         {/snippet}
         {#if !session}
           <p class="empty">{c.listed && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane."}</p>
@@ -231,10 +231,15 @@
               </div>
             </div>
             <div class="composer">
-              <div class="box">
+              {#if session.unavailable}
+                <!-- The session's branch cannot be worked on now: it says why, and sends nothing. -->
+                <p class="unavailable" role="status">{session.unavailable}</p>
+              {/if}
+              <div class="box" class:off={session.unavailable !== null}>
                 <textarea
                   rows="2"
                   aria-label="Message"
+                  disabled={session.unavailable !== null}
                   placeholder="Ask the agent to work on this branch…"
                   bind:this={c.panes.composer}
                   value={typed}
@@ -271,7 +276,7 @@
                   {#if running}
                     <button class="icon-button" aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
                   {:else}
-                    <button class="icon-button primary" aria-label="Send (Enter)" aria-keyshortcuts="Enter" disabled={typed.trim() === ""} onclick={() => void c.send()}><Icon name="send" /></button>
+                    <button class="icon-button primary" aria-label="Send (Enter)" aria-keyshortcuts="Enter" disabled={typed.trim() === "" || session.unavailable !== null} onclick={() => void c.send()}><Icon name="send" /></button>
                   {/if}
                 </div>
               </div>
@@ -525,6 +530,16 @@
     border: 1px solid var(--line-input);
     border-radius: var(--radius-chip);
     background: var(--surface-input);
+  }
+  /* A session that cannot send reads as off; why stands above its composer. */
+  .box.off {
+    opacity: 0.6;
+  }
+  .unavailable {
+    margin: 0 0 6px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
+    overflow-wrap: anywhere;
   }
   .box:focus-within {
     outline: 2px solid var(--focus);

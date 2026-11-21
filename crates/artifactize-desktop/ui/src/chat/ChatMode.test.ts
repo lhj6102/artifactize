@@ -28,6 +28,9 @@ const session: ChatSession = {
   id: "chat-1",
   title: "Fix checkout rounding",
   worktree: "/work/app",
+  project: "app",
+  branch: "fix/rounding",
+  unavailable: null,
   selection: { backend: "claude-agent", model: "claude-opus-5-5" },
   createdAt: "2026-11-21T00:00:00Z",
   updatedAt: "2026-11-21T00:00:00Z",
@@ -79,7 +82,8 @@ function show() {
 it("lists sessions by project, sends a message and shows the turn as the library streams it", async () => {
   const { calls, state } = backend();
   const { app } = show();
-  await screen.findByText("app");
+  // Grouped by the project and branch the library names.
+  await screen.findByText("app / fix/rounding");
   await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
   const composer = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   await fireEvent.input(composer, { target: { value: "Fix it and verify." } });
@@ -196,4 +200,23 @@ it("says no provider lists a model once every provider has answered with none", 
   await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("No provider lists a model. Connect one in Settings."));
   expect(within(dialog).getByRole("button", { name: "Create" }).hasAttribute("disabled")).toBe(true);
   expect(calls.some((call) => call.cmd === "chat_create")).toBe(false);
+});
+
+it("says why a session whose branch cannot be worked on now sends nothing, its composer off", async () => {
+  const calls: string[] = [];
+  const gone: ChatSession = { ...session, unavailable: "The branch fix/rounding is no longer checked out." };
+  mockIPC((cmd) => {
+    calls.push(cmd);
+    if (cmd === "chat_list") return [gone];
+    if (cmd === "chat_open") return { session: gone, running: false, turns: [] } satisfies ChatView;
+    return null;
+  }, { shouldMockEvents: true });
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  expect((await screen.findByRole("status")).textContent).toBe("The branch fix/rounding is no longer checked out.");
+  const composer = screen.getByLabelText<HTMLTextAreaElement>("Message");
+  expect(composer.disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "Send (Enter)" }).hasAttribute("disabled")).toBe(true);
+  await fireEvent.keyDown(composer, { key: "Enter" });
+  expect(calls).not.toContain("chat_send");
 });

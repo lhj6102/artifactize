@@ -87,7 +87,7 @@ export class ChatModeState {
   /** Send what is typed in the shown session, with the model chosen for it if one was. */
   async send(): Promise<void> {
     const view = this.view;
-    if (!view || view.running) return;
+    if (!view || view.running || view.session.unavailable !== null) return;
     const id = view.session.id;
     const draft = this.typed[id] ?? "";
     const text = draft.trim();

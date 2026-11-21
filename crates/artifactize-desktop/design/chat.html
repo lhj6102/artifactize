@@ -47,12 +47,12 @@
   <div class="m-screen">
     <section class="m-pane">
       <div class="m-pane-head"><span class="m-new"><span class="m-icon i-add"></span>New chat</span></div>
-      <p class="m-group-label">shop</p>
+      <p class="m-group-label">shop / fix/checkout-rounding</p>
       <div class="m-session selected"><span class="m-item-name">Fix checkout rounding</span><span class="m-age">now</span></div>
       <div class="m-session"><span class="m-item-name">Gift card balance</span><span class="m-age">1h</span></div>
-      <p class="m-group-label">artifactize</p>
+      <p class="m-group-label">artifactize / dev</p>
       <div class="m-session"><span class="m-item-name">Release notes wording</span><span class="m-age">1d</span></div>
-      <p class="m-group-label">웹툰-플랫폼</p>
+      <p class="m-group-label">웹툰-플랫폼 / main</p>
       <div class="m-session"><span class="m-item-name">결제 흐름 문서 정리와 검증 범위 확인</span><span class="m-age">3d</span></div>
     </section>
     <div class="m-divider"></div>
@@ -192,7 +192,7 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-CHAT-1">D-CHAT-1</dt>
-  <dd>Chat's Pane is one <code>--surface-panel</code> column, as an agent chat application's sidebar: its head, a row closed below by <code>--line-group</code>, holds <b>New chat</b>, a button across the Pane's width with the add icon; under it the sessions, grouped by project, the groups and their sessions newest first, each group under its project's name as a group label (D-SYS-5), each session one <code>--row</code> line: its title in <code>--ink</code>, cut with an ellipsis, and its age at the right in <code>--ink-3</code> with tabular figures. The shown session has <code>--selection</code> and, while the keyboard is in the list, the 2px inset bar (D-SYS-7). <span class="avoid">a second line under each session; the branch or the model in the list; a heading over the Pane; a card per session; a preview on hover.</span></dd>
+  <dd>Chat's Pane is one <code>--surface-panel</code> column, as an agent chat application's sidebar: its head, a row closed below by <code>--line-group</code>, holds <b>New chat</b>, a button across the Pane's width with the add icon; under it the sessions, grouped by project and branch, the groups and their sessions newest first, each group under <i>{project} / {branch}</i> as a group label (D-SYS-5), each session one <code>--row</code> line: its title in <code>--ink</code>, cut with an ellipsis, and its age at the right in <code>--ink-3</code> with tabular figures. The shown session has <code>--selection</code> and, while the keyboard is in the list, the 2px inset bar (D-SYS-7). <span class="avoid">a second line under each session; the branch on a session's line or the model in the list; a heading over the Pane; a card per session; a preview on hover.</span></dd>
   <dt id="D-CHAT-2">D-CHAT-2</dt>
   <dd>The Main area's header row (D-MAIN-1) names the session: its title as the view's name, then its branch in <code>--mono</code> <code>--ink-2</code> as its headline. Under it, closed above by <code>--line-panel</code>, the conversation stands on <code>--surface-app</code> in a column of <code>--measure</code> centred in the area, newest at the bottom, scrolling on its own and following its newest line unless scrolled up. With no session shown, one <code>--ink-2</code> line says how to start one (D-MAIN-3). <span class="avoid">the conversation stretched to the window's width; avatars; a time on every message; the model or the provider in the header.</span></dd>
   <dt id="D-CHAT-3">D-CHAT-3</dt>
@@ -207,6 +207,8 @@
   <dd>The model menu opens upward from the selector, its bottom left at the selector's top left, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow. Each provider Settings lists is a group: its name as a group label, then its models as <code>--row</code> rows by name; the session's model has <code>--selection</code> and semibold; a provider that lists none says why in <code>--red</code> at <code>--text-small</code> in its group. After a <code>--line-group</code> line, <b>Connect provider</b> with the add icon ends the menu. Taller than the room above the selector, the menu scrolls inside itself. <span class="avoid">a menu that opens downward over the composer or on hover; a model chosen by colour alone; IDs or a line explaining the harness in the menu.</span></dd>
   <dt id="D-CHAT-8">D-CHAT-8</dt>
   <dd>The New chat dialog is a dialog as the overlays draw one (D-OVL-1): its title, the <b>Branch</b> field, a choice on <code>--surface-input</code> inside <code>--line-input</code>, then <b>Model</b>, labelled as a form's field is, its value plain text, not a field: the provider's name and the model in <code>--mono</code> at <code>--text-small</code>; while the providers' models are being read it says <i>Reading the providers' models…</i> in <code>--ink-2</code>, and once they are read with none listed, <i>No provider lists a model. Connect one in Settings.</i> in <code>--ink-2</code>. Cancel and the primary Create end its last row, Create disabled until the model is known. <span class="avoid">Create offered before the model is known; the no-model sentence while the models are still being read; a model choice in the dialog (the composer's selector changes it).</span></dd>
+  <dt id="D-CHAT-9">D-CHAT-9</dt>
+  <dd>A session whose branch cannot be worked on now keeps its place in the Pane and its conversation; above its composer, one line in <code>--ink-2</code> at <code>--text-small</code> says why, as the library says it, and the composer reads as off: its field and Send disabled, the whole box at reduced opacity. <span class="avoid">the session hidden or removed from the Pane; a red banner; a composer that takes text it cannot send.</span></dd>
 </dl>
 </main>
 </div>

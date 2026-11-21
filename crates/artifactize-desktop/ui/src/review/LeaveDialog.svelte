@@ -23,7 +23,8 @@
     if (taken.length === 0) return onleave();
     l.working = true;
     try {
-      const acted = await call(commands.humanRelease(taken, app.jobs.next()));
+      // Only the claims this app took are released, all of them or none.
+      const acted = await call(commands.humanReleaseTaken(taken, app.jobs.next()));
       if (acted.notice.error) l.error = acted.notice.text;
       else onleave();
     } catch (failure) {
