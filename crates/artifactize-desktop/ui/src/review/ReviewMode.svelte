@@ -7,7 +7,9 @@
   // read-only in the same place. ↑ ↓ move through the list, Enter opens the selected review, Esc
   // in a review steps back to the list.
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
+  import { Coalesced } from "../ipc/coalesced";
   import { REVIEW_DEFAULT_QUERY, call, message, onStateChanged, type BrowseView, type ReviewMatch } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import Panel from "../shell/Panel.svelte";
@@ -177,12 +179,18 @@
     });
   }
 
+  /** A claim, a submission or a new review elsewhere: the list follows it, one search at a time
+   * and only while Review is on screen; a change missed while it was not is read when it is. */
+  const refresh = new Coalesced(() => search(r.query), () => app.mode === "review");
+  const following: Attachment = () => {
+    if (app.mode === "review") untrack(() => refresh.showing());
+  };
+
   onMount(() => {
     void search(r.query);
     if (browse.view) accept(browse.view);
     const unshown = browse.onShown(accept);
-    // A claim, a submission or a new review elsewhere: the list follows it.
-    const unchanged = onStateChanged(() => void search(r.query));
+    const unchanged = onStateChanged(() => refresh.request());
     return () => {
       unshown();
       unchanged();
@@ -190,7 +198,7 @@
   });
 </script>
 
-<div class="mode">
+<div class="mode" {@attach following}>
   <PaneGroup direction="horizontal" autoSaveId="review-layout" class="columns">
     {#if app.paneShown}
       <Split id="review-pane" order={1} defaultSize={24} minSize={12}>

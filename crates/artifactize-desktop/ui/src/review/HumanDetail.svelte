@@ -11,6 +11,7 @@
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { onStateChanged, type Settled } from "../ipc/client";
+  import { Coalesced } from "../ipc/coalesced";
   import type { Review } from "./review.svelte";
   import Tools from "./Tools.svelte";
   import ToolLog from "./ToolLog.svelte";
@@ -73,10 +74,12 @@
     // Waiting time and the busy seconds redraw without reading the state.
     const clock = setInterval(() => {
       h.now = Date.now();
-      if (!review.busy) void review.load(false);
+      if (!review.busy && active) void review.load(false);
     }, 1000);
-    // A settlement or claim elsewhere shows on the next read; an open form is set aside.
-    const stop = onStateChanged(() => void review.load());
+    // A settlement or claim elsewhere shows on the next read, one read at a time and only while
+    // the review is on screen; an open form is set aside.
+    const reading = new Coalesced(() => review.load(), () => active);
+    const stop = onStateChanged(() => reading.request());
     // Tools that already took focus (a reopened request with Tools focused) keep it.
     if (h.root && !h.root.contains(document.activeElement)) h.root.focus();
     return () => {

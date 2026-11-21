@@ -511,3 +511,25 @@ it("paints nothing of a mode that is not shown, its graph included, and keeps it
   await fireEvent.keyDown(window, { key: "2", code: "Digit2", ctrlKey: true });
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0");
 });
+
+it("reads at most twice for a burst of changes, and nothing for a mode not on screen until it is shown", async () => {
+  const { calls } = backend(monitor(), () => browseView(1, { waiting: [waitingRow("run-0-1")] }));
+  render(App);
+  await screen.findByRole("navigation", { name: "Modes" });
+  // Settled after launch: count from here.
+  await waitFor(() => expect(calls.some((call) => call.command === "human_search")).toBe(true));
+  await new Promise((settle) => setTimeout(settle, 50));
+  const count = (command: string) => calls.filter((call) => call.command === command).length;
+  const [searched, counted] = [count("human_search"), count("human_waiting_count")];
+  // A verify finishing: many changes at once.
+  await Promise.all(Array.from({ length: 30 }, () => emit("state-changed", { resync: false })));
+  await new Promise((settle) => setTimeout(settle, 50));
+  // Review is not on screen: its list is not searched again; the bar's count reads at most twice.
+  expect(count("human_search")).toBe(searched);
+  expect(count("human_waiting_count") - counted).toBeLessThanOrEqual(2);
+  // Shown, it reads once what changed meanwhile.
+  await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
+  await waitFor(() => expect(count("human_search")).toBe(searched + 1));
+  await new Promise((settle) => setTimeout(settle, 50));
+  expect(count("human_search")).toBe(searched + 1);
+});

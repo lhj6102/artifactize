@@ -4,7 +4,8 @@
   // the hidden ones out of sight and out of reach, so each keeps its place.
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { Dialog } from "bits-ui";
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import { Coalesced } from "./ipc/coalesced";
   import { listen } from "@tauri-apps/api/event";
   import type { Attachment } from "svelte/attachments";
   import { call, message, subscribe, onActiveReviewChanged, onCurrentChanged, onHumanDraftChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
@@ -48,9 +49,12 @@
     const clock = setInterval(() => void browse.redraw(), 1000);
     const unwatched = release.watch();
     void app.countWaiting();
+    // Each change reads again at most once at a time: the bar's count always, Verify's branches
+    // and Run only while Verify is on screen (once more when it is shown again).
     const unchanged = onStateChanged((resync) => {
-      browse.refresh(resync);
-      void app.countWaiting();
+      resyncing ||= resync;
+      browsing.request();
+      counting.request();
     });
     // What Human tools print, for whichever review or Artifact shows it.
     const unlogged = onHumanToolLog((logs) => app.logged(logs));
@@ -102,6 +106,22 @@
 
   /** The active review follows the claimed review shown in Review, and the pet overlay shows it
    * while its evaluation space is not in front (J-POINT, J-PET). Re-runs as those change. */
+  /** Reads the backend's changes ask for, one at a time (see `Coalesced`). */
+  let resyncing = false;
+  const browsing = new Coalesced(
+    async () => {
+      const resync = resyncing;
+      resyncing = false;
+      browse.refresh(resync);
+    },
+    () => app.mode === "verify",
+  );
+  const counting = new Coalesced(() => app.countWaiting());
+  /** Verify shown again reads what changed while it was not. */
+  const verifying: Attachment = () => {
+    if (app.mode === "verify") untrack(() => browsing.showing());
+  };
+
   const following: Attachment = () => {
     const shown = r.shown.kind === "review" ? app.reviews[r.shown.id] : undefined;
     const owned = shown?.owned ? shown.id : null;
@@ -256,7 +276,7 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="app" {@attach following}>
+<div class="app" {@attach following} {@attach verifying}>
   {#if app.failure}
     <p class="failure">{app.failure}</p>
   {:else if app.launch}

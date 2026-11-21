@@ -76,6 +76,8 @@ function show() {
   const hosted = renderHosted(ChatMode);
   const main = { ...branch("fix/rounding", [runChip("run-9", "GREEN")]), workspace: "/work/app" };
   hosted.app.browse.view = browseView(1, { branches: [main] });
+  // Chat is on screen: it follows the library's changes.
+  hosted.app.mode = "chat";
   return hosted;
 }
 

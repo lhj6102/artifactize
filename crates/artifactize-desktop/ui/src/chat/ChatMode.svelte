@@ -7,7 +7,8 @@
   // Verify. Sessions, turns and Run cards are the library's.
   import { Dialog } from "bits-ui";
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import { Coalesced } from "../ipc/coalesced";
   import type { Attachment } from "svelte/attachments";
   import { onSessionChanged, onStateChanged, type ChatRun, type ChatSession } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
@@ -111,6 +112,8 @@
   }
 
   function newChat() {
+    // The live branches as they are now: Verify reads them only while it is on screen.
+    browse.refresh();
     // The branch selected in Verify comes first.
     const shown = app.monitor.shown;
     const selected = shown.kind === "none" ? undefined : branches.find((branch) => keyOf(branch.key) === keyOf(shown.branch));
@@ -157,12 +160,29 @@
     });
   };
 
+  /** The shown session and the list read again as the library changes them, one read of each at
+   * a time and only while Chat is on screen; what changed meanwhile is read when it is shown. */
+  const rereading = new Coalesced(() => c.read(), () => app.mode === "chat");
+  const listing = new Coalesced(() => c.list(), () => app.mode === "chat");
+  const following: Attachment = () => {
+    if (app.mode !== "chat") return;
+    untrack(() => {
+      rereading.showing();
+      listing.showing();
+    });
+  };
+
   onMount(() => {
     void c.list();
-    const unsession = onSessionChanged((id) => void c.changed(id));
-    // A Run a session started moves on: its card follows.
+    const unsession = onSessionChanged((id) => {
+      if (id === c.selected) rereading.request();
+      listing.request();
+    });
     // A Run a session started moves on, or a checkout changed: the cards and sessions follow.
-    const unstate = onStateChanged(() => void c.changed(c.selected ?? ""));
+    const unstate = onStateChanged(() => {
+      rereading.request();
+      listing.request();
+    });
     return () => {
       unsession();
       unstate();
@@ -182,7 +202,7 @@
   </div>
 {/snippet}
 
-<div class="mode">
+<div class="mode" {@attach following}>
   <PaneGroup direction="horizontal" autoSaveId="chat-layout" class="columns">
     {#if app.paneShown}
       <Split id="chat-pane" order={1} defaultSize={20} minSize={12}>

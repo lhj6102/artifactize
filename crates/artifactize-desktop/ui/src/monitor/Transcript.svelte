@@ -3,6 +3,7 @@
   // columns and rows this monospace pane fits; scrolling asks for another window.
   import { TranscriptState, setTranscriptState } from "./transcript-state.svelte";
   import { onDestroy, onMount } from "svelte";
+  import { Coalesced } from "../ipc/coalesced";
   import {
     call,
     useIpc,
@@ -115,10 +116,13 @@
     if (t.pane) observer.observe(t.pane);
     // Missed appends and removals show within the probe; without a session yet, resolve again.
     const timer = setInterval(() => (t.handle === null ? void resolve() : void ask(null, null, true)), PROBE_MS);
+    // The library's changes read again one read at a time: a burst costs at most two.
+    const asking = new Coalesced(() => ask(null, null, true));
+    const resolving = new Coalesced(() => resolve());
     const stopSession = onSessionChanged((changed) => {
-      if (changed === t.session) void ask(null, null, true);
+      if (changed === t.session) asking.request();
     });
-    const stopState = onStateChanged(() => void resolve());
+    const stopState = onStateChanged(() => resolving.request());
     return () => {
       observer.disconnect();
       clearInterval(timer);
