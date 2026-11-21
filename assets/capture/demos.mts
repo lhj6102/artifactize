@@ -258,32 +258,47 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   list.push(`file '${segments.at(-1)!.frames.at(-1)!.file}'`);
   const concat = join(work, `${basename(gif)}.txt`);
   writeFileSync(concat, `${list.join("\n")}\n`);
-  // Drawn after fps and scaling, so it advances on every GIF frame and stays a crisp thin line;
-  // laid over in RGB, since a subsampled overlay would wash out a status's thin strips.
   const { height, colour, track } = PROGRESS;
-  // The GIF's frames: the planned length on the frame grid.
-  const count = Math.max(Math.round(clock * GIF.fps), 1);
-  // The bar grows with the frame's number, counted from 1 here, so it is empty on the first
-  // frame and full on the last whatever their times.
-  const progress = `drawbox=x=0:y=ih-${height}:w=iw:h=${height}:color=${track}:t=fill[track];` +
-    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min((n-1)/${Math.max(count - 1, 1)},1)':y=H-h:shortest=1:format=rgb`;
+  const count = Math.max(Math.round(clock * GIF.fps), 2);
+  const rgb = (hex: string) => Buffer.from(hex.slice(2), "hex");
+  const row = (hex: string) => Buffer.alloc(GIF.width * 3, rgb(hex));
+  // Generate the bar as RGB24 bytes. YUV-only FFmpeg colour filters can change its exact RGB.
+  const strips = join(work, `${basename(gif)}.bar.rgb`);
+  const stride = GIF.width * 3;
+  const pixels = Buffer.alloc(stride * height * count, rgb(track));
+  for (let n = 0; n < count; n += 1) {
+    const filled = Math.round(GIF.width * n / (count - 1)) * 3;
+    for (let y = 0; y < height; y += 1) {
+      const start = (n * height + y) * stride;
+      pixels.fill(rgb(colour), start, start + filled);
+    }
+  }
+  writeFileSync(strips, pixels);
+  const barInput = ["-f", "rawvideo", "-pixel_format", "rgb24", "-video_size", `${GIF.width}x${height}`, "-framerate", String(GIF.fps), "-i", strips];
   // The repeated last entry would otherwise play its hold a second time: end at the planned length.
-  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=end_frame=${count},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
+  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=end_frame=${count},scale=${GIF.width}:-1:flags=lanczos,format=rgb24,crop=iw:ih-${height}:0:0[top];[top][1:v]vstack=shortest=1`;
   // The bar's few pixels would not earn its colours a palette entry, nor would the statuses'
   // thin strips, icons and words always: generate the palette with entries to spare, then set
   // the last ones to the bar, its track and each status's colour exactly.
   const pinned = [colour, track, ...STATUS_COLOURS];
   const generated = join(work, `${basename(gif)}.palette.png`);
   const palette = join(work, `${basename(gif)}.pinned.png`);
-  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat,
+  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, ...barInput,
     "-filter_complex", `${frames},palettegen=max_colors=${GIF.colours - pinned.length}:stats_mode=diff:reserve_transparent=0`,
     "-update", "1", generated]);
-  // The palette is a 16×16 image read row by row: its last entries are its last row's end.
-  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", generated, "-vf",
-    pinned.map((pin, at) => `drawbox=x=${16 - pinned.length + at}:y=15:w=1:h=1:color=${pin}:t=fill`).join(","),
-    "-update", "1", palette]);
-  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, "-i", palette,
-    "-filter_complex", `${frames}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
+  // Write the final entries of the 16×16 palette directly, without a color conversion.
+  const fromUi = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"));
+  const { PNG } = fromUi("pngjs") as typeof import("../../crates/artifactize-desktop/ui/node_modules/pngjs");
+  const table = PNG.sync.read(readFileSync(generated));
+  if (table.width !== 16 || table.height !== 16) throw new Error("expected a 16×16 GIF palette");
+  pinned.forEach((pin, at) => {
+    const offset = (16 * 16 - pinned.length + at) * 4;
+    rgb(pin).copy(table.data, offset);
+    table.data[offset + 3] = 255;
+  });
+  writeFileSync(palette, PNG.sync.write(table));
+  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, ...barInput, "-i", palette,
+    "-filter_complex", `${frames}[v];[v][2:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
     gif]);
   const framesWritten = Number(run("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0",
     "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", gif]).trim());
@@ -292,7 +307,6 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   const barRows = spawnSync("ffmpeg", ["-v", "error", "-i", gif, "-vf",
     `select='eq(n,0)+eq(n,${count - 1})',format=rgb24,crop=iw:1:0:ih-2`, "-fps_mode", "passthrough", "-f", "rawvideo", "-"],
     { maxBuffer: GIF.width * 3 * 4 });
-  const row = (hex: string) => Buffer.alloc(GIF.width * 3, Buffer.from(hex.slice(2), "hex"));
   if (barRows.status !== 0 || !barRows.stdout.equals(Buffer.concat([row(track), row(colour)]))) {
     throw new Error(`${gif} must start with an empty progress bar and end with a full one`);
   }
@@ -655,7 +669,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   // 0.1.0–0.6.0 had no graph to draw: their one step is a blank card with its caption.
   const blank = join(frames, "before.png");
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-pix_fmt", "rgb24", "-frames:v", "1", blank]);
-  segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: `${tags[0].slice(1)}–${tags[first - 1].slice(1)} · no Artifacts yet`, hold: GIF.step });
+  segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: "0.1.0–0.6.0 · no Artifacts yet", hold: GIF.step });
   // Each step is committed to the checkout's main branch, whose Current the app shows.
   mkdirSync(fixture.repo, { recursive: true });
   e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
