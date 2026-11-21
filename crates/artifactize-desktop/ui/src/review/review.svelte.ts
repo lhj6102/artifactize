@@ -127,6 +127,10 @@ class ReviewState {
   form = $state<FormDraft | null>(null);
   /** The library's draft of this review for this reviewer, as last read or answered. */
   draft = $state.raw<ReviewDraft | null>(null);
+  /** The draft's Notes; typed text shows at once, as an override, until the library answers. */
+  notes = $derived(this.draft?.notes ?? "");
+  /** What Point appended to the Notes since they were last edited: those lines stand out. */
+  pointed = $state.raw<string[]>([]);
   choice = 0;
   /** Notes typed and not sent yet; the text the next send is based on; one send at a time. */
   pending: string | null = null;
@@ -159,10 +163,12 @@ export class Review {
   set form(value: FormDraft | null) { this.#state.form = value; }
   get draft(): ReviewDraft | null { return this.#state.draft; }
 
-  /** The draft's Notes; typed text shows at once, as an override, until the library answers. */
-  notes = $derived(this.#state.draft?.notes ?? "");
-  /** What Point appended to the Notes since they were last edited: those lines stand out. */
-  pointed = $state<string[]>([]);
+  /** The draft's Notes and what Point appended to them: the request's own, the same for every
+   * handle of it. */
+  get notes(): string { return this.#state.notes; }
+  set notes(value: string) { this.#state.notes = value; }
+  get pointed(): string[] { return this.#state.pointed; }
+  set pointed(value: string[]) { this.#state.pointed = value; }
 
   readonly settled = $derived(this.view?.stage === "completed");
   readonly owned = $derived(this.view?.stage === "review");
