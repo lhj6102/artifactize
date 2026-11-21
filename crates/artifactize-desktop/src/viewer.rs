@@ -23,7 +23,18 @@ pub(crate) struct Sessions(Mutex<SessionsInner>, OnceLock<ActiveEvent>);
 struct SessionsInner {
     last: u32,
     live: BTreeMap<u32, Arc<viewer::Session>>,
+    /// What each live session shows: an Artifact of a worktree in one viewer.
+    places: BTreeMap<u32, Place>,
     active: Option<RequestId>,
+}
+
+/// What a viewer session shows. Two sessions of the same place show the same thing, whatever
+/// their titles: a window already showing it is brought to the front instead of a second one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Place {
+    worktree: PathBuf,
+    artifact: String,
+    viewer: String,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -46,14 +57,39 @@ impl Sessions {
         }
     }
 
-    fn keep(&self, viewer: viewer::Session) -> ViewerLaunch {
+    fn keep(&self, viewer: viewer::Session, worktree: PathBuf) -> ViewerLaunch {
         let context = viewer.context(None);
         let title = format!("{} — {}", context.artifact, context.title);
+        let place = Place {
+            worktree,
+            artifact: context.artifact.to_string(),
+            viewer: context.type_name.to_string(),
+        };
+        let session = self.remember(place);
+        self.0
+            .lock()
+            .expect("viewer sessions")
+            .live
+            .insert(session, Arc::new(viewer));
+        ViewerLaunch { session, title }
+    }
+
+    /// Number a new session showing `place`.
+    fn remember(&self, place: Place) -> u32 {
         let mut sessions = self.0.lock().expect("viewer sessions");
         sessions.last = sessions.last.checked_add(1).expect("unique viewer session");
         let session = sessions.last;
-        sessions.live.insert(session, Arc::new(viewer));
-        ViewerLaunch { session, title }
+        sessions.places.insert(session, place);
+        session
+    }
+
+    /// Sessions `one` and `other` show the same Artifact of the same worktree in the same viewer.
+    pub(crate) fn same_place(&self, one: u32, other: u32) -> bool {
+        let sessions = self.0.lock().expect("viewer sessions");
+        match (sessions.places.get(&one), sessions.places.get(&other)) {
+            (Some(one), Some(other)) => one == other,
+            _ => false,
+        }
     }
 
     fn get(&self, session: u32) -> Result<Arc<viewer::Session>, Failure> {
@@ -68,11 +104,9 @@ impl Sessions {
 
     /// End viewer session `session`: its window closed, or another shows the same Artifact.
     pub(crate) fn drop_session(&self, session: u32) {
-        self.0
-            .lock()
-            .expect("viewer sessions")
-            .live
-            .remove(&session);
+        let mut sessions = self.0.lock().expect("viewer sessions");
+        sessions.live.remove(&session);
+        sessions.places.remove(&session);
     }
 
     /// The page of viewer session `session` when its viewer is a plugin's web page.
@@ -94,6 +128,7 @@ impl Sessions {
         let mut sessions = self.0.lock().expect("viewer sessions");
         sessions.active = None;
         sessions.live.clear();
+        sessions.places.clear();
     }
 }
 
@@ -121,9 +156,10 @@ pub(crate) async fn launch(
         _ => unreachable!("one source of viewer launch"),
     };
     let artifact = artifact.clone();
+    let worktree = workspace.clone();
     let open = tokio::task::spawn_blocking(move || viewer::Session::open(&workspace, &artifact));
     let viewer = crate::failure::joined(open.await)?.map_err(Failure::Read)?;
-    Ok(Some(app.viewers.keep(viewer)))
+    Ok(Some(app.viewers.keep(viewer, worktree)))
 }
 
 #[derive(Serialize, Type)]
@@ -266,12 +302,7 @@ pub async fn viewer_declarations(
 #[tauri::command]
 #[specta::specta]
 pub fn viewer_close(app: tauri::State<'_, App>, session: u32) {
-    app.viewers
-        .0
-        .lock()
-        .expect("viewer sessions")
-        .live
-        .remove(&session);
+    app.viewers.drop_session(session);
 }
 
 /// Append to the shared draft and return the updated plain-text response.
@@ -370,5 +401,38 @@ pub(crate) async fn refresh_active(app: &App) {
         && artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer).is_some()
     {
         settled(app, &id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn place(worktree: &str, artifact: &str, viewer: &str) -> Place {
+        Place {
+            worktree: PathBuf::from(worktree),
+            artifact: artifact.into(),
+            viewer: viewer.into(),
+        }
+    }
+
+    #[test]
+    fn a_session_shows_the_same_place_only_for_the_same_worktree_artifact_and_viewer() {
+        let sessions = Sessions::default();
+        let first = sessions.remember(place("/work/one", "checkout", "files"));
+        let other_worktree = sessions.remember(place("/work/two", "checkout", "files"));
+        let again = sessions.remember(place("/work/one", "checkout", "files"));
+        let other_viewer = sessions.remember(place("/work/one", "checkout", "markdown"));
+        assert!(
+            !sessions.same_place(first, other_worktree),
+            "a same-named Artifact of another worktree is another place"
+        );
+        assert!(sessions.same_place(first, again));
+        assert!(!sessions.same_place(first, other_viewer));
+        sessions.drop_session(again);
+        assert!(
+            !sessions.same_place(first, again),
+            "an ended session shows nothing"
+        );
     }
 }

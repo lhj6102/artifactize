@@ -76,12 +76,13 @@ fn viewer<R: Runtime>(
     session: u32,
     title: String,
 ) -> tauri::Result<()> {
-    let open = handle
-        .webview_windows()
-        .into_iter()
-        .find(|(label, window)| {
-            label.starts_with(VIEWER) && window.title().is_ok_and(|shown| shown == title)
-        });
+    // The same Artifact of the same worktree in the same viewer, whatever the windows' titles.
+    let open = handle.webview_windows().into_iter().find(|(label, _)| {
+        label
+            .strip_prefix(VIEWER)
+            .and_then(|shown| shown.parse().ok())
+            .is_some_and(|shown| shown != session && app.viewers.same_place(shown, session))
+    });
     if let Some((_, window)) = open {
         app.viewers.drop_session(session);
         let _ = window.unminimize();
