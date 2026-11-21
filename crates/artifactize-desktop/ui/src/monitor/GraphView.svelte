@@ -483,7 +483,7 @@
 
   function dropOf(key: string, event: MouseEvent | TouchEvent): Drop | null {
     const [copy, at] = [byKey.get(key), pointOf(event)];
-    return copy && at ? dropAt(graph, drawn, rects, copy, at) : null;
+    return copy && at ? dropAt(drawn, rects, copy, at) : null;
   }
 
   function dragStart(key: string) {

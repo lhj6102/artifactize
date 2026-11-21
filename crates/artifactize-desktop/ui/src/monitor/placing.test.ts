@@ -30,26 +30,32 @@ const copy = (key: string) => drawn.find((found) => found.key === key)!;
 
 describe("a drop", () => {
   it("over a whole's box, outside its parts, makes the dragged Artifact its part", () => {
-    const drop = dropAt(graph, drawn, rects, copy("a:core"), { x: 10, y: 10 });
+    const drop = dropAt(drawn, rects, copy("a:core"), { x: 10, y: 10 });
     expect(drop).toEqual({ kind: "join", to: "app", key: "a:app" });
   });
 
   it("onto a node makes that node its whole", () => {
-    expect(dropAt(graph, drawn, rects, copy("a:core"), { x: 410, y: 310 })).toEqual({ kind: "join", to: "docs", key: "a:docs" });
+    expect(dropAt(drawn, rects, copy("a:core"), { x: 410, y: 310 })).toEqual({ kind: "join", to: "docs", key: "a:docs" });
   });
 
   it("onto an Artifact inside the dragged one is still that Artifact, which the library then refuses", () => {
-    const drop = dropAt(graph, drawn, rects, copy("a:app"), { x: 400 + BOX.pad + 10, y: BOX.header + 10 });
+    const drop = dropAt(drawn, rects, copy("a:app"), { x: 400 + BOX.pad + 10, y: BOX.header + 10 });
     expect(drop).toEqual({ kind: "join", to: "kit", key: "a:bundle/a:kit" });
   });
 
+  it("onto a whole that already holds the dragged Artifact is that drop, for the library to refuse, never a leave in its place", () => {
+    // kit, dragged out of app, over bundle's box (bundle already holds kit) and over bundle's kit.
+    expect(dropAt(drawn, rects, copy("a:app/a:kit"), { x: 410, y: 10 })).toEqual({ kind: "join", to: "bundle", key: "a:bundle" });
+    expect(dropAt(drawn, rects, copy("a:app/a:kit"), { x: 400 + BOX.pad + 10, y: BOX.header + 10 })).toEqual({ kind: "join", to: "kit", key: "a:bundle/a:kit" });
+  });
+
   it("outside every box takes a part out of its whole, and leaves a top-level Artifact placed", () => {
-    expect(dropAt(graph, drawn, rects, copy("a:app/a:kit"), { x: 900, y: 900 })).toEqual({ kind: "leave" });
-    expect(dropAt(graph, drawn, rects, copy("a:core"), { x: 900, y: 900 })).toEqual({ kind: "place" });
+    expect(dropAt(drawn, rects, copy("a:app/a:kit"), { x: 900, y: 900 })).toEqual({ kind: "leave" });
+    expect(dropAt(drawn, rects, copy("a:core"), { x: 900, y: 900 })).toEqual({ kind: "place" });
   });
 
   it("inside its own box places a part there", () => {
-    expect(dropAt(graph, drawn, rects, copy("a:app/a:kit"), { x: 10, y: 10 })).toEqual({ kind: "place" });
+    expect(dropAt(drawn, rects, copy("a:app/a:kit"), { x: 10, y: 10 })).toEqual({ kind: "place" });
   });
 });
 

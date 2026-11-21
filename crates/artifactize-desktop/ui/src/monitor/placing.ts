@@ -3,7 +3,6 @@
 // pointer as its part (a whole's box, or a node, which becomes a whole), or leaves its whole
 // for the top level. Places are saved as shown: a box's parts from its inner corner, in the
 // whole's file; the top level's in each node's own.
-import type { Shape } from "../ipc/client";
 import { roomOf, type Annotations } from "./annotations";
 import type { Point } from "./graph";
 import { BOX, header, type Copy, type Rect } from "./parts";
@@ -27,16 +26,14 @@ export function under(drawn: Copy[], rects: Map<string, Rect>, point: Point, ski
   return found;
 }
 
-/** Where releasing the dragged copy `dragged` with the pointer at `point` puts it. A copy is a
- * drop target unless it is the dragged Artifact itself, already holds it as a part, or is the
- * box it is dragged in; one inside it would make a cycle and is still the target the library
- * then refuses. Over no box it leaves its whole; over its own box it is placed. */
-export function dropAt(graph: Shape, drawn: Copy[], rects: Map<string, Rect>, dragged: Copy, point: Point): Drop {
+/** Where releasing the dragged copy `dragged` with the pointer at `point` puts it: the drop the
+ * person made, never another edit in its place. Over the box it is dragged in it is placed;
+ * over no box it leaves its whole; over any other copy it joins that Artifact, which the library
+ * accepts or refuses (a cycle, or a whole that already holds it), saying why. */
+export function dropAt(drawn: Copy[], rects: Map<string, Rect>, dragged: Copy, point: Point): Drop {
   const target = under(drawn, rects, point, dragged.key);
   if (target === null) return dragged.parent === null ? { kind: "place" } : { kind: "leave" };
   if (target.key === dragged.parent) return { kind: "place" };
-  const parts = graph.nodes.find((node) => node.id === target.node.id)?.parts ?? [];
-  if (target.node.id === dragged.node.id || parts.includes(dragged.node.id)) return target.parent === dragged.parent ? { kind: "place" } : { kind: "leave" };
   return { kind: "join", to: target.node.name, key: target.key };
 }
 
