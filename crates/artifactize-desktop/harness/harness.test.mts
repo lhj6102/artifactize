@@ -11,7 +11,7 @@ import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { it, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { commandStream, forwardReadiness, superviseSession } from "./harness.mts";
+import { commandStream, forwardReadiness, releaseFixture, superviseSession } from "./harness.mts";
 import { embeddedPorts } from "../ui/e2e/portable.ts";
 
 const harness = fileURLToPath(new URL("./harness.mts", import.meta.url));
@@ -268,6 +268,32 @@ it("a failed service release cannot proceed to fixture deletion or retry ownersh
   assert.equal(commands.end(), ending);
   await assert.rejects(commands.run(async () => { events.push("remove inputs"); }), /session is stopping/);
   assert.deepEqual(events, ["service cleanup"]);
+});
+
+it("keeps ownership through two native stop failures and settles before removing the fixture", async () => {
+  let attempts = 0;
+  let settled = false;
+  let removed = false;
+  const recovery = superviseSession(() => {
+    attempts += 1;
+    if (attempts < 3) throw new Error("native exit not confirmed yet");
+  }, async () => {});
+  const owner = {
+    get stopped() { return recovery.stopped; },
+    stop: () => recovery.stop(),
+  };
+  await assert.rejects(releaseFixture(owner, async () => {
+    assert.equal(recovery.stopped, true);
+    settled = true;
+  }, () => {
+    assert.equal(settled, true);
+    removed = true;
+  }, async () => {
+    assert.equal(settled, false);
+    assert.equal(removed, false);
+  }), /native exit not confirmed yet/);
+  assert.equal(attempts, 3);
+  assert.equal(removed, true);
 });
 
 for (const gotBrowser of [false, true]) {

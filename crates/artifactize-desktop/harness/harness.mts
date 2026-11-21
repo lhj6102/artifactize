@@ -11,6 +11,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { own, type Owned } from "../ui/e2e/fixtures/owned.ts";
 import { cancelRuns, createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
@@ -51,7 +52,35 @@ export function superviseSession(recover: () => void, releasePort: () => Promise
   };
 }
 
-type AppOwner = { stopped: boolean; stop: () => Promise<void> };
+type AppOwner = { readonly stopped: boolean; stop: () => Promise<void> };
+
+/** Keep the teardown owner alive until it confirms native exit. The retry delay avoids
+ * spinning on an OS that has not yet finished a requested exit. */
+const OWNER_RETRY_MS = 1000;
+
+export async function releaseFixture(
+  owner: AppOwner | undefined,
+  settleRuns: () => Promise<void>,
+  removeInputs: () => void,
+  retry: () => Promise<unknown> = () => delay(OWNER_RETRY_MS),
+): Promise<void> {
+  let stopFailure: { cause: unknown } | undefined;
+  while (owner && !owner.stopped) {
+    try { await owner.stop(); }
+    catch (cause) { stopFailure ??= { cause }; }
+    if (!owner.stopped) await retry();
+  }
+  // Confirm app exit before ending its Runs, and settle those Runs before deleting inputs.
+  try {
+    await settleRuns();
+    removeInputs();
+  } catch (error) {
+    if (stopFailure) throw new AggregateError([stopFailure.cause, error], "app and fixture cleanup failed");
+    throw error;
+  }
+  if (stopFailure) throw stopFailure.cause;
+}
+
 /** The app's launch modes: none, `--repo`, `review` and `graph --repo`. */
 const SCREENS = ["monitor", "repo", "review", "graph"] as const;
 type Screen = (typeof SCREENS)[number];
@@ -374,21 +403,14 @@ async function serve(): Promise<void> {
   // Startup is an active command too, so an in-flight acquisition is joined first.
   const release = async () => {
     if (server.listening) server.close();
-    const failures: unknown[] = [];
-    // Retry the recorded owner, even after startup returned no browser handle. The service
-    // can fail twice without losing the independent native identity needed to reap the app.
-    for (let tries = 0; owner && !owner.stopped && tries < 2; tries += 1) {
-      try { await owner.stop(); } catch (error) { failures.push(error); }
+    try {
+      await releaseFixture(owner, async () => {
+        shown = undefined;
+        await scope?.close();
+      }, () => { if (candidate) cleanup(candidate.root); });
+    } finally {
+      rmSync(join(sessionDir, ENDPOINT), { force: true });
     }
-    if (owner && !owner.stopped) {
-      failures.push(new Error(`The owned app could not be reaped; its inputs are kept at ${candidate?.root}`));
-    } else {
-      shown = undefined;
-      try { await scope?.close(); } catch (error) { failures.push(error); }
-      try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
-    }
-    rmSync(join(sessionDir, ENDPOINT), { force: true });
-    if (failures.length > 0) throw new AggregateError(failures, "Desktop cleanup failed");
   };
   let edits = 0;
   let graphLaunches = 0;

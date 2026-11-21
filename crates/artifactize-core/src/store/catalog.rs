@@ -43,7 +43,14 @@ struct Metadata {
     status: RunStatus,
     created_at: crate::types::Timestamp,
     completed_at: Option<crate::types::Timestamp>,
+    error: Option<String>,
     comment: Option<crate::types::RunComment>,
+}
+
+impl Metadata {
+    fn state(&mut self) -> Result<super::RunState, String> {
+        super::RunState::from_parts(self.status, self.completed_at, self.error.take())
+    }
 }
 
 #[derive(Deserialize)]
@@ -144,8 +151,9 @@ pub(super) fn in_snapshot(
     // Keep the SQL projection small. Full Run state contains validation and evidence that are
     // not part of the timeline, and collecting those blobs made every cold read expensive.
     let sql = format!("SELECT id,CASE WHEN json_valid(data) THEN json_object(
-        'repoPath',repo,'status',status,'createdAt',json_extract(data,'$.createdAt'),
+        'repoPath',repo,'status',json_extract(data,'$.status'),'createdAt',json_extract(data,'$.createdAt'),
         'completedAt',json_extract(data,'$.completedAt'),'comment',json_extract(data,'$.comment'),
+        'error',CASE coalesce(json_type(data,'$.error'),'null') WHEN 'text' THEN '' WHEN 'null' THEN NULL ELSE 0 END,
         'commonDir',json_extract(data,'$.commonDir'),'worktreePath',json_extract(data,'$.worktreePath'),
         'branch',json_extract(data,'$.branch')) END FROM runs{predicate} ORDER BY rowid");
     let mut statement = db.prepare_cached(&sql)?;
@@ -156,18 +164,26 @@ pub(super) fn in_snapshot(
     while let Some(row) = rows.next()? {
         let id: crate::types::RunId = row.get(0)?;
         let data = row.get_ref(1)?.as_str().unwrap_or("null");
-        match decode::<Metadata>("run", &id, data) {
-            Ok(run) => {
+        let metadata = decode::<Metadata>("run", &id, data).and_then(|mut run| {
+            let state = run.state().map_err(|reason| Unreadable {
+                kind: "run".into(),
+                id: id.to_string(),
+                reason,
+            })?;
+            Ok((run, state))
+        });
+        match metadata {
+            Ok((run, lifecycle)) => {
                 order.push(id.clone());
                 catalog.insert(
                     id.clone(),
                     CatalogRun {
                         id,
                         created_at: run.created_at,
-                        completed_at: run.completed_at,
+                        completed_at: lifecycle.completed_at(),
                         repo_path: run.repo_path,
                         repository: run.repository,
-                        status: run.status,
+                        status: lifecycle.status(),
                         comment: run.comment,
                         red: 0,
                         error: 0,
