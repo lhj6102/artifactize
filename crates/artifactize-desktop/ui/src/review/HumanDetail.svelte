@@ -270,7 +270,8 @@
     <div class="reviewing">
       {@render reading()}
       <Section name="Tool log" folds={false}>
-        <div class="fill"><ToolLog entries={review.log} empty="What the tools print shows here." /></div>
+        <!-- Submitted, the box stays where it was, empty (D-REV-1). -->
+        <div class="fill"><ToolLog entries={review.log} empty={review.settled ? null : "What the tools print shows here."} /></div>
       </Section>
       {@render debug()}
     </div>
@@ -362,6 +363,10 @@
   .fill > :global(*) {
     flex: 1 1 auto;
     min-height: 0;
+  }
+  /* In two columns the log's box takes the rest of the panel's height, uncapped (D-REV-3). */
+  .fill :global(.log) {
+    max-height: none;
   }
   /* The Evaluation: its head row, the Result scrolling on its own, the actions along its bottom. */
   .evaluation {
