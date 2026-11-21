@@ -4,7 +4,8 @@
   // panned and zoomed as Verify's graph is. A click on an Artifact opens its panel at the right:
   // its evals with their kind, title, criteria and the Artifacts they read. While pointing, a
   // click on an Artifact or an eval appends its ID.
-  import { SvelteFlow, SvelteFlowProvider, type Edge, type Node } from "@xyflow/svelte";
+  import { SvelteFlow, SvelteFlowProvider, type Edge, type Node, type Viewport } from "@xyflow/svelte";
+  import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
   import { onMount } from "svelte";
   import { call, message } from "../ipc/client";
@@ -16,6 +17,16 @@
   const v = getViewerState();
   const SIZE = { width: 168, height: 36 };
   const nodeTypes = { declared: DeclaredNode };
+  /** The smallest grid cell, in screen pixels, still drawn. */
+  const GRID_SHOWN = 8;
+  /** Where the graph is looked at from, as the canvas pans and zooms. */
+  let camera = $state<Viewport>({ x: 0, y: 0, zoom: 1 });
+  /** The grid's cell in graph units, as the --grid token says. */
+  let unit = $state(24);
+  const cell = $derived(unit * camera.zoom);
+  const gridCell: Attachment<HTMLElement> = (canvas) => {
+    unit = Number.parseFloat(getComputedStyle(canvas).getPropertyValue("--grid")) || unit;
+  };
 
   let graph = $state.raw<Declared | null>(null);
   let error = $state<string | null>(null);
@@ -62,14 +73,22 @@
   });
 </script>
 
-<div class="declared" class:open={shown !== null}>
-  <div class="canvas" aria-label="Declared graph">
+<div class="declared">
+  <div
+    class="canvas"
+    class:far={cell < GRID_SHOWN}
+    aria-label="Declared graph"
+    style:background-size="{cell}px {cell}px"
+    style:background-position="{camera.x}px {camera.y}px"
+    {@attach gridCell}
+  >
     {#if error}<p class="error">{error}</p>{/if}
     {#if graph}
       <SvelteFlowProvider>
         <SvelteFlow
           bind:nodes
           bind:edges
+          bind:viewport={camera}
           {nodeTypes}
           fitView
           minZoom={0.1}
@@ -112,26 +131,34 @@
 
 <style>
   .declared {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    position: relative;
     height: 100%;
     min-height: 0;
   }
-  .declared.open {
-    grid-template-columns: minmax(0, 1fr) min(420px, 45%);
-  }
+  /* The canvas keeps the whole window; its faint grid moves and scales with the camera, left
+     out once its cells are too small to read (D-GRAPH-1, D-GRAPH-6). */
   .canvas {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
-    background: var(--surface-app);
+    position: absolute;
+    inset: 0;
+    background-color: var(--surface-app);
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--line-group) 40%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--line-group) 40%, transparent) 1px, transparent 1px);
+  }
+  .canvas.far {
+    background-image: none;
   }
   .canvas :global(.svelte-flow) {
-    --xy-background-color: var(--surface-app);
+    --xy-background-color: transparent;
     --xy-edge-stroke: var(--edge);
   }
-  /* The Artifact's panel, docked at the right as the Detail is. */
+  /* The Artifact's panel, docked over the canvas's right edge as the Detail is (D-INS-1). */
   .panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(420px, 45%);
     display: flex;
     flex-direction: column;
     min-height: 0;
