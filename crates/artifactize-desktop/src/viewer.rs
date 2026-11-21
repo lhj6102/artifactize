@@ -132,12 +132,17 @@ impl Sessions {
     }
 }
 
+pub(crate) enum Source {
+    /// The original request which owns the tool, even when opened through a follower.
+    Review(RequestId),
+    Workspace(PathBuf),
+}
+
 /// A viewer is minted only when the library has run an admitted viewer Human tool.
 pub(crate) async fn launch(
     app: &App,
     outcome: &Outcome,
-    review_id: Option<artifactize_core::types::RequestId>,
-    workspace: Option<PathBuf>,
+    source: Source,
 ) -> Result<Option<ViewerLaunch>, Failure> {
     let Outcome::Ran {
         result: Ok(result), ..
@@ -148,12 +153,11 @@ pub(crate) async fn launch(
     let [Content::Viewer { artifact }] = result.content() else {
         return Ok(None);
     };
-    let workspace = match (review_id, workspace) {
-        (Some(id), None) => store::read_request_repo(&app.launch.state, id.as_str())
+    let workspace = match source {
+        Source::Review(id) => store::read_request_repo(&app.launch.state, id.as_str())
             .await
             .map_err(Failure::Read)?,
-        (None, Some(workspace)) => workspace,
-        _ => unreachable!("one source of viewer launch"),
+        Source::Workspace(workspace) => workspace,
     };
     let artifact = artifact.clone();
     let worktree = workspace.clone();

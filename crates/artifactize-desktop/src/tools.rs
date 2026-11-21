@@ -150,6 +150,7 @@ pub async fn artifact_tools(
 #[specta::specta]
 pub async fn artifact_tool_run(
     app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
     branch: BranchKey,
     artifact: String,
     tool: String,
@@ -158,6 +159,7 @@ pub async fn artifact_tool_run(
     let artifact = artifact_name(&artifact)?;
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
     let workspace = app.browse.branch(&branch.to_place())?.workspace;
+    let work = app.human.start_artifact(caller, job)?;
     let operation = review::Tool::operation_of(&tool, &artifact).to_owned();
     let run = app.human.log().start(
         Key::Artifact {
@@ -167,21 +169,23 @@ pub async fn artifact_tool_run(
         &operation,
         artifact.as_str(),
     );
-    let cancel = app.human.start(job);
     let result = match app.sites.declarations(&workspace, &artifact).await {
-        Ok(declarations) => declarations.run_tool(&tool, cancel, run).await,
+        Ok(declarations) => declarations.run_tool(&tool, work.cancel.clone(), run).await,
         Err(error) => {
             run.end(review::log::End::Failed(error.to_string()));
             Err(error.to_string())
         }
     };
-    app.human.end(job);
     let outcome = Outcome::Ran {
         tool,
         claimed: None,
         result,
     };
     let mut notice: Notice = outcome.notice().into();
-    notice.viewer = crate::viewer::launch(&app, &outcome, None, Some(workspace)).await?;
+    if !work.cancel.is_cancelled() {
+        notice.viewer =
+            crate::viewer::launch(&app, &outcome, crate::viewer::Source::Workspace(workspace))
+                .await?;
+    }
     Ok(notice)
 }

@@ -609,6 +609,155 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_review_cancels_its_tool_before_a_submission_from_another_window() {
+    let inputs = os::tempdir();
+    let started = inputs.path().join("started");
+    let release = inputs.path().join("finish");
+    let arguments = json!(["touch", started, "wait", release]);
+    let tool = json!(os::steps_program(inputs.path()));
+    let declaration = format!(
+        r#"name = "busy"
+fingerprint = false
+
+[views.human_tools]
+wait = {{ description = "Wait for the test gate.", command = {tool}, args = {arguments}, kind = "output" }}
+
+[evals.approve]
+title = "Approve the fixture"
+profile = {{ kind = "human" }}
+payload.instruction = "Review the fixture."
+"#
+    );
+    let fixture = fixture_with(&[("busy", &declaration)]);
+    let window = window(&fixture, Mode::Review);
+    let other = tauri::WebviewWindowBuilder::new(&window.app, "other", Default::default())
+        .build()
+        .unwrap();
+    let id = saved(&fixture, "busy/approve").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+
+    struct FinishOnDrop<'a>(&'a Path);
+    impl Drop for FinishOnDrop<'_> {
+        fn drop(&mut self) {
+            let _ = fs::write(self.0, "");
+        }
+    }
+    std::thread::scope(|scope| {
+        let first = &window.window;
+        let id = id.as_str();
+        let running = scope.spawn(move || {
+            invoke(
+                first,
+                "human_run",
+                json!({"id": id, "tool": "wait_busy", "job": 2}),
+            )
+        });
+        let gate = FinishOnDrop(&release);
+        os::wait_until(std::time::Duration::from_secs(15), || started.is_file());
+        let rejected = invoke(&other, "human_release", json!({"ids": [id], "job": 2})).unwrap_err();
+        assert_eq!(rejected["kind"], "action");
+        assert!(
+            rejected["message"]
+                .as_str()
+                .unwrap()
+                .contains("work in progress")
+        );
+        let rejected = invoke(
+            &other,
+            "human_run",
+            json!({"id": id, "tool": "wait_busy", "job": 2}),
+        )
+        .unwrap_err();
+        assert_eq!(rejected["kind"], "action");
+        let submitted = invoke(&other, "human_draft_submit", json!({"id": id, "job": 2})).unwrap();
+        assert_eq!(submitted["settled"], "published");
+        let ran = running.join().unwrap().unwrap();
+        assert_eq!(
+            ran["error"], true,
+            "the unfinished tool was cancelled: {ran}"
+        );
+        assert!(
+            !release.exists(),
+            "the tool was never told to finish on its own"
+        );
+        drop(gate);
+    });
+    assert_eq!(
+        saved(&fixture, "busy/approve").request.status(),
+        artifactize_core::types::RequestStatus::Green
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_shared_review_opens_the_original_artifact_viewer_not_the_followers() {
+    const PAGE: &str = r#"name = "page"
+type = "files"
+fingerprint = { files = ["content.txt"] }
+
+[evals.approve]
+title = "Review the page"
+profile = { kind = "human" }
+payload.instruction = "Read the page."
+"#;
+    let prepare = |repo: &Path| {
+        fs::create_dir_all(repo.join("page")).unwrap();
+        support::declaration::write(repo, repo.join("page/index.artf"), PAGE).unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("page/content.txt")),
+            "original",
+        )
+        .unwrap();
+    };
+    let root = os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    prepare(&repo);
+    let fixture = Fixture {
+        _root: run_fixture::RepoLease::new(root, &state, &repo),
+        repo,
+        state,
+    };
+    verify(&fixture.repo, &fixture.state);
+    let original = saved(&fixture, "page/approve").request.id.to_string();
+    let root = os::tempdir();
+    let follower_repo = root.path().join("follower");
+    prepare(&follower_repo);
+    let _lease = run_fixture::RepoLease::new(root, &fixture.state, &follower_repo);
+    verify(&follower_repo, &fixture.state);
+    fs::write(
+        support::declaration::source_path(follower_repo.join("page/content.txt")),
+        "follower",
+    )
+    .unwrap();
+    let follower = saved(&fixture, "page/approve");
+    let id = follower.request.id.to_string();
+    assert_ne!(id, original);
+    assert_eq!(
+        follower.execution.unwrap().provenance.request_id.as_str(),
+        original
+    );
+
+    let window = window(&fixture, Mode::Review);
+    let claim = invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    assert_eq!(claim["view"]["stage"], "review");
+    let launched = invoke(
+        &window,
+        "human_run",
+        json!({"id": id, "tool": "view_page", "job": 2}),
+    )
+    .unwrap();
+    let contents = invoke(
+        &window,
+        "viewer_read_text",
+        json!({"session": launched["viewer"]["session"], "path": "content.txt"}),
+    )
+    .unwrap();
+    assert_eq!(contents, "original");
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_review_never_goes_back_to_a_view_read_before_its_newest() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);

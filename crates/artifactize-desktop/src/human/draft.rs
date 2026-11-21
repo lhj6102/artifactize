@@ -3,7 +3,7 @@ use artifactize_core::review;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use super::{FormView, Verdict, form::FieldValue, opened, read};
+use super::{Caller, FormView, Verdict, form::FieldValue, read};
 use crate::{App, Failure, ids::RequestKey};
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -160,12 +160,12 @@ pub async fn human_draft_append(
 #[specta::specta]
 pub async fn human_draft_submit(
     app: tauri::State<'_, App>,
+    caller: Caller,
     id: RequestKey,
     job: crate::ids::JobId,
 ) -> Result<super::Submitted, Failure> {
     let id = id.into_inner();
-    super::guard(&app, &id, review::review_refusal).await?;
-    let request = opened(&app, &id)?;
+    let request = super::guard(&app, &id, review::review_refusal).await?;
     let draft = review::read_draft(&app.launch.state, &request.request.id, &app.launch.reviewer)
         .await
         .map_err(Failure::Read)?
@@ -175,5 +175,5 @@ pub async fn human_draft_submit(
         .and_then(|form| form.result())
         .and_then(TryInto::try_into)
         .map_err(Failure::Invalid)?;
-    super::submit(&app, id, result, job).await
+    super::submit(&app, caller, id, request.request.id.clone(), result, job).await
 }

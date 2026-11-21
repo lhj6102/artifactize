@@ -6,10 +6,13 @@
 //! errors are the terminal's.
 pub(crate) mod draft;
 mod form;
+mod jobs;
 pub(crate) mod log;
 pub(crate) mod search;
 
 pub use form::{Draft, FormView, Verdict};
+pub(crate) use jobs::Caller;
+use jobs::{Action, Jobs};
 
 use crate::ids::{JobId, RequestKey};
 use crate::{
@@ -66,8 +69,7 @@ pub struct Reviews {
     pub(crate) reads: Reads,
     /// Resolved tool command lines, resolved once per request and again after each run.
     commands: Mutex<BTreeMap<RequestId, Resolved>>,
-    /// Running jobs by the frontend's job number.
-    jobs: Mutex<BTreeMap<JobId, CancellationToken>>,
+    jobs: Jobs,
     /// Claims this app took and has neither submitted nor released.
     taken: Mutex<BTreeSet<RequestId>>,
     log: review::log::Sink,
@@ -85,7 +87,7 @@ impl Default for Reviews {
             views: Mutex::default(),
             reads: Reads::default(),
             commands: Mutex::default(),
-            jobs: Mutex::default(),
+            jobs: Jobs::default(),
             taken: Mutex::default(),
             log,
             logs: Mutex::default(),
@@ -129,22 +131,15 @@ impl Reviews {
     }
 
     pub fn cancel_all(&self) {
-        for token in self.jobs.lock().expect("jobs lock").values() {
-            token.cancel();
-        }
+        self.jobs.cancel_all();
     }
 
-    pub(crate) fn start(&self, job: JobId) -> CancellationToken {
-        let token = CancellationToken::new();
-        self.jobs
-            .lock()
-            .expect("jobs lock")
-            .insert(job, token.clone());
-        token
-    }
-
-    pub(crate) fn end(&self, job: JobId) {
-        self.jobs.lock().expect("jobs lock").remove(&job);
+    pub(crate) fn start_artifact(
+        &self,
+        caller: Caller,
+        job: JobId,
+    ) -> Result<jobs::Lease<'_>, Failure> {
+        self.jobs.begin(caller, job, Vec::new(), Action::Tool)
     }
 
     /// Freshen the cached views of requests the waiting stack read as read number `read`, so
@@ -487,18 +482,14 @@ pub async fn human_form(
     form::template(&opened(&app, &id)?.request, verdict, kept)
 }
 
-async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {
-    let cancel = app.human.start(job);
-    let outcome = work
-        .run(
-            app.launch.state.clone(),
-            app.launch.reviewer.clone(),
-            cancel,
-            app.human.log.clone(),
-        )
-        .await;
-    app.human.end(job);
-    outcome
+async fn run_job(app: &App, work: Job, cancel: CancellationToken) -> Outcome {
+    work.run(
+        app.launch.state.clone(),
+        app.launch.reviewer.clone(),
+        cancel,
+        app.human.log.clone(),
+    )
+    .await
 }
 
 /// Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
@@ -507,6 +498,7 @@ async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {
 #[specta::specta]
 pub async fn human_claim(
     app: tauri::State<'_, App>,
+    caller: Caller,
     id: RequestKey,
     job: JobId,
 ) -> Result<Acted, Failure> {
@@ -514,9 +506,14 @@ pub async fn human_claim(
     // Someone else's claim, or a settled request, is refused in the library's words.
     let (_, view) = read(&app, &id).await?;
     review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
-    let outcome = run_job(&app, job, Job::Claim { id: id.clone() }).await;
+    let owner = view.request.id.clone();
+    let work = app
+        .human
+        .jobs
+        .begin(caller, job, vec![owner.clone()], Action::Ordinary)?;
+    let outcome = run_job(&app, Job::Claim { id: owner.clone() }, work.cancel.clone()).await;
     if let Outcome::Claimed { result: Ok(_) } = &outcome {
-        app.human.took(&id, true);
+        app.human.took(&owner, true);
     }
     acted(&app, &id, outcome).await
 }
@@ -540,21 +537,27 @@ async fn acted(app: &App, id: &RequestId, outcome: Outcome) -> Result<Acted, Fai
 #[specta::specta]
 pub async fn human_run(
     app: tauri::State<'_, App>,
+    caller: Caller,
     id: RequestKey,
     tool: String,
     job: JobId,
 ) -> Result<Notice, Failure> {
     let id = id.into_inner();
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
-    guard(&app, &id, review::review_refusal).await?;
+    let request = guard(&app, &id, review::review_refusal).await?;
+    let owner = request.request.id.clone();
+    let work = app
+        .human
+        .jobs
+        .begin(caller, job, vec![owner.clone()], Action::Tool)?;
     let outcome = run_job(
         &app,
-        job,
         Job::Run {
-            id: id.clone(),
+            id: owner.clone(),
             tool,
             claim: false,
         },
+        work.cancel.clone(),
     )
     .await;
     // Declarations may have changed; resolve the commands again for the next run.
@@ -562,19 +565,20 @@ pub async fn human_run(
         .commands
         .lock()
         .expect("commands lock")
-        .remove(&id);
+        .remove(&owner);
     let mut notice: Notice = outcome.notice().into();
-    notice.viewer = crate::viewer::launch(&app, &outcome, Some(id), None).await?;
+    if !work.cancel.is_cancelled() {
+        notice.viewer =
+            crate::viewer::launch(&app, &outcome, crate::viewer::Source::Review(owner)).await?;
+    }
     Ok(notice)
 }
 
 /// Cancel running job `job`: a tool, or a submission's fingerprint recheck.
 #[tauri::command]
 #[specta::specta]
-pub fn human_cancel(app: tauri::State<'_, App>, job: JobId) {
-    if let Some(token) = app.human.jobs.lock().expect("jobs lock").get(&job) {
-        token.cancel();
-    }
+pub fn human_cancel(app: tauri::State<'_, App>, caller: Caller, job: JobId) {
+    app.human.jobs.cancel(caller, job);
 }
 
 /// Where a submission's settled result stands.
@@ -604,11 +608,11 @@ async fn guard(
     app: &App,
     id: &RequestId,
     rule: fn(Option<&RequestView>, &artifactize_core::types::ReviewerId) -> Option<String>,
-) -> Result<(), Failure> {
+) -> Result<RequestView, Failure> {
     let (_, view) = read(app, id).await?;
     match rule(Some(&view), &app.launch.reviewer) {
         Some(refusal) => Err(Failure::Action(refusal)),
-        None => Ok(()),
+        None => Ok(view),
     }
 }
 
@@ -671,33 +675,40 @@ pub async fn human_remove_item(
 #[specta::specta]
 pub async fn human_submit(
     app: tauri::State<'_, App>,
+    caller: Caller,
     id: RequestKey,
     draft: Draft,
     job: JobId,
 ) -> Result<Submitted, Failure> {
     let id = id.into_inner();
-    guard(&app, &id, review::review_refusal).await?;
-    let request = opened(&app, &id)?;
+    let request = guard(&app, &id, review::review_refusal).await?;
     let result = form::result(&request.request, draft)?
         .try_into()
         .map_err(Failure::Invalid)?;
-    submit(&app, id, result, job).await
+    submit(&app, caller, id, request.request.id.clone(), result, job).await
 }
 
 async fn submit(
     app: &App,
+    caller: Caller,
     id: RequestId,
+    owner: RequestId,
     result: review::Submission,
     job: JobId,
 ) -> Result<Submitted, Failure> {
+    let work = app
+        .human
+        .jobs
+        .begin(caller, job, vec![owner.clone()], Action::Submit)?;
+    work.ready().await?;
     let outcome = run_job(
         app,
-        job,
         Job::Submit {
-            id: id.clone(),
+            id: owner.clone(),
             result,
             claim: false,
         },
+        work.cancel.clone(),
     )
     .await;
     let settled = match &outcome {
@@ -708,14 +719,17 @@ async fn submit(
         Outcome::Submitted { result: Ok(_), .. } => Settled::Published,
         other => unreachable!("a submit job ends in Submitted or SavedLocally, not {other:?}"),
     };
-    app.human.took(&id, false);
-    crate::viewer::settled(app, &id);
+    app.human.took(&owner, false);
+    crate::viewer::settled(app, &owner);
+    if id != owner {
+        crate::viewer::settled(app, &id);
+    }
     // A submitted review's log ends here; what a launched program still prints is dropped.
     app.human
         .logs
         .lock()
         .expect("logs lock")
-        .remove(&review::log::Key::from(&id));
+        .remove(&review::log::Key::from(&owner));
     let Acted { notice, view } = acted(app, &id, outcome).await?;
     Ok(Submitted {
         settled,
@@ -729,27 +743,39 @@ async fn submit(
 #[specta::specta]
 pub async fn human_release(
     app: tauri::State<'_, App>,
+    caller: Caller,
     ids: Vec<RequestKey>,
     job: JobId,
 ) -> Result<Acted, Failure> {
     let ids: Vec<RequestId> = ids.into_iter().map(RequestKey::into_inner).collect();
-    if let [id] = ids.as_slice() {
-        guard(&app, id, review::release_refusal).await?;
+    let mut owners = BTreeSet::new();
+    for id in &ids {
+        let view = if ids.len() == 1 {
+            guard(&app, id, review::release_refusal).await?
+        } else {
+            read(&app, id).await?.1
+        };
+        owners.insert(view.request.id.clone());
     }
+    let owners: Vec<_> = owners.into_iter().collect();
+    let work = app
+        .human
+        .jobs
+        .begin(caller, job, owners.clone(), Action::Ordinary)?;
     let outcome = run_job(
         &app,
-        job,
         Job::Release {
-            ids: ids.clone(),
+            ids: owners.clone(),
             quit: false,
         },
+        work.cancel.clone(),
     )
     .await;
     let Outcome::Released { failed, .. } = &outcome else {
         unreachable!("a release job ends in Released");
     };
     // A release that failed keeps its claim on the list.
-    for id in ids
+    for id in owners
         .iter()
         .filter(|id| !failed.iter().any(|(failed, _)| failed == *id))
     {
