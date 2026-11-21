@@ -870,6 +870,11 @@ fingerprint = { files = ["content.txt"] }
 title = "Review the page"
 profile = { kind = "human" }
 payload.instruction = "Read the page."
+
+[evals.another]
+title = "Review the page separately"
+profile = { kind = "human" }
+payload.instruction = "Read the page separately."
 "#;
     let prepare = |repo: &Path| {
         fs::create_dir_all(repo.join("page")).unwrap();
@@ -931,6 +936,32 @@ payload.instruction = "Read the page."
     )
     .unwrap();
     assert_eq!(contents, "original");
+
+    let session = &launched["viewer"]["session"];
+    let other = saved(&fixture, "page/another").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": other, "job": 3})).unwrap();
+    invoke(&window, "active_review_set", json!({"request": original})).unwrap();
+    let context = invoke(&window, "viewer_context", json!({"session": session})).unwrap();
+    assert_eq!(context["review"], original);
+    invoke(&window, "active_review_set", json!({"request": other})).unwrap();
+    let refused = invoke(
+        &window,
+        "viewer_point",
+        json!({"session": session, "review": context["review"], "text": "Delayed Point"}),
+    )
+    .unwrap_err();
+    assert_eq!(refused["kind"], "action");
+    for review in [&original, &other] {
+        let draft = invoke(&window, "human_draft", json!({"id": review})).unwrap();
+        assert_eq!(draft["notes"], "");
+    }
+    let notes = invoke(
+        &window,
+        "viewer_point",
+        json!({"session": session, "review": other, "text": "content.txt L1:C1"}),
+    )
+    .unwrap();
+    assert_eq!(notes, "content.txt L1:C1");
 }
 
 #[test]

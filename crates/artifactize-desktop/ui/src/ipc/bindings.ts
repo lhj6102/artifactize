@@ -204,8 +204,8 @@ export const commands = {
 	/**  The exact scoped graph wire shape used by the library. Serialize at the IPC edge. */
 	viewerDeclarations: (session: number) => typedError<string, Failure>(__TAURI_INVOKE("viewer_declarations", { session })),
 	viewerClose: (session: number) => __TAURI_INVOKE<void>("viewer_close", { session }),
-	/**  Append to the shared draft and return the updated plain-text response. */
-	viewerPoint: (session: number, text: string) => typedError<string, Failure>(__TAURI_INVOKE("viewer_point", { session, text })),
+	/**  Append to the review that was active when Point began, never to its replacement. */
+	viewerPoint: (session: number, review: string, text: string) => typedError<string, Failure>(__TAURI_INVOKE("viewer_point", { session, review, text })),
 	activeReviewSet: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("active_review_set", { request })),
 	/**
 	 *  Open the Artifact Viewer of viewer session `session`, titled `title`; one already showing the

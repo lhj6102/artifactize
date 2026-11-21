@@ -309,18 +309,21 @@ pub fn viewer_close(app: tauri::State<'_, App>, session: u32) {
     app.viewers.drop_session(session);
 }
 
-/// Append to the shared draft and return the updated plain-text response.
+/// Append to the review that was active when Point began, never to its replacement.
 #[tauri::command]
 #[specta::specta]
 pub async fn viewer_point(
     app: tauri::State<'_, App>,
     session: u32,
+    review: RequestKey,
     text: String,
 ) -> Result<String, Failure> {
     let viewer = app.viewers.get(session)?;
+    let expected = review.into_inner();
     let review = active(&app)
         .await
-        .ok_or_else(|| Failure::Action("Pointing needs an active Human review.".into()))?;
+        .filter(|review| review.id == expected)
+        .ok_or_else(|| Failure::Action("The active review changed. Start Point again.".into()))?;
     viewer
         .pointing(&app.launch.state, &review, &text)
         .await
