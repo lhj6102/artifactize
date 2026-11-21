@@ -196,13 +196,11 @@ impl App {
     ///
     /// [`Origin::replaces`]: artifactize_core::monitor::Origin::replaces
     fn observe(&self, origin: artifactize_core::monitor::Origin) -> u32 {
-        let (generation, replaced) = self.generation.observe(origin);
-        if replaced {
+        self.generation.observe(origin, || {
             self.human.reset();
             self.currents.reset();
             self.viewers.reset();
-        }
-        generation
+        })
     }
 
     /// A closing window cancels running Human tools, Current scans and a Codex sign-in in

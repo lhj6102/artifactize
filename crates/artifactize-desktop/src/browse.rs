@@ -531,11 +531,13 @@ pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<Br
         }
     };
     if let Some(origin) = accepted {
-        app.observe(origin);
+        let generation = app.observe(origin);
         // A review opened from the Waiting stack shows the claims and states it lists, unless
-        // it read them since.
-        let (number, views) = app.browse.waiting_views();
-        app.human.remember(number, views);
+        // it read them since or a newer snapshot replaced this state.
+        app.generation.if_current(generation, || {
+            let (number, views) = app.browse.waiting_views();
+            app.human.remember(generation, number, views);
+        });
     }
     Ok(app.browse.view(OffsetDateTime::now_utc()))
 }

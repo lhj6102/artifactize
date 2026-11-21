@@ -63,6 +63,7 @@ impl Reads {
 /// Keep the referenced request for the header and Back link, and its owner for review actions.
 #[derive(Clone)]
 struct ReadReview {
+    generation: u32,
     exact: RequestView,
     owner: RequestView,
 }
@@ -154,13 +155,19 @@ impl Reviews {
 
     /// Freshen the cached views of requests the waiting stack read as read number `read`, so
     /// a review opened from it shows the claims and states the stack shows.
-    pub(crate) fn remember(&self, read: u32, views: impl IntoIterator<Item = RequestView>) {
+    pub(crate) fn remember(
+        &self,
+        generation: u32,
+        read: u32,
+        views: impl IntoIterator<Item = RequestView>,
+    ) {
         for view in views {
             let id = view.request.id.clone();
             self.keep(
                 read,
                 id,
                 ReadReview {
+                    generation,
                     exact: view.clone(),
                     owner: view,
                 },
@@ -393,30 +400,35 @@ fn view(
 /// Read the exact request and its actionable owner under the same read sequence number.
 async fn read(app: &App, id: &RequestId) -> Result<(u32, ReadReview), Failure> {
     let state = &app.launch.state;
+    let generation = app.generation.current();
     let (number, views) = app
         .human
         .reads
         .numbered(async {
             let exact = store::read_request_as(state, id, store::Shown::Requests).await?;
-            resolve(app, exact).await
+            resolve(app, generation, exact).await
         })
         .await;
     Ok((
         number,
-        loaded(app, number, views.map_err(Failure::Read)?).await,
+        loaded(app, number, views.map_err(Failure::Read)?).await?,
     ))
 }
 
-async fn resolve(app: &App, exact: RequestView) -> Result<ReadReview, String> {
+async fn resolve(app: &App, generation: u32, exact: RequestView) -> Result<ReadReview, String> {
     let owner = if exact.request.status().is_human_wait() {
         store::read_original_as(&app.launch.state, &exact, store::Shown::Requests).await?
     } else {
         exact.clone()
     };
-    Ok(ReadReview { exact, owner })
+    Ok(ReadReview {
+        generation,
+        exact,
+        owner,
+    })
 }
 
-async fn loaded(app: &App, number: u32, read: ReadReview) -> ReadReview {
+async fn loaded(app: &App, number: u32, read: ReadReview) -> Result<ReadReview, Failure> {
     let view = &read.owner;
     let state = &app.launch.state;
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
@@ -428,33 +440,56 @@ async fn loaded(app: &App, number: u32, read: ReadReview) -> ReadReview {
             .lock()
             .expect("commands lock")
             .contains_key(&view.request.id);
-    if resolve {
-        let commands = async {
-            let (receipts, _) = artifactize_core::human::open(state, &view.request.id).await?;
-            let result = artifactize_core::human::tool_commands(&receipts, &view.request.id).await;
-            let closed = receipts.close().await;
-            result.and_then(|commands| closed.map(|()| commands))
-        }
-        .await;
-        app.human
-            .commands
-            .lock()
-            .expect("commands lock")
-            .insert(view.request.id.clone(), commands);
-    }
-    app.human
-        .keep(number, read.exact.request.id.clone(), read.clone());
-    read
+    let commands = if resolve {
+        Some(
+            async {
+                let (receipts, _) = artifactize_core::human::open(state, &view.request.id).await?;
+                let result =
+                    artifactize_core::human::tool_commands(&receipts, &view.request.id).await;
+                let closed = receipts.close().await;
+                result.and_then(|commands| closed.map(|()| commands))
+            }
+            .await,
+        )
+    } else {
+        None
+    };
+    app.generation
+        .if_current(read.generation, || {
+            if let Some(commands) = commands {
+                app.human
+                    .commands
+                    .lock()
+                    .expect("commands lock")
+                    .insert(view.request.id.clone(), commands);
+            }
+            app.human
+                .keep(number, read.exact.request.id.clone(), read.clone());
+        })
+        .ok_or_else(|| {
+            Failure::Read("The state was replaced while reading the review; reopen it.".into())
+        })?;
+    Ok(read)
 }
 
 /// The review of `request`, read as read number `read`.
 fn show(app: &App, read: u32, request: &ReadReview) -> HumanView {
-    let commands = app.human.commands.lock().expect("commands lock");
+    let commands = app
+        .generation
+        .if_current(request.generation, || {
+            app.human
+                .commands
+                .lock()
+                .expect("commands lock")
+                .get(&request.owner.request.id)
+                .cloned()
+        })
+        .flatten();
     let mut shown = view(
         &request.owner,
         app.launch.reviewer.as_str(),
-        commands.get(&request.owner.request.id),
-        app.generation.current(),
+        commands.as_ref(),
+        request.generation,
         read,
         OffsetDateTime::now_utc(),
     );

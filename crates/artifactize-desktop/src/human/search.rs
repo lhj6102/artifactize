@@ -159,6 +159,7 @@ pub async fn human_open_reference(
     let query = query
         .parse::<search::Query>()
         .map(search::Query::for_places);
+    let generation = app.generation.current();
     let (number, opened) = app
         .human
         .reads
@@ -179,11 +180,11 @@ pub async fn human_open_reference(
                     Some("The current filter is incomplete or invalid.".into()),
                 ),
             };
-            Ok::<_, String>((super::resolve(&app, exact).await?, reason))
+            Ok::<_, String>((super::resolve(&app, generation, exact).await?, reason))
         })
         .await;
     let (views, outside_reason) = opened.map_err(Failure::Read)?;
-    let view = super::loaded(&app, number, views).await;
+    let view = super::loaded(&app, number, views).await?;
     Ok(OpenReview {
         view: super::show(&app, number, &view),
         outside_filter: outside_reason.is_some(),
