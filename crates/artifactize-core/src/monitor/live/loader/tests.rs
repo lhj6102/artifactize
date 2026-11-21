@@ -82,7 +82,11 @@ async fn a_cold_reference_reads_only_the_named_run_even_with_unrelated_history()
     std::fs::create_dir(&repo).unwrap();
     let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     std::fs::create_dir(repo.join(".artifactize")).unwrap();
-    std::fs::write(repo.join(".artifactize/root.artf"), "path = './'\nbasis = true\n").unwrap();
+    std::fs::write(
+        repo.join(".artifactize/root.artf"),
+        "path = './'\nbasis = true\n",
+    )
+    .unwrap();
     let (selected, requests) = run("run-selected", &repo, &state, 1);
     receipts.create_run(&selected, &requests).await.unwrap();
     let read = || {

@@ -13,7 +13,11 @@ type InFlight = OnceCell<Reply>;
 type Queries = BTreeMap<(String, u32), Weak<InFlight>>;
 
 #[derive(Default)]
-pub(super) struct Searches(Mutex<Queries>);
+pub(super) struct Searches {
+    pending: Mutex<Queries>,
+    // Different queries can still arrive from multiple windows. Keep one database reader.
+    reader: tokio::sync::Mutex<()>,
+}
 
 impl Searches {
     pub(super) async fn read(
@@ -23,7 +27,7 @@ impl Searches {
         load: impl Future<Output = Reply>,
     ) -> Reply {
         let pending = {
-            let mut in_flight = self.0.lock().expect("Review searches lock");
+            let mut in_flight = self.pending.lock().expect("Review searches lock");
             in_flight.retain(|_, read| read.strong_count() != 0);
             let entry = in_flight.entry((query, start)).or_default();
             entry.upgrade().unwrap_or_else(|| {
@@ -32,6 +36,54 @@ impl Searches {
                 created
             })
         };
-        pending.get_or_init(|| load).await.clone()
+        pending
+            .get_or_init(|| async {
+                let _reader = self.reader.lock().await;
+                load.await
+            })
+            .await
+            .clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{future::poll_fn, task::Poll};
+
+    #[tokio::test]
+    async fn overlapping_searches_share_one_read_but_a_later_search_reads_again() {
+        let searches = Searches::default();
+        let finish = tokio::sync::Notify::new();
+        let mut first = std::pin::pin!(searches.read("waiting".into(), 0, async {
+            finish.notified().await;
+            Ok(ReviewPage {
+                reviews: vec![],
+                next: Some(1),
+            })
+        }));
+        let mut second = std::pin::pin!(
+            searches.read("waiting".into(), 0, async { panic!("overlapping read") })
+        );
+        poll_fn(|cx| {
+            assert!(first.as_mut().poll(cx).is_pending());
+            assert!(second.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        finish.notify_one();
+        let (a, b) = tokio::join!(first, second);
+        assert_eq!(a.unwrap().next, Some(1));
+        assert_eq!(b.unwrap().next, Some(1));
+        let later = searches
+            .read("waiting".into(), 0, async {
+                Ok(ReviewPage {
+                    reviews: vec![],
+                    next: None,
+                })
+            })
+            .await
+            .unwrap();
+        assert_eq!(later.next, None);
     }
 }
