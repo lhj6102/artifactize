@@ -44,14 +44,15 @@ export const scenarios: Scenario[] = [
       await app.mode("Review");
       await app.review.openListed(id);
       await app.review.claim();
-      // The pet opens the draft's last verdict without selecting a verdict in this process.
+      await app.review.until((shown) => shown.verdict === "RED", "Review automatically opens the saved RED verdict after restart");
+      assert.equal(await app.review.value("reason"), "Check the linked notes again");
+      assert.equal(await app.review.notes(), "Keep the checked selector.");
+      // Without any new verdict selection, the pet also opens the draft's last verdict.
       const w = windows();
       await w.mode("Verify");
       await w.pet();
       await w.petUntil((shown) => shown.verdict === "RED" && shown.notes === "Keep the checked selector.", "the pet opens the persisted RED verdict and Notes after restart");
       await w.mode("Review");
-      await app.review.choose("RED");
-      assert.equal(await app.review.value("reason"), "Check the linked notes again");
       await app.review.choose("GREEN");
       await app.until(async () => (await app.review.notes()) === "Keep the checked selector." && (await app.review.value("comment")) === "Release notes checked", "reclaim after restart restored the Notes and GREEN draft");
       const completed = await app.review.submit();

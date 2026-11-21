@@ -48,9 +48,8 @@ export const scenarios: Scenario[] = [
       assert.match(pet.head, /^notes\/signoff · run-/);
       assert.equal(pet.notes, notes);
       assert.equal(pet.point, true, "Point while the notes' viewer is open");
-      // The claimed review's form is open, as in Review: its Verdict radios are the pet's one
-      // GREEN and RED choice, and a click on one switches the form.
-      assert.deepEqual([pet.choices, pet.radios, pet.verdict], [["GREEN", "RED"], 2, "GREEN"]);
+      // No verdict has been chosen: the pet offers the buttons but no verdict form.
+      assert.deepEqual([pet.choices, pet.radios, pet.verdict], [["GREEN", "RED"], 0, ""]);
       const edited = `${pet.notes.trim()}\nThe rounding reads right.`;
       await w.petNotes(edited);
       await w.petChoose("RED");
