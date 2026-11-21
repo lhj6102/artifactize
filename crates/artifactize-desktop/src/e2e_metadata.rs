@@ -19,24 +19,33 @@ pub fn check_build(context: &mut tauri::Context<tauri::Wry>) -> std::process::Ex
                 .windows(plugin_path.len())
                 .any(|part| part == plugin_path)
         });
-    // External setup may need the native window API before the scenario can act. Ask the
-    // same resolved authority that will serve the main window, not a declaration on disk.
-    let main_window_focus = context
-        .runtime_authority_mut()
-        .resolve_access(
-            "plugin:window|set_focus",
-            "main",
-            "main",
-            &tauri::ipc::Origin::Local,
-        )
-        .is_some();
+    // The runner's frame actions (callWindow): focus, orderly close and native title reads.
+    // Query the resolved permissions for each window that the suite addresses, including a
+    // representative label for the Artifact Viewer's generated viewer-* labels.
+    let authority = context.runtime_authority_mut();
+    let missing_window_access: Vec<_> = [
+        ("main", "set_focus"),
+        ("main", "close"),
+        ("main", "title"),
+        ("viewer-1", "title"),
+        ("pet", "title"),
+    ]
+    .into_iter()
+    .filter_map(|(window, name)| {
+        let command = format!("plugin:window|{name}");
+        authority
+            .resolve_access(&command, window, window, &tauri::ipc::Origin::Local)
+            .is_none()
+            .then(|| format!("{window}: {name}"))
+    })
+    .collect();
     println!(
         "{}",
         serde_json::json!({
             "embeddedDriver": true,
             "globalTauri": context.config().app.with_global_tauri,
             "testFrontend": test_frontend,
-            "mainWindowFocus": main_window_focus,
+            "missingWindowAccess": missing_window_access,
         })
     );
     std::process::ExitCode::SUCCESS
