@@ -492,3 +492,22 @@ it("offers the graph's commands in the palette only while Verify is on screen", 
   // New chat is offered from any mode.
   expect(inReview).toContain("New chat");
 });
+
+it("paints nothing of a mode that is not shown, its graph included, and keeps its place", async () => {
+  const main = branch("main", [runChip("run-0", "RED")]);
+  backend(monitor(), () => browseView(1, { branches: [main] }));
+  render(App);
+  await fireEvent.click(await within(await screen.findByRole("group", { name: "Pane entries" })).findByRole("button", { name: /^app \/ main/ }));
+  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0"));
+  await waitFor(() => expect(document.querySelector('main[aria-label="Verify"] .svelte-flow__node')).not.toBeNull());
+  await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
+  const verify = workspace("Verify");
+  expect(verify.hidden).toBe(true);
+  // Transparent as a whole: its graph's nodes, which set their own visibility, and their layers
+  // paint nothing over the mode shown.
+  expect(getComputedStyle(verify).opacity).toBe("0");
+  expect(verify.querySelector(".svelte-flow__node")).not.toBeNull();
+  // Its place is kept: the Run is still shown when Verify comes back.
+  await fireEvent.keyDown(window, { key: "2", code: "Digit2", ctrlKey: true });
+  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0");
+});

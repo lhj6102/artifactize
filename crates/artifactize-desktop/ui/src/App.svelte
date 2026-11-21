@@ -263,9 +263,9 @@
     <!-- The three workspaces share one place; the hidden ones keep their size and their place,
          out of sight and out of reach. -->
     <div class="workspaces">
-      <main class="workspace" aria-label="Chat" hidden={app.mode !== "chat"} inert={app.mode !== "chat"}><ChatMode /></main>
-      <main class="workspace" aria-label="Verify" hidden={app.mode !== "verify"} inert={app.mode !== "verify"}><Monitor /></main>
-      <main class="workspace" aria-label="Review" hidden={app.mode !== "review"} inert={app.mode !== "review"}><ReviewMode /></main>
+      <main class="workspace" aria-label="Chat" hidden={app.mode !== "chat"} inert={app.mode !== "chat"} style:opacity={app.mode === "chat" ? null : "0"}><ChatMode /></main>
+      <main class="workspace" aria-label="Verify" hidden={app.mode !== "verify"} inert={app.mode !== "verify"} style:opacity={app.mode === "verify" ? null : "0"}><Monitor /></main>
+      <main class="workspace" aria-label="Review" hidden={app.mode !== "review"} inert={app.mode !== "review"} style:opacity={app.mode === "review" ? null : "0"}><ReviewMode /></main>
     </div>
   {:else}
     <div></div>
@@ -328,9 +328,15 @@
     min-height: 0;
     min-width: 0;
   }
+  /* A hidden mode paints nothing: no descendant can show itself again (a graph's nodes set
+   * their own visibility), and its composited layers are transparent with it. */
   .workspace[hidden] {
     display: block;
     visibility: hidden;
+    pointer-events: none;
+  }
+  .workspace[hidden] :global(*) {
+    visibility: hidden !important;
   }
   :global(.dialog.open-id) {
     width: min(480px, 92vw);
