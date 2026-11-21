@@ -32,11 +32,16 @@ describe("Leaving", () => {
     expect(leaving.held).toEqual({ taken: [], turns: ["Fix checkout rounding"] });
   });
 
-  it("lets the window close without claims", async () => {
-    mockIPC((cmd) => (cmd === "human_taken" ? [] : null));
+  it("routes a native close without claims through durable shutdown", async () => {
+    const called: string[] = [];
+    mockIPC((cmd) => {
+      called.push(cmd);
+      return cmd === "human_taken" ? [] : null;
+    });
     const leaving = new Leaving();
     const request = close();
     await leaving.closeRequested(request.event);
-    expect(request.prevented()).toBe(false);
+    expect(request.prevented()).toBe(true);
+    expect(called).toEqual(["human_taken", "main_close"]);
   });
 });

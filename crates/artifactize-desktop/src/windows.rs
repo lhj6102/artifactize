@@ -1,7 +1,10 @@
 //! The app's windows beside the main one: an Artifact Viewer per viewer session (J-VIEWER) and
 //! the pet overlay (J-PET), and the `viewer:` scheme that serves a plugin viewer's page into its
 //! sandboxed frame with a policy of its own. Closing the main window closes the others.
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 
 use tauri::{
     LogicalSize, Manager, PhysicalPosition, Runtime, WebviewUrl, WebviewWindowBuilder,
@@ -30,24 +33,28 @@ enum Action {
     Viewer { session: u32, title: String },
     Pet(Option<String>),
     FocusMain,
+    CloseMain,
 }
 
 type Act = Box<dyn Fn(&App, Action) -> Result<(), String> + Send + Sync>;
 
 /// The windows, reached from the commands through the app's handle once the app is set up.
 #[derive(Default)]
-pub(crate) struct Windows(OnceLock<Act>);
+pub(crate) struct Windows {
+    action: OnceLock<Act>,
+    closing: AtomicBool,
+}
 
 impl Windows {
     pub(crate) fn attach<R: Runtime>(&self, handle: tauri::AppHandle<R>) {
-        let _ = self.0.set(Box::new(move |app, action| {
+        let _ = self.action.set(Box::new(move |app, action| {
             act(&handle, app, action).map_err(|error| error.to_string())
         }));
     }
 
     fn act(&self, app: &App, action: Action) -> Result<(), Failure> {
         let act = self
-            .0
+            .action
             .get()
             .ok_or_else(|| Failure::Action("The app has no windows yet.".into()))?;
         act(app, action).map_err(Failure::Action)
@@ -58,6 +65,9 @@ fn act<R: Runtime>(handle: &tauri::AppHandle<R>, app: &App, action: Action) -> t
     match action {
         Action::Viewer { session, title } => viewer(handle, app, session, title),
         Action::Pet(request) => pet(handle, request),
+        Action::CloseMain => handle
+            .get_webview_window(MAIN)
+            .map_or(Ok(()), |main| main.destroy()),
         Action::FocusMain => match handle.get_webview_window(MAIN) {
             Some(main) => {
                 let _ = main.unminimize();
@@ -170,12 +180,26 @@ pub async fn main_focus(app: tauri::State<'_, App>) -> Result<(), Failure> {
     app.windows.act(&app, Action::FocusMain)
 }
 
+/// Close only after the accepted quit has settled this app's owned Chat turns.
+#[tauri::command]
+#[specta::specta]
+pub async fn main_close(app: tauri::State<'_, App>) -> Result<(), Failure> {
+    if app.windows.closing.swap(true, Ordering::AcqRel) {
+        return Ok(());
+    }
+    app.close().await;
+    let result = app.windows.act(&app, Action::CloseMain);
+    if result.is_err() {
+        app.windows.closing.store(false, Ordering::Release);
+    }
+    result
+}
+
 /// What a window's destruction ends: the main window takes the app's work and every other window
 /// with it; a viewer window its viewer session.
 pub(crate) fn destroyed<R: Runtime>(window: &tauri::Window<R>) {
     let label = window.label();
     if label == MAIN {
-        drop(window.state::<App>().close());
         for (other, webview) in window.app_handle().webview_windows() {
             if other != MAIN {
                 let _ = webview.destroy();

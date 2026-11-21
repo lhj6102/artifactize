@@ -64,8 +64,13 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
         loop {
             ticks.tick().await;
             // A failed read is the next load's notice; the rescan tries again next tick.
-            let changed = crate::browse::rescan(&app.state::<App>()).await;
-            if changed.unwrap_or(false) && (StateChanged { resync: false }).emit(&app).is_err() {
+            let app_state = app.state::<App>();
+            let reviews_changed =
+                artifactize_core::store::retire_removed_signoffs(&app_state.launch.state).await;
+            let branches_changed = crate::browse::rescan(&app_state).await;
+            if (reviews_changed.unwrap_or(false) || branches_changed.unwrap_or(false))
+                && (StateChanged { resync: false }).emit(&app).is_err()
+            {
                 return;
             }
         }

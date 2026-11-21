@@ -111,7 +111,7 @@
   };
 
   async function quit() {
-    if (await leaving.allowed()) await getCurrentWindow().destroy();
+    if (await leaving.allowed()) await leaving.close();
   }
 
   /** Read the state afresh and scan the branches again; a shown Current is scanned again too. */
@@ -305,7 +305,7 @@
 <LeaveDialog
   held={leaving.held}
   onstay={() => leaving.stay()}
-  onleave={() => void getCurrentWindow().destroy()}
+  onleave={() => void leaving.close()}
 />
 
 <style>

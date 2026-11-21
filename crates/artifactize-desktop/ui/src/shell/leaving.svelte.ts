@@ -26,9 +26,14 @@ export class Leaving {
     return false;
   }
 
-  /** A close request from the window: prevented unless closing is allowed. */
+  /** Route accepted native closes through the same durable shutdown as palette Quit. */
   async closeRequested(event: { preventDefault(): void }): Promise<void> {
-    if (!(await this.allowed())) event.preventDefault();
+    event.preventDefault();
+    if (await this.allowed()) await this.close();
+  }
+
+  async close(): Promise<void> {
+    await call(this.ipc.mainClose());
   }
 
   stay(): void {

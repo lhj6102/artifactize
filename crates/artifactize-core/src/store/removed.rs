@@ -24,17 +24,17 @@ use crate::{
 const REMOVED: &str = "Its Run's repository folder no longer exists.";
 
 /// End every waiting Human sign-off whose Run's repository folder no longer exists. Only a
-/// read happens while every repository is present.
-pub async fn retire_removed_signoffs(state: &Path) -> Result<(), String> {
+/// read happens while every repository is present. Returns whether it changed Review.
+pub async fn retire_removed_signoffs(state: &Path) -> Result<bool, String> {
     let removed = removed_repositories(state).await?;
     let Some(first) = removed.first() else {
-        return Ok(());
+        return Ok(false);
     };
     // The removed repository is only the boundary the state is checked against.
     let receipts = Receipts::open(state, first).await?;
     let result = receipts.retire_removed(removed).await;
     let closed = receipts.close().await;
-    result.and(closed)
+    result.and_then(|changed| closed.map(|()| changed))
 }
 
 /// The repositories, as the state saves them, of Runs with a waiting Human request whose
@@ -106,12 +106,14 @@ fn fate<'a>(original: &RequestId, waiters: &'a [Waiter]) -> Fate<'a> {
 }
 
 impl Receipts {
-    async fn retire_removed(&self, removed: Vec<PathBuf>) -> Result<(), String> {
+    async fn retire_removed(&self, removed: Vec<PathBuf>) -> Result<bool, String> {
         self.connection
-            .call(move |db| -> Result<(), Error> {
+            .call(move |db| -> Result<bool, Error> {
                 let transaction =
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-                for (id, (mut execution, waiters)) in affected(&transaction, &removed)? {
+                let affected = affected(&transaction, &removed)?;
+                let changed = !affected.is_empty();
+                for (id, (mut execution, waiters)) in affected {
                     match fate(&execution.provenance.request_id, &waiters) {
                         Fate::End => {
                             for waiter in &waiters {
@@ -143,7 +145,7 @@ impl Receipts {
                     }
                 }
                 transaction.commit()?;
-                Ok(())
+                Ok(changed)
             })
             .await
             .map_err(|e| e.to_string())

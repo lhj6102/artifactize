@@ -1,7 +1,8 @@
 // The left pane: hiding and resizing it, starring a branch, searching, and the reviews waiting
 // for a person as other processes change them.
 import assert from "node:assert/strict";
-import { addRepository, addWorktrees, artifactize, createProject, createRelease, orderRuns, request, requests, savedRuns, verify } from "../fixtures/repo.ts";
+import { addRepository, addWorktrees, artifactize, createProject, createRelease, declareRelease, orderRuns, request, requests, savedRuns, verify, verifyWaiting } from "../fixtures/repo.ts";
+import { nativePath, removeTree, type NativePath } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
@@ -171,6 +172,31 @@ export const scenarios: Scenario[] = [
       await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "the claimed review no longer waits");
       await app.review.openListed(newer);
       assert.match(await app.review.debugState(), new RegExp(`^Request ${newer} `));
+    },
+  }),
+  scenario<{ folder: NativePath; review: string }>({
+    id: "review-removed-folder",
+    title: "a waiting review disappears when its folder goes even if Verify no longer listed the folder",
+    journeys: ["J-LIVE", "J-REVIEW-LIST"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      const folder = nativePath(fixture.root, "folder-only");
+      declareRelease(fixture, {}, folder, "# A second release\n");
+      removeTree(nativePath(folder, ".git")); // This workspace is a folder, not a Git worktree.
+      const run = await verifyWaiting(fixture, folder);
+      const review = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff")!.id;
+      return { fixture, data: { folder, review } };
+    },
+    run: async (app, { data: { folder, review } }) => {
+      const visible = async () => (await app.pane.branches()).some((branch) => branch.label.includes("folder-only"));
+      await app.until(visible, "the folder is listed before its declarations are removed");
+      removeTree(nativePath(folder, ".artifactize"));
+      await app.until(async () => !await visible(), "Verify no longer lists the folder");
+      await app.mode("Review");
+      await app.until(async () => (await app.review.list()).some((row) => row.id === review), "the folder's review still waits as its folder still exists");
+      removeTree(folder);
+      await app.until(async () => !(await app.review.list()).some((row) => row.id === review), "Review dropped the missing folder's waiting request on its own");
+      await app.waitingBadge(1);
     },
   }),
 ];

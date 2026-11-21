@@ -577,13 +577,22 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     let (repo, state) = worktree(&root);
     let hold = Gate::default();
     hold.close();
+    let closing = Gate::default();
+    closing.close();
+    let closing_request = Arc::new(tokio::sync::Notify::new());
     let provider = FakeProvider::start({
         let hold = hold.clone();
+        let closing = closing.clone();
+        let closing_request = closing_request.clone();
         move |request| {
             if request.method == "GET" {
                 return openai::models(&["restart-model"]);
             }
-            let text = if request
+            let text = if request.body.to_string().contains("Close a running turn") {
+                closing_request.notify_one();
+                closing.wait();
+                "This did not stop."
+            } else if request
                 .body
                 .to_string()
                 .contains("Resume the interrupted session")
@@ -618,7 +627,7 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let chat = Chat::new(state.clone(), cli);
+    let chat = Chat::new(state.clone(), cli.clone());
     let session = chat
         .create(
             &repo,
@@ -655,5 +664,29 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     .await;
     assert!(matches!(resumed.turns[0].state, TurnState::Interrupted));
     assert!(matches!(resumed.turns[1].state, TurnState::Completed));
+    chat.send(&session.id, "Close a running turn".into(), None)
+        .await
+        .unwrap();
+    tokio::time::timeout(
+        support::os::patience(Duration::from_secs(30)),
+        closing_request.notified(),
+    )
+    .await
+    .expect("the provider received the turn that close must stop");
+    tokio::time::timeout(support::os::patience(Duration::from_secs(30)), chat.close())
+        .await
+        .expect("close waits for the turn to record cancellation");
+    assert!(
+        chat.send(&session.id, "Not accepted after close".into(), None)
+            .await
+            .is_err()
+    );
+    let reopened = Chat::new(state.clone(), cli)
+        .open(&session.id)
+        .await
+        .unwrap();
+    assert!(!reopened.running);
+    assert!(matches!(reopened.turns[2].state, TurnState::Stopped));
+    closing.open();
     changes.close().await.unwrap();
 }

@@ -216,6 +216,8 @@ export const commands = {
 	petShow: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("pet_show", { request })),
 	/**  Bring the main window to the front: the pet overlay leads back to its review there. */
 	mainFocus: () => typedError<null, Failure>(__TAURI_INVOKE("main_focus")),
+	/**  Close only after the accepted quit has settled this app's owned Chat turns. */
+	mainClose: () => typedError<null, Failure>(__TAURI_INVOKE("main_close")),
 	/**  The read-only Detail of request `id` in its Run. */
 	requestDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("request_detail", { id })),
 	/**

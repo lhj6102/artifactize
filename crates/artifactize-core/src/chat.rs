@@ -110,7 +110,19 @@ pub struct View {
 pub struct Chat {
     state: PathBuf,
     executable: Option<PathBuf>,
-    active: Arc<Mutex<BTreeMap<SessionId, CancellationToken>>>,
+    active: Arc<ActiveTurns>,
+}
+
+#[derive(Default)]
+struct ActiveTurns {
+    state: Mutex<Turns>,
+    settled: tokio::sync::Notify,
+}
+
+#[derive(Default)]
+struct Turns {
+    closed: bool,
+    turns: BTreeMap<SessionId, CancellationToken>,
 }
 
 impl Chat {
@@ -138,9 +150,33 @@ impl Chat {
         }
     }
 
-    pub fn stop_all(&self) {
-        for cancel in self.active.lock().expect("Chat active turns lock").values() {
-            cancel.cancel();
+    /// Stop accepting work, cancel owned Chat turns and wait for their saved outcomes and
+    /// ownership release. Verify Runs already admitted remain independent of Chat.
+    pub fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
+        {
+            let mut active = self.active.state.lock().expect("Chat active turns lock");
+            active.closed = true;
+            for cancel in active.turns.values() {
+                cancel.cancel();
+            }
+        }
+        let active = self.active.clone();
+        async move {
+            loop {
+                let settled = active.settled.notified();
+                tokio::pin!(settled);
+                settled.as_mut().enable();
+                if active
+                    .state
+                    .lock()
+                    .expect("Chat active turns lock")
+                    .turns
+                    .is_empty()
+                {
+                    return;
+                }
+                settled.await;
+            }
         }
     }
 
@@ -295,7 +331,7 @@ impl Chat {
         let (accepted, acknowledgement) = tokio::sync::oneshot::channel();
         // Once queued, the library owns preparation and cleanup independently of the IPC caller.
         tokio::spawn(async move {
-            match chat.prepare(&id, &text, selection).await {
+            match chat.prepare(&id, &text, selection, &active.cancel).await {
                 Ok(prepared) => {
                     let _ = accepted.send(Ok(()));
                     chat.finish(prepared, text, active).await;
@@ -316,6 +352,7 @@ impl Chat {
         id: &SessionId,
         text: &str,
         selection: Option<Model>,
+        cancel: &CancellationToken,
     ) -> Result<Prepared, String> {
         let mut session = store::chat::load(&self.state, id).await?;
         session = crate::task::blocking(move || session.with_checkout()).await?;
@@ -324,7 +361,10 @@ impl Chat {
         }
         let context = self.context(&session.worktree)?;
         if let Some(selection) = selection.filter(|selection| *selection != session.selection) {
-            self.check_model(context.repo(), &selection).await?;
+            tokio::select! {
+                _ = cancel.cancelled() => return Err("Chat stopped before accepting the turn.".into()),
+                listed = self.check_model(context.repo(), &selection) => listed?,
+            }
             session.selection = selection;
         }
         let file = path(&self.state, id);
@@ -441,8 +481,8 @@ impl Chat {
 
     /// Cancel a turn owned by this Chat process, without cancelling its already-admitted Runs.
     pub fn stop(&self, id: &SessionId) -> bool {
-        let active = self.active.lock().expect("Chat active turns lock");
-        active.get(id).is_some_and(|cancel| {
+        let active = self.active.state.lock().expect("Chat active turns lock");
+        active.turns.get(id).is_some_and(|cancel| {
             cancel.cancel();
             true
         })
@@ -466,8 +506,11 @@ impl Chat {
     }
 
     fn claim(&self, id: &SessionId) -> Result<Active, String> {
-        let mut entries = self.active.lock().expect("Chat active turns lock");
-        match entries.entry(id.clone()) {
+        let mut active = self.active.state.lock().expect("Chat active turns lock");
+        if active.closed {
+            return Err("Chat is closing.".into());
+        }
+        match active.turns.entry(id.clone()) {
             Slot::Occupied(_) => Err("This Chat session already has an active turn.".into()),
             Slot::Vacant(entry) => {
                 let cancel = entry.insert(CancellationToken::new()).clone();
@@ -499,9 +542,12 @@ impl Drop for Active {
     fn drop(&mut self) {
         self.chat
             .active
+            .state
             .lock()
             .expect("Chat active turns lock")
+            .turns
             .remove(&self.id);
+        self.chat.active.settled.notify_waiters();
     }
 }
 
