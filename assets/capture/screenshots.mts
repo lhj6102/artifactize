@@ -319,6 +319,9 @@ async function capture(output: string, work: string): Promise<void> {
         .map((row) => row.textContent?.trim());
       return lines.includes("- Faster startup.") && lines.at(-1) === "■ done";
     }, review), { timeout: WAIT, timeoutMsg: "the notes tool printed the notes and finished" });
+    // The log may arrive before the tool command returns. GREEN ignores clicks while that
+    // job is still busy, so wait for the tool button to become usable again.
+    await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the finished notes tool is usable again" });
     await app.$(review).$("button=GREEN").click();
     await app.$(`${review} [aria-label="Evaluation"] #field-summary`).waitForDisplayed({ timeout: WAIT });
     await app.$(`${review} [role="radio"][aria-checked="true"].green`).waitForDisplayed({ timeout: WAIT });
