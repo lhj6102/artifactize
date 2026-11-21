@@ -735,7 +735,7 @@
         if (key !== undefined) void minimize(key, !byKey.get(key)!.minimized);
       },
     },
-  ]);
+  ], () => app.mode === "verify" && !app.monitor.settings);
 
   /** Enter on a focused Artifact node opens its Detail, as a click does; on a button in it,
    * the button acts. */

@@ -468,3 +468,25 @@ it("makes the claimed review shown in Review the active one, and shows the pet o
   window.dispatchEvent(new Event("focus"));
   await waitFor(() => expect(asked("pet_show")).toEqual(["run-a-2", null, "run-a-2", null]));
 });
+
+it("offers the graph's commands in the palette only while Verify is on screen", async () => {
+  const main = branch("main", [runChip("run-0", "RED")]);
+  backend(monitor(), () => browseView(1, { branches: [main] }));
+  render(App);
+  await fireEvent.click(await within(await screen.findByRole("group", { name: "Pane entries" })).findByRole("button", { name: /^app \/ main/ }));
+  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0"));
+  const offered = async () => {
+    await fireEvent.keyDown(window, { key: "k", code: "KeyK", ctrlKey: true });
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    const labels = [...palette.querySelectorAll(".palette-item span:first-child")].map((item) => item.textContent);
+    await fireEvent.keyDown(palette.querySelector("input")!, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull());
+    return labels;
+  };
+  expect(await offered()).toContain("Open the Run's Detail");
+  await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
+  const inReview = await offered();
+  expect(inReview).not.toContain("Open the Run's Detail");
+  expect(inReview).not.toContain("Find");
+  expect(inReview).toContain("Show Verify");
+});

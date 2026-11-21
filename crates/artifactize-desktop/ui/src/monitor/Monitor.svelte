@@ -299,7 +299,7 @@
       enabled: () => m.opened !== null,
       run: closeDetail,
     },
-  ]);
+  ], () => app.mode === "verify" && !app.monitor.settings);
 
   /** The graph's top within the stage, kept as `--graph-top`: the Detail docks from there, below
    * the Main area's header and below what the view shows above its graph (a Run's headline, a
