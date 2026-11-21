@@ -17,6 +17,7 @@
   import { composing } from "../shell/keys";
   import { providerName } from "../settings/provider-names";
   import { toolLine } from "./tool-line";
+  import { useCommands } from "../shell/commands.svelte";
   import { keyOf } from "../monitor/monitor-state.svelte";
 
   const app = getAppState();
@@ -117,6 +118,20 @@
     c.creating = true;
     if (c.worktree) void c.readStarting(c.worktree);
   }
+
+  // New chat from the palette too, whatever mode is shown: it shows Chat first (J-PALETTE).
+  useCommands(() => [
+    {
+      id: "chat.new",
+      group: "Chat",
+      label: "New chat",
+      run: () => {
+        app.monitor.settings = false;
+        app.mode = "chat";
+        newChat();
+      },
+    },
+  ]);
 
   async function create(event: SubmitEvent) {
     event.preventDefault();

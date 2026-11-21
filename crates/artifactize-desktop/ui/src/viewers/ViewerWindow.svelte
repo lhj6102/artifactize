@@ -108,7 +108,7 @@
 
 <div class="window" class:pointing={v.pointing}>
   <header class="strip">
-    <span class="name">{context?.artifact ?? ""}</span>
+    <span class="name" title={context?.artifact}>{context?.artifact ?? ""}</span>
     <span class="kind">{context?.title ?? ""}</span>
     {#if entry?.kind === "web" && v.page !== "connected"}
       <span class="page" class:silent={v.page === "silent"} role="status">
@@ -163,11 +163,24 @@
     border-bottom: 1px solid var(--line-panel);
     font-size: var(--text-small);
   }
+  /* A long name is cut with an ellipsis; Point and the review keep their place (D-SYS-9). */
+  .name,
+  .kind {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .name {
+    flex: 0 1 auto;
     font-weight: 600;
   }
   .kind {
+    flex: 0 2 auto;
     color: var(--ink-2);
+  }
+  .strip > :global(button) {
+    flex: none;
   }
   /* The plugin page's state until it reaches the bridge (D-VIEW-6). */
   .page {

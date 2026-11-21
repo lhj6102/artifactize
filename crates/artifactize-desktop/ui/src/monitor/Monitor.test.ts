@@ -489,4 +489,6 @@ it("offers the graph's commands in the palette only while Verify is on screen", 
   expect(inReview).not.toContain("Open the Run's Detail");
   expect(inReview).not.toContain("Find");
   expect(inReview).toContain("Show Verify");
+  // New chat is offered from any mode.
+  expect(inReview).toContain("New chat");
 });
