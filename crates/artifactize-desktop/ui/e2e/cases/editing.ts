@@ -66,7 +66,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "definition-conflict",
-    title: "an edit of a file changed on disk since the Current read it, by another writer, writes nothing and names the file, and the Current then shows the file as it is",
+    title: "graph edits preserve unsaved Source, and edits of files changed by another writer are refused and show what is on disk",
     journeys: ["J-DEFINITION-CONFLICT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
@@ -75,6 +75,15 @@ export const scenarios: Scenario[] = [
     run: async (app, { fixture }) => {
       await app.graph.open("a:core", "Artifact core");
       await app.detail.definitionUntil("core", (each) => each.path === "core/", "core's Definition");
+      const before = definitionText(fixture, "core")!;
+      const unsaved = `${before}# Unsaved review comment\n`;
+      await app.detail.editSource("core", unsaved);
+      await app.graph.drag("a:core", 0, 60);
+      await app.until(async () => (await app.text()).includes(".artifactize/core.artf has unsaved text in its Source; nothing written."), "the graph refused to write the file with unsaved Source text");
+      await app.detail.definitionUntil("core", (shown) => shown.source === unsaved, "the typed Source text stayed in the editor");
+      assert.equal(definitionText(fixture, "core"), before, "the graph edit left the file untouched");
+      await app.detail.sourceAction("Revert");
+      await app.detail.definitionUntil("core", (shown) => shown.source === before, "Revert put back the saved Source");
       const theirs = definitionText(fixture, "core")!.replace("basis = true\n", "basis = true\nparts = [\"kit\"]\n");
       rewriteDefinition(fixture, "core", theirs);
       await app.detail.writePath("core", "moved/", (each) => each.refusals.includes(".artifactize/core.artf changed on disk; nothing written."), "the edit refused, naming the file");

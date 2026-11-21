@@ -6,6 +6,7 @@ import { artifactize, type Fixture } from "./repo.ts";
 export const CHAT_MODEL = "fixture-chat";
 const DEFAULT_MODEL = "fixture-small";
 export const WORK_PROMPT = "Read the release notes and verify the worktree";
+export const PARTIAL_ANSWER = "I am still working on the notes.";
 export const STOP_PROMPT = "Wait for my next instruction";
 export const QUIT_PROMPT = "Keep working until I quit";
 export const CONTINUE_PROMPT = "Continue after the stopped turn";
@@ -38,7 +39,15 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
       }
       if (body.includes(QUIT_PROMPT)) return; // Quitting the app ends this response.
       const resumed = body.includes(CONTINUE_PROMPT);
-      if (!resumed && body.includes(STOP_PROMPT)) return; // The user owns cancellation of this response.
+      if (!resumed && body.includes(STOP_PROMPT)) {
+        const early = [
+          { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "msg_partial", role: "assistant", status: "in_progress", content: [] } },
+          { type: "response.output_text.delta", item_id: "msg_partial", output_index: 0, content_index: 0, delta: PARTIAL_ANSWER },
+        ];
+        response.writeHead(200, { "Content-Type": "text/event-stream" });
+        response.write(early.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join(""));
+        return; // Only Stop or fixture teardown ends this stream; no completion is sent.
+      }
       let number = 1;
       let output: object[];
       if (resumed || body.includes('"call_id":"verify-notes"')) {

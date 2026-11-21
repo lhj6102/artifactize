@@ -51,7 +51,8 @@ export const scenarios: Scenario[] = [
       // The claimed review's form is open, as in Review: its Verdict radios are the pet's one
       // GREEN and RED choice, and a click on one switches the form.
       assert.deepEqual([pet.choices, pet.radios, pet.verdict], [["GREEN", "RED"], 2, "GREEN"]);
-      await w.petNotes(`${pet.notes.trim()}\nThe rounding reads right.`);
+      const edited = `${pet.notes.trim()}\nThe rounding reads right.`;
+      await w.petNotes(edited);
       await w.petChoose("RED");
       await w.petChoose("GREEN");
       const chosen = await w.readPet();
@@ -62,7 +63,8 @@ export const scenarios: Scenario[] = [
       const saved = request(fixture, "notes/signoff");
       assert.notEqual(saved.status, "DEFERRED", "the review is settled");
       assert.equal(saved.result?.comment, "Checked the totals.");
-      await w.main();
+      await w.mode("Review");
+      await app.review.until((shown) => shown.completed.includes(edited), "the submitted review shows the Notes edited in the pet");
       // Closing the viewer's window closes it alone.
       await w.closeViewer(label);
       assert.deepEqual(await w.viewers(), []);

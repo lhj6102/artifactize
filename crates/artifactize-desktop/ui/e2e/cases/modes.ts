@@ -1,6 +1,6 @@
 // Mode references as a person follows them across Verify, Review and Chat.
 import assert from "node:assert/strict";
-import { CHAT_ANSWER, CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
+import { CHAT_ANSWER, CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
 import { artifactize, createRelease, request } from "../fixtures/repo.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -92,6 +92,8 @@ export const scenarios: Scenario[] = [
       await app.graph.openOrigin(WORK_PROMPT);
       await app.chat.says(CHAT_ANSWER);
       await app.chat.send(STOP_PROMPT);
+      await app.chat.says(PARTIAL_ANSWER);
+      await app.chat.working();
       await app.chat.stop();
       await app.chat.send(CONTINUE_PROMPT);
       await app.chat.says(CONTINUE_ANSWER);
