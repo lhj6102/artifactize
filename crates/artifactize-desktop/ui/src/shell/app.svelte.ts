@@ -179,14 +179,20 @@ export class AppState {
     }
   }
 
-  /** Open the saved request `id` in Review, as a reference opens it: a Human review as its
-   * review, any other request read-only. */
+  /** Open the saved request `id` in Review, as a reference opens it: a Human review still
+   * waiting, claimable or this reviewer's, as its review; any other request read-only, a
+   * submitted review or one another reviewer holds included (J-OPEN-ID). */
   async openRequest(id: string): Promise<void> {
     const r = this.reviewMode;
     this.mode = "review";
     try {
       const detail = await call(this.ipc.requestDetail(id));
-      if (detail.profile === "human") return await this.showReview(id);
+      if (detail.profile === "human") {
+        const opened = await call(this.ipc.humanOpenReference(id, r.query));
+        const view = opened.view;
+        const actionable = view.stage !== "completed" && (view.claim === null || view.claim.mine);
+        if (actionable) return await this.showReview(id);
+      }
       r.folds = { log: false };
       r.shown = { kind: "request", detail };
       r.outside = null;
