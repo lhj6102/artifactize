@@ -20,6 +20,8 @@ export class ViewerState {
   context = $state.raw<ViewerContext | null>(null);
   /** Pointing: the next click on a place in the Artifact appends it to the draft. */
   pointing = $state(false);
+  /** The active review pointing was started for: what is pointed goes to that review only. */
+  armedFor = $state<string | null>(null);
   error = $state<string | null>(null);
   /** A plugin's page: loading until it first reaches the bridge (it asks for `context` when it
    * starts), or silent when it finished loading without having asked for anything yet. */
@@ -53,8 +55,19 @@ export class ViewerState {
     } catch (failure) {
       this.error = message(failure);
     }
-    if (!this.pointable) this.pointing = false;
+    // Pointing was for the review that was active: another one now, it stops, nothing added.
+    if (this.armedFor !== null && this.context?.review !== this.armedFor) {
+      this.arm(false);
+      this.error = "The review changed while pointing; nothing was added.";
+    }
+    if (!this.pointable) this.arm(false);
     await Promise.all([this.announce(), this.readEval()]);
+  }
+
+  /** Start pointing for the active review, or stop. */
+  arm(on: boolean): void {
+    this.pointing = on && this.pointable;
+    this.armedFor = this.pointing ? (this.context?.review ?? null) : null;
   }
 
   /** Tell the other windows this viewer is open, for which Artifact and review. */
@@ -72,15 +85,18 @@ export class ViewerState {
   /** Append `text` to the active review's Notes through the library; the Notes it answers. The
    * windows showing those Notes are told what was pointed, which stands out there. */
   async append(text: string): Promise<string> {
-    const notes = await call(this.ipc.viewerPoint(this.session, text));
-    const review = this.context?.review;
-    if (review) announcePointed(review, text);
+    // The review pointing was started for; the library refuses it once another is active.
+    const review = this.armedFor ?? this.context?.review ?? null;
+    this.arm(false);
+    if (review === null) throw new Error("Pointing needs an active Human review.");
+    const notes = await call(this.ipc.viewerPoint(this.session, review, text));
+    announcePointed(review, text);
     return notes;
   }
 
-  /** Append `text`, a place pointed at, to the active review's draft; pointing ends. */
+  /** Append `text`, a place pointed at, to the review pointing was for; pointing ends. A
+   * refusal says why in the strip. */
   async point(text: string): Promise<void> {
-    this.pointing = false;
     try {
       await this.append(text);
       this.error = null;

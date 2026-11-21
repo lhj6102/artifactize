@@ -41,9 +41,15 @@
       else if (data.method === "files") result = await call(v.ipc.viewerFiles(session, args.path ?? ""));
       else if (data.method === "readText") result = await call(v.ipc.viewerReadText(session, args.path ?? ""));
       else if (data.method === "pointing") {
-        // A place pointed at in the page ends pointing, as a built-in viewer's click does.
-        v.pointing = false;
-        result = await v.append(args.text ?? "");
+        // A place pointed at in the page ends pointing, as a built-in viewer's click does, and
+        // goes to the review pointing was started for; a refusal shows in the strip too.
+        try {
+          result = await v.append(args.text ?? "");
+          v.error = null;
+        } catch (failure) {
+          v.error = message(failure);
+          throw failure;
+        }
       } else if (data.method === "status") {
         v.status = args.text?.trim() || null;
         result = null;
@@ -68,8 +74,8 @@
 
   /** Start or stop pointing; a plugin's page is told, and points in its own document. */
   function point(on: boolean) {
-    v.pointing = on;
-    if (entry?.kind === "web") frame?.contentWindow?.postMessage({ channel: CHANNEL, event: "point", armed: on }, "*");
+    v.arm(on);
+    if (entry?.kind === "web") frame?.contentWindow?.postMessage({ channel: CHANNEL, event: "point", armed: v.pointing }, "*");
   }
 
   function keydown(event: KeyboardEvent) {

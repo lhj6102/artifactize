@@ -2,7 +2,7 @@
 // Artifact through its viewer session and Point appends the place clicked; a plugin's page
 // reaches the Artifact only through the bridge, answered for its own frame alone.
 import { clearMocks, mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ViewerContext, ViewerEntry } from "../ipc/client";
@@ -101,9 +101,27 @@ describe("File Explorer", () => {
     expect(screen.getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("true");
     await fireEvent.click(second);
     await waitFor(() => expect(pointed(calls)).toEqual(["src/total.ts L2:C1"]));
+    // It goes to the review pointing was started for.
+    expect(calls.find((call) => call.cmd === "viewer_point")?.args.review).toBe("run-a-2");
     expect(screen.getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false");
     // The windows showing the review's Notes are told what was pointed, to mark it there.
     await waitFor(() => expect(told).toEqual([{ review: "run-a-2", text: "src/total.ts L2:C1" }]));
+  });
+
+  it("stops pointing, adding nothing, when the active review changes while it points", async () => {
+    const shown = context();
+    const calls = backend({ kind: "builtin", viewer: "files" }, { "a.txt": "one\ntwo" }, shown);
+    render(ViewerWindow, { session: 8 });
+    await fireEvent.click(await screen.findByRole("button", { name: "a.txt" }));
+    const line = await screen.findByText("two");
+    await fireEvent.click(await screen.findByRole("button", { name: "Point" }));
+    // Armed for run-a-2; run-b-3 becomes the active review before the click.
+    shown.review = "run-b-3";
+    await emit("active-review-changed", { request: "run-b-3" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false"));
+    expect(screen.getByRole("status").textContent).toBe("The review changed while pointing; nothing was added.");
+    await fireEvent.click(line);
+    expect(pointed(calls)).toEqual([]);
   });
 
   it("shows no Point without an active review, and Esc stops pointing without appending", async () => {
