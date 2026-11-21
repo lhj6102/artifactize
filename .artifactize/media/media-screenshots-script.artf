@@ -4,7 +4,7 @@ type = "files"
 
 [evals.records-scenes]
 title = "The script captures scenes A, B and C from the real app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.records-scenes.payload]
