@@ -226,13 +226,16 @@ $info.EnvironmentVariables.Remove('DESKTOP_BUILD_ARGS')
 $child = [Diagnostics.Process]::Start($info)
 $child.WaitForExit()
 $code = $child.ExitCode
-# Keep the job (and inherited stdout) alive until the command's descendants exit too.
-$counts = New-Object E2eBuildJob+Accounting
-$accountSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf($counts)
-do {
-  if (-not [E2eBuildJob]::QueryInformationJobObject($job, 1, [ref]$counts, $accountSize, [IntPtr]::Zero)) { throw 'cannot observe E2E build Job Object' }
-  if ($counts.Active -gt 1) { Start-Sleep -Milliseconds 20 }
-} while ($counts.Active -gt 1)
+# A batch owns service teardown; if it exits leaving apps behind, close the job as a
+# fail-safe instead of waiting forever. Build commands normally drain their descendants.
+if ($env:DESKTOP_TREE_COMPLETES_WITH_ROOT -ne '1') {
+  $counts = New-Object E2eBuildJob+Accounting
+  $accountSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf($counts)
+  do {
+    if (-not [E2eBuildJob]::QueryInformationJobObject($job, 1, [ref]$counts, $accountSize, [IntPtr]::Zero)) { throw 'cannot observe E2E build Job Object' }
+    if ($counts.Active -gt 1) { Start-Sleep -Milliseconds 20 }
+  } while ($counts.Active -gt 1)
+}
 # The wrapper itself is in the job. The OS closes the handle on its way out.
 exit $code
 `;
@@ -243,15 +246,22 @@ function windowsArg(arg: string): string {
 }
 
 /** Start a program with an owned process group, or a Windows Job Object. */
-export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean }): ChildProcess {
+export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean; completesWithRoot?: boolean }): ChildProcess {
   const stdio = ["ignore", options.capture ? "pipe" : "inherit", "inherit"] as const;
   if (WINDOWS) {
     const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
     const script = Buffer.from(WINDOWS_JOB, "utf16le").toString("base64");
-    const env = { ...options.env, DESKTOP_BUILD_PROGRAM: program, DESKTOP_BUILD_ARGS: args.map(windowsArg).join(" ") };
+    const env = { ...options.env, DESKTOP_BUILD_PROGRAM: program, DESKTOP_BUILD_ARGS: args.map(windowsArg).join(" "),
+      DESKTOP_TREE_COMPLETES_WITH_ROOT: options.completesWithRoot ? "1" : "0" };
     return spawn(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", script], { cwd: options.cwd, env, windowsHide: true, stdio: [...stdio] });
   }
   return spawn(program, args, { cwd: options.cwd, env: options.env, detached: true, windowsHide: true, stdio: [...stdio] });
+}
+
+/** A batch needs the same Windows kill-on-close ownership as the build tree. On Unix the
+ * terminal's signal reaches the batch and WDIO runs its teardown hooks. */
+export function startBatch(program: string, args: readonly string[], env: Environment, cwd: NativePath): ChildProcess {
+  return WINDOWS ? startTree(program, args, { cwd, env, capture: false, completesWithRoot: true }) : spawn(program, args, { env, cwd, stdio: "inherit" });
 }
 
 /** End the owned tree, not just the command whose exit status the wrapper reports. */
@@ -384,9 +394,40 @@ export function displayScreenshot(output: NativePath, pid?: number): Uint8Array 
   } finally { removeTree(scratch); }
 }
 
-/** Retain the last changed startup frame before the service kills its timed-out process. */
-export function startupImage(output: NativePath): (encode?: boolean) => Uint8Array | undefined {
-  if (!LINUX) return () => undefined;
+/** The service spawns the app directly under the batch. Before the driver is ready, the
+ * configured state path distinguishes this fixture from all other children and apps. This
+ * lookup is for read-only screenshots, never for signalling a process. */
+function startupPid(state: NativePath): number | undefined {
+  if (MACOS) {
+    const listed = spawnSync("/bin/ps", ["-ww", "-axo", "pid=,ppid=,command="], { encoding: "utf8", timeout: 1000 });
+    for (const line of listed.stdout?.split("\n") ?? []) {
+      const parsed = /^\s*(\d+)\s+(\d+)\s+(.*)/.exec(line);
+      if (parsed && Number(parsed[2]) === process.pid && parsed[3].includes(`--state-dir ${state} --reviewer`)) return Number(parsed[1]);
+    }
+    return undefined;
+  }
+  const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const query = `Get-CimInstance Win32_Process -Filter ('ParentProcessId=' + $env:DESKTOP_STARTUP_PARENT) | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:DESKTOP_STARTUP_STATE) } | Select-Object -First 1 -ExpandProperty ProcessId`;
+  const listed = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(query, "utf16le").toString("base64")], {
+    env: { ...process.env, DESKTOP_STARTUP_PARENT: String(process.pid), DESKTOP_STARTUP_STATE: state },
+    encoding: "utf8", windowsHide: true, timeout: 3000,
+  });
+  const text = listed.stdout?.trim() ?? "";
+  return /^\d+$/.test(text) ? Number(text) : undefined;
+}
+
+/** Retain the last startup frame before the service kills its timed-out process. */
+export function startupImage(output: NativePath, state: NativePath): (encode?: boolean) => Uint8Array | undefined {
+  if (!LINUX) {
+    let last: Uint8Array | undefined;
+    const timer = setInterval(() => {
+      const pid = startupPid(state);
+      if (!pid) return;
+      try { last = displayScreenshot(output, pid); } catch { /* no native window yet */ }
+    }, 5000);
+    timer.unref();
+    return (encode = true) => { clearInterval(timer); return encode ? last : undefined; };
+  }
   const frame = nativePath(output, "Xvfb_screen0");
   const baseline = readFileSync(frame);
   let last: Buffer | undefined;
@@ -457,15 +498,16 @@ export const appsAtOnce = WINDOWS || LINUX ? 1 : 2;
 /** This machine's OS as a failure names it. */
 export const systemName = `${process.platform} ${release()} (${process.arch})`;
 
-/** The machine-wide resources a batch holds while its apps run: on Windows the desktop's
- * foreground window, which another suite run's app would take away. */
-export const desktopResources: readonly string[] = WINDOWS ? ["foreground"] : [];
+/** Every batch on a shared desktop takes the same lock, including ordinary batches that
+ * could otherwise interfere with another suite's exclusive scenario. Isolated Xvfb displays
+ * need no desktop lock; the runner still locks a scenario's other shared resources. */
+export const desktopResources: readonly string[] = WINDOWS || MACOS ? ["foreground"] : [];
 
 /** The foreground lock's fail-closed marker survives a batch process that must exit without
  * having confirmed it stopped its app. The path is shared by suite runs in this desktop's
  * user account, independent of the per-run scratch, state and sanitized environment. */
 export function foregroundQuarantine(): NativePath | null {
-  return WINDOWS ? nativePath(homedir(), ".artifactize-desktop-e2e", "foreground-unreleased") : null;
+  return WINDOWS || MACOS ? nativePath(homedir(), ".artifactize-desktop-e2e", "foreground-unreleased") : null;
 }
 
 /** Check under the foreground lock before letting a second suite open another app. */

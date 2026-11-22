@@ -35,6 +35,7 @@ export type Service = {
 };
 const foreground = foregroundQuarantine();
 const scenarioPorts = new Map<string, number>();
+const scenarioStates = new Map<string, Context["root"]>();
 let observeService: (() => Service[]) | undefined;
 const shutdownFailures: unknown[] = [];
 const pendingStops = new Map<Service, () => Promise<void>>();
@@ -138,15 +139,17 @@ export const config = {
         if (prepare) service.onPrepare = async (...args) => {
           // A failed service startup may leave an app but skip the usual completion hook.
           pendingStops.set(service, () => complete(1, {}, []));
-          const finishCapture = startupImage(output);
+          const captures = [...scenarioStates].map(([id, state]) => ({ id, stop: startupImage(output, state) }));
           try { await prepare(...args); }
           catch (error) {
-            const shot = finishCapture();
-            for (const item of selected) {
-              await keepEvidence(item.id, nativePath(evidence, item.id), `Tauri could not start the embedded WebDriver before the scenario ran: ${inspect(error)}`, shot);
+            for (const { id, stop } of captures) {
+              let shot: Uint8Array | undefined;
+              let capture = "";
+              try { shot = stop(); } catch (failure) { capture = `\nCould not capture the startup window: ${String(failure)}`; }
+              await keepEvidence(id, nativePath(evidence, id), `Tauri could not start the embedded WebDriver before the scenario ran: ${inspect(error)}${capture}`, shot);
             }
             throw error;
-          } finally { finishCapture(false); }
+          } finally { for (const capture of captures) capture.stop(false); }
         };
         service.onComplete = async (...args) => {
           const stop = () => complete(...args);
@@ -182,6 +185,7 @@ export const config = {
       prepared[0]?.scope.defer(close);
       for (const [index, { scope, input, env, app }] of prepared.entries()) {
         scenarioPorts.set(selected[index].id, ports[index]);
+        scenarioStates.set(selected[index].id, input.fixture.state);
         const context = nativePath(scope.root, "context.json");
         writeJson(context, { ...input, root: scope.root, port: ports[index], evidence: nativePath(evidence, selected[index].id) } satisfies Context);
         capabilities[index]["artifactize:context"] = context;

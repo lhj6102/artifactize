@@ -11,7 +11,7 @@ import { inspect } from "node:util";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { appsAtOnce, assertHeadless, checkForeground, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, quarantineForeground, releaseForeground, runnerCommand, systemName, setVariable, variable } from "./platform.ts";
+import { appsAtOnce, assertHeadless, checkForeground, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, quarantineForeground, releaseForeground, runnerCommand, systemName, setVariable, startBatch, variable } from "./platform.ts";
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
 import { APPS_UNRELEASED, type Scenario } from "./scenario.ts";
 
@@ -32,12 +32,15 @@ export function batches(scenarios: readonly Pick<Scenario, "id" | "alone" | "res
 let interrupted = false;
 
 /** Run `program` with this terminal's output until it exits; its exit code. */
-function child(program: string, args: string[], env: NodeJS.ProcessEnv, cwd?: NativePath): Promise<number> {
+function exitCode(started: ReturnType<typeof spawn>): Promise<number> {
   return new Promise((done, fail) => {
-    const started = spawn(program, args, { env, cwd, stdio: "inherit" });
     started.once("error", fail);
     started.once("close", (code) => done(code ?? 1));
   });
+}
+
+function child(program: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
+  return exitCode(spawn(program, args, { env, stdio: "inherit" }));
 }
 
 /** An interrupt fails the run, whenever it comes, and starts no other batch. One that reaches
@@ -99,7 +102,7 @@ async function suite(ids: string[]): Promise<void> {
       const env = { ...process.env, DESKTOP_TEST_CANDIDATE: candidate.manifest, DESKTOP_TEST_BATCH: JSON.stringify(ids),
         DESKTOP_TEST_BATCH_OUTPUT: logs, DESKTOP_TEST_EVIDENCE_RUN: evidence };
       const command = runnerCommand([suitePath("run.ts"), "batch"], env);
-      const passed = await child(command.program, command.args, command.env, logs) === 0;
+      const passed = await exitCode(startBatch(command.program, command.args, command.env, logs)) === 0;
       const left = groups.slice(index + 1).flat();
       const unrun = left.length ? `${left.length} scenarios did not run (${left.join(", ")})` : "no scenario was left to run";
       if (!passed) {
