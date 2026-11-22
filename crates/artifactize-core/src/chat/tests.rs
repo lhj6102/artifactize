@@ -1,6 +1,17 @@
 use super::*;
 
 #[tokio::test]
+async fn stopping_for_quit_cancels_local_work_even_without_a_saved_owner() {
+    let root = crate::test_os::tempdir();
+    let chat = Chat::discover(root.path().join("no-state"));
+    let id = "chat-preparing".parse().unwrap();
+    let active = chat.claim(&id).unwrap();
+    assert!(!active.cancel.is_cancelled());
+    chat.stop_running().await.unwrap();
+    assert!(active.cancel.is_cancelled());
+}
+
+#[tokio::test]
 async fn moving_a_branch_prefers_a_usable_session_but_keeps_stranded_history_readable() {
     let root = crate::test_os::tempdir();
     let worktree = root.path().join("current");

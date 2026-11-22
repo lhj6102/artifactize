@@ -852,11 +852,25 @@ impl Chat {
     /// The desktop's quit prompt names every running Chat. Deliver the same Stop to those
     /// turns even when another process owns them, before the desktop window closes.
     pub async fn stop_running(&self) -> Result<(), StopRunningError> {
+        let local: std::collections::BTreeSet<_> = {
+            let active = self.active.state.lock().expect("Chat active turns lock");
+            active
+                .turns
+                .iter()
+                .map(|(id, token)| {
+                    token.cancel();
+                    id.clone()
+                })
+                .collect()
+        };
         let mut failed = Vec::new();
         let turns = store::chat::active_turns(&self.state, true)
             .await
             .map_err(StopRunningError::Unreadable)?;
         for (session, owner) in turns {
+            if owner.in_current_process() && local.contains(&session.id) {
+                continue;
+            }
             if let Err(error) = self.stop_exact(&session, owner).await {
                 failed.push(format!("{}: {error}", session.id));
             }

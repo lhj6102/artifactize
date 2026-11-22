@@ -30,6 +30,10 @@ impl Owner {
         })
     }
 
+    pub(crate) fn in_current_process(&self) -> bool {
+        self.birth.pid.get() == std::process::id()
+    }
+
     pub(crate) fn live(&self) -> Result<bool, String> {
         process::is_alive(Some(self.birth)).map_err(|error| error.to_string())
     }
