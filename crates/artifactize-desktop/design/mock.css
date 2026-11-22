@@ -404,6 +404,18 @@
   padding: 0 var(--pad) 4px 30px;
   font-size: var(--text-small);
 }
+.m-branch.folded {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--row-pane);
+}
+.m-branch.folded > .m-branch-head {
+  min-height: 18px;
+}
+.m-branch.folded > .m-latest {
+  padding-bottom: 0;
+}
 .m-branch.folded.hover {
   background: var(--surface-group);
 }
