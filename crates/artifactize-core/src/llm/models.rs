@@ -57,6 +57,127 @@ pub struct Listing {
     pub models: Vec<ListedModel>,
 }
 
+/// The result a model menu renders. Absence of setup is not a failed listing.
+pub enum Availability {
+    Models(Vec<ListedModel>),
+    NotSetUp {
+        reason: String,
+    },
+    Failed {
+        error: String,
+    },
+    CliMissing {
+        reason: String,
+    },
+    CliTooOld {
+        version: semver::Version,
+        required_version: semver::Version,
+        error: String,
+    },
+}
+
+impl Availability {
+    fn listed(listing: Result<Vec<ListedModel>, String>) -> Self {
+        match listing {
+            Ok(models) => Self::Models(models),
+            Err(error) => Self::Failed { error },
+        }
+    }
+}
+
+/// Discover models and classify setup failures at the native provider boundary.
+pub async fn availability(
+    backend: Backend,
+    state: Option<&Path>,
+    repo: Option<&Path>,
+) -> Availability {
+    use super::Route;
+    use crate::auth::{antigravity, claude_agent, codex};
+    use Availability::*;
+    let route = match super::route(&backend, state, repo, "to list models") {
+        Ok(route) => route,
+        Err(failure) if failure.code == crate::agent::error::Code::Authentication => {
+            return NotSetUp {
+                reason: failure.message,
+            };
+        }
+        Err(failure) => {
+            return Failed {
+                error: failure.message,
+            };
+        }
+    };
+    match route {
+        Route::Antigravity => {
+            use super::antigravity::{MINIMUM, Problem};
+            match antigravity::models_checked().await {
+                Ok(models) => Models(models),
+                Err(Problem::Missing) => CliMissing {
+                    reason: "Install the Antigravity CLI (agy).".into(),
+                },
+                Err(Problem::SignedOut) => NotSetUp {
+                    reason: "Sign in to Antigravity with Google.".into(),
+                },
+                Err(Problem::TooOld { version }) => CliTooOld {
+                    error: format!("Update Antigravity to {MINIMUM} or newer."),
+                    version,
+                    required_version: MINIMUM,
+                },
+                Err(problem) => Failed {
+                    error: crate::agent::error::Failure::from(problem).message,
+                },
+            }
+        }
+        Route::ClaudeAgent => {
+            let minimum = super::claude_agent::MINIMUM_VERSION;
+            match claude_agent::cli_version().await {
+                Ok(None) => {
+                    return CliMissing {
+                        reason: "Install Claude Code (claude).".into(),
+                    };
+                }
+                Ok(Some(version)) if version < minimum => {
+                    return CliTooOld {
+                        error: format!("Update Claude Code to {minimum} or newer."),
+                        version,
+                        required_version: minimum,
+                    };
+                }
+                Err(error) => return Failed { error },
+                Ok(Some(_)) => {}
+            }
+            match claude_agent::status().await {
+                claude_agent::Status::Missing => CliMissing {
+                    reason: "Install Claude Code (claude).".into(),
+                },
+                claude_agent::Status::SignedOut => NotSetUp {
+                    reason: "Sign in to Claude Code.".into(),
+                },
+                claude_agent::Status::Failed { error } => Failed { error },
+                claude_agent::Status::SignedIn { .. } => {
+                    Availability::listed(super::claude_agent::models().await)
+                }
+            }
+        }
+        Route::Http(super::HttpRoute {
+            api: Api::Codex,
+            base,
+            ..
+        }) => match codex::status(state, repo) {
+            Ok(codex::Status::Absent) => NotSetUp {
+                reason: "Sign in to Codex.".into(),
+            },
+            Ok(codex::Status::Refused { reason }) => Failed { error: reason },
+            Err(error) => Failed { error },
+            Ok(_) => Availability::listed(super::codex::models(&base, state, repo).await),
+        },
+        Route::Http(super::HttpRoute { api, base, key }) => {
+            let key = key.as_ref().map_or("", |key| key.expose());
+            Availability::listed(list_at(api, key, super::adapter_base(&base)).await)
+        }
+    }
+}
+
 /// `state` holds saved keys, custom providers and Codex credentials; `repo` keeps them
 /// outside the reviewed repository.
 pub async fn list(

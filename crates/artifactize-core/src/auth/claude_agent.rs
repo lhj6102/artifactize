@@ -101,6 +101,23 @@ async fn ask(args: &[&str]) -> Result<Option<process::Output>, String> {
     }
 }
 
+/// Identify the installed native executable without opening a session or signing in.
+pub(crate) async fn cli_version() -> Result<Option<semver::Version>, String> {
+    let Some(output) = ask(&["--version"]).await? else {
+        return Ok(None);
+    };
+    output
+        .status
+        .success()
+        .then(|| platform::output_text(&output.stdout))
+        .and_then(|text| {
+            text.split_whitespace()
+                .find_map(|word| semver::Version::parse(word.trim_start_matches('v')).ok())
+        })
+        .map(Some)
+        .ok_or_else(|| "Cannot read the Claude Code version (`claude --version`).".into())
+}
+
 /// Ask Claude Code whether it is signed in (`claude auth status --json`).
 pub async fn status() -> Status {
     match ask(&["auth", "status", "--json"]).await {

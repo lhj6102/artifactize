@@ -119,14 +119,23 @@ impl Fixture {
         );
         assert!(!result.status.success());
         assert!(String::from_utf8_lossy(&result.stdout).contains("not on PATH"));
+        let listing = || {
+            artifactize_core::llm::models::availability("antigravity".parse().unwrap(), None, None)
+        };
+        use artifactize_core::llm::models::Availability;
         self.mode("old");
         let old = account::status().await;
         assert!(old.path.as_ref().is_some_and(|path| path.is_file()));
         assert_eq!(old.required_version.to_string(), "1.5.1");
         assert_eq!(old.version.unwrap().to_string(), "1.5.0");
         assert!(matches!(old.state, account::State::TooOld { error } if error.contains("1.5.1")));
+        assert!(
+            matches!(listing().await, Availability::CliTooOld { version, required_version, .. }
+            if version.to_string() == "1.5.0" && required_version.to_string() == "1.5.1")
+        );
         self.mode("signed-out");
         assert_eq!(account::status().await.state, account::State::SignedOut);
+        assert!(matches!(listing().await, Availability::NotSetUp { .. }));
         self.mode("auth-link");
         assert_eq!(account::status().await.state, account::State::SignedOut);
         self.mode("quota");
@@ -213,7 +222,7 @@ impl Fixture {
         let alias =
             os::run(&mut self.cli(&["provider", "add", "agy-alias", "--alias", "antigravity"]));
         assert!(!alias.status.success());
-        assert!(String::from_utf8_lossy(&alias.stdout).contains("Chat only"));
+        assert!(String::from_utf8_lossy(&alias.stdout).contains("cannot be aliased"));
 
         let chat = Chat::new(self.state.clone(), self.cli.clone());
         let mut model = Model {

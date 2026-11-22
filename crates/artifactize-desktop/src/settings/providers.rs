@@ -132,6 +132,7 @@ pub struct CustomProvider {
 pub struct Providers {
     /// The built-in providers, in the order Settings lists them.
     pub builtin: Vec<Provider>,
+    pub alias_targets: Vec<Provider>,
     pub keys: Vec<KeyStatus>,
     pub custom: Vec<CustomProvider>,
 }
@@ -160,6 +161,7 @@ pub fn providers_list(app: tauri::State<'_, App>) -> Result<Providers, Failure> 
     let list = providers::list(state, repo).map_err(Failure::Account)?;
     Ok(Providers {
         builtin: config::Provider::ALL.into_iter().map(Into::into).collect(),
+        alias_targets: list.alias_targets.into_iter().map(Into::into).collect(),
         keys: list
             .keys
             .into_iter()
@@ -277,25 +279,73 @@ pub struct Model {
     pub default_effort: Option<String>,
 }
 
-/// `models <provider>`: what a built-in or custom provider offers to this key or account.
+/// Model discovery reports unavailable setup separately from a failed listing.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ModelsResult {
+    Models {
+        models: Vec<Model>,
+    },
+    NotSetUp {
+        reason: String,
+    },
+    Failed {
+        error: String,
+    },
+    CliMissing {
+        reason: String,
+    },
+    CliTooOld {
+        version: String,
+        required_version: String,
+        error: String,
+    },
+}
+
+/// `models <provider>`: this provider's models or why it could not list them.
 #[tauri::command]
 #[specta::specta]
 pub async fn models_list(
     app: tauri::State<'_, App>,
     provider: String,
-) -> Result<Vec<Model>, Failure> {
+) -> Result<ModelsResult, Failure> {
+    use llm::models::Availability as A;
     let backend = provider.parse().map_err(Failure::Invalid)?;
-    let listing = llm::models::list(backend, Some(&app.launch.state), app.launch.settings_repo())
+    Ok(
+        match llm::models::availability(
+            backend,
+            Some(&app.launch.state),
+            app.launch.settings_repo(),
+        )
         .await
-        .map_err(Failure::Account)?;
-    Ok(listing
-        .models
-        .into_iter()
-        .map(|model| Model {
-            slug: model.slug.to_string(),
-            display_name: model.display_name,
-            efforts: model.efforts,
-            default_effort: model.default_effort,
-        })
-        .collect())
+        {
+            A::Models(models) => ModelsResult::Models {
+                models: models
+                    .into_iter()
+                    .map(|model| Model {
+                        slug: model.slug.to_string(),
+                        display_name: model.display_name,
+                        efforts: model.efforts,
+                        default_effort: model.default_effort,
+                    })
+                    .collect(),
+            },
+            A::NotSetUp { reason } => ModelsResult::NotSetUp { reason },
+            A::Failed { error } => ModelsResult::Failed { error },
+            A::CliMissing { reason } => ModelsResult::CliMissing { reason },
+            A::CliTooOld {
+                version,
+                required_version,
+                error,
+            } => ModelsResult::CliTooOld {
+                version: version.to_string(),
+                required_version: required_version.to_string(),
+                error,
+            },
+        },
+    )
 }

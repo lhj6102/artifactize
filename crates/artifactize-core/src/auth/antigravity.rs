@@ -91,7 +91,11 @@ pub async fn status() -> Status {
 }
 
 pub async fn models() -> Result<Vec<ListedModel>, String> {
-    probe(Acp::inspect).await.map_err(message)
+    models_checked().await.map_err(message)
+}
+
+pub(crate) async fn models_checked() -> Result<Vec<ListedModel>, Problem> {
+    probe(Acp::inspect).await
 }
 
 pub async fn logout() -> Result<(), String> {

@@ -363,8 +363,8 @@ branch: string } |
 	 *  reports it.
 	 */
 	claudeAgentLogout: () => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_logout")),
-	/**  `models <provider>`: what a built-in or custom provider offers to this key or account. */
-	modelsList: (provider: string) => typedError<Model[], Failure>(__TAURI_INVOKE("models_list", { provider })),
+	/**  `models <provider>`: this provider's models or why it could not list them. */
+	modelsList: (provider: string) => typedError<ModelsResult, Failure>(__TAURI_INVOKE("models_list", { provider })),
 	/**  `remote status`: URL, share level, token source, reachability, principal and scopes. */
 	remoteStatus: () => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_status")),
 	/**
@@ -1058,6 +1058,9 @@ export type Model = {
 	defaultEffort: string | null,
 };
 
+/**  Model discovery reports unavailable setup separately from a failed listing. */
+export type ModelsResult = { kind: "models"; models: Model[] } | { kind: "notSetUp"; reason: string } | { kind: "failed"; error: string } | { kind: "cliMissing"; reason: string } | { kind: "cliTooOld"; version: string; requiredVersion: string; error: string };
+
 export type Movement = { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" };
 
 /**  A native sign-in either needs a prompt or has already ended with the new status. */
@@ -1149,6 +1152,7 @@ export type Provider = "codex" | "claude-agent" | "antigravity" | "openai" | "an
 export type Providers = {
 	/**  The built-in providers, in the order Settings lists them. */
 	builtin: Provider[],
+	aliasTargets: Provider[],
 	keys: KeyStatus[],
 	custom: CustomProvider[],
 };

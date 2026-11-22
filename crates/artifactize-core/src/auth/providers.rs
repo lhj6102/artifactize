@@ -231,6 +231,8 @@ impl Serialize for KeyStatus {
 /// The providers this machine has set up.
 #[derive(Debug, Clone, Serialize)]
 pub struct Providers {
+    #[serde(skip)]
+    pub alias_targets: Vec<Provider>,
     pub keys: Vec<KeyStatus>,
     pub custom: BTreeMap<Backend, CustomView>,
     /// Why nothing can be saved in this state, which holds nothing yet.
@@ -286,10 +288,18 @@ fn read(state: Option<&Path>, repo: Option<&Path>) -> Result<(Saved, Option<Stri
     Ok((saved, None))
 }
 
+fn can_alias(provider: Provider) -> bool {
+    !matches!(provider, Provider::ClaudeAgent | Provider::Antigravity)
+}
+
 /// What `state` has set up, without any key.
 pub fn list(state: Option<&Path>, repo: Option<&Path>) -> Result<Providers, String> {
     let (saved, refused) = read(state, repo)?;
     Ok(Providers {
+        alias_targets: Provider::ALL
+            .into_iter()
+            .filter(|provider| can_alias(*provider))
+            .collect(),
         keys: Provider::ALL
             .into_iter()
             .filter_map(|provider| {
@@ -404,13 +414,12 @@ pub async fn save_custom(
             "{provider} is a built-in provider; give the custom provider another name."
         ));
     }
-    if matches!(
-        custom,
-        Custom::Alias {
-            provider: Provider::Antigravity
-        }
-    ) {
-        return Err("Antigravity is Chat only and cannot be aliased by a custom provider.".into());
+    if let Custom::Alias { provider } = &custom
+        && !can_alias(*provider)
+    {
+        return Err(format!(
+            "{provider} uses a native CLI and cannot be aliased by a custom provider."
+        ));
     }
     update(state, repo, |saved| {
         if let Custom::Endpoint { key: slot, .. } = &mut custom {

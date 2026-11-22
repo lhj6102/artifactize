@@ -217,7 +217,7 @@ fn settings_command_probe() {
     let providers = call("providers_list", json!({})).unwrap();
     assert_eq!(
         providers,
-        json!({"builtin": builtin, "keys": keys("absent"), "custom": []})
+        json!({"builtin": builtin, "aliasTargets": ["codex", "openai", "anthropic", "gemini"], "keys": keys("absent"), "custom": []})
     );
     call(
         "provider_key_save",
@@ -265,7 +265,7 @@ fn settings_command_probe() {
     for name in ["local", "work"] {
         let models = call("models_list", json!({"provider": name})).unwrap();
         assert_eq!(
-            models,
+            models["models"],
             json!([{"slug": "gpt-fake", "displayName": "gpt-fake", "efforts": [], "defaultEffort": null}])
         );
     }
@@ -277,9 +277,10 @@ fn settings_command_probe() {
         providers["custom"],
         json!([{"name": "work", "target": {"kind": "alias", "provider": "openai"}}])
     );
-    let gone = call("models_list", json!({"provider": "local"})).unwrap_err();
+    let gone = call("models_list", json!({"provider": "local"})).unwrap();
+    assert_eq!(gone["kind"], "notSetUp");
     assert!(
-        gone["message"]
+        gone["reason"]
             .as_str()
             .unwrap()
             .contains("No provider named local"),
@@ -289,22 +290,36 @@ fn settings_command_probe() {
     // Models, with the CLI's error for a missing key.
     let models = call("models_list", json!({"provider": "openai"})).unwrap();
     assert_eq!(
-        models,
+        models["models"],
         json!([{"slug": "gpt-fake", "displayName": "gpt-fake", "efforts": [], "defaultEffort": null}])
     );
-    let missing = call("models_list", json!({"provider": "anthropic"})).unwrap_err();
+    let missing = call("models_list", json!({"provider": "anthropic"})).unwrap();
     assert_eq!(
         missing,
-        json!({"kind": "account", "message": "ANTHROPIC_API_KEY or a saved anthropic key is required to list models."})
+        json!({"kind": "notSetUp", "reason": "ANTHROPIC_API_KEY or a saved anthropic key is required to list models."})
     );
-    let signed_out = call("models_list", json!({"provider": "codex"})).unwrap_err();
-    assert!(
-        signed_out["message"]
-            .as_str()
-            .unwrap()
-            .contains("artifactize login codex"),
-        "{signed_out}"
+    let signed_out = call("models_list", json!({"provider": "codex"})).unwrap();
+    assert_eq!(
+        signed_out,
+        json!({"kind":"notSetUp","reason":"Sign in to Codex."})
     );
+    for provider in ["antigravity", "claude-agent"] {
+        let refused = call("provider_custom_save", json!({
+            "name":"native", "target":{"kind":"alias","provider":provider}, "key":{"kind":"none"},
+        })).unwrap_err();
+        assert!(
+            refused["message"]
+                .as_str()
+                .unwrap()
+                .contains("cannot be aliased")
+        );
+    }
+    call("provider_custom_save", json!({
+        "name":"broken", "target":{"kind":"endpoint","api":"openaiChat","url":format!("{provider_url}/unknown")}, "key":{"kind":"none"},
+    })).unwrap();
+    let failed = call("models_list", json!({"provider":"broken"})).unwrap();
+    assert_eq!(failed["kind"], "failed");
+    assert!(failed["error"].is_string());
 
     // Codex, in the frontend's order: start, then wait, and while the wait is pending a paste
     // of the redirect URL (as the CLI accepts it on stdin) or a cancel must still reach the
@@ -345,7 +360,7 @@ fn settings_command_probe() {
     assert!(!status.to_string().contains("refresh-1"));
     let models = call("models_list", json!({"provider": "codex"})).unwrap();
     assert_eq!(
-        models,
+        models["models"],
         json!([{"slug": "gpt-6-luna", "displayName": "GPT-6 Luna", "efforts": [], "defaultEffort": null}])
     );
     // A finished sign-in takes no more pastes.
