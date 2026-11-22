@@ -42,7 +42,7 @@
 <div class="m-desktop">
   <div class="m-vwindow" style="left: 40px; top: 24px; width: 900px; height: 600px">
     <div class="m-frame"><b>checkout — HTML</b></div>
-    <div class="m-vstrip"><span class="m-vname">checkout</span><span class="m-vkind">HTML</span><span class="m-spacer"></span><span class="m-vreview"><span class="m-icon i-human tone-human"></span>checkout/looks-right</span><span class="m-button small pointing"><span class="m-icon i-point"></span>Point</span></div>
+    <div class="m-vstrip"><span class="m-vname">checkout</span><span class="m-vkind">HTML</span><span class="m-vkind">checkout.html · Checkout</span><span class="m-spacer"></span><span class="m-vreview"><span class="m-icon i-human tone-human"></span>checkout/looks-right</span><span class="m-button small pointing"><span class="m-icon i-point"></span>Point</span></div>
     <div class="m-vbody single">
       <div class="m-md" style="padding: 24px 32px">
         <h1>Checkout</h1>
@@ -58,27 +58,27 @@
   <div class="m-pet" style="right: 24px; bottom: 24px">
     <img class="m-pet-sprite" src="../ui/src/shell/pet.svg" alt="" />
     <div class="m-pet-head"><span class="m-icon i-human tone-human"></span>checkout/looks-right<span class="m-run">· run-9PLM3X</span></div>
-    <div class="m-point compact"><span class="m-icon i-point"></span><span class="m-ptext">#checkout .summary</span><span class="m-button small quiet">Insert</span></div>
-    <div class="m-point compact" style="background: var(--accent-soft)"><span class="m-icon i-point"></span><span class="m-ptext">#checkout .total</span><span class="m-button small quiet">Insert</span></div>
+    <div class="m-point compact" style="background: var(--accent-soft)"><span class="m-icon i-point"></span><span class="m-ptext">#checkout .summary</span><span class="m-button small quiet">Insert</span></div>
     <div class="m-verdicts"><span class="m-verdict green">GREEN</span><span class="m-verdict red chosen">RED</span></div>
     <div class="m-field"><span class="m-name">change<span class="m-required">*</span></span>
-      <ol class="m-items"><li><div class="m-input area text focused"><span>The total keeps four decimals.</span></div><span class="m-icon i-remove"></span></li></ol>
+      <ol class="m-items"><li><div class="m-input area text"><span>The total keeps four decimals.</span></div><span class="m-icon i-remove"></span></li></ol>
       <span class="m-button small quiet m-add"><span class="m-icon i-add"></span>Add</span>
     </div>
+    <div class="m-field"><span class="m-name">comment</span><div class="m-input area text"><span class="m-placeholder">Optional</span></div></div>
     <div class="m-pet-actions"><span class="m-button small pointing"><span class="m-icon i-point"></span>Point</span><span class="m-spacer"></span><span class="m-button primary">Submit RED</span></div>
   </div>
 </div>
 <span class="callout" style="left: 260px; top: 26px">1</span>
-<span class="callout" style="left: 200px; top: 58px">2</span>
+<span class="callout" style="left: 70px; top: 84px">2</span>
 <span class="callout" style="left: 640px; top: 62px">3</span>
 <span class="callout" style="left: 860px; top: 62px">4</span>
 <span class="callout" style="left: 420px; top: 300px">5</span>
-<span class="callout" style="left: 900px; top: 520px">6</span>
-<span class="callout" style="left: 1236px; top: 548px">7</span>
-<span class="callout" style="left: 1060px; top: 600px">8</span>
+<span class="callout" style="left: 880px; top: 370px">6</span>
+<span class="callout" style="left: 1236px; top: 395px">7</span>
+<span class="callout" style="left: 1236px; top: 470px">8</span>
 <span class="callout" style="left: 1010px; top: 700px">9</span>
 </div>
-<figcaption>Stage 1280 × 760. The <code>html</code> example plugin's viewer over another application, pointing: the reviewer clicked Point, then the order total; the selector of what was pointed at is added to the review's Points, shown last in the pet overlay at the screen's bottom right, nothing written into the form and nothing submitted. The page inside is the plugin's, drawn here in the app's tokens.</figcaption>
+<figcaption>Stage 1280 × 760. The <code>html</code> example plugin's viewer over another application, pointing: the reviewer clicked Point and holds the pointer over the order total, outlined; the click will add its selector to the review's Points, as the earlier point shown in the pet overlay at the screen's bottom right was added, nothing written into the form and nothing submitted. Once added, pointing ends and both Points read as off again. The strip shows the page's latest status line, its page and title. The page inside is the plugin's, drawn here in the app's tokens.</figcaption>
 </figure>
 
 <ol class="notes">
@@ -89,7 +89,7 @@
   <li><span class="n">5</span><div><b>Pointed place</b><span>While pointing, what is under the pointer is outlined in the accent; a click adds its readable text to the review's Points and pointing ends.</span></div></li>
   <li><span class="n">6</span><div><b>The pet</b><span>The app's own pet, the brand's faceted emerald in its bezel with a face, sits on the overlay's top edge.</span></div></li>
   <li><span class="n">7</span><div><b>Review</b><span>The active review's eval and Run in monospace; a click shows the review in Review.</span></div></li>
-  <li><span class="n">8</span><div><b>The same draft</b><span>The review's Points, compact: each its text and Insert, the one just added on the accent's soft fill; then the verdict choice and the open form; what is typed here is what Review shows.</span></div></li>
+  <li><span class="n">8</span><div><b>The same draft</b><span>The review's Points, compact: each its text and Insert, the newest on the soft fill until the next; then the verdict choice and the open form with its comment; what is typed here is what Review shows.</span></div></li>
   <li><span class="n">9</span><div><b>Point and Submit</b><span>Point at the left, pointing in the viewer that is open for the review's Artifact; Submit, naming the verdict, at the right.</span></div></li>
 </ol>
 
@@ -156,12 +156,15 @@
     <div class="m-frame"><b>structure — Artifactize Viewer</b></div>
     <div class="m-vstrip"><span class="m-vname">structure</span><span class="m-vkind">Artifactize Viewer</span><span class="m-spacer"></span><span class="m-vreview"><span class="m-icon i-human tone-human"></span>structure/scope-reads-clearly</span><span class="m-button small"><span class="m-icon i-point"></span>Point</span></div>
     <div class="m-vbody graph">
+      <div style="display: flex; flex-direction: column; min-width: 0">
+      <div class="m-strip" style="border-top: 0; border-bottom: 1px solid var(--line-group); background: var(--surface-panel)"><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div>
       <div class="m-canvas" style="position: relative">
         <div class="m-edge" style="left: 236px; top: 158px; width: 220px; transform: rotate(20deg)"></div>
         <div class="m-edge" style="left: 236px; top: 158px; width: 210px"></div>
         <div class="m-dnode selected" style="left: 68px; top: 140px"><span class="m-name">front-design</span><span class="m-type">files</span></div>
         <div class="m-dnode" style="left: 456px; top: 140px"><span class="m-name">checkout</span><span class="m-type">html</span></div>
         <div class="m-dnode" style="left: 440px; top: 220px"><span class="m-name">copy</span><span class="m-type">markdown</span></div>
+      </div>
       </div>
       <div class="m-dpanel">
         <div class="m-main-head"><div class="m-dock-title"><h2>Artifact front-design</h2><span class="m-type">files</span></div></div>
@@ -184,8 +187,8 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 240px; top: 190px">14</span>
-<span class="callout" style="left: 340px; top: 150px">15</span>
+<span class="callout" style="left: 240px; top: 218px">14</span>
+<span class="callout" style="left: 340px; top: 178px">15</span>
 <span class="callout" style="left: 1180px; top: 100px">16</span>
 <span class="callout" style="left: 1180px; top: 136px">17</span>
 </div>
@@ -240,7 +243,7 @@
   <dt id="D-VIEW-4">D-VIEW-4</dt>
   <dd>The Markdown viewer shows the rendered document on <code>--surface-panel</code> in a column of <code>--measure</code>, padded 16px by 24px: its first heading at <code>--text-heading</code> bold over a <code>--line-group</code> line, its second at <code>--text-title</code> semibold, deeper ones at <code>--text-body</code> semibold, text at <code>--text-body</code> in <code>--ink</code>, links in <code>--accent</code>, inline code and code blocks in <code>--mono</code> on <code>--surface-input</code>, tables with <code>--line-group</code> rules. An Artifact of several Markdown files lists them at the left as the File Explorer's tree does (D-VIEW-3); one file takes the whole window. While pointing, the line under the pointer is outlined by a 2px dashed <code>--point</code> line. <span class="avoid">the raw Markdown shown as the document; font sizes outside the tokens; a page wider than the measure.</span></dd>
   <dt id="D-VIEW-5">D-VIEW-5</dt>
-  <dd>The Artifactize Viewer draws what the project declares, not a Run: a canvas as a graph's (D-GRAPH-1, D-GRAPH-6) with a node per declared Artifact, 168 × 36px, a <code>--surface-panel</code> face, a <code>--line-node</code> outline, its name in <code>--ink</code> and its type as a small tag (<code>--mono</code> at <code>--text-label</code> in <code>--ink-2</code> inside a <code>--line-group</code> border of <code>--radius-chip</code>; an untyped Artifact's tag reads <i>custom</i>), with no status icon, strip or tally; references as edges in the neutral <code>--edge</code>, without ports or colour. A click on a node gives it the selected outline (D-NODE-2) and opens its panel, docked at the right as the Detail is (D-INS-1): its name and type in the header row, then each eval in a section opened by <code>--line-group</code>: its name in <code>--mono</code> with its kind as a tag (<i>agent</i>, <i>human</i>, <i>runtime</i>), then Title, Criteria (its instruction, whole) and Reads (the Artifacts it reads, as tags), each label in <code>--ink-2</code> at <code>--text-small</code>. While pointing, the node or the eval under the pointer is outlined by a 2px dashed <code>--point</code> line. <span class="avoid">verdict colours, icons or tallies in the Artifactize Viewer; an edge drawn as an eval; a connection that cannot tell which Artifact reads which.</span></dd>
+  <dd>The Artifactize Viewer draws what the project declares, not a Run: a canvas as a graph's (D-GRAPH-1, D-GRAPH-6) with a node per declared Artifact, 168 × 36px, a <code>--surface-panel</code> face, a <code>--line-node</code> outline, its name in <code>--ink</code> and its type as a small tag (<code>--mono</code> at <code>--text-label</code> in <code>--ink-2</code> inside a <code>--line-group</code> border of <code>--radius-chip</code>; an untyped Artifact's tag reads <i>custom</i>), with no status icon, strip or tally; references as edges in the neutral <code>--edge</code>, without ports or colour. A click on a node gives it the selected outline (D-NODE-2) and opens its panel, docked at the right as the Detail is (D-INS-1): its name and type in the header row, then each eval in a section opened by <code>--line-group</code>: its name in <code>--mono</code> with its kind as a tag (<i>agent</i>, <i>human</i>, <i>runtime</i>), then Title, Criteria (its instruction, whole) and Reads (the Artifacts it reads, as tags), each label in <code>--ink-2</code> at <code>--text-small</code>. While pointing, the node or the eval under the pointer is outlined by a 2px dashed <code>--point</code> line. Above the canvas, a graph's tool strip (D-GRAPH-4) holds its zoom group and Fit, without Find; it pans and zooms as Verify's graph does. <span class="avoid">verdict colours, icons or tallies in the Artifactize Viewer; zoom controls floating on its canvas; an edge drawn as an eval; a connection that cannot tell which Artifact reads which.</span></dd>
   <dt id="D-VIEW-6">D-VIEW-6</dt>
   <dd>A project's own viewer plugin fills everything under the strip with its page, which the app does not restyle; the <code>html</code> example shows the Artifact's page in an embedded browser. Point stands in the strip as for every viewer (D-VIEW-2) and tells the page to point; what the page shows while pointing is its own, held to the same outline: what is under the pointer outlined by a 2px dashed <code>--point</code> line. While the plugin's page has not yet reached the viewer's bridge (a page asks it for its context when it starts), the strip says, after the viewer's name, <i>Loading {plugin}…</i> in <code>--ink-2</code>; a page that finished loading without reaching it says there, in <code>--red</code>, that it did not connect; the line goes once the page reaches the bridge, and from then on the same place holds the latest status line the page reports (for <code>html</code>, the page shown and its title once loaded, or why it failed), in <code>--ink-2</code>, each replacing the last. <span class="avoid">the app's controls drawn over a plugin's page; a plugin page that reaches the app's window or its state.</span></dd>
   <dt id="D-PET-1">D-PET-1</dt>
