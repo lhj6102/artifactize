@@ -37,21 +37,33 @@ it("gives a fixture's programs homes inside it and none of the person's credenti
   }
 });
 
-it("teardown runs every cleanup, last first, ends a stand-in waiting for its gate and deletes the folder", async () => {
+it("teardown closes a gated stand-in and keeps inputs until failed cleanup is retried", async (test) => {
   const parent = newDirectory(scratchDirectory(), "desktop-owned-test-");
+  test.after(() => removeTree(parent));
   const scope = own(parent);
   const order: string[] = [];
   scope.defer(() => { order.push("first"); });
-  scope.defer(() => { throw new Error("a cleanup that fails"); });
+  let released = false;
+  scope.defer(() => { if (!released) throw new Error("a cleanup that fails"); });
   scope.defer(async () => { order.push("last"); });
   // A stand-in tool that waits for a gate nobody opens.
   const waiting = spawn(nodeProgram, [suitePath("fixtures", "program.ts"), "slow", nativePath(scope.root, "slow.gate")], { stdio: "ignore" });
-  const ended = new Promise<number | null>((done) => waiting.once("exit", (code) => done(code)));
+  const ended = new Promise<number | null>((done, fail) => {
+    waiting.once("error", fail);
+    waiting.once("close", (code) => done(code));
+  });
+  test.after(async () => {
+    if (waiting.exitCode === null && waiting.signalCode === null) waiting.kill();
+    await ended;
+  });
   await assert.rejects(scope.close(), (error: AggregateError) => error.errors.length === 1 && /a cleanup that fails/.test(String(error.errors[0])));
   assert.deepEqual(order, ["last", "first"]);
   assert.equal(await ended, 0, "the stand-in ended once its fixture closed");
+  assert.equal(exists(scope.root), true, "a failed owner still needs the fixture");
+  released = true;
+  await scope.close();
+  assert.deepEqual(order, ["last", "first"], "only the failed cleanup was retried");
   assert.equal(exists(scope.root), false);
-  removeTree(parent);
 });
 
 it("returns a build step's output and fails a step that fails", async () => {

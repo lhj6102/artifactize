@@ -5,7 +5,8 @@ import { completed, type Checkpoint } from "./commands.mts";
 
 const searched = (query: string, sequence: number, done = true, pending = 0): Checkpoint => ({
   query,
-  activity: { revision: sequence * 2, pending, commands: {}, search: { query, sequence, completed: done } },
+  reviewQuery: null,
+  activity: { revision: sequence * 2, pending, commands: {}, reviewSearch: null, search: { query, sequence, completed: done } },
 });
 
 it("waits for a new matching search after a query changes, including A → B → A", () => {
@@ -23,7 +24,7 @@ it("waits for a new matching search after a query changes, including A → B →
 it("requires pending commands to finish even when the query already matches", () => {
   assert.equal(completed(searched("A", 1, true, 1)), false);
   assert.equal(completed(searched("A", 1)), true);
-  assert.equal(completed({ activity: searched("A", 1).activity, query: null }), true);
+  assert.equal(completed({ activity: searched("A", 1).activity, query: null, reviewQuery: null }), true);
 });
 
 it("a completed failed query cannot reuse rows left by a successful query", () => {
@@ -33,17 +34,26 @@ it("a completed failed query cannot reuse rows left by a successful query", () =
   assert.equal(completed({ ...failed, queryFailure: null }, before), true);
 });
 
-it("waits for Review's debounced search after the visible filter changes", () => {
-  const before: Checkpoint = { query: null, reviewQuery: "waiting", activity: { revision: 2, pending: 0, search: null,
-    commands: { humanSearch: { started: 1, completed: 1, failed: 0, pending: 0 } } } };
-  const typed = { ...before, reviewQuery: "is:mine" };
-  assert.equal(completed(typed, before), false);
-  assert.equal(completed({ ...typed, activity: { ...typed.activity, revision: 4,
-    commands: { humanSearch: { started: 2, completed: 2, failed: 0, pending: 0 } } } }, before), true);
+it("does not take old Review rows for the new filter when a background search finishes first", () => {
+  const review = (filter: string, searched: string, sequence: number, completed = true): Checkpoint => ({
+    query: null,
+    reviewQuery: filter,
+    activity: { revision: sequence * 2, pending: 0, search: null, commands: {}, reviewSearch: { query: searched, sequence, completed } },
+  });
+  const before = review("waiting", "waiting", 1);
+  assert.equal(completed(review("is:mine", "waiting", 1), before), false, "the new filter has not dispatched");
+  assert.equal(completed(review("is:mine", "waiting", 2), before), false, "a reload of the previous query proves nothing");
+  assert.equal(completed(review("is:mine", "is:mine", 3, false), before), false, "new dispatch without completion");
+  const matching = review("is:mine", "is:mine", 3);
+  const failed = { ...matching, activity: { ...matching.activity, reviewSearch: { ...matching.activity.reviewSearch!, failed: true as const } } };
+  assert.equal(completed(failed, before), false, "a failed search is not its result rows");
+  assert.equal(completed(matching, before), true);
+  assert.equal(completed(before, matching), false, "an old completion cannot satisfy a return to the same filter");
+  assert.equal(completed(review("waiting", "waiting", 4), matching), true);
 });
 
 it("needs no search for the starting query until one is typed", () => {
-  const start: Checkpoint = { query: "sort:recent", activity: { revision: 1, pending: 0, commands: {}, search: null } };
+  const start: Checkpoint = { query: "sort:recent", reviewQuery: null, activity: { revision: 1, pending: 0, commands: {}, search: null, reviewSearch: null } };
   assert.equal(completed(start), true);
   assert.equal(completed({ ...start, query: "branch:x" }, start), false, "a typed query waits for its own search");
 });

@@ -1,9 +1,9 @@
 // The harness waits for the app's native work through its read-only IPC activity record, never a replacement
 // invoke or a command dispatched by the observer.
-import type { CommandActivity } from "../ui/src/ipc/activity.ts";
+import type { CommandActivity, SearchActivity } from "../ui/src/ipc/activity.ts";
 import { afterRender } from "../ui/e2e/keys.ts";
 
-export type Checkpoint = { activity: CommandActivity; query: string | null; reviewQuery?: string | null; queryFailure?: string | null };
+export type Checkpoint = { activity: CommandActivity; query: string | null; reviewQuery: string | null; queryFailure?: string | null };
 
 export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
   return browser.execute(() => {
@@ -21,19 +21,19 @@ export function checkpoint(browser: WebdriverIO.Browser): Promise<Checkpoint> {
 
 /** Query-changing actions need a *new* matching search, not an older A after A → B → A.
  * A background read of the new query also qualifies: it rendered that exact query. */
+function queryRendered(query: string | null, search: SearchActivity | null, before?: { query: string | null; search: SearchActivity | null }): boolean {
+  if (query === null) return true;
+  const changed = before?.query != null && before.query !== query;
+  // A field that just appeared may show its starting query without dispatching another search.
+  if (search === null) return !changed;
+  if (!search.completed || search.failed || search.query !== query) return false;
+  return !changed || search.sequence > (before.search?.sequence ?? 0);
+}
+
 export function completed(current: Checkpoint, before?: Checkpoint): boolean {
   if (current.activity.pending !== 0 || current.queryFailure) return false;
-  if (before?.reviewQuery != null && current.reviewQuery != null && current.reviewQuery !== before.reviewQuery) {
-    const search = current.activity.commands.humanSearch;
-    const previous = before.activity.commands.humanSearch;
-    if (!search || search.completed <= (previous?.completed ?? 0) || search.failed > (previous?.failed ?? 0)) return false;
-  }
-  if (current.query === null) return true;
-  const search = current.activity.search;
-  // Nothing typed yet: the field shows the starting query the first read already used.
-  if (search === null) return !before || before.query === current.query;
-  if (!search.completed || search.query !== current.query) return false;
-  return !before || before.query === current.query || search.sequence > (before.activity.search?.sequence ?? 0);
+  return queryRendered(current.query, current.activity.search, before && { query: before.query, search: before.activity.search })
+    && queryRendered(current.reviewQuery, current.activity.reviewSearch, before && { query: before.reviewQuery, search: before.activity.reviewSearch });
 }
 
 /** Completion of native work followed by its render. A search debounce is not native work

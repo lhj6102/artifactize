@@ -2,7 +2,7 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
-import { installChatProvider } from "../fixtures/chat.ts";
+import { CHAT_MODEL, installChatProvider } from "../fixtures/chat.ts";
 import { REVIEW_FINDING, REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
 import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -263,8 +263,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: { gate: fixture.gate } };
     },
     run: async (app, { data: { gate } }) => {
-      await app.chat.createFromDialog();
-      await app.chat.graph();
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:slow", (node) => node.label === "slow: checking", "slow is still being checked");
       await app.graph.node("a:quick", (node) => node.label === "quick: checking", "quick, which reads slow, too");
       await app.graph.node("a:other", (node) => node.label === "other: would run (1 eval)", "other's verdict is in");
@@ -290,11 +290,17 @@ export const scenarios: Scenario[] = [
     },
     run: async (app, { data: { gate } }) => {
       await app.pane.selectBranch("repo  master");
-      // Save an empty conversation on the selected branch. The Run's link opens its Graph.
+      // Save two conversations on the branch. Only the latest uses this model, so the
+      // Graph alone isn't enough to prove Open in Chat landed on the right session.
       await app.mode("Chat");
       await app.chat.create();
+      assert.notEqual(await app.chat.selected(), CHAT_MODEL);
+      await app.chat.create();
+      await app.chat.model(CHAT_MODEL);
       await app.mode("Verify");
       await app.graph.openInChat();
+      await app.chat.viewShown("Graph");
+      assert.equal(await app.chat.selected(), CHAT_MODEL);
       await app.graph.until(async () => (await app.graph.scan()) !== "", "the Run's branch is being scanned in Chat");
       await app.graph.node("a:slow", (node) => node.label === "slow: checking", "slow is being checked");
       writeText(gate, "go");

@@ -86,7 +86,7 @@ export class Pane {
     return this.branch(name, (entry) => entry.entries.length > before, `${name} lists older Runs`);
   }
 
-  /** Click the timeline entry `id` (a Run's ID, or `current`) of the branch, expanding it first:
+  /** Click the timeline entry `id` (a Run's ID) of the branch, expanding it first:
    * it is the one shown. */
   async choose(name: string, id: string): Promise<void> {
     if (!(await this.branch(name)).expanded) await this.toggle(name);

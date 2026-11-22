@@ -13,12 +13,14 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { installChatProvider } from "../ui/e2e/fixtures/chat.ts";
 import { own, type Owned } from "../ui/e2e/fixtures/owned.ts";
 import { cancelRuns, createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
 import { assertHeadless, displayEnvironment, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
-import { asNativePath, embeddedPorts, nativePath, newDirectory, runProgramOk } from "../ui/e2e/portable.ts";
+import { asNativePath, embeddedPorts, nativePath, newDirectory, runProgramOk, type NativePath } from "../ui/e2e/portable.ts";
 import { page, press, recordKeys, typeText } from "../ui/e2e/keys.ts";
 import { adopt, cargoGate, cleanup, prepare, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
+import { newChatBranch } from "../ui/e2e/views/chat.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "./commands.mts";
 
 // Resolve the public package entry from the frontend which declares this dependency.
@@ -60,8 +62,8 @@ const OWNER_RETRY_MS = 1000;
 
 export async function releaseFixture(
   owner: AppOwner | undefined,
-  settleRuns: () => Promise<void>,
-  removeInputs: () => void,
+  scope: Owned | undefined,
+  candidateRoot: NativePath | undefined,
   retry: () => Promise<unknown> = () => delay(OWNER_RETRY_MS),
 ): Promise<void> {
   let stopFailure: { cause: unknown } | undefined;
@@ -72,8 +74,8 @@ export async function releaseFixture(
   }
   // Confirm app exit before ending its Runs, and settle those Runs before deleting inputs.
   try {
-    await settleRuns();
-    removeInputs();
+    await scope?.close();
+    if (candidateRoot) cleanup(candidateRoot);
   } catch (error) {
     if (stopFailure) throw new AggregateError([stopFailure.cause, error], "app and fixture cleanup failed");
     throw error;
@@ -157,26 +159,26 @@ async function settled(browser: WebdriverIO.Browser, before?: Checkpoint): Promi
 
 /** A launch is ready when the fixture's actual entry-point content has rendered. */
 async function rendered(browser: WebdriverIO.Browser, screen: Screen) {
-  await browser.waitUntil(() => browser.execute((entry) => {
-    const main = document.querySelector('section.panel[aria-label="Main area"]');
-    // Without arguments: the Pane lists the fixture's branch, the Main area shows nothing chosen.
-    if (entry === "monitor") {
-      return [...document.querySelectorAll('[aria-label="Branches"] [role="treeitem"]')].some((row) => row.textContent?.includes("repo"))
-        && main?.querySelector(":scope > header h2")?.textContent?.trim() === "Nothing chosen";
-    }
-    if (entry === "review") {
-      const review = document.querySelector(`[aria-label="Review's main area"]`);
-      return !!review?.querySelector('[aria-label="Human review"] .instruction');
-    }
-    if (entry === "graph") {
-      // A fresh Graph launch has no saved Chat: it offers to create one on the fixture branch.
-      const dialog = document.querySelector('[role="dialog"].new-chat');
-      const branch = dialog?.querySelector<HTMLSelectElement>("select");
-      return dialog?.querySelector("h2")?.textContent?.trim() === "New chat"
-        && branch?.selectedOptions[0]?.textContent?.trim().startsWith("repo");
-    }
-    return !!main?.querySelector('.graph .svelte-flow__node[data-id="a:release"]');
-  }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
+  if (screen === "graph") {
+    // This entry point gets an unused state directory, so it opens New chat, not a
+    // Graph view in a saved session. The E2E restart case covers that other path.
+    await browser.waitUntil(async () => await browser.execute(newChatBranch) === "repo / master",
+      { timeout: LAUNCH_TIMEOUT, timeoutMsg: "graph launch did not open New chat on repo / master" });
+  } else {
+    await browser.waitUntil(() => browser.execute((entry) => {
+      const main = document.querySelector('main[aria-label="Verify"]:not([hidden]) section.panel[aria-label="Main area"]');
+      // Without arguments: the Pane lists the fixture's branch, the Main area shows nothing chosen.
+      if (entry === "monitor") {
+        return [...document.querySelectorAll('[aria-label="Branches"] [role="treeitem"]')].some((row) => row.textContent?.includes("repo"))
+          && main?.querySelector(":scope > header h2")?.textContent?.trim() === "Nothing chosen";
+      }
+      if (entry === "review") {
+        const review = document.querySelector(`main[aria-label="Review"]:not([hidden]) [aria-label="Review's main area"]`);
+        return !!review?.querySelector('[aria-label="Human review"] .instruction');
+      }
+      return !!main?.querySelector('.graph .svelte-flow__node[data-id="a:release"]');
+    }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
+  }
   // The key helpers read what the page received from the passive recorder, as in the suite;
   // it goes on the page once that page has rendered.
   await recordKeys(browser);
@@ -409,10 +411,7 @@ async function serve(): Promise<void> {
   const release = async () => {
     if (server.listening) server.close();
     try {
-      await releaseFixture(owner, async () => {
-        shown = undefined;
-        await scope?.close();
-      }, () => { if (candidate) cleanup(candidate.root); });
+      await releaseFixture(owner, scope, candidate?.root);
     } finally {
       rmSync(join(sessionDir, ENDPOINT), { force: true });
     }
@@ -468,7 +467,11 @@ async function serve(): Promise<void> {
               shown = undefined;
               const target = request.screen === "graph" ? { ...fixture, state: nativePath(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
               // A graph launch's own state holds the Runs started in it: they end with the fixture's.
-              if (target !== fixture) scope?.defer(() => cancelRuns(target));
+              if (target !== fixture) {
+                if (!scope) throw new Error("the app session has no fixture owner");
+                scope.defer(() => cancelRuns(target));
+                await installChatProvider(scope, target);
+              }
               const args = { monitor: [], repo: ["--repo", target.repo], review: ["review"], graph: ["graph", "--repo", target.repo] }[request.screen];
               const session = await acquire(input, target, platformEnv, args);
               // Accept the replacement before rendering can fail or shutdown can drain us.

@@ -222,8 +222,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: { definition: nativePath(fixture.repo, ".artifactize", "docs.artf") } };
     },
     run: async (app, { data: { definition } }) => {
-      await app.chat.createFromDialog();
-      await app.chat.graph();
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:docs");
       await app.graph.open("a:docs", "Artifact docs");
       await app.detail.openEval("docs/lint");

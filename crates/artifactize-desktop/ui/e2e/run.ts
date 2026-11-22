@@ -4,6 +4,7 @@
 // built. `prepare` and `cleanup <manifest>` build and remove a candidate for later runs, and
 // `unit` runs the suite's own unit tests.
 import { spawn } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename } from "node:path";
 import { inspect } from "node:util";
@@ -128,7 +129,17 @@ async function suite(ids: string[]): Promise<void> {
   } catch (error) {
     failures.push(error);
   } finally {
-    try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
+    try {
+      if (candidate) {
+        const fixtures = nativePath(candidate.root, "fixtures");
+        // A batch whose fixture could not close leaves its directory intact. Do not
+        // bypass that ownership check by deleting the enclosing build folder.
+        if (exists(fixtures) && readdirSync(fixtures).length) {
+          throw new Error(`fixtures not released; kept the candidate and its inputs at ${candidate.root}`);
+        }
+        cleanup(candidate.root);
+      }
+    } catch (error) { failures.push(error); }
     if (!declared) try { removeTree(output); } catch (error) { failures.push(error); }
   }
   if (failed.length) failures.unshift(new Error(`desktop scenarios failed on ${systemName}: ${failed.join(", ")}`));

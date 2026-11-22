@@ -6,7 +6,9 @@ import { afterRender, press, typeText } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
 const REVIEW_MAIN = `section.panel[aria-label="Review's main area"]`;
-const MAIN = `:is(main[aria-label="Verify"]:not([hidden]) section.panel[aria-label="Main area"], main[aria-label="Chat"]:not([hidden]) section.panel[aria-label="Chat's main area"])`;
+const VERIFY_MAIN = 'main[aria-label="Verify"]:not([hidden]) section.panel[aria-label="Main area"]';
+const CHAT_MAIN = `main[aria-label="Chat"]:not([hidden]) section.panel[aria-label="Chat's main area"]`;
+const MAIN = `:is(${VERIFY_MAIN}, ${CHAT_MAIN})`;
 const DETAIL = 'main:not([hidden]) aside[aria-label="Detail"]';
 /** The main area's graph, never the one a Detail draws of an Artifact's neighbours. */
 const GRAPH = `${MAIN} .graph`;
@@ -55,7 +57,9 @@ export class Graph {
 
   /** Open in Chat from a Run's header or an empty branch. */
   async openInChat(): Promise<void> {
-    await this.browser.$(MAIN).$("button=Open in Chat").click();
+    const link = this.browser.$(VERIFY_MAIN).$("button=Open in Chat");
+    await link.waitForDisplayed();
+    await link.click();
   }
 
   /** The header's title: the Run's ID, the Chat session's title, or `Nothing chosen`. */
@@ -86,7 +90,7 @@ export class Graph {
       const said = scan?.querySelector("time")?.getAttribute("aria-label") ?? scan?.querySelector(".checking")?.getAttribute("aria-label") ?? "";
       const failure = scan?.querySelector(".failure")?.textContent?.trim();
       return failure ? `${said} ${failure}` : said;
-    }, MAIN);
+    }, CHAT_MAIN);
   }
 
   /** What the main area says where its view would be (nothing chosen, a Run it cannot read). */

@@ -19,8 +19,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
-      await app.chat.createFromDialog();
-      await app.chat.graph();
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.open("a:core", "Artifact core");
       let shown = await app.detail.definitionUntil("core", (each) => each.file === ".artifactize/core.artf", "core's Definition names its file");
       assert.equal(shown.path, "core/");
@@ -78,8 +78,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
-      await app.chat.createFromDialog();
-      await app.chat.graph();
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.open("a:core", "Artifact core");
       await app.detail.definitionUntil("core", (each) => each.path === "core/", "core's Definition");
       const before = definitionText(fixture, "core")!;
@@ -109,8 +109,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
-      await app.chat.createFromDialog();
-      await app.chat.graph();
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       // docs, on its own at the top level, becomes core's part and then leaves it.
       await app.graph.node("a:docs");
       await app.graph.open("a:core", "Artifact core");
@@ -137,8 +137,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
-      await app.chat.createFromDialog();
-      await app.chat.graph();
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:core");
       await app.graph.tool("New Artifact");
       assert.equal((await app.detail.dialog())?.title, "New Artifact");
@@ -191,8 +191,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
-      await app.chat.createFromDialog();
-      await app.chat.graph();
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:core");
       assert.equal(await app.graph.hasTool("Reset layout"), false, "laid out automatically");
       // Where core is beside docs, at the zoom shown: whatever the camera does.
@@ -210,12 +210,16 @@ export const scenarios: Scenario[] = [
         return !!after && Math.abs(after.y - before.y - 60) <= 12 && Math.abs(after.x - before.x) <= 12;
       }, "core drawn where it was released");
       // For the app started again: where core was laid out automatically, and where it is now.
-      return { automatic, placed: await offset() };
+      const placedAt = await offset();
+      // The next graph launch must switch this saved session back from Conversation.
+      await app.chat.show("Conversation");
+      return { automatic, placed: placedAt };
     },
     // A later app draws core where it was placed, beside the others; Reset layout then lays the
     // level out automatically again, and a node dropped on a whole becomes its part.
     restarted: async (app, { fixture }, carried) => {
       const { automatic, placed: placedAt } = carried as Record<"automatic" | "placed", { x: number; y: number }>;
+      await app.chat.viewShown("Graph");
       await app.graph.node("a:core");
       const offset = async () => {
         const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
@@ -262,8 +266,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
-      await app.chat.createFromDialog();
-      await app.chat.graph();
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:core", (node) => node.comment === CORE_NOTE, "core's comment drawn under it");
       // The first scan over, nothing redraws the Detail while a comment is typed.
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the Current scanned");

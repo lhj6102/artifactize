@@ -99,8 +99,10 @@ export async function verifySignals(manifest: string, output: string): Promise<v
         await bounded(Promise.race([boundary, beforeExit]), `${phase} acquisition`);
         assert.equal(existsSync(join(directory, "control.json")), phase === "ready");
         if (phase === "ready") {
-          const launch = JSON.parse(await invoke("launch", { screen: "graph" })) as { isError?: boolean };
-          assert.equal(launch.isError, undefined);
+          const launch = JSON.parse(await invoke("launch", { screen: "graph" })) as { isError?: boolean; content: { text: string }[] };
+          assert.equal(launch.isError, undefined, launch.content[0].text);
+          assert.match(launch.content[0].text, /^New chat$/m, "the fresh graph launch returned the New chat dialog title");
+          assert.match(launch.content[0].text, /\bbutton "Create"/, "New chat offers Create");
           const submission = JSON.parse(await invoke("cli", { args: ["verify", "--all", "--json"] })) as {
             isError?: boolean; content: { text: string }[];
           };
