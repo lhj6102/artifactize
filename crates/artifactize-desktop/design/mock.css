@@ -1069,8 +1069,8 @@
   box-shadow: inset 2px 0 0 var(--red);
   padding-left: 6px;
 }
-/* A choice within a tab, Summary or its log: the chosen one bold in the strong text colour,
-   the other in the quieter one. */
+/* A choice within a tab, Summary or its log: the chosen one in the strong text colour over the
+   current mark, the other in the quieter one, both at one weight. */
 .m-views {
   display: flex;
   gap: 8px;
@@ -1408,21 +1408,18 @@
   max-height: calc(100% - 64px);
 }
 .m-dialog > * {
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-.m-dialog > h2,
-.m-dialog > .m-dialog-actions,
-.m-dialog > .m-settings-head {
   flex: none;
-  overflow: visible;
 }
 .m-dialog > .m-kv,
-.m-dialog > .m-providers {
+.m-dialog > .m-providers,
+.m-dialog > .m-dialog-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+.m-dialog-body {
+  display: flex;
+  flex-direction: column;
 }
 .m-scrolls {
   position: relative;
@@ -2087,7 +2084,7 @@
 .m-older {
   display: flex;
   align-items: center;
-  min-height: var(--row);
+  min-height: var(--row-pane);
   padding: 0 var(--pad) 0 56px;
   color: var(--ink-2);
   font-size: var(--text-small);
