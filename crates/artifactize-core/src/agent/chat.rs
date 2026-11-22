@@ -42,16 +42,31 @@ pub(crate) async fn turn(
         Some(context.repo()),
         "for this Chat model",
     )?;
-    let Route::Http(route) = route else {
-        return claude_agent::chat(
-            &selection.model,
-            tools,
-            history,
-            &text,
-            recorder,
-            cancellation,
-        )
-        .await;
+    let route = match route {
+        Route::Http(route) => route,
+        Route::ClaudeAgent => {
+            return claude_agent::chat(
+                &selection.model,
+                tools,
+                history,
+                &text,
+                recorder,
+                cancellation,
+            )
+            .await;
+        }
+        Route::Antigravity => {
+            return super::antigravity::turn(
+                &selection.model,
+                context,
+                tools,
+                history,
+                &text,
+                recorder,
+                cancellation,
+            )
+            .await;
+        }
     };
     let client = Client::at(route, &selection.model, context.state(), context.repo())?;
     let mut request = CompletionRequest::new(text).preamble(SYSTEM);
@@ -92,4 +107,20 @@ pub(crate) async fn turn(
         });
         request.chat_history.push(turns.call_tools(calls).await?);
     }
+}
+
+/// Replay Artifactize's own history into a fresh subprocess session. Do not rely on a
+/// vendor session's storage or replay any calls as executions.
+pub(super) fn replay(history: &[Message], text: &str) -> String {
+    if history.is_empty() {
+        return text.to_owned();
+    }
+    let records = history
+        .iter()
+        .map(|msg| serde_json::to_string(msg).expect("message is JSON"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "Conversation history (one JSON message per line):\n{records}\n\nNew user message:\n{text}"
+    )
 }

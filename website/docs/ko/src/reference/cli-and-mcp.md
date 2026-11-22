@@ -38,7 +38,7 @@
 | `cache list` | `--history` | 각 재사용 키의 최신(또는 전체) 캐시 기록을 나열합니다. | `0` |
 | `cache show KEY` | `--history` | 64자리 16진수 `KEY`의 캐시 기록을 JSON으로 출력합니다. | `0` (`4` 기록 없음) |
 | `cache rm KEY` | — | 해당 `KEY`의 로컬 캐시 기록을 삭제합니다. | `0` |
-| `login` / `logout` | `openai\|anthropic\|gemini\|codex\|claude-agent` | 표준 입력으로 API 키를 저장/삭제하거나 Codex·Claude Code에 로그인/로그아웃합니다. | `0` |
+| `login` / `logout` | `openai\|anthropic\|gemini\|codex\|claude-agent\|antigravity` | 표준 입력으로 API 키를 저장/삭제하거나 Codex, Claude Code 또는 Antigravity에 로그인하거나 로그아웃합니다. | `0` |
 | `provider` | `list`, `add NAME (--alias P \| --api openai-responses\|openai-chat\|anthropic\|gemini --url URL [--key])`, `remove NAME` | `$STATE/auth/providers.json`의 사용자 지정 Agent 프로바이더를 관리합니다. | `0` |
 | `models PROVIDER` | 내장 또는 사용자 지정 프로바이더 이름 | 해당 프로바이더에서 사용할 수 있는 모델 ID와 표시 이름을 나열합니다. | `0` |
 | `remote` | `login URL [--share summary\|full]`, `status`, `push [--dry-run]`, `logout` | 팀 리뷰 저장소 연결을 설정하고 결과를 동기화합니다. `summary`는 최상위 `executionPaths`를 공유하고 `execution.provenance.repoPath` 및 `execution.provenance.executionPaths`가 포함된 전체 `execution` 객체는 제외합니다. `full`은 `execution` 객체를 포함합니다. | `0` (`status` 미로그인 시 `1`) |
@@ -53,7 +53,7 @@ Run을 시작한 곳의 기록이 있으면 `run show`와 `run_show`가 `origin`
 
 ## 상태 디렉터리, 캐시, `limits.json` {#state-cache-and-limits}
 
-Artifactize는 로컬 Run 기록, 캐시, Agent 대화, 자격 증명(`codex`, API 키, 사용자 지정 프로바이더, 팀 리뷰 저장소 토큰)을 저장소 바깥의 상태 디렉터리 한 곳에 보관합니다. `claude-agent` 로그인 정보는 Claude Code에서 따로 보관합니다. 경로 우선순위는 `--state-dir PATH` → `$ARTIFACTIZE_STATE_HOME` → `$XDG_STATE_HOME/artifactize` → Windows의 `%LOCALAPPDATA%\artifactize` 또는 Linux·macOS의 `~/.local/state/artifactize`입니다. Microsoft Store 패키지는 별도 상태 디렉터리를 사용합니다. 상태 디렉터리가 Git 워크트리나 Artifactize 작업 공간 안에 있으면 `$STATE/auth/` 아래의 인증 파일 사용을 거부합니다.
+Artifactize는 로컬 Run 기록, 캐시, Agent 대화, 자격 증명(`codex`, API 키, 사용자 지정 프로바이더, 팀 리뷰 저장소 토큰)을 저장소 바깥의 상태 디렉터리 한 곳에 보관합니다. Claude Code와 Antigravity의 로그인 정보는 각 CLI에서 따로 보관합니다. 경로 우선순위는 `--state-dir PATH` → `$ARTIFACTIZE_STATE_HOME` → `$XDG_STATE_HOME/artifactize` → Windows의 `%LOCALAPPDATA%\artifactize` 또는 Linux·macOS의 `~/.local/state/artifactize`입니다. Microsoft Store 패키지는 별도 상태 디렉터리를 사용합니다. 상태 디렉터리가 Git 워크트리나 Artifactize 작업 공간 안에 있으면 `$STATE/auth/` 아래의 인증 파일 사용을 거부합니다.
 
 같은 상태 디렉터리를 사용하는 모든 Run에 공통으로 적용할 한도가 필요하면 `$STATE/limits.json`에서 설정하세요.
 

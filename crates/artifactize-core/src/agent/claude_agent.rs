@@ -357,18 +357,7 @@ pub(super) async fn chat(
         recorder,
         attempts: &mut attempts,
     };
-    let prompt = if history.is_empty() {
-        text.to_owned()
-    } else {
-        let records = history
-            .iter()
-            .map(|msg| serde_json::to_string(msg).expect("message is JSON"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!(
-            "Conversation history (one JSON message per line):\n{records}\n\nNew user message:\n{text}"
-        )
-    };
+    let prompt = super::chat::replay(&history, text);
     let (mut conversation, running) = session.open(&launch).await?;
     let answer = conversation.ask(&prompt).await;
     close(conversation, running, answer).await

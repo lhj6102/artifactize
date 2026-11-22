@@ -2,6 +2,7 @@
 //! read), saved provider API keys and custom providers, and the remote review store's
 //! configuration and token.
 
+pub mod antigravity;
 pub mod claude_agent;
 pub mod codex;
 pub mod providers;

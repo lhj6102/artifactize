@@ -1,6 +1,7 @@
 //! Exact-model rig backends with explicit API-key or Codex credentials, the custom providers
 //! of this machine, and the loopback-only test endpoint override for offline fake providers.
 
+pub mod antigravity;
 mod api;
 pub mod claude_agent;
 pub mod codex;
@@ -10,6 +11,7 @@ pub(crate) mod delivery;
 mod delivery_tests;
 mod error_body;
 pub mod models;
+pub(crate) mod stdio_mcp;
 #[cfg(test)]
 pub(crate) mod tests;
 mod usage;
@@ -69,6 +71,7 @@ pub enum Client {
 /// Where a provider's requests go: its API, its root and its key.
 pub(crate) enum Route {
     ClaudeAgent,
+    Antigravity,
     Http(HttpRoute),
 }
 
@@ -106,8 +109,10 @@ pub(crate) fn route(
             }
         },
     };
-    if provider == Provider::ClaudeAgent {
-        return Ok(Route::ClaudeAgent);
+    match provider {
+        Provider::ClaudeAgent => return Ok(Route::ClaudeAgent),
+        Provider::Antigravity => return Ok(Route::Antigravity),
+        _ => {}
     }
     let key = match providers::key_variable(provider) {
         Some(variable) => Some(providers::key(provider, state, repo)?.ok_or_else(|| {
@@ -211,6 +216,7 @@ impl Client {
     ) -> Result<Self, Failure> {
         match route(backend, Some(state), Some(repo), "for this Agent backend")? {
             Route::Http(route) => Self::at(route, model, state, repo),
+            Route::Antigravity => Err(antigravity::eval_refusal()),
             Route::ClaudeAgent => Err(Failure::new(
                 Code::AgentError,
                 "Unsupported client backend: claude-agent runs reviews through Claude Code.",
@@ -261,7 +267,7 @@ impl Client {
                 ),
                 key,
             ),
-            Api::Codex | Api::ClaudeAgent => unreachable!("handled above"),
+            Api::Codex | Api::ClaudeAgent | Api::Antigravity => unreachable!("handled above"),
         })
     }
 
@@ -314,6 +320,7 @@ impl Client {
             ),
             // Claude Code's own options: adaptive thinking with its summaries shown, and the
             // declared effort.
+            Api::Antigravity => unreachable!("Antigravity is Chat only"),
             Api::ClaudeAgent => {
                 let mut value = json!({"thinking":"adaptive", "thinkingDisplay":"summarized"});
                 if let Some(effort) = reasoning {
@@ -358,6 +365,7 @@ impl Client {
                     "name":"artifactize_verdict", "strict":true, "schema":schema,
                 }});
             }
+            Api::Antigravity => unreachable!("Antigravity is Chat only"),
             Api::ClaudeAgent => {
                 parameters["jsonSchema"] = schema;
             }
@@ -564,7 +572,7 @@ pub fn base_url_variable(provider: Provider) -> Option<&'static str> {
         Provider::Anthropic => Some("ARTIFACTIZE_ANTHROPIC_BASE_URL"),
         Provider::Gemini => Some("ARTIFACTIZE_GEMINI_BASE_URL"),
         Provider::Codex => Some("ARTIFACTIZE_CODEX_BASE_URL"),
-        Provider::ClaudeAgent => None,
+        Provider::ClaudeAgent | Provider::Antigravity => None,
     }
 }
 
@@ -679,7 +687,7 @@ fn base_url(provider: Provider) -> Result<url::Url, String> {
         Provider::Anthropic => "https://api.anthropic.com",
         Provider::Gemini => gemini::BASE_URL,
         Provider::Codex => codex::BASE_URL,
-        Provider::ClaudeAgent => unreachable!("Claude Code has no HTTP route"),
+        Provider::ClaudeAgent | Provider::Antigravity => unreachable!("no HTTP route"),
     };
     Ok(url::Url::parse(base).expect("built-in provider base URL"))
 }

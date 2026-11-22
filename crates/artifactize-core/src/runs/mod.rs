@@ -161,6 +161,10 @@ impl Context {
         &self.repo
     }
 
+    pub(crate) fn executable(&self) -> &Path {
+        &self.executable
+    }
+
     /// The canonical state directory shared by this endpoint and its Run workers.
     pub fn state(&self) -> &Path {
         &self.state

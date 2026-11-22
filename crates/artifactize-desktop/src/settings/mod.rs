@@ -2,6 +2,7 @@
 //! calls (`login`/`logout`, `provider`, `models`, `remote login|logout|status|push`, `limits`).
 //! Nothing here stores, validates or reaches a service on its own; secrets never come back to
 //! the frontend.
+mod antigravity;
 mod claude_agent;
 mod codex;
 mod limits;
@@ -9,6 +10,7 @@ mod providers;
 mod remote;
 mod sign_in;
 
+pub use antigravity::*;
 pub use claude_agent::*;
 pub use codex::*;
 pub use limits::*;
@@ -19,6 +21,7 @@ pub use remote::*;
 #[derive(Default)]
 pub struct Settings {
     codex_sign_ins: sign_in::SignIns<codex::Codex>,
+    antigravity_sign_ins: sign_in::SignIns<antigravity::GoogleAccount>,
     claude_sign_ins: sign_in::SignIns<claude_agent::ClaudeCode>,
 }
 
@@ -26,9 +29,9 @@ impl Settings {
     /// Stop the sign-ins; the returned future ends once they have ended.
     pub(crate) fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
         let (codex, claude) = (self.codex_sign_ins.close(), self.claude_sign_ins.close());
+        let antigravity = self.antigravity_sign_ins.close();
         async move {
-            codex.await;
-            claude.await;
+            tokio::join!(codex, claude, antigravity);
         }
     }
 }

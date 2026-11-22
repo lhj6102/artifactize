@@ -14,6 +14,7 @@ use specta::Type;
 pub enum Provider {
     Codex,
     ClaudeAgent,
+    Antigravity,
     Openai,
     Anthropic,
     Gemini,
@@ -23,6 +24,7 @@ impl From<Provider> for config::Provider {
     fn from(provider: Provider) -> Self {
         match provider {
             Provider::Codex => Self::Codex,
+            Provider::Antigravity => Self::Antigravity,
             Provider::ClaudeAgent => Self::ClaudeAgent,
             Provider::Openai => Self::Openai,
             Provider::Anthropic => Self::Anthropic,
@@ -35,6 +37,7 @@ impl From<config::Provider> for Provider {
     fn from(provider: config::Provider) -> Self {
         match provider {
             config::Provider::Codex => Self::Codex,
+            config::Provider::Antigravity => Self::Antigravity,
             config::Provider::ClaudeAgent => Self::ClaudeAgent,
             config::Provider::Openai => Self::Openai,
             config::Provider::Anthropic => Self::Anthropic,

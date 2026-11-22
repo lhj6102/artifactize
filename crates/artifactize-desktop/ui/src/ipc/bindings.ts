@@ -278,6 +278,27 @@ export const commands = {
 	codexLoginCancel: () => __TAURI_INVOKE<void>("codex_login_cancel"),
 	/**  `logout codex`: revoke and remove artifactize's own tokens. */
 	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),
+	/**  Ask Antigravity whether it is signed in (an ACP probe without a prompt). */
+	antigravityStatus: () => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_status")),
+	/**
+	 *  Start `login antigravity`: `agy acp --login` prints a Google sign-in URL. Returns the URL
+	 *  it printed; finish with [`antigravity_login_wait`].
+	 */
+	antigravityLoginStart: () => typedError<AntigravityPrompt, Failure>(__TAURI_INVOKE("antigravity_login_start")),
+	/**
+	 *  Wait for sign-in `sign_in` (from [`antigravity_login_start`]) to end; returns Antigravity's
+	 *  sign-in as it then reports it.
+	 */
+	antigravityLoginWait: (signIn: SignInId) => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_login_wait", { signIn })),
+	/**  Give the sign-in the code Antigravity's sign-in page shows, as the CLI accepts on stdin. */
+	antigravityLoginPaste: (code: string) => typedError<null, Failure>(__TAURI_INVOKE("antigravity_login_paste", { code })),
+	/**  Stop the sign-in in progress: Antigravity is stopped before it saves a login. */
+	antigravityLoginCancel: () => __TAURI_INVOKE<void>("antigravity_login_cancel"),
+	/**
+	 *  `logout antigravity`: run ACP `logout`; returns the sign-in as Antigravity then
+	 *  reports it.
+	 */
+	antigravityLogout: () => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_logout")),
 	/**  Ask Claude Code whether it is signed in (`claude auth status`). */
 	claudeAgentStatus: () => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_status")),
 	/**
@@ -356,6 +377,18 @@ export type Acted_Serialize = {
 export type ActiveReviewChanged = {
 	request: string | null,
 };
+
+/**  The Google authorization URL. Its Antigravity callback page gives a code to paste. */
+export type AntigravityPrompt = {
+	url: string,
+	/**  The sign-in to wait for with [`antigravity_login_wait`]. */
+	signIn: SignInId,
+};
+
+/**  Antigravity's sign-in, as Antigravity reports it. */
+export type AntigravityStatus = 
+/**  `agy` is not on `PATH`. */
+{ state: "missing" } | { state: "tooOld"; version: string; error: string } | { state: "signedOut" } | { state: "signedIn" } | { state: "quota"; error: string } | { state: "rateLimited"; error: string } | { state: "failed"; error: string };
 
 export type Attention = {
 	mark: Mark,
@@ -1036,7 +1069,7 @@ export type PlanLine = {
 export type Profile = "runtime" | "agent" | "human";
 
 /**  A built-in provider, by the name the CLI and an eval's `backend` give it. */
-export type Provider = "codex" | "claude-agent" | "openai" | "anthropic" | "gemini";
+export type Provider = "codex" | "claude-agent" | "antigravity" | "openai" | "anthropic" | "gemini";
 
 /**  The providers of this machine. */
 export type Providers = {

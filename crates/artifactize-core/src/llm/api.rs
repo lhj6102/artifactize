@@ -14,6 +14,7 @@ pub enum Api {
     Codex,
     /// The user's own Claude Code, run as a subprocess (`llm::claude_agent`).
     ClaudeAgent,
+    Antigravity,
 }
 
 impl From<Provider> for Api {
@@ -23,6 +24,7 @@ impl From<Provider> for Api {
             Provider::Anthropic => Self::Anthropic,
             Provider::Gemini => Self::Gemini,
             Provider::Codex => Self::Codex,
+            Provider::Antigravity => Self::Antigravity,
             Provider::ClaudeAgent => Self::ClaudeAgent,
         }
     }
@@ -43,6 +45,7 @@ impl Api {
     /// Declared effort is exact: an effort the API does not take fails rather than remaps.
     pub fn validate_reasoning(self, reasoning: &str) -> Result<(), String> {
         let supported = match self {
+            Self::Antigravity => return Provider::Antigravity.validate_eval(),
             // Codex takes the Responses efforts as they are, as Pi's openai-codex does; Chat
             // Completions' `reasoning_effort` takes the same names.
             Self::OpenaiResponses | Self::OpenaiChat | Self::Codex => matches!(

@@ -25,6 +25,8 @@ pub enum Provider {
     #[serde(rename = "claude-agent")]
     #[value(name = "claude-agent")]
     ClaudeAgent,
+    /// The user’s own Google Antigravity CLI and its login (Chat only).
+    Antigravity,
     /// The OpenAI API (OPENAI_API_KEY or a saved key).
     Openai,
     /// The Anthropic API (ANTHROPIC_API_KEY or a saved key).
@@ -35,9 +37,10 @@ pub enum Provider {
 
 impl Provider {
     /// In the order Settings lists them.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Codex,
         Self::ClaudeAgent,
+        Self::Antigravity,
         Self::Openai,
         Self::Anthropic,
         Self::Gemini,
@@ -45,11 +48,19 @@ impl Provider {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Antigravity => "antigravity",
             Self::Anthropic => "anthropic",
             Self::ClaudeAgent => "claude-agent",
             Self::Codex => "codex",
             Self::Gemini => "gemini",
             Self::Openai => "openai",
+        }
+    }
+
+    pub(crate) fn validate_eval(self) -> Result<(), String> {
+        match self {
+            Self::Antigravity => Err("Antigravity is available for Chat only: Google's consumer plans don't cover automated evaluation and the CLI can't be confined to an eval's tools; use the `gemini` API-key backend".into()),
+            _ => Ok(()),
         }
     }
 

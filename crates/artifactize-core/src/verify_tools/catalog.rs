@@ -178,7 +178,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             ReadTool::Models,
-            "List models available from the named backend: a built-in provider (codex, claude-agent, openai, anthropic, gemini) or a custom provider set up on this machine.",
+            "List models available from the named backend: a built-in provider (codex, claude-agent, antigravity, openai, anthropic, gemini) or a custom provider set up on this machine.",
             object!({"provider":{"type":"string","pattern":format!("^[A-Za-z0-9][A-Za-z0-9_-]{{0,{}}}$", BACKEND_NAME_CHARS - 1)}}),
             &["provider"],
         ),

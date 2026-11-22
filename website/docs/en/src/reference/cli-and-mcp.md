@@ -38,7 +38,7 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `cache list` | `--history` | Lists latest (or all) cached reuse-key records. | `0` |
 | `cache show KEY` | `--history` | Prints cached record JSON for 64-hex `KEY`. | `0` (`4` missing) |
 | `cache rm KEY` | — | Deletes local cache records for `KEY`. | `0` |
-| `login` / `logout` | `openai\|anthropic\|gemini\|codex\|claude-agent` | Saves/removes API keys (stdin) or signs in/out of Codex or Claude Code. | `0` |
+| `login` / `logout` | `openai\|anthropic\|gemini\|codex\|claude-agent\|antigravity` | Saves/removes API keys (stdin) or signs in/out of Codex, Claude Code or Antigravity. | `0` |
 | `provider` | `list`, `add NAME (--alias P \| --api openai-responses\|openai-chat\|anthropic\|gemini --url URL [--key])`, `remove NAME` | Manages custom Agent providers in `$STATE/auth/providers.json`. | `0` |
 | `models PROVIDER` | built-in or custom provider name | Lists available model IDs and display names from the provider. | `0` |
 | `remote` | `login URL [--share summary\|full]`, `status`, `push [--dry-run]`, `logout` | Configures and syncs with a team review store (`summary` shares top-level `executionPaths` and omits the full `execution` object including `execution.provenance.repoPath` and `execution.provenance.executionPaths`; `full` includes `execution`). | `0` (`1` not signed in on `status`) |
@@ -53,7 +53,7 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 
 ## State, cache, and `limits.json` {#state-cache-and-limits}
 
-All local Runs, cache entries, saved Agent conversations, and Artifactize-saved credentials (`codex`, API keys, custom providers, and remote store tokens; `claude-agent` keeps its login in Claude Code itself) live in one state directory outside any repository: `--state-dir PATH`, else `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else `%LOCALAPPDATA%\artifactize` on Windows or `~/.local/state/artifactize` on Linux and macOS (the Microsoft Store package keeps an isolated package-private state). Auth files under `$STATE/auth/` are refused if the state directory lies inside a Git worktree or Artifactize workspace.
+All local Runs, cache entries, saved Agent conversations, and Artifactize-saved credentials (`codex`, API keys, custom providers, and remote store tokens; Claude Code and Antigravity keep their own sign-ins) live in one state directory outside any repository: `--state-dir PATH`, else `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else `%LOCALAPPDATA%\artifactize` on Windows or `~/.local/state/artifactize` on Linux and macOS (the Microsoft Store package keeps an isolated package-private state). Auth files under `$STATE/auth/` are refused if the state directory lies inside a Git worktree or Artifactize workspace.
 
 Optional `$STATE/limits.json` configures bounds across all Runs sharing that state directory:
 

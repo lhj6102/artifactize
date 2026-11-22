@@ -2,10 +2,13 @@
 //! artifactize writes back. Fields artifactize does not use are ignored; an unknown line or
 //! block type is `Other`, since Claude Code adds new ones between versions.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::types::{ClaudeMessageId, ClaudeRequestId, ClaudeToolUseId};
+use crate::{
+    llm::stdio_mcp::Rpc,
+    types::{ClaudeMessageId, ClaudeRequestId, ClaudeToolUseId},
+};
 
 /// One line from Claude Code.
 #[derive(Debug, Deserialize)]
@@ -43,53 +46,6 @@ pub enum ControlRequest {
     },
     #[serde(other)]
     Other,
-}
-
-/// A JSON-RPC message for the host's MCP server: a request the server answers, or a
-/// notification (no `id`).
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Rpc {
-    Known(McpRequest),
-    Unknown {
-        #[serde(default)]
-        id: Option<RpcId>,
-        method: String,
-    },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "method")]
-pub enum McpRequest {
-    #[serde(rename = "initialize")]
-    Initialize { id: RpcId, params: InitializeParams },
-    #[serde(rename = "tools/list")]
-    ToolsList { id: RpcId },
-    #[serde(rename = "tools/call")]
-    ToolsCall { id: RpcId, params: CallParams },
-    #[serde(rename = "ping")]
-    Ping { id: RpcId },
-}
-
-/// A JSON-RPC id: a number or a string, echoed back unchanged.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RpcId {
-    Number(i64),
-    Text(String),
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InitializeParams {
-    pub protocol_version: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CallParams {
-    pub name: String,
-    #[serde(default)]
-    pub arguments: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]

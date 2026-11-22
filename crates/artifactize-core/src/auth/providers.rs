@@ -254,7 +254,7 @@ pub fn key_variable(provider: Provider) -> Option<&'static str> {
         Provider::Openai => Some("OPENAI_API_KEY"),
         Provider::Anthropic => Some("ANTHROPIC_API_KEY"),
         Provider::Gemini => Some("GEMINI_API_KEY"),
-        Provider::Codex | Provider::ClaudeAgent => None,
+        Provider::Codex | Provider::ClaudeAgent | Provider::Antigravity => None,
     }
 }
 

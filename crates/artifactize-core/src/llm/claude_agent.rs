@@ -5,7 +5,7 @@
 
 pub mod channel;
 pub mod command;
-pub mod mcp;
+pub(crate) use super::stdio_mcp as mcp;
 pub mod wire;
 
 use std::time::Duration;

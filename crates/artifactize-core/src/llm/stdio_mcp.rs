@@ -1,14 +1,12 @@
-//! The MCP server artifactize hosts inside its own process for one Claude Code session.
-//! Claude Code reaches it through its control protocol, so no socket or second process is
-//! involved; the review runs every tool call itself, with its budgets and audit.
+//! The shared MCP server for tools hosted by Artifactize.
 
 use serde_json::{Value, json};
 
-use super::wire::{McpRequest, Rpc, RpcId};
 use crate::tools::{Content, ToolDefinition, ToolResult};
+use serde::{Deserialize, Serialize};
 
 /// The JSON-RPC error code of an unknown method.
-const METHOD_NOT_FOUND: i64 = -32601;
+pub(crate) const METHOD_NOT_FOUND: i64 = -32601;
 
 /// The offered tools, in MCP's shape.
 pub struct Server {
@@ -65,7 +63,7 @@ impl Server {
                 "result": {
                     "protocolVersion": params.protocol_version,
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": super::command::SERVER, "version": env!("CARGO_PKG_VERSION")},
+                    "serverInfo": {"name": NAME, "version": env!("CARGO_PKG_VERSION")},
                 },
             }),
             McpRequest::ToolsList { id } => {
@@ -109,4 +107,53 @@ pub fn call_reply(id: &RpcId, result: ToolResult) -> Value {
 /// A tool call refused before it ran.
 pub fn call_error(id: &RpcId, message: &str) -> Value {
     call_reply(id, ToolResult::error(message))
+}
+
+pub(crate) const NAME: &str = "artifactize";
+
+/// A JSON-RPC message for the host's MCP server: a request the server answers, or a
+/// notification (no `id`).
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Rpc {
+    Known(McpRequest),
+    Unknown {
+        #[serde(default)]
+        id: Option<RpcId>,
+        method: String,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "method")]
+pub enum McpRequest {
+    #[serde(rename = "initialize")]
+    Initialize { id: RpcId, params: InitializeParams },
+    #[serde(rename = "tools/list")]
+    ToolsList { id: RpcId },
+    #[serde(rename = "tools/call")]
+    ToolsCall { id: RpcId, params: CallParams },
+    #[serde(rename = "ping")]
+    Ping { id: RpcId },
+}
+
+/// A JSON-RPC id: a number or a string, echoed back unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RpcId {
+    Number(i64),
+    Text(String),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitializeParams {
+    pub protocol_version: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CallParams {
+    pub name: String,
+    #[serde(default)]
+    pub arguments: Option<Value>,
 }

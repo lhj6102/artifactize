@@ -32,6 +32,7 @@ pub async fn list(
     let route =
         super::route(&backend, state, repo, "to list models").map_err(|failure| failure.message)?;
     let models = match route {
+        super::Route::Antigravity => crate::auth::antigravity::models().await?,
         super::Route::ClaudeAgent => super::claude_agent::models().await?,
         super::Route::Http(super::HttpRoute {
             api: Api::Codex,
@@ -71,7 +72,9 @@ async fn list_at(api: Api, key: &str, base: &str) -> Result<Vec<ListedModel>, St
                     .list_models()
                     .await
             }
-            Api::Codex | Api::ClaudeAgent => unreachable!("they list their own models"),
+            Api::Codex | Api::ClaudeAgent | Api::Antigravity => {
+                unreachable!("they list their own models")
+            }
         }
     };
     let models = tokio::time::timeout(LIST_TIMEOUT, request)
