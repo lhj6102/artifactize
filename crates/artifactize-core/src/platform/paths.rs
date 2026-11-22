@@ -205,6 +205,41 @@ pub(crate) fn conflicting_entry<'a>(
     Ok(None)
 }
 
+/// Open a regular file for replacement without letting native name aliases redirect the write.
+/// If the name is new, refuse a differently cased entry on every filesystem.
+pub(crate) fn open_portable_write(path: &Path) -> io::Result<File> {
+    use artifactize_tools::scope::{OpenError, open_child};
+
+    let parent = path.parent().ok_or(io::ErrorKind::InvalidInput)?;
+    let name = path.file_name().ok_or(io::ErrorKind::InvalidInput)?;
+    let directory = super::open_directory(parent)?;
+    let mut options = File::options();
+    options.write(true);
+    let original = match open_child(&directory, name) {
+        Ok(file) if file.metadata()?.is_file() => Some(file),
+        Ok(_) => return Err(io::Error::other("Only a regular file can be written.")),
+        Err(OpenError::NotFound) => {
+            if conflicting_entry(parent, std::iter::once(name))?.is_some() {
+                return Err(io::Error::other(
+                    "File path must use the exact directory entry name.",
+                ));
+            }
+            options.create_new(true);
+            None
+        }
+        Err(error) => return Err(io::Error::other(error)),
+    };
+    let opened = super::open_no_follow(&mut options, path)?;
+    if let Some(original) = original
+        && super::file_identity(&original)? != super::file_identity(&opened)?
+    {
+        return Err(io::Error::other(
+            "File changed before it could be opened for writing.",
+        ));
+    }
+    Ok(opened)
+}
+
 /// The checkout must be usable even on a volume with Windows filename restrictions.
 fn portable_component(name: &OsStr) -> io::Result<()> {
     let invalid = |reason| io::Error::new(io::ErrorKind::InvalidInput, reason);

@@ -61,6 +61,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     let state = root.path().join("state");
     fs::create_dir(&worktree).unwrap();
     fs::write(worktree.join("notes.txt"), "before").unwrap();
+    fs::write(worktree.join("Case.txt"), "keep this file").unwrap();
     let lines = (1..=160)
         .map(|line| format!("output {line:03}\n"))
         .collect::<String>();
@@ -126,6 +127,11 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
                         &json!({"program":support::os::cat_program(),"args":["lines.txt"]}),
                     ),
                     openai::function_call("call_bytes", "run_command", &json!({"program":noisy})),
+                    openai::function_call(
+                        "call_alias",
+                        "write",
+                        &json!({"path":"case.txt","text":"must not overwrite"}),
+                    ),
                     openai::function_call(
                         "call_verify",
                         "verify_start",
@@ -275,6 +281,26 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     assert!(noisy.contains("begin 한"));
     assert!(noisy.trim_end().ends_with("한 end"));
     assert!(noisy.len() <= 8 * 1024);
+    assert!(
+        mid.turns[0]
+            .blocks
+            .iter()
+            .any(|block| matches!(block, Block::Tool {
+        tool_kind: ToolKind::Edit,
+        summary,
+        failed: Some(true),
+        ..
+    } if summary == "write case.txt"))
+    );
+    assert_eq!(
+        fs::read_to_string(worktree.join("Case.txt")).unwrap(),
+        "keep this file"
+    );
+    assert!(
+        !fs::read_dir(&worktree)
+            .unwrap()
+            .any(|entry| entry.unwrap().file_name() == "case.txt")
+    );
     let run = cards(&mid).remove(0);
     let run_view = store::read_run(&state, run.as_str()).await.unwrap();
     assert_eq!(

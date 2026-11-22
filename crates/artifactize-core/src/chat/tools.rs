@@ -1,6 +1,5 @@
 //! The provider-independent Chat tool set, with file and Verify operations scoped to one worktree.
 use std::{
-    fs::{File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
     time::Duration,
@@ -222,8 +221,10 @@ impl<'a> Tools<'a> {
                     .scope
                     .resolve_input(root, &self.owner, cwd)
                     .map_err(|error| error.to_string())?;
+                let program =
+                    crate::platform::program_path(&program).map_err(|error| error.to_string())?;
                 let command = runtime::Command::prepare(
-                    program.into(),
+                    program.into_os_string(),
                     args.into_iter().map(Into::into).collect(),
                     &folder,
                     self.output,
@@ -293,18 +294,8 @@ fn write_file(path: &Path, text: &str) -> Result<(), String> {
     if text.len() > EDIT_BYTES {
         return Err(format!("File content exceeds {EDIT_BYTES} bytes."));
     }
-    let mut file: File = crate::platform::open_no_follow(
-        OpenOptions::new().create(true).truncate(false).write(true),
-        path,
-    )
-    .map_err(|error| error.to_string())?;
-    if !file
-        .metadata()
-        .map_err(|error| error.to_string())?
-        .is_file()
-    {
-        return Err("Only a regular file can be written.".into());
-    }
+    let mut file =
+        crate::platform::paths::open_portable_write(path).map_err(|error| error.to_string())?;
     file.set_len(0)
         .and_then(|()| file.write_all(text.as_bytes()))
         .map_err(|error| error.to_string())
