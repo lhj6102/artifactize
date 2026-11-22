@@ -174,16 +174,17 @@
 /* The count of Human reviews waiting for a person, at the top right of Review's icon. */
 .m-count-pill {
   position: absolute;
-  top: 4px;
-  left: calc(50% + 5px);
+  top: 3px;
+  left: calc(50% + var(--icon-bar) / 2 + 3px);
   min-width: 16px;
   height: 14px;
   padding: 0 4px;
+  border: 1px solid var(--line-input);
   border-radius: var(--radius-chip);
-  background: var(--human);
-  color: var(--bar-active);
+  background: var(--bar-active);
+  color: var(--human);
   font-size: var(--text-label);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 14px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -301,7 +302,7 @@
   padding: 6px 8px;
 }
 .m-input .m-placeholder {
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .m-input.focused {
   outline: 2px solid var(--focus);
@@ -342,7 +343,7 @@
   overflow: hidden;
 }
 .m-branch {
-  padding: 4px var(--pad) 6px 6px;
+  padding: 0 0 4px;
   border-bottom: 1px solid var(--line-group);
 }
 .m-branch-head {
@@ -351,6 +352,7 @@
   align-items: center;
   column-gap: 4px;
   min-height: var(--row-pane);
+  padding: 0 var(--pad) 0 6px;
 }
 .m-chevron {
   width: 20px;
@@ -395,7 +397,7 @@
   grid-template-columns: 10px auto minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
-  margin-left: 24px;
+  margin: 0 var(--pad) 0 30px;
   font-size: var(--text-small);
 }
 .m-dot {
@@ -422,7 +424,7 @@
   font-variant-numeric: tabular-nums;
 }
 .m-timeline {
-  margin: 2px 0 0 24px;
+  margin: 0;
 }
 .m-entry {
   position: relative;
@@ -430,8 +432,10 @@
   grid-template-columns: 18px minmax(0, 1fr) auto;
   column-gap: 8px;
   align-items: baseline;
-  padding: 3px 8px 3px 0;
-  border-radius: var(--radius-control);
+  align-content: center;
+  min-height: var(--row-pane);
+  padding: 2px var(--pad) 2px 30px;
+  box-sizing: border-box;
   font-size: var(--text-small);
 }
 .m-entry .m-dot {
@@ -451,9 +455,9 @@
 .m-entry:not(:last-child)::before {
   content: "";
   position: absolute;
-  left: 8.5px;
-  top: 18px;
-  bottom: -10px;
+  left: 38.5px;
+  top: 22px;
+  bottom: -14px;
   width: 1px;
   background: var(--line-group);
 }
@@ -1072,7 +1076,10 @@
 }
 .m-instruction {
   margin: 0;
-  padding: 0 var(--pad) 10px;
+  padding: 4px var(--pad) 14px;
+  color: var(--ink);
+  font-size: var(--text-title);
+  line-height: 1.55;
 }
 .m-summary .m-status {
   font-weight: 700;
@@ -1993,7 +2000,7 @@
   white-space: nowrap;
 }
 .m-session .m-age {
-  color: var(--ink-3);
+  color: var(--ink-2);
   font-size: var(--text-small);
 }
 .m-session.selected {
@@ -2056,7 +2063,7 @@
   gap: 6px;
   height: var(--control);
   padding: 0 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--line-group);
   border-radius: var(--radius-control);
   color: var(--ink);
   font-size: var(--text-small);
@@ -2108,11 +2115,12 @@
 }
 /* A model's reasoning efforts on its row in the model menu, the session's one marked. */
 .m-efforts {
-  display: flex;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(4, 46px);
   margin-left: auto;
 }
 .m-effort {
+  justify-self: center;
   padding: 0 6px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
@@ -2135,7 +2143,7 @@
 }
 .m-menu-note {
   padding: 0 8px 4px;
-  color: var(--red);
+  color: var(--ink-2);
   font-size: var(--text-small);
 }
 .m-menu-sep {
@@ -2386,10 +2394,11 @@
 }
 .m-pet-sprite {
   position: absolute;
-  left: 8px;
-  top: -34px;
-  width: 56px;
-  height: 56px;
+  left: 10px;
+  top: -24px;
+  width: 40px;
+  height: 40px;
+  filter: saturate(0.6);
 }
 .m-pet-head {
   display: flex;
@@ -2420,7 +2429,7 @@
    was pointed and when, and Insert at the right. In the pet overlay, compact: text and Insert. */
 .m-point {
   display: grid;
-  grid-template-columns: var(--icon) minmax(0, 1fr) max-content max-content;
+  grid-template-columns: var(--icon) minmax(0, 1fr) max-content max-content var(--icon);
   column-gap: 8px;
   align-items: center;
   min-height: var(--row);
