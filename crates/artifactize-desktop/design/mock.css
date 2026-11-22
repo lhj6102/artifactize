@@ -2231,7 +2231,7 @@
   color: var(--ink);
 }
 .m-button.pointing .m-icon {
-  color: var(--accent);
+  color: var(--focus);
 }
 .m-vbody {
   flex: 1;
@@ -2323,7 +2323,7 @@
   font: var(--text-small) var(--mono);
 }
 .m-md .pointed {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 /* The Artifactize Viewer: Artifacts as nodes without a verdict, their type at the right;
@@ -2345,7 +2345,7 @@
   border: 2px solid var(--outline-selected);
 }
 .m-dnode.pointed {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 .m-dnode .m-name {
@@ -2380,7 +2380,7 @@
   font-size: var(--text-small);
 }
 .m-deval-head.pointed {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
   border-radius: var(--radius-control);
 }

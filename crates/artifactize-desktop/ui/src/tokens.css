@@ -32,13 +32,13 @@
   --ink: #e8e9ec;
   --ink-2: #a4a8b2;
   --ink-3: #6f7480;
-  --ink-on-accent: #0b0b0d;
+  --ink-on-accent: #16171a;
 
   /* Interaction */
-  --accent: #8b8cf0;
-  --accent-soft: #2c2d4b;
-  --selection: #33354a;
-  --focus: #a2a3f6;
+  --accent: #d4d6dc;
+  --accent-soft: #3b3d45;
+  --selection: #3a3c44;
+  --focus: #f4a868;
   --outline-selected: #dcdee5;
   --scrim: rgb(0 0 0 / 45%);
 
