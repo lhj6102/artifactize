@@ -2,6 +2,8 @@ import { createContext } from "svelte";
 import {
   call,
   message,
+  type AntigravityPrompt,
+  type AntigravityStatus,
   type ClaudeAgentPrompt,
   type ClaudeAgentStatus,
   type CodexPrompt,
@@ -94,6 +96,15 @@ export class SettingsState {
   claudeCode = $state("");
   /** Claude Code is being asked, signed in or signed out. */
   claudeBusy = $state(false);
+  /** Antigravity's own sign-in, read when its setup is chosen. */
+  antigravity = $state.raw<AntigravityStatus | null>(null);
+  antigravityError = $state<string | null>(null);
+  antigravityAttempt = $state<number | null>(null);
+  antigravityPrompt = $state.raw<AntigravityPrompt | null>(null);
+  antigravityByHand = $state(false);
+  antigravityCode = $state("");
+  antigravityBusy = $state(false);
+  #modelReads = 0;
   models = $state.raw<Model[] | null>(null);
   modelsError = $state<string | null>(null);
   listing = $state(false);
@@ -124,7 +135,10 @@ export class SettingsState {
   /** Read everything again: another process may have signed in, saved a key or changed a
    * custom provider. */
   async load() {
-    await Promise.all([this.loadProviders(), this.loadCodex(), this.loadRemote(), this.loadGrace()]);
+    await Promise.all([
+      this.loadProviders(), this.loadCodex(), this.loadRemote(), this.loadGrace(),
+      this.choice.kind === "builtin" && this.choice.provider === "antigravity" ? this.loadAntigravity() : undefined,
+    ]);
   }
 
   /** The grace in force, and the seconds field set to it. */
@@ -169,12 +183,12 @@ export class SettingsState {
   choose(choice: Choice) {
     this.choice = choice;
     this.key = "";
-    this.models = null;
-    this.modelsError = null;
+    this.#clearModels();
     this.providersError = null;
     const custom = choice.kind === "custom" ? this.providers?.custom.find((one) => one.name === choice.name) : undefined;
     this.draft = custom ? draftOf(custom) : blank();
     if (choice.kind === "builtin" && choice.provider === "claude-agent" && !this.claudeBusy) void this.loadClaude();
+    if (choice.kind === "builtin" && choice.provider === "antigravity") void this.loadAntigravity();
   }
 
   async saveKey(provider: Provider) {
@@ -250,19 +264,26 @@ export class SettingsState {
     }
   }
 
+  #clearModels() {
+    ++this.#modelReads;
+    this.models = null;
+    this.modelsError = null;
+    this.listing = false;
+  }
+
   async listModels() {
     const backend = this.backend;
     if (!backend) return;
+    this.#clearModels();
+    const read = this.#modelReads;
     this.listing = true;
-    this.models = null;
-    this.modelsError = null;
     try {
       const models = await call(this.#commands.modelsList(backend));
-      if (backend === this.backend) this.models = models;
+      if (read === this.#modelReads) this.models = models;
     } catch (failure) {
-      if (backend === this.backend) this.modelsError = message(failure);
+      if (read === this.#modelReads) this.modelsError = message(failure);
     } finally {
-      this.listing = false;
+      if (read === this.#modelReads) this.listing = false;
     }
   }
 
@@ -397,6 +418,98 @@ export class SettingsState {
       this.claudeError = message(failure);
     } finally {
       this.claudeBusy = false;
+    }
+  }
+
+  #showAntigravity(status: AntigravityStatus) {
+    // The previous list (or listing error) may no longer belong to this sign-in.
+    if (this.backend === "antigravity" && this.antigravity && this.antigravity.state !== status.state) this.#clearModels();
+    this.antigravity = status;
+  }
+
+  /** Ask the Antigravity CLI again; keep its result separate from a sign-in or sign-out error. */
+  async #readAntigravity() {
+    this.#showAntigravity(await call(this.#commands.antigravityStatus()));
+  }
+
+  async loadAntigravity() {
+    if (this.antigravityBusy) return;
+    this.antigravityBusy = true;
+    this.antigravityError = null;
+    try {
+      await this.#readAntigravity();
+    } catch (failure) {
+      this.antigravityError = message(failure);
+    } finally {
+      this.antigravityBusy = false;
+    }
+  }
+
+  async antigravitySignIn() {
+    if (this.antigravityBusy) return;
+    this.antigravityBusy = true;
+    this.antigravityError = null;
+    this.antigravityByHand = false;
+    try {
+      this.antigravityAttempt = await call(this.#commands.antigravityLoginStart());
+      const started = await call(this.#commands.antigravityLoginPrompt(this.antigravityAttempt));
+      if ("signIn" in started) {
+        this.antigravityPrompt = started;
+        // A browser that cannot open must not stop Finish by hand or hold up the wait.
+        void call(this.#commands.chatOpenLink(started.url)).catch((failure: unknown) => {
+          if (this.antigravityPrompt === started) this.antigravityError = message(failure);
+        });
+        this.#showAntigravity(await call(this.#commands.antigravityLoginWait(started.signIn)));
+      } else {
+        this.#showAntigravity(started);
+      }
+      this.antigravityError = null;
+    } catch (failure) {
+      this.antigravityError = message(failure);
+      this.antigravityPrompt = null;
+      this.antigravityAttempt = null;
+      // Even if sign-in failed or was cancelled, the CLI may now report another status.
+      await this.#readAntigravity().catch(() => {});
+    } finally {
+      this.antigravityPrompt = null;
+      this.antigravityAttempt = null;
+      this.antigravityCode = "";
+      this.antigravityBusy = false;
+    }
+  }
+
+  async antigravityPaste() {
+    const code = this.antigravityCode.trim();
+    const prompt = this.antigravityPrompt;
+    if (!code || !prompt) return;
+    this.antigravityCode = "";
+    this.antigravityError = null;
+    try {
+      await call(this.#commands.antigravityLoginPaste(prompt.signIn, code));
+    } catch (failure) {
+      if (this.antigravityPrompt === prompt) this.antigravityError = message(failure);
+    }
+  }
+
+  async cancelAntigravitySignIn() {
+    const attempt = this.antigravityAttempt;
+    if (attempt === null) return;
+    try {
+      await this.#commands.antigravityLoginCancel(attempt);
+    } catch (failure) {
+      if (this.antigravityAttempt === attempt) this.antigravityError = message(failure);
+    }
+  }
+
+  async antigravitySignOut() {
+    this.antigravityError = null;
+    this.antigravityBusy = true;
+    try {
+      this.#showAntigravity(await call(this.#commands.antigravityLogout()));
+    } catch (failure) {
+      this.antigravityError = message(failure);
+    } finally {
+      this.antigravityBusy = false;
     }
   }
 

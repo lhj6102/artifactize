@@ -4,6 +4,7 @@
   // read back.
   import type { EndpointApi, Provider } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
+  import AntigravityAccount from "./AntigravityAccount.svelte";
   import ClaudeAgentAccount from "./ClaudeAgentAccount.svelte";
   import CodexAccount from "./CodexAccount.svelte";
   import { getSettingsState, type Choice } from "./settings-state.svelte";
@@ -14,6 +15,7 @@
   const NAMES = PROVIDER_NAMES;
   /** The built-in providers, in the order the library lists them. */
   const builtin = $derived(s.providers?.builtin ?? []);
+  const aliasChoices = $derived(builtin.filter((provider) => provider !== "antigravity"));
   const APIS: Record<EndpointApi, string> = {
     openaiResponses: "OpenAI Responses",
     openaiChat: "OpenAI Chat Completions",
@@ -75,6 +77,8 @@
       <CodexAccount />
     {:else if s.choice.kind === "builtin" && s.choice.provider === "claude-agent"}
       <ClaudeAgentAccount />
+    {:else if s.choice.kind === "builtin" && s.choice.provider === "antigravity"}
+      <AntigravityAccount />
     {:else if s.choice.kind === "builtin"}
       {@const provider = s.choice.provider}
       <section aria-labelledby="key-title">
@@ -123,7 +127,7 @@
           {#if s.draft.kind === "alias"}
             <label for="custom-provider">Provider</label>
             <select id="custom-provider" class="input" bind:value={s.draft.provider}>
-              {#each builtin as provider (provider)}
+              {#each aliasChoices as provider (provider)}
                 <option value={provider}>{NAMES[provider]}</option>
               {/each}
             </select>

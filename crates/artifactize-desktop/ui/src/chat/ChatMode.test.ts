@@ -60,6 +60,7 @@ function backend() {
     other: null as ChatSession | null,
     send: null as ((text: string) => Promise<void>) | null,
     stop: null as (() => Promise<boolean>) | null,
+    antigravitySignedIn: false,
   };
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
@@ -104,14 +105,17 @@ function backend() {
       case "claude_agent_status":
         return { state: "signedIn", method: "claude.ai", plan: null };
       case "antigravity_status":
-        return { state: "signedOut" };
-      case "models_list":
-        if ((args as { provider: string }).provider === "anthropic") throw { kind: "account", message: "Model listing timed out." };
+        return { state: state.antigravitySignedIn ? "signedIn" : "signedOut" };
+      case "models_list": {
+        const { provider } = args as { provider: string };
+        if (provider === "antigravity") return [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }];
+        if (provider === "anthropic") throw { kind: "account", message: "Model listing timed out." };
         return [
           { slug: "claude-opus-5-5", displayName: "Opus 5.5", efforts: ["high", "low", "xhigh"], defaultEffort: "high" },
           { slug: "claude-sonnet-5-5", displayName: "Sonnet 5.5", efforts: ["high", "low"], defaultEffort: "high" },
           { slug: "quiet-id", displayName: "Quiet", efforts: [], defaultEffort: null },
         ];
+      }
       default:
         return null;
     }
@@ -216,6 +220,28 @@ it("filters the upward model menu and saves a model and effort immediately, even
   await fireEvent.click(trigger);
   await fireEvent.pointerDown(screen.getByRole("textbox", { name: "Message" }));
   expect(screen.queryByRole("menu")).toBeNull();
+});
+
+it("reads Antigravity's account models after sign-in on reopening the Chat model menu", async () => {
+  const { calls, state } = backend();
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  const trigger = await screen.findByRole("button", { name: /claude-opus-5-5/ });
+  await fireEvent.click(trigger);
+  const menu = screen.getByRole("menu", { name: "Models" });
+  await within(menu).findByText("Not set up: Gemini, Antigravity");
+  expect(calls.some(({ cmd, args }) => cmd === "models_list" && args.provider === "antigravity")).toBe(false);
+  await fireEvent.keyDown(within(menu).getByRole("searchbox"), { key: "Escape" });
+  state.antigravitySignedIn = true;
+
+  await fireEvent.click(trigger);
+  const reopened = screen.getByRole("menu", { name: "Models" });
+  const model = await within(reopened).findByRole("menuitemradio", { name: "Gemini Demo" });
+  expect(within(reopened).getByText("Not set up: Gemini")).toBeTruthy();
+  await fireEvent.click(model);
+  expect(calls.find(({ cmd }) => cmd === "chat_set_model")?.args).toEqual({
+    id: session.id, selection: { backend: "antigravity", model: "gemini-demo", effort: null },
+  });
 });
 
 /** A library with no session yet whose providers answer once `answer` is called, the custom
