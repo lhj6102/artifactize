@@ -1,6 +1,6 @@
 //! Antigravity's native Google sign-in. URLs and a single pasted code are relayed to the
 //! official CLI; its credentials and vendor files never pass through Artifactize.
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -24,23 +24,22 @@ const LOGIN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const LOGIN_LINE_BYTES: u64 = 8192;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Status {
+pub enum State {
     Missing,
-    TooOld { version: String, error: String },
+    TooOld { error: String },
     SignedOut,
-    SignedIn,
+    SignedIn { account: Option<String> },
     Quota { error: String },
     RateLimited { error: String },
     Failed { error: String },
 }
 
-impl From<Problem> for Status {
+impl From<Problem> for State {
     fn from(problem: Problem) -> Self {
         match problem {
             Problem::Missing => Self::Missing,
             Problem::SignedOut => Self::SignedOut,
-            Problem::TooOld { ref version } => Self::TooOld {
-                version: version.to_string(),
+            Problem::TooOld { .. } => Self::TooOld {
                 error: Failure::from(problem).message,
             },
             Problem::Quota => Self::Quota {
@@ -54,12 +53,40 @@ impl From<Problem> for Status {
     }
 }
 
-/// The check never authenticates or sends a prompt. `session/new` distinguishes initialized
-/// but signed-out agents from ones that can start a session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status {
+    pub path: Option<PathBuf>,
+    pub version: Option<semver::Version>,
+    pub required_version: semver::Version,
+    pub state: State,
+}
+
+/// The check never authenticates or sends a prompt. A `session/new` distinguishes available
+/// accounts; Antigravity ACP does not report a Google account identity for the session.
 pub async fn status() -> Status {
-    match probe(Acp::inspect).await {
-        Ok(_) => Status::SignedIn,
-        Err(problem) => problem.into(),
+    let deadline = Instant::now() + PROBE_TIMEOUT;
+    let cancel = CancellationToken::new();
+    let mut path = None;
+    let mut version = None;
+    let result = async {
+        let directory = antigravity::workspace()?;
+        let executable = antigravity::executable(directory.path())?;
+        let executable = path.insert(executable);
+        let detected =
+            antigravity::version(executable, directory.path(), deadline, &cancel).await?;
+        antigravity::supported(version.insert(detected))?;
+        let acp = Acp::start_checked(directory, executable, deadline, &cancel).await?;
+        probe_started(acp, deadline, Acp::inspect).await
+    }
+    .await;
+    Status {
+        path,
+        version,
+        required_version: antigravity::MINIMUM,
+        state: match result {
+            Ok(_) => State::SignedIn { account: None },
+            Err(problem) => problem.into(),
+        },
     }
 }
 
@@ -76,7 +103,15 @@ async fn probe<T>(
 ) -> Result<T, Problem> {
     let deadline = Instant::now() + PROBE_TIMEOUT;
     let cancel = CancellationToken::new();
-    let mut acp = Acp::start(deadline, &cancel).await?;
+    let acp = Acp::start(deadline, &cancel).await?;
+    probe_started(acp, deadline, ask).await
+}
+
+async fn probe_started<T>(
+    mut acp: Acp,
+    deadline: Instant,
+    ask: impl for<'a> AsyncFnOnce(&'a mut Acp) -> Result<T, Problem>,
+) -> Result<T, Problem> {
     let result = tokio::time::timeout_at(deadline, ask(&mut acp))
         .await
         .unwrap_or_else(|_| {
@@ -108,10 +143,12 @@ pub async fn login_with(
 ) -> Result<(), String> {
     let deadline = Instant::now() + LOGIN_TIMEOUT;
     let directory = antigravity::workspace().map_err(message)?;
-    antigravity::check_version(directory.path(), deadline, &CancellationToken::new())
-        .await
-        .map_err(message)?;
-    let command = antigravity::command(&["acp", "--login"], directory.path(), deadline);
+    let executable =
+        antigravity::check_version(directory.path(), deadline, &CancellationToken::new())
+            .await
+            .map_err(message)?;
+    let mut command = antigravity::command(&["acp", "--login"], directory.path(), deadline);
+    command.program = executable.into_os_string();
     let mut cli = process::spawn_handoff(&command)
         .await
         .map_err(antigravity::start_problem)

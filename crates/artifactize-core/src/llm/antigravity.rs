@@ -2,7 +2,11 @@
 pub mod bridge;
 mod wire;
 
-use std::{io, path::Path, time::Duration};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -26,7 +30,7 @@ use crate::{
 };
 
 /// 1.5.1 opened Google account models to every ACP client.
-const MINIMUM: semver::Version = semver::Version::new(1, 5, 1);
+pub(crate) const MINIMUM: semver::Version = semver::Version::new(1, 5, 1);
 /// Metadata requests never send a prompt; a stalled installation or sign-in check ends quickly.
 pub(crate) const PROBE_TIMEOUT: Duration = super::models::LIST_TIMEOUT;
 /// One ACP line holds a single request or a streamed event, not an entire conversation.
@@ -160,19 +164,23 @@ pub(crate) fn workspace() -> Result<PrivateTempDir, Problem> {
     )
 }
 
-pub(crate) async fn check_version(
+pub(crate) fn executable(cwd: &Path) -> Result<PathBuf, Problem> {
+    platform::program::resolve(Path::new("agy"), cwd)
+        .map_err(|error| start_problem(process::Error::Spawn(error)))
+}
+
+pub(crate) async fn version(
+    path: &Path,
     cwd: &Path,
     deadline: Instant,
     cancellation: &CancellationToken,
-) -> Result<(), Problem> {
-    let output = process::run(
-        command(&["--version"], cwd, deadline),
-        cancellation.clone(),
-        |_| async { Ok(()) },
-    )
-    .await
-    .map_err(start_problem)?;
-    let version = output
+) -> Result<semver::Version, Problem> {
+    let mut check = command(&["--version"], cwd, deadline);
+    check.program = path.as_os_str().to_owned();
+    let output = process::run(check, cancellation.clone(), |_| async { Ok(()) })
+        .await
+        .map_err(start_problem)?;
+    output
         .status
         .success()
         .then(|| platform::output_text(&output.stdout))
@@ -182,11 +190,27 @@ pub(crate) async fn check_version(
         })
         .ok_or_else(|| {
             Problem::Failed("Cannot read the Antigravity CLI version (`agy --version`).".into())
-        })?;
-    if version < MINIMUM {
-        return Err(Problem::TooOld { version });
+        })
+}
+
+pub(crate) fn supported(version: &semver::Version) -> Result<(), Problem> {
+    if *version < MINIMUM {
+        Err(Problem::TooOld {
+            version: version.clone(),
+        })
+    } else {
+        Ok(())
     }
-    Ok(())
+}
+
+pub(crate) async fn check_version(
+    cwd: &Path,
+    deadline: Instant,
+    cancellation: &CancellationToken,
+) -> Result<PathBuf, Problem> {
+    let path = executable(cwd)?;
+    supported(&version(&path, cwd, deadline, cancellation).await?)?;
+    Ok(path)
 }
 
 pub(crate) struct Acp {
@@ -208,14 +232,24 @@ impl Acp {
         cancel: &CancellationToken,
     ) -> Result<Self, Problem> {
         let directory = workspace()?;
-        check_version(directory.path(), deadline, cancel).await?;
+        let executable = check_version(directory.path(), deadline, cancel).await?;
+        Self::start_checked(directory, &executable, deadline, cancel).await
+    }
+
+    pub(crate) async fn start_checked(
+        directory: PrivateTempDir,
+        executable: &Path,
+        deadline: Instant,
+        cancel: &CancellationToken,
+    ) -> Result<Self, Problem> {
         // Native login stays in its usual place. A fresh, empty cwd keeps repo settings and
         // hooks out of ACP; callback denial and terminal sandboxing are not eval confinement.
-        let command = command(
+        let mut command = command(
             &["acp", "--sandbox", "--include-default-customizations=false"],
             directory.path(),
             deadline,
         );
+        command.program = executable.as_os_str().to_owned();
         let (read, write, running) = Running::spawn(&command, deadline, cancel)
             .await
             .map_err(start_problem)?;

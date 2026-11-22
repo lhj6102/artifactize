@@ -17,43 +17,46 @@ impl Flow for GoogleAccount {
     const WAITED: &'static str = "The Antigravity sign-in is already being waited for.";
 }
 
-/// Antigravity's sign-in, as Antigravity reports it.
+/// Antigravity's installation and sign-in, as the CLI reports them.
 #[derive(Debug, Clone, Serialize, Type)]
-#[serde(
-    tag = "state",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum AntigravityStatus {
-    /// `agy` is not on `PATH`.
+#[serde(rename_all = "camelCase")]
+pub struct AntigravityStatus {
+    pub path: Option<crate::browse::PathKey>,
+    pub version: Option<String>,
+    pub required_version: String,
+    #[serde(flatten)]
+    pub state: AntigravityState,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub enum AntigravityState {
     Missing,
-    TooOld {
-        version: String,
-        error: String,
-    },
+    TooOld { error: String },
     SignedOut,
-    SignedIn,
-    Quota {
-        error: String,
-    },
-    RateLimited {
-        error: String,
-    },
-    Failed {
-        error: String,
-    },
+    SignedIn { account: Option<String> },
+    Quota { error: String },
+    RateLimited { error: String },
+    Failed { error: String },
 }
 
 impl From<antigravity::Status> for AntigravityStatus {
     fn from(status: antigravity::Status) -> Self {
-        match status {
-            antigravity::Status::Missing => Self::Missing,
-            antigravity::Status::SignedOut => Self::SignedOut,
-            antigravity::Status::SignedIn => Self::SignedIn,
-            antigravity::Status::TooOld { version, error } => Self::TooOld { version, error },
-            antigravity::Status::Quota { error } => Self::Quota { error },
-            antigravity::Status::RateLimited { error } => Self::RateLimited { error },
-            antigravity::Status::Failed { error } => Self::Failed { error },
+        use antigravity::State;
+        let state = match status.state {
+            State::Missing => AntigravityState::Missing,
+            State::TooOld { error } => AntigravityState::TooOld { error },
+            State::SignedOut => AntigravityState::SignedOut,
+            State::SignedIn { account } => AntigravityState::SignedIn { account },
+            State::Quota { error } => AntigravityState::Quota { error },
+            State::RateLimited { error } => AntigravityState::RateLimited { error },
+            State::Failed { error } => AntigravityState::Failed { error },
+        };
+        Self {
+            path: status.path.as_deref().map(crate::browse::PathKey::new),
+            version: status.version.map(|version| version.to_string()),
+            required_version: status.required_version.to_string(),
+            state,
         }
     }
 }

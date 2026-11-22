@@ -410,10 +410,14 @@ export type AntigravityPrompt = {
 	signIn: SignInId,
 };
 
-/**  Antigravity's sign-in, as Antigravity reports it. */
-export type AntigravityStatus = 
-/**  `agy` is not on `PATH`. */
-{ state: "missing" } | { state: "tooOld"; version: string; error: string } | { state: "signedOut" } | { state: "signedIn" } | { state: "quota"; error: string } | { state: "rateLimited"; error: string } | { state: "failed"; error: string };
+export type AntigravityState = { state: "missing" } | { state: "tooOld"; error: string } | { state: "signedOut" } | { state: "signedIn"; account: string | null } | { state: "quota"; error: string } | { state: "rateLimited"; error: string } | { state: "failed"; error: string };
+
+/**  Antigravity's installation and sign-in, as the CLI reports them. */
+export type AntigravityStatus = {
+	path: PathKey | null,
+	version: string | null,
+	requiredVersion: string,
+} & AntigravityState;
 
 export type Attention = {
 	mark: Mark,

@@ -120,27 +120,29 @@ impl Fixture {
         assert!(!result.status.success());
         assert!(String::from_utf8_lossy(&result.stdout).contains("not on PATH"));
         self.mode("old");
-        assert!(
-            matches!(account::status().await, account::Status::TooOld { version, error } if version == "1.5.0" && error.contains("1.5.1"))
-        );
+        let old = account::status().await;
+        assert!(old.path.as_ref().is_some_and(|path| path.is_file()));
+        assert_eq!(old.required_version.to_string(), "1.5.1");
+        assert_eq!(old.version.unwrap().to_string(), "1.5.0");
+        assert!(matches!(old.state, account::State::TooOld { error } if error.contains("1.5.1")));
         self.mode("signed-out");
-        assert_eq!(account::status().await, account::Status::SignedOut);
+        assert_eq!(account::status().await.state, account::State::SignedOut);
         self.mode("auth-link");
-        assert_eq!(account::status().await, account::Status::SignedOut);
+        assert_eq!(account::status().await.state, account::State::SignedOut);
         self.mode("quota");
         assert!(matches!(
-            account::status().await,
-            account::Status::Quota { .. }
+            account::status().await.state,
+            account::State::Quota { .. }
         ));
         self.mode("rate");
         assert!(matches!(
-            account::status().await,
-            account::Status::RateLimited { .. }
+            account::status().await.state,
+            account::State::RateLimited { .. }
         ));
         self.mode("failed");
         assert!(matches!(
-            account::status().await,
-            account::Status::Failed { .. }
+            account::status().await.state,
+            account::State::Failed { .. }
         ));
         self.mode("signed-out");
 
@@ -157,7 +159,10 @@ impl Fixture {
         let said = String::from_utf8(output.stderr).unwrap();
         assert!(said.contains("https://accounts.google.com/o/oauth2/auth?"));
         assert!(!said.contains("example.invalid") && !said.contains("fixture-code"));
-        assert_eq!(account::status().await, account::Status::SignedIn);
+        let signed_in = account::status().await;
+        assert_eq!(signed_in.state, account::State::SignedIn { account: None });
+        assert!(signed_in.path.is_some());
+        assert!(signed_in.version.unwrap() >= signed_in.required_version);
 
         let models = os::run(&mut self.cli(&["models", "antigravity"]));
         assert!(models.status.success(), "{models:?}");
@@ -175,7 +180,7 @@ impl Fixture {
         self.mode("signed-in");
         let ended = os::run(&mut self.cli(&["logout", "antigravity"]));
         assert!(ended.status.success(), "{ended:?}");
-        assert_eq!(account::status().await, account::Status::SignedOut);
+        assert_eq!(account::status().await.state, account::State::SignedOut);
         self.mode("signed-in");
     }
 

@@ -3401,6 +3401,11 @@ pub fn is_detached(pid: u32) -> bool {
 }
 
 /// Human/model and persisted path spelling, independent of native separators.
+/// JSON paths the tool opens verbatim use the operating system's spelling.
+pub fn native_path_text(path: &Path) -> &str {
+    path.to_str().expect("fixture paths are Unicode")
+}
+
 pub fn path_text(path: &Path) -> String {
     let text = path.to_str().expect("fixture paths are Unicode");
     #[cfg(windows)]
@@ -3574,8 +3579,8 @@ pub fn write_python_script(path: &Path, code: &str) {
 pub fn python_authors_environment() -> String {
     r#"
 assert os.path.expanduser('~') != os.environ['TMPDIR']
-assert context['tmpDir'] == os.environ['TMPDIR'].replace('\\', '/')
-assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR'].replace('\\', '/')
+assert context['tmpDir'] == os.environ['TMPDIR']
+assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR']
 own = ('ARTIFACTIZE_WORKSPACE_DIR', 'ARTIFACTIZE_OUTPUT_DIR', 'ARTIFACTIZE_TMP_DIR', 'ARTIFACTIZE_SESSION_DIR')
 assert not [name for name in os.environ if name.upper().startswith('ARTIFACTIZE_') and name not in own]
 "#
