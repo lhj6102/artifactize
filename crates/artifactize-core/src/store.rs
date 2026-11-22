@@ -39,7 +39,8 @@ pub use snapshots::{
 mod wait_timeout;
 pub(crate) use catalog::places as read_run_places;
 pub use catalog::{
-    CatalogRun, Signoff, read_catalog, read_catalog_run, run_checkout, viewer_checkout,
+    CatalogRun, Signoff, read_catalog, read_catalog_run, read_open_run_ids, run_checkout,
+    viewer_checkout,
 };
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
 pub(crate) mod reader;

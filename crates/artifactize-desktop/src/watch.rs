@@ -107,8 +107,11 @@ impl ChatWorktrees {
 
 /// Run owners can die silently; the state hub only announces actual commits.
 pub(crate) async fn reconcile_runs(app: &App) {
-    for run in app.browse.open_runs() {
-        let _ = artifactize_core::runs::reconcile_interrupted(&app.launch.state, &run).await;
+    let state = &app.launch.state;
+    if let Ok(open) = artifactize_core::store::read_open_run_ids(state).await {
+        for run in open {
+            let _ = artifactize_core::runs::reconcile_interrupted(state, &run).await;
+        }
     }
 }
 

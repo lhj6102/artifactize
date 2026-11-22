@@ -251,6 +251,8 @@ pub async fn main_close(app: tauri::State<'_, App>) -> Result<(), Failure> {
         return Ok(());
     }
     let result = async {
+        // Drain first: a queued write may need the claim lock to finish.
+        let _drafts = app.human.drain_drafts().await;
         let _settling = app.human.claim_gate.lock().await;
         if !crate::human::live_claims(&app).await?.is_empty() {
             return Err(Failure::Action(

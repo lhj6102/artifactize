@@ -36,6 +36,10 @@ async fn observer_reconciles_a_saved_run_without_a_matching_owner() {
         .unwrap();
     drop(writer);
 
+    assert_eq!(
+        store::read_open_run_ids(&state).await.unwrap(),
+        std::slice::from_ref(&id)
+    );
     assert!(reconcile_interrupted(&state, &id).await.unwrap());
     let saved = store::read_run(&state, &id).await.unwrap().run;
     assert_eq!(saved.status(), crate::types::RunStatus::Error);
@@ -44,6 +48,7 @@ async fn observer_reconciles_a_saved_run_without_a_matching_owner() {
         Some(crate::types::FailureCode::OwnerDied)
     );
     assert!(!reconcile_interrupted(&state, &id).await.unwrap());
+    assert!(store::read_open_run_ids(&state).await.unwrap().is_empty());
 }
 
 #[tokio::test]

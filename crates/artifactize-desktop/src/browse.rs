@@ -513,25 +513,6 @@ impl Browse {
         }
     }
 
-    /// The live timeline and the Run shown by reference both need dead-owner observation.
-    pub(crate) fn open_runs(&self) -> BTreeSet<RunId> {
-        let shown = self.shown();
-        shown
-            .branches
-            .iter()
-            .flat_map(|branch| &branch.runs)
-            .filter(|run| run.status.is_open())
-            .map(|run| run.id.clone())
-            .chain(
-                shown
-                    .opened
-                    .loaded()
-                    .filter(|run| run.run.run.status().is_open())
-                    .map(|run| run.run.run.id.clone()),
-            )
-            .collect()
-    }
-
     /// The listed branch at `place`: where its Current is scanned and its tools run.
     pub fn branch(&self, place: &Place) -> Result<Branch, Failure> {
         self.shown()

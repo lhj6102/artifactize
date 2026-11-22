@@ -212,6 +212,10 @@ impl Reviews {
         self.taken.lock().expect("taken lock").clear();
     }
 
+    pub(crate) async fn drain_drafts(&self) -> draft_queue::Drained<'_> {
+        self.drafts.drain().await
+    }
+
     pub(crate) fn invalidate_searches(&self) {
         self.searches.invalidate();
     }

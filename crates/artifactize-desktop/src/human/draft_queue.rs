@@ -7,7 +7,7 @@ use std::{
 };
 
 use artifactize_core::types::RequestId;
-use tokio::sync::{Mutex as Gate, OwnedMutexGuard};
+use tokio::sync::{Mutex as Gate, MutexGuard, OwnedMutexGuard};
 
 use crate::Failure;
 
@@ -23,7 +23,32 @@ pub(crate) struct Turns {
     _held: Vec<OwnedMutexGuard<()>>,
 }
 
+pub(crate) struct Drained<'a> {
+    _admission: MutexGuard<'a, ()>,
+    _held: Vec<OwnedMutexGuard<()>>,
+}
+
 impl DraftQueue {
+    /// Hold admission closed for quit and drain every operation already accepted.
+    pub(super) async fn drain(&self) -> Drained<'_> {
+        let admission = self.admit.lock().await;
+        let gates: Vec<_> = self
+            .owners
+            .lock()
+            .expect("draft queues lock")
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect();
+        let mut held = Vec::with_capacity(gates.len());
+        for gate in gates {
+            held.push(gate.lock_owned().await);
+        }
+        Drained {
+            _admission: admission,
+            _held: held,
+        }
+    }
+
     pub(super) async fn enter(
         &self,
         resolve: impl Future<Output = Result<Vec<RequestId>, Failure>>,
@@ -75,6 +100,25 @@ impl DraftQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn quit_drains_already_accepted_draft_writes_before_closing_admission() {
+        let queue = DraftQueue::default();
+        let owner: RequestId = "run-owner-1".parse().unwrap();
+        let edit = queue
+            .enter(async { Ok(vec![owner.clone()]) })
+            .await
+            .unwrap();
+        let mut quit = Box::pin(queue.drain());
+        assert!(poll_fn(|cx| Poll::Ready(quit.as_mut().poll(cx).is_pending())).await);
+        let mut later = Box::pin(queue.enter(async { Ok(vec![owner.clone()]) }));
+        assert!(poll_fn(|cx| Poll::Ready(later.as_mut().poll(cx).is_pending())).await);
+        drop(edit);
+        let quitting = quit.await;
+        assert!(poll_fn(|cx| Poll::Ready(later.as_mut().poll(cx).is_pending())).await);
+        drop(quitting);
+        assert_eq!(later.await.unwrap().owners, [owner]);
+    }
 
     #[tokio::test]
     async fn submission_waits_for_an_already_admitted_edit_of_its_original_request() {
