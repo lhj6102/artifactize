@@ -570,7 +570,7 @@ fn verify_browse_and_review_search_are_independent() {
     invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
     assert_eq!(
         invoke(&window, "human_waiting_count", json!({})).unwrap(),
-        0
+        1
     );
     let exact = invoke(
         &window,
@@ -1041,6 +1041,11 @@ payload.instruction = "Read the page separately."
     assert_eq!(wrong_worktree["artifact"], active["artifact"]);
     assert_eq!(active["petMatch"], true);
     assert_eq!(wrong_worktree["petMatch"], false);
+    // The global badge counts pending verdicts even while the selected review is claimed.
+    assert_eq!(
+        invoke(&window, "human_waiting_count", json!({})).unwrap(),
+        2
+    );
 
     let result = invoke(
         &window,

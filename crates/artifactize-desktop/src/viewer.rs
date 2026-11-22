@@ -605,8 +605,8 @@ async fn read_active(app: &App, shown: Option<RequestId>) -> Result<Option<Activ
 /// Claims from any surface can activate or deactivate the most recently shown Review.
 pub(crate) async fn refresh_active(app: &App) {
     let (shown, revision) = {
-        let sessions = app.viewers.0.lock().expect("viewer sessions");
-        (sessions.selected.clone(), sessions.activation)
+        let mut sessions = app.viewers.0.lock().expect("viewer sessions");
+        (sessions.selected.clone(), sessions.advance_activation())
     };
     let Some(shown) = shown else { return };
     if let Ok(active) = read_active(app, Some(shown)).await {

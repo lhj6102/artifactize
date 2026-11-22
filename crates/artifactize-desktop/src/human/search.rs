@@ -114,13 +114,13 @@ async fn search_page(app: &App, parsed: &search::Query, start: u32) -> Result<Re
     })
 }
 
-/// Number of unclaimed Human reviews, including deferred sign-offs, for the Review mode badge.
+/// Number of pending Human verdicts, claimed or not, for the Review mode badge.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_waiting_count(app: tauri::State<'_, App>) -> Result<u32, Failure> {
-    let query = search::DEFAULT
+    let query = "type:human status:waiting_human"
         .parse::<search::Query>()
-        .expect("the default Review query parses")
+        .expect("the pending-review query parses")
         .for_live_repositories();
     let count = search::count(&app.launch.state, &query, &app.launch.reviewer)
         .await

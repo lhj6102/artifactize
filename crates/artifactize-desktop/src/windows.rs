@@ -183,9 +183,11 @@ pub async fn viewer_window(
     title: String,
 ) -> Result<(), Failure> {
     let ready = async {
+        let prepared = app.viewers.get(session)?;
         if let Some(review) = app.viewers.pending_review(session) {
+            let state = &app.launch.state;
             let view = artifactize_core::store::read_request_as(
-                &app.launch.state,
+                state,
                 review.as_str(),
                 artifactize_core::store::Shown::Requests,
             )
@@ -196,8 +198,15 @@ pub async fn viewer_window(
             {
                 return Err(Failure::Action(reason));
             }
+            let (_, saved) = artifactize_core::store::run_checkout(state, &view.request.run_id)
+                .await
+                .map_err(Failure::Read)?;
+            if prepared.checkout() != &saved {
+                return Err(Failure::Action(
+                    "Check out the review's branch to open its Artifact Viewer.".into(),
+                ));
+            }
         }
-        let prepared = app.viewers.get(session)?;
         crate::failure::joined(tokio::task::spawn_blocking(move || prepared.check_scope()).await)?
             .map_err(Failure::Read)
     }
