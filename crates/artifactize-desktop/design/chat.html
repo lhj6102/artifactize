@@ -27,11 +27,12 @@
 <main data-screen="chat">
 <h1>Chat: a session with Artifactize's own agent</h1>
 <p class="lead">
-  Chat mode, laid out as agent chat applications are: its Pane holds New chat and the sessions,
-  grouped by project, one line each; its Main area holds the chosen session's conversation in a
-  column of the reading measure and the composer under it. The agent's text reads as text, what
-  it did as quiet one-line rows, and each verify it starts as a Run reference that opens the Run
-  in Verify. The model selector sits at the composer's bottom left, its menu opening upward;
+  Chat mode, laid out as agent chat applications are: its Pane holds New chat, the search and the
+  sessions, grouped by project, one line each, a session's state where its age is; its Main area
+  holds the chosen session's conversation in a column of the reading measure, kept where it is
+  read, and the composer under it. The agent's text reads as Markdown, what it did as quiet
+  one-line rows, routine ones folded into a summary, each with its details a click away, and each
+  verify it starts as a Run reference that opens the Run in Verify. The model selector sits at the composer's bottom left, its menu opening upward;
   Send, or Stop while a turn runs, at its bottom right.
 </p>
 
@@ -47,11 +48,13 @@
   <div class="m-screen">
     <section class="m-pane">
       <div class="m-pane-head"><span class="m-new"><span class="m-icon i-add"></span>New chat</span></div>
+      <div class="m-chat-search"><div class="m-input text"><span class="m-placeholder">Search chats</span></div></div>
       <p class="m-group-label">shop / fix/checkout-rounding</p>
       <div class="m-session selected"><span class="m-item-name">Fix checkout rounding</span><span class="m-age">now</span></div>
-      <div class="m-session"><span class="m-item-name">Gift card balance</span><span class="m-age">1h</span></div>
+      <div class="m-session"><span class="m-item-name">Gift card balance</span><span class="m-state tone-red">failed</span></div>
       <p class="m-group-label">artifactize / dev</p>
-      <div class="m-session"><span class="m-item-name">Release notes wording</span><span class="m-age">1d</span></div>
+      <div class="m-session"><span class="m-item-name">Release notes wording</span><span class="m-state tone-running">running</span></div>
+      <div class="m-session"><span class="m-item-name">Changelog for 0.25</span><span class="m-state">finished</span></div>
       <p class="m-group-label">웹툰-플랫폼 / main</p>
       <div class="m-session"><span class="m-item-name">결제 흐름 문서 정리와 검증 범위 확인</span><span class="m-age">3d</span></div>
     </section>
@@ -63,14 +66,14 @@
           <div class="m-msg">Checkout total shows too many decimals. Fix it and verify.</div>
           <div class="m-turn">
             <p>I'll check how the checkout total is formatted.</p>
-            <div class="m-call"><span class="m-icon i-file"></span>Read <span class="m-target">checkout/total.ts</span></div>
-            <div class="m-call"><span class="m-icon i-edit"></span>Edited <span class="m-target">checkout/total.ts</span><span>+3 −1</span></div>
+            <div class="m-call"><span class="m-icon i-fold"></span>Read 3 files · searched 1 folder · edited 1 file</div>
             <div class="m-runref"><span class="m-icon i-red tone-red"></span><span class="m-mono">run-4FT2KQ</span><span class="tone-red"><b>RED</b></span><span></span><span class="m-what">checkout/unit</span><span class="m-go"><span class="m-icon i-open"></span>Open in Verify</span></div>
-            <p>checkout/unit fails: the total is rounded before the discount is applied. Moving the rounding to the end.</p>
+            <p><code>checkout/unit</code> fails: the total is rounded before the discount is applied. Moving the rounding to the end.</p>
             <div class="m-call"><span class="m-icon i-edit"></span>Edited <span class="m-target">checkout/total.ts</span><span>+2 −2</span></div>
             <div class="m-call"><span class="m-icon i-command"></span>Ran <span class="m-target">pnpm test checkout</span><span class="m-failed">exit 1: vitest is not installed in this worktree</span></div>
             <div class="m-runref"><span class="m-icon i-human tone-yellow"></span><span class="m-mono">run-9PLM3X</span><span class="tone-yellow"><b>YELLOW</b></span><span></span><span class="m-what">checkout/looks-right waits for a person</span><span class="m-go"><span class="m-icon i-open"></span>Open in Verify</span></div>
-            <p>checkout/unit passes now. checkout/looks-right waits for a person to check the page.</p>
+            <p>Done for now:</p>
+            <ul><li><code>checkout/unit</code> passes: the total is rounded after the discount.</li><li><code>checkout/looks-right</code> waits for a person to check the page.</li></ul>
           </div>
         </div>
         <div class="m-composer">
@@ -84,32 +87,40 @@
   </div>
 </div>
 <span class="callout" style="left: 250px; top: 8px">1</span>
-<span class="callout" style="left: 250px; top: 46px">2</span>
+<span class="callout" style="left: 250px; top: 70px">16</span>
+<span class="callout" style="left: 250px; top: 98px">2</span>
+<span class="callout" style="left: 284px; top: 146px">17</span>
+<span class="callout" style="left: 740px; top: 382px">18</span>
+<span class="callout" style="left: 1140px; top: 620px">19</span>
 <span class="callout" style="left: 560px; top: 4px">3</span>
-<span class="callout" style="left: 1060px; top: 362px">4</span>
-<span class="callout" style="left: 700px; top: 412px">5</span>
-<span class="callout" style="left: 1060px; top: 450px">6</span>
-<span class="callout" style="left: 860px; top: 556px">7</span>
+<span class="callout" style="left: 1140px; top: 320px">4</span>
+<span class="callout" style="left: 700px; top: 493px">5</span>
+<span class="callout" style="left: 1140px; top: 414px">6</span>
+<span class="callout" style="left: 880px; top: 519px">7</span>
 <span class="callout" style="left: 540px; top: 692px">8</span>
 <span class="callout" style="left: 1060px; top: 712px">9</span>
 </div>
-<figcaption>Stage 1280 × 800. A session whose turn has ended: what the agent did between its words, two verifies, each a Run reference, one command that failed. The composer is empty, Send at its right.</figcaption>
+<figcaption>Stage 1280 × 800. A session whose turn has ended: what the agent did between its words, the first tools folded into a summary line, two verifies, each a Run reference, one command that failed, and an answer in Markdown. In the Pane, other sessions' states: one failed and one finished while not shown, one running. The composer is empty, Send at its right.</figcaption>
 </figure>
 
 <ol class="notes">
   <li><span class="n">1</span><div><b>New chat</b><span>One button across the Pane's top; it asks for the branch the session works on.</span></div></li>
+  <li><span class="n">16</span><div><b>Search</b><span>Lists only the sessions whose title, project or branch matches, as the library finds them.</span></div></li>
   <li><span class="n">2</span><div><b>Sessions</b><span>Grouped under their project, newest first; one line each, the title and its age. The shown one on the selection.</span></div></li>
+  <li><span class="n">17</span><div><b>State</b><span>In the age's place: <i>running</i> while a turn runs, then how a turn ended while the session was not shown (<i>finished</i>, <i>failed</i>, <i>stopped</i>) until it is shown.</span></div></li>
   <li><span class="n">3</span><div><b>Header row</b><span>The session's title and, quieter, the branch it works on.</span></div></li>
-  <li><span class="n">4</span><div><b>Message</b><span>What the person sent, a block at the column's right; the agent answers at the left in plain text.</span></div></li>
+  <li><span class="n">4</span><div><b>Message</b><span>What the person sent, exactly as typed, a block at the column's right; the agent answers at the left, unboxed.</span></div></li>
+  <li><span class="n">18</span><div><b>Summary</b><span>Tools in a row that went well, folded into one line of what they did; a click unfolds them.</span></div></li>
   <li><span class="n">5</span><div><b>What the agent did</b><span>One quiet line per tool, no box: an icon, a verb and what it acted on.</span></div></li>
   <li><span class="n">6</span><div><b>Run reference</b><span>A verify the agent started: the Run, its status as it changes, what failed or waits, and Open in Verify.</span></div></li>
   <li><span class="n">7</span><div><b>Failed</b><span>A tool that failed says why in red on its line.</span></div></li>
+  <li><span class="n">19</span><div><b>Markdown</b><span>The agent's text read as Markdown: lists, links, inline code and code blocks.</span></div></li>
   <li><span class="n">8</span><div><b>Composer</b><span>One field; under the text, the model at the left and Send at the right.</span></div></li>
   <li><span class="n">9</span><div><b>Send</b><span>The one primary control; while a turn runs it is Stop.</span></div></li>
 </ol>
 
 <figure class="figure">
-<div class="stage" style="--w: 760; --h: 480">
+<div class="stage" style="--w: 760; --h: 520">
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr); background: var(--surface-app)">
   <div class="m-chat" style="position: relative; border-top: 0">
@@ -128,6 +139,7 @@
       </div>
     </div>
     <div class="m-menu" style="left: 20px; bottom: 56px; width: 240px">
+      <div class="m-input text focused"><span class="m-placeholder">Filter models</span></div>
       <div class="m-label">Codex</div>
       <div class="m-menu-item">GPT-6.2 Sol</div>
       <div class="m-label">Claude Agent</div>
@@ -148,12 +160,13 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 270px; top: 150px">10</span>
-<span class="callout" style="left: 270px; top: 314px">11</span>
-<span class="callout" style="left: 690px; top: 384px">12</span>
-<span class="callout" style="left: 690px; top: 290px">13</span>
+<span class="callout" style="left: 270px; top: 190px">10</span>
+<span class="callout" style="left: 270px; top: 40px">20</span>
+<span class="callout" style="left: 270px; top: 354px">11</span>
+<span class="callout" style="left: 690px; top: 424px">12</span>
+<span class="callout" style="left: 690px; top: 330px">13</span>
 </div>
-<figcaption>Stage 760 × 480. A turn running, a read in progress: the model menu open upward over the conversation; Stop in Send's place.</figcaption>
+<figcaption>Stage 760 × 520. A turn running, a read in progress: the model menu open upward over the conversation, its filter field focused; Stop in Send's place.</figcaption>
 </figure>
 
 <ol class="notes">
@@ -161,6 +174,82 @@
   <li><span class="n">11</span><div><b>Connect provider</b><span>The last row, after a line: it opens Settings on Providers. A provider that lists nothing says why in red, as Antigravity does until it is signed in.</span></div></li>
   <li><span class="n">12</span><div><b>Stop</b><span>Send's place while a turn runs; the composer stays usable.</span></div></li>
   <li><span class="n">13</span><div><b>In progress</b><span>A tool still running: the in-progress icon and its verb in the present tense.</span></div></li>
+  <li><span class="n">20</span><div><b>Filter</b><span>The menu's first row, focused when it opens: typing lists only the models whose name, ID or provider matches. Esc closes the menu alone.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 760; --h: 560">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr); background: var(--surface-app)">
+  <div class="m-chat" style="position: relative; border-top: 0">
+    <div class="m-convo" style="justify-content: flex-start">
+      <div class="m-msg">Why does the total round twice?</div>
+      <div class="m-turn">
+        <p>The total is rounded in two places:</p>
+        <div class="m-codeblock"><pre>export function total(cart: Cart): number {
+  const sum = round(subtotal(cart));
+  return round(sum - discount(cart));
+}</pre><span class="m-button small quiet">Copy</span></div>
+        <div class="m-call"><span class="m-icon i-unfold"></span>Read 2 files · ran 1 command</div>
+        <div class="m-call-parts">
+          <div class="m-call"><span class="m-icon i-file"></span>Read <span class="m-target">checkout/total.ts</span></div>
+          <div class="m-call"><span class="m-icon i-file"></span>Read <span class="m-target">checkout/discount.ts</span></div>
+          <div class="m-call"><span class="m-icon i-command"></span>Ran <span class="m-target">pnpm vitest run checkout</span></div>
+          <div class="m-call-details"><span>Asked with</span><span class="m-mono">pnpm vitest run checkout</span><span>Exit code</span><span class="m-mono">0</span><div class="m-out">… 38 earlier lines
+ ✓ checkout/total.test.ts (6 tests)
+ Test Files  1 passed (1)
+      Tests  6 passed (6)</div></div>
+        </div>
+        <p>I'll keep the rounding in <code>formatTotal</code> only and take it out of <code>total</code>.</p>
+      </div>
+      <span class="m-scroll-end"><span class="m-icon i-unfold"></span>Scroll to end</span>
+    </div>
+    <div class="m-composer">
+      <div class="m-composer-box">
+        <div class="m-composer-text"><span style="color: var(--ink-3)">Ask the agent to work on this branch…</span></div>
+        <div class="m-composer-row"><span class="m-picker">Opus 5.5<span class="m-icon i-unfold"></span></span><span class="m-spacer"></span><span class="m-stopping"><span class="m-icon i-running tone-running"></span>Stopping…</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 600px; top: 100px">21</span>
+<span class="callout" style="left: 260px; top: 174px">22</span>
+<span class="callout" style="left: 690px; top: 285px">23</span>
+<span class="callout" style="left: 460px; top: 428px">24</span>
+<span class="callout" style="left: 600px; top: 515px">25</span>
+</div>
+<figcaption>Stage 760 × 560. A conversation read above its end while its turn is being stopped: the agent's Markdown with a code block, a summary line unfolded into its tools and one tool's details unfolded; Scroll to end at the conversation's bottom.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">21</span><div><b>Code block</b><span>The agent's Markdown: a code block in mono on the panel surface, Copy at its top right; inline code as a quiet chip.</span></div></li>
+  <li><span class="n">22</span><div><b>Summary unfolded</b><span>A summary line unfolded: its tools as their own lines, indented under it; a click folds them again.</span></div></li>
+  <li><span class="n">23</span><div><b>Details</b><span>A tool's line clicked: what it was asked with, its exit code and the end of its output, as much as the library keeps.</span></div></li>
+  <li><span class="n">24</span><div><b>Scroll to end</b><span>Shown only away from the end; the conversation stays where it is read until it is clicked.</span></div></li>
+  <li><span class="n">25</span><div><b>Stopping</b><span>Stop once clicked, until the turn has stopped.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 760; --h: 150">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr); background: var(--surface-app)">
+  <div class="m-chat" style="position: relative; border-top: 0; justify-content: flex-end">
+    <div class="m-composer">
+      <div class="m-refused"><span>Not sent: another turn of this session is still running.</span><span class="m-button small quiet">Copy</span><span class="m-button small quiet disabled">Restore</span></div>
+      <div class="m-composer-box">
+        <div class="m-composer-text">Also check the receipt page.</div>
+        <div class="m-composer-row"><span class="m-picker">Opus 5.5<span class="m-icon i-unfold"></span></span><span class="m-spacer"></span><span class="m-icon-button primary" aria-label="Send"><span class="m-icon i-send"></span></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 370px; top: 10px">26</span>
+</div>
+<figcaption>Stage 760 × 150. A message the library did not accept, with newer text typed since: Copy keeps it within reach, Restore waits for an empty composer.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">26</span><div><b>Not sent</b><span>Why, in red, above the composer, with Copy and Restore; Restore is disabled while the composer holds newer text, which it never replaces.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -194,19 +283,19 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-CHAT-1">D-CHAT-1</dt>
-  <dd>Chat's Pane is one <code>--surface-panel</code> column, as an agent chat application's sidebar: its head, a row closed below by <code>--line-group</code>, holds <b>New chat</b>, a button across the Pane's width with the add icon; under it the sessions, grouped by project and branch, the groups and their sessions newest first, each group under <i>{project} / {branch}</i> as a group label (D-SYS-5), each session one <code>--row</code> line: its title in <code>--ink</code>, cut with an ellipsis, and its age at the right in <code>--ink-3</code> with tabular figures. The shown session has <code>--selection</code> and, while the keyboard is in the list, the 2px inset bar (D-SYS-7). <span class="avoid">a second line under each session; the branch on a session's line or the model in the list; a heading over the Pane; a card per session; a preview on hover.</span></dd>
+  <dd>Chat's Pane is one <code>--surface-panel</code> column, as an agent chat application's sidebar: its head, a row closed below by <code>--line-group</code>, holds <b>New chat</b>, a button across the Pane's width with the add icon; under it the search field, a <code>--control</code> field on <code>--surface-input</code> across the Pane's width, its placeholder <i>Search chats</i> in <code>--ink-3</code>; under it the sessions, grouped by project and branch, the groups and their sessions newest first, each group under <i>{project} / {branch}</i> as a group label (D-SYS-5), each session one <code>--row</code> line: its title in <code>--ink</code>, cut with an ellipsis, and at the right its age in <code>--ink-3</code> with tabular figures, or in the age's place its state as one word at <code>--text-small</code> semibold (J-CHAT): <i>running</i> in <code>--running</code>, then until the session is shown how a turn ended while it was not, <i>finished</i> in <code>--ink</code>, <i>failed</i> in <code>--red</code> or <i>stopped</i> in <code>--ink-2</code>. While the search matches nothing, one <code>--ink-2</code> line, <i>No chat matches.</i>, takes the list's place. The shown session has <code>--selection</code> and, while the keyboard is in the list, the 2px inset bar (D-SYS-7). <span class="avoid">a second line under each session; the branch on a session's line or the model in the list; a heading over the Pane; a card per session; a preview on hover; a dot, badge or count beside a session; a Human review's waiting shown in the Pane (the bar's Review count says it).</span></dd>
   <dt id="D-CHAT-2">D-CHAT-2</dt>
-  <dd>The Main area's header row (D-MAIN-1) names the session: its title as the view's name, then its branch in <code>--mono</code> <code>--ink-2</code> as its headline. Under it, closed above by <code>--line-panel</code>, the conversation stands on <code>--surface-app</code> in a column of <code>--measure</code> centred in the area, newest at the bottom, scrolling on its own and following its newest line unless scrolled up. With no session shown, one <code>--ink-2</code> line says how to start one (D-MAIN-3). <span class="avoid">the conversation stretched to the window's width; avatars; a time on every message; the model or the provider in the header.</span></dd>
+  <dd>The Main area's header row (D-MAIN-1) names the session: its title as the view's name, then its branch in <code>--mono</code> <code>--ink-2</code> as its headline. Under it, closed above by <code>--line-panel</code>, the conversation stands on <code>--surface-app</code> in a column of <code>--measure</code> centred in the area, newest at the bottom, scrolling on its own and following its newest line only while it is read at its end (J-CHAT-READ): scrolled up, what is read stays put as the turn streams and Run references change in place. Away from the end, <b>Scroll to end</b> stands centred at the conversation's bottom, 8px above the composer, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow, <code>--control</code> high, the unfold icon and its name at <code>--text-small</code>; at the end it is not drawn. With no session shown, one <code>--ink-2</code> line says how to start one (D-MAIN-3). <span class="avoid">the conversation stretched to the window's width; avatars; a time on every message; the model or the provider in the header; a jump to the end while scrolled up; a count of new lines on Scroll to end.</span></dd>
   <dt id="D-CHAT-3">D-CHAT-3</dt>
-  <dd>A person's message is a block at the column's right, at most 80% of its width, on <code>--surface-group</code> with <code>--radius-chip</code> and no border, its text as typed. The agent's turn runs at the column's left as plain text at <code>--text-body</code> in <code>--ink</code>, without a box, a name or an icon before it; a stopped turn ends with <i>Stopped</i> in <code>--ink-2</code>, a failed one with why in <code>--red</code>; a turn that ended well ends with its last words. <span class="avoid">a bubble around the agent's text; the model, the time or a token count under every turn; a sentence saying the turn went well.</span></dd>
+  <dd>A person's message is a block at the column's right, at most 80% of its width, on <code>--surface-group</code> with <code>--radius-chip</code> and no border, its text exactly as typed, never read as Markdown. The agent's turn runs at the column's left at <code>--text-body</code> in <code>--ink</code>, without a box, a name or an icon before it, its text read as Markdown (J-CHAT-SEND): paragraphs; lists with their markers, indented 20px; links as the app's links (<code>--accent</code>, underlined), opening in the browser; inline code in <code>--mono</code> at <code>--text-small</code> on <code>--surface-group</code> with <code>--radius-control</code>; a code block on <code>--surface-panel</code> inside a <code>--line-group</code> border of <code>--radius-control</code>, its lines in <code>--mono</code> at <code>--text-small</code>, kept as written and scrolling sideways on their own, <b>Copy</b> a small quiet button at its top right; headings no larger than <code>--text-title</code>, semibold; anything else, HTML included, as its text. A stopped turn ends with <i>Stopped</i> in <code>--ink-2</code>, a failed one with why in <code>--red</code>; a turn that ended well ends with its last words. <span class="avoid">a bubble around the agent's text; the model, the time or a token count under every turn; a sentence saying the turn went well; HTML from the answer rendered; images or embedded pages from the answer; colour themes for code.</span></dd>
   <dt id="D-CHAT-4">D-CHAT-4</dt>
-  <dd>What the agent did is one quiet line per tool between its words, without a box or a background: an icon of what it does in <code>--ink-3</code> (the file icon for a read, the folder icon for a listing or a search, the edit icon for an edit or a write, the command icon for a command, the Verify icon for Verify's other tools), then at <code>--text-small</code> in <code>--ink-2</code> a verb (<i>Read</i>, <i>Searched</i>, <i>Edited</i>, <i>Ran</i>, …, in the present tense while it runs) and what it acted on in <code>--mono</code>, cut with an ellipsis; an edit adds the lines it added and removed, <i>+N −M</i>, in the same ink. While it runs, the in-progress icon in <code>--running</code> takes its icon's place. A tool that failed adds why in <code>--red</code> on the same line. A verify the agent started is not such a line but its Run reference (D-CHAT-5). <span class="avoid">a box, a background or a border per tool; a tick for a tool that went well; a time per tool; added and removed lines in GREEN and RED; a tool's output in the conversation.</span></dd>
+  <dd>What the agent did is one quiet line per tool between its words, without a box or a background: an icon of what it does in <code>--ink-3</code> (the file icon for a read, the folder icon for a listing or a search, the edit icon for an edit or a write, the command icon for a command, the Verify icon for Verify's other tools), then at <code>--text-small</code> in <code>--ink-2</code> a verb (<i>Read</i>, <i>Searched</i>, <i>Edited</i>, <i>Ran</i>, …, in the present tense while it runs) and what it acted on in <code>--mono</code>, cut with an ellipsis; an edit adds the lines it added and removed, <i>+N −M</i>, in the same ink. While it runs, the in-progress icon in <code>--running</code> takes its icon's place. A tool that failed adds why in <code>--red</code> on the same line. A verify the agent started is not such a line but its Run reference (D-CHAT-5). Tools in a row that went well, with no words between them, are one summary line of the same anatomy: the fold icon in <code>--ink-3</code> in the tool's icon's place, then what they did, counted, verbs joined by <i>·</i> (<i>Read 3 files · searched 1 folder · edited 1 file</i>); unfolded, the unfold icon takes its place and their lines follow under it, indented 22px. A running or failed tool is never in a summary, nor is a Run reference; a summary ends where one stands. A click on a tool's line unfolds its details under it, indented 22px, at <code>--text-small</code> in <code>--ink-2</code>: a key/value grid (<i>Asked with</i>, <i>Exit code</i> for a command), then the end of its output, as much as the library keeps, in <code>--mono</code> in <code>--ink</code> on <code>--surface-input</code> with <code>--radius-control</code>, its first line saying how many earlier lines were left out (<i>… 38 earlier lines</i>); a second click folds them. <span class="avoid">a box, a background or a border per tool; a tick for a tool that went well; a time per tool; added and removed lines in GREEN and RED; a tool's output shown before its line is clicked; a running or failed tool hidden in a summary; a terminal drawn in the conversation.</span></dd>
   <dt id="D-CHAT-5">D-CHAT-5</dt>
   <dd>A Run reference is one row of 32px inside a <code>--line-group</code> border of <code>--radius-control</code> on <code>--surface-panel</code>: the Run's status icon in its colour, the Run ID in <code>--mono</code>, its status word bold in its colour (in progress, then its verdict, changing in place), what needs attention in <code>--ink-2</code> (the eval that failed or waits for a person, cut with an ellipsis), and at the right <i>Open in Verify</i>, a text reference in <code>--accent</code> led by the open icon (D-REF-1). <span class="avoid">a coloured card or stripe for the Run's status; the word Verify repeated in the row; Open in Verify as a primary button.</span></dd>
   <dt id="D-CHAT-6">D-CHAT-6</dt>
-  <dd>The composer stands under the conversation in the same <code>--measure</code> column, 12px above the area's bottom: one field on <code>--surface-input</code> with a <code>--line-input</code> border of <code>--radius-chip</code>, its text growing to eight lines, its placeholder <i>Ask the agent to work on this branch…</i> in <code>--ink-3</code>; under the text, inside the field, one row: the model selector at the left, the session's model in <code>--ink</code> with the unfold icon, borderless; at the right <b>Send</b>, the one primary control, an icon button of <code>--control</code> with the send icon and its accessible name, which becomes <b>Stop</b>, a quiet icon button with the stop icon, while a turn runs. Keyboard focus is the field's 2px ring (D-SYS-7). <span class="avoid">the selector above the field or at its right; the provider's name beside the model; Send at the left; a key cap; a disabled composer while a turn runs.</span></dd>
+  <dd>The composer stands under the conversation in the same <code>--measure</code> column, 12px above the area's bottom: one field on <code>--surface-input</code> with a <code>--line-input</code> border of <code>--radius-chip</code>, its text growing to eight lines, its placeholder <i>Ask the agent to work on this branch…</i> in <code>--ink-3</code>; under the text, inside the field, one row: the model selector at the left, the session's model in <code>--ink</code> with the unfold icon, borderless; at the right <b>Send</b>, the one primary control, an icon button of <code>--control</code> with the send icon and its accessible name, which becomes <b>Stop</b>, a quiet icon button with the stop icon, while a turn runs; once Stop is clicked, <i>Stopping…</i> in <code>--ink-2</code> at <code>--text-small</code>, led by the in-progress icon in <code>--running</code>, takes its place until the turn has stopped (J-CHAT-STOP). A message the library did not accept leaves one line above the field, inside the column: why in <code>--red</code> at <code>--text-small</code>, cut with an ellipsis, then <b>Copy</b> and <b>Restore</b> as small quiet buttons; Restore is drawn disabled while the field holds text (J-CHAT-SEND). Keyboard focus is the field's 2px ring (D-SYS-7). <span class="avoid">the selector above the field or at its right; the provider's name beside the model; Send at the left; a key cap; a disabled composer while a turn runs; Stop clickable again while stopping; a refused message put back over newer text; a refused message shown in the conversation as sent.</span></dd>
   <dt id="D-CHAT-7">D-CHAT-7</dt>
-  <dd>The model menu opens upward from the selector, its bottom left at the selector's top left, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow. Each provider Settings lists is a group: its name as a group label, then its models as <code>--row</code> rows by name; the session's model has <code>--selection</code> and semibold; a provider that lists none says why in <code>--red</code> at <code>--text-small</code> in its group (Antigravity, until it is signed in, <i>Not signed in.</i>; its Google account's models once it is, J-SET-ANTIGRAVITY). After a <code>--line-group</code> line, <b>Connect provider</b> with the add icon ends the menu. Taller than the room above the selector, the menu scrolls inside itself. <span class="avoid">a menu that opens downward over the composer or on hover; a model chosen by colour alone; IDs or a line explaining the harness in the menu.</span></dd>
+  <dd>The model menu opens upward from the selector, its bottom left at the selector's top left, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow. Its first row is the filter, a <code>--control</code> field on <code>--surface-input</code>, its placeholder <i>Filter models</i>, focused when the menu opens; typed in, the groups keep only the models that match, a provider with none left drops out, and with nothing left one <code>--ink-2</code> line, <i>No model matches.</i>, stands in their place. The menu closes on a click outside it and on Esc, which does nothing else (J-CHAT-MODEL). Each provider Settings lists is a group: its name as a group label, then its models as <code>--row</code> rows by name; the session's model has <code>--selection</code> and semibold; a provider that lists none says why in <code>--red</code> at <code>--text-small</code> in its group (Antigravity, until it is signed in, <i>Not signed in.</i>; its Google account's models once it is, J-SET-ANTIGRAVITY). After a <code>--line-group</code> line, <b>Connect provider</b> with the add icon ends the menu. Taller than the room above the selector, the menu scrolls inside itself. <span class="avoid">a menu that opens downward over the composer or on hover; a model chosen by colour alone; IDs or a line explaining the harness in the menu.</span></dd>
   <dt id="D-CHAT-8">D-CHAT-8</dt>
   <dd>The New chat dialog is a dialog as the overlays draw one (D-OVL-1): its title, the <b>Branch</b> field, a choice on <code>--surface-input</code> inside <code>--line-input</code>, then <b>Model</b>, labelled as a form's field is, its value plain text, not a field: the provider's name and the model in <code>--mono</code> at <code>--text-small</code>; while the providers' models are being read it says <i>Reading the providers' models…</i> in <code>--ink-2</code>, and once they are read with none listed, <i>No provider lists a model. Connect one in Settings.</i> in <code>--ink-2</code>. Cancel and the primary Create end its last row, Create disabled until the model is known. <span class="avoid">Create offered before the model is known; the no-model sentence while the models are still being read; a model choice in the dialog (the composer's selector changes it).</span></dd>
   <dt id="D-CHAT-9">D-CHAT-9</dt>

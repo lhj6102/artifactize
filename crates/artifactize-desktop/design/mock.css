@@ -1847,8 +1847,108 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Chat's Pane: New chat across its top, then the sessions under their project's label, one line
-   each: the title, and its age at the right. */
+/* Tools in a row that went well, unfolded under their summary line; a tool's details unfolded
+   under its line: a key/value grid, then the end of its output. */
+.m-call-parts {
+  display: flex;
+  flex-direction: column;
+  padding-left: 22px;
+}
+.m-call-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 10px;
+  margin: 2px 0 4px 22px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-call-details .m-out {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  color: var(--ink);
+  font: var(--text-small) var(--mono);
+  white-space: pre;
+  overflow: hidden;
+}
+/* The agent's Markdown: lists, inline code and code blocks, each block with Copy at its top
+   right; links as the app's links. */
+.m-turn ul {
+  margin: 2px 0;
+  padding-left: 20px;
+}
+.m-turn code {
+  padding: 0 4px;
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  font: var(--text-small) var(--mono);
+}
+.m-codeblock {
+  position: relative;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+}
+.m-codeblock pre {
+  margin: 0;
+  padding: 8px 10px;
+  font: var(--text-small) var(--mono);
+  white-space: pre;
+  overflow: hidden;
+}
+.m-codeblock .m-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+/* Away from the conversation's end: Scroll to end, raised, centred at its bottom. */
+.m-scroll-end {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  box-shadow: 0 2px 8px var(--scrim);
+  font-size: var(--text-small);
+}
+/* Stop once clicked, until the turn has stopped; a message the library did not accept. */
+.m-stopping {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-refused {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--red);
+  font-size: var(--text-small);
+}
+.m-refused > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Chat's Pane: New chat across its top, the search field, then the sessions under their
+   project's label, one line each: the title, and at the right its state or its age. */
+.m-chat-search {
+  padding: 8px var(--pad) 0;
+}
+.m-session .m-state {
+  font-size: var(--text-small);
+  font-weight: 600;
+}
 .m-new {
   display: flex;
   align-items: center;
@@ -2002,6 +2102,9 @@
   margin-left: auto;
   color: var(--ink-2);
   font: var(--text-small) var(--mono);
+}
+.m-menu .m-input {
+  margin-bottom: 4px;
 }
 .m-menu-note {
   padding: 0 8px 4px;
