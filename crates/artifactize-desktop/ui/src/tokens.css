@@ -25,7 +25,7 @@
   --line-panel: #101114;
   --line-node: #101114;
   --line-group: #363840;
-  --line-input: #40434c;
+  --line-input: #757985;
   --edge: #7f8490;
 
   /* Ink */
@@ -38,7 +38,8 @@
   --accent: #d4d6dc;
   --accent-soft: #3b3d45;
   --selection: #3a3c44;
-  --focus: #f4a868;
+  --focus: #e6e7eb;
+  --point: #f4a868;
   --outline-selected: #dcdee5;
   --scrim: rgb(0 0 0 / 45%);
 
@@ -51,7 +52,7 @@
   /* Statuses, one colour each wherever they show (a list, a chip, a graph's node), read with
      their glyph or word; the last two are what verify would do, on a Current */
   --green: #4ac26b;
-  --red: #f2675d;
+  --red: #ff7b72;
   --error: #f0883e;
   --running: #6cb6ff;
   --human: #4c8ff0;

@@ -390,7 +390,11 @@
   font-weight: 700;
 }
 .m-star {
-  color: var(--ink-3);
+  width: 24px;
+  height: 24px;
+  -webkit-mask-size: var(--icon);
+  mask-size: var(--icon);
+  color: var(--ink-2);
 }
 .m-star.on {
   color: var(--ink);
@@ -445,7 +449,8 @@
   align-self: center;
 }
 .m-entry.filled {
-  background: var(--surface-group);
+  background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--ink-2);
 }
 .m-entry .m-sub {
   grid-column: 2 / 4;
@@ -1049,7 +1054,9 @@
   color: var(--ink-2);
 }
 .m-log .m-stderr {
-  color: var(--red);
+  color: var(--ink);
+  box-shadow: inset 2px 0 0 var(--red);
+  padding-left: 6px;
 }
 /* A choice within a tab, Summary or its log: the chosen one bold in the strong text colour,
    the other in the quieter one. */
@@ -2008,6 +2015,7 @@
 }
 .m-session.selected {
   background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--ink-2);
 }
 /* A Pane row under the pointer, across the whole row; a row the keyboard is on, its 2px ring
    inside the whole row. */
@@ -2131,7 +2139,7 @@
 /* A model's reasoning efforts on its row in the model menu, the session's one marked. */
 .m-efforts {
   display: grid;
-  grid-template-columns: repeat(4, 46px);
+  grid-template-columns: repeat(4, 52px);
   align-self: stretch;
   margin: 0 -8px 0 auto;
 }
@@ -2150,9 +2158,9 @@
   color: var(--ink);
 }
 .m-effort.on {
-  border-color: var(--line-input);
   color: var(--ink);
   font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--ink);
 }
 .m-menu-item .m-right {
   margin-left: auto;
@@ -2231,7 +2239,7 @@
   color: var(--ink);
 }
 .m-button.pointing .m-icon {
-  color: var(--focus);
+  color: var(--point);
 }
 .m-vbody {
   flex: 1;
@@ -2323,7 +2331,7 @@
   font: var(--text-small) var(--mono);
 }
 .m-md .pointed {
-  outline: 2px solid var(--focus);
+  outline: 2px dashed var(--point);
   outline-offset: 1px;
 }
 /* The Artifactize Viewer: Artifacts as nodes without a verdict, their type at the right;
@@ -2345,7 +2353,7 @@
   border: 2px solid var(--outline-selected);
 }
 .m-dnode.pointed {
-  outline: 2px solid var(--focus);
+  outline: 2px dashed var(--point);
   outline-offset: 2px;
 }
 .m-dnode .m-name {
@@ -2380,7 +2388,7 @@
   font-size: var(--text-small);
 }
 .m-deval-head.pointed {
-  outline: 2px solid var(--focus);
+  outline: 2px dashed var(--point);
   outline-offset: 1px;
   border-radius: var(--radius-control);
 }

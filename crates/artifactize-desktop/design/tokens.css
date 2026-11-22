@@ -9,8 +9,9 @@
    edge); a status shows on it as an icon and a strip, not as the colour of its lines. Colour carries meaning only on the element that has the meaning (a status dot or
    word, a node's light, a verdict button), and a meaning has one colour wherever the app shows
    it, in a list, a chip or a graph; the accent is for what is interactive, a light neutral as a
-   video editor's controls are, and the one warm colour is the focus ring and the pointing outline,
-   in the family of the bottom bar's mark.
+   video editor's controls are, the focus ring a light neutral too, and the one warm colour is
+   Point's: the dashed outline of the place being pointed at and the armed Point's icon, in the
+   family of the bottom bar's mark.
 
    The app is dark only, whatever the system's appearance. The values are our
    own: the handoff's sampled HEX values were a comparison point, not a source. */
@@ -27,7 +28,7 @@
   --line-panel: #101114;
   --line-node: #101114;
   --line-group: #363840;
-  --line-input: #40434c;
+  --line-input: #757985;
   --edge: #7f8490;
 
   /* Ink */
@@ -40,7 +41,8 @@
   --accent: #d4d6dc;
   --accent-soft: #3b3d45;
   --selection: #3a3c44;
-  --focus: #f4a868;
+  --focus: #e6e7eb;
+  --point: #f4a868;
   --outline-selected: #dcdee5;
   --scrim: rgb(0 0 0 / 45%);
 
@@ -53,7 +55,7 @@
   /* Statuses, one colour each wherever they show (a list, a chip, a graph's node), read with
      their glyph or word; the last two are what verify would do, on a Current */
   --green: #4ac26b;
-  --red: #f2675d;
+  --red: #ff7b72;
   --error: #f0883e;
   --running: #6cb6ff;
   --human: #4c8ff0;
