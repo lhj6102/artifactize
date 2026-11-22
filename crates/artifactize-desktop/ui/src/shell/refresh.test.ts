@@ -19,7 +19,7 @@ vi.hoisted(() => {
   vi.stubEnv("MODE", "e2e");
 });
 
-const launch: LaunchView = { mode: "monitor", state: "/state", reviewer: "alice", request: null };
+const launch: LaunchView = { mode: "monitor", state: "/state", reviewer: "alice", request: null, graphBranch: null };
 
 /** A read the test answers, optionally with a notice that shows once the window took it. */
 type Read = { navigate: Navigate; answer: (notice?: string, branches?: BrowseView["branches"]) => Promise<void>; fail: (message: string) => Promise<void> };

@@ -270,7 +270,7 @@ impl From<&artifactize_core::runs::Origin> for RunOrigin {
 #[serde(rename_all = "camelCase")]
 pub struct RunPanel {
     pub id: crate::ids::RunKey,
-    /// The Run's branch if it still lives, independent of filtering and timeline paging.
+    /// The Run's timeline branch, including a historical branch pinned by its reference.
     pub branch: Option<BranchKey>,
     /// The branch for Open in Chat, even when it is no longer checked out.
     pub chat_branch: BranchKey,
@@ -450,12 +450,24 @@ fn waiting(waiting: &Waiting, now: OffsetDateTime) -> WaitingRow {
 }
 
 pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
+    let historical = (shown.reference && shown.opened_branch.is_none())
+        .then(|| {
+            shown
+                .opened
+                .loaded()
+                .map(|selected| Branch::historical(&selected.run.run))
+        })
+        .flatten();
+    let timeline_branch = shown
+        .opened_branch
+        .as_ref()
+        .or_else(|| historical.as_ref().map(|branch| &branch.place));
     let run = shown.opened.loaded().map(|selected| {
         let (run, requests) = (&selected.run, &selected.requests);
         let progress = monitor::progress(run, requests, now);
         RunPanel {
             id: run.run.id.clone().into(),
-            branch: shown.opened_branch.as_ref().map(BranchKey::new),
+            branch: timeline_branch.map(BranchKey::new),
             chat_branch: shown.opened_branch.as_ref().map_or_else(
                 || BranchKey::new(&Place::recorded_run(&run.run)),
                 BranchKey::new,
@@ -486,6 +498,9 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         && let Some(linked) = shown.branches.iter().find(|branch| &branch.place == place)
     {
         branches.insert(0, linked);
+    }
+    if let Some(branch) = &historical {
+        branches.insert(0, branch);
     }
     let branches = branches
         .into_iter()

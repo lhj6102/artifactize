@@ -111,17 +111,31 @@ pub struct LaunchView {
     pub state: String,
     pub reviewer: String,
     pub request: Option<crate::ids::RequestKey>,
+    /// The recorded branch for a Graph launch on a checkout that no longer exists.
+    pub graph_branch: Option<crate::browse::BranchKey>,
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
+pub async fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
     let launch = &app.launch;
+    let graph_branch = match (launch.mode, launch.repo.as_deref()) {
+        (Mode::Graph, Some(path)) if !path.is_dir() => app
+            .chat
+            .list(Some(path), None)
+            .await
+            .map_err(Failure::Read)?
+            .into_iter()
+            .next()
+            .map(|session| crate::browse::BranchKey::new(&session.branch())),
+        _ => None,
+    };
     Ok(LaunchView {
         mode: launch.mode,
         state: artifactize_tools::files::path_text(&launch.state),
         reviewer: launch.reviewer.to_string(),
         request: launch.request.clone().map(Into::into),
+        graph_branch,
     })
 }
 

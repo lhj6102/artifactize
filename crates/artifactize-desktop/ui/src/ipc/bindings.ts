@@ -988,6 +988,8 @@ export type LaunchView = {
 	state: string,
 	reviewer: string,
 	request: string | null,
+	/**  The recorded branch for a Graph launch on a checkout that no longer exists. */
+	graphBranch: BranchKey | null,
 };
 
 /**  How a node or edge is lit; each source's library type determines precedence. */
@@ -1295,7 +1297,7 @@ export type RunOutcome = {
  */
 export type RunPanel = {
 	id: string,
-	/**  The Run's branch if it still lives, independent of filtering and timeline paging. */
+	/**  The Run's timeline branch, including a historical branch pinned by its reference. */
 	branch: BranchKey | null,
 	/**  The branch for Open in Chat, even when it is no longer checked out. */
 	chatBranch: BranchKey,

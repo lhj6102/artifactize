@@ -164,9 +164,10 @@
     if (mode === "review") return;
     // The launched branch opens expanded, so the entry it shows is in view.
     if (launched) m.expanded.add(keyOf(launched.key));
-    if (mode === "graph" && next.launch) {
+    if (mode === "graph") {
+      const target = next.launch ?? app.launch.graphBranch;
       if (launched) select(launched);
-      void app.showBranchGraph(next.launch);
+      if (target) void app.showBranchGraph(target);
       return;
     }
     if (launched) select(launched);

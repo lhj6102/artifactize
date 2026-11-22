@@ -180,6 +180,28 @@ pub struct Branch {
 }
 
 impl Branch {
+    /// A saved Run on an absent branch, shown only while following its exact reference.
+    pub fn historical(run: &crate::store::Run) -> Self {
+        let place = Place::recorded_run(run);
+        let Label {
+            project,
+            branch: name,
+        } = label(&place);
+        Self {
+            place,
+            project,
+            name,
+            workspace: run.repo_path.clone(),
+            runs: vec![Chip {
+                id: run.id.clone(),
+                status: run.status(),
+                created_at: run.created_at,
+                completed_at: run.completed_at(),
+                comment: run.comment.clone(),
+            }],
+        }
+    }
+
     /// In-progress Runs first, then ended Runs, newest first within each group.
     pub fn timeline(&self) -> impl Iterator<Item = &Chip> {
         let newest = self.runs.iter().rev();

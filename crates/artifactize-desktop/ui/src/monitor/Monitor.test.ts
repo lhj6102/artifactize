@@ -176,7 +176,7 @@ function workspace(mode: string): HTMLElement {
   return found;
 }
 
-const monitor = (request: string | null = null): LaunchView => ({ mode: "monitor", state: "/state", reviewer: "alice", request });
+const monitor = (request: string | null = null): LaunchView => ({ mode: "monitor", state: "/state", reviewer: "alice", request, graphBranch: null });
 
 it("opens on the Current of the branch it was started for, and scans it again on Refresh, Ctrl+R and F5", async () => {
   const main = branch("main", []);

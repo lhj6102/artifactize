@@ -2114,8 +2114,15 @@ fn a_run_reference_keeps_its_chat_branch_and_discovers_a_new_checkout() {
     };
     let retired = open();
     assert_eq!(retired["run"]["id"], run);
-    assert_eq!(retired["run"]["branch"], Value::Null);
+    assert_eq!(retired["run"]["branch"], branch);
     assert_eq!(retired["run"]["chatBranch"], branch);
+    let historical = retired["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["key"] == branch)
+        .unwrap();
+    assert_eq!(historical["chips"][0]["id"], run);
     let moved = fixture.repo.with_file_name("new-worktree");
     os::git(
         &fixture.repo,
@@ -2221,6 +2228,25 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
     )
     .unwrap();
     assert_eq!(from_nested, session["selection"]);
+    let away = fixture.repo.with_file_name("moved-away");
+    fs::rename(&fixture.repo, &away).unwrap();
+    let old_launch = window(&fixture, Mode::Graph);
+    let started = invoke(&old_launch, "launch", json!({})).unwrap();
+    assert_eq!(started["graphBranch"], branch);
+    let history = invoke(
+        &old_launch,
+        "chat_latest_for_branch",
+        json!({"branch":started["graphBranch"]}),
+    )
+    .unwrap();
+    assert_eq!(history["id"], id);
+    assert_eq!(
+        history["unavailable"],
+        "This Chat's worktree no longer exists."
+    );
+    drop(old_launch);
+    fs::rename(away, &fixture.repo).unwrap();
+
     os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
     let refused = invoke(
         &first,
