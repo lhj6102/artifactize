@@ -62,7 +62,8 @@ pub async fn human_search(
     let parsed = query
         .parse::<search::Query>()
         .map_err(Failure::Invalid)?
-        .for_places();
+        .for_places()
+        .for_live_repositories();
     app.human
         .searches
         .read(query, start, search_page(&app, &parsed, start))
@@ -115,8 +116,9 @@ async fn search_page(app: &App, parsed: &search::Query, start: u32) -> Result<Re
 #[specta::specta]
 pub async fn human_waiting_count(app: tauri::State<'_, App>) -> Result<u32, Failure> {
     let query = search::DEFAULT
-        .parse()
-        .expect("the default Review query parses");
+        .parse::<search::Query>()
+        .expect("the default Review query parses")
+        .for_live_repositories();
     let count = search::count(&app.launch.state, &query, &app.launch.reviewer)
         .await
         .map_err(Failure::Read)?;
@@ -158,7 +160,7 @@ pub async fn human_open_reference(
     let id = id.into_inner();
     let query = query
         .parse::<search::Query>()
-        .map(search::Query::for_places);
+        .map(|query| query.for_places().for_live_repositories());
     let generation = app.generation.current();
     let (number, opened) = app
         .human

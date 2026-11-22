@@ -42,6 +42,19 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
             if !matches!(change, Change::SessionInvalidated(_)) {
                 crate::viewer::refresh_active(&state).await;
             }
+            if matches!(
+                change,
+                Change::RunInvalidated(_) | Change::StateInvalidated | Change::Resync
+            ) {
+                let logs = state.human.clear_settled_logs(&state.launch.state).await;
+                if !logs.is_empty()
+                    && (crate::human::log::HumanToolLog { logs })
+                        .emit(&hub)
+                        .is_err()
+                {
+                    return;
+                }
+            }
             let sent = match change {
                 Change::StateInvalidated | Change::RunInvalidated(_) => {
                     StateChanged { resync: false }.emit(&hub)

@@ -432,9 +432,63 @@ pub async fn chat_send(
         .map_err(Failure::Action)
 }
 
-/// Stop this process's in-flight turn; Verify Runs already accepted keep running.
+/// Ask the library to stop the turn, regardless of which process owns it.
 #[tauri::command]
 #[specta::specta]
-pub fn chat_stop(app: tauri::State<'_, App>, id: SessionKey) -> bool {
-    app.chat.stop(&id.into_inner())
+pub async fn chat_stop(app: tauri::State<'_, App>, id: SessionKey) -> Result<bool, Failure> {
+    app.chat
+        .stop(&id.into_inner())
+        .await
+        .map_err(Failure::Action)
+}
+
+/// Open an HTTP(S) link from a conversation in the system browser.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_open_link(url: String) -> Result<(), Failure> {
+    open_web_link(&url, |url| async move {
+        artifactize_tools::opener::open(std::ffi::OsStr::new(url.as_str())).await
+    })
+    .await
+}
+
+async fn open_web_link<O: Future<Output = std::io::Result<()>>>(
+    input: &str,
+    open: impl FnOnce(tauri::Url) -> O,
+) -> Result<(), Failure> {
+    let url = tauri::Url::parse(input).map_err(|error| Failure::Invalid(error.to_string()))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err(Failure::Invalid(
+            "Chat links must be HTTP or HTTPS URLs.".into(),
+        ));
+    }
+    open(url)
+        .await
+        .map_err(|error| Failure::Action(format!("Cannot open link: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn chat_opens_only_a_web_url_in_the_system_browser() {
+        let url = "https://example.test/path?topic=a%20b#section";
+        open_web_link(url, |target| async move {
+            assert_eq!(target.as_str(), url);
+            Ok(())
+        })
+        .await
+        .unwrap();
+        for invalid in [
+            "file:///private/report",
+            "javascript:void(0)",
+            "../relative",
+        ] {
+            assert!(matches!(
+                open_web_link(invalid, |_| async { panic!("not a web link") }).await,
+                Err(Failure::Invalid(_))
+            ));
+        }
+    }
 }

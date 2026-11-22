@@ -10,6 +10,7 @@ use std::{
     collections::{BTreeMap, btree_map::Entry as Slot},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,8 @@ pub use transcript::{Block, RunCard, Turn, TurnState};
 const TITLE_CHARS: usize = 72;
 /// Limit one prompt so a caller cannot overwhelm the transcript and model request at once.
 const PROMPT_BYTES: usize = 256 * 1024;
+/// A turn checks for a durable stop from another app even when the provider sends no data.
+const STOP_CHECK: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -304,7 +307,11 @@ impl Chat {
         worktree: &Path,
         identity: &repository::Identity,
     ) -> Result<Option<Model>, String> {
-        if let Some(selection) = store::chat::latest_model(&self.state, worktree, identity).await? {
+        if let Some(selection) = self
+            .latest_for_branch(&Place::for_checkout(worktree, identity))
+            .await?
+            .map(|session| session.selection)
+        {
             return Ok(Some(selection));
         }
         let providers = providers::list(Some(&self.state), Some(worktree))?;
@@ -334,8 +341,9 @@ impl Chat {
         worktree: &Path,
         selection: Option<Model>,
     ) -> Result<Session, String> {
-        let context = self.context(worktree)?;
-        let worktree = context.repo();
+        let workspace =
+            crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
+        let worktree = workspace.as_path();
         crate::config::read_workspace_config(worktree).map_err(|error| error.to_string())?;
         let repository = crate::task::blocking({
             let worktree = worktree.to_owned();
@@ -345,7 +353,9 @@ impl Chat {
         let selection = match selection {
             Some(selection) => {
                 let previous = if selection.effort.is_none() {
-                    store::chat::latest_model(&self.state, worktree, &repository).await?
+                    self.latest_for_branch(&Place::for_checkout(worktree, &repository))
+                        .await?
+                        .map(|session| session.selection)
                 } else {
                     None
                 };
@@ -645,7 +655,7 @@ impl Chat {
             Ok(output) => {
                 let tools = tools::Tools::new(&context, output.path())
                     .guard_checkout(session.repository.as_ref());
-                agent::chat_turn(
+                let turn = agent::chat_turn(
                     &session.selection,
                     &context,
                     &tools,
@@ -653,8 +663,23 @@ impl Chat {
                     text,
                     &mut recorder,
                     &active.cancel,
-                )
-                .await
+                );
+                let requested = async {
+                    let mut check = tokio::time::interval(STOP_CHECK);
+                    check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                    loop {
+                        check.tick().await;
+                        if receipts.chat_stop_requested(&session.id, &owner).await == Ok(true) {
+                            active.cancel.cancel();
+                            break;
+                        }
+                    }
+                };
+                tokio::pin!(turn);
+                tokio::select! {
+                    answer = &mut turn => answer,
+                    () = requested => turn.await,
+                }
             }
             Err(error) => Err(error),
         };
@@ -680,13 +705,28 @@ impl Chat {
         recorder.notify();
     }
 
-    /// Cancel a turn owned by this Chat process, without cancelling its already-admitted Runs.
-    pub fn stop(&self, id: &SessionId) -> bool {
-        let active = self.active.state.lock().expect("Chat active turns lock");
-        active.turns.get(id).is_some_and(|cancel| {
+    /// Stop the active turn, even if another app owns it. Accepted Verify Runs are independent.
+    pub async fn stop(&self, id: &SessionId) -> Result<bool, String> {
+        let local = self
+            .active
+            .state
+            .lock()
+            .expect("Chat active turns lock")
+            .turns
+            .get(id)
+            .cloned();
+        if let Some(cancel) = local {
             cancel.cancel();
-            true
-        })
+            return Ok(true);
+        }
+        let Some(owner) = store::chat::turn_owner(&self.state, id).await? else {
+            return Ok(false);
+        };
+        let session = store::chat::load(&self.state, id).await?;
+        let receipts = Receipts::open(&self.state, &session.worktree).await?;
+        let stopped = receipts.stop_chat(id, owner).await;
+        let closed = receipts.close().await;
+        stopped.and_then(|stopped| closed.map(|()| stopped))
     }
 
     async fn resolve_model(

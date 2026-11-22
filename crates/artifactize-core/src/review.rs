@@ -360,13 +360,25 @@ impl Job {
                 let mut failed = Vec::new();
                 for id in &ids {
                     let release = async {
+                        let check = || {
+                            if cancel.is_cancelled() {
+                                Err("Review action cancelled.".to_owned())
+                            } else {
+                                Ok(())
+                            }
+                        };
+                        check()?;
                         // Settled requests and claims released elsewhere leave nothing to release.
                         let view = store::read_request_id(&state, id).await?;
                         if view.claim.is_none_or(|claim| claim.reviewer != reviewer) {
                             return Ok(());
                         }
+                        check()?;
                         let (receipts, _) = human::open(&state, id).await?;
-                        let result = human::unclaim(&receipts, id, &reviewer).await.map(drop);
+                        let result = match check() {
+                            Ok(()) => human::unclaim(&receipts, id, &reviewer).await.map(drop),
+                            Err(error) => Err(error),
+                        };
                         let closed = receipts.close().await;
                         result.and(closed)
                     };

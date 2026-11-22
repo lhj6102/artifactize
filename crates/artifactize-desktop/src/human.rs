@@ -87,9 +87,16 @@ pub struct Reviews {
     log: review::log::Sink,
     /// The Tool log of each review a run logged to, until it is submitted, and of each
     /// Artifact whose tool ran without a review, while the app runs.
-    logs: Mutex<BTreeMap<review::log::Key, review::log::ToolLog>>,
+    logs: Mutex<Logs>,
     /// The Tool log's receiving end, until the app starts forwarding it.
     events: Mutex<Option<review::log::Events>>,
+}
+
+#[derive(Default)]
+struct Logs {
+    open: BTreeMap<review::log::Key, review::log::ToolLog>,
+    /// A queued Start can still arrive after the submission's invalidation.
+    settled: BTreeSet<RequestId>,
 }
 
 impl Default for Reviews {
@@ -126,19 +133,60 @@ impl Reviews {
         let mut logs = self.logs.lock().expect("logs lock");
         let mut changed = BTreeSet::new();
         for event in events {
-            changed.insert(event.key.clone());
-            logs.entry(event.key.clone()).or_default().apply(event);
+            if matches!(&event.key, review::log::Key::Review(id) if logs.settled.contains(id)) {
+                continue;
+            }
+            let log = logs.open.entry(event.key.clone()).or_default();
+            if !log.entries().is_empty() || matches!(event.kind, review::log::Kind::Start { .. }) {
+                changed.insert(event.key.clone());
+            }
+            log.apply(event);
         }
         changed
             .into_iter()
-            .map(|key| log::keyed_log(&key, &logs[&key]))
+            .map(|key| log::keyed_log(&key, &logs.open[&key]))
             .collect()
+    }
+
+    fn clear_log(&self, id: &RequestId) -> Option<log::KeyedLog> {
+        let mut logs = self.logs.lock().expect("logs lock");
+        logs.settled.insert(id.clone());
+        let key = review::log::Key::from(id);
+        logs.open
+            .remove(&key)
+            .map(|_| log::keyed_log(&key, &review::log::ToolLog::default()))
+    }
+
+    /// Read the authoritative review after a commit in any process, not just this window.
+    pub(crate) async fn clear_settled_logs(&self, state: &std::path::Path) -> Vec<log::KeyedLog> {
+        let ids: Vec<_> = self
+            .logs
+            .lock()
+            .expect("logs lock")
+            .open
+            .keys()
+            .filter_map(|key| match key {
+                review::log::Key::Review(id) => Some(id.clone()),
+                review::log::Key::Artifact { .. } => None,
+            })
+            .collect();
+        let mut cleared = Vec::new();
+        for id in ids {
+            if store::read_request_as(state, id.as_str(), store::Shown::Requests)
+                .await
+                .is_ok_and(|view| !view.request.status().is_human_wait())
+                && let Some(log) = self.clear_log(&id)
+            {
+                cleared.push(log);
+            }
+        }
+        cleared
     }
 
     /// Forget everything read from a replaced state and cancel its jobs.
     pub fn reset(&self) {
         self.cancel_all();
-        self.logs.lock().expect("logs lock").clear();
+        *self.logs.lock().expect("logs lock") = Logs::default();
         self.views.lock().expect("views lock").clear();
         self.commands.lock().expect("commands lock").clear();
         self.taken.lock().expect("taken lock").clear();
@@ -805,11 +853,7 @@ async fn submit(
         crate::viewer::settled(app, &id);
     }
     // A submitted review's log ends here; what a launched program still prints is dropped.
-    app.human
-        .logs
-        .lock()
-        .expect("logs lock")
-        .remove(&review::log::Key::from(&owner));
+    app.human.clear_log(&owner);
     let Acted { notice, view } = acted(app, &id, outcome).await?;
     Ok(Submitted {
         settled,
@@ -828,6 +872,7 @@ pub async fn human_release(
     job: JobId,
 ) -> Result<Acted, Failure> {
     let ids: Vec<RequestId> = ids.into_iter().map(RequestKey::into_inner).collect();
+    let mut work = app.human.jobs.register(caller, job, Action::Ordinary)?;
     let mut owners = BTreeSet::new();
     for id in &ids {
         let view = if ids.len() == 1 {
@@ -838,10 +883,7 @@ pub async fn human_release(
         owners.insert(view.request.id.clone());
     }
     let owners: Vec<_> = owners.into_iter().collect();
-    let work = app
-        .human
-        .jobs
-        .begin(caller, job, owners.clone(), Action::Ordinary)?;
+    work.admit(owners.clone())?;
     let outcome = run_job(
         &app,
         Job::Release {

@@ -62,8 +62,10 @@ export const commands = {
 	model: string,
 	effort: string | null,
 } | null) => typedError<null, Failure>(__TAURI_INVOKE("chat_send", { id, text, selection })),
-	/**  Stop this process's in-flight turn; Verify Runs already accepted keep running. */
-	chatStop: (id: string) => __TAURI_INVOKE<boolean>("chat_stop", { id }),
+	/**  Ask the library to stop the turn, regardless of which process owns it. */
+	chatStop: (id: string) => typedError<boolean, Failure>(__TAURI_INVOKE("chat_stop", { id })),
+	/**  Open an HTTP(S) link from a conversation in the system browser. */
+	chatOpenLink: (url: string) => typedError<null, Failure>(__TAURI_INVOKE("chat_open_link", { url })),
 	/**  Navigate, read the state and return what to show. */
 	browse: (navigate: Navigate) => typedError<BrowseView, Failure>(__TAURI_INVOKE("browse", { navigate })),
 	/**  Redraw ages and running times from the shown snapshot, without reading the state. */
@@ -310,7 +312,7 @@ export const commands = {
 	 *  Start `login antigravity`: `agy acp --login` prints a Google sign-in URL. Returns the URL
 	 *  it printed; finish with [`antigravity_login_wait`].
 	 */
-	antigravityLoginStart: () => typedError<AntigravityPrompt, Failure>(__TAURI_INVOKE("antigravity_login_start")),
+	antigravityLoginStart: () => typedError<NativeStart<AntigravityPrompt, AntigravityStatus>, Failure>(__TAURI_INVOKE("antigravity_login_start")),
 	/**
 	 *  Wait for sign-in `sign_in` (from [`antigravity_login_start`]) to end; returns Antigravity's
 	 *  sign-in as it then reports it.
@@ -331,7 +333,7 @@ export const commands = {
 	 *  Start `login claude-agent`: `claude auth login` runs and opens the browser. Returns the URL
 	 *  it printed; finish with [`claude_agent_login_wait`].
 	 */
-	claudeAgentLoginStart: () => typedError<ClaudeAgentPrompt, Failure>(__TAURI_INVOKE("claude_agent_login_start")),
+	claudeAgentLoginStart: () => typedError<NativeStart<ClaudeAgentPrompt, ClaudeAgentStatus>, Failure>(__TAURI_INVOKE("claude_agent_login_start")),
 	/**
 	 *  Wait for sign-in `sign_in` (from [`claude_agent_login_start`]) to end; returns Claude Code's
 	 *  sign-in as it then reports it.
@@ -1025,6 +1027,9 @@ export type Model = {
 };
 
 export type Movement = { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" };
+
+/**  A native sign-in either needs a prompt or has already ended with the new status. */
+export type NativeStart<Prompt, Status> = Prompt | Status;
 
 /**  A step of the pane and how to read the state for it. */
 export type Navigate = {

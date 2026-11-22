@@ -356,7 +356,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     )
     .await
     .unwrap();
-    assert!(restarted.stop(&session.id));
+    assert!(restarted.stop(&session.id).await.unwrap());
     let stopped = observe(&restarted, &session.id, &mut changes, |view| {
         !view.running && view.turns.len() == 2
     })
@@ -802,6 +802,7 @@ async fn claude_chat_fixture() {
 
 const RESTART_STATE: &str = "ARTIFACTIZE_CHAT_RESTART_STATE";
 const RESTART_SESSION: &str = "ARTIFACTIZE_CHAT_RESTART_SESSION";
+const WAIT_FOR_STOP: &str = "ARTIFACTIZE_CHAT_WAIT_FOR_STOP";
 
 #[tokio::test]
 async fn interrupted_chat_owner_fixture() {
@@ -809,11 +810,22 @@ async fn interrupted_chat_owner_fixture() {
         return;
     };
     let id = std::env::var(RESTART_SESSION).unwrap().parse().unwrap();
-    let chat = Chat::new(state.into(), support::os::cli());
+    let state = std::path::PathBuf::from(state);
+    let chat = Chat::new(state.clone(), support::os::cli());
     chat.send(&id, "This turn will lose its process.".into(), None)
         .await
         .unwrap();
-    // The test runtime exits while the model is held by the parent fixture's gate.
+    if std::env::var_os(WAIT_FOR_STOP).is_some() {
+        let mut changes = Subscription::new(&state).await;
+        let stopped = observe(&chat, &id, &mut changes, |view| !view.running).await;
+        assert!(matches!(
+            stopped.turns.last().unwrap().state,
+            TurnState::Stopped
+        ));
+        changes.close().await.unwrap();
+        chat.close().await;
+    }
+    // Without the flag, the runtime exits while the model is held by the parent fixture.
 }
 
 #[tokio::test]
@@ -919,6 +931,34 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     .await;
     assert!(matches!(resumed.turns[0].state, TurnState::Interrupted));
     assert!(matches!(resumed.turns[1].state, TurnState::Completed));
+    // A separate app process owns the provider turn; this process may still stop it.
+    hold.close();
+    let mut child = tokio::process::Command::new(std::env::current_exe().unwrap());
+    child
+        .args(["--exact", "interrupted_chat_owner_fixture"])
+        .env(RESTART_STATE, &state)
+        .env(RESTART_SESSION, session.id.as_str())
+        .env(WAIT_FOR_STOP, "1")
+        .kill_on_drop(true);
+    let child = child.spawn().unwrap();
+    let active = observe(&chat, &session.id, &mut changes, |view| {
+        view.running && view.turns.len() == 3
+    })
+    .await;
+    assert!(matches!(active.turns[2].state, TurnState::Running));
+    assert!(chat.stop(&session.id).await.unwrap());
+    let stopped = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
+    hold.open();
+    let ended = tokio::time::timeout(
+        support::os::patience(Duration::from_secs(30)),
+        child.wait_with_output(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(ended.status.success());
+    assert!(matches!(stopped.turns[2].state, TurnState::Stopped));
+    assert!(!chat.stop(&session.id).await.unwrap());
     chat.send(&session.id, "Close a running turn".into(), None)
         .await
         .unwrap();

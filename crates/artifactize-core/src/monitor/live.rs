@@ -175,9 +175,18 @@ pub struct Branch {
 }
 
 impl Branch {
-    /// The Run in progress a branch's timeline starts with: the newest Run, while it runs.
+    /// In-progress Runs first, then ended Runs, newest first within each group.
+    pub fn timeline(&self) -> impl Iterator<Item = &Chip> {
+        let newest = self.runs.iter().rev();
+        newest
+            .clone()
+            .filter(|chip| chip.status.is_open())
+            .chain(newest.filter(|chip| !chip.status.is_open()))
+    }
+
+    /// The newest Run still in progress, even if a later one already ended.
     pub fn running(&self) -> Option<&Chip> {
-        self.runs.last().filter(|chip| chip.status.is_open())
+        self.runs.iter().rev().find(|chip| chip.status.is_open())
     }
 
     /// When its newest Run started.

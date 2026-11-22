@@ -391,15 +391,12 @@ fn status_word(status: RunStatus) -> String {
 }
 
 fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> BranchView {
-    let skipped = branch.runs.len().saturating_sub(limit);
-    let kept = &branch.runs[skipped..];
-    let running = branch.running().is_some() && !kept.is_empty();
-    let chips = kept
-        .iter()
-        .enumerate()
-        .rev()
-        .map(|(at, chip)| {
-            let running = running && at + 1 == kept.len();
+    let older = branch.runs.len() > limit;
+    let chips = branch
+        .timeline()
+        .take(limit)
+        .map(|chip| {
+            let running = chip.status.is_open();
             let age = monitor::duration(now - chip.created_at.time());
             Chip::Run {
                 id: chip.id.clone().into(),
@@ -418,7 +415,7 @@ fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> 
         name: branch.name.clone(),
         workspace: PathKey::new(&branch.workspace),
         chips,
-        older: skipped > 0,
+        older,
         starred,
     }
 }

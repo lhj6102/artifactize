@@ -16,6 +16,8 @@ use crate::{
 pub(crate) struct Owner {
     birth: ChildIdentity,
     token: String,
+    #[serde(default)]
+    stop_requested: bool,
 }
 
 impl Owner {
@@ -24,6 +26,7 @@ impl Owner {
             birth: process::child_identity(std::process::id())
                 .map_err(|error| error.to_string())?,
             token: crate::agent::uuid()?,
+            stop_requested: false,
         })
     }
 
@@ -94,33 +97,9 @@ pub(crate) async fn for_branch(state: &Path, branch: &Place) -> Result<Vec<Sessi
     }).await?.unwrap_or_default())
 }
 
-pub(crate) async fn latest_model(
-    state: &Path,
-    worktree: &Path,
-    identity: &crate::repository::Identity,
-) -> Result<Option<Model>, String> {
-    let worktree = crate::platform::path_text(worktree);
-    let identity = identity.clone();
-    Ok(read(state, move |db| {
-        let mut statement = db.prepare(
-            "SELECT data FROM chat_sessions WHERE worktree=?1 ORDER BY updated_at DESC,id DESC",
-        )?;
-        let rows = statement.query_map([worktree], |row| row.get::<_, String>(0))?;
-        for row in rows {
-            let session: Session = serde_json::from_str(&row?)?;
-            if session
-                .repository
-                .as_ref()
-                .unwrap_or(&crate::repository::Identity::default())
-                == &identity
-            {
-                return Ok(Some(session.selection));
-            }
-        }
-        Ok(None)
-    })
-    .await?
-    .flatten())
+pub(crate) async fn turn_owner(state: &Path, id: &SessionId) -> Result<Option<Owner>, String> {
+    let id = id.clone();
+    Ok(read(state, move |db| owner(db, &id)).await?.flatten())
 }
 
 pub(crate) async fn load(state: &Path, id: &SessionId) -> Result<Session, String> {
@@ -303,6 +282,43 @@ impl Receipts {
             transaction.commit()?;
             Ok(())
         }).await.map_err(|error| error.to_string())
+    }
+
+    /// Request only this exact observed turn, not a replacement accepted after the read.
+    pub(crate) async fn stop_chat(&self, id: &SessionId, expected: Owner) -> Result<bool, String> {
+        let id = id.clone();
+        self.connection
+            .call(move |db| {
+                if !expected.live().map_err(Error::Invalid)? {
+                    return Ok(false);
+                }
+                let updated = db.execute(
+                "UPDATE chat_active_turns SET data=json_set(data,'$.stop_requested',json('true')) \
+                 WHERE session_id=? AND json_extract(data,'$.token')=?",
+                params![id, expected.token],
+            )?;
+                Ok::<_, Error>(updated != 0)
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) async fn chat_stop_requested(
+        &self,
+        id: &SessionId,
+        expected: &Owner,
+    ) -> Result<bool, String> {
+        let id = id.clone();
+        let token = expected.token.clone();
+        self.connection
+            .call(move |db| {
+                Ok::<_, Error>(
+                    owner(db, &id)?
+                        .is_some_and(|current| current.token == token && current.stop_requested),
+                )
+            })
+            .await
+            .map_err(|error| error.to_string())
     }
 
     pub(crate) async fn finish_chat(

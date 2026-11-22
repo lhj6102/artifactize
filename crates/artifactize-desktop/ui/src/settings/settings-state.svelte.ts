@@ -342,8 +342,13 @@ export class SettingsState {
     this.byHand = false;
     this.claudeBusy = true;
     try {
-      this.claudePrompt = await call(this.#commands.claudeAgentLoginStart());
-      this.claude = await call(this.#commands.claudeAgentLoginWait(this.claudePrompt.signIn));
+      const started = await call(this.#commands.claudeAgentLoginStart());
+      if ("signIn" in started) {
+        this.claudePrompt = started;
+        this.claude = await call(this.#commands.claudeAgentLoginWait(started.signIn));
+      } else {
+        this.claude = started;
+      }
     } catch (failure) {
       this.claudeError = message(failure);
     } finally {

@@ -120,9 +120,24 @@ pub fn forward<R: tauri::Runtime>(app: tauri::AppHandle<R>, mut events: Events) 
             {
                 batch.push(event);
             }
-            let logs = app.state::<App>().human.logged(batch);
+            let state = app.state::<App>();
+            let starts_review = batch.iter().any(|event| {
+                matches!(event.key, Key::Review(_))
+                    && matches!(
+                        event.kind,
+                        artifactize_core::review::log::Kind::Start { .. }
+                    )
+            });
+            let mut logs = state.human.logged(batch);
+            // A delayed Start can be the first event since another process submitted.
+            // Recheck then, and otherwise let the state watcher reconcile settlements.
+            if starts_review {
+                let cleared = state.human.clear_settled_logs(&state.launch.state).await;
+                logs.retain(|log| !cleared.iter().any(|clear| clear.key == log.key));
+                logs.extend(cleared);
+            }
             // The app is closing; what runs still print is discarded.
-            if (HumanToolLog { logs }).emit(&app).is_err() {
+            if !logs.is_empty() && (HumanToolLog { logs }).emit(&app).is_err() {
                 return;
             }
         }
@@ -134,6 +149,26 @@ mod tests {
     use super::*;
     use artifactize_core::review::log::{End, Kind, channel};
     use serde_json::json;
+
+    #[test]
+    fn a_submission_clears_the_review_log_and_drops_delayed_tool_output() {
+        let reviews = crate::human::Reviews::default();
+        let mut events = reviews.take_events().unwrap();
+        let request: artifactize_core::types::RequestId = "run-1-1".parse().unwrap();
+        let launched = reviews.log().start(&request, "open", "notes");
+        let visible = reviews.logged(vec![events.try_recv().unwrap()]);
+        assert_eq!(visible[0].entries.len(), 1);
+        let cleared = reviews.clear_log(&request).unwrap();
+        assert_eq!(cleared.key, visible[0].key);
+        assert!(cleared.entries.is_empty());
+        launched.text(Stream::Stdout, "late output\n");
+        let _queued = reviews.log().start(&request, "render", "notes");
+        assert!(
+            reviews
+                .logged(vec![events.try_recv().unwrap(), events.try_recv().unwrap()])
+                .is_empty()
+        );
+    }
 
     #[test]
     fn a_review_log_reaches_the_frontend_with_each_run_its_lines_and_end() {

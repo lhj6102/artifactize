@@ -20,8 +20,14 @@ pub(super) trait Flow {
     const ENDED: &'static str;
     /// A second waiter for the same sign-in.
     const WAITED: &'static str;
-    /// It ended signed in without asking anything: its status says so.
-    const UNASKED: &'static str;
+}
+
+/// A native sign-in either needs a prompt or has already ended with the new status.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[serde(untagged)]
+pub enum NativeStart<Prompt, Status> {
+    Prompt(Prompt),
+    Complete(Status),
 }
 
 struct SignIn {
@@ -114,14 +120,14 @@ impl<F: Flow> SignIns<F> {
     pub(super) async fn start(
         &self,
         launch: impl FnOnce(oneshot::Receiver<String>, oneshot::Sender<F::Prompt>) -> SignInTask,
-    ) -> Result<(SignInId, F::Prompt), Failure> {
+    ) -> Result<Option<(SignInId, F::Prompt)>, Failure> {
         // The previous sign-in frees what it holds before this one starts.
         self.stop();
         let (paste, pasted) = oneshot::channel();
         let (shown, prompt) = oneshot::channel();
         let id = self.register(launch(pasted, shown), paste);
         match prompt.await {
-            Ok(prompt) if self.is_current(id) => Ok((id, prompt)),
+            Ok(prompt) if self.is_current(id) => Ok(Some((id, prompt))),
             // Cancelled or replaced while it started: stopped already.
             Ok(_) => Err(Failure::Account(F::CANCELLED.into())),
             // It ended before showing anything: cancelled, or why it failed.
@@ -131,9 +137,7 @@ impl<F: Flow> SignIns<F> {
                 self.finish(id);
                 match ended {
                     Ok(Err(error)) => Err(Failure::Account(error)),
-                    // An outside program may succeed without asking anything, signed in
-                    // already: said, and the status read again shows it.
-                    Ok(Ok(())) => Err(Failure::Account(F::UNASKED.into())),
+                    Ok(Ok(())) => Ok(None),
                     Err(error) => Err(Self::ended_badly(error)),
                 }
             }
@@ -230,7 +234,6 @@ mod tests {
         const NOT_WAITING: &'static str = "No sign-in is waiting for a paste.";
         const ENDED: &'static str = "The sign-in already ended.";
         const WAITED: &'static str = "The sign-in is already being waited for.";
-        const UNASKED: &'static str = "The sign-in ended without asking anything.";
     }
 
     /// A sign-in whose prompt the test releases: `go` shows it.
@@ -264,6 +267,22 @@ mod tests {
 
     /// A cancel while a start waits for its prompt stops it: the start reads as cancelled,
     /// nothing is registered, and a paste finds no sign-in.
+    #[tokio::test]
+    async fn a_native_sign_in_can_finish_successfully_without_a_prompt() {
+        let sign_ins = SignIns::<Test>::default();
+        let started = sign_ins
+            .start(|_, shown| {
+                tokio::spawn(async move {
+                    drop(shown);
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+        assert!(started.is_none());
+        assert!(sign_ins.paste("there is no prompt".into()).is_err());
+    }
+
     #[tokio::test]
     async fn a_cancel_during_a_start_leaves_no_sign_in() {
         let sign_ins = SignIns::<Test>::default();
@@ -303,7 +322,7 @@ mod tests {
             Failure::Account("Sign-in was cancelled.".into())
         );
         let _ = newer_go.send(());
-        let (id, prompt) = second.await.unwrap();
+        let (id, prompt) = second.await.unwrap().expect("the URL is ready");
         assert_eq!(prompt, "http://127.0.0.1:9/oauth/authorize");
         sign_ins
             .paste("http://localhost:1455/auth/callback?code=c&state=s".into())

@@ -67,9 +67,33 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
         };
         receipts.create_chat(&session).await.unwrap();
     }
+    let saved_model = Model {
+        backend: "codex".parse().unwrap(),
+        model: "fixture-model".parse().unwrap(),
+        effort: None,
+    };
+    let checkout = crate::test_os::canonical(&worktree);
+    crate::test_os::git(
+        &checkout,
+        &["init", "--quiet", "--initial-branch=feature/Billing"],
+    );
+    let newer = Session {
+        id: "chat-newest-on-branch".parse().unwrap(),
+        title: "The latest session".into(),
+        worktree: checkout.clone(),
+        repository: Some(repository::identify(&checkout)),
+        selection: saved_model,
+        view: SessionView::Conversation,
+        created_at: "2026-10-25T12:00:00Z".parse().unwrap(),
+        updated_at: "2026-10-25T12:00:00Z".parse().unwrap(),
+        activity: None,
+        running: false,
+        unavailable: None,
+    };
+    let branch = newer.branch();
     drop(receipts);
 
-    let chat = Chat::discover(state);
+    let chat = Chat::discover(state.clone());
     let ids = |sessions: Vec<Session>| {
         sessions
             .into_iter()
@@ -99,6 +123,17 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
             .await
             .unwrap()
             .is_empty()
+    );
+    let receipts = store::OwnedReceipts::open(&state, &worktree).await.unwrap();
+    receipts.create_chat(&newer).await.unwrap();
+    drop(receipts);
+    // Switching an old Chat to Graph is not a turn and does not reorder the branch.
+    chat.set_view(&"chat-new".parse().unwrap(), SessionView::Graph)
+        .await
+        .unwrap();
+    assert_eq!(
+        chat.latest_for_branch(&branch).await.unwrap().unwrap().id,
+        newer.id
     );
 }
 

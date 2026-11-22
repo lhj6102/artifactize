@@ -143,10 +143,14 @@ impl Drop for Window {
 }
 
 fn window(fixture: &Fixture, mode: Mode) -> Window {
+    launched_window(fixture, mode, Some(fixture.repo.clone()))
+}
+
+fn launched_window(fixture: &Fixture, mode: Mode, repo: Option<std::path::PathBuf>) -> Window {
     let launch = Launch {
         mode,
         state: fixture.state.clone(),
-        repo: Some(fixture.repo.clone()),
+        repo,
         reviewer: "alice".parse().unwrap(),
         request: None,
     };
@@ -1907,6 +1911,172 @@ fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, 
         view = invoke(window, "current_view", json!({"branch": branch})).unwrap();
     }
     (first, view)
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
+    let root = os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir_all(repo.join("nested")).unwrap();
+    os::git(&repo, &["init", "--quiet", "--initial-branch=main"]);
+    support::declaration::write(
+        &repo,
+        repo.join("index.artf"),
+        "name = 'app'\nbasis = true\n",
+    )
+    .unwrap();
+    let fixture = Fixture {
+        _root: run_fixture::RepoLease::new(root, &state, &repo),
+        repo,
+        state,
+    };
+    let provider = FakeProvider::start(|_| support::openai::models(&["fixture-chat"]));
+    let first = window(&fixture, Mode::Monitor);
+    invoke(&first, "provider_custom_save", json!({
+        "name": "scripted", "target": {"kind": "endpoint", "api": "openaiResponses", "url": provider.openai_base()},
+        "key": {"kind": "none"},
+    })).unwrap();
+    let make = || {
+        invoke(
+            &first,
+            "chat_create",
+            json!({
+                "worktree": os::path_text(&fixture.repo),
+                "selection": {"backend": "scripted", "model": "fixture-chat", "effort": null},
+            }),
+        )
+        .unwrap()
+    };
+    let session = make();
+    assert_eq!(session["view"], "conversation");
+    let branch = session["branchKey"].clone();
+    let id = session["id"].clone();
+    invoke(&first, "chat_set_view", json!({"id":id,"view":"graph"})).unwrap();
+    let from_nested = invoke(
+        &first,
+        "chat_default_model",
+        json!({
+            "worktree": os::path_text(&fixture.repo.join("nested")),
+        }),
+    )
+    .unwrap();
+    assert_eq!(from_nested, session["selection"]);
+    os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+    let other = make();
+    assert_ne!(other["branchKey"], branch);
+    assert_eq!(
+        invoke(&first, "chat_latest_for_branch", json!({"branch": branch})).unwrap(),
+        Value::Null
+    );
+    os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+    drop(first);
+
+    let restarted = launched_window(&fixture, Mode::Monitor, None);
+    assert_eq!(
+        invoke(&restarted, "browse", json!({"navigate":STILL()})).unwrap()["branches"],
+        json!([])
+    );
+    let latest = invoke(
+        &restarted,
+        "chat_latest_for_branch",
+        json!({"branch":branch}),
+    )
+    .unwrap();
+    assert_eq!(latest["id"], id);
+    assert_eq!(latest["view"], "graph");
+    let restored = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
+    assert_eq!(restored["session"]["view"], "graph");
+    assert_eq!(restored["session"]["unavailable"], Value::Null);
+    let (_, current) = scan_current(&restarted, &branch);
+    assert_eq!(current["artifacts"], 1);
+    let definitions = invoke(&restarted, "definitions", json!({"branch":branch})).unwrap();
+    assert!(definitions.to_string().contains("app"));
+
+    os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+    let stale = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
+    assert_eq!(
+        stale["session"]["unavailable"],
+        "Check out main in this worktree to continue this Chat."
+    );
+    assert!(
+        invoke(
+            &restarted,
+            "current_scan",
+            json!({"branch":branch,"refresh":true})
+        )
+        .is_err()
+    );
+    assert!(invoke(&restarted, "definitions", json!({"branch":branch})).is_err());
+    assert_eq!(
+        invoke(
+            &restarted,
+            "chat_latest_for_branch",
+            json!({"branch":other["branchKey"]})
+        )
+        .unwrap()["id"],
+        other["id"]
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn review_search_omits_a_deleted_repository_even_with_no_waiting_filter() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Review);
+    let search = || {
+        invoke(
+            &monitor,
+            "human_search",
+            json!({"query":"type:human","start":null}),
+        )
+        .unwrap()
+    };
+    assert_eq!(search()["reviews"].as_array().unwrap().len(), 1);
+    fixture._root.release().unwrap();
+    fs::remove_dir_all(&fixture.repo).unwrap();
+    assert_eq!(search()["reviews"], json!([]));
+    let completion = invoke(
+        &monitor,
+        "human_search_complete",
+        json!({"query":"type:human repo:r"}),
+    )
+    .unwrap();
+    assert_eq!(completion["candidates"], json!([]));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_cancelled_release_does_not_mutate_the_saved_claim() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.clone();
+    invoke(&monitor, "human_claim", json!({"id":id,"job":1})).unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel();
+    let (log, _events) = artifactize_core::review::log::channel();
+    let released = tauri::async_runtime::block_on(
+        artifactize_core::review::Job::Release {
+            ids: vec![id.clone()],
+            quit: false,
+        }
+        .run(fixture.state.clone(), "alice".parse().unwrap(), cancel, log),
+    );
+    assert!(
+        matches!(released, artifactize_core::review::Outcome::Released { failed, .. }
+        if failed == [(id.clone(), "Review action cancelled.".into())])
+    );
+    assert_eq!(
+        saved(&fixture, "release/signoff")
+            .claim
+            .unwrap()
+            .reviewer
+            .as_str(),
+        "alice"
+    );
+    invoke(&monitor, "human_release", json!({"ids":[id],"job":2})).unwrap();
+    assert!(saved(&fixture, "release/signoff").claim.is_none());
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Claude Code's own sign-in for the `claude-agent` backend: its state as Claude Code reports
 //! it, and `claude auth login`/`logout` run as `artifactize login|logout claude-agent` run
 //! them. Claude Code keeps its login; nothing of it reaches artifactize.
-use super::sign_in::Flow;
+use super::sign_in::{Flow, NativeStart};
 use crate::ids::SignInId;
 use crate::{App, Failure};
 use artifactize_core::auth::claude_agent;
@@ -17,7 +17,6 @@ impl Flow for ClaudeCode {
     const NOT_WAITING: &'static str = "No Claude Code sign-in is waiting for a code.";
     const ENDED: &'static str = "The Claude Code sign-in already ended.";
     const WAITED: &'static str = "The Claude Code sign-in is already being waited for.";
-    const UNASKED: &'static str = "Claude Code signed in without asking anything.";
 }
 
 /// Claude Code's sign-in, as Claude Code reports it.
@@ -80,8 +79,8 @@ pub struct ClaudeAgentPrompt {
 #[specta::specta]
 pub async fn claude_agent_login_start(
     app: tauri::State<'_, App>,
-) -> Result<ClaudeAgentPrompt, Failure> {
-    let (sign_in, prompt) = app
+) -> Result<NativeStart<ClaudeAgentPrompt, ClaudeAgentStatus>, Failure> {
+    let started = app
         .settings
         .claude_sign_ins
         .start(|pasted, shown| {
@@ -93,9 +92,12 @@ pub async fn claude_agent_login_start(
             })
         })
         .await?;
-    Ok(ClaudeAgentPrompt {
-        url: prompt.url.to_string(),
-        sign_in,
+    Ok(match started {
+        Some((sign_in, prompt)) => NativeStart::Prompt(ClaudeAgentPrompt {
+            url: prompt.url.to_string(),
+            sign_in,
+        }),
+        None => NativeStart::Complete(read_status().await),
     })
 }
 

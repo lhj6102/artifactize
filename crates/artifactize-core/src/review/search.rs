@@ -145,6 +145,7 @@ enum Term {
 pub struct Query {
     terms: Vec<Term>,
     places: bool,
+    live: bool,
 }
 
 /// Who holds a request's claim, as the current reviewer sees it.
@@ -322,6 +323,7 @@ impl std::str::FromStr for Query {
         Ok(Self {
             terms,
             places: false,
+            live: false,
         })
     }
 }
@@ -356,6 +358,12 @@ impl Query {
     /// Search the displayed projects and branches, instead of raw checkout paths.
     pub fn for_places(mut self) -> Self {
         self.places = true;
+        self
+    }
+
+    /// Hide requests whose workspace is gone, without hiding the record from CLI history.
+    pub fn for_live_repositories(mut self) -> Self {
+        self.live = true;
         self
     }
 
@@ -616,6 +624,7 @@ async fn suggest_in(
         // Tags are completed from the definitions the matches' Runs saved.
         Ok(mut query) if from_requests => {
             query.places = places || matches!(key, Some(Key::Text(TextField::Branch)));
+            query.live = places;
             page(state, &query, reviewer, 0, shown)
                 .await?
                 .requests
@@ -664,7 +673,9 @@ pub async fn open(
             .await?
             .remove(&view.request.run_id);
     }
-    let outside_reason = if Box::pin(follows_waiting(state, &view)).await {
+    let outside_reason = if query.live && !repo.is_dir() {
+        Some("This review's repository folder no longer exists.".into())
+    } else if Box::pin(follows_waiting(state, &view, query.live)).await {
         Some("This review shares the original request's sign-off.".into())
     } else if query.matches(&entry) {
         None
@@ -761,6 +772,7 @@ async fn read_matching(
 ) -> Result<(), String> {
     let statuses = query.statuses();
     let mut position = start;
+    let mut exists = std::collections::BTreeMap::new();
     loop {
         let batch = store::read_request_batch(state, &statuses, position, BATCH, shown).await?;
         let read = batch.len() as u64;
@@ -774,7 +786,9 @@ async fn read_matching(
             Labels::new()
         };
         for (offset, (view, repo)) in batch.into_iter().enumerate() {
-            if Box::pin(follows_waiting(state, &view)).await {
+            if (query.live && !*exists.entry(repo.clone()).or_insert_with(|| repo.is_dir()))
+                || Box::pin(follows_waiting(state, &view, query.live)).await
+            {
                 continue;
             }
             let mut entry = Entry::new(&view, &repo, reviewer);
@@ -816,7 +830,7 @@ async fn labels(state: &Path, ids: Vec<crate::types::RunId>) -> Result<Labels, S
 }
 
 /// A waiting follower whose original still waits: the original's own row lists it.
-async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
+async fn follows_waiting(state: &Path, view: &RequestView, live: bool) -> bool {
     if !view.request.status().is_human_wait() {
         return false;
     }
@@ -829,7 +843,14 @@ async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
         return false;
     };
     // Only the original's status matters, never what its Run's definitions hold.
-    store::read_request_by_id(state, source, store::Shown::Requests)
+    if !store::read_request_by_id(state, source, store::Shown::Requests)
         .await
         .is_ok_and(|original| original.request.status().is_human_wait())
+    {
+        return false;
+    }
+    !live
+        || store::read_request_repo_by_id(state, source.clone())
+            .await
+            .is_ok_and(|repo| repo.is_dir())
 }

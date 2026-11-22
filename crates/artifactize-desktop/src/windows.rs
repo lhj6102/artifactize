@@ -122,7 +122,13 @@ fn pet<R: Runtime>(handle: &tauri::AppHandle<R>, request: Option<String>) -> tau
         return shown.map_or(Ok(()), |pet| pet.hide());
     };
     let pet = match shown {
-        Some(pet) => pet,
+        Some(pet) => {
+            if let Some(url) = pet_destination(pet.url()?, &request) {
+                pet.hide()?;
+                pet.navigate(url)?;
+            }
+            pet
+        }
         None => WebviewWindowBuilder::new(
             handle,
             PET,
@@ -152,6 +158,19 @@ fn pet<R: Runtime>(handle: &tauri::AppHandle<R>, request: Option<String>) -> tau
         pet.set_position(PhysicalPosition::new(x, y))?;
     }
     pet.show()
+}
+
+/// Keep the existing review mounted unless this show names a different one. The URL
+/// supplies the target even if the webview missed a change before installing its listeners.
+fn pet_destination(mut url: tauri::Url, request: &str) -> Option<tauri::Url> {
+    if url
+        .query_pairs()
+        .any(|(key, value)| key == "pet" && value == request)
+    {
+        return None;
+    }
+    url.query_pairs_mut().clear().append_pair("pet", request);
+    Some(url)
 }
 
 /// Open the Artifact Viewer of viewer session `session`, titled `title`; one already showing the
@@ -263,4 +282,20 @@ pub(crate) fn page<R: Runtime>(
         .header("Content-Security-Policy", PAGE_POLICY)
         .body(html.into_bytes())
         .expect("a page response")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reused_pet_window_loads_the_review_it_is_shown_for() {
+        let old = tauri::Url::parse("https://tauri.localhost/index.html?pet=run-a-1").unwrap();
+        assert!(pet_destination(old.clone(), "run-a-1").is_none());
+        let current = pet_destination(old, "run-b-2").unwrap();
+        assert_eq!(
+            current.as_str(),
+            "https://tauri.localhost/index.html?pet=run-b-2"
+        );
+    }
 }

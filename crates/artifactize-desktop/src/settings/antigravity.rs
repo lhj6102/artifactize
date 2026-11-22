@@ -1,5 +1,5 @@
 //! Antigravity IPC forwards native account operations to the library.
-use super::sign_in::Flow;
+use super::sign_in::{Flow, NativeStart};
 use crate::ids::SignInId;
 use crate::{App, Failure};
 use artifactize_core::auth::antigravity;
@@ -15,7 +15,6 @@ impl Flow for GoogleAccount {
     const NOT_WAITING: &'static str = "No Antigravity sign-in is waiting for a code.";
     const ENDED: &'static str = "The Antigravity sign-in already ended.";
     const WAITED: &'static str = "The Antigravity sign-in is already being waited for.";
-    const UNASKED: &'static str = "Antigravity signed in without asking anything.";
 }
 
 /// Antigravity's sign-in, as Antigravity reports it.
@@ -85,8 +84,8 @@ pub struct AntigravityPrompt {
 #[specta::specta]
 pub async fn antigravity_login_start(
     app: tauri::State<'_, App>,
-) -> Result<AntigravityPrompt, Failure> {
-    let (sign_in, prompt) = app
+) -> Result<NativeStart<AntigravityPrompt, AntigravityStatus>, Failure> {
+    let started = app
         .settings
         .antigravity_sign_ins
         .start(|pasted, shown| {
@@ -98,9 +97,12 @@ pub async fn antigravity_login_start(
             })
         })
         .await?;
-    Ok(AntigravityPrompt {
-        url: prompt.url.to_string(),
-        sign_in,
+    Ok(match started {
+        Some((sign_in, prompt)) => NativeStart::Prompt(AntigravityPrompt {
+            url: prompt.url.to_string(),
+            sign_in,
+        }),
+        None => NativeStart::Complete(read_status().await),
     })
 }
 

@@ -56,6 +56,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             chat::chat_open,
             chat::chat_send,
             chat::chat_stop,
+            chat::chat_open_link,
             browse::browse,
             browse::redraw,
             browse::pane_complete,
