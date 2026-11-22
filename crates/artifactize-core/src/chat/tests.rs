@@ -99,3 +99,54 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
+    use rig_core::message::{
+        AssistantContent, ToolCall, ToolFunction, ToolName, ToolResultContent,
+    };
+    use serde_json::json;
+
+    let root = crate::test_os::tempdir();
+    let file = root.path().join("chat-sessions").join("conversation.jsonl");
+    let id = "chat-mcp-result".parse().unwrap();
+    let mut recorder = Recorder::chat(root.path(), &file, &id, 1).unwrap();
+    recorder.event(Kind::Send(Send {
+        text: Some("Run the fixture".into()),
+        framing: None,
+        files_changed: None,
+        tools: None,
+    }));
+    let call = ToolCall::from_wire(
+        "call-command",
+        ToolFunction::new(
+            ToolName::new("run_command").unwrap(),
+            json!({"program":"fixture"}),
+        ),
+    );
+    recorder.message(
+        1,
+        &rig_core::message::Message::Assistant {
+            id: None,
+            content: vec![AssistantContent::ToolCall(call.clone())],
+        },
+        false,
+    );
+    // Claude Code reports MCP's JSON content as text, including its escaped line separators.
+    let result = ToolResultContent::text(
+        r#"{"exitCode":0,"stdout":"one\ntwo\n","stderr":"","truncated":false}"#,
+    );
+    recorder.tool_results(
+        2,
+        &rig_core::message::Message::tool_results(vec![call.result(vec![result])]),
+        &[false],
+    );
+    recorder.event(Kind::Answer(Answer::Completed("Done".into())));
+    recorder.check_saved().unwrap();
+    drop(recorder);
+    let saved = Conversation::load(&file).unwrap();
+    let turns = transcript::turns(saved.as_ref(), false);
+    assert!(matches!(&turns[0].blocks[0], Block::Tool {
+        exit_code: Some(0), omitted_lines: 0, output_truncated: false, summary, output: Some(output), ..
+    } if summary == "ran fixture (exit 0)" && output == "one\ntwo\n"));
+}

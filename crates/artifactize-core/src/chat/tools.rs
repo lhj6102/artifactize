@@ -240,10 +240,30 @@ impl<'a> Tools<'a> {
                 };
                 let stdout = text(&output.stdout);
                 let stderr = text(&output.stderr);
-                match output.status.end() {
-                    crate::platform::ProcessEnd::Exited(0) => Ok(ToolResult::success(Content::Json { data: json!({"exitCode": 0, "stdout": stdout, "stderr": stderr, "truncated": output.truncated}) }).into()),
-                    end => Err(format!("Command did not succeed: {end:?}\n{stdout}\n{stderr}")),
-                }
+                let Some(exit_code) = output.status.code() else {
+                    return Err(format!(
+                        "Command did not succeed: {}\n{stdout}\n{stderr}",
+                        output.status
+                    ));
+                };
+                let command = super::details::CommandOutput {
+                    exit_code,
+                    stdout: stdout.into(),
+                    stderr: stderr.into(),
+                    truncated: output.truncated,
+                };
+                let result = if exit_code == 0 {
+                    ToolResult::success(Content::Json {
+                        data: serde_json::to_value(command).map_err(|error| error.to_string())?,
+                    })
+                } else {
+                    // A ToolResult error is one text block. Use the same JSON envelope as the
+                    // success response so the transcript doesn't infer a numeric status from prose.
+                    ToolResult::error(
+                        serde_json::to_string(&command).map_err(|error| error.to_string())?,
+                    )
+                };
+                Ok(result.into())
             }
             _ => {
                 if !verify_tools::chat_tool(name) {

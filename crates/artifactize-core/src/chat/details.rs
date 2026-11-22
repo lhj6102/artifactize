@@ -1,4 +1,6 @@
 //! Bounded display details without changing the tool reply replayed to a model.
+use std::borrow::Cow;
+
 use rig_core::message::ToolResultContent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -38,6 +40,8 @@ impl ToolKind {
 struct Arguments<'a> {
     path: Option<&'a str>,
     pattern: Option<&'a str>,
+    old_text: Option<&'a str>,
+    new_text: Option<&'a str>,
     program: Option<&'a str>,
     #[serde(borrow)]
     args: Vec<&'a str>,
@@ -46,7 +50,20 @@ struct Arguments<'a> {
 pub(super) fn summary(name: &str, arguments: &Value) -> String {
     let args = Arguments::deserialize(arguments).unwrap_or_default();
     let words = match name {
-        "read" | "write" | "edit" => vec![name, args.path.unwrap_or("")],
+        "read" | "write" => vec![name, args.path.unwrap_or("")],
+        "edit" => {
+            let target = short(
+                [name, args.path.unwrap_or("")]
+                    .into_iter()
+                    .flat_map(str::split_whitespace),
+            );
+            return match (args.old_text, args.new_text) {
+                (Some(old), Some(new)) => {
+                    format!("{target} +{} −{}", new.lines().count(), old.lines().count())
+                }
+                _ => target,
+            };
+        }
         "list" => vec![name, args.path.unwrap_or(".")],
         "glob" | "grep" => vec![name, args.pattern.unwrap_or("")],
         "run_command" => {
@@ -76,14 +93,36 @@ pub(super) struct ResultView {
     pub truncated: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CommandOutput<'a> {
-    exit_code: i32,
-    stdout: &'a str,
-    stderr: &'a str,
+pub(super) struct CommandOutput<'a> {
+    pub exit_code: i32,
+    #[serde(borrow)]
+    pub stdout: Cow<'a, str>,
+    #[serde(borrow)]
+    pub stderr: Cow<'a, str>,
     #[serde(default)]
-    truncated: bool,
+    pub truncated: bool,
+}
+
+impl<'a> CommandOutput<'a> {
+    fn from_part(part: &'a ToolResultContent) -> Option<Self> {
+        match part {
+            ToolResultContent::Json { value } => Self::deserialize(value).ok(),
+            // The Claude Code MCP transport carries structured output as JSON text.
+            ToolResultContent::Text(text) => serde_json::from_str(&text.text).ok(),
+            _ => None,
+        }
+    }
+}
+
+fn legacy_exit(text: &str) -> Option<i32> {
+    text.lines()
+        .next()?
+        .strip_prefix("Command did not succeed: Exited(")?
+        .strip_suffix(')')?
+        .parse()
+        .ok()
 }
 
 impl ResultView {
@@ -95,36 +134,28 @@ impl ResultView {
         let mut capture_truncated = false;
         let text = content
             .into_iter()
-            .map(|part| match part {
-                ToolResultContent::Text(text) => {
-                    if kind == ToolKind::Command {
-                        // Nonzero exits have always been saved as text diagnostics. Parse only
-                        // the generated first line, never stdout or another tool's output.
-                        exit_code = text
-                            .text
-                            .lines()
-                            .next()
-                            .and_then(|line| line.strip_prefix("Command did not succeed: Exited("))
-                            .and_then(|code| code.strip_suffix(')'))
-                            .and_then(|code| code.parse().ok());
-                    }
-                    text.text.clone()
+            .map(|part| {
+                if kind == ToolKind::Command
+                    && let Some(command) = CommandOutput::from_part(part)
+                {
+                    exit_code = Some(command.exit_code);
+                    capture_truncated = command.truncated;
+                    return [command.stdout.as_ref(), command.stderr.as_ref()]
+                        .into_iter()
+                        .filter(|text| !text.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("\n");
                 }
-                ToolResultContent::Json { value } => {
-                    if kind == ToolKind::Command
-                        && let Ok(output) = CommandOutput::deserialize(value)
-                    {
-                        exit_code = Some(output.exit_code);
-                        capture_truncated = output.truncated;
-                        return [output.stdout, output.stderr]
-                            .into_iter()
-                            .filter(|s| !s.is_empty())
-                            .collect::<Vec<_>>()
-                            .join("\n");
+                match part {
+                    ToolResultContent::Text(text) => {
+                        if kind == ToolKind::Command {
+                            exit_code = legacy_exit(&text.text);
+                        }
+                        text.text.clone()
                     }
-                    value.to_string()
+                    ToolResultContent::Json { value } => value.to_string(),
+                    _ => "[non-text output]".into(),
                 }
-                _ => "[non-text output]".into(),
             })
             .collect::<Vec<_>>()
             .join("\n");
