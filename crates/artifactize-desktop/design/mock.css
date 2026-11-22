@@ -46,7 +46,7 @@
   --i-chat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 2.5h6.5a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5.5L3.25 10.25V8.5h-.5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z'/%3E%3C/svg%3E");
   --i-verify: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 2.25h3.5v2.5h-3.5zM6.75 7.25h3.5v2.5h-3.5zM3.5 4.75V8.5h3.25'/%3E%3C/svg%3E");
   --i-review: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.75h4.25L9.25 3.75v6.5H3zM4.75 6.75 5.9 7.9 7.75 5.5'/%3E%3C/svg%3E");
-  --i-settings: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 3.75h8.5M1.75 8.25h8.5'/%3E%3Ccircle cx='4.25' cy='3.75' r='1.5' fill='currentColor' stroke='none'/%3E%3Ccircle cx='7.75' cy='8.25' r='1.5' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-settings: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.20 4.85 L10.50 5.07 L10.50 6.93 L9.20 7.15 L9.08 7.45 L9.84 8.53 L8.53 9.84 L7.45 9.08 L7.15 9.20 L6.93 10.50 L5.07 10.50 L4.85 9.20 L4.55 9.08 L3.47 9.84 L2.16 8.53 L2.92 7.45 L2.80 7.15 L1.50 6.93 L1.50 5.07 L2.80 4.85 L2.92 4.55 L2.16 3.47 L3.47 2.16 L4.55 2.92 L4.85 2.80 L5.07 1.50 L6.93 1.50 L7.15 2.80 L7.45 2.92 L8.53 2.16 L9.84 3.47 L9.08 4.55Z'/%3E%3Ccircle cx='6' cy='6' r='1.5'/%3E%3C/svg%3E");
   --i-point: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='3.25'/%3E%3Cpath d='M6 1v1.5M6 9.5V11M1 6h1.5M9.5 6H11'/%3E%3Ccircle cx='6' cy='6' r='.9' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
   --i-send: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 10V2.5M2.75 5.75 6 2.5l3.25 3.25'/%3E%3C/svg%3E");
   --i-stop: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3h6v6H3z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
@@ -1076,10 +1076,10 @@
 }
 .m-instruction {
   margin: 0;
-  padding: 4px var(--pad) 14px;
+  padding: 6px var(--pad) 18px;
   color: var(--ink);
-  font-size: var(--text-title);
-  line-height: 1.55;
+  font-size: var(--text-lead);
+  line-height: 1.5;
 }
 .m-summary .m-status {
   font-weight: 700;
@@ -1149,8 +1149,8 @@
   line-height: 18px;
 }
 .m-stage.review {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--surface-group);
+  color: var(--ink-2);
 }
 .m-meta {
   color: var(--ink-2);
@@ -1387,7 +1387,7 @@
 .m-palette-input {
   padding: 10px 12px;
   border-bottom: 1px solid var(--line-group);
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 .m-palette-group {
   padding: 6px;
@@ -2006,6 +2006,18 @@
 .m-session.selected {
   background: var(--selection);
 }
+/* A Pane row under the pointer, across the whole row; a row the keyboard is on, its 2px ring
+   inside the whole row. */
+.m-session.hover,
+.m-branch-head.hover,
+.m-entry.hover {
+  background: var(--surface-group);
+}
+.m-session.kfocus,
+.m-branch-head.kfocus,
+.m-entry.kfocus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
 /* A Run reference: a row inside a group line, the Run's status icon, Verify, the Run ID, its
    status word and what needs attention, then Open in Verify. */
 .m-runref {
@@ -2117,16 +2129,22 @@
 .m-efforts {
   display: grid;
   grid-template-columns: repeat(4, 46px);
-  margin-left: auto;
+  align-self: stretch;
+  margin: 0 -8px 0 auto;
 }
 .m-effort {
-  justify-self: center;
-  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   color: var(--ink-2);
   font-size: var(--text-small);
   font-weight: 400;
+}
+.m-effort.hover {
+  background: var(--surface-group);
+  color: var(--ink);
 }
 .m-effort.on {
   border-color: var(--line-input);
@@ -2205,9 +2223,12 @@
   font-family: var(--mono);
 }
 .m-button.pointing {
-  border-color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--line-input);
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.m-button.pointing .m-icon {
+  color: var(--accent);
 }
 .m-vbody {
   flex: 1;
