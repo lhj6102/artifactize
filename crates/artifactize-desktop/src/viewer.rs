@@ -501,9 +501,10 @@ pub async fn viewer_point(
     review: RequestKey,
     text: String,
 ) -> Result<(), Failure> {
+    let expected = review.into_inner();
+    let _turn = crate::human::draft_turns(&app, std::slice::from_ref(&expected)).await?;
     let _claim = app.human.claim_gate.lock().await;
     let viewer = app.viewers.get(session)?;
-    let expected = review.into_inner();
     let active = active(&app)
         .await
         .filter(|review| review.shown == expected && app.viewers.active().as_ref() == Some(review))

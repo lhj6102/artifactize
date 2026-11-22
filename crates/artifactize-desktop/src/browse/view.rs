@@ -272,6 +272,8 @@ pub struct RunPanel {
     pub id: crate::ids::RunKey,
     /// The Run's branch if it still lives, independent of filtering and timeline paging.
     pub branch: Option<BranchKey>,
+    /// The branch for Open in Chat, even when it is no longer checked out.
+    pub chat_branch: BranchKey,
     pub origin: Option<RunOrigin>,
     /// The Run's own row, whose Detail its headline opens.
     pub node: crate::ids::NodeKey,
@@ -454,6 +456,10 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         RunPanel {
             id: run.run.id.clone().into(),
             branch: shown.opened_branch.as_ref().map(BranchKey::new),
+            chat_branch: shown.opened_branch.as_ref().map_or_else(
+                || BranchKey::new(&Place::recorded_run(&run.run)),
+                BranchKey::new,
+            ),
             origin: run.run.origin.as_ref().map(Into::into),
             node: NodeId::run(&run.run.id).into(),
             mark: progress.status.into(),

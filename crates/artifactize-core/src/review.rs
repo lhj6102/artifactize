@@ -99,6 +99,8 @@ pub fn release_refusal(
 pub enum Answer {
     Explicit(Submission),
     SavedDraft,
+    /// Captured after earlier edits reached storage; checked again atomically at settlement.
+    PreparedDraft(Draft),
 }
 
 /// Lifecycle work with owned inputs, so the screen keeps drawing while it runs.
@@ -338,7 +340,11 @@ impl Job {
                             human::submit_and_publish(&state, &id, &reviewer, &result, cancel).await
                         }
                         Answer::SavedDraft => {
-                            human::publish_saved_draft(&state, &id, &reviewer, cancel).await
+                            human::publish_saved_draft(&state, &id, &reviewer, None, cancel).await
+                        }
+                        Answer::PreparedDraft(draft) => {
+                            human::publish_saved_draft(&state, &id, &reviewer, Some(draft), cancel)
+                                .await
                         }
                     }
                     .map(Box::new)

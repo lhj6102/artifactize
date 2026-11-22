@@ -570,7 +570,7 @@ pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<Br
             let needs_catalog = {
                 let shown = app.browse.shown();
                 matches!(shown.opened, Opened::Missing(_))
-                    || shown.opened_branch.as_ref().is_some_and(|place| {
+                    || shown.opened_branch.as_ref().is_none_or(|place| {
                         !shown.branches.iter().any(|branch| {
                             &branch.place == place && branch.runs.iter().any(|chip| chip.id == id)
                         })

@@ -210,14 +210,27 @@ pub async fn submit(
     submission: &Submission,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
-    submit_answer(receipts, request, reviewer, Some(submission), cancellation).await
+    submit_answer(
+        receipts,
+        request,
+        reviewer,
+        SubmittedAnswer::Explicit(submission),
+        cancellation,
+    )
+    .await
+}
+
+enum SubmittedAnswer<'a> {
+    Explicit(&'a Submission),
+    SavedDraft,
+    PreparedDraft(crate::review::Draft),
 }
 
 async fn submit_answer(
     receipts: &Receipts,
     request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
-    explicit: Option<&Submission>,
+    answer: SubmittedAnswer<'_>,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     let (mut request, _) = receipts.human_request(request, reviewer).await?;
@@ -227,13 +240,17 @@ async fn submit_answer(
         .iter()
         .find(|eval| eval.id == request.eval_id)
         .expect("reconnected eval");
-    let (answer, expected) = match explicit {
-        Some(submission) => (submission.validate(&eval.declaration)?, None),
-        None => {
-            let draft = receipts
-                .read_review_draft(&request.id, reviewer)
-                .await?
-                .unwrap_or_default();
+    let (answer, expected) = match answer {
+        SubmittedAnswer::Explicit(submission) => (submission.validate(&eval.declaration)?, None),
+        other => {
+            let draft = match other {
+                SubmittedAnswer::SavedDraft => receipts
+                    .read_review_draft(&request.id, reviewer)
+                    .await?
+                    .unwrap_or_default(),
+                SubmittedAnswer::PreparedDraft(draft) => draft,
+                SubmittedAnswer::Explicit(_) => unreachable!(),
+            };
             (
                 draft.submission(&request)?.validate(&eval.declaration)?,
                 Some(draft),
@@ -255,7 +272,14 @@ pub async fn submit_and_publish(
     submission: &Submission,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
-    publish_answer(state, request, reviewer, Some(submission), cancellation).await
+    publish_answer(
+        state,
+        request,
+        reviewer,
+        SubmittedAnswer::Explicit(submission),
+        cancellation,
+    )
+    .await
 }
 
 /// Submit the saved answer, refusing to settle if another surface changes its verdict or
@@ -264,22 +288,24 @@ pub(crate) async fn publish_saved_draft(
     state: &Path,
     request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
+    draft: Option<crate::review::Draft>,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
-    publish_answer(state, request, reviewer, None, cancellation).await
+    let answer = draft.map_or(SubmittedAnswer::SavedDraft, SubmittedAnswer::PreparedDraft);
+    publish_answer(state, request, reviewer, answer, cancellation).await
 }
 
 async fn publish_answer(
     state: &Path,
     request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
-    explicit: Option<&Submission>,
+    answer: SubmittedAnswer<'_>,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     let (receipts, repo) = open(state, request).await?;
     let result = async {
         let remote = Session::open(Some(state), Some(&repo))?;
-        let request = submit_answer(&receipts, request, reviewer, explicit, cancellation).await?;
+        let request = submit_answer(&receipts, request, reviewer, answer, cancellation).await?;
         if let Some(remote) = remote {
             remote
                 .publish_request(&receipts, &request)

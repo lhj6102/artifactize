@@ -147,8 +147,10 @@ pub async fn human_draft_edit(
     id: RequestKey,
     change: DraftChange,
 ) -> Result<ReviewDraft, Failure> {
+    let id = id.into_inner();
+    let turn = super::draft_turns(&app, std::slice::from_ref(&id)).await?;
     let _claim = app.human.claim_gate.lock().await;
-    let request = read(&app, &id.into_inner()).await?.1.owner;
+    let request = read(&app, &turn.owners[0]).await?.1.owner;
     let draft = review::edit_draft(
         &app.launch.state,
         &request.request.id,
@@ -168,8 +170,10 @@ pub async fn human_draft_remove_point(
     id: RequestKey,
     point: ReviewPoint,
 ) -> Result<ReviewDraft, Failure> {
+    let id = id.into_inner();
+    let turn = super::draft_turns(&app, std::slice::from_ref(&id)).await?;
     let _claim = app.human.claim_gate.lock().await;
-    let request = read(&app, &id.into_inner()).await?.1.owner;
+    let request = read(&app, &turn.owners[0]).await?.1.owner;
     let draft = review::remove_point(
         &app.launch.state,
         &request.request.id,
@@ -195,13 +199,17 @@ pub async fn human_draft_submit(
         .human
         .jobs
         .register(caller, job, super::jobs::Action::Finish)?;
-    let request = super::guard(&app, &id, review::review_refusal).await?;
+    let turn = work
+        .prepare(super::draft_turns(&app, std::slice::from_ref(&id)))
+        .await?;
+    let request = super::guard(&app, &turn.owners[0], review::review_refusal).await?;
     super::submit(
         &app,
         work,
         id,
         request.request.id.clone(),
         review::Answer::SavedDraft,
+        turn,
     )
     .await
 }

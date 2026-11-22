@@ -2075,6 +2075,73 @@ fn opening_a_review_does_not_retire_its_claim_when_declarations_change() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_run_reference_keeps_its_chat_branch_and_discovers_a_new_checkout() {
+    let fixture = fixture();
+    let original = launched_window(&fixture, Mode::Monitor, None);
+    let first = invoke(&original, "browse", json!({"navigate":STILL()})).unwrap();
+    let branch = first["branches"][0]["key"].clone();
+    let name = branch["branch"].as_str().unwrap();
+    let run = saved(&fixture, "release/signoff")
+        .request
+        .run_id
+        .to_string();
+    os::git(
+        &fixture.repo,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "first",
+        ],
+    );
+    os::git(&fixture.repo, &["switch", "--quiet", "-c", "parked"]);
+
+    let restarted = launched_window(&fixture, Mode::Monitor, None);
+    let open = || {
+        invoke(
+            &restarted,
+            "browse",
+            json!({
+                "navigate":{"run":{"kind":"reference","id":run},"full":false,"resync":false},
+            }),
+        )
+        .unwrap()
+    };
+    let retired = open();
+    assert_eq!(retired["run"]["id"], run);
+    assert_eq!(retired["run"]["branch"], Value::Null);
+    assert_eq!(retired["run"]["chatBranch"], branch);
+    let moved = fixture.repo.with_file_name("new-worktree");
+    os::git(
+        &fixture.repo,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            os::native_path_text(&moved),
+            name,
+        ],
+    );
+
+    // No periodic watcher runs in the mock. Linking again must discover the worktree.
+    let shown = open();
+    assert_eq!(shown["run"]["branch"], branch);
+    let live = shown["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["key"] == branch)
+        .unwrap();
+    assert_eq!(live["chips"][0]["id"], run);
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_direct_run_reference_reveals_its_branch_without_resetting_verify_search() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);

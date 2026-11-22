@@ -330,8 +330,8 @@
             {/if}
           {/snippet}
           {#snippet actions()}
-            {#if shown.kind === "run"}
-              <Reference onclick={() => void app.showBranchGraph(shown.branch)}>Open in Chat</Reference>
+            {#if shown.kind === "run" && run}
+              <Reference onclick={() => void app.showBranchGraph(run.chatBranch)}>Open in Chat</Reference>
             {/if}
           {/snippet}
           {#if shown.kind === "run"}

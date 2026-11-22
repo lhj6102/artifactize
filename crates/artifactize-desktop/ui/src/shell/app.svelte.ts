@@ -278,15 +278,14 @@ export class AppState {
     if (!(await this.browse.navigate({ run: { kind: "reference", id: run } }))) return;
     const shown = this.browse.view?.run;
     if (shown?.kind !== "read" || shown.id !== run) return;
-    const branch = shown.branch;
-    if (!branch) {
-      // Only a live branch's Runs are drawn: one whose branch is gone is read in its Detail.
-      this.browse.error = `Run ${run} is not on a live branch.`;
-      return;
-    }
+    const branch = shown.branch ?? shown.chatBranch;
     const m = this.monitor;
-    m.expanded.add(keyOf(branch));
-    m.selected = { kind: "chip", branch, chip: run };
+    if (shown.branch) {
+      m.expanded.add(keyOf(shown.branch));
+      m.selected = { kind: "chip", branch: shown.branch, chip: run };
+    } else {
+      m.selected = null;
+    }
     m.shown = { kind: "run", branch, run };
     m.opened = node === null ? null : { source: { kind: "run", run }, node, tab };
   }

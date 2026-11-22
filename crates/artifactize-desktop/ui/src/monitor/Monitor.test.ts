@@ -124,7 +124,7 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
           if (step?.kind !== "open" && step?.kind !== "reference") return view;
           if (view.run.kind === "read" && view.run.id === step.id) return view;
           const live = view.branches.find((each) => each.chips.some((chip) => chip.kind === "run" && chip.id === step.id));
-          return { ...view, run: { kind: "read", id: step.id, origin: null, node: `r:${step.id}`, mark: { status: "GREEN", glyph: "✓" }, needs: [], branch: live?.key ?? null } };
+          return { ...view, run: { kind: "read", id: step.id, origin: null, node: `r:${step.id}`, mark: { status: "GREEN", glyph: "✓" }, needs: [], branch: live?.key ?? null, chatBranch: live?.key ?? branchKey("main") } };
         }
         case "redraw":
           return snapshot();
@@ -345,6 +345,7 @@ it("says a Run's verdict and what needs attention in the header row, which opens
   const run: RunPanel = {
     id: "run-2",
     branch: feature.key,
+    chatBranch: feature.key,
     origin: null,
     node: "run:run-2",
     mark: { status: "YELLOW", glyph: "✓" },

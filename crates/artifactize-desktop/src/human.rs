@@ -5,6 +5,7 @@
 //! the review's own [`Form`] turns them into the result, so typed fields, coercion and local
 //! errors are the terminal's.
 pub(crate) mod draft;
+mod draft_queue;
 mod form;
 mod jobs;
 pub(crate) mod log;
@@ -80,6 +81,7 @@ pub struct Reviews {
     /// Resolved tool command lines, resolved once per request and again after each run.
     commands: Mutex<BTreeMap<RequestId, Resolved>>,
     jobs: Jobs,
+    drafts: draft_queue::DraftQueue,
     /// A shutdown snapshot must not race the database claim or its local ownership record.
     pub(crate) claim_gate: tokio::sync::Mutex<()>,
     /// Claims this app took and has neither submitted nor released.
@@ -110,6 +112,7 @@ impl Default for Reviews {
             searches: searches::Searches::default(),
             commands: Mutex::default(),
             jobs: Jobs::default(),
+            drafts: draft_queue::DraftQueue::default(),
             claim_gate: tokio::sync::Mutex::default(),
             taken: Mutex::default(),
             log,
@@ -470,6 +473,30 @@ fn view(
         generation,
         read,
     }
+}
+
+/// Reserve the original review's write order before reading form data or taking action.
+pub(crate) async fn draft_turns(
+    app: &App,
+    ids: &[RequestId],
+) -> Result<draft_queue::Turns, Failure> {
+    app.human
+        .drafts
+        .enter(async {
+            let state = &app.launch.state;
+            let mut owners = Vec::with_capacity(ids.len());
+            for id in ids {
+                let exact = store::read_request_as(state, id.as_str(), store::Shown::Requests)
+                    .await
+                    .map_err(Failure::Read)?;
+                let owner = store::read_review_owner(state, &exact)
+                    .await
+                    .map_err(Failure::Read)?;
+                owners.push(owner.request.id.clone());
+            }
+            Ok(owners)
+        })
+        .await
 }
 
 /// Read the exact request and its actionable owner under the same read sequence number.
@@ -835,7 +862,11 @@ pub async fn human_submit(
 ) -> Result<Submitted, Failure> {
     let id = id.into_inner();
     let work = app.human.jobs.register(caller, job, Action::Finish)?;
-    let request = guard(&app, &id, review::review_refusal).await?;
+    let turn = work
+        .prepare(draft_turns(&app, std::slice::from_ref(&id)))
+        .await?;
+    let owner = &turn.owners[0];
+    let request = guard(&app, owner, review::review_refusal).await?;
     let result = form::result(&request.request, draft)?
         .try_into()
         .map_err(Failure::Invalid)?;
@@ -845,6 +876,7 @@ pub async fn human_submit(
         id,
         request.request.id.clone(),
         review::Answer::Explicit(result),
+        turn,
     )
     .await
 }
@@ -855,10 +887,24 @@ async fn submit(
     id: RequestId,
     owner: RequestId,
     answer: review::Answer,
+    turn: draft_queue::Turns,
 ) -> Result<Submitted, Failure> {
     work.admit(vec![owner.clone()])?;
     app.viewers.cancel_review(&owner);
     work.ready().await?;
+    let answer = match answer {
+        review::Answer::SavedDraft => {
+            let draft = review::read_draft(&app.launch.state, &owner, &app.launch.reviewer)
+                .await
+                .map_err(Failure::Read)?
+                .unwrap_or_default();
+            review::Answer::PreparedDraft(draft)
+        }
+        answer => answer,
+    };
+    // Keep the queue only until Submit takes its answer. Edits during the fingerprint check
+    // may still change it; the library compares the submitted snapshot at settlement.
+    drop(turn);
     let outcome = run_job(
         app,
         Job::Submit {
@@ -903,7 +949,7 @@ pub async fn human_release(
 ) -> Result<Acted, Failure> {
     let ids: Vec<RequestId> = ids.into_iter().map(RequestKey::into_inner).collect();
     let mut work = app.human.jobs.register(caller, job, Action::Ordinary)?;
-    // Earlier draft writes (including from the pet) finish before releasing the claim.
+    let _turn = work.prepare(draft_turns(&app, &ids)).await?;
     let _claim = work
         .prepare(async { Ok(app.human.claim_gate.lock().await) })
         .await?;
@@ -1003,6 +1049,9 @@ pub async fn human_release_taken(
         app.viewers.cancel_review(id);
     }
     work.ready().await?;
+    let _turn = work
+        .prepare(app.human.drafts.enter(async { Ok(ids.clone()) }))
+        .await?;
     let _claim = work
         .prepare(async { Ok(app.human.claim_gate.lock().await) })
         .await?;

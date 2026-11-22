@@ -1297,6 +1297,8 @@ export type RunPanel = {
 	id: string,
 	/**  The Run's branch if it still lives, independent of filtering and timeline paging. */
 	branch: BranchKey | null,
+	/**  The branch for Open in Chat, even when it is no longer checked out. */
+	chatBranch: BranchKey,
 	origin: RunOrigin | null,
 	/**  The Run's own row, whose Detail its headline opens. */
 	node: string,

@@ -114,6 +114,11 @@ impl Place {
         }
     }
 
+    /// The Run's original branch, even when no worktree currently has it checked out.
+    pub fn recorded_run(run: &crate::store::Run) -> Self {
+        Self::for_checkout(&run.repo_path, &run.repository)
+    }
+
     /// Refuse a stale path rather than scanning or editing a different branch.
     pub async fn checked_workspace(&self, workspace: PathBuf) -> Result<PathBuf, String> {
         let place = self.clone();
