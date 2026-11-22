@@ -170,7 +170,13 @@ export const scenarios: Scenario[] = [
       await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "only the other repository's review matches the new filter");
       await app.waitingBadge(2);
       assert.equal(artifactize(fixture, ["request", "claim", older, "--reviewer", "bob"]).status, 0);
-      // The claimed request is absent from the waiting filter but still needs its verdict.
+      // First show both requests, including Bob's newly observable claim. The next result
+      // cannot pass by rereading the old repo:other results or by missing the claim.
+      await app.review.filterFor("type:human");
+      await app.until(async () => {
+        const rows = await app.review.list();
+        return rows.some((row) => row.id === newer) && rows.some((row) => row.id === older && /bob/.test(row.name));
+      }, "both projects are listed and the older review names Bob");
       await app.review.filterFor("type:human waiting");
       await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "the claimed review is absent from the waiting filter");
       await app.waitingBadge(2);

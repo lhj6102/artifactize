@@ -145,18 +145,21 @@ async function suite(ids: string[]): Promise<void> {
         cleanup(candidate.root);
       }
     } catch (error) { failures.push(error); }
-    if (!declared) try { removeTree(output); } catch (error) { failures.push(error); }
   }
   if (failed.length) failures.unshift(new Error(`desktop scenarios failed on ${systemName}: ${failed.join(", ")}`));
-  // The evidence folder stays only when scenarios failed or the run was cut short.
+  // A signal queued while synchronous candidate cleanup held the event loop must be seen
+  // before deciding that its logs and evidence may go.
+  await turned();
+  if (interrupted) {
+    if (!noted()) failures.push(new Error("interrupted: the suite was stopped while it cleaned up"));
+    for (const entry of readdirSync(output, { withFileTypes: true })) {
+      if (!entry.isDirectory() || exists(nativePath(evidence, entry.name))) continue;
+      for (const log of serviceLogs(nativePath(output, entry.name), evidence)) console.error(log);
+    }
+  }
+  if (!declared) try { removeTree(output); } catch (error) { failures.push(error); }
   const kept = failures.length > 0;
   if (!kept) try { removeTree(evidence); } catch (error) { failures.push(error); }
-  // An interrupt that came during the cleanup, which held this thread, fails the run too: its
-  // handler runs once the event loop has turned.
-  await turned();
-  if (interrupted && !noted()) {
-    failures.push(new Error("interrupted: the suite was stopped while it cleaned up"));
-  }
   if (!failures.length) return;
   throw new AggregateError(failures, `desktop E2E failed on ${systemName}${kept ? `; evidence (each failed scenario's failure, screenshot and logs): ${evidence}` : ""}`);
 }

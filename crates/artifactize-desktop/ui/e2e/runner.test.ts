@@ -8,7 +8,7 @@ import { checkE2eApp, runStep } from "./build.ts";
 import { own } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
 import { checkForeground, nodeProgram, processRunning, quarantineForeground, releaseForeground, xwdPng } from "./platform.ts";
-import { exists, nativePath, newDirectory, readTextIfExists, removeTree, scratchDirectory, suitePath, withMachineLock, writeText } from "./portable.ts";
+import { exists, nativePath, newDirectory, readTextIfExists, removeTree, scratchDirectory, suitePath, withMachineLock } from "./portable.ts";
 import { batches } from "./run.ts";
 
 it("batches scenarios in order, at most `size` apps at once, one that runs alone or is started again by itself", () => {
@@ -109,30 +109,32 @@ it("fails a build interrupted after its root exits but while a descendant holds 
   const root = newDirectory(scratchDirectory(), "desktop-interrupt-test-");
   test.after(() => removeTree(root));
   const pidFile = nativePath(root, "pid");
-  const gate = nativePath(root, "done");
-  const holder = `const fs = require('node:fs');
-    const poll = setInterval(() => { if (fs.existsSync(process.argv[1])) clearInterval(poll); }, 20);
-    setTimeout(() => clearInterval(poll), 5000).unref();`;
+  const descendant = nativePath(root, "descendant");
+  const holder = `require('node:fs').writeFileSync(process.argv[1], String(process.pid));
+    setTimeout(() => {}, 5000);`;
   const launcher = `const { spawn } = require('node:child_process');
     const child = spawn(process.execPath, ['-e', process.argv[3], process.argv[2]], { stdio: 'inherit' });
     child.once('spawn', () => require('node:fs').writeFileSync(process.argv[1], String(process.pid)));
     child.unref();`;
   let finished = false;
-  const step = runStep(nodeProgram, ["-e", launcher, pidFile, gate, holder], { env: process.env, cwd: root, capture: true });
+  const step = runStep(nodeProgram, ["-e", launcher, pidFile, descendant, holder], { env: process.env, cwd: root, capture: true });
   void step.then(() => (finished = true), () => (finished = true));
   try {
     const deadline = Date.now() + 3000;
     for (;;) {
       const pid = Number(readTextIfExists(pidFile));
-      if (pid > 0 && !processRunning(pid)) break;
+      if (pid > 0 && !processRunning(pid) && Number(readTextIfExists(descendant)) > 0) break;
       assert.ok(Date.now() < deadline && !finished, "the build command exited with its pipe still open");
       await delay(10);
     }
     assert.equal(finished, false, "the descendant still holds stdout");
     process.emit("SIGINT", "SIGINT");
     await assert.rejects(step, /was interrupted/);
+    const pid = Number(readTextIfExists(descendant));
+    const exitDeadline = Date.now() + 1000;
+    while (processRunning(pid) && Date.now() < exitDeadline) await delay(10);
+    assert.equal(processRunning(pid), false, "interruption stopped the descendant, not just its stdout");
   } finally {
-    writeText(gate, "");
     await step.catch(() => undefined);
   }
 });

@@ -19,8 +19,6 @@ export async function runStep(program: string, args: readonly string[], options:
   const interrupt = () => {
     interrupted = true;
     try { stopTree(child); } catch (error) { stopFailure = error; }
-    // A descendant can still have the pipe open after the command itself has exited.
-    child.stdout?.destroy();
   };
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", interrupt);

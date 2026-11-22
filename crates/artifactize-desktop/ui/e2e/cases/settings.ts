@@ -299,18 +299,28 @@ export const scenarios: Scenario[] = [
       await app.settings.tab("Limits");
       assert.equal(await app.settings.value("grace-seconds"), "120", "the grace in force");
       assert.equal(await app.settings.usable("Save"), false, "Save waits for another value");
-      await app.settings.enter("grace-seconds", "1");
+      const grace = 5;
+      await app.settings.enter("grace-seconds", String(grace));
       await app.settings.button("Save");
-      await app.eventually(() => signoffGrace(fixture) === 1, "the CLI reads the new grace");
+      await app.eventually(() => signoffGrace(fixture) === grace, "the CLI reads the new grace");
       // Saved, the field holds the grace in force and Save waits for another value again.
-      await app.until(async () => !(await app.settings.usable("Save")) && (await app.settings.value("grace-seconds")) === "1", "the window shows the grace saved");
+      await app.until(async () => !(await app.settings.usable("Save")) && (await app.settings.value("grace-seconds")) === String(grace), "the window shows the grace saved");
       await app.settings.close("Close");
-      const started = await artifactizeAsync(fixture, ["verify", "--all", "--json"]);
-      assert.equal(started.status, 0, started.stderr);
-      const { run } = JSON.parse(started.stdout) as { run: string };
+      // Observe the live Run as the command starts, not after its completion. The elapsed
+      // window starts with a visible human wait and is bounded by the product's grace.
+      if (!(await app.pane.branch("repo  master")).expanded) await app.pane.toggle("repo  master");
+      const verifying = artifactizeAsync(fixture, ["verify", "--all", "--wait", "--json"]);
+      await app.waitingBadge(1);
+      const waitingSince = performance.now();
+      await app.until(async () => (await app.pane.branch("repo  master")).entries.some((entry) => /YELLOW/.test(entry.text)),
+        "the new Run ends YELLOW within the saved grace", (grace + 5) * 1000);
+      assert.ok(performance.now() - waitingSince >= (grace - 2) * 1000, "the sign-off did not expire immediately");
+      const done = await verifying;
+      assert.equal(done.status, 5, done.stderr);
+      const { id: run } = JSON.parse(done.stdout) as { id: string };
       await app.pane.choose("repo  master", run);
       await app.graph.titled(run);
-      await app.until(async () => (await app.graph.headline()).includes("YELLOW"), "the new Run ends YELLOW within the short grace, not the default 120 seconds");
+      assert.match(await app.graph.headline(), /YELLOW/);
     },
   }),
 ];

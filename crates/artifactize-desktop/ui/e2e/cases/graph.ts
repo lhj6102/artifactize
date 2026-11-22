@@ -2,7 +2,7 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
-import { CHAT_MODEL, GRAPH_ANSWER, GRAPH_PROMPT, installChatProvider } from "../fixtures/chat.ts";
+import { CHAT_MODEL, GRAPH_ANSWER, GRAPH_GATE, GRAPH_PROMPT, installChatProvider } from "../fixtures/chat.ts";
 import { REVIEW_FINDING, REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
 import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -262,7 +262,7 @@ export const scenarios: Scenario[] = [
       await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: { gate: fixture.gate } };
     },
-    run: async (app, { data: { gate } }) => {
+    run: async (app, { fixture, data: { gate } }) => {
       await app.chat.createFromDialog("repo / master");
       await app.chat.show("Graph");
       await app.graph.node("a:slow", (node) => node.label === "slow: checking", "slow is still being checked");
@@ -276,8 +276,12 @@ export const scenarios: Scenario[] = [
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
       await app.chat.model(CHAT_MODEL);
       await app.chat.send(GRAPH_PROMPT, false);
+      await app.chat.working();
       await app.chat.viewShown("Graph");
       await app.graph.node("a:slow");
+      writeText(nativePath(fixture.root, GRAPH_GATE), "answer");
+      await app.chat.finished();
+      await app.chat.viewShown("Graph");
       await app.chat.show("Conversation");
       await app.chat.says(GRAPH_ANSWER);
       await app.chat.show("Graph");
@@ -300,7 +304,7 @@ export const scenarios: Scenario[] = [
       await installChatProvider(own, fixture);
       return { fixture, data: { gate: fixture.gate } };
     },
-    run: async (app, { data: { gate } }) => {
+    run: async (app, { fixture, data: { gate } }) => {
       await app.pane.selectBranch("repo  master");
       // Save two conversations on the branch. Only the latest uses this model, so the
       // Graph alone isn't enough to prove Open in Chat landed on the right session.
@@ -324,8 +328,12 @@ export const scenarios: Scenario[] = [
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
       await app.chat.model(CHAT_MODEL);
       await app.chat.send(GRAPH_PROMPT, false);
+      await app.chat.working();
       await app.chat.viewShown("Graph");
       await app.graph.node("a:slow");
+      writeText(nativePath(fixture.root, GRAPH_GATE), "answer");
+      await app.chat.finished();
+      await app.chat.viewShown("Graph");
       await app.chat.show("Conversation");
       await app.chat.says(GRAPH_ANSWER);
     },

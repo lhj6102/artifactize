@@ -76,7 +76,11 @@ export async function keepEvidence(id: string, evidence: NativePath, failure: st
   const restarted = variable("DESKTOP_TEST_PHASE") === "restarted";
   const kept = restarted ? asNativePath(`${evidence}-started-again`) : evidence;
   const report = nativePath(kept, "failure.txt");
-  if (exists(report)) return;
+  if (exists(report)) {
+    const image = nativePath(kept, "window.png");
+    if (shown instanceof Uint8Array && !exists(image)) writeBytes(image, shown);
+    return;
+  }
   const waiting = waits.running.length ? `the wait it was in then: ${waits.running.join(", within it: ")}\n` : waits.last ? `no wait ran then; its last wait, which had ended: ${waits.last}\n` : "";
   const said = `OS: ${systemName}\nscenario: ${id}${restarted ? " (started again)" : ""}\n${waiting}\n${failure}\n`;
   writeText(nativePath(makeDirectory(kept), "failure.txt"), said);

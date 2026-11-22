@@ -158,6 +158,10 @@ export class Chat {
     await this.browser.$(`${MAIN} button[aria-label="Stop (Esc)"]`).waitForDisplayed({ timeoutMsg: "timed out: the turn runs and Send reads Stop" });
   }
 
+  async finished(): Promise<void> {
+    await this.browser.$(`${MAIN} button[aria-label="Send (Enter)"]`).waitForDisplayed({ timeoutMsg: "the turn ended and the composer shows Send again" });
+  }
+
   async stop(kept: string): Promise<void> {
     await this.browser.$(`${MAIN} button[aria-label="Stop (Esc)"]`).click();
     await holds(this.browser, () => this.browser.execute((selector, partial) =>

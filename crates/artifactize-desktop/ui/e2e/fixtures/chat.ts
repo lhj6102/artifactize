@@ -15,6 +15,7 @@ export const CONTINUE_PROMPT = "Continue after the stopped turn";
 export const CONTINUE_ANSWER = "The conversation can continue.";
 export const CHAT_ANSWER = "The notes were read and Verify was started.";
 export const GRAPH_PROMPT = "Summarize what you see on the graph";
+export const GRAPH_GATE = "graph-answer";
 export const GRAPH_ANSWER = "I see the Current while we work.";
 
 function call(id: string, name: string, args: object) {
@@ -44,6 +45,20 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
       if (body.includes(QUIT_PROMPT)) return; // Quitting the app ends this response.
       const resumed = body.includes(CONTINUE_PROMPT);
       const askedGraph = body.includes(GRAPH_PROMPT);
+      if (askedGraph) {
+        const gate = nativePath(fixture.root, GRAPH_GATE);
+        const release = setInterval(() => {
+          if (!exists(gate)) return;
+          clearInterval(release);
+          const complete = { type: "response.completed", sequence_number: 0, response: { id: "resp_graph", object: "response", created_at: 1, model: CHAT_MODEL, status: "completed",
+            output: [{ type: "message", id: "graph_answer", role: "assistant", status: "completed", content: [{ type: "output_text", text: GRAPH_ANSWER, annotations: [] }] }],
+            usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } } };
+          response.writeHead(200, { "Content-Type": "text/event-stream" });
+          response.end(`event: ${complete.type}\ndata: ${JSON.stringify(complete)}\n\n`);
+        }, 25);
+        response.once("close", () => clearInterval(release));
+        return;
+      }
       if (!resumed && body.includes(STOP_PROMPT)) {
         const early = [
           { type: "response.output_item.added", output_index: 0, item: { type: "message", id: "msg_partial", role: "assistant", status: "in_progress", content: [] } },
@@ -64,9 +79,9 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
       }
       let number = 1;
       let output: object[];
-      if (resumed || askedGraph || body.includes('"call_id":"verify-notes"')) {
+      if (resumed || body.includes('"call_id":"verify-notes"')) {
         number = 3;
-        output = [{ type: "message", id: "msg_notes", role: "assistant", status: "completed", content: [{ type: "output_text", text: resumed ? CONTINUE_ANSWER : askedGraph ? GRAPH_ANSWER : `${CHAT_ANSWER}\n\n${"More release notes.\n\n".repeat(60)}`, annotations: [] }] }];
+        output = [{ type: "message", id: "msg_notes", role: "assistant", status: "completed", content: [{ type: "output_text", text: resumed ? CONTINUE_ANSWER : `${CHAT_ANSWER}\n\n${"More release notes.\n\n".repeat(60)}`, annotations: [] }] }];
       } else if (body.includes('"call_id":"read-notes"')) {
         number = 2;
         output = [call("verify-notes", "verify_start", { scope: { kind: "artifact", artifactId: "docs" } })];

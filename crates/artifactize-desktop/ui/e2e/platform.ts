@@ -173,28 +173,96 @@ export function packageCommand(args: string[]): { program: string; args: string[
   return { program: "pnpm", args };
 }
 
-/** Start a program as the root of a process tree that `stopTree` can end whole: a process
- * group of its own on Unix; Windows ends a tree by its root's ID. */
-export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean }): ChildProcess {
-  return spawn(program, args, {
-    cwd: options.cwd, env: options.env, detached: !WINDOWS, windowsHide: true,
-    stdio: ["ignore", options.capture ? "pipe" : "inherit", "inherit"],
-  });
+// Keep a native Job Object handle in the wrapper, not in the command that might finish
+// before its children. The wrapper joins before starting any command, so no child can race
+// assignment. Killing the wrapper closes the last handle and kills the whole job, even when
+// the command's own PID has already gone away. No shell interprets the command's arguments.
+const WINDOWS_JOB = String.raw`
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class E2eBuildJob {
+  [StructLayout(LayoutKind.Sequential)] public struct Limits {
+    public long ProcessTime, JobTime;
+    public uint Flags;
+    public UIntPtr MinSet, MaxSet;
+    public uint ProcessLimit;
+    public UIntPtr Affinity;
+    public uint Priority, Scheduling;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct Extended {
+    public Limits Basic;
+    public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes;
+    public UIntPtr ProcessLimit, JobLimit, PeakProcess, PeakJob;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct Accounting {
+    public long User, Kernel, PeriodUser, PeriodKernel;
+    public uint Faults, Total, Active, Terminated;
+  }
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr CreateJobObject(IntPtr attributes, IntPtr name);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetInformationJobObject(IntPtr job, int type, ref Extended info, uint size);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool QueryInformationJobObject(IntPtr job, int type, out Accounting info, uint size, IntPtr returned);
+  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
+}
+'@
+$job = [E2eBuildJob]::CreateJobObject([IntPtr]::Zero, [IntPtr]::Zero)
+if ($job -eq [IntPtr]::Zero) { throw 'cannot create E2E build Job Object' }
+$limits = New-Object E2eBuildJob+Extended
+$basic = $limits.Basic
+$basic.Flags = 0x2000
+$limits.Basic = $basic
+$limitSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf($limits)
+if (-not [E2eBuildJob]::SetInformationJobObject($job, 9, [ref]$limits, $limitSize)) { throw 'cannot set kill-on-close for the E2E build Job Object' }
+$self = [Diagnostics.Process]::GetCurrentProcess()
+if (-not [E2eBuildJob]::AssignProcessToJobObject($job, $self.Handle)) { throw 'cannot enter the E2E build Job Object' }
+$info = New-Object Diagnostics.ProcessStartInfo
+$info.FileName = $env:DESKTOP_BUILD_PROGRAM
+$info.Arguments = $env:DESKTOP_BUILD_ARGS
+$info.UseShellExecute = $false
+$info.EnvironmentVariables.Remove('DESKTOP_BUILD_PROGRAM')
+$info.EnvironmentVariables.Remove('DESKTOP_BUILD_ARGS')
+$child = [Diagnostics.Process]::Start($info)
+$child.WaitForExit()
+$code = $child.ExitCode
+# Keep the job (and inherited stdout) alive until the command's descendants exit too.
+$counts = New-Object E2eBuildJob+Accounting
+$accountSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf($counts)
+do {
+  if (-not [E2eBuildJob]::QueryInformationJobObject($job, 1, [ref]$counts, $accountSize, [IntPtr]::Zero)) { throw 'cannot observe E2E build Job Object' }
+  if ($counts.Active -gt 1) { Start-Sleep -Milliseconds 20 }
+} while ($counts.Active -gt 1)
+# The wrapper itself is in the job. The OS closes the handle on its way out.
+exit $code
+`;
+
+/** Windows' argv quoting for CreateProcess (including trailing backslashes). */
+function windowsArg(arg: string): string {
+  return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/\\+$/, '$&$&')}"`;
 }
 
-/** End the process tree `startTree` started, its root and every descendant. */
-export function stopTree(child: ChildProcess): void {
-  if (child.pid === undefined || (WINDOWS && child.exitCode !== null)) return;
-  const pid = child.pid;
+/** Start a program with an owned process group, or a Windows Job Object. */
+export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean }): ChildProcess {
+  const stdio = ["ignore", options.capture ? "pipe" : "inherit", "inherit"] as const;
   if (WINDOWS) {
-    // taskkill from the system's own folder, whatever PATH holds; 128: no such process.
-    const taskkill = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "taskkill.exe");
-    const ended = spawnSync(taskkill, ["/T", "/F", "/PID", String(pid)], { windowsHide: true, encoding: "utf8" });
-    if (ended.error || (ended.status !== 0 && ended.status !== 128)) throw new Error(`taskkill could not end process ${pid}: ${ended.error ?? ended.stderr}`);
-  } else {
-    try { process.kill(-pid, "SIGKILL"); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const script = Buffer.from(WINDOWS_JOB, "utf16le").toString("base64");
+    const env = { ...options.env, DESKTOP_BUILD_PROGRAM: program, DESKTOP_BUILD_ARGS: args.map(windowsArg).join(" ") };
+    return spawn(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", script], { cwd: options.cwd, env, windowsHide: true, stdio: [...stdio] });
   }
+  return spawn(program, args, { cwd: options.cwd, env: options.env, detached: true, windowsHide: true, stdio: [...stdio] });
+}
+
+/** End the owned tree, not just the command whose exit status the wrapper reports. */
+export function stopTree(child: ChildProcess): void {
+  if (child.pid === undefined) return;
+  if (WINDOWS) {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    return;
+  }
+  try { process.kill(-child.pid, "SIGKILL"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
 }
 
 /** Whether process `pid` still runs. Signal 0 only checks it, on every OS; a process that
@@ -352,9 +420,9 @@ export function testWindowOptions(windows: readonly Record<string, unknown>[]): 
   return MACOS ? { windows: windows.map((window) => ({ ...window, backgroundThrottling: "disabled" })) } : {};
 }
 
-/** How many test apps run at once. WebView2 gives focus events only to the page of the
- * desktop's one foreground window, so Windows runs one app at a time. */
-export const appsAtOnce = WINDOWS ? 1 : 2;
+/** WebView2 gives focus events only to the foreground window. A private Xvfb screen belongs
+ * to one scenario, so its failure evidence cannot capture another scenario's window. */
+export const appsAtOnce = WINDOWS || LINUX ? 1 : 2;
 
 /** This machine's OS as a failure names it. */
 export const systemName = `${process.platform} ${release()} (${process.arch})`;

@@ -205,7 +205,7 @@ export const config = {
     workers.delete(cid);
     if (code === 0 || !worker?.id) return;
     const folder = nativePath(evidence, worker.restarted ? `${worker.id}-started-again` : worker.id);
-    if (exists(nativePath(folder, "failure.txt"))) return; // afterTest had a live session.
+    if (exists(nativePath(folder, "window.png"))) return; // afterTest captured the window.
     let screen: Uint8Array | undefined;
     let capture = "";
     const port = scenarioPorts.get(worker.id);

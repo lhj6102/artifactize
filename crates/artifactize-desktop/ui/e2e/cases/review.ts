@@ -120,7 +120,7 @@ export const scenarios: Scenario[] = [
       await review.until((each) => each.running !== "", "the tool runs");
       const tool = await slowProcess(app, pids, 1);
       const done = await review.submit();
-      await app.until(async () => !processRunning(tool), "the submission stopped the running tool's process");
+      assert.equal(processRunning(tool), false, "the tool has already exited when the completed result first appears");
       assert.match(done.completed, /확인 gu/, "the completed result stays open");
       assert.match(done.completed, /comment\s*확인 gu/, "its fields by name");
       assert.doesNotMatch(done.completed, /approved/, "the form's constant not shown");
