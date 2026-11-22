@@ -257,7 +257,7 @@ impl Fixture {
             let run = turn.blocks.iter().find_map(|block| match block { Block::Run { card } => Some(card.id.clone()), _ => None }).expect("Verify Run reference");
             let pids = peer_pids(&self.root);
             assert!(pids.iter().all(|&pid| os::running(pid)));
-            assert!(chat.stop(&session.id));
+            assert!(chat.stop(&session.id).await.unwrap());
             let stopped = observe(&chat, &session.id, changes, |view| !view.running).await;
             assert!(matches!(stopped.turns[0].state, TurnState::Stopped));
             assert_eq!(fs::read_to_string(self.root.join("cancelled")).unwrap(), "fixture-session");
