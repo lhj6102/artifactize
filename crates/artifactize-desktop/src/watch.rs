@@ -91,6 +91,12 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
             ) {
                 state.human.review_status_changed();
             }
+            if matches!(
+                change,
+                Change::RunInvalidated(_) | Change::StateInvalidated | Change::Resync
+            ) {
+                state.human.invalidate_searches();
+            }
             let sent = match change {
                 Change::StateInvalidated | Change::RunInvalidated(_) => {
                     StateChanged { resync: false }.emit(&hub)
@@ -124,6 +130,9 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                 tokio::task::spawn_blocking(move || observed.rescan()).await,
             )
             .unwrap_or(false);
+            if review_worktrees_changed {
+                app_state.human.invalidate_searches();
+            }
             if (reviews_changed.unwrap_or(false)
                 || branches_changed.unwrap_or(false)
                 || review_worktrees_changed

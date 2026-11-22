@@ -41,6 +41,11 @@ impl Searches {
         changed
     }
 
+    /// A request following an invalidation must not join an older in-flight page.
+    pub(super) fn invalidate(&self) {
+        self.pending.lock().expect("Review searches lock").clear();
+    }
+
     pub(super) async fn read(
         &self,
         query: String,
@@ -71,6 +76,35 @@ impl Searches {
 mod tests {
     use super::*;
     use std::{future::poll_fn, task::Poll};
+
+    #[tokio::test]
+    async fn a_refresh_after_invalidation_does_not_reuse_an_in_flight_page() {
+        let searches = Searches::default();
+        let finish = tokio::sync::Notify::new();
+        let mut stale = std::pin::pin!(searches.read("waiting".into(), 0, async {
+            finish.notified().await;
+            Ok(ReviewPage {
+                reviews: vec![],
+                next: Some(1),
+            })
+        }));
+        poll_fn(|cx| {
+            assert!(stale.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        searches.invalidate();
+        let fresh = searches.read("waiting".into(), 0, async {
+            Ok(ReviewPage {
+                reviews: vec![],
+                next: None,
+            })
+        });
+        finish.notify_one();
+        let (stale, fresh) = tokio::join!(stale, fresh);
+        assert_eq!(stale.unwrap().next, Some(1));
+        assert_eq!(fresh.unwrap().next, None);
+    }
 
     #[tokio::test]
     async fn overlapping_searches_share_one_read_but_a_later_search_reads_again() {

@@ -113,6 +113,10 @@ impl Session {
         }
     }
 
+    pub fn workspace(&self) -> &Path {
+        &self.root
+    }
+
     pub fn checkout(&self) -> &repository::Identity {
         &self.checkout
     }
@@ -123,7 +127,7 @@ impl Session {
     }
 
     /// An already-open viewer's scope cannot authorize access after a declaration changes.
-    fn check_scope(&self) -> Result<(), String> {
+    pub fn check_scope(&self) -> Result<(), String> {
         self.check_checkout()?;
         let config =
             config::read_workspace_config(&self.root).map_err(|error| error.to_string())?;

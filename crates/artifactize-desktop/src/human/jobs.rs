@@ -1,5 +1,8 @@
 //! Coordinate review actions across the IPC surfaces which share one desktop app.
-use std::{collections::BTreeMap, sync::Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 use artifactize_core::types::RequestId;
 use tokio_util::sync::CancellationToken;
@@ -48,8 +51,8 @@ struct Running {
     done: CancellationToken,
 }
 
-#[derive(Default)]
-pub(super) struct Jobs(Mutex<BTreeMap<Key, Running>>);
+#[derive(Clone, Default)]
+pub(super) struct Jobs(Arc<Mutex<BTreeMap<Key, Running>>>);
 
 impl Jobs {
     pub(super) fn begin(
@@ -58,7 +61,7 @@ impl Jobs {
         job: JobId,
         ids: Vec<RequestId>,
         action: Action,
-    ) -> Result<Lease<'_>, Failure> {
+    ) -> Result<Lease, Failure> {
         let mut lease = self.register(caller, job, action)?;
         lease.admit(ids)?;
         Ok(lease)
@@ -70,7 +73,7 @@ impl Jobs {
         caller: Caller,
         job: JobId,
         action: Action,
-    ) -> Result<Lease<'_>, Failure> {
+    ) -> Result<Lease, Failure> {
         let key = (caller.0, job);
         let mut live = self.0.lock().expect("jobs lock");
         if live.contains_key(&key) {
@@ -89,7 +92,7 @@ impl Jobs {
             },
         );
         Ok(Lease {
-            jobs: self,
+            jobs: self.clone(),
             key,
             cancel,
             tools: Vec::new(),
@@ -110,14 +113,14 @@ impl Jobs {
 }
 
 /// Holds admission until the IPC operation, including tool cleanup, has finished.
-pub(crate) struct Lease<'a> {
-    jobs: &'a Jobs,
+pub(crate) struct Lease {
+    jobs: Jobs,
     key: Key,
     pub(crate) cancel: CancellationToken,
     tools: Vec<CancellationToken>,
 }
 
-impl Lease<'_> {
+impl Lease {
     /// After resolving the exact owner, reserve it against the other review surfaces.
     pub(super) fn admit(&mut self, ids: Vec<RequestId>) -> Result<(), Failure> {
         let mut live = self.jobs.0.lock().expect("jobs lock");
@@ -151,6 +154,10 @@ impl Lease<'_> {
     }
 
     /// A lookup does not hold a job open after its caller cancels it.
+    pub(crate) fn belongs_to(&self, caller: &Caller, job: JobId) -> bool {
+        self.key.0 == caller.0 && self.key.1 == job
+    }
+
     pub(crate) async fn prepare<T>(
         &self,
         read: impl Future<Output = Result<T, Failure>>,
@@ -173,7 +180,7 @@ impl Lease<'_> {
     }
 }
 
-impl Drop for Lease<'_> {
+impl Drop for Lease {
     fn drop(&mut self) {
         let mut live = self.jobs.0.lock().expect("jobs lock");
         if let Some(work) = live.remove(&self.key) {

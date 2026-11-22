@@ -371,7 +371,7 @@
         <div class="dialog-body">
           <label class="field">
             <span class="field-name">Branch</span>
-            <select bind:value={c.worktree} onchange={() => c.worktree && void c.readStarting(c.worktree)}>
+            <select bind:value={c.worktree} onchange={() => c.worktree && void c.readStarting(c.worktree, branches.find((branch) => branch.workspace === c.worktree)?.key ?? null)}>
               {#each branches as branch (branch.workspace)}
                 <option value={branch.workspace}>{branch.name ? `${branch.project} / ${branch.name}` : branch.project}</option>
               {/each}

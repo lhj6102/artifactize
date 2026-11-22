@@ -288,9 +288,13 @@ pub struct ChatView {
 pub async fn chat_default_model(
     app: tauri::State<'_, App>,
     worktree: PathKey,
+    branch: Option<BranchKey>,
 ) -> Result<Option<ChatModel>, Failure> {
     app.chat
-        .default_model(&worktree.to_path())
+        .default_model_for(
+            &worktree.to_path(),
+            branch.as_ref().map(BranchKey::to_place).as_ref(),
+        )
         .await
         .map(|model| model.map(Into::into))
         .map_err(Failure::Read)
@@ -302,11 +306,13 @@ pub async fn chat_default_model(
 pub async fn chat_create(
     app: tauri::State<'_, App>,
     worktree: PathKey,
+    branch: Option<BranchKey>,
     selection: Option<ChatModel>,
 ) -> Result<ChatSession, Failure> {
     app.chat
-        .create(
+        .create_for_branch(
             &worktree.to_path(),
+            branch.as_ref().map(BranchKey::to_place).as_ref(),
             selection.map(TryInto::try_into).transpose()?,
         )
         .await

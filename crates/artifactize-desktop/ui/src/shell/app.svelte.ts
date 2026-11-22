@@ -221,8 +221,8 @@ export class AppState {
     this.browse.refresh();
     const shown = this.monitor.shown;
     const target = branch ?? (shown.kind === "none" ? null : shown.branch);
-    const workspace = target ? this.browse.branch(target)?.workspace : undefined;
-    this.chat.newChat(workspace ?? (branch ? null : this.browse.view?.branches[0]?.workspace ?? null));
+    const selected = (target ? this.browse.branch(target) : undefined) ?? (branch ? undefined : this.browse.view?.branches[0]);
+    this.chat.newChat(selected?.workspace ?? null, selected?.key ?? null);
   }
 
   /** Show a branch's Current in its most recent Chat session, or start New chat there. */

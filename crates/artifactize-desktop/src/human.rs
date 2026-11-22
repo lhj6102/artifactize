@@ -12,8 +12,8 @@ pub(crate) mod search;
 mod searches;
 
 pub use form::{Draft, FormView, Verdict};
-pub(crate) use jobs::Caller;
 use jobs::{Action, Jobs};
+pub(crate) use jobs::{Caller, Lease};
 
 use crate::ids::{JobId, RequestKey};
 use crate::{
@@ -203,6 +203,10 @@ impl Reviews {
         self.taken.lock().expect("taken lock").clear();
     }
 
+    pub(crate) fn invalidate_searches(&self) {
+        self.searches.invalidate();
+    }
+
     pub(crate) fn review_worktrees_changed(&self) -> bool {
         self.searches.rescan()
     }
@@ -211,11 +215,7 @@ impl Reviews {
         self.jobs.cancel_all();
     }
 
-    pub(crate) fn start_artifact(
-        &self,
-        caller: Caller,
-        job: JobId,
-    ) -> Result<jobs::Lease<'_>, Failure> {
+    pub(crate) fn start_artifact(&self, caller: Caller, job: JobId) -> Result<Lease, Failure> {
         self.jobs.register(caller, job, Action::Tool)
     }
 
@@ -689,7 +689,7 @@ pub async fn human_run(
 ) -> Result<Notice, Failure> {
     let id = id.into_inner();
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
-    let mut work = app.human.jobs.register(caller.clone(), job, Action::Tool)?;
+    let mut work = app.human.jobs.register(caller, job, Action::Tool)?;
     let request = guard(&app, &id, review::review_refusal).await?;
     let owner = request.request.id.clone();
     work.admit(vec![owner.clone()])?;
@@ -711,19 +711,7 @@ pub async fn human_run(
         .expect("commands lock")
         .remove(&owner);
     let mut notice: Notice = outcome.notice().into();
-    if !work.cancel.is_cancelled() {
-        notice.viewer = crate::viewer::launch(
-            &app,
-            &mut outcome,
-            crate::viewer::Source::Review(owner),
-            crate::viewer::LaunchJob {
-                caller,
-                id: job,
-                cancel: work.cancel.clone(),
-            },
-        )
-        .await?;
-    }
+    notice.viewer = crate::viewer::launch(&app, &mut outcome, Some(owner), work);
     Ok(notice)
 }
 
@@ -853,7 +841,7 @@ pub async fn human_submit(
 
 async fn submit(
     app: &App,
-    mut work: jobs::Lease<'_>,
+    mut work: Lease,
     id: RequestId,
     owner: RequestId,
     answer: review::Answer,

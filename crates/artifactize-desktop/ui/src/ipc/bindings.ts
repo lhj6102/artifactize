@@ -9,11 +9,19 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	launch: () => typedError<LaunchView, Failure>(__TAURI_INVOKE("launch")),
 	/**  Create an empty Chat session for the chosen worktree; `null` uses its default model. */
-	chatCreate: (worktree: PathKey, selection: {
+	chatCreate: (worktree: PathKey, branch: 
+/**  A Git repository's branch, by the repository's common directory. */
+{ kind: "branch"; common: PathKey; 
+/**  Refused at the boundary unless a branch name. */
+branch: string } | 
+/**  A detached Git worktree, by its folder. */
+{ kind: "detached"; common: PathKey; path: PathKey } | 
+/**  A folder outside Git. */
+{ kind: "folder"; path: PathKey } | null, selection: {
 	backend: string,
 	model: string,
 	effort: string | null,
-} | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, selection })),
+} | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, branch, selection })),
 	/**  Save the selected model and effort for the next turn without sending a message. */
 	chatSetModel: (id: string, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_model", { id, selection })),
 	/**  Keep the chosen view for this session without sending a message or reordering Chat. */
@@ -39,11 +47,19 @@ export const commands = {
 	 *  Read the starting model for a new session. The pending call is the loading state;
 	 *  `null` means no provider lists a model and the worktree has no previous session.
 	 */
-	chatDefaultModel: (worktree: PathKey) => typedError<{
+	chatDefaultModel: (worktree: PathKey, branch: 
+/**  A Git repository's branch, by the repository's common directory. */
+{ kind: "branch"; common: PathKey; 
+/**  Refused at the boundary unless a branch name. */
+branch: string } | 
+/**  A detached Git worktree, by its folder. */
+{ kind: "detached"; common: PathKey; path: PathKey } | 
+/**  A folder outside Git. */
+{ kind: "folder"; path: PathKey } | null) => typedError<{
 	backend: string,
 	model: string,
 	effort: string | null,
-} | null, Failure>(__TAURI_INVOKE("chat_default_model", { worktree })),
+} | null, Failure>(__TAURI_INVOKE("chat_default_model", { worktree, branch })),
 	/**  List saved sessions newest first. `null` applies no worktree or query filter. */
 	chatList: (worktree: string | null, query: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree, query })),
 	/**  Acknowledge the latest settled outcome for this machine user. */

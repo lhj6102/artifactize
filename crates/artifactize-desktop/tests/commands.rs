@@ -1002,6 +1002,18 @@ payload.instruction = "Read the page separately."
     .unwrap();
     assert_eq!(contents, "original");
 
+    let refused = invoke(
+        &window,
+        "human_run",
+        json!({"id":id,"tool":"view_page","job":20}),
+    )
+    .unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("work in progress")
+    );
     let session = &launched["viewer"]["session"];
     let pane = invoke(&window, "browse", json!({"navigate": STILL()})).unwrap();
     let follower_branch = pane["branches"]
@@ -2026,6 +2038,20 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
     .unwrap();
     assert_eq!(from_nested, session["selection"]);
     os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+    let refused = invoke(
+        &first,
+        "chat_create",
+        json!({
+            "worktree": os::path_text(&fixture.repo), "branch": branch, "selection": null,
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("no longer checked out")
+    );
     let other = make();
     assert_ne!(other["branchKey"], branch);
     assert_eq!(

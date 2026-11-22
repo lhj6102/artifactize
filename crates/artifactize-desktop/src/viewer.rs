@@ -11,7 +11,6 @@ use artifactize_core::{
     config::{Target, plugins},
     review::{Outcome, log},
     store,
-    tools::human::Content,
     types::{ArtifactName, RequestId},
     viewer,
 };
@@ -37,23 +36,11 @@ struct SessionsInner {
     activation: u64,
 }
 
-/// A handed-off tool is cancellable until its window starts opening.
-pub(crate) struct LaunchJob {
-    pub caller: crate::human::Caller,
-    pub id: crate::ids::JobId,
-    pub cancel: tokio_util::sync::CancellationToken,
-}
-
+/// A pending Viewer keeps its admission until the native window opens or is cancelled.
 pub(crate) struct PendingLaunch {
-    job: LaunchJob,
+    job: crate::human::Lease,
     review: Option<RequestId>,
-    log: Option<log::Run>,
-}
-
-impl PendingLaunch {
-    fn cancelled(&self) -> bool {
-        self.job.cancel.is_cancelled()
-    }
+    log: log::Run,
 }
 
 /// The review as shown, and the original request whose claim, Artifact and draft it uses.
@@ -158,7 +145,7 @@ impl Sessions {
         }
     }
 
-    fn get(&self, session: u32) -> Result<Arc<viewer::Session>, Failure> {
+    pub(crate) fn get(&self, session: u32) -> Result<Arc<viewer::Session>, Failure> {
         self.0
             .lock()
             .expect("viewer sessions")
@@ -186,18 +173,24 @@ impl Sessions {
     }
 
     pub(crate) fn cancel_job(&self, caller: &crate::human::Caller, id: crate::ids::JobId) {
-        for pending in self.0.lock().expect("viewer sessions").launching.values() {
-            if &pending.job.caller == caller && pending.job.id == id {
-                pending.job.cancel.cancel();
-            }
-        }
+        self.cancel_where(|pending| pending.job.belongs_to(caller, id));
     }
 
     pub(crate) fn cancel_review(&self, review: &RequestId) {
-        for pending in self.0.lock().expect("viewer sessions").launching.values() {
-            if pending.review.as_ref() == Some(review) {
-                pending.job.cancel.cancel();
-            }
+        self.cancel_where(|pending| pending.review.as_ref() == Some(review));
+    }
+
+    fn cancel_where(&self, matches: impl Fn(&PendingLaunch) -> bool) {
+        let mut sessions = self.0.lock().expect("viewer sessions");
+        let cancelled: Vec<_> = sessions
+            .launching
+            .iter()
+            .filter_map(|(id, launch)| matches(launch).then_some(*id))
+            .collect();
+        for id in cancelled {
+            sessions.launching.remove(&id);
+            sessions.live.remove(&id);
+            sessions.places.remove(&id);
         }
     }
 
@@ -289,68 +282,36 @@ impl SessionsInner {
     }
 }
 
-pub(crate) enum Source {
-    /// The original request which owns the tool, even when opened through a follower.
-    Review(RequestId),
-    Workspace(PathBuf),
-}
-
-/// A viewer is minted only when the library has run an admitted viewer Human tool.
-pub(crate) async fn launch(
+/// Transfer the admitted library viewer and retain the job until the native window responds.
+pub(crate) fn launch(
     app: &App,
     outcome: &mut Outcome,
-    source: Source,
-    job: LaunchJob,
-) -> Result<Option<ViewerLaunch>, Failure> {
+    review: Option<RequestId>,
+    job: crate::human::Lease,
+) -> Option<ViewerLaunch> {
     let Outcome::Ran {
         result: Ok(result), ..
     } = outcome
     else {
-        return Ok(None);
+        return None;
     };
-    let [Content::Viewer { artifact }] = result.content() else {
-        return Ok(None);
-    };
-    let artifact = artifact.clone();
-    let review = match &source {
-        Source::Review(id) => Some(id.clone()),
-        Source::Workspace(_) => None,
-    };
-    let pending = PendingLaunch {
-        job,
-        review,
-        log: result.take_viewer_launch(),
-    };
-    let opened = async {
-        let workspace = match source {
-            Source::Review(id) => store::read_request_repo(&app.launch.state, id.as_str())
-                .await
-                .map_err(Failure::Read)?,
-            Source::Workspace(workspace) => workspace,
-        };
-        let worktree = workspace.clone();
-        let open =
-            tokio::task::spawn_blocking(move || viewer::Session::open(&workspace, &artifact));
-        let viewer = crate::failure::joined(open.await)?.map_err(Failure::Read)?;
-        Ok::<_, Failure>((viewer, worktree))
+    let (viewer, log) = result.take_viewer_launch()?;
+    if job.cancel.is_cancelled() {
+        return None;
     }
-    .await;
-    if pending.cancelled() {
-        // Dropping the unfinished log reports Cancelled, never Launched.
-        return Ok(None);
-    }
-    match opened {
-        Ok((viewer, worktree)) => Ok(Some(app.viewers.keep(viewer, worktree, pending))),
-        Err(error) => finish_launch(pending.log, Err(error)),
-    }
+    let worktree = viewer.workspace().to_owned();
+    Some(
+        app.viewers
+            .keep(*viewer, worktree, PendingLaunch { job, review, log }),
+    )
 }
 
 impl PendingLaunch {
     pub(crate) fn open(self, open: impl FnOnce() -> Result<(), Failure>) -> Result<(), Failure> {
-        if self.cancelled() {
+        if self.job.cancel.is_cancelled() {
             return Err(Failure::Action("Viewer launch cancelled.".into()));
         }
-        finish_launch(self.log, open())
+        finish_launch(Some(self.log), open())
     }
 }
 
@@ -777,20 +738,22 @@ mod launch_tests {
 
     #[test]
     fn a_cancelled_viewer_handoff_never_opens_a_native_window() {
-        let cancel = tokio_util::sync::CancellationToken::new();
         let (sink, mut events) = log::channel();
         let review: RequestId = "run-1-1".parse().unwrap();
         let run = sink.start(&review, "view", "notes");
+        let reviews = crate::human::Reviews::default();
+        let job = reviews
+            .start_artifact(
+                crate::human::Caller::test_main(),
+                serde_json::from_str("1").unwrap(),
+            )
+            .unwrap();
+        job.cancel.cancel();
         let pending = PendingLaunch {
-            log: Some(run),
+            log: run,
             review: Some(review),
-            job: LaunchJob {
-                caller: crate::human::Caller::test_main(),
-                id: serde_json::from_str("1").unwrap(),
-                cancel: cancel.clone(),
-            },
+            job,
         };
-        cancel.cancel();
         assert!(pending.open(|| panic!("cancelled before opening")).is_err());
         let start = events.try_recv().unwrap();
         let end = events.try_recv().unwrap();

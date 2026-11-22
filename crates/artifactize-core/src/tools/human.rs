@@ -68,7 +68,7 @@ pub enum ToolResult {
     Error(ErrorText),
     Viewer {
         content: artifactize_tools::result::ContentBlocks<Content>,
-        pending: Option<Run>,
+        pending: Option<(Box<crate::viewer::Session>, Run)>,
     },
 }
 
@@ -103,7 +103,7 @@ impl ToolResult {
     }
 
     /// Transfer the unfinished Viewer log to the desktop that performs the actual launch.
-    pub fn take_viewer_launch(&mut self) -> Option<Run> {
+    pub fn take_viewer_launch(&mut self) -> Option<(Box<crate::viewer::Session>, Run)> {
         match self {
             Self::Viewer { pending, .. } => pending.take(),
             _ => None,
@@ -335,7 +335,13 @@ impl<'a> Registry<'a> {
                     }])
                     .expect("a Viewer result always has one block");
                 let pending = if run.waits_for_viewer() {
-                    Some(run)
+                    match crate::viewer::Session::from_config(
+                        self.config,
+                        &tool.definition.artifact_id,
+                    ) {
+                        Ok(viewer) => Some((Box::new(viewer), run)),
+                        Err(error) => return failed(run, error),
+                    }
                 } else {
                     run.end(End::Done);
                     None

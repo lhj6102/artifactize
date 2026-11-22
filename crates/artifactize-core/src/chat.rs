@@ -187,6 +187,23 @@ impl Session {
     }
 }
 
+async fn checkout_for(
+    worktree: &Path,
+    expected: Option<&Place>,
+) -> Result<(PathBuf, repository::Identity), String> {
+    let worktree =
+        crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
+    let expected = expected.cloned();
+    crate::task::blocking(move || {
+        let identity = repository::identify(&worktree);
+        if expected.is_some_and(|expected| expected != Place::for_checkout(&worktree, &identity)) {
+            return Err("This branch is no longer checked out in the worktree.".into());
+        }
+        Ok((worktree, identity))
+    })
+    .await?
+}
+
 fn verify_checkout(worktree: &Path, saved: Option<&repository::Identity>) -> Result<(), String> {
     checkout_refusal(saved, &repository::identify(worktree)).map_or(Ok(()), Err)
 }
@@ -313,13 +330,15 @@ impl Chat {
     /// The starting model for a new session: the worktree's last choice, or the first
     /// listed model in Settings order after every provider has answered.
     pub async fn default_model(&self, worktree: &Path) -> Result<Option<Model>, String> {
-        let worktree =
-            crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
-        let identity = crate::task::blocking({
-            let worktree = worktree.clone();
-            move || repository::identify(&worktree)
-        })
-        .await?;
+        self.default_model_for(worktree, None).await
+    }
+
+    pub async fn default_model_for(
+        &self,
+        worktree: &Path,
+        branch: Option<&Place>,
+    ) -> Result<Option<Model>, String> {
+        let (worktree, identity) = checkout_for(worktree, branch).await?;
         self.starting_model(&worktree, &identity).await
     }
 
@@ -362,15 +381,19 @@ impl Chat {
         worktree: &Path,
         selection: Option<Model>,
     ) -> Result<Session, String> {
-        let workspace =
-            crate::workspace::canonical_target(worktree).map_err(|error| error.to_string())?;
+        self.create_for_branch(worktree, None, selection).await
+    }
+
+    /// Create only on the checkout the person selected, not a branch switched in meanwhile.
+    pub async fn create_for_branch(
+        &self,
+        workspace: &Path,
+        branch: Option<&Place>,
+        selection: Option<Model>,
+    ) -> Result<Session, String> {
+        let (workspace, repository) = checkout_for(workspace, branch).await?;
         let worktree = workspace.as_path();
         crate::config::read_workspace_config(worktree).map_err(|error| error.to_string())?;
-        let repository = crate::task::blocking({
-            let worktree = worktree.to_owned();
-            move || repository::identify(&worktree)
-        })
-        .await?;
         let selection = match selection {
             Some(selection) => {
                 let previous = if selection.effort.is_none() {

@@ -197,6 +197,16 @@ pub async fn viewer_window(
             return Err(Failure::Action(reason));
         }
     }
+    let prepared = app.viewers.get(session)?;
+    let scope =
+        crate::failure::joined(tokio::task::spawn_blocking(move || prepared.check_scope()).await)?;
+    if let Err(error) = scope {
+        if let Some(pending) = app.viewers.take_launch(session) {
+            let _ = pending.open(|| Err(Failure::Read(error.clone())));
+        }
+        app.viewers.drop_session(session);
+        return Err(Failure::Read(error));
+    }
     // Take the handoff once; a cancelled or already consumed handoff cannot open again.
     let pending = app
         .viewers

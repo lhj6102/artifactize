@@ -36,7 +36,7 @@ export class ChatModeState {
   modelQuery = $state("");
   /** The model a new session on a worktree starts with, as the library says: `known` once it
    * answered, `model` null when no provider lists one. */
-  starting = $state.raw<{ worktree: string; known: boolean; model: ChatModel | null } | null>(null);
+  starting = $state.raw<{ worktree: string; branch: BranchKey | null; known: boolean; model: ChatModel | null } | null>(null);
   /** What went wrong, for the main area's notice. */
   error = $state<string | null>(null);
   noticeOpen = $state(false);
@@ -134,11 +134,11 @@ export class ChatModeState {
   }
 
   /** Open the new session dialog on `worktree` and read its library default. */
-  newChat(worktree: string | null): void {
+  newChat(worktree: string | null, branch: BranchKey | null = null): void {
     ++this.#opening;
     this.worktree = worktree;
     this.creating = true;
-    if (worktree) void this.readStarting(worktree);
+    if (worktree) void this.readStarting(worktree, branch);
   }
 
   /** Read the shown session again: its turns stream and its Run cards change. */
@@ -287,15 +287,15 @@ export class ChatModeState {
 
   /** Ask the library which model a new session on `worktree` starts with; the dialog says it is
    * reading until it answers. */
-  async readStarting(worktree: string): Promise<void> {
+  async readStarting(worktree: string, branch: BranchKey | null): Promise<void> {
     const mine = ++this.#defaults;
-    this.starting = { worktree, known: false, model: null };
+    this.starting = { worktree, branch, known: false, model: null };
     try {
-      const model = await call(this.ipc.chatDefaultModel(worktree));
-      if (mine === this.#defaults) this.starting = { worktree, known: true, model };
+      const model = await call(this.ipc.chatDefaultModel(worktree, branch));
+      if (mine === this.#defaults) this.starting = { worktree, branch, known: true, model };
     } catch (failure) {
       if (mine !== this.#defaults) return;
-      this.starting = { worktree, known: true, model: null };
+      this.starting = { worktree, branch, known: true, model: null };
       this.error = message(failure);
     }
   }
@@ -305,7 +305,7 @@ export class ChatModeState {
     // Without a model yet the dialog says why and does not offer Create.
     if (this.starting?.worktree !== worktree || this.starting.model === null) return false;
     try {
-      const session = await call(this.ipc.chatCreate(worktree, null));
+      const session = await call(this.ipc.chatCreate(worktree, this.starting.branch, null));
       await this.list();
       await this.open(session.id);
       return true;
