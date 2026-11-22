@@ -299,6 +299,21 @@ pub async fn chat_create(
         .map_err(Failure::Action)
 }
 
+/// Save the selected model and effort for the next turn without sending a message.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_set_model(
+    app: tauri::State<'_, App>,
+    id: SessionKey,
+    selection: ChatModel,
+) -> Result<ChatSession, Failure> {
+    app.chat
+        .set_model(&id.into_inner(), selection.try_into()?)
+        .await
+        .map(Into::into)
+        .map_err(Failure::Action)
+}
+
 /// List saved sessions newest first. `null` applies no worktree or query filter.
 #[tauri::command]
 #[specta::specta]

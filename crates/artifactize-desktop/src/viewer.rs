@@ -62,6 +62,7 @@ impl ActiveReview {
 struct Place {
     address: Address,
     viewer: String,
+    scope: viewer::Scope,
 }
 
 /// Where the Artifact's scope points, not just the name by which it was found. A checkout can
@@ -103,6 +104,7 @@ impl Sessions {
                 target: context.target.clone(),
             },
             viewer: context.type_name.to_string(),
+            scope: viewer.scope(),
         };
         let session = self.remember(place);
         self.0
@@ -122,7 +124,7 @@ impl Sessions {
         session
     }
 
-    /// Sessions `one` and `other` show the same Artifact target in the same worktree and viewer.
+    /// Sessions `one` and `other` show the same current Artifact scope and viewer.
     pub(crate) fn same_place(&self, one: u32, other: u32) -> bool {
         let sessions = self.0.lock().expect("viewer sessions");
         match (sessions.places.get(&one), sessions.places.get(&other)) {
@@ -588,6 +590,7 @@ mod tests {
                 target: serde_json::from_value(serde_json::json!(target)).unwrap(),
             },
             viewer: viewer.into(),
+            scope: viewer::Scope::default(),
         }
     }
 

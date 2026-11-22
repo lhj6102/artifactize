@@ -311,6 +311,16 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             title: "Edit and verify the notes".into()
         })
     );
+    let next_model = Model {
+        model: "second-model".parse().unwrap(),
+        ..selection.clone()
+    };
+    let changed_while_streaming = reader
+        .set_model(&session.id, next_model.clone())
+        .await
+        .unwrap();
+    assert!(changed_while_streaming.running);
+    assert_eq!(changed_while_streaming.selection, next_model);
     final_answer.open();
     let ended = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
     assert!(matches!(ended.turns[0].state, TurnState::Completed));
@@ -333,7 +343,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     assert!(!entries[0].running);
     assert_eq!(
         restarted.default_model(&worktree).await.unwrap(),
-        Some(selection.clone())
+        Some(next_model)
     );
     assert_eq!(restored.session.title, "Edit and verify the notes");
     restarted
@@ -627,13 +637,24 @@ async fn codex_chat_fixture() {
         effort: Some("high".into()),
         ..model
     };
-    chat.send(
-        &session.id,
-        "What can you do?".into(),
-        Some(selection.clone()),
-    )
-    .await
-    .unwrap();
+    let saved = chat
+        .set_model(&session.id, selection.clone())
+        .await
+        .unwrap();
+    assert_eq!(saved.selection, selection);
+    assert!(chat.open(&session.id).await.unwrap().turns.is_empty());
+    assert_eq!(
+        Chat::new(state.clone(), support::os::cli())
+            .open(&session.id)
+            .await
+            .unwrap()
+            .session
+            .selection,
+        selection
+    );
+    chat.send(&session.id, "What can you do?".into(), None)
+        .await
+        .unwrap();
     let view = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
     assert!(
         matches!(&view.turns[0].state, TurnState::Completed),

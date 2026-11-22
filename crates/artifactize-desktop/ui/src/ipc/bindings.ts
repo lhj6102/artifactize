@@ -14,6 +14,8 @@ export const commands = {
 	model: string,
 	effort: string | null,
 } | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, selection })),
+	/**  Save the selected model and effort for the next turn without sending a message. */
+	chatSetModel: (id: string, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_model", { id, selection })),
 	/**
 	 *  Read the starting model for a new session. The pending call is the loading state;
 	 *  `null` means no provider lists a model and the worktree has no previous session.

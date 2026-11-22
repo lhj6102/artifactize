@@ -165,10 +165,48 @@ impl Receipts {
             .map_err(|error| error.to_string())
     }
 
-    pub(crate) async fn save_chat(&self, session: &Session) -> Result<(), String> {
-        let session = session.clone();
+    /// Accept the turn with an explicit choice, or take the latest saved choice atomically.
+    pub(crate) async fn accept_chat(
+        &self,
+        session: &Session,
+        selection: Option<Model>,
+    ) -> Result<Model, String> {
+        let mut session = session.clone();
         self.connection
-            .call(move |db| save(db, &session))
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                session.selection = match selection {
+                    Some(selection) => selection,
+                    None => saved_chat(&transaction, &session.id)?.selection,
+                };
+                save(&transaction, &session)?;
+                transaction.commit()?;
+                Ok::<_, Error>(session.selection)
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) async fn set_chat_model(
+        &self,
+        state: &Path,
+        id: &SessionId,
+        selection: Model,
+    ) -> Result<Session, String> {
+        let state = state.to_owned();
+        let id = id.clone();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut session = load_session(&transaction, &state, &id)?;
+                if session.selection != selection {
+                    session.selection = selection;
+                    session.updated_at = crate::broker::now();
+                    save(&transaction, &session)?;
+                }
+                transaction.commit()?;
+                Ok::<_, Error>(session)
+            })
             .await
             .map_err(|error| error.to_string())
     }
@@ -228,13 +266,24 @@ impl Receipts {
         self.connection.call(move |db| {
             let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let released = transaction.execute("DELETE FROM chat_active_turns WHERE session_id=? AND json_extract(data,'$.token')=?", params![id, token])?;
-            if released != 0 && let Some(session) = settled {
+            if released != 0 && let Some(mut session) = settled {
+                // A selector change accepted during the turn is for the next message.
+                let current = saved_chat(&transaction, &id)?;
+                session.selection = current.selection;
+                session.updated_at = session.updated_at.max(current.updated_at);
                 save(&transaction, &session)?;
             }
             transaction.commit()?;
             Ok::<_, Error>(())
         }).await.map_err(|error| error.to_string())
     }
+}
+
+fn saved_chat(db: &Connection, id: &SessionId) -> Result<Session, Error> {
+    let data: String = db.query_row("SELECT data FROM chat_sessions WHERE id=?", [id], |row| {
+        row.get(0)
+    })?;
+    Ok(serde_json::from_str(&data)?)
 }
 
 fn save(db: &Connection, session: &Session) -> Result<(), Error> {

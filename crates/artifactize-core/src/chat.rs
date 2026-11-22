@@ -431,6 +431,31 @@ impl Chat {
         })
     }
 
+    /// Save a selection for the next turn without adding a message. An accepted turn keeps
+    /// the selection it started with, even if the user changes the model while it streams.
+    pub async fn set_model(&self, id: &SessionId, selection: Model) -> Result<Session, String> {
+        let session = self.available(id).await?;
+        let selection = self
+            .resolve_model(&session.worktree, selection, Some(&session.selection))
+            .await?;
+        let receipts = Receipts::open(&self.state, &session.worktree).await?;
+        let saved = receipts.set_chat_model(&self.state, id, selection).await;
+        let closed = receipts.close().await;
+        let saved = saved.and_then(|session| closed.map(|()| session))?;
+        crate::changes::Publisher::new(&self.state)
+            .notify(crate::changes::Change::SessionInvalidated(id.clone()));
+        Ok(saved)
+    }
+
+    async fn available(&self, id: &SessionId) -> Result<Session, String> {
+        let session = store::chat::load(&self.state, id).await?;
+        let mut session = crate::task::blocking(move || session.with_checkout()).await?;
+        match session.unavailable.take() {
+            Some(reason) => Err(reason),
+            None => Ok(session),
+        }
+    }
+
     /// Start a durable turn and return as soon as it has an accepted user message. The recorder
     /// notifies `SessionInvalidated(id)` as text, tool outcomes and Run references arrive.
     pub async fn send(
@@ -473,20 +498,16 @@ impl Chat {
         selection: Option<Model>,
         cancel: &CancellationToken,
     ) -> Result<Prepared, String> {
-        let mut session = store::chat::load(&self.state, id).await?;
-        session = crate::task::blocking(move || session.with_checkout()).await?;
-        if let Some(reason) = session.unavailable.take() {
-            return Err(reason);
-        }
+        let mut session = self.available(id).await?;
         let context = self.context(&session.worktree)?;
-        if let Some(selection) = selection
-            .filter(|selection| selection.effort.is_none() || *selection != session.selection)
-        {
-            session.selection = tokio::select! {
+        let selection = if let Some(selection) = selection {
+            Some(tokio::select! {
                 _ = cancel.cancelled() => return Err("Chat stopped before accepting the turn.".into()),
                 resolved = self.resolve_model(context.repo(), selection, Some(&session.selection)) => resolved?,
-            };
-        }
+            })
+        } else {
+            None
+        };
         let file = path(&self.state, id);
         let owner = store::chat::Owner::current()?;
         let receipts = Receipts::open(&self.state, context.repo()).await?;
@@ -524,7 +545,7 @@ impl Chat {
                     outcome: Outcome::Running,
                     unseen: false,
                 });
-                receipts.save_chat(&session).await?;
+                session.selection = receipts.accept_chat(&session, selection).await?;
                 Ok::<_, String>((recorder, history))
             }
             .await;

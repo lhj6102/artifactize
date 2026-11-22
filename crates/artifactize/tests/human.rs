@@ -238,6 +238,49 @@ async fn schema_ten_reviews_keep_their_receipts_and_gain_drafts() {
     );
 }
 
+#[test]
+fn a_long_open_viewer_cannot_read_a_new_folder_parts_files() {
+    let root = support::os::tempdir();
+    let repo = root.path();
+    fs::create_dir(repo.join(".artifactize")).unwrap();
+    fs::create_dir_all(repo.join("parent/child")).unwrap();
+    fs::write(repo.join("parent/child/report.txt"), "report contents").unwrap();
+    fs::write(repo.join("parent/home.txt"), "parent contents").unwrap();
+    fs::write(
+        repo.join(".artifactize/parent.artf"),
+        "path = 'parent/'\ntype = 'files'\nbasis = true\n",
+    )
+    .unwrap();
+    let artifact = "parent".parse().unwrap();
+    let child = "child/report.txt".parse().unwrap();
+    let original = artifactize_core::viewer::Session::open(repo, &artifact).unwrap();
+    assert_eq!(original.read_text(&child).unwrap(), "report contents");
+
+    fs::write(
+        repo.join(".artifactize/child.artf"),
+        "path = 'parent/child/'\ntype = 'files'\nbasis = true\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join(".artifactize/parent.artf"),
+        "path = 'parent/'\ntype = 'files'\nparts = ['child']\n",
+    )
+    .unwrap();
+    assert!(
+        original
+            .read_text(&child)
+            .unwrap_err()
+            .contains("Reopen the viewer")
+    );
+    let reopened = artifactize_core::viewer::Session::open(repo, &artifact).unwrap();
+    assert_ne!(original.scope(), reopened.scope());
+    assert!(reopened.read_text(&child).is_err());
+    assert_eq!(
+        reopened.read_text(&"home.txt".parse().unwrap()).unwrap(),
+        "parent contents"
+    );
+}
+
 #[tokio::test]
 async fn a_claimed_review_opens_by_its_exact_reference_outside_the_default_search() {
     use artifactize_core::review::{Target, search};

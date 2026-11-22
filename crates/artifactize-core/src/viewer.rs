@@ -26,6 +26,13 @@ pub struct Session {
     entry: ViewerEntry,
 }
 
+/// The ownership boundaries that can change while the Artifact's target remains the same.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Scope {
+    nested: std::collections::BTreeMap<config::ChildPrefix, ArtifactName>,
+    covering_part: Option<ArtifactName>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Review {
     pub id: RequestId,
@@ -97,6 +104,33 @@ impl Session {
         })
     }
 
+    pub fn scope(&self) -> Scope {
+        Scope {
+            nested: self.artifact.nested.clone(),
+            covering_part: self.artifact.covering_part.clone(),
+        }
+    }
+
+    /// An already-open viewer's scope cannot authorize access after a declaration changes.
+    fn check_scope(&self) -> Result<(), String> {
+        let config =
+            config::read_workspace_config(&self.root).map_err(|error| error.to_string())?;
+        if config
+            .artifacts
+            .get(&self.artifact.name)
+            .is_some_and(|current| {
+                current.path == self.artifact.path
+                    && current.type_name == self.artifact.type_name
+                    && current.nested == self.artifact.nested
+                    && current.covering_part == self.artifact.covering_part
+            })
+        {
+            Ok(())
+        } else {
+            Err("This Artifact's viewer scope has changed. Reopen the viewer.".into())
+        }
+    }
+
     pub fn entry(&self) -> &ViewerEntry {
         &self.entry
     }
@@ -126,6 +160,7 @@ impl Session {
     }
 
     pub fn read_text(&self, path: &InputPath) -> Result<String, String> {
+        self.check_scope()?;
         let path = self
             .artifact
             .file_name()
@@ -137,6 +172,7 @@ impl Session {
     /// Read one directory at a time. Never list non-owned siblings of a file Artifact or
     /// directories outside an aspect's selection.
     pub fn files(&self, path: &InputPath) -> Result<Vec<FileEntry>, String> {
+        self.check_scope()?;
         let path = path.as_str();
         if path.is_empty()
             && let Some(name) = self.artifact.file_name()
@@ -182,6 +218,7 @@ impl Session {
     }
 
     pub fn declarations(&self) -> Result<graph_structure::Structure, String> {
+        self.check_scope()?;
         if !matches!(
             self.entry,
             ViewerEntry::Builtin {
