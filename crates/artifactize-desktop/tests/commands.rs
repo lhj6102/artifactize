@@ -831,6 +831,61 @@ payload.instruction = "Review the fixture."
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn two_windows_save_different_fields_in_one_repeated_group() {
+    // Build the additional schema without TOML table nesting changing the existing fields.
+    let declaration = RELEASE.replace(
+        "properties.comment = { type = \"string\" }",
+        r#"properties.comment = { type = "string" }
+properties.groups = { type = "array", items = { type = "object", properties = { left = { type = "string" }, right = { type = "string" } } } }"#,
+    );
+    let declaration = declaration
+        .lines()
+        .filter(|line| !line.starts_with("[views.human_tools]") && !line.starts_with("notes ="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let fixture = fixture_with(&[(
+        "repeated",
+        &declaration.replace(
+            "name = \"release\"",
+            "name = \"repeated\"\ntype = \"files\"",
+        ),
+    )]);
+    let first = window(&fixture, Mode::Review);
+    let second = tauri::WebviewWindowBuilder::new(&first.app, "second", Default::default())
+        .build()
+        .unwrap();
+    let id = saved(&fixture, "repeated/signoff").request.id.to_string();
+    invoke(&first, "human_claim", json!({"id":id,"job":1})).unwrap();
+    invoke(
+        &first,
+        "human_draft_edit",
+        json!({"id":id,"change":{"kind":"addItem","verdict":"GREEN","name":"groups"}}),
+    )
+    .unwrap();
+    for (window, field, text) in [
+        (&*first, "left", "saved in Review"),
+        (&second, "right", "saved in the pet"),
+    ] {
+        invoke(
+            window,
+            "human_draft_edit",
+            json!({"id":id,"change":{
+                "kind":"groupField","verdict":"GREEN","name":"groups","item":0,"field":field,
+                "value":{"kind":"text","value":text},
+            }}),
+        )
+        .unwrap();
+    }
+    let draft = invoke(&first, "human_draft", json!({"id":id})).unwrap();
+    let text = draft["green"].to_string();
+    assert!(
+        text.contains("saved in Review") && text.contains("saved in the pet"),
+        "{draft}"
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn an_edit_during_submission_is_saved_without_settling_the_older_answer() {
     let inputs = os::tempdir();
     let steps = inputs.path().join("fingerprint-steps");

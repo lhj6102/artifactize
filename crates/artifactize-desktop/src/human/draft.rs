@@ -55,6 +55,13 @@ pub enum DraftChange {
         name: String,
         value: FieldValue,
     },
+    GroupField {
+        verdict: Verdict,
+        name: String,
+        item: u32,
+        field: String,
+        value: FieldValue,
+    },
     AddItem {
         verdict: Verdict,
         name: String,
@@ -79,6 +86,19 @@ impl From<DraftChange> for review::DraftEdit {
             } => Self::Field {
                 verdict: verdict.into(),
                 name,
+                value: value.into(),
+            },
+            DraftChange::GroupField {
+                verdict,
+                name,
+                item,
+                field,
+                value,
+            } => Self::GroupField {
+                verdict: verdict.into(),
+                name,
+                item,
+                field,
                 value: value.into(),
             },
             DraftChange::AddItem { verdict, name } => Self::AddItem {

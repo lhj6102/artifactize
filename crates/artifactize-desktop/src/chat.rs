@@ -456,8 +456,10 @@ pub async fn chat_mark_seen(app: tauri::State<'_, App>, id: SessionKey) -> Resul
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_open(app: tauri::State<'_, App>, id: SessionKey) -> Result<ChatView, Failure> {
+    let id = id.into_inner();
+    app.chat_stream.opened(&app.chat, &id);
     app.chat
-        .open(&id.into_inner())
+        .open(&id)
         .await
         .map(|view| {
             app.chat_worktrees

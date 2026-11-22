@@ -752,7 +752,7 @@ export type Draft = {
 	fields: ([string, FieldValue])[],
 };
 
-export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number };
+export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "groupField"; verdict: Verdict; name: string; item: number; field: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number };
 
 /**
  *  What the library says of an edit before it is made: the definition files it would write, by

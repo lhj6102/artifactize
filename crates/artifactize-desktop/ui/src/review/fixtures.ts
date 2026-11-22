@@ -24,6 +24,11 @@ export function draftLibrary(green: FormView = greenForm, red: FormView = redFor
     const change = (args as { change: DraftChange }).change;
     if (change.kind === "verdict") draft.verdict = change.verdict;
     else if (change.kind === "field") edit(change.verdict, change.name, () => change.value);
+    else if (change.kind === "groupField") edit(change.verdict, change.name, (value) => {
+      if (value.kind !== "groups") return value;
+      return { kind: "groups", value: value.value.map((group, index) => index === change.item
+        ? group.map(([name, child]) => [name, name === change.field ? change.value : child]) : group) };
+    });
     else {
       const item = change.kind === "removeItem" ? change.item : null;
       edit(change.verdict, change.name, (value) => {

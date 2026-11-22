@@ -178,6 +178,7 @@ pub fn export(path: &Path) -> Result<(), String> {
 pub struct App {
     pub launch: Launch,
     chat: artifactize_core::chat::Chat,
+    chat_stream: watch::ChatStream,
     chat_worktrees: watch::ChatWorktrees,
     browse: browse::Browse,
     human: human::Reviews,
@@ -195,6 +196,7 @@ impl App {
         Self {
             browse: browse::Browse::new(launch.repo.clone()),
             chat: artifactize_core::chat::Chat::discover(launch.state.clone()),
+            chat_stream: watch::ChatStream::default(),
             chat_worktrees: watch::ChatWorktrees::default(),
             launch,
             human: human::Reviews::default(),
@@ -239,6 +241,7 @@ impl App {
             self.human.reset();
             self.currents.reset();
             self.viewers.reset();
+            self.windows.close_viewers(self);
         })
     }
 

@@ -588,6 +588,14 @@ impl Chat {
         Ok(())
     }
 
+    /// Chat records are append-only. Readers can detect a missed hint without parsing a
+    /// transcript, with `None` covering a session that has not yet accepted a turn.
+    pub fn transcript_size(&self, id: &SessionId) -> Option<u64> {
+        std::fs::metadata(path(&self.state, id))
+            .ok()
+            .map(|file| file.len())
+    }
+
     /// The model's streamed text, tools, and current state of each referenced Run.
     pub async fn open(&self, id: &SessionId) -> Result<View, String> {
         let session = store::chat::load(&self.state, id).await?;

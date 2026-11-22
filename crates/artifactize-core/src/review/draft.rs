@@ -67,6 +67,13 @@ pub enum DraftEdit {
         name: String,
         value: FieldValue,
     },
+    GroupField {
+        verdict: Verdict,
+        name: String,
+        item: u32,
+        field: String,
+        value: FieldValue,
+    },
     AddItem {
         verdict: Verdict,
         name: String,
@@ -127,6 +134,32 @@ impl Draft {
                     .find(|field| field.name == name)
                     .ok_or_else(|| format!("{name} is not a field of this form."))?;
                 fill(std::slice::from_mut(field), &[(name, value)]);
+                *self.fields_mut(verdict) = values_of(&form.fields);
+            }
+            DraftEdit::GroupField {
+                verdict,
+                name,
+                item,
+                field,
+                value,
+            } => {
+                let mut form = self.form(request, verdict)?;
+                let group = form
+                    .fields
+                    .iter_mut()
+                    .find(|group| group.name == name)
+                    .ok_or_else(|| format!("{name} is not a field of this form."))?;
+                let Input::Groups { items, .. } = &mut group.input else {
+                    return Err(format!("{name} is not a repeated group."));
+                };
+                let item = items
+                    .get_mut(item as usize)
+                    .ok_or("The repeated group item no longer exists.")?;
+                let input = item
+                    .iter_mut()
+                    .find(|input| input.name == field)
+                    .ok_or_else(|| format!("{field} is not a field of {name}."))?;
+                fill(std::slice::from_mut(input), &[(field, value)]);
                 *self.fields_mut(verdict) = values_of(&form.fields);
             }
             DraftEdit::AddItem { verdict, name } => {

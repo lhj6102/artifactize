@@ -36,15 +36,6 @@
 
   type Group = [string, FieldValue][];
   const groups = (value: FieldValue | undefined): Group[] => (value?.kind === "groups" ? value.value : []);
-  /** The groups with one group's field edited. */
-  function setGroups(name: string, next: Group[]) {
-    set(name, { kind: "groups", value: next });
-  }
-  /** `group` with field `name` set to `value`. */
-  const within = (group: Group, name: string, value: FieldValue): Group => {
-    const at = group.findIndex(([sub]) => sub === name);
-    return at < 0 ? [...group, [name, value]] : group.with(at, [name, value]);
-  };
   const valueIn = (group: Group, name: string) => group.find(([sub]) => sub === name)?.[1];
 </script>
 
@@ -149,7 +140,7 @@
                     <label class="name" for={id} id={sub.input.kind === "bool" ? id : undefined}>
                       {sub.name}{#if sub.required}<span class="required" aria-label="required">*</span>{/if}
                     </label>
-                    {@render scalar(sub, valueIn(group, sub.name), id, (next) => setGroups(field.name, list.with(at, within(group, sub.name, next))))}
+                    {@render scalar(sub, valueIn(group, sub.name), id, (next) => void form.setGroupField(field.name, at, sub.name, next))}
                     {#if sub.hint}<span class="hint">{sub.hint}</span>{/if}
                   </div>
                 {/each}

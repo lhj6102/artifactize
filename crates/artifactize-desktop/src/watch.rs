@@ -67,6 +67,32 @@ pub struct SessionChanged {
     pub session: crate::ids::SessionKey,
 }
 
+/// Only the last opened conversation needs a live transcript fallback in this window.
+#[derive(Default)]
+pub(crate) struct ChatStream(Mutex<Option<(artifactize_core::types::SessionId, Option<u64>)>>);
+
+impl ChatStream {
+    pub(crate) fn opened(
+        &self,
+        chat: &artifactize_core::chat::Chat,
+        id: &artifactize_core::types::SessionId,
+    ) {
+        let mut shown = self.0.lock().expect("Chat stream lock");
+        *shown = Some((id.clone(), chat.transcript_size(id)));
+    }
+
+    fn changed(&self, chat: &artifactize_core::chat::Chat) -> Option<crate::ids::SessionKey> {
+        let mut shown = self.0.lock().expect("Chat stream lock");
+        let (id, size) = shown.as_mut()?;
+        let current = chat.transcript_size(id);
+        if current == *size {
+            return None;
+        }
+        *size = current;
+        Some(id.clone().into())
+    }
+}
+
 /// Chat sessions read by a window may be the only record of a live worktree.
 #[derive(Default, Clone)]
 pub(crate) struct ChatWorktrees(Arc<Mutex<BTreeMap<PathBuf, Checkout>>>);
@@ -194,6 +220,11 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
             ticks.tick().await;
             // A failed read is the next load's notice; the rescan tries again next tick.
             let app_state = app.state::<App>();
+            if let Some(session) = app_state.chat_stream.changed(&app_state.chat)
+                && (SessionChanged { session }).emit(&app).is_err()
+            {
+                return;
+            }
             let _ = app_state.chat.reconcile_interrupted().await;
             reconcile_runs(&app_state).await;
             let reviews_changed =

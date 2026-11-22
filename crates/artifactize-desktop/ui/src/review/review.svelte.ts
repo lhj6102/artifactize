@@ -74,10 +74,27 @@ export class FormDraft {
 
   /** Set field `name`. */
   async set(name: string, value: FieldValue): Promise<void> {
+    await this.#setPending(name, value, { kind: "field", verdict: this.verdict, name, value });
+  }
+
+  /** Save just the edited child field; the rest of the group stays owned by the library. */
+  async setGroupField(name: string, item: number, field: string, value: FieldValue): Promise<void> {
+    const groups = this.values[name];
+    if (groups?.kind !== "groups" || !groups.value[item]) return;
+    const current = groups.value[item];
+    const at = current.findIndex(([key]) => key === field);
+    const pair: [string, FieldValue] = [field, value];
+    const next = at < 0 ? [...current, pair] : current.with(at, pair);
+    await this.#setPending(name, { kind: "groups", value: groups.value.with(item, next) }, {
+      kind: "groupField", verdict: this.verdict, name, item, field, value,
+    });
+  }
+
+  async #setPending(name: string, value: FieldValue, change: DraftChange): Promise<void> {
     const edit = { value };
     this.#pending[name] = edit;
     this.showPending();
-    await this.#ask({ kind: "field", verdict: this.verdict, name, value }, () => {
+    await this.#ask(change, () => {
       if (this.#pending[name] === edit) delete this.#pending[name];
     });
   }

@@ -34,6 +34,7 @@ enum Action {
     Pet(Option<String>),
     FocusMain,
     CloseMain,
+    CloseViewers,
 }
 
 type Act = Box<dyn Fn(&App, Action) -> Result<(), String> + Send + Sync>;
@@ -57,6 +58,10 @@ impl Windows {
         self.closing.load(Ordering::Acquire)
     }
 
+    pub(crate) fn close_viewers(&self, app: &App) {
+        let _ = self.act(app, Action::CloseViewers);
+    }
+
     fn act(&self, app: &App, action: Action) -> Result<(), Failure> {
         let act = self
             .action
@@ -70,6 +75,14 @@ fn act<R: Runtime>(handle: &tauri::AppHandle<R>, app: &App, action: Action) -> t
     match action {
         Action::Viewer { session, title } => viewer(handle, app, session, title),
         Action::Pet(request) => pet(handle, request),
+        Action::CloseViewers => {
+            for (label, window) in handle.webview_windows() {
+                if label.starts_with(VIEWER) {
+                    let _ = window.destroy();
+                }
+            }
+            Ok(())
+        }
         Action::CloseMain => handle
             .get_webview_window(MAIN)
             .map_or(Ok(()), |main| main.destroy()),
