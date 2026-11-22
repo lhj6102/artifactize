@@ -543,12 +543,17 @@ pub async fn current_scan(
             tauri::async_runtime::spawn(async move {
                 let mut next = Some(fresh);
                 while let Some(Fresh { scan, token, stage }) = next.take() {
-                    let found = live::scan(&workspace, &state, token, |current| {
-                        if currents.publish(&place, scan, current) {
-                            stage.send_replace(Stage::Published);
-                            currents.announce(&key);
-                        }
-                    })
+                    let found = async {
+                        // A queued refresh can outlive the checkout it was requested for.
+                        let workspace = place.checked_workspace(workspace.clone()).await?;
+                        live::scan(&workspace, &state, token, |current| {
+                            if currents.publish(&place, scan, current) {
+                                stage.send_replace(Stage::Published);
+                                currents.announce(&key);
+                            }
+                        })
+                        .await
+                    }
                     .await;
                     let outcome = found.map(|current| {
                         currents.publish(&place, scan, current);

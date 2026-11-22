@@ -46,14 +46,7 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                 change,
                 Change::RunInvalidated(_) | Change::StateInvalidated | Change::Resync
             ) {
-                let logs = state.human.clear_settled_logs(&state.launch.state).await;
-                if !logs.is_empty()
-                    && (crate::human::log::HumanToolLog { logs })
-                        .emit(&hub)
-                        .is_err()
-                {
-                    return;
-                }
+                state.human.review_status_changed();
             }
             let sent = match change {
                 Change::StateInvalidated | Change::RunInvalidated(_) => {

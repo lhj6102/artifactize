@@ -113,14 +113,26 @@ pub fn keyed_log(key: &Key, log: &ToolLog) -> KeyedLog {
 /// Forward the app's Tool log to every window until the app exits.
 pub fn forward<R: tauri::Runtime>(app: tauri::AppHandle<R>, mut events: Events) {
     tauri::async_runtime::spawn(async move {
-        while let Some(first) = events.recv().await {
+        let state = app.state::<App>();
+        loop {
+            let first = tokio::select! {
+                biased;
+                () = state.human.wait_for_review_status() => {
+                    let logs = state.human.clear_settled_logs(&state.launch.state).await;
+                    if !logs.is_empty() && (HumanToolLog { logs }).emit(&app).is_err() {
+                        return;
+                    }
+                    continue;
+                }
+                event = events.recv() => event,
+            };
+            let Some(first) = first else { return };
             let mut batch = vec![first];
             while batch.len() < BATCH
                 && let Ok(event) = events.try_recv()
             {
                 batch.push(event);
             }
-            let state = app.state::<App>();
             let starts_review = batch.iter().any(|event| {
                 matches!(event.key, Key::Review(_))
                     && matches!(

@@ -88,6 +88,7 @@ pub struct Reviews {
     /// The Tool log of each review a run logged to, until it is submitted, and of each
     /// Artifact whose tool ran without a review, while the app runs.
     logs: Mutex<Logs>,
+    log_settlement: tokio::sync::Notify,
     /// The Tool log's receiving end, until the app starts forwarding it.
     events: Mutex<Option<review::log::Events>>,
 }
@@ -112,6 +113,7 @@ impl Default for Reviews {
             taken: Mutex::default(),
             log,
             logs: Mutex::default(),
+            log_settlement: tokio::sync::Notify::new(),
             events: Mutex::new(Some(events)),
         }
     }
@@ -155,6 +157,14 @@ impl Reviews {
         logs.open
             .remove(&key)
             .map(|_| log::keyed_log(&key, &review::log::ToolLog::default()))
+    }
+
+    pub(crate) fn review_status_changed(&self) {
+        self.log_settlement.notify_one();
+    }
+
+    pub(crate) async fn wait_for_review_status(&self) {
+        self.log_settlement.notified().await;
     }
 
     /// Read the authoritative review after a commit in any process, not just this window.
@@ -853,7 +863,7 @@ async fn submit(
         crate::viewer::settled(app, &id);
     }
     // A submitted review's log ends here; what a launched program still prints is dropped.
-    app.human.clear_log(&owner);
+    app.human.review_status_changed();
     let Acted { notice, view } = acted(app, &id, outcome).await?;
     Ok(Submitted {
         settled,

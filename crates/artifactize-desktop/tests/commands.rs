@@ -1932,7 +1932,8 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
         repo,
         state,
     };
-    let provider = FakeProvider::start(|_| support::openai::models(&["fixture-chat"]));
+    let provider =
+        FakeProvider::start(|_| support::openai::models(&["another-model", "fixture-chat"]));
     let first = window(&fixture, Mode::Monitor);
     invoke(&first, "provider_custom_save", json!({
         "name": "scripted", "target": {"kind": "endpoint", "api": "openaiResponses", "url": provider.openai_base()},
@@ -1993,6 +1994,17 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
     assert_eq!(current["artifacts"], 1);
     let definitions = invoke(&restarted, "definitions", json!({"branch":branch})).unwrap();
     assert!(definitions.to_string().contains("app"));
+    let changed = invoke(
+        &restarted,
+        "definition_check",
+        json!({
+            "branch":branch,
+            "operation":{"kind":"setComment","name":"app","text":"Chat can edit Current"},
+        }),
+    )
+    .unwrap();
+    assert_eq!(changed["kind"], "checked");
+    assert_eq!(changed["files"].as_array().unwrap().len(), 1);
 
     os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
     let stale = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
