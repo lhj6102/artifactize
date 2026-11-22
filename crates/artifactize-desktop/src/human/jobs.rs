@@ -40,8 +40,10 @@ type Key = (String, JobId);
 pub(super) enum Action {
     Ordinary,
     Tool,
-    /// Submit or quit after stopping tools on the affected reviews.
+    /// Submit after stopping tools on the affected reviews.
     Finish,
+    /// Release and quit can stop tools and submissions from another webview.
+    Quit,
 }
 
 struct Running {
@@ -133,7 +135,10 @@ impl Lease {
             if key == &self.key || !work.ids.iter().any(|id| ids.contains(id)) {
                 continue;
             }
-            if action == Action::Finish && work.action == Action::Tool {
+            if matches!(
+                (action, work.action),
+                (Action::Finish | Action::Quit, Action::Tool) | (Action::Quit, Action::Finish)
+            ) {
                 tools.push((work.cancel.clone(), work.done.clone()));
             } else {
                 return Err(Failure::Action(
@@ -192,6 +197,29 @@ impl Drop for Lease {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn release_and_quit_can_cancel_a_submission_in_another_window() {
+        let jobs = Jobs::default();
+        let id = "run-pet-1".parse::<RequestId>().unwrap();
+        let job = |number: &str| serde_json::from_str(number).unwrap();
+        let submit = jobs
+            .begin(
+                Caller("pet".into()),
+                job("1"),
+                vec![id.clone()],
+                Action::Finish,
+            )
+            .unwrap();
+        let quit = jobs
+            .begin(Caller("main".into()), job("2"), vec![id], Action::Quit)
+            .unwrap();
+        assert!(submit.cancel.is_cancelled());
+        let mut ready = std::pin::pin!(quit.ready());
+        assert!(futures_pending(ready.as_mut()).await);
+        drop(submit);
+        assert!(ready.await.is_ok());
+    }
 
     #[tokio::test]
     async fn cancelling_an_artifact_tool_while_its_checkout_is_resolved_prevents_execution() {

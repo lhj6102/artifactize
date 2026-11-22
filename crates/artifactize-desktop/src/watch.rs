@@ -121,25 +121,30 @@ pub(crate) async fn reconcile_runs(app: &App) {
 pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
     let hub = app.clone();
     tauri::async_runtime::spawn(async move {
-        let initial = artifactize_core::store::read_catalog(&state).await;
         let mut changes = Subscription::new(&state).await;
+        let initial = artifactize_core::store::read_catalog(&state).await;
+        let mut retry = initial.is_err();
         let mut finished = Finished::seed(initial.unwrap_or_default());
         loop {
-            let change = changes.next().await;
-            let runs = match &change {
-                Change::RunInvalidated(id) => artifactize_core::store::read_catalog_run(&state, id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .into_iter()
-                    .collect(),
-                Change::StateInvalidated | Change::Resync => {
-                    artifactize_core::store::read_catalog(&state)
-                        .await
-                        .unwrap_or_default()
-                }
-                _ => Vec::new(),
+            let change = if retry {
+                tokio::time::timeout(RESCAN, changes.next()).await.ok()
+            } else {
+                Some(changes.next().await)
             };
+            // A failed point read may have missed the only completion hint. Reconcile the
+            // catalog after a bounded wait even when no further state changes arrive.
+            let runs = if retry || matches!(change, Some(Change::StateInvalidated | Change::Resync))
+            {
+                artifactize_core::store::read_catalog(&state).await
+            } else if let Some(Change::RunInvalidated(id)) = &change {
+                artifactize_core::store::read_catalog_run(&state, id)
+                    .await
+                    .map(|run| run.into_iter().collect())
+            } else {
+                Ok(Vec::new())
+            };
+            retry = runs.is_err();
+            let runs = runs.unwrap_or_default();
             let state = hub.state::<App>();
             for run in runs {
                 if let Some(event) = finished.observed(run).await {
@@ -149,6 +154,7 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                     }
                 }
             }
+            let Some(change) = change else { continue };
             state.browse.invalidate(&change);
             if !matches!(change, Change::SessionInvalidated(_)) {
                 crate::viewer::refresh_active(&state).await;

@@ -52,6 +52,15 @@ async fn moving_a_branch_prefers_a_usable_session_but_keeps_stranded_history_rea
     assert_eq!(preferred.id, usable.id);
     assert!(preferred.unavailable.is_none());
     crate::test_os::git(&worktree, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+    let old_nested = stranded.worktree.join("former-subdirectory");
+    assert_eq!(
+        chat.latest_for_removed_checkout(&old_nested)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        stranded.id
+    );
     let fallback = chat.latest_for_navigation(&branch).await.unwrap().unwrap();
     assert_eq!(fallback.id, stranded.id);
     assert_eq!(

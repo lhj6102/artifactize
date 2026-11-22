@@ -1048,7 +1048,7 @@ pub async fn human_release_taken(
     let work = app
         .human
         .jobs
-        .begin(caller, job, ids.clone(), Action::Finish)?;
+        .begin(caller, job, ids.clone(), Action::Quit)?;
     for id in &ids {
         app.viewers.cancel_review(id);
     }

@@ -481,6 +481,31 @@ impl Chat {
         .await
     }
 
+    /// Find a conversation by its former checkout, including a workspace within the worktree.
+    pub async fn latest_for_removed_checkout(
+        &self,
+        workspace: &Path,
+    ) -> Result<Option<Session>, String> {
+        let workspace =
+            crate::workspace::canonical_target(workspace).map_err(|error| error.to_string())?;
+        let sessions = store::chat::list(&self.state, None).await?;
+        crate::task::blocking(move || {
+            sessions
+                .into_iter()
+                .find(|session| {
+                    let recorded = session
+                        .repository
+                        .as_ref()
+                        .and_then(|repo| repo.worktree_path.as_deref())
+                        .unwrap_or(&session.worktree);
+                    crate::platform::paths::relative_beneath(&workspace, recorded).is_some()
+                        || crate::platform::paths_equal(&workspace, recorded)
+                })
+                .map(Session::with_checkout)
+        })
+        .await
+    }
+
     /// The most recently active saved session on this branch, even if its checkout is gone.
     pub async fn latest_for_branch(&self, branch: &Place) -> Result<Option<Session>, String> {
         let mut sessions = store::chat::for_branch(&self.state, branch)

@@ -122,11 +122,9 @@ pub async fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
     let graph_branch = match (launch.mode, launch.repo.as_deref()) {
         (Mode::Graph, Some(path)) if !path.is_dir() => app
             .chat
-            .list(Some(path), None)
+            .latest_for_removed_checkout(path)
             .await
             .map_err(Failure::Read)?
-            .into_iter()
-            .next()
             .map(|session| crate::browse::BranchKey::new(&session.branch())),
         _ => None,
     };
