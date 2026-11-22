@@ -42,7 +42,7 @@ impl Scratch {
             crate::platform::paths::lock(&held)?;
             let name = lock
                 .file_name()
-                .and_then(|name| crate::platform::os_text(&name))
+                .and_then(crate::platform::os_text)
                 .and_then(|name| name.strip_suffix(LOCK))
                 .expect("the lock was named with its suffix");
             platform::private_named_dir(root, name)
