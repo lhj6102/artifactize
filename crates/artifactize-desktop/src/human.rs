@@ -600,6 +600,10 @@ fn show(app: &App, read: u32, request: &ReadReview) -> HumanView {
         OffsetDateTime::now_utc(),
     );
     shown.id = request.exact.request.id.clone().into();
+    shown.title = format!(
+        "{} · {}",
+        request.exact.request.eval_id, request.exact.request.title
+    );
     shown.technical = review::technical(&request.exact, app.launch.reviewer.as_str())
         .into_iter()
         .map(|(key, value)| Field {

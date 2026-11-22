@@ -1018,6 +1018,15 @@ payload.instruction = "Read the page separately."
     let root = os::tempdir();
     let follower_repo = root.path().join("follower");
     prepare(&follower_repo);
+    support::declaration::write(
+        &follower_repo,
+        follower_repo.join("page/index.artf"),
+        &PAGE.replace(
+            "title = \"Review the page\"",
+            "title = \"Review the follower page\"",
+        ),
+    )
+    .unwrap();
     let _lease = run_fixture::RepoLease::new(root, &fixture.state, &follower_repo);
     verify(&follower_repo, &fixture.state);
     fs::write(
@@ -1043,6 +1052,7 @@ payload.instruction = "Read the page separately."
     let reopened = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
     assert_eq!(reopened["target"], claim["view"]["target"]);
     assert_eq!(reopened["id"], id);
+    assert_eq!(reopened["title"], "page/approve · Review the follower page");
     let launched = invoke(
         &window,
         "human_run",
