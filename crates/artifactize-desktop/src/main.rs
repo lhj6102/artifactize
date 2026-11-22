@@ -70,8 +70,12 @@ fn main() -> std::process::ExitCode {
         let abandoned = Arc::new(AtomicBool::new(false));
         let watchdog = abandoned.clone();
         let code = app.run_return(move |app, event| {
-            if companion.is_some() && matches!(event, tauri::RunEvent::Ready) {
-                e2e_metadata::arm_companion_close(app, watchdog.clone());
+            if matches!(event, tauri::RunEvent::Ready) {
+                #[cfg(target_os = "macos")]
+                e2e_metadata::arm_window_image(app);
+                if companion.is_some() {
+                    e2e_metadata::arm_companion_close(app, watchdog.clone());
+                }
             }
         });
         if abandoned.load(Ordering::Acquire) {

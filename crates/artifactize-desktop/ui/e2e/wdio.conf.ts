@@ -3,11 +3,12 @@
 // after (teardown).
 import { inspect } from "node:util";
 import { SevereServiceError } from "webdriverio";
+import type { BatchLifecycle } from "./batch-lifecycle.ts";
 import { checkE2eApp, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { appsAtOnce, displayEnvironment, displayScreenshot, foregroundQuarantine, quarantineForeground, releaseForeground, setVariable, startupImage, variable, type Environment } from "./platform.ts";
+import { appsAtOnce, displayEnvironment, displayScreenshot, fallbackImage, fallbackImageEnvironment, setVariable, startupImage, variable, type Environment } from "./platform.ts";
 import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson, writeText } from "./portable.ts";
 import { APPS_UNRELEASED, COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
 
@@ -33,16 +34,17 @@ export type Service = {
   embeddedConfigs?: Map<string, { port: number }>;
   embeddedProcesses?: Map<string, { proc: { pid?: number; exitCode: number | null; signalCode: string | null } }>;
 };
-const foreground = foregroundQuarantine();
+let lifecycle: BatchLifecycle | undefined;
 const scenarioPorts = new Map<string, number>();
-const scenarioStates = new Map<string, Context["root"]>();
+const scenarioStates = new Map<string, { state: Context["root"]; fallback: Context["root"] }>();
 let observeService: (() => Service[]) | undefined;
-const shutdownFailures: unknown[] = [];
-const pendingStops = new Map<Service, () => Promise<void>>();
 const workers = new Map<string, { id: string; restarted: boolean }>();
 
 /** WDIO can log an ordinary service error without propagating it to the batch result. */
-export function trackServiceShutdown(services: () => Service[]): void { observeService = services; }
+export function trackServiceShutdown(owner: BatchLifecycle, services: () => Service[]): void {
+  lifecycle = owner;
+  observeService = services;
+}
 
 export let preparationFailure: unknown;
 
@@ -59,25 +61,14 @@ export function assertCompleted(): void {
  * service failed to stop the batch's apps (`serviceFailure`), every scenario of the batch keeps
  * that failure as its evidence, with the window as its flow left it, before its files go. */
 let tearingDown: Promise<void> | undefined;
-export function teardown(): Promise<void> {
-  return tearingDown ??= finishTeardown();
+export function teardown(owner: BatchLifecycle): Promise<void> {
+  return tearingDown ??= finishTeardown(owner);
 }
 
-async function finishTeardown(): Promise<void> {
-  if (pendingStops.size) {
-    for (const [service, stop] of pendingStops) {
-      // Retry the service, not a PID found on the machine. It still owns an unsuccessful stop.
-      try { await stop(); pendingStops.delete(service); } catch (error) { shutdownFailures.push(error); }
-    }
-  }
-  if (pendingStops.size) {
-    const failure = `Tauri service did not confirm that the apps in ${selected.map((item) => item.id).join(", ")} exited. Candidate and inputs kept at ${candidate.root}.`;
-    quarantineForeground(foreground, failure);
-    writeText(nativePath(output, APPS_UNRELEASED), `${failure}\n`);
-  } else {
-    releaseForeground(foreground);
-  }
-  const serviceFailure = shutdownFailures.length ? new AggregateError(shutdownFailures, "Tauri service failed to stop its apps") : undefined;
+async function finishTeardown(owner: BatchLifecycle): Promise<void> {
+  const stopped = await owner.close();
+  if (!stopped) writeText(nativePath(output, APPS_UNRELEASED), `Apps not released. Candidate and inputs kept at ${candidate.root}.\n`);
+  const serviceFailure = owner.failures.length ? new AggregateError(owner.failures, "Tauri service failed to stop its apps") : undefined;
   const scopes = owned.splice(0);
   // Read before the folders go.
   const windows = scopes.map((scope) => nativePath(scope.root, LAST_WINDOW)).map((image) => (exists(image) ? readBytes(image) : undefined));
@@ -89,7 +80,7 @@ async function finishTeardown(): Promise<void> {
     }
   }
   // The filesystem may allow removing files while a live app still uses them.
-  if (pendingStops.size) throw new AggregateError(failures, "apps not released; scenario inputs kept");
+  if (!stopped) throw new AggregateError(failures, "apps not released; scenario inputs kept");
   const results = await Promise.allSettled(scopes.map((scope) => scope.close()));
   for (const [index, result] of results.entries()) {
     if (result.status !== "rejected") continue;
@@ -132,31 +123,28 @@ export const config = {
   services: [["tauri", { appBinaryPath: candidate.app, driverProvider: "embedded", startTimeout: 60000, logDir: output, captureBackendLogs: true }]],
   async onPrepare(_config: unknown, capabilities: Capability[]) {
     try {
+      const owner = lifecycle;
+      if (!owner) throw new Error("the batch has no lifecycle owner");
       for (const service of observeService?.() ?? []) {
         const complete = service.onComplete?.bind(service);
         if (!complete) continue;
         const prepare = service.onPrepare?.bind(service);
         if (prepare) service.onPrepare = async (...args) => {
           // A failed service startup may leave an app but skip the usual completion hook.
-          pendingStops.set(service, () => complete(1, {}, []));
-          const captures = [...scenarioStates].map(([id, state]) => ({ id, stop: startupImage(output, state) }));
+          owner.arm(service, () => complete(1, {}, []));
+          const captures = [...scenarioStates].map(([id, { state, fallback }]) => ({ id, fallback, stop: startupImage(output, state) }));
           try { await prepare(...args); }
           catch (error) {
-            for (const { id, stop } of captures) {
+            for (const { id, fallback, stop } of captures) {
               let shot: Uint8Array | undefined;
               let capture = "";
               try { shot = stop(); } catch (failure) { capture = `\nCould not capture the startup window: ${String(failure)}`; }
-              await keepEvidence(id, nativePath(evidence, id), `Tauri could not start the embedded WebDriver before the scenario ran: ${inspect(error)}${capture}`, shot);
+              await keepEvidence(id, nativePath(evidence, id), `Tauri could not start the embedded WebDriver before the scenario ran: ${inspect(error)}${capture}`, shot ?? fallbackImage(fallback));
             }
             throw error;
           } finally { for (const capture of captures) capture.stop(false); }
         };
-        service.onComplete = async (...args) => {
-          const stop = () => complete(...args);
-          pendingStops.set(service, stop);
-          try { await stop(); pendingStops.delete(service); }
-          catch (error) { shutdownFailures.push(error); throw error; }
-        };
+        service.onComplete = (...args) => owner.stop(service, () => complete(...args));
       }
       const unset = new Set<string>();
       const prepared: { scope: Owned; input: Awaited<ReturnType<typeof selected[number]["prepare"]>>; env: Environment; app: Context["root"] }[] = [];
@@ -185,13 +173,14 @@ export const config = {
       prepared[0]?.scope.defer(close);
       for (const [index, { scope, input, env, app }] of prepared.entries()) {
         scenarioPorts.set(selected[index].id, ports[index]);
-        scenarioStates.set(selected[index].id, input.fixture.state);
+        const fallback = nativePath(scope.root, "app-snapshot.png");
+        scenarioStates.set(selected[index].id, { state: input.fixture.state, fallback });
         const context = nativePath(scope.root, "context.json");
         writeJson(context, { ...input, root: scope.root, port: ports[index], evidence: nativePath(evidence, selected[index].id) } satisfies Context);
         capabilities[index]["artifactize:context"] = context;
         capabilities[index]["tauri:options"] = { application: app };
         capabilities[index]["wdio:tauriServiceOptions"] = {
-          appArgs: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])], env: set(env), embeddedPort: ports[index],
+          appArgs: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])], env: set({ ...env, ...fallbackImageEnvironment(fallback) }), embeddedPort: ports[index],
         };
       }
       // The service starts each app with this process's variables under the scenario's own:
@@ -227,6 +216,7 @@ export const config = {
       .find((child) => child?.exitCode === null && child.signalCode === null);
     try { screen = displayScreenshot(output, process?.pid); }
     catch (error) { capture = `\nCould not capture the owned window: ${String(error)}`; }
+    screen ??= fallbackImage(scenarioStates.get(worker.id)?.fallback);
     await keepEvidence(worker.id, folder, `WebdriverIO worker ${cid} exited ${code} before its test could keep evidence; see its session/setup error in the batch log.${capture}`, screen);
   },
   beforeSession(_config: unknown, capability: Capability) {

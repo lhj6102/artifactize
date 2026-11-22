@@ -394,6 +394,16 @@ export function displayScreenshot(output: NativePath, pid?: number): Uint8Array 
   } finally { removeTree(scratch); }
 }
 
+/** The app's own WebKit image is independent of OS screen-capture permission. */
+export function fallbackImageEnvironment(path: NativePath): Environment {
+  return MACOS ? { ARTIFACTIZE_E2E_WINDOW_IMAGE: path } : {};
+}
+
+export function fallbackImage(path?: NativePath): Uint8Array | undefined {
+  if (!path || !MACOS) return undefined;
+  try { return readFileSync(path); } catch { return undefined; }
+}
+
 /** The service spawns the app directly under the batch. Before the driver is ready, the
  * configured state path distinguishes this fixture from all other children and apps. This
  * lookup is for read-only screenshots, never for signalling a process. */

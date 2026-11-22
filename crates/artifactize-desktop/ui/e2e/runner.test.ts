@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { it } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { PNG } from "pngjs";
+import { BatchLifecycle } from "./batch-lifecycle.ts";
 import { checkE2eApp, cleanup, runStep } from "./build.ts";
 import { own } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
@@ -131,11 +132,17 @@ it("fails a build interrupted after its root exits but while a descendant holds 
   const step = runStep(nodeProgram, ["-e", launcher, pidFile, descendant, holder], { env: process.env, cwd: root, capture: true });
   void step.then(() => (finished = true), () => (finished = true));
   try {
-    const deadline = Date.now() + 3000;
+    // The wrapper has to start and compile its job helper before the command exists.
+    // Time the interrupted-after-exit transition only once its target PID is known.
+    const launchDeadline = Date.now() + 30000;
+    let deadline: number | undefined;
     for (;;) {
       const pid = Number(readTextIfExists(pidFile));
-      if (pid > 0 && !processRunning(pid) && Number(readTextIfExists(descendant)) > 0) break;
-      assert.ok(Date.now() < deadline && !finished, "the build command exited with its pipe still open");
+      if (pid > 0) {
+        deadline ??= Date.now() + 4000;
+        if (!processRunning(pid) && Number(readTextIfExists(descendant)) > 0) break;
+      }
+      assert.ok(Date.now() < (deadline ?? launchDeadline) && !finished, "the build command exited with its pipe still open");
       await delay(10);
     }
     assert.equal(finished, false, "the descendant still holds stdout");
@@ -148,4 +155,47 @@ it("fails a build interrupted after its root exits but while a descendant holds 
   } finally {
     await step.catch(() => undefined);
   }
+});
+
+
+it("leaves no foreground marker if exit occurs during launcher initialization", async (test) => {
+  const root = newDirectory(scratchDirectory(), "e2e-lease-before-launch-");
+  test.after(() => removeTree(root));
+  const marker = nativePath(root, "foreground");
+  const owner = new BatchLifecycle(marker, "fixture apps");
+  assert.equal(await owner.close(), true);
+  assert.equal(exists(marker), false);
+  assert.throws(() => owner.arm({}, async () => {}), /closed before the service started/);
+  assert.doesNotThrow(() => new BatchLifecycle(marker, "next batch"));
+});
+
+it("joins signal and normal teardown and releases the lease after a failed stop is retried", async (test) => {
+  const root = newDirectory(scratchDirectory(), "e2e-lease-retry-");
+  test.after(() => removeTree(root));
+  const marker = nativePath(root, "foreground");
+  const owner = new BatchLifecycle(marker, "fixture apps");
+  const service = {};
+  let retries = 0;
+  let release!: () => void;
+  const stopped = new Promise<void>((resolve) => { release = resolve; });
+  owner.arm(service, async () => { retries++; await stopped; });
+  await assert.rejects(owner.stop(service, async () => { throw new Error("first stop failed"); }), /first stop failed/);
+  const closing = owner.close();
+  assert.equal(owner.close(), closing);
+  assert.equal(exists(marker), true);
+  release();
+  assert.equal(await closing, true);
+  assert.equal(retries, 1);
+  assert.equal(owner.failures.length, 1);
+  assert.equal(exists(marker), false);
+});
+
+it("retains the lease when service shutdown cannot be confirmed", async (test) => {
+  const root = newDirectory(scratchDirectory(), "e2e-lease-unreleased-");
+  test.after(() => removeTree(root));
+  const marker = nativePath(root, "foreground");
+  const owner = new BatchLifecycle(marker, "unreleased fixture apps");
+  owner.arm({}, async () => { throw new Error("shutdown not confirmed"); });
+  assert.equal(await owner.close(), false);
+  assert.throws(() => new BatchLifecycle(marker, "next batch"), /unreleased fixture apps/);
 });

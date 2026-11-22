@@ -8,10 +8,11 @@ import { readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename } from "node:path";
 import { inspect } from "node:util";
+import { BatchLifecycle } from "./batch-lifecycle.ts";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { appsAtOnce, assertHeadless, checkForeground, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, quarantineForeground, releaseForeground, runnerCommand, systemName, setVariable, startBatch, variable } from "./platform.ts";
+import { appsAtOnce, assertHeadless, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, runnerCommand, systemName, setVariable, startBatch, variable } from "./platform.ts";
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
 import { APPS_UNRELEASED, type Scenario } from "./scenario.ts";
 
@@ -147,12 +148,17 @@ async function suite(ids: string[]): Promise<void> {
   await turned();
   if (interrupted) {
     if (!noted()) failures.push(new Error("interrupted: the suite was stopped while it cleaned up"));
+  }
+  // Keep every batch's logs before either output directory can be removed. On success the
+  // staged evidence is removed; cleanup failures (not only test failures) retain it.
+  try {
     for (const entry of readdirSync(output, { withFileTypes: true })) {
       if (!entry.isDirectory() || exists(nativePath(evidence, entry.name))) continue;
-      for (const log of serviceLogs(nativePath(output, entry.name), evidence)) console.error(log);
+      const logs = serviceLogs(nativePath(output, entry.name), evidence);
+      if (failures.length) for (const log of logs) console.error(log);
     }
-  }
-  if (!declared) try { removeTree(output); } catch (error) { failures.push(error); }
+    if (!declared) removeTree(output);
+  } catch (error) { failures.push(error); }
   const kept = failures.length > 0;
   if (!kept) try { removeTree(evidence); } catch (error) { failures.push(error); }
   if (!failures.length) return;
@@ -182,25 +188,11 @@ async function holding(body: () => Promise<void>): Promise<void> {
 
 async function batch(): Promise<void> {
   assertHeadless();
-  const foreground = foregroundQuarantine();
-  await holding(async () => {
-    checkForeground(foreground);
-    quarantineForeground(foreground, `Batch ${variable("DESKTOP_TEST_BATCH") ?? ""} owns the foreground; its output is at ${variable("DESKTOP_TEST_BATCH_OUTPUT")}.`);
-    try { await launch(); }
-    finally {
-      // If configuration never loaded, the service cannot have started an app. Otherwise only
-      // its teardown, including on interruption, can confirm release.
-      if (!loaded) releaseForeground(foreground);
-    }
-  });
+  await holding(() => launch(new BatchLifecycle(foregroundQuarantine(),
+    `Batch ${variable("DESKTOP_TEST_BATCH") ?? ""} owns the foreground; its output is at ${variable("DESKTOP_TEST_BATCH_OUTPUT")}.`)));
 }
 
-
-
-/** The batch's configuration once loaded, for an interrupt's teardown. */
-let loaded: typeof import("./wdio.conf.ts") | undefined;
-
-async function launch(): Promise<void> {
+async function launch(owner: BatchLifecycle): Promise<void> {
   const output = asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? "");
   const declared = variable("DESKTOP_TEST_EVIDENCE_RUN");
   const evidence = declared ? asNativePath(declared) : newDirectory(output, "evidence-");
@@ -208,44 +200,46 @@ async function launch(): Promise<void> {
   const logs = () => serviceLogs(output, evidence);
   const { Launcher } = await import("@wdio/cli");
   const launcher = new Launcher(suitePath("wdio.conf.ts"));
+  let loaded: typeof import("./wdio.conf.ts") | undefined;
+  let exiting = false;
+  const teardown = async () => {
+    if (loaded) await loaded.teardown(owner);
+    else await owner.close();
+  };
   // An interrupt goes through WDIO's own exit routine, which ends its workers (each keeps the
   // evidence of the scenario it was in, journey.spec.ts); this hook, in the same routine, then
   // stops the apps as the service does at the end, closes the fixtures and prints and keeps the
   // logs as for any failed batch, before the process exits.
   const exitHook = createRequire(import.meta.resolve("@wdio/cli"))("async-exit-hook") as (hook: (done: () => void) => void) => void;
   exitHook((done) => {
-    const internals = launcher as unknown as { runner?: { shutdown(): Promise<unknown> }; _launcher?: { onComplete?(code: number, config: unknown, caps: unknown): Promise<void> }[] };
+    exiting = true;
+    const internals = launcher as unknown as { runner?: { shutdown(): Promise<unknown> } };
     void (async () => {
-      try {
-        await internals.runner?.shutdown();
-        try {
-          for (const service of internals._launcher ?? []) await service.onComplete?.(1, {}, []);
-        } finally {
-          await loaded?.teardown();
-        }
-      } catch (error) { console.error(inspect(error)); }
+      try { await internals.runner?.shutdown(); }
+      catch (error) { console.error(inspect(error)); }
+      try { await teardown(); } catch (error) { console.error(inspect(error)); }
       try { for (const log of logs()) console.error(log); } catch (error) { console.error(inspect(error)); }
       await printed();
       done();
     })();
   });
-  // The loader is set up before the configuration is imported, so the runner and WDIO share
-  // one instance of it.
-  await launcher.initialize();
-  const configuration = await import("./wdio.conf.ts");
-  loaded = configuration;
-  configuration.trackServiceShutdown(() => (launcher as unknown as { _launcher?: import("./wdio.conf.ts").Service[] })._launcher ?? []);
   const failures: unknown[] = [];
   try {
+    // Set up the loader before importing the configuration. Neither step may start apps.
+    await launcher.initialize();
+    if (exiting) throw new Error("interrupted before the desktop service started");
+    const configuration = await import("./wdio.conf.ts");
+    if (exiting) throw new Error("interrupted before the desktop service started");
+    loaded = configuration;
+    configuration.trackServiceShutdown(owner, () => (launcher as unknown as { _launcher?: import("./wdio.conf.ts").Service[] })._launcher ?? []);
     const code = await launcher.run();
     if (code !== 0) failures.push(new Error(`the WDIO batch failed with exit code ${code}`));
     else configuration.assertCompleted();
   } catch (error) {
-    failures.push(configuration.preparationFailure ?? error);
+    failures.push(loaded?.preparationFailure ?? error);
+  } finally {
+    try { await teardown(); } catch (error) { failures.push(error); }
   }
-  // A service that failed to stop the apps fails the batch, each scenario keeping it as its
-  // evidence with the window its flow left.
-  try { await configuration.teardown(); } catch (error) { failures.push(error); }
   if (failures.length) {
     for (const log of logs()) console.error(log);
     throw new AggregateError(failures, "desktop WDIO batch failed");

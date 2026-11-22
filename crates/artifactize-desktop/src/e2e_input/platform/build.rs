@@ -26,6 +26,7 @@ pub fn compile() -> Result<(), String> {
         "macos" => {
             cc::Build::new()
                 .file("src/e2e_input/platform/cocoa.m")
+                .file("src/e2e_window_image.m")
                 .flag("-fobjc-arc")
                 .try_compile("artifactize_e2e_input")
                 .map_err(|error| format!("the E2E input adapter did not compile: {error}"))?;
@@ -36,5 +37,6 @@ pub fn compile() -> Result<(), String> {
     }
     println!("cargo:rerun-if-changed=src/e2e_input/platform/gtk.c");
     println!("cargo:rerun-if-changed=src/e2e_input/platform/cocoa.m");
+    println!("cargo:rerun-if-changed=src/e2e_window_image.m");
     Ok(())
 }
