@@ -19,7 +19,10 @@
   import Reference from "../shell/Reference.svelte";
   import { composing } from "../shell/keys";
   import { providerName } from "../settings/provider-names";
-  import { toolLine } from "./tool-line";
+  import { activity } from "./tool-line";
+  import ChatActivity from "./ChatActivity.svelte";
+  import ChatMarkdown from "./ChatMarkdown.svelte";
+  import ModelPicker from "./ModelPicker.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import CurrentView from "./CurrentView.svelte";
   import ScanState from "./ScanState.svelte";
@@ -47,7 +50,10 @@
   const live = $derived(graph && session?.unavailable === null);
   const mainNotice = $derived((live ? definitions.notice ?? c.graph?.graphError : null) ?? c.error);
   const running = $derived(view?.running ?? false);
-  const model = $derived(session ? c.model(session) : null);
+  const stopping = $derived(session !== null && c.stopping.has(session.id));
+  const submitting = $derived(session !== null && (c.sending.has(session.id) || c.choosing.has(session.id)));
+  const rejected = $derived(session === null ? undefined : c.rejected.get(session.id));
+  const away = $derived(session !== null && c.scroll[session.id]?.following === false);
   const typed = $derived(session ? (c.typed[session.id] ?? "") : "");
   /** The model New chat's session starts with, once the library said it for the chosen branch. */
   const answer = $derived(c.starting !== null && c.starting.worktree === c.worktree ? c.starting : null);
@@ -61,6 +67,11 @@
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
     return `${Math.floor(seconds / 86400)}d`;
+  }
+
+  function sessionState(item: ChatSession) {
+    if (item.outcome === "running" || item.running) return "running";
+    return item.unseen ? item.outcome === "completed" ? "finished" : item.outcome : null;
   }
 
   /** A Run card's status word and its icon's status. */
@@ -100,19 +111,8 @@
       void c.send();
     } else if (event.key === "Escape" && running) {
       event.preventDefault();
-      void c.stop();
+      if (!c.picking) void c.stop();
     }
-  }
-
-  async function openSession(id: string) {
-    await c.open(id);
-    await tick();
-    c.panes.composer?.focus();
-  }
-
-  function pick(backend: string, slug: string) {
-    if (session) c.chosen[session.id] = { backend, model: slug, effort: null };
-    c.picking = false;
   }
 
   // New chat from the palette too, whatever mode is shown: it shows Chat first (J-PALETTE).
@@ -140,31 +140,44 @@
   }
 
   /** Read the same place again after a view or session switch; only follow at the end. */
-  function remember(log: HTMLElement, id = session?.id) {
-    if (!id) return;
+  function remember(log: HTMLElement) {
+    const id = session?.id;
+    if (!id || app.mode !== "chat") return;
     const top = log.scrollTop;
-    if (c.scroll[id]?.top === top) return; // The programmatic jump to a Run does not re-enable following.
+    // A programmatic reveal may already be at the bottom; only an actual scroll or the button
+    // should end that reading position.
+    if (c.scroll[id]?.top === top) return;
     c.scroll[id] = { top, following: log.scrollHeight - log.clientHeight - top <= 2 };
   }
 
+  function scrollToEnd(log: HTMLElement, id: string) {
+    log.scrollTop = log.scrollHeight;
+    c.scroll[id] = { top: log.scrollTop, following: true };
+  }
+
   const follow: Attachment<HTMLElement> = (log) => {
-    const id = view?.session.id;
+    const id = session?.id;
     const reveal = c.reveal;
-    if (!id || app.mode !== "chat") return;
+    const turns = view?.turns; // Recheck when a library snapshot brings a new line or Run card.
+    if (!id || !turns || app.mode !== "chat") return;
     let attached = true;
-    queueMicrotask(() => {
-      if (!attached) return;
-      const card = reveal ? [...log.querySelectorAll<HTMLElement>("[data-run]")].find((item) => item.dataset.run === reveal) : null;
-      if (card) {
+    function place() {
+      if (!attached || !id || app.mode !== "chat") return;
+      const card = reveal && [...log.querySelectorAll<HTMLElement>("[data-run]")].find((item) => item.dataset.run === reveal);
+      if (card && c.reveal === reveal) {
         card.scrollIntoView({ block: "center" });
         c.scroll[id] = { top: log.scrollTop, following: false };
         c.reveal = null;
-      } else if (!reveal) {
+      } else if (!c.reveal) {
         const kept = c.scroll[id];
         log.scrollTop = !kept || kept.following ? log.scrollHeight : kept.top;
       }
-    });
-    return () => { attached = false; };
+    }
+    queueMicrotask(place);
+    const dimensions = new ResizeObserver(place);
+    dimensions.observe(log);
+    if (log.firstElementChild) dimensions.observe(log.firstElementChild);
+    return () => { attached = false; dimensions.disconnect(); };
   };
 
   /** The shown session and the list read again as the library changes them, one read of each at
@@ -176,6 +189,7 @@
     untrack(() => {
       rereading.showing();
       listing.showing();
+      c.acknowledge();
     });
   };
 
@@ -207,7 +221,7 @@
   <div class="run" data-run={card.id}>
     <span class={tone(status.status)}><Icon name={statusIcon(status.status)} /></span>
     <span class="mono">{card.id}</span>
-    <span class={tone(status.status)}>{status.word}</span>
+    <b class={tone(status.status)}>{status.word}</b>
     <span class="what">{attention}</span>
     <Reference onclick={() => app.showRun(card.id)}>Open in Verify</Reference>
   </div>
@@ -219,14 +233,22 @@
       <Split id="chat-pane" order={1} defaultSize={20} minSize={12}>
         <section class="pane" aria-label="Chats" bind:this={c.panes.pane}>
           <div class="head"><button class="button new" onclick={() => app.newChat()}><Icon name="add" />New chat</button></div>
+          <div class="search"><input type="search" value={c.query} bind:this={c.panes.search} aria-label="Search chats" placeholder="Search chats" oninput={(event) => c.search(event.currentTarget.value)} onkeydown={(event) => {
+            if (event.key === "Escape" && !composing(event)) {
+              event.preventDefault();
+              c.search("");
+            }
+          }} /></div>
           <div class="sessions">
+            {#if c.listed && c.query.trim() && groups.length === 0}<p class="empty">No chat matches.</p>{/if}
             {#each groups as [project, members] (project)}
               <p class="group">{project}</p>
               <ul aria-label="Sessions of {project}">
                 {#each members as item (item.id)}
+                  {@const state = sessionState(item)}
                   <li>
-                    <button class="session" class:selected={c.selected === item.id} aria-current={c.selected === item.id ? "true" : undefined} onclick={() => void openSession(item.id)}>
-                      <span class="title">{item.title || "New chat"}</span><span class="age">{age(item.updatedAt)}</span>
+                    <button class="session" class:selected={c.selected === item.id} aria-current={c.selected === item.id ? "true" : undefined} onclick={() => void c.open(item.id)}>
+                      <span class="title">{item.title || "New chat"}</span> <span class="age" class:running={state === "running"} class:failed={state === "failed"} class:finished={state === "finished"}>{state ?? age(item.updatedAt)}</span>
                     </button>
                   </li>
                 {/each}
@@ -255,7 +277,7 @@
           {/if}
         {/snippet}
         {#if !session}
-          <p class="empty">{c.listed && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane."}</p>
+          <p class="empty">{c.listed && !c.query.trim() && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane."}</p>
         {:else}
           <div class="chat">
             {#if graph}
@@ -267,43 +289,55 @@
                 {/key}
               {/if}
             {:else}
-            {#key session.id}
-            <div class="convo" role="log" aria-label="Conversation" {@attach follow} onscroll={(event) => remember(event.currentTarget)}>
-              <div class="column">
-                {#each view?.turns ?? [] as turn, at (at)}
-                  <div class="message">{turn.user}</div>
-                  <div class="turn">
-                    {#each turn.blocks as block, part (part)}
-                      {#if block.kind === "text"}
-                        <p class="text">{block.text}</p>
-                      {:else if block.kind === "tool"}
-                        {@const busy = block.output === null && block.failed === null}
-                        {@const line = toolLine(block.name, block.arguments, busy)}
-                        <div class="call">
-                          {#if busy}<span class="tone-running"><Icon name="running" /></span>{:else}<span class="quiet"><Icon name={line.icon} /></span>{/if}
-                          <span>{line.verb}</span><span class="target mono">{line.target}</span>
-                          {#if line.lines}<span>{line.lines}</span>{/if}
-                          {#if block.failed}<span class="failed">{block.output}</span>{/if}
+              {#key session.id}
+                <div class="reading">
+                  <div class="convo" role="log" aria-label="Conversation" {@attach follow} onscroll={(event) => remember(event.currentTarget)}>
+                    <div class="column">
+                      {#each view?.turns ?? [] as turn, at (at)}
+                        <div class="message">{turn.user}</div>
+                        <div class="turn">
+                          {#each activity(turn.blocks) as part (part.at)}
+                            {#if part.kind === "group"}
+                              <ChatActivity tools={part.tools} grouped running={turn.state.kind === "running"} />
+                            {:else if part.block.kind === "text"}
+                              <ChatMarkdown text={part.block.text} />
+                            {:else if part.block.kind === "tool"}
+                              <ChatActivity tools={[part.block]} running={turn.state.kind === "running"} />
+                            {:else}
+                              {@render runCard(part.block.card)}
+                            {/if}
+                          {/each}
+                          {#if turn.state.kind === "stopped"}
+                            <p class="end">Stopped</p>
+                          {:else if turn.state.kind === "interrupted"}
+                            <p class="end">Interrupted · Turn ended before the agent finished.</p>
+                          {:else if turn.state.kind === "failed"}
+                            <p class="end failed">{turn.state.message}</p>
+                          {/if}
                         </div>
-                      {:else}
-                        {@render runCard(block.card)}
-                      {/if}
-                    {/each}
-                    {#if turn.state.kind === "stopped" || turn.state.kind === "interrupted"}
-                      <p class="end">Stopped</p>
-                    {:else if turn.state.kind === "failed"}
-                      <p class="end failed">{turn.state.message}</p>
-                    {/if}
+                      {/each}
+                    </div>
                   </div>
-                {/each}
-              </div>
-            </div>
-            {/key}
+                  {#if away}
+                    <button class="button scroll-end" onclick={(event) => {
+                      const log = event.currentTarget.previousElementSibling;
+                      if (log instanceof HTMLElement) scrollToEnd(log, session.id);
+                    }}><Icon name="unfold" />Scroll to end</button>
+                  {/if}
+                </div>
+              {/key}
             {/if}
             <div class="composer">
               {#if !graph && session.unavailable}
                 <!-- The session's branch cannot be worked on now: it says why, and sends nothing. -->
                 <p class="unavailable" role="status">{session.unavailable}</p>
+              {/if}
+              {#if rejected}
+                <div class="rejected">
+                  <span class="failed" role="status" title={rejected.reason}>{rejected.reason}</span>
+                  <button class="button small" onclick={() => void c.copy(rejected.text)}>Copy</button>
+                  <button class="button small" disabled={typed !== ""} onclick={() => { c.restore(session.id); c.panes.composer?.focus({ preventScroll: true }); }}>Restore</button>
+                </div>
               {/if}
               <div class="box" class:off={session.unavailable !== null}>
                 <textarea
@@ -318,36 +352,14 @@
                   onkeydown={composerKey}
                 ></textarea>
                 <div class="row">
-                  <div class="picker">
-                    <button class="model" disabled={session.unavailable !== null} aria-haspopup="menu" aria-expanded={c.picking} onclick={() => { c.picking = !c.picking; if (c.picking) void c.providersRead(); }}>
-                      {model?.model ?? "Choose a model"}<Icon name="unfold" />
-                    </button>
-                    {#if c.picking && session.unavailable === null}
-                      <!-- The model menu, opening upward from the selector. -->
-                      <div class="menu" role="menu" aria-label="Models">
-                        {#each c.providers as entry (entry.provider)}
-                          <p class="label">{providerName(entry.provider)}</p>
-                          {#if entry.error}
-                            <p class="note">{entry.error}</p>
-                          {:else if entry.models === null}
-                            <p class="quiet-note">…</p>
-                          {:else}
-                            {#each entry.models as item (item.slug)}
-                              {@const on = model?.backend === entry.provider && model.model === item.slug}
-                              <button class="item" class:on role="menuitemradio" aria-checked={on} onclick={() => pick(entry.provider, item.slug)}>{item.displayName}</button>
-                            {/each}
-                          {/if}
-                        {/each}
-                        <hr />
-                        <button class="item" role="menuitem" onclick={() => { c.picking = false; app.monitor.settings = true; }}><Icon name="add" />Connect provider</button>
-                      </div>
-                    {/if}
-                  </div>
+                  <ModelPicker {session} />
                   <span class="spacer"></span>
-                  {#if running}
+                  {#if stopping}
+                    <span class="stopping" role="status"><span class="tone-running"><Icon name="running" /></span>Stopping…</span>
+                  {:else if running}
                     <button class="button icon-button" disabled={session.unavailable !== null} aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
                   {:else}
-                    <button class="button icon-button primary" aria-label="Send (Enter)" aria-keyshortcuts="Enter" disabled={typed.trim() === "" || session.unavailable !== null} onclick={() => void c.send()}><Icon name="send" /></button>
+                    <button class="button icon-button primary" aria-label="Send (Enter)" aria-keyshortcuts="Enter" disabled={typed.trim() === "" || session.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
                   {/if}
                 </div>
               </div>
@@ -379,7 +391,7 @@
             <span class="field-name" id="new-chat-model">Model</span>
             <p class="starting" class:quiet={!starting} role="status" aria-labelledby="new-chat-model">
               {#if starting}
-                {providerName(starting.backend)} · {starting.model}
+                {providerName(starting.backend)} · {starting.model}{starting.effort ? ` · ${starting.effort}` : ""}
               {:else if reading}
                 Reading the providers' models…
               {:else}
@@ -423,6 +435,19 @@
     justify-content: flex-start;
     gap: 6px;
   }
+  .search { padding: 8px var(--pad) 4px; }
+  .search input {
+    box-sizing: border-box;
+    width: 100%;
+    height: var(--control);
+    padding: 0 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
+    font: inherit;
+  }
+  .search input::placeholder { color: var(--ink-2); }
   .sessions {
     flex: 1;
     min-height: 0;
@@ -465,6 +490,7 @@
     background: var(--selection);
     color: var(--ink);
   }
+  .session:focus-visible { outline-offset: -2px; }
   .session .title {
     flex: 1;
     min-width: 0;
@@ -477,6 +503,9 @@
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
   }
+  .age.running { color: var(--running); }
+  .age.failed { color: var(--red); }
+  .age.finished { color: var(--ink); }
   .branch {
     color: var(--ink-2);
     overflow: hidden;
@@ -530,9 +559,16 @@
     border-top: 1px solid var(--line-panel);
     background: var(--surface-app);
   }
-  .convo {
-    min-height: 0;
-    overflow: auto;
+  .reading { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+  .convo { min-height: 0; overflow: auto; overflow-anchor: none; }
+  .scroll-end {
+    position: absolute;
+    justify-self: center;
+    bottom: 8px;
+    gap: 4px;
+    background: var(--surface-raised);
+    border-color: var(--line-panel);
+    box-shadow: 0 2px 8px var(--scrim);
   }
   .column {
     display: flex;
@@ -557,38 +593,7 @@
     gap: 4px;
     min-width: 0;
   }
-  .text {
-    margin: 2px 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  /* What the agent did: one quiet line per tool, no box (D-CHAT-4). */
-  .call {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    min-height: var(--row-dense);
-    color: var(--ink-2);
-    font-size: var(--text-small);
-    white-space: nowrap;
-  }
-  .quiet {
-    display: inline-flex;
-    color: var(--ink-3);
-  }
-  .tone-running {
-    display: inline-flex;
-  }
-  .target,
-  .failed {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .failed {
-    color: var(--red);
-  }
+  .failed { color: var(--red); }
   .end {
     margin: 2px 0;
     color: var(--ink-2);
@@ -611,6 +616,7 @@
     background: var(--surface-panel);
     font-size: var(--text-small);
   }
+  .run b { font-weight: inherit; }
   .run > span:first-child {
     display: inline-flex;
   }
@@ -669,7 +675,7 @@
     font: inherit;
   }
   textarea::placeholder {
-    color: var(--ink-3);
+    color: var(--ink-2);
   }
   .row {
     display: flex;
@@ -679,90 +685,11 @@
   .spacer {
     flex: 1;
   }
-  .picker {
-    position: relative;
-  }
-  .model {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: var(--control);
-    margin: 0;
-    padding: 0 8px;
-    border: 1px solid transparent;
-    border-radius: var(--radius-control);
-    background: none;
-    color: var(--ink);
-    font: inherit;
-    font-size: var(--text-small);
-    cursor: pointer;
-  }
-  .model:hover {
-    background: var(--surface-group);
-  }
-  /* The model menu, raised, opening upward (D-CHAT-7). */
-  .menu {
-    position: absolute;
-    left: 0;
-    bottom: calc(100% + 4px);
-    z-index: 30;
-    width: 260px;
-    max-height: 60vh;
-    overflow: auto;
-    padding: 4px;
-    background: var(--surface-raised);
-    border: 1px solid var(--line-panel);
-    border-radius: var(--radius-control);
-    box-shadow: 0 2px 8px var(--scrim);
-  }
-  .menu .label {
-    margin: 0;
-    padding: 6px 8px 2px;
-    font-size: var(--text-label);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ink-2);
-  }
-  .menu .note {
-    margin: 0;
-    padding: 0 8px 4px;
-    color: var(--red);
-    font-size: var(--text-small);
-  }
-  .menu .quiet-note {
-    margin: 0;
-    padding: 0 8px 4px;
-    color: var(--ink-3);
-  }
-  .item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    min-height: var(--row);
-    margin: 0;
-    padding: 0 8px;
-    border: 0;
-    border-radius: var(--radius-control);
-    background: none;
-    color: var(--ink-2);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  .item:not(.on):hover {
-    background: var(--surface-group);
-  }
-  .item.on {
-    background: var(--selection);
-    color: var(--ink);
-  }
-  hr {
-    margin: 4px 0;
-    border: 0;
-    border-top: 1px solid var(--line-group);
-  }
+  .rejected, .stopping { display: flex; align-items: center; gap: 8px; font-size: var(--text-small); }
+  .rejected { margin: 0 0 6px; }
+  .rejected .failed { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .stopping { color: var(--ink-2); min-height: var(--control); }
+  .stopping .tone-running { display: inline-flex; }
   .icon-button {
     display: inline-grid;
     place-items: center;

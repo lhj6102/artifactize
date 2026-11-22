@@ -2,17 +2,16 @@
 // the model chosen for its next turn, the Run reference to bring into view, the model menu's
 // providers and what is typed in each composer. One owner, kept in the AppState; sessions, turns,
 // Run cards, providers and models are the library's, read and changed through the IPC.
-import { SvelteMap } from "svelte/reactivity";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { GraphWorkspace } from "../monitor/graph-workspace.svelte";
-import { call, message, type BranchKey, type ChatModel, type ChatSession, type ChatSessionView, type ChatView, type Commands, type Model } from "../ipc/client";
-
-/** A provider of the model menu: its models once listed, or why it lists none. */
-export type MenuProvider = { provider: string; models: Model[] | null; error: string | null };
+import { call, message, type BranchKey, type ChatModel, type ChatSession, type ChatSessionView, type ChatView, type Commands } from "../ipc/client";
+import { providerEntries, readProvider, type MenuProvider } from "./model-providers";
 
 export class ChatModeState {
   /** The library's sessions, newest activity first. */
   sessions = $state.raw<ChatSession[]>([]);
-  /** The library has answered the list at least once. */
+  query = $state("");
+  /** The library has answered the current list query. */
   listed = $state(false);
   /** The session shown, by its ID. */
   selected = $state<string | null>(null);
@@ -26,10 +25,15 @@ export class ChatModeState {
   reveal = $state<string | null>(null);
   /** What is typed in each session's composer, by session: kept while another is shown. */
   readonly typed: Record<string, string> = $state({});
-  /** The model chosen for each session's next turn, by session, until it is sent. */
-  readonly chosen: Record<string, ChatModel> = $state({});
-  /** The providers Settings lists, with their models, as the model menu shows them. */
+  /** Work tied to a session, even if the person switches away while the command runs. */
+  readonly sending = new SvelteMap<string, boolean>();
+  readonly stopping = new SvelteMap<string, boolean>();
+  readonly choosing = new SvelteMap<string, boolean>();
+  readonly rejected = new SvelteMap<string, { text: string; reason: string }>();
+  readonly #marking = new SvelteSet<string>();
   providers = $state.raw<MenuProvider[]>([]);
+  providerError = $state<string | null>(null);
+  modelQuery = $state("");
   /** The model a new session on a worktree starts with, as the library says: `known` once it
    * answered, `model` null when no provider lists one. */
   starting = $state.raw<{ worktree: string; known: boolean; model: ChatModel | null } | null>(null);
@@ -42,27 +46,35 @@ export class ChatModeState {
   /** The model menu is open. */
   picking = $state(false);
   /** The parts focus moves into. */
-  readonly panes: { pane?: HTMLElement; main?: HTMLElement; composer?: HTMLTextAreaElement } = $state({});
+  readonly panes: { pane?: HTMLElement; search?: HTMLInputElement; main?: HTMLElement; composer?: HTMLTextAreaElement } = $state({});
 
   /** Counts reads of the shown session: only the newest answer is shown. */
   #reads = 0;
   #opening = 0;
   #views = 0;
+  #lists = 0;
+  #providerReads = 0;
+  #defaults = 0;
 
-  constructor(readonly ipc: Commands) {}
+  constructor(readonly ipc: Commands, readonly shown: () => boolean) {}
 
-  /** The model the shown session's next turn runs with. */
-  model(session: ChatSession): ChatModel {
-    return this.chosen[session.id] ?? session.selection;
+  search(query: string): void {
+    if (query === this.query) return;
+    this.query = query;
+    this.listed = false;
+    void this.list();
   }
 
-  /** Read the sessions again. */
+  /** Read the library's match list; a late reply to an older search cannot replace it. */
   async list(): Promise<void> {
+    const mine = ++this.#lists;
     try {
-      this.sessions = await call(this.ipc.chatList(null, null));
+      const sessions = await call(this.ipc.chatList(null, this.query.trim() === "" ? null : this.query));
+      if (mine !== this.#lists) return;
+      this.sessions = sessions;
       this.listed = true;
     } catch (failure) {
-      this.error = message(failure);
+      if (mine === this.#lists) this.error = message(failure);
     }
   }
 
@@ -79,7 +91,10 @@ export class ChatModeState {
     }
     if (opening !== this.#opening) return;
     ++this.#views;
-    if (this.selected !== id) this.view = null;
+    if (this.selected !== id) {
+      this.view = null;
+      this.picking = false;
+    }
     this.reveal = reveal;
     this.selected = id;
     this.error = null;
@@ -133,78 +148,154 @@ export class ChatModeState {
     const mine = ++this.#reads;
     try {
       const view = await call(this.ipc.chatOpen(id));
-      if (mine === this.#reads && this.selected === id) this.view = view;
+      if (mine !== this.#reads || this.selected !== id) return;
+      this.view = view;
+      if (!view.running) this.stopping.delete(id);
+      this.acknowledge();
     } catch (failure) {
-      if (mine === this.#reads) this.error = message(failure);
+      if (mine === this.#reads && this.selected === id) this.error = message(failure);
     }
   }
 
-  /** Send what is typed in the shown session, with the model chosen for it if one was. */
+  acknowledge(): void {
+    if (this.view?.session.unseen && !this.view.running && this.shown()) void this.#markSeen(this.view.session.id);
+  }
+
+  async #markSeen(id: string): Promise<void> {
+    if (this.#marking.has(id)) return;
+    this.#marking.add(id);
+    try {
+      await call(this.ipc.chatMarkSeen(id));
+      if (this.view?.session.id === id && this.view.session.unseen) {
+        this.view = { ...this.view, session: { ...this.view.session, unseen: false } };
+      }
+      await this.list();
+    } catch (failure) {
+      if (this.selected === id) this.error = message(failure);
+    } finally {
+      this.#marking.delete(id);
+    }
+  }
+
+  /** A pending message is neither in the transcript nor eligible to send twice. New text
+   * stays independent of the pending submission. */
   async send(): Promise<void> {
     const view = this.view;
     if (!view || view.running || view.session.unavailable !== null) return;
     const id = view.session.id;
-    const draft = this.typed[id] ?? "";
-    const text = draft.trim();
-    if (text === "") return;
-    const chosen = this.chosen[id] ?? null;
-    // The composer empties for the next message; the draft comes back if nothing was sent.
+    const text = this.typed[id] ?? "";
+    if (text.trim() === "" || this.sending.has(id) || this.choosing.has(id) || this.stopping.has(id)) return;
+    this.sending.set(id, true);
     this.typed[id] = "";
     try {
-      await call(this.ipc.chatSend(id, text, chosen));
-      delete this.chosen[id];
-      this.error = null;
-      await this.read();
+      await call(this.ipc.chatSend(id, text, null));
+      if (this.selected === id) {
+        this.error = null;
+        await this.read();
+      }
+      void this.list();
     } catch (failure) {
-      // Nothing was sent: the draft comes back as it was, unless something new was typed since.
-      if ((this.typed[id] ?? "") === "") this.typed[id] = draft;
+      this.rejected.set(id, { text, reason: message(failure) });
+    } finally {
+      this.sending.delete(id);
+    }
+  }
+
+  restore(id: string): void {
+    const rejected = this.rejected.get(id);
+    if (!rejected || (this.typed[id] ?? "") !== "") return;
+    this.typed[id] = rejected.text;
+    this.rejected.delete(id);
+  }
+
+  async stop(): Promise<void> {
+    const view = this.view;
+    if (!view?.running || this.stopping.has(view.session.id)) return;
+    const id = view.session.id;
+    this.stopping.set(id, true);
+    this.error = null;
+    try {
+      const requested = await call(this.ipc.chatStop(id));
+      // True means cancellation was requested, not that the transcript has stopped yet.
+      if (this.selected === id) await this.read();
+      if (!requested) this.stopping.delete(id);
+    } catch (failure) {
+      this.stopping.delete(id);
+      if (this.selected === id) this.error = message(failure);
+    }
+  }
+
+  async openLink(url: string): Promise<void> {
+    try {
+      await call(this.ipc.chatOpenLink(url));
+    } catch (failure) {
       this.error = message(failure);
     }
   }
 
-  /** Stop the shown session's running turn. */
-  async stop(): Promise<void> {
-    const id = this.view?.session.id;
-    if (!id) return;
+  async copy(text: string): Promise<void> {
     try {
-      await call(this.ipc.chatStop(id));
-      await this.read();
+      await navigator.clipboard.writeText(text);
+    } catch {
+      this.error = "Clipboard is unavailable.";
+    }
+  }
+
+  /** Save the selection now. For a model name, null tells the library to keep the prior
+   * effort if the model offers it or use its default. */
+  async setModel(id: string, selection: ChatModel): Promise<void> {
+    this.picking = false;
+    if (this.choosing.has(id)) return;
+    this.choosing.set(id, true);
+    try {
+      const saved = await call(this.ipc.chatSetModel(id, selection));
+      if (this.view?.session.id === id) {
+        ++this.#reads; // An earlier in-flight read could still hold the previous selection.
+        this.view = { ...this.view, session: { ...this.view.session, selection: saved.selection } };
+        this.error = null;
+        await this.read();
+      }
     } catch (failure) {
-      this.error = message(failure);
+      if (this.selected === id) this.error = message(failure);
+    } finally {
+      this.choosing.delete(id);
     }
   }
 
   /** Read the providers Settings lists and the models each offers, for the model menu. */
-  async providersRead(): Promise<void> {
+  async openPicker(): Promise<void> {
+    this.picking = true;
+    this.modelQuery = "";
+    const mine = ++this.#providerReads;
+    this.providerError = null;
     try {
       const listed = await call(this.ipc.providersList());
-      const names = [...listed.builtin, ...listed.custom.map((custom) => custom.name)];
-      this.providers = names.map((provider) => ({ provider, models: null, error: null }));
-      await Promise.all(
-        names.map(async (provider) => {
-          let entry: MenuProvider;
-          try {
-            entry = { provider, models: await call(this.ipc.modelsList(provider)), error: null };
-          } catch (failure) {
-            entry = { provider, models: null, error: message(failure) };
-          }
-          this.providers = this.providers.map((each) => (each.provider === provider ? entry : each));
-        }),
-      );
+      if (mine !== this.#providerReads) return;
+      const entries = providerEntries(listed);
+      this.providers = entries.map(([provider]) => ({ provider, listing: { kind: "loading" } }));
+      const read = readProvider(this.ipc, listed);
+      await Promise.all(entries.map(async ([provider, setup]) => {
+        const listing = await read(provider, setup);
+        if (mine === this.#providerReads) {
+          this.providers = this.providers.map((entry) => entry.provider === provider ? { provider, listing } : entry);
+        }
+      }));
     } catch (failure) {
-      this.error = message(failure);
+      if (mine === this.#providerReads) this.providerError = message(failure);
     }
   }
 
   /** Ask the library which model a new session on `worktree` starts with; the dialog says it is
    * reading until it answers. */
   async readStarting(worktree: string): Promise<void> {
+    const mine = ++this.#defaults;
     this.starting = { worktree, known: false, model: null };
     try {
       const model = await call(this.ipc.chatDefaultModel(worktree));
-      if (this.starting?.worktree === worktree) this.starting = { worktree, known: true, model };
+      if (mine === this.#defaults) this.starting = { worktree, known: true, model };
     } catch (failure) {
-      if (this.starting?.worktree === worktree) this.starting = { worktree, known: true, model: null };
+      if (mine !== this.#defaults) return;
+      this.starting = { worktree, known: true, model: null };
       this.error = message(failure);
     }
   }

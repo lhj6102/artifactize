@@ -53,7 +53,8 @@ export class AppState {
   /** Review's chosen review and what its main area shows. */
   readonly reviewMode = new ReviewModeState();
   /** Chat's sessions and the one shown. */
-  readonly chat: ChatModeState = new ChatModeState(this.ipc);
+  readonly chat: ChatModeState = new ChatModeState(this.ipc, () => this.mode === "chat");
+  settingsTab = $state<"providers" | "remote" | "limits">("providers");
   /** Quitting asks first while claims are held or a Chat turn runs in any session, as the
    * library lists them. */
   readonly leaving = Object.assign(new Leaving(this.ipc), {

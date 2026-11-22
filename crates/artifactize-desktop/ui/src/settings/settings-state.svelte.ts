@@ -63,7 +63,6 @@ export const principalOf = (status: RemoteStatus | null) =>
 /** What the Settings modal holds: the snapshots it read, what is typed and what is under way,
  * and the library commands that change them. */
 export class SettingsState {
-  tab = $state<"providers" | "remote" | "limits">("providers");
   /** Numbers the remote-store calls: only the newest answer is shown. */
   remoteCalls = $state(0);
   /** Outstanding store reads or mutations, for the section's accessible busy state. */

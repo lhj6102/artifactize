@@ -17,7 +17,8 @@
   let { active, onclose }: { active: boolean; onclose?: () => void } = $props();
   const s = new SettingsState(useIpc());
   /** The window's reviewer and a newer release: Settings' header holds them (D-SET-1). */
-  const { launch, release } = $derived(getAppState());
+  const app = getAppState();
+  const { launch, release } = app;
   setSettingsState(s);
 
   const TABS = [
@@ -36,9 +37,9 @@
   function tabKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    const at = TABS.findIndex((tab) => tab.id === s.tab);
-    s.tab = TABS[(at + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length].id;
-    document.getElementById(`settings-tab-${s.tab}`)?.focus();
+    const at = TABS.findIndex((tab) => tab.id === app.settingsTab);
+    app.settingsTab = TABS[(at + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length].id;
+    document.getElementById(`settings-tab-${app.settingsTab}`)?.focus();
   }
 
   const signedIn = $derived(s.codex?.state === "stored");
@@ -53,7 +54,7 @@
             label: signedIn ? "Sign in to Codex again" : "Sign in to Codex",
             enabled: () => !s.busy && s.codex?.state !== "file" && s.codex?.state !== "refused",
             run: () => {
-              s.tab = "providers";
+              app.settingsTab = "providers";
               s.choose({ kind: "builtin", provider: "codex" });
               void s.signIn();
             },
@@ -72,10 +73,10 @@
           id="settings-tab-{tab.id}"
           role="tab"
           class="tab"
-          aria-selected={s.tab === tab.id}
+          aria-selected={app.settingsTab === tab.id}
           aria-controls="settings-panel-{tab.id}"
-          tabindex={s.tab === tab.id ? 0 : -1}
-          onclick={() => (s.tab = tab.id)}
+          tabindex={app.settingsTab === tab.id ? 0 : -1}
+          onclick={() => (app.settingsTab = tab.id)}
           onkeydown={tabKey}>{tab.label}</button
         >
       {/each}
@@ -87,11 +88,11 @@
     {/if}
     {#if onclose}<button class="button" aria-keyshortcuts="Escape" onclick={onclose}>Close</button>{/if}
   </header>
-  {#if s.tab === "providers"}
+  {#if app.settingsTab === "providers"}
     <div class="dialog-body" id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
       <ProvidersTab />
     </div>
-  {:else if s.tab === "remote"}
+  {:else if app.settingsTab === "remote"}
     <div class="dialog-body" id="settings-panel-remote" role="tabpanel" aria-labelledby="settings-tab-remote">
       <RemoteStore />
     </div>
