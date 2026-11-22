@@ -175,7 +175,7 @@ export class Review {
    * error line (stderr, a failed end) as the log marks it. */
   log(): Promise<string[]> {
     return this.browser.execute((root) => [...document.querySelectorAll(`${root} [role="log"][aria-label="Tool log"] p:not(.muted)`)]
-      .map((row) => `${(row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS ")}${row.querySelector(".red") || row.classList.contains("stderr") ? " [red]" : ""}`), this.root);
+      .map((row) => `${(row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS ")}${row.querySelector(".red") || row.matches(".stderr, .end.failed") ? " [red]" : ""}`), this.root);
   }
 
   /** The rows of the last run of the tool `name`, from its start line on. */

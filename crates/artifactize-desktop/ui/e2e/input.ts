@@ -238,8 +238,8 @@ export async function clickRowGutter(browser: WebdriverIO.Browser, row: Webdrive
       range.selectNodeContents(node);
       bounds.push(...range.getClientRects());
     }
-    for (const offset of [4, 12, 24, 40, 56]) {
-      for (const portion of [0.5, 0.75, 0.25]) {
+    for (const offset of [4, 8, 12, 24, 40, 56]) {
+      for (const portion of [0.5, 0.75, 0.25, 0.9, 0.1]) {
         const x = Math.floor(right - offset), y = Math.floor(box.top + box.height * portion);
         const hit = document.elementFromPoint(x, y);
         const control = hit?.closest("button, a, input");
