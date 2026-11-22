@@ -195,7 +195,7 @@ pub async fn human_open_reference(
         })
         .await;
     let (views, outside_reason) = opened.map_err(Failure::Read)?;
-    let view = super::loaded(&app, number, views).await?;
+    let view = super::loaded(&app, number, views, true).await?;
     Ok(OpenReview {
         view: super::show(&app, number, &view),
         outside_filter: outside_reason.is_some(),

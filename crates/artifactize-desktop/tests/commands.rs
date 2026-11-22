@@ -2004,6 +2004,15 @@ fn opening_a_review_does_not_retire_its_claim_when_declarations_change() {
     let retained = saved(&fixture, "release/signoff");
     assert!(retained.request.status().is_human_wait());
     assert_eq!(retained.claim.unwrap().reviewer.as_str(), "alice");
+    assert!(opened["view"]["tools"][0]["error"].is_string());
+    support::declaration::write(
+        &fixture.repo,
+        fixture.repo.join("release/index.artf"),
+        RELEASE,
+    )
+    .unwrap();
+    let restored = invoke(&viewer, "human_open", json!({"id":id,"reload":true})).unwrap();
+    assert!(restored["tools"][0]["error"].is_null());
 }
 
 #[test]

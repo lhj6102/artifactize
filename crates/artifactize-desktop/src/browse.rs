@@ -101,6 +101,20 @@ struct Shown {
     shapes: crate::ids::ShapeKey,
 }
 
+impl Shown {
+    fn chip_limit(&self, branch: &Branch) -> usize {
+        let selected = self
+            .opened
+            .id()
+            .and_then(|id| branch.timeline().position(|chip| &chip.id == id));
+        self.chips
+            .get(&branch.place)
+            .copied()
+            .unwrap_or(CHIPS)
+            .max(selected.map_or(0, |at| at + 1))
+    }
+}
+
 /// The pane's search: its text as typed, and the query it parses to or why it does not, parsed
 /// once when navigation accepts it.
 struct Search {
@@ -257,7 +271,12 @@ impl Browse {
         }
         if let Some(branch) = &step.older {
             let place = branch.to_place();
-            let more = shown.chips.get(&place).copied().unwrap_or(CHIPS) + CHIPS;
+            let visible = shown
+                .branches
+                .iter()
+                .find(|branch| branch.place == place)
+                .map_or(CHIPS, |branch| shown.chip_limit(branch));
+            let more = visible.saturating_add(CHIPS);
             shown.chips.insert(place, more);
         }
         shown.revision += 1;

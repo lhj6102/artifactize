@@ -397,27 +397,11 @@ pub async fn chat_latest_for_branch(
     app: tauri::State<'_, App>,
     branch: BranchKey,
 ) -> Result<Option<ChatSession>, Failure> {
-    let place = branch.to_place();
-    let latest = app
-        .chat
-        .latest_for_branch(&place)
+    app.chat
+        .latest_for_branch(&branch.to_place())
         .await
-        .map_err(Failure::Read)?;
-    if latest
-        .as_ref()
-        .is_some_and(|session| session.unavailable.is_some())
-        && app.current_workspace(&branch).await.is_ok()
-    {
-        // A branch can move to a new worktree. A live navigation should not get stuck
-        // on the old checkout; a branch with no live workspace still has its saved Chat.
-        return app
-            .chat
-            .latest_available_for_branch(&place)
-            .await
-            .map(|session| session.map(Into::into))
-            .map_err(Failure::Read);
-    }
-    Ok(latest.map(Into::into))
+        .map(|session| session.map(Into::into))
+        .map_err(Failure::Read)
 }
 
 /// Keep the chosen view for this session without sending a message or reordering Chat.

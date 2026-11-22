@@ -468,6 +468,14 @@ fn view(
 
 /// Read the exact request and its actionable owner under the same read sequence number.
 async fn read(app: &App, id: &RequestId) -> Result<(u32, ReadReview), Failure> {
+    read_review(app, id, false).await
+}
+
+async fn read_review(
+    app: &App,
+    id: &RequestId,
+    refresh: bool,
+) -> Result<(u32, ReadReview), Failure> {
     let state = &app.launch.state;
     let generation = app.generation.current();
     let (number, views) = app
@@ -480,7 +488,7 @@ async fn read(app: &App, id: &RequestId) -> Result<(u32, ReadReview), Failure> {
         .await;
     Ok((
         number,
-        loaded(app, number, views.map_err(Failure::Read)?).await?,
+        loaded(app, number, views.map_err(Failure::Read)?, refresh).await?,
     ))
 }
 
@@ -493,17 +501,23 @@ async fn resolve(app: &App, generation: u32, exact: RequestView) -> Result<ReadR
     })
 }
 
-async fn loaded(app: &App, number: u32, read: ReadReview) -> Result<ReadReview, Failure> {
+async fn loaded(
+    app: &App,
+    number: u32,
+    read: ReadReview,
+    refresh: bool,
+) -> Result<ReadReview, Failure> {
     let view = &read.owner;
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
     let resolve = view.request.status().is_human_wait()
         && view.request.human_definition.is_some()
-        && !app
-            .human
-            .commands
-            .lock()
-            .expect("commands lock")
-            .contains_key(&view.request.id);
+        && (refresh
+            || !app
+                .human
+                .commands
+                .lock()
+                .expect("commands lock")
+                .contains_key(&view.request.id));
     let commands = if resolve {
         Some(artifactize_core::human::preview_tool_commands(view.request.clone()).await)
     } else {
@@ -583,7 +597,7 @@ pub async fn human_open(
         .flatten();
     let (number, request) = match cached {
         Some(cached) => cached,
-        None => read(&app, &id).await?,
+        None => read_review(&app, &id, reload).await?,
     };
     Ok(show(&app, number, &request))
 }
