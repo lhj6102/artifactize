@@ -37,8 +37,19 @@ export class FormDraft {
   /** The draft's values; assigned over, they show what was typed until the next answer. */
   values = $derived<Record<string, FieldValue>>(Object.fromEntries(this.#snapshot.fields));
   error = $state<string | null>(null);
-  /** Counts edits: only the newest answer replaces the draft. */
-  #edits = 0;
+  /** Pending field overrides are tied to individual commands, not a second saved draft. */
+  readonly #pending: Record<string, { value: FieldValue }> = Object.create(null);
+  #queue: Promise<void> = Promise.resolve();
+
+  get ready(): Promise<void> { return this.#queue; }
+
+  /** An incoming draft may be older than text already typed in this window. */
+  showPending(): void {
+    this.values = {
+      ...Object.fromEntries(this.#snapshot.fields),
+      ...Object.fromEntries(Object.entries(this.#pending).map(([name, edit]) => [name, edit.value])),
+    };
+  }
 
   constructor(
     id: string,
@@ -63,8 +74,12 @@ export class FormDraft {
 
   /** Set field `name`. */
   async set(name: string, value: FieldValue): Promise<void> {
-    this.values = { ...this.values, [name]: value };
-    await this.#ask({ kind: "field", verdict: this.verdict, name, value });
+    const edit = { value };
+    this.#pending[name] = edit;
+    this.showPending();
+    await this.#ask({ kind: "field", verdict: this.verdict, name, value }, () => {
+      if (this.#pending[name] === edit) delete this.#pending[name];
+    });
   }
 
   /** Add an empty item to the list field `name`; the library builds it. */
@@ -77,24 +92,22 @@ export class FormDraft {
     await this.#ask({ kind: "removeItem", verdict: this.verdict, name, item });
   }
 
-  async #ask(change: DraftChange): Promise<void> {
-    const answered = this.answering();
-    const mine = ++this.#edits;
-    try {
-      const answer = await call(this.ipc.humanDraftEdit(this.id, change));
-      // Only the newest answer is the draft: an older one would bring back what a newer edit
-      // replaced, in this form and in the review's draft alike.
-      if (mine === this.#edits) {
+  #ask(change: DraftChange, settled = () => {}): Promise<void> {
+    const wrote = this.#queue.then(async () => {
+      const answered = this.answering();
+      try {
+        const answer = await call(this.ipc.humanDraftEdit(this.id, change));
         this.error = null;
         await answered(answer);
-      }
-    } catch (error) {
-      if (mine === this.#edits) {
-        // Roll back the temporary override to the single saved draft.
-        this.values = Object.fromEntries(this.#snapshot.fields);
+      } catch (error) {
         this.error = message(error);
+      } finally {
+        settled();
+        this.showPending();
       }
-    }
+    });
+    this.#queue = wrote;
+    return wrote;
   }
 }
 
@@ -255,6 +268,7 @@ export class Review {
       };
       state.forms = { GREEN: form("GREEN"), RED: form("RED") };
     }
+    for (const form of Object.values(state.forms)) form.showPending();
     const newest = draft.points.at(-1);
     // The library timestamps in fixed-width UTC RFC3339, so this preserves nanosecond order.
     if (newest && (!state.latestPoint || newest.at > state.latestPoint.at)) state.latestPoint = newest;
@@ -305,15 +319,21 @@ export class Review {
     }
   }
 
+  async #fieldsSaved(): Promise<void> {
+    const forms = this.#state.forms;
+    if (forms) await Promise.all([forms.GREEN.ready, forms.RED.ready]);
+  }
+
   /** Release the claim, also while the form is edited: the form is left, its draft kept. */
   async release(): Promise<void> {
     if (this.busy || this.settled) return;
     try {
       // The form stays while the release runs, its Submit disabled; released, the form is
       // left and its draft kept for the next claim.
-      const acted = await this.#job("Releasing the claim", (job) =>
-        call(this.ipc.humanRelease([this.id], job)),
-      );
+      const acted = await this.#job("Releasing the claim", async (job) => {
+        await this.#fieldsSaved();
+        return call(this.ipc.humanRelease([this.id], job));
+      });
       if (acted && this.editing) this.stopEditing();
       if (acted) this.#acted(acted);
     } catch (error) {
@@ -368,6 +388,7 @@ export class Review {
     try {
       const submitted = await this.#job(`Submitting ${form.verdict}`, async (job) => {
         // What is typed reaches the library first: it submits the draft it keeps.
+        await this.#fieldsSaved();
         return call(this.ipc.humanDraftSubmit(this.id, job));
       });
       if (!submitted) return null;

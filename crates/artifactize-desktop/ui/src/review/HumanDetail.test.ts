@@ -459,9 +459,9 @@ describe("HumanDetail", () => {
     mockIPC(async (cmd, args) => {
       if (cmd === "human_open") return humanView("review");
       if (cmd === "human_draft" && reread) kept.draft.points.push({ text: "L4:C1", source: "release · Markdown", at: "2026-11-23T00:00:02Z" });
-      const answer = kept.answer(cmd, args);
+      // Delay saving the edit itself so the first Point invalidation returns the old text.
       if (cmd === "human_draft_edit") await new Promise<void>((resolve) => (finish = resolve));
-      return answer ?? null;
+      return kept.answer(cmd, args) ?? null;
     }, { shouldMockEvents: true });
     const review = new Review("run-a-2", new Jobs());
     renderHosted(HumanDetail, { review, onback: () => {} });
