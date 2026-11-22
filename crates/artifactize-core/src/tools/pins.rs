@@ -135,7 +135,7 @@ fn walk(
     for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let name = entry.file_name();
-        let text = name.to_str().ok_or("execution paths must be UTF-8.")?;
+        let text = platform::os_text(&name).ok_or("execution paths must be UTF-8.")?;
         let label = if relative.is_empty() {
             text.to_owned()
         } else {

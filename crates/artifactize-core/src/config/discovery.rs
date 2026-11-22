@@ -67,7 +67,7 @@ pub(super) fn read_sources_unresolved(
     for (file, source) in sources {
         let name = file
             .file_stem()
-            .and_then(|name| name.to_str())
+            .and_then(crate::platform::os_text)
             .ok_or_else(|| {
                 ConfigError::new(file, "line 1, column 1: Artifact names must be UTF-8.")
             })?;

@@ -197,8 +197,8 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     let mut created: Vec<PathBuf> = Vec::new();
     for file in sources.keys() {
         let final_file = destination.join(file.file_name().expect("definition filename"));
-        if let Err(error) = std::fs::rename(
-            staged
+        if let Err(error) = crate::platform::paths::rename_open_file(
+            &staged
                 .path()
                 .join(file.file_name().expect("definition filename")),
             &final_file,

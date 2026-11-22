@@ -101,17 +101,17 @@ impl Record {
         };
         let retired = match self.kind {
             RecordKind::Start => save_owner(&self.directory, None),
-            RecordKind::Invocation => {
-                std::fs::remove_file(self.directory.join(format!("process-{}.json", child.pid)))
-                    .or_else(|error| {
-                        if error.kind() == io::ErrorKind::NotFound {
-                            Ok(())
-                        } else {
-                            Err(error)
-                        }
-                    })
-                    .and_then(|()| platform::sync_dir(&self.directory))
-            }
+            RecordKind::Invocation => crate::platform::paths::remove_open_file(
+                &self.directory.join(format!("process-{}.json", child.pid)),
+            )
+            .or_else(|error| {
+                if error.kind() == io::ErrorKind::NotFound {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })
+            .and_then(|()| platform::sync_dir(&self.directory)),
         };
         match retired {
             Ok(()) => {
@@ -143,7 +143,7 @@ pub(super) fn allocate(root: &Path) -> io::Result<(platform::PrivateTempDir, Fil
             .create(true),
         &root.join("lock"),
     )?;
-    lock.lock()?;
+    crate::platform::paths::lock(&lock)?;
     // The allocation lock makes an owner-less directory unambiguously abandoned.
     let sessions = platform::open_directory(root)?;
     for entry in platform::read_dir(&sessions)? {
@@ -165,7 +165,7 @@ pub(super) fn allocate(root: &Path) -> io::Result<(platform::PrivateTempDir, Fil
                     platform::private_options().read(true).write(true),
                     &path.join("lease"),
                 ) {
-                    Ok(lease) => match lease.try_lock() {
+                    Ok(lease) => match crate::platform::paths::try_lock(&lease) {
                         Err(std::fs::TryLockError::WouldBlock) => continue,
                         Err(std::fs::TryLockError::Error(error)) => return Err(error),
                         Ok(()) => {}
@@ -204,7 +204,7 @@ pub(super) fn allocate(root: &Path) -> io::Result<(platform::PrivateTempDir, Fil
         .write(true)
         .create_new(true)
         .open(directory.path().join("lease"))?;
-    lease.lock()?;
+    crate::platform::paths::lock(&lease)?;
     save_owner(directory.path(), None)?;
     Ok((directory, lease))
 }

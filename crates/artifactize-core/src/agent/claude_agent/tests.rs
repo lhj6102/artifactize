@@ -495,7 +495,7 @@ async fn claude_code_chat_uses_the_worktree_and_verify_tools() {
     let context = crate::runs::Context::new(
         &fixture.config.root,
         Some(&fixture.state),
-        &std::env::current_exe().unwrap(),
+        &crate::test_os::test_executable(),
     )
     .unwrap();
     let tools = crate::chat::tools::Tools::new(&context, &fixture.output);

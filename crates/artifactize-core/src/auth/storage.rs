@@ -148,7 +148,7 @@ impl Storage {
         .map_err(|e| e.to_string())?;
         check_private_file(&file)?;
         loop {
-            match file.try_lock() {
+            match platform::paths::try_lock(&file) {
                 Ok(()) => return Ok(file),
                 Err(TryLockError::WouldBlock) => {
                     tokio::time::sleep(platform::FILE_LOCK_RETRY_INTERVAL).await

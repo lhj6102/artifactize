@@ -2771,6 +2771,10 @@ pub fn isolated_test_command(test: &str, environment: &[(&str, std::ffi::OsStrin
 }
 
 /// Prepare an exact child probe for a caller to customize before owning it with start/finish.
+pub fn test_executable() -> std::path::PathBuf {
+    std::env::current_exe().expect("the test fixture is running")
+}
+
 pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command.args(["--exact", test, "--nocapture"]);

@@ -728,8 +728,8 @@ async fn sign_in_browser_calls_the_external_opener_without_a_shell() {
     assert!(
         output.status.success(),
         "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        crate::platform::output_text(&output.stdout),
+        crate::platform::output_text(&output.stderr)
     );
 }
 

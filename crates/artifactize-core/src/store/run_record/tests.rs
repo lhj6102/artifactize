@@ -96,7 +96,11 @@ async fn an_existing_reader_sees_the_updated_run_and_request() {
     };
     let before = snapshot(&mut reader);
     let mut app = request("run-1", "app", saved.repo_path.as_path());
-    app.state = store::RequestState::failed("stopped".into(), None, crate::broker::now());
+    app.state = store::RequestState::failed(
+        "stopped".into(),
+        None,
+        "2026-01-01T00:01:00Z".parse().unwrap(),
+    );
     receipts.save_request(&app).await.unwrap();
     let updated = snapshot(&mut reader);
     assert_eq!(updated.requests[0].error(), Some("stopped"));

@@ -195,7 +195,7 @@ async fn full_refresh_rereads_git_metadata() {
 fn run(path: &Path) -> CatalogRun {
     CatalogRun {
         id: "run-1".parse().unwrap(),
-        created_at: crate::types::Timestamp::now(),
+        created_at: "2026-01-01T00:01:00Z".parse().unwrap(),
         completed_at: None,
         repo_path: path.to_path_buf(),
         repository: Identity::default(),

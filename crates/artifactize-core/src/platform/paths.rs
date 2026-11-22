@@ -176,7 +176,10 @@ pub(crate) fn portable_filename(name: &str) -> Result<(), String> {
             .strip_prefix("com")
             .or_else(|| lower.strip_prefix("lpt"))
             .is_some_and(|number| {
-                matches!(number, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+                matches!(
+                    number,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
             })
     {
         Err(format!("Artifact name {name:?} is a reserved device name."))
@@ -334,6 +337,16 @@ pub(crate) fn lock_file(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
+/// Acquire an exclusive native lock through the filesystem boundary.
+pub(crate) fn lock(file: &std::fs::File) -> io::Result<()> {
+    file.lock()
+}
+
+/// Try to acquire the lock without waiting for another owner.
+pub(crate) fn try_lock(file: &std::fs::File) -> Result<(), std::fs::TryLockError> {
+    file.try_lock()
+}
+
 /// Unlink a file even while readers or a lease holder still have it open. Windows
 /// handles opened by this layer share deletion, just as Unix permits unlinking.
 pub(crate) fn remove_open_file(path: &Path) -> io::Result<()> {
@@ -465,4 +478,13 @@ pub(crate) fn relative_beneath(path: &Path, root: &Path) -> Option<PathBuf> {
         .ancestors()
         .find(|candidate| super::paths_equal(candidate, &root))?;
     path.strip_prefix(ancestor).ok().map(Path::to_owned)
+}
+
+#[cfg(test)]
+#[test]
+fn windows_superscript_device_names_are_not_portable() {
+    assert!(portable_filename("COM¹").is_err());
+    assert!(portable_filename("lPt²").is_err());
+    assert!(portable_filename("COM³").is_err());
+    assert!(portable_filename("COM⁴").is_ok());
 }

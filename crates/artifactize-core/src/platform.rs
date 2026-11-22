@@ -162,6 +162,11 @@ pub fn os_text(value: &std::ffi::OsStr) -> Option<&str> {
     value.to_str()
 }
 
+/// A filesystem name for display when a lossless path key is not needed.
+pub(crate) fn display_name(value: &std::ffi::OsStr) -> String {
+    value.to_string_lossy().into_owned()
+}
+
 /// A captured output line, accepting either common ending even when the program
 /// (rather than the host) explicitly chose which ending to emit.
 pub(crate) fn output_line(bytes: &[u8]) -> &[u8] {
