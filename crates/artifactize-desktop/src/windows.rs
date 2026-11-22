@@ -52,6 +52,10 @@ impl Windows {
         }));
     }
 
+    pub(crate) fn is_closing(&self) -> bool {
+        self.closing.load(Ordering::Acquire)
+    }
+
     fn act(&self, app: &App, action: Action) -> Result<(), Failure> {
         let act = self
             .action
@@ -187,8 +191,17 @@ pub async fn main_close(app: tauri::State<'_, App>) -> Result<(), Failure> {
     if app.windows.closing.swap(true, Ordering::AcqRel) {
         return Ok(());
     }
-    app.close().await;
-    let result = app.windows.act(&app, Action::CloseMain);
+    let result = async {
+        let _settling = app.human.claim_gate.lock().await;
+        if !crate::human::live_claims(&app).await?.is_empty() {
+            return Err(Failure::Action(
+                "Release the review claims before closing this window.".into(),
+            ));
+        }
+        app.close().await;
+        app.windows.act(&app, Action::CloseMain)
+    }
+    .await;
     if result.is_err() {
         app.windows.closing.store(false, Ordering::Release);
     }

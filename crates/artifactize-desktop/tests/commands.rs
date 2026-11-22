@@ -452,6 +452,37 @@ fn quit_never_releases_a_replacement_claim_of_the_same_reviewer() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn quit_cannot_leave_a_claim_acquired_after_the_confirmation_snapshot() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([])
+    );
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let refused = invoke(&window, "main_close", json!({})).unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("Release the review claims")
+    );
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([id])
+    );
+    invoke(
+        &window,
+        "human_release_taken",
+        json!({"ids": [id], "job": 2}),
+    )
+    .unwrap();
+    assert!(saved(&fixture, "release/signoff").claim.is_none());
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn verify_browse_and_review_search_are_independent() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
@@ -1002,6 +1033,16 @@ payload.instruction = "Read the page separately."
     .unwrap();
     assert!(result.is_null());
     let other = saved(&fixture, "page/another").request.id.to_string();
+    let refused = invoke(&window, "active_review_set", json!({"request": other})).unwrap_err();
+    assert_eq!(refused["kind"], "action");
+    assert!(context(session)["review"].is_null());
+    let refused = invoke(
+        &window,
+        "viewer_point",
+        json!({"session": session, "review": id, "text": "Do not append to the earlier review"}),
+    )
+    .unwrap_err();
+    assert_eq!(refused["kind"], "action");
     invoke(&window, "human_claim", json!({"id": other, "job": 4})).unwrap();
     invoke(&window, "active_review_set", json!({"request": other})).unwrap();
     let refused = invoke(

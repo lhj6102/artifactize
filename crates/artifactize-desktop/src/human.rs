@@ -80,6 +80,8 @@ pub struct Reviews {
     /// Resolved tool command lines, resolved once per request and again after each run.
     commands: Mutex<BTreeMap<RequestId, Resolved>>,
     jobs: Jobs,
+    /// A shutdown snapshot must not race the database claim or its local ownership record.
+    pub(crate) claim_gate: tokio::sync::Mutex<()>,
     /// Claims this app took and has neither submitted nor released.
     taken: Mutex<BTreeMap<RequestId, store::HumanClaim>>,
     log: review::log::Sink,
@@ -99,6 +101,7 @@ impl Default for Reviews {
             searches: searches::Searches::default(),
             commands: Mutex::default(),
             jobs: Jobs::default(),
+            claim_gate: tokio::sync::Mutex::default(),
             taken: Mutex::default(),
             log,
             logs: Mutex::default(),
@@ -562,22 +565,32 @@ pub async fn human_claim(
     job: JobId,
 ) -> Result<Acted, Failure> {
     let id = id.into_inner();
+    let mut work = app.human.jobs.register(caller, job, Action::Ordinary)?;
     // Someone else's claim, or a settled request, is refused in the library's words.
     let (_, views) = read(&app, &id).await?;
     let view = views.owner;
     review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
     let owner = view.request.id.clone();
-    let work = app
-        .human
-        .jobs
-        .begin(caller, job, vec![owner.clone()], Action::Ordinary)?;
-    let outcome = run_job(&app, Job::Claim { id: owner.clone() }, work.cancel.clone()).await;
-    if let Outcome::Claimed {
-        result: Ok((claim, true)),
-    } = &outcome
-    {
-        app.human.took(claim.clone());
-    }
+    work.admit(vec![owner.clone()])?;
+    let outcome = {
+        let _settling = tokio::select! {
+            biased;
+            () = work.cancel.cancelled() => return Err(Failure::Action("Review action cancelled.".into())),
+            gate = app.human.claim_gate.lock() => gate,
+        };
+        if app.windows.is_closing() {
+            return Err(Failure::Action("This window is closing.".into()));
+        }
+        work.ready().await?;
+        let outcome = run_job(&app, Job::Claim { id: owner }, work.cancel.clone()).await;
+        if let Outcome::Claimed {
+            result: Ok((claim, true)),
+        } = &outcome
+        {
+            app.human.took(claim.clone());
+        }
+        outcome
+    };
     acted(&app, &id, outcome).await
 }
 
@@ -864,6 +877,12 @@ pub async fn human_release(
 #[tauri::command]
 #[specta::specta]
 pub async fn human_taken(app: tauri::State<'_, App>) -> Result<Vec<RequestKey>, Failure> {
+    let _settling = app.human.claim_gate.lock().await;
+    live_claims(&app).await
+}
+
+/// The caller holds `claim_gate`, so a pending acquisition cannot change this snapshot.
+pub(crate) async fn live_claims(app: &App) -> Result<Vec<RequestKey>, Failure> {
     let claims = app.human.taken.lock().expect("taken lock").clone();
     let mut live = Vec::new();
     for (id, claim) in claims {

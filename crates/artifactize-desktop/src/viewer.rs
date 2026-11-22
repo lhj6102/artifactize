@@ -174,11 +174,21 @@ impl Sessions {
     async fn activate(
         &self,
         state: &Generation,
+        shown: Option<&RequestId>,
         read: impl Future<Output = Result<Option<ActiveReview>, Failure>>,
     ) -> Result<(), Failure> {
         let activation = {
             let mut sessions = self.0.lock().expect("viewer sessions");
-            sessions.advance_activation()
+            let activation = sessions.advance_activation();
+            if sessions
+                .active
+                .as_ref()
+                .is_some_and(|active| Some(&active.shown) != shown)
+            {
+                sessions.active = None;
+                self.notify(None);
+            }
+            activation
         };
         let generation = state.current();
         let review = read.await;
@@ -188,13 +198,12 @@ impl Sessions {
                 if sessions.activation != activation {
                     return Ok(());
                 }
-                let review = review?;
-                if sessions.active != review {
-                    let request = review.as_ref().map(|review| review.shown.clone().into());
-                    sessions.active = review;
-                    self.notify(request);
+                let active = review.as_ref().ok().and_then(Option::as_ref);
+                if sessions.active.as_ref() != active {
+                    self.notify(active.map(|review| review.shown.clone().into()));
+                    sessions.active = active.cloned();
                 }
-                Ok(())
+                review.map(|_| ())
             })
             .ok_or_else(|| {
                 Failure::Read("The state was replaced while reading the review; reopen it.".into())
@@ -466,13 +475,13 @@ pub async fn active_review_set(
     app: tauri::State<'_, App>,
     request: Option<RequestKey>,
 ) -> Result<(), Failure> {
+    let shown = request.map(RequestKey::into_inner);
     app.viewers
-        .activate(&app.generation, async {
-            let Some(request) = request else {
+        .activate(&app.generation, shown.as_ref(), async {
+            let Some(shown) = shown.clone() else {
                 return Ok(None);
             };
             let state = &app.launch.state;
-            let shown = request.into_inner();
             let exact = store::read_request_as(state, shown.as_str(), store::Shown::Requests)
                 .await
                 .map_err(Failure::Read)?;
@@ -563,7 +572,7 @@ mod tests {
         };
         let (entered, wait_for_older) = tokio::sync::oneshot::channel();
         let (finish, wait_for_newer) = tokio::sync::oneshot::channel();
-        let older = sessions.activate(&generation, async {
+        let older = sessions.activate(&generation, Some(&first), async {
             entered.send(()).unwrap();
             wait_for_newer.await.unwrap();
             Ok(review(&first))
@@ -571,7 +580,11 @@ mod tests {
         let newer = async {
             wait_for_older.await.unwrap();
             sessions
-                .activate(&generation, std::future::ready(Ok(review(&latest))))
+                .activate(
+                    &generation,
+                    Some(&latest),
+                    std::future::ready(Ok(review(&latest))),
+                )
                 .await
                 .unwrap();
             finish.send(()).unwrap();
