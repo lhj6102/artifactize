@@ -232,25 +232,23 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
   await waitFor(() => expect(opened).toEqual(["run-a-7"]));
 });
 
-it("opens the originating Chat session from a Run's Provenance", async () => {
-  const opened = vi.fn();
-  mockIPC((command, args) => {
+it("names the originating Chat in Provenance without another link", async () => {
+  mockIPC((command) => {
     if (command === "detail_row") return row("run:run-a", "run", "run-a", "✓", "green");
     if (command === "detail") return {
       ...view("run:run-a", "run-a"), target: "run",
       outcome: { failed: [], tally: [], took: "1s", finished: true, comment: null },
     };
-    if (command === "chat_open") opened(args);
     return null;
   }, { shouldMockEvents: true });
   renderHosted(DetailPane, {
     source: RUN, revision: 1, branch: null, node: "run:run-a", tab: null, focused: false, active: true,
-    run: { id: "run-a", branch: null, origin: { kind: "chat", sessionId: "chat-a", title: "The original chat" }, node: "run:run-a", mark: { status: "GREEN", glyph: "✓" }, needs: [] },
+    run: { id: "run-a", branch: null, chatBranch: { kind: "folder", path: "/repo" }, origin: { kind: "chat", sessionId: "chat-a", title: "The original chat" }, node: "run:run-a", mark: { status: "GREEN", glyph: "✓" }, needs: [] },
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
   await fireEvent.click(await screen.findByRole("button", { name: "Provenance" }));
-  await fireEvent.click(await screen.findByRole("button", { name: "Chat · The original chat" }));
-  await waitFor(() => expect(opened).toHaveBeenCalledWith({ id: "chat-a" }));
+  expect(await screen.findByText("Chat · The original chat")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Chat · The original chat" })).toBeNull();
 });
 
 it("shows the claim stage on the Human eval row and progress with its actions", async () => {

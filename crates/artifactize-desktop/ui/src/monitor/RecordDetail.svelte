@@ -9,8 +9,6 @@
   // Debug; a Run's leads with its Outcome and what it Waits for, then What, Provenance and
   // Technical.
   import type { DetailView, Field, RunPanel } from "../ipc/client";
-  import { getAppState } from "../shell/app.svelte";
-  import Reference from "../shell/Reference.svelte";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
   import { markIcon, statusIcon } from "../shell/icons";
@@ -35,7 +33,6 @@
     log: boolean;
   } = $props();
 
-  const app = getAppState();
   const origin = $derived(run?.origin ?? null);
   const agent = $derived(detail.profile === "agent" && detail.request !== null);
   /** The name of the request's log, if it has one. */
@@ -97,10 +94,8 @@
     {#if provenance && origin}
       <dt>Started by</dt>
       <dd>
-        {#if origin.kind === "chat" && run}
-          {@const session = origin}
-          {@const id = run.id}
-          <Reference chip onclick={() => app.showChat(session.sessionId, id)}>Chat · {session.title}</Reference>
+        {#if origin.kind === "chat"}
+          Chat · {origin.title}
         {:else}
           {origin.kind === "mcp" ? "MCP client" : "CLI"}
         {/if}

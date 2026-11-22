@@ -35,6 +35,20 @@ describe("openRequest", () => {
     expect(app.reviewMode.shown.kind).toBe("review");
   });
 
+  it("opens the current reviewer's pending review with its actionable draft", async () => {
+    const view = humanView("review");
+    const draft = draftLibrary();
+    draft.draft.verdict = "GREEN";
+    backend(view, draft);
+    const app = new AppState();
+    await app.openRequest(view.id);
+    const opened = app.reviews[view.id];
+    expect(app.reviewMode.shown).toEqual({ kind: "review", id: view.id });
+    await waitFor(() => expect(opened.form?.verdict).toBe("GREEN"));
+    expect(opened.owned).toBe(true);
+    expect(opened.submittable).toBe(true);
+  });
+
   it("opens a submitted review, and one another reviewer holds, read-only", async () => {
     for (const view of [humanView("completed"), humanView("claim", { claim: { reviewer: "bob", mine: false } })]) {
       backend(view);

@@ -293,6 +293,10 @@ it("offers Create in New chat only once the model the session starts with is kno
   await waitFor(() => expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({
     worktree: session.worktree, branch: session.branchKey, selection: null,
   }));
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => expect(document.activeElement).toBe(composer));
+  expect(screen.queryByRole("dialog", { name: "New chat" })).toBeNull();
+  expect(screen.getByRole("log", { name: "Conversation" }).textContent?.trim()).toBe("");
 });
 
 it("says no provider lists a model once every provider has answered with none", async () => {
