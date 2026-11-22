@@ -422,7 +422,7 @@
   box-shadow: inset 0 0 0 1.5px var(--ink-2);
 }
 .m-status {
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0.02em;
 }
 .m-num {
@@ -533,7 +533,7 @@
 }
 .m-headline .m-status {
   flex: none;
-  font-weight: 700;
+  font-weight: 400;
 }
 .m-headline .m-text {
   min-width: 0;
@@ -692,6 +692,7 @@
    else: the icon before its name and the strip along its bottom, both in the status's colour.
    After the name, how many of its evals are GREEN of how many. */
 .m-node {
+  --light: transparent;
   position: absolute;
   box-sizing: border-box;
   display: flex;
@@ -720,9 +721,10 @@
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
-/* The opened node: its own outline turns neutral-bright and 2px, the strip staying. Under the
-   pointer the outline only steps up. The focus ring is a second mark, 2px outside, only while
-   the keyboard moves focus. */
+/* The opened node keeps its own outline and is ringed by the current mark 2px outside it, a gap
+   of the canvas between, clear of its status strip and, for a minimized whole, of the outline
+   stacked behind it. Under the pointer an unselected outline only steps up. The focus ring is a
+   second mark, further out, only while the keyboard moves focus. */
 .m-node.selected,
 .m-whole.selected {
   box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
@@ -762,6 +764,7 @@
   transform: translate(50%, -50%);
 }
 .m-whole {
+  --light: transparent;
   position: absolute;
   border: 1px solid var(--line-node);
   border-radius: var(--radius-control);
@@ -792,6 +795,12 @@
    under its name. */
 .m-node.minimized {
   box-shadow: 3px 3px 0 -1px var(--surface-app), 3px 3px 0 0 var(--line-node), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-node.minimized.selected {
+  box-shadow: 3px 3px 0 -1px var(--surface-app), 3px 3px 0 0 var(--line-node), 0 0 0 6px var(--surface-app), 0 0 0 7px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-node.minimized.focused {
+  outline-offset: 9px;
 }
 .m-node .m-text {
   flex: 1;
@@ -827,8 +836,8 @@
   background: var(--light);
 }
 .m-block.selected {
-  outline: 2px solid var(--current-mark);
-  outline-offset: 1px;
+  outline: 1px solid var(--current-mark);
+  outline-offset: 2px;
 }
 .m-far-whole {
   position: absolute;
@@ -1094,7 +1103,7 @@
   line-height: 1.5;
 }
 .m-summary .m-status {
-  font-weight: 700;
+  font-weight: 400;
   margin-right: 10px;
 }
 .m-cost {
@@ -1157,7 +1166,7 @@
   background: var(--surface-group);
   color: var(--ink-2);
   font-size: var(--text-label);
-  font-weight: 600;
+  font-weight: 400;
   line-height: 18px;
 }
 .m-stage.review {
@@ -1399,7 +1408,15 @@
   max-height: calc(100% - 64px);
 }
 .m-dialog > * {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.m-dialog > h2,
+.m-dialog > .m-dialog-actions,
+.m-dialog > .m-settings-head {
   flex: none;
+  overflow: visible;
 }
 .m-dialog > .m-kv,
 .m-dialog > .m-providers {
@@ -1637,6 +1654,12 @@
   background: var(--surface-raised);
   box-shadow: 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
 }
+.m-node.lifted.selected {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-whole.lifted.selected {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), 0 2px 8px var(--scrim);
+}
 .m-node.target,
 .m-whole.target {
   border-color: var(--accent);
@@ -1644,6 +1667,12 @@
 }
 .m-whole.target {
   box-shadow: 0 0 0 1px var(--accent);
+}
+.m-node.target.selected {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px var(--surface-app), 0 0 0 4px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-whole.target.selected {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px var(--surface-app), 0 0 0 4px var(--current-mark);
 }
 /* A Definition's parts: one dense row each, the name and its remove button. */
 .m-parts {
@@ -2072,7 +2101,7 @@
 }
 .m-session .m-state {
   font-size: var(--text-small);
-  font-weight: 600;
+  font-weight: 400;
 }
 .m-new {
   display: flex;
@@ -2162,6 +2191,7 @@
   align-items: center;
   gap: 4px;
   color: var(--ink-2);
+  font-weight: 400;
 }
 .m-composer {
   width: 100%;
@@ -2485,13 +2515,17 @@
   background: var(--surface-panel);
 }
 .m-dnode.selected {
-  border: 1px solid var(--current-mark);
-  box-shadow: 0 0 0 1px var(--current-mark);
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark);
 }
 .m-dnode.pointed {
   outline: 2px dashed var(--handle);
   box-shadow: 0 0 0 3px var(--handle-edge);
   outline-offset: 2px;
+}
+/* Selected and pointed at once: the current ring first, the handle line outside it. */
+.m-dnode.selected.pointed {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), 0 0 0 9px var(--handle-edge);
+  outline-offset: 5px;
 }
 .m-dnode .m-name {
   flex: 1;
