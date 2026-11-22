@@ -11,7 +11,7 @@ import { inspect } from "node:util";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { appsAtOnce, assertHeadless, checkForeground, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, quarantineForeground, releaseForeground, runnerCommand, systemName, variable } from "./platform.ts";
+import { appsAtOnce, assertHeadless, checkForeground, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, quarantineForeground, releaseForeground, runnerCommand, systemName, setVariable, variable } from "./platform.ts";
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
 import { APPS_UNRELEASED, type Scenario } from "./scenario.ts";
 
@@ -135,15 +135,7 @@ async function suite(ids: string[]): Promise<void> {
     failures.push(error);
   } finally {
     try {
-      if (candidate) {
-        const fixtures = nativePath(candidate.root, "fixtures");
-        // A batch whose fixture could not close leaves its directory intact. Do not
-        // bypass that ownership check by deleting the enclosing build folder.
-        if (exists(fixtures) && readdirSync(fixtures).length) {
-          throw new Error(`fixtures not released; kept the candidate and its inputs at ${candidate.root}`);
-        }
-        cleanup(candidate.root);
-      }
+      if (candidate) cleanup(candidate.root);
     } catch (error) { failures.push(error); }
   }
   if (failed.length) failures.unshift(new Error(`desktop scenarios failed on ${systemName}: ${failed.join(", ")}`));
@@ -207,8 +199,10 @@ let loaded: typeof import("./wdio.conf.ts") | undefined;
 
 async function launch(): Promise<void> {
   const output = asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? "");
-  const evidence = variable("DESKTOP_TEST_EVIDENCE_RUN");
-  const logs = () => serviceLogs(output, evidence ? asNativePath(evidence) : undefined);
+  const declared = variable("DESKTOP_TEST_EVIDENCE_RUN");
+  const evidence = declared ? asNativePath(declared) : newDirectory(output, "evidence-");
+  setVariable("DESKTOP_TEST_EVIDENCE_RUN", evidence);
+  const logs = () => serviceLogs(output, evidence);
   const { Launcher } = await import("@wdio/cli");
   const launcher = new Launcher(suitePath("wdio.conf.ts"));
   // An interrupt goes through WDIO's own exit routine, which ends its workers (each keeps the

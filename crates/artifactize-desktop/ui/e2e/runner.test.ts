@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { it } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { PNG } from "pngjs";
-import { checkE2eApp, runStep } from "./build.ts";
+import { checkE2eApp, cleanup, runStep } from "./build.ts";
 import { own } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
 import { checkForeground, nodeProgram, processRunning, quarantineForeground, releaseForeground, xwdPng } from "./platform.ts";
@@ -78,6 +78,17 @@ it("teardown closes a gated stand-in and keeps inputs until failed cleanup is re
   await scope.close();
   assert.deepEqual(order, ["last", "first"], "only the failed cleanup was retried");
   assert.equal(exists(scope.root), false);
+});
+
+it("refuses candidate cleanup while a fixture has not been released", async (test) => {
+  const root = newDirectory(scratchDirectory(), "desktop-candidate-test-");
+  test.after(() => removeTree(root));
+  const fixture = own(nativePath(root, "fixtures"));
+  assert.throws(() => cleanup(root), /fixtures not released/);
+  assert.equal(exists(fixture.root), true);
+  await fixture.close();
+  cleanup(root);
+  assert.equal(exists(root), false);
 });
 
 it("returns a build step's output and fails a step that fails", async () => {

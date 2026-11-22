@@ -270,6 +270,16 @@ export function stopTree(child: ChildProcess): void {
 export function processRunning(pid: number): boolean {
   try {
     process.kill(pid, 0);
+    if (LINUX) {
+      // A dead orphan can retain its PID in a container whose init does not reap it.
+      try {
+        const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+        if (stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) === "Z") return false;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    }
     return true;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
@@ -372,6 +382,26 @@ export function displayScreenshot(output: NativePath, pid?: number): Uint8Array 
     }
     return readFileSync(image);
   } finally { removeTree(scratch); }
+}
+
+/** Retain the last changed startup frame before the service kills its timed-out process. */
+export function startupImage(output: NativePath): (encode?: boolean) => Uint8Array | undefined {
+  if (!LINUX) return () => undefined;
+  const frame = nativePath(output, "Xvfb_screen0");
+  const baseline = readFileSync(frame);
+  let last: Buffer | undefined;
+  const sample = () => {
+    try {
+      const pixels = readFileSync(frame);
+      if (!pixels.equals(baseline)) last = pixels;
+    } catch { /* the framebuffer may disappear as the display ends */ }
+  };
+  const timer = setInterval(sample, 250);
+  timer.unref();
+  return (encode = true) => {
+    clearInterval(timer);
+    return encode && last ? xwdPng(last) : undefined;
+  };
 }
 
 /** Decode the Xvfb screen's ZPixmap into a portable evidence PNG. */

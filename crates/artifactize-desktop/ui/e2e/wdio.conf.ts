@@ -7,7 +7,7 @@ import { checkE2eApp, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { appsAtOnce, displayEnvironment, displayScreenshot, foregroundQuarantine, quarantineForeground, releaseForeground, setVariable, variable, type Environment } from "./platform.ts";
+import { appsAtOnce, displayEnvironment, displayScreenshot, foregroundQuarantine, quarantineForeground, releaseForeground, setVariable, startupImage, variable, type Environment } from "./platform.ts";
 import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson, writeText } from "./portable.ts";
 import { APPS_UNRELEASED, COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
 
@@ -138,7 +138,15 @@ export const config = {
         if (prepare) service.onPrepare = async (...args) => {
           // A failed service startup may leave an app but skip the usual completion hook.
           pendingStops.set(service, () => complete(1, {}, []));
-          await prepare(...args);
+          const finishCapture = startupImage(output);
+          try { await prepare(...args); }
+          catch (error) {
+            const shot = finishCapture();
+            for (const item of selected) {
+              await keepEvidence(item.id, nativePath(evidence, item.id), `Tauri could not start the embedded WebDriver before the scenario ran: ${inspect(error)}`, shot);
+            }
+            throw error;
+          } finally { finishCapture(false); }
         };
         service.onComplete = async (...args) => {
           const stop = () => complete(...args);

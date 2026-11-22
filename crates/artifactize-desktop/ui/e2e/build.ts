@@ -1,6 +1,7 @@
 // The builds the suite and the desktop's own tools run: the E2E test app with the CLI (a
 // candidate), the production app for a person's launch, and the Rust gates. Each build has
 // its own folder, Cargo output included, removed when its owner is done with it.
+import { readdirSync } from "node:fs";
 import { executableName, packageCommand, pathNotUrl, setVariable, startTree, stopTree, tempEnvironment, testWindowOptions, variable, type Environment } from "./platform.ts";
 import { absolutePath, asNativePath, copyFile, exists, makeDirectory, nativePath, newDirectory, readJson, removeTree, runProgram, scratchDirectory, suitePath, writeJson, type NativePath } from "./portable.ts";
 
@@ -150,6 +151,10 @@ export function snapshotCandidate(parent: NativePath): Promise<Candidate> {
 
 /** Remove a candidate's folder once nothing runs from it any more. */
 export function cleanup(root: NativePath): void {
+  const fixtures = nativePath(root, "fixtures");
+  if (exists(fixtures) && readdirSync(fixtures).length) {
+    throw new Error(`fixtures not released; kept the candidate and its inputs at ${root}`);
+  }
   removeTree(root);
 }
 

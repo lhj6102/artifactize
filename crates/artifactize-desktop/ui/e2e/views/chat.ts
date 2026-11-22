@@ -36,12 +36,19 @@ export class Chat {
     }
     const dialog = this.browser.$(DIALOG);
     await dialog.waitForDisplayed();
+    const sessionCount = () => this.browser.execute(() => document.querySelectorAll('[aria-label="Chats"] button.session').length);
+    const before = await sessionCount();
     const create = dialog.$("button=Create");
     await create.waitForEnabled({ timeoutMsg: "timed out: the starting model is ready and Create is enabled" });
     const starting = (await dialog.$('[role="status"][aria-labelledby="new-chat-model"]').getText()).trim();
     await create.click();
     await dialog.waitForDisplayed({ reverse: true });
-    await this.browser.$(`${MAIN} textarea[aria-label="Message"]`).waitForDisplayed();
+    await holds(this.browser, async () => await sessionCount() === before + 1, "Create added another session to the Chat Pane");
+    await holds(this.browser, () => this.browser.execute((main, log) => {
+      const shown = document.querySelector(main);
+      return shown?.querySelector("header h2")?.textContent?.trim() === "New chat"
+        && shown.querySelector(log)?.textContent?.trim() === "";
+    }, MAIN, LOG), "the new session is selected with an empty conversation");
     return starting;
   }
 
@@ -80,7 +87,7 @@ export class Chat {
     const option = this.browser.$('[aria-label="Models"]').$(`[role="menuitemradio"]=${name}`);
     await option.waitForDisplayed();
     await option.click();
-    await holds(this.browser, async () => (await this.browser.$(`${MAIN} button[aria-haspopup="menu"]`).getText()) === name, `${name} selected`);
+    await holds(this.browser, async () => !(await this.browser.$(menu).isDisplayed()) && await this.selected() === name, `${name} selected and its model menu closed`);
   }
 
   async filter(text: string): Promise<void> {

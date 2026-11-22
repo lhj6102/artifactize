@@ -309,13 +309,16 @@ export const scenarios: Scenario[] = [
       // Observe the live Run as the command starts, not after its completion. The elapsed
       // window starts with a visible human wait and is bounded by the product's grace.
       if (!(await app.pane.branch("repo  master")).expanded) await app.pane.toggle("repo  master");
-      const verifying = artifactizeAsync(fixture, ["verify", "--all", "--wait", "--json"]);
+      const started = performance.now();
+      let settled: number | undefined;
+      const verifying = artifactizeAsync(fixture, ["verify", "--all", "--wait", "--json"]).finally(() => { settled = performance.now(); });
       await app.waitingBadge(1);
-      const waitingSince = performance.now();
       await app.until(async () => (await app.pane.branch("repo  master")).entries.some((entry) => /YELLOW/.test(entry.text)),
         "the new Run ends YELLOW within the saved grace", (grace + 5) * 1000);
-      assert.ok(performance.now() - waitingSince >= (grace - 2) * 1000, "the sign-off did not expire immediately");
       const done = await verifying;
+      // The grace cannot start before the command does. Use the command boundary, never
+      // the delayed observation of its waiting badge, to reject an immediate expiry.
+      assert.ok(settled! - started >= grace * 1000, "the Run did not expire before its saved grace could elapse");
       assert.equal(done.status, 5, done.stderr);
       const { id: run } = JSON.parse(done.stdout) as { id: string };
       await app.pane.choose("repo  master", run);

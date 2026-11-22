@@ -326,7 +326,6 @@ export const scenarios: Scenario[] = [
       await app.graph.node("a:quick", (node) => node.label === "quick: would run (1 eval)", "quick, changed since the Run, would run again");
       // Every Artifact checked, the scan still ends after its last one: the header then says when.
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
-      await app.chat.model(CHAT_MODEL);
       await app.chat.send(GRAPH_PROMPT, false);
       await app.chat.working();
       await app.chat.viewShown("Graph");
