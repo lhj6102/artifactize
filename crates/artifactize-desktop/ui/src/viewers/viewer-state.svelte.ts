@@ -2,9 +2,12 @@
 // a plugin's page), its context (the Artifact and the active review), whether it is pointing, and
 // what went wrong. Everything it reads of the Artifact comes from the library through the viewer
 // commands; Point appends through the library to the active review's draft.
+import type { Viewport } from "@xyflow/svelte";
 import { createContext } from "svelte";
 import { emit } from "@tauri-apps/api/event";
 import { call, commands, message, type Commands, type ViewerContext, type ViewerEntry } from "../ipc/client";
+
+import { declared, type Declared } from "./declared";
 
 /** What a viewer window tells the others about itself: the pet overlay points through the one
  * whose session the library matches to the active review's original request (`petMatch`: that
@@ -15,6 +18,14 @@ export type Presence = { session: number; artifact: string; review: string | nul
 export const PRESENCE = "viewer-presence";
 export const ASK = "viewer-ask";
 export const ARM = "point-arm";
+
+class DeclaredProject {
+  camera = $state<Viewport>({ x: 0, y: 0, zoom: 1 });
+  unit = $state(24);
+  graph = $state.raw<Declared | null>(null);
+  error = $state<string | null>(null);
+  selected = $state<string | null>(null);
+}
 
 export class ViewerState {
   entry = $state.raw<ViewerEntry | null>(null);
@@ -30,7 +41,18 @@ export class ViewerState {
   /** The active review's eval, `{Artifact}/{eval}`, once read. */
   evalId = $state<string | null>(null);
 
+  readonly project = new DeclaredProject();
+
   constructor(readonly session: number, readonly ipc: Commands = commands) {}
+
+  async loadDeclarations(): Promise<void> {
+    try {
+      this.project.graph = declared(await call(this.ipc.viewerDeclarations(this.session)));
+      this.project.error = null;
+    } catch (failure) {
+      this.project.error = message(failure);
+    }
+  }
 
   /** Point is offered in the strip while this reviewer holds the active review: a built-in
    * viewer points by itself, a plugin's page once the strip tells it to (the bridge's `point`

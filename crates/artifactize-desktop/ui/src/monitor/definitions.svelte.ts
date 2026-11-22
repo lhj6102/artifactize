@@ -4,7 +4,7 @@
 // not, the definitions are read again and the Current is scanned again. Typed text in a Source
 // is never overwritten: an edit on the graph that would write its file is refused until it is
 // saved or reverted.
-import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import { SvelteMap } from "svelte/reactivity";
 import { call, commands, message, type BranchKey, type Commands, type DefinitionNode, type DefinitionsView, type EditCheck, type EditOperation, type EditRefusal } from "../ipc/client";
 import { keyOf } from "./monitor-state.svelte";
 import { annotationsOf, fieldLines, withField, type Annotations, type Measure } from "./annotations";
@@ -191,22 +191,6 @@ export class Definitions {
       throw failure;
     });
     return this.#checks[key];
-  }
-
-  /** A preview from the displayed definitions only. The library still checks and writes on drop. */
-  outlinesPart(part: string, from: string | null, whole: string): boolean {
-    const source = this.node(part);
-    const target = this.node(whole);
-    if (!source || !target || source.styleError || target.styleError || (from !== null && this.node(from)?.styleError) || target.parts.includes(part)) return false;
-    const seen = new SvelteSet<string>();
-    const pending = [part];
-    for (let name; (name = pending.pop()) !== undefined;) {
-      if (name === whole) return false;
-      if (seen.has(name)) continue;
-      seen.add(name);
-      pending.push(...(this.node(name)?.parts ?? []));
-    }
-    return true;
   }
 
   /** The text each file was shown with: the definitions' files, a Source's saved text being

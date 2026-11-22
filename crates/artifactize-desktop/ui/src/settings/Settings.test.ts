@@ -65,6 +65,7 @@ function backend(options: {
       case "providers_list":
         return {
           builtin: ["codex", "claude-agent", "antigravity", "openai", "anthropic", "gemini"],
+          aliasTargets: ["codex", "openai", "anthropic", "gemini"],
           keys: Object.keys(VARIABLES).map((provider) => ({
             provider: provider as Provider,
             variable: VARIABLES[provider],
@@ -138,11 +139,11 @@ function backend(options: {
         return (agy = AGY_OUT);
       case "models_list":
         if (payload.provider === "antigravity") {
-          if (agyStatus().state === "signedOut") throw { kind: "account", message: "Antigravity needs your Google sign-in. Run `artifactize login antigravity` or use Settings → Providers." };
-          return [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }];
+          if (agyStatus().state === "signedOut") return { kind: "notSetUp", reason: "Not signed in." };
+          return { kind: "models", models: [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }] };
         }
-        if (payload.provider === "anthropic") throw { kind: "account", message: "ANTHROPIC_API_KEY is required to list models." };
-        return [{ slug: "gpt-fake", displayName: "GPT Fake" }];
+        if (payload.provider === "anthropic") return { kind: "failed", error: "The provider refused to list models." };
+        return { kind: "models", models: [{ slug: "gpt-fake", displayName: "GPT Fake" }] };
       case "remote_status":
         return remote;
       case "remote_login": {
@@ -494,7 +495,8 @@ describe("Settings", () => {
 
     await fireEvent.click(within(nav).getByRole("button", { name: "Custom provider" }));
     await fireEvent.click(screen.getByRole("radio", { name: "alias of a built-in provider" }));
-    expect(within(screen.getByRole("combobox", { name: "Provider" })).queryByRole("option", { name: "Antigravity" })).toBeNull();
+    const choices = within(screen.getByRole("combobox", { name: "Provider" })).getAllByRole("option");
+    expect(choices.map((option) => option.textContent?.trim())).toEqual(["Codex", "OpenAI", "Anthropic", "Gemini"]);
   });
 
   it("opens the Antigravity prompt, signs in by hand, lists the account's models, and signs out", async () => {
@@ -506,7 +508,7 @@ describe("Settings", () => {
     await waitFor(() => expect(fact.textContent?.trim()).toBe("Not signed in"));
     const list = screen.getByRole("button", { name: "List models" });
     await fireEvent.click(list);
-    await screen.findByText(/^Antigravity needs your Google sign-in/);
+    expect((await screen.findByText("Not signed in.")).classList.contains("muted")).toBe(true);
 
     await fireEvent.click(screen.getByRole("button", { name: "Sign in with Antigravity" }));
     const manual = await screen.findByRole("button", { name: "Finish by hand" });
@@ -529,7 +531,7 @@ describe("Settings", () => {
     const signOut = await screen.findByRole("button", { name: "Sign out of Antigravity" });
     expect(fact.textContent?.trim()).toBe("Signed in with Google");
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
-    expect(screen.queryByText(/^Antigravity needs your Google sign-in/)).toBeNull();
+    expect(screen.queryByText("Not signed in.")).toBeNull();
     await fireEvent.click(list);
     await screen.findByText("Gemini Demo");
     expect(screen.getByText("gemini-demo")).toBeTruthy();
@@ -591,7 +593,7 @@ describe("Settings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
     expect(screen.queryByText("GPT Fake")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "List models" }));
-    await screen.findByText("ANTHROPIC_API_KEY is required to list models.");
+    await screen.findByText("The provider refused to list models.");
   });
 
   it("masks the store token and drops it from the screen once submitted, refused or not", async () => {

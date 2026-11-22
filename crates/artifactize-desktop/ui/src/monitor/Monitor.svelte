@@ -60,31 +60,26 @@
     if (m.opened && keyOf(m.opened.source) !== next) m.opened = null;
   }
 
-  /** Show `chip` of `item`, selected in its timeline. */
-  function choose(item: BranchView, chip: Chip) {
-    show(item, chip);
-    m.selected = { kind: "chip", branch: item.key, chip: chipKey(chip) };
-  }
-
-  /** Show `chip` of `item` in the Main area; a find field over the graph shown before closes. */
-  function show(item: BranchView, chip: Chip) {
+  /** Choose a Run in the timeline, or a branch and its newest Run. Keep the previous view
+   * until Browse accepted the requested navigation. */
+  let choosing = 0;
+  async function navigate(item: BranchView, chip: Chip | null, selected: Entry) {
+    const choice = ++choosing;
+    const accepted = await (chip ? browse.open(chip.id) : browse.close());
+    if (!accepted || choice !== choosing) return;
+    if (chip && (browse.view?.run.kind !== "read" || browse.view.run.id !== chip.id)) return;
     m.finding = false;
-    m.shown = { kind: "run", branch: item.key, run: chip.id };
-    closeDetailOf(keyOf({ kind: "run", run: chip.id }));
-    void browse.open(chip.id);
+    m.shown = chip ? { kind: "run", branch: item.key, run: chip.id } : { kind: "branch", branch: item.key };
+    closeDetailOf(chip ? keyOf({ kind: "run", run: chip.id }) : null);
+    m.selected = selected;
   }
 
-  /** Select a branch: show its newest Run or the empty branch's reference to Chat. */
+  function choose(item: BranchView, chip: Chip) {
+    void navigate(item, chip, { kind: "chip", branch: item.key, chip: chipKey(chip) });
+  }
+
   function select(item: BranchView) {
-    const first = item.newest;
-    if (first) show(item, first);
-    else {
-      m.finding = false;
-      m.shown = { kind: "branch", branch: item.key };
-      closeDetailOf(null);
-      void browse.close();
-    }
-    m.selected = { kind: "branch", branch: item.key };
+    void navigate(item, item.newest, { kind: "branch", branch: item.key });
   }
 
   /** A click on a branch: it expands, and its newest entry shows. */
@@ -246,7 +241,7 @@
   }
 
   const title = $derived(shown.kind === "run" ? shown.run : shown.kind === "branch" ? (branch?.name || branch?.project || "Branch") : "Nothing chosen");
-  const notice = $derived(m.graphError ?? browse.error ?? view?.notice ?? null);
+  const notice = $derived(m.graph.error ?? browse.error ?? view?.notice ?? null);
 
   useCommands(() => [
     { id: "main.run", group: "Graph", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
@@ -262,10 +257,9 @@
 
   /** The Pane's narrowest share of the window, in percent. */
   /** The window's width, as the Pane and the Main area share it. */
-  let windowWidth = $state(window.innerWidth);
   /** The Main area's narrowest share: room for the narrowest Detail beside the graph it keeps
    * visible (D-INS-1), and never less than 30 percent. */
-  const mainMin = $derived(mainSplitMinimum(windowWidth));
+  const mainMin = $derived(mainSplitMinimum(app.windowWidth));
 </script>
 
 {#snippet detail()}
@@ -291,7 +285,6 @@
   {/if}
 {/snippet}
 
-<svelte:window bind:innerWidth={windowWidth} />
 
 <div class="monitor">
   <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">

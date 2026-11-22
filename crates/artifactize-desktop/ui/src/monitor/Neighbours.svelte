@@ -11,7 +11,7 @@
   import { call, useIpc, type Neighbours, type Source } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
   import { BLOCKING } from "./graph";
-  import type { NeighboursState } from "./neighbours-state.svelte";
+  import { getNeighboursState } from "./neighbours-state.svelte";
   import { NODE } from "./layout";
   import Section from "../shell/Section.svelte";
 
@@ -20,17 +20,15 @@
     revision,
     node,
     onopen,
-    state: n,
   }: {
     source: Source;
     /** The snapshot's or scan's revision: a new one may relight the neighbours. */
     revision: number;
     node: string;
     onopen: (node: string) => void;
-    /** Where the read neighbours are kept: the Detail's. */
-    state: NeighboursState;
   } = $props();
   const commands = useIpc();
+  const n = getNeighboursState();
   const nodeTypes = { artifact: ArtifactNode };
   /** Room between columns and between stacked neighbours. */
   const GAP = { x: 72, y: 16 };

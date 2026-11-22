@@ -49,7 +49,7 @@ const context = (overrides: Partial<ViewerContext> = {}): ViewerContext => ({
 type Call = { cmd: string; args: Record<string, unknown> };
 
 /** A viewer session of `entry` over `files` (path → text; a path ending in `/` a folder). */
-function backend(entry: ViewerEntry, files: Record<string, string>, shown: ViewerContext | ((session: number) => ViewerContext) = context(), declarations = "{}") {
+function backend(entry: ViewerEntry, files: Record<string, string | (() => Promise<string>)>, shown: ViewerContext | ((session: number) => ViewerContext) = context(), declarations = "{}") {
   const calls: Call[] = [];
   mockIPC((cmd, args) => {
     const given = args as Record<string, unknown>;
@@ -65,8 +65,10 @@ function backend(entry: ViewerEntry, files: Record<string, string>, shown: Viewe
           .filter((path) => path.startsWith(under) && path !== under && !path.slice(under.length).replace(/\/$/, "").includes("/"))
           .map((path) => ({ name: path.slice(under.length).replace(/\/$/, ""), path: path.replace(/\/$/, ""), kind: path.endsWith("/") ? "directory" : "file" }));
       }
-      case "viewer_read_text":
-        return files[String(given.path)];
+      case "viewer_read_text": {
+        const read = files[String(given.path)];
+        return typeof read === "function" ? read() : read;
+      }
       case "viewer_declarations":
         return declarations;
       case "viewer_point":
@@ -171,11 +173,32 @@ it("keeps a single file in the File Explorer tree", async () => {
   backend({ kind: "builtin", viewer: "files" }, { "": "const total = 1;" }, context({ target: "source/total.ts", targetKind: "file" }));
   render(ViewerWindow, { session: 2 });
   const tree = await screen.findByRole("list", { name: "Files" });
-  expect(within(tree).getByRole("button", { name: "total.ts" }).getAttribute("aria-current")).toBe("true");
+  await waitFor(() => expect(within(tree).getByRole("button", { name: "total.ts" }).getAttribute("aria-current")).toBe("true"));
   expect(await within(screen.getByRole("region", { name: "Document" })).findByText("const total = 1;")).toBeTruthy();
 });
 
 describe("Markdown", () => {
+  it("keeps the last readable document and its Point path if a new selection fails", async () => {
+    let fail!: (reason: unknown) => void;
+    const calls = backend({ kind: "builtin", viewer: "markdown" }, {
+      "a.md": "# First document", "b.md": () => new Promise((_ok, reject) => { fail = reject; }), "c.md": "# Third document",
+    }, context({ type: "markdown", title: "Markdown" }));
+    render(ViewerWindow, { session: 2 });
+    const first = await screen.findByRole("heading", { name: "First document" });
+    const a = screen.getByRole("button", { name: "a.md" });
+    await fireEvent.click(screen.getByRole("button", { name: "b.md" }));
+    expect(a.getAttribute("aria-current")).toBe("true");
+    fail({ kind: "read", message: "Second document unavailable." });
+    await screen.findByText("Second document unavailable.");
+    expect(a.getAttribute("aria-current")).toBe("true");
+    await fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    await fireEvent.click(first);
+    expect(pointed(calls)).toEqual(["a.md L1:C1"]);
+    await fireEvent.click(screen.getByRole("button", { name: "c.md" }));
+    await screen.findByRole("heading", { name: "Third document" });
+    expect(screen.getByRole("button", { name: "c.md" }).getAttribute("aria-current")).toBe("true");
+    expect(screen.queryByText("Second document unavailable.")).toBeNull();
+  });
   it("opens web links through IPC, but points at the source line when armed", async () => {
     const text = "# Install\n\nRun the `installer`.\nSee [the docs](https://example.test/docs).\n\n```sh\nfirst command\nsecond command\n```\n\n| Field | Value |\n|---|---|\n| status | ready |";
     const calls = backend({ kind: "builtin", viewer: "markdown" }, { "": text }, context({ targetKind: "file", type: "markdown", title: "Markdown" }));

@@ -38,11 +38,17 @@ export class AppState {
   /** The live branches, the waiting reviews and the shown Run. */
   readonly browse = new Browse(this.ipc);
   /** The Current of the branch shown in Chat's Graph. */
-  readonly current: Current = new Current(this.ipc, (branch) => void this.definitions.load(branch));
+  readonly current: Current = new Current(this.ipc, (branch) => void this.definitionsFor(branch).load(branch));
   /** The shown branch's definitions, which its Current edits. */
-  readonly definitions: Definitions = new Definitions(this.ipc, (branch) => void this.current.scan(branch, true));
-  /** A Run can read its placements without replacing the Current's editable definitions. */
-  readonly runDefinitions = new Definitions(this.ipc);
+  readonly #definitions: Record<string, Definitions> = Object.create(null);
+  definitionsFor(branch: BranchKey): Definitions {
+    return this.#definitions[keyOf(branch)] ??= new Definitions(this.ipc, (each) => void this.current.scan(each, true));
+  }
+  readonly #emptyDefinitions = new Definitions(this.ipc);
+  get definitions(): Definitions {
+    const branch = this.chat.view?.session.branchKey;
+    return branch ? this.definitionsFor(branch) : this.#emptyDefinitions;
+  }
   /** The dragged Detail width, shared by the graph workspaces and Review. */
   detailWidth = $state<number | null>(loadWidth());
   /** The mode shown above the bottom bar; the others keep their place while hidden. */
@@ -93,6 +99,9 @@ export class AppState {
   waiting = $state(0);
   /** The Open by ID dialog. */
   asking = $state(false);
+  wanted = $state("");
+  windowWidth = $state(typeof window === "undefined" ? 0 : window.innerWidth);
+  now = $state(Date.now());
   /** The active review: the claimed review last shown in Review, which viewers' Point and the
    * pet overlay act on; the library holds it and clears it when the review settles. */
   active = $state<string | null>(null);

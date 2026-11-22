@@ -5,7 +5,7 @@
   // choice and the open form, Point (pointing in an open viewer of the review's Artifact) and
   // Submit. The main window shows and hides it; it follows the active review as it changes.
   import { emit, listen } from "@tauri-apps/api/event";
-  import { onMount, untrack } from "svelte";
+  import { createContext, onMount, untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import { commands, onActiveReviewChanged, onHumanDraftChanged, onStateChanged, subscribe } from "../ipc/client";
   import { Jobs } from "../ipc/jobs.svelte";
@@ -20,13 +20,19 @@
   import petImage from "../shell/pet.svg";
 
   let { request }: { request: string } = $props();
-  const jobs = new Jobs();
+  class PetState {
+    readonly jobs = new Jobs();
+    readonly viewers = new SvelteMap<number, Presence>();
+    review: Review;
+    constructor(id: string) { this.review = $state(new Review(id, this.jobs)); }
+  }
+  const [getPetState, setPetState] = createContext<PetState>();
+  setPetState(new PetState(untrack(() => request)));
+  const pet = getPetState();
   const caret = new FormCaret();
-  /** The review the overlay acts on: the active one. */
-  let review = $state(new Review(untrack(() => request), jobs));
+  const review = $derived(pet.review);
   const view = $derived(review.view);
-  /** The viewers open, by session, as they announce themselves. */
-  const viewers = new SvelteMap<number, Presence>();
+  const { viewers } = pet;
   /** The open viewer Point arms: the one the library matches to this review's original request. */
   const pointer = $derived(view === null ? null : ([...viewers.values()].find((each) => each.open && each.pointable && each.petMatch && each.review === review.id) ?? null));
   const run = $derived(view?.target.run ?? "");
@@ -34,8 +40,8 @@
 
   /** Read review `id`; a verdict its draft holds comes back as that verdict's open form. */
   async function show(id: string) {
-    if (review.id !== id) review = new Review(id, jobs);
-    await review.load();
+    if (pet.review.id !== id) pet.review = new Review(id, pet.jobs);
+    await pet.review.load();
   }
 
   async function submit() {

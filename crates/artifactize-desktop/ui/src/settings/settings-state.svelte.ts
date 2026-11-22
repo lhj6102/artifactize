@@ -12,7 +12,7 @@ import {
   type CustomProvider,
   type EndpointApi,
   type KeyInput,
-  type Model,
+  type ModelsResult,
   type Provider,
   type Providers,
   type Pushed,
@@ -105,8 +105,7 @@ export class SettingsState {
   antigravityCode = $state("");
   antigravityBusy = $state(false);
   #modelReads = 0;
-  models = $state.raw<Model[] | null>(null);
-  modelsError = $state<string | null>(null);
+  models = $state.raw<ModelsResult | null>(null);
   listing = $state(false);
   remote = $state.raw<RemoteStatus | null>(null);
   remoteError = $state<string | null>(null);
@@ -267,7 +266,6 @@ export class SettingsState {
   #clearModels() {
     ++this.#modelReads;
     this.models = null;
-    this.modelsError = null;
     this.listing = false;
   }
 
@@ -281,7 +279,7 @@ export class SettingsState {
       const models = await call(this.#commands.modelsList(backend));
       if (read === this.#modelReads) this.models = models;
     } catch (failure) {
-      if (read === this.#modelReads) this.modelsError = message(failure);
+      if (read === this.#modelReads) this.models = { kind: "failed", error: message(failure) };
     } finally {
       if (read === this.#modelReads) this.listing = false;
     }

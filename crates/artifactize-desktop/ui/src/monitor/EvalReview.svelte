@@ -9,26 +9,35 @@
   import { call, useIpc, type Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { plain } from "../shell/keys";
+  import { getDetailPaneState } from "./detail-pane-state.svelte";
+  import { keyOf } from "./monitor-state.svelte";
   import Reference from "../shell/Reference.svelte";
 
   let { source, node, revision, row }: { source: Source; node: string; revision: number; row: Snippet<[Snippet?]> } = $props();
   const app = getAppState();
   const ipc = useIpc();
   /** The eval's request, once its Detail named it. */
-  let request = $state<string | null>(null);
+  const state = getDetailPaneState();
+  const key = $derived(`${keyOf(source)}\n${node}`);
+  const request = $derived(state.evalRequests[key] ?? null);
   const review = $derived(request === null ? undefined : app.reviews[request]);
   const view = $derived(review?.view ?? null);
 
   /** The eval's request, read for each new snapshot; its review is the window's one. */
   const read: Attachment = () => {
     void revision;
+    const target = key;
     let current = true;
     call(ipc.detail(source, node)).then(
       (detail) => {
-        if (!current || detail.profile !== "human" || detail.request === null) return;
+        if (!current) return;
+        if (detail.profile !== "human" || detail.request === null) {
+          state.evalRequests[target] = null;
+          return;
+        }
         const id = detail.request;
         void app.review(id).load().then(() => {
-          if (current) request = id;
+          if (current) state.evalRequests[target] = id;
         });
       },
       () => {},

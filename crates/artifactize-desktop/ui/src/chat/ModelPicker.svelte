@@ -15,7 +15,7 @@
   const modelName = $derived(label?.kind === "models" ? label.models.find((item) => item.slug === model.model)?.displayName ?? model.model : model.model);
   const query = $derived(c.modelQuery.trim().toLowerCase());
   const groups = $derived.by(() => c.providers.flatMap<MenuProvider & { name: string }>(({ provider, listing }) => {
-    if (listing.kind === "unconfigured") return [];
+    if (listing.kind === "notSetUp") return [];
     const name = providerName(provider);
     const matchesProvider = name.toLowerCase().includes(query) || provider.toLowerCase().includes(query);
     if (listing.kind !== "models") return query ? [] : [{ provider, name, listing }];
@@ -25,7 +25,7 @@
   }));
   const efforts = $derived([...new Set(c.providers.flatMap(({ listing }) =>
     listing.kind === "models" ? listing.models.flatMap((item) => item.efforts) : []))]);
-  const unconfigured = $derived(c.providers.filter(({ listing }) => listing.kind === "unconfigured").map(({ provider }) => providerName(provider)));
+  const unconfigured = $derived(c.providers.filter(({ listing }) => listing.kind === "notSetUp").map(({ provider }) => providerName(provider)));
   let trigger: HTMLButtonElement;
 
   const focus: Attachment<HTMLInputElement> = (input) => input.focus({ preventScroll: true });
@@ -76,6 +76,10 @@
           <p class="label">{name}</p>
           {#if listing.kind === "failed"}
             <p class="note failed">{listing.error}</p>
+          {:else if listing.kind === "cliMissing"}
+            <p class="note">{listing.reason}</p>
+          {:else if listing.kind === "cliTooOld"}
+            <p class="note">{listing.error}</p>
           {:else if listing.kind === "loading"}
             <p class="note">Reading models…</p>
           {:else if listing.kind === "models"}

@@ -38,7 +38,7 @@ describe("openRequest", () => {
       const app = new AppState();
       await app.openRequest("run-a-2");
       expect(app.reviewMode.shown).toEqual({ kind: "review", id: view.id });
-      expect(app.review(view.id).view).toEqual(view);
+      expect(app.reviews[view.id]?.view).toEqual(view);
       clearMocks();
     }
   });
@@ -49,7 +49,7 @@ it("routes a shared review's draft and Tool log notifications by their original 
   backend(view);
   const app = new AppState();
   await app.openRequest("follower");
-  const review = app.review("follower");
+  const review = app.reviews.follower;
   const drafts = vi.spyOn(review, "readDraft");
   const entry = { run: "tool-1", at: 0, operation: "show", artifact: "release", lines: [], end: null };
   app.draftChanged("follower");

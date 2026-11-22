@@ -33,7 +33,7 @@
   setAppState(app);
   const { browse, current, leaving, monitor: m, release, reviewMode: r } = app;
   /** The ID typed into the Open by ID dialog. */
-  let wanted = $state("");
+
 
   onMount(() => {
     const hideActivity = exposeActivity(app.activity);
@@ -45,7 +45,7 @@
     );
     void browse.navigate({ full: true });
     // Ages and running times redraw from the snapshot; nothing is read.
-    const clock = setInterval(() => void browse.redraw(), 1000);
+    const clock = setInterval(() => { app.now = Date.now(); void browse.redraw(); }, 1000);
     const unwatched = release.watch();
     void app.countWaiting();
     // Each change reads again at most once at a time: the bar's count always, Verify's branches
@@ -187,10 +187,10 @@
   /** Open the request typed into Open by ID in Review. */
   function openWanted(event: SubmitEvent) {
     event.preventDefault();
-    const id = wanted.trim();
+    const id = app.wanted.trim();
     if (!id) return;
     app.asking = false;
-    wanted = "";
+    app.wanted = "";
     void app.openRequest(id).then(async () => {
       r.focus = "main";
       await tick();
@@ -269,7 +269,7 @@
   const keys = $derived(help(focused));
 </script>
 
-<svelte:window onkeydown={keydown} />
+<svelte:window onkeydown={keydown} bind:innerWidth={app.windowWidth} />
 
 <div class="app" {@attach following} {@attach verifying}>
   {#if app.failure}
@@ -295,7 +295,7 @@
       <Dialog.Title class="dialog-title">Open a request by ID</Dialog.Title>
       <form class="dialog-layout" onsubmit={openWanted}>
         <div class="dialog-body">
-          <input class="field-input text" placeholder="req-…" bind:value={wanted} aria-label="Request ID" />
+          <input class="field-input text" placeholder="req-…" bind:value={app.wanted} aria-label="Request ID" />
         </div>
         <div class="dialog-actions">
           <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>

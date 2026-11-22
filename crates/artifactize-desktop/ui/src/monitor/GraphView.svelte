@@ -131,7 +131,7 @@
   const showing = $derived(new Set(opened === null ? [] : (keys.get(opened) ?? [])));
   /** Where every copy is, wholes around their parts and their comments. */
   const rects = $derived(boxes(drawn, positions, roomOf(annotations)));
-  const defs = app.definitions;
+  const defs = $derived(branch ? app.definitionsFor(branch) : app.definitions);
   /** A Current of a branch whose definitions are read: what is on it can be edited. */
   const editable = $derived(current && branch !== null && defs.of(branch));
   /** The graph's edges between copies, lit as their edges. */
@@ -490,7 +490,11 @@
     return copy && at ? dropAt(drawn, rects, copy, at) : null;
   }
 
+  let preview = 0;
+  let requestedTarget: string | null = null;
   function dragStart(key: string) {
+    ++preview;
+    requestedTarget = null;
     v.dragging = { key, cancelled: false };
     v.target = null;
   }
@@ -503,7 +507,16 @@
     if (canvased && from && now) v.moved = { key, x: now.x - from.x, y: now.y - from.y };
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
     const fromWhole = copy?.parent ? byKey.get(copy.parent)?.node.name ?? null : null;
-    v.target = copy && drop?.kind === "join" && defs.outlinesPart(copy.node.name, fromWhole, drop.to) ? drop.key : null;
+    const next = copy && drop?.kind === "join" ? drop.key : null;
+    if (requestedTarget === next) return;
+    requestedTarget = next;
+    const asked = ++preview;
+    v.target = null;
+    const owner = branch;
+    if (!owner || !copy || drop?.kind !== "join") return;
+    void defs.check(owner, { kind: "movePart", part: copy.node.name, from: fromWhole, to: drop.to, at: [0, 0] }).then((result) => {
+      if (asked === preview && v.dragging?.key === key && !v.dragging.cancelled && result.kind === "checked") v.target = drop.key;
+    }, () => {});
   }
 
   /** A released node: placed, made a part of the Artifact under it, or out of its whole. It is
@@ -519,6 +532,8 @@
 
   async function release(node: Node, event: MouseEvent | TouchEvent) {
     const held = v.dragging;
+    ++preview;
+    requestedTarget = null;
     v.dragging = null;
     v.target = null;
     const copy = byKey.get(node.id);

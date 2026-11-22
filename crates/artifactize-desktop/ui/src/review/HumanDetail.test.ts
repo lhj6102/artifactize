@@ -441,8 +441,10 @@ describe("HumanDetail", () => {
     const kept = draftLibrary();
     kept.draft.verdict = "GREEN";
     let finish: (() => void) | undefined;
+    let reread = false;
     mockIPC(async (cmd, args) => {
       if (cmd === "human_open") return humanView("review");
+      if (cmd === "human_draft" && reread) kept.draft.points.push({ text: "L4:C1", source: "release · Markdown", at: "2026-11-23T00:00:02Z" });
       const answer = kept.answer(cmd, args);
       if (cmd === "human_draft_edit") await new Promise<void>((resolve) => (finish = resolve));
       return answer ?? null;
@@ -456,8 +458,10 @@ describe("HumanDetail", () => {
     await review.readDraft();
     await screen.findByText("L2:C9");
     expect(comment.value).toBe("Still typing");
+    reread = true;
     finish?.();
-    await waitFor(() => expect(screen.getByText("L2:C9")).toBeTruthy());
+    await screen.findByText("L4:C1");
+    expect(screen.getByText("L2:C9")).toBeTruthy();
     expect(comment.value).toBe("Still typing");
   });
 

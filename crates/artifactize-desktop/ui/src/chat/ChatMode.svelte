@@ -28,7 +28,8 @@
   import ScanState from "./ScanState.svelte";
 
   const app = getAppState();
-  const { current, definitions, chat: c } = app;
+  const { current, chat: c } = app;
+  const definitions = $derived(app.definitions);
 
   const branches = $derived(c.branches ?? []);
   /** Where a session works, as the library names it: its project and branch. */
@@ -46,30 +47,32 @@
   });
   const view = $derived(c.view);
   const session = $derived(view?.session ?? null);
+  const turns = $derived((view?.turns ?? []).map((turn) => ({ ...turn, activity: activity(turn.blocks) })));
   const graph = $derived(session?.view === "graph");
-  let windowWidth = $state(window.innerWidth);
-  const mainMin = $derived(graph ? mainSplitMinimum(windowWidth) : 30);
+  const mainMin = $derived(graph ? mainSplitMinimum(app.windowWidth) : 30);
   const live = $derived(graph && session?.unavailable === null);
-  const mainNotice = $derived((live ? definitions.notice ?? c.graph?.graphError : null) ?? c.error);
+  const mainNotice = $derived((live ? definitions.notice ?? c.graph?.graph.error : null) ?? c.error);
   const running = $derived(view?.running ?? false);
   const stopping = $derived(session !== null && c.stopping.has(session.id));
   const submitting = $derived(session !== null && (c.sending.has(session.id) || c.choosing.has(session.id)));
   const rejected = $derived(session === null ? undefined : c.rejected.get(session.id));
   const away = $derived(session !== null && c.scroll[session.id]?.following === false);
-  const typed = $derived(session ? (c.typed[session.id] ?? "") : "");
+  const typed = $derived(session ? c.composer(session.id)?.shown ?? "" : "");
   /** The model New chat's session starts with, once the library said it for the chosen branch. */
   const answer = $derived(c.starting !== null && c.starting.worktree === c.worktree ? c.starting : null);
   const starting = $derived(answer?.model ?? null);
   const reading = $derived(answer === null || !answer.known);
 
   /** How long ago `at` (an RFC 3339 time) was, as the Pane says it. */
-  function age(at: string): string {
-    const seconds = Math.max(0, (Date.now() - Date.parse(at)) / 1000);
+  function age(at: string, now: number): string {
+    const seconds = Math.max(0, (now - Date.parse(at)) / 1000);
     if (seconds < 60) return "now";
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
     return `${Math.floor(seconds / 86400)}d`;
   }
+
+  const ages = $derived(new Map(c.sessions.map((item) => [item.id, age(item.updatedAt, app.now)])));
 
   function sessionState(item: ChatSession) {
     if (item.outcome === "running" || item.running) return "running";
@@ -95,13 +98,15 @@
       case "preparing":
       case "waiting":
         return { word: "Queued", status: "QUEUED" };
-      default:
+      case "running":
         return { word: "Running", status: "RUNNING" };
+      default:
+        return { word: "Status unavailable", status: "INCOMPLETE" };
     }
   }
 
   function write(text: string) {
-    if (session) c.typed[session.id] = text;
+    if (session) c.composer(session.id)?.type(text);
   }
 
   /** Enter sends, Shift+Enter breaks the line, Esc stops a running turn; an input method's
@@ -212,7 +217,6 @@
   </div>
 {/snippet}
 
-<svelte:window bind:innerWidth={windowWidth} />
 
 <div class="mode" {@attach following}>
   <PaneGroup direction="horizontal" autoSaveId="chat-layout" class="columns">
@@ -235,7 +239,7 @@
                   {@const state = sessionState(item)}
                   <li>
                     <button class="session" class:selected={c.selected === item.id} aria-current={c.selected === item.id ? "true" : undefined} onclick={() => void c.open(item.id)}>
-                      <span class="title">{item.title || "New chat"}</span> <span class="age" class:running={state === "running"} class:failed={state === "failed"} class:finished={state === "finished"}>{state ?? age(item.updatedAt)}</span>
+                      <span class="title">{item.title || "New chat"}</span> <span class="age" class:running={state === "running"} class:failed={state === "failed"} class:finished={state === "finished"}>{state ?? ages.get(item.id)}</span>
                     </button>
                   </li>
                 {/each}
@@ -282,10 +286,10 @@
                 <div class="reading">
                   <div class="convo" role="log" aria-label="Conversation" {@attach follow} onscroll={(event) => remember(event.currentTarget)}>
                     <div class="column">
-                      {#each view?.turns ?? [] as turn, at (at)}
+                      {#each turns as turn, at (at)}
                         <div class="message">{turn.user}</div>
                         <div class="turn">
-                          {#each activity(turn.blocks) as part (part.at)}
+                          {#each turn.activity as part (part.at)}
                             {#if part.kind === "group"}
                               <ChatActivity tools={part.tools} grouped running={turn.state.kind === "running"} />
                             {:else if part.block.kind === "text"}

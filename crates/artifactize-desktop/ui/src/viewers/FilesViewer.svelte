@@ -61,9 +61,8 @@
   <section class="doc" aria-label="Document">
     {#if f.shown !== null}
       <div class="head mono">{single ? (v.context?.target ?? "") : f.shown}</div>
-      {#if f.error}
-        <p class="error">{f.error}</p>
-      {:else if f.text !== null}
+      {#if f.error}<p class="error" role="status">{f.error}</p>{/if}
+      {#if f.text !== null}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
         <ol class="source" class:pointing={v.pointing}>
           {#each lines as text, at (at)}
@@ -72,7 +71,7 @@
         </ol>
       {/if}
     {:else}
-      <p class="empty">Choose a file.</p>
+      <p class={f.error ? "error" : "empty"}>{f.error ?? "Choose a file."}</p>
     {/if}
   </section>
 </div>

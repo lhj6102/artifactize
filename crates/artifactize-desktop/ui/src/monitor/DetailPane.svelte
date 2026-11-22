@@ -18,7 +18,7 @@
   import Icon from "../shell/Icon.svelte";
   import { markIcon, markLabel } from "../shell/icons";
   import RecordDetail from "./RecordDetail.svelte";
-  import { NeighboursState } from "./neighbours-state.svelte";
+  import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
   import Neighbours from "./Neighbours.svelte";
   import { toolsKey } from "./artifact-tools.svelte";
   import ArtifactTools from "./ArtifactTools.svelte";
@@ -78,6 +78,7 @@
 
   /** The opened Artifact's neighbours, read by its Neighbours section. */
   const neighbours = new NeighboursState();
+  setNeighboursState(neighbours);
   /** A part of several wholes is drawn in each: Debug names them, in graph order. */
   const drawnIn = $derived.by((): [string, string][] => {
     const graph = neighbours.graph;
@@ -236,7 +237,7 @@
           </ul>
         </Section>
         {/if}
-        <Neighbours {source} {revision} {node} {onopen} state={neighbours} />
+        <Neighbours {source} {revision} {node} {onopen} />
         {#if branch}
           {#key toolsKey(branch.workspace, branch.key, row.name)}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
         {/if}

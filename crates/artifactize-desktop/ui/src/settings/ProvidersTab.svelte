@@ -15,7 +15,7 @@
   const NAMES = PROVIDER_NAMES;
   /** The built-in providers, in the order the library lists them. */
   const builtin = $derived(s.providers?.builtin ?? []);
-  const aliasChoices = $derived(builtin.filter((provider) => provider !== "antigravity"));
+  const aliasChoices = $derived(s.providers?.aliasTargets ?? []);
   const APIS: Record<EndpointApi, string> = {
     openaiResponses: "OpenAI Responses",
     openaiChat: "OpenAI Chat Completions",
@@ -175,13 +175,15 @@
         <div class="row">
           <button class="button" disabled={s.listing} onclick={() => void s.listModels()}>List models</button>
         </div>
-        {#if s.modelsError}<p class="error" role="alert">{s.modelsError}</p>{/if}
-        {#if s.models}
-          {#if s.models.length === 0}
+        {#if s.models?.kind === "failed"}<p class="error" role="alert">{s.models.error}</p>
+        {:else if s.models?.kind === "notSetUp" || s.models?.kind === "cliMissing"}<p class="muted">{s.models.reason}</p>
+        {:else if s.models?.kind === "cliTooOld"}<p class="muted">{s.models.error}</p>
+        {:else if s.models?.kind === "models"}
+          {#if s.models.models.length === 0}
             <p class="muted">No models listed.</p>
           {:else}
             <ul class="models" aria-label="Models">
-              {#each s.models as model (model.slug)}
+              {#each s.models.models as model (model.slug)}
                 <li>{model.displayName}<code>{model.slug}</code></li>
               {/each}
             </ul>

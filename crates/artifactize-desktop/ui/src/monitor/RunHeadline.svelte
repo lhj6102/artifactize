@@ -9,9 +9,10 @@
   import { tone } from "../shell/tone";
 
   let { run, onrun }: { run: RunPanel; onrun: () => void } = $props();
+  const needs = $derived(run.needs.map((need) => `${need.text} ${need.mark.status}`).join(", "));
 </script>
 
-<button class="headline" aria-label="{run.mark.status}{run.needs.length > 0 ? `: ${run.needs.map((need) => `${need.text} ${need.mark.status}`).join(", ")}` : ""}, open the Run's Detail" onclick={onrun}>
+<button class="headline" aria-label="{run.mark.status}{needs ? `: ${needs}` : ""}, open the Run's Detail" onclick={onrun}>
   <span class="status {tone(run.mark.status)}"><Icon name={statusIcon(run.mark.status)} /> {run.mark.status}</span>
   {#each run.needs as need, at (at)}
     <span class="need"><span class={tone(need.mark.status)}><Icon name={statusIcon(need.mark.status)} /></span>{need.text}</span>

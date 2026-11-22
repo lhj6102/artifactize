@@ -322,19 +322,18 @@ it("keeps the Open in Review reference on a submitted Human eval's tab", async (
 });
 
 it("shows an Artifact without evals or neighbours with no chips, no Evals and no Neighbours", async () => {
-  const neighbours = vi.fn();
+  let copies = 2;
   mockIPC((command, args) => {
     if (command === "detail_row") return rowOf(args, [row("a:lone", "artifact", "lone", "✓", "green")]);
     if (command === "neighbours") {
-      neighbours();
-      // Drawn once, using nothing and used by nothing.
-      return { moreUses: 0, moreUsedBy: 0, wholes: [], copies: 1, shape: {
+      // An otherwise isolated Artifact starts drawn twice, then only once.
+      return { moreUses: 0, moreUsedBy: 0, wholes: [], copies, shape: {
         nodes: [{ id: "a:lone", name: "lone", light: "green", tally: null, note: null, parts: [] }], edges: [],
       } };
     }
     return command === "detail" ? view("a:lone", "Artifact lone") : null;
   });
-  renderHosted(DetailPane, {
+  const { rerender } = renderHosted(DetailPane, {
     source: RUN, revision: 1, branch: null, node: "a:lone", tab: null, focused: false, active: true,
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
@@ -342,10 +341,10 @@ it("shows an Artifact without evals or neighbours with no chips, no Evals and no
   expect(screen.queryByRole("tablist")).toBeNull();
   expect(screen.queryByRole("list", { name: "Evals of lone" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Evals" })).toBeNull();
-  // A section with nothing to show is not shown, once its neighbours are read.
-  await waitFor(() => expect(neighbours).toHaveBeenCalled());
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(screen.queryByRole("button", { name: "Neighbours" })).toBeNull();
+  await screen.findByRole("button", { name: "Neighbours" });
+  copies = 1;
+  await rerender({ revision: 2 });
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Neighbours" })).toBeNull());
 });
 
 it("draws the Artifact between the Artifacts its evals use and those that use it once Neighbours is unfolded, and opens a neighbour on a click", async () => {

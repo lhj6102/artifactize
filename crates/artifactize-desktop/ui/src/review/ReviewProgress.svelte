@@ -5,6 +5,7 @@
 
   let { review }: { review: Review } = $props();
   let now = $state(Date.now());
+  const seconds = $derived(review.busy ? Math.max(0, Math.floor((now - review.busy.since) / 1000)) : 0);
   const clock: Attachment = () => {
     const update = () => (now = Date.now());
     update();
@@ -16,7 +17,7 @@
 {#if review.busy}
   <span class="busy" role="status" {@attach clock}>
     <span class="tone-running"><Icon name="running" label={review.busy.label} /></span>
-    <span class="seconds">{Math.max(0, Math.floor((now - review.busy.since) / 1000))}s</span>
+    <span class="seconds">{seconds}s</span>
     <button class="button small" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button>
   </span>
 {:else if review.notice?.error}

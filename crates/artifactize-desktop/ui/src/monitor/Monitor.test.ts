@@ -120,7 +120,9 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
           // A Run opened by its ID is read whatever the Pane lists, with its live branch.
           const step = (args as { navigate?: Navigate }).navigate?.run;
           const view = snapshot();
+          if (step?.kind === "close") return { ...view, run: { kind: "none" } };
           if (step?.kind !== "open" && step?.kind !== "reference") return view;
+          if (view.run.kind === "read" && view.run.id === step.id) return view;
           const live = view.branches.find((each) => each.chips.some((chip) => chip.kind === "run" && chip.id === step.id));
           return { ...view, run: { kind: "read", id: step.id, origin: null, node: `r:${step.id}`, mark: { status: "GREEN", glyph: "✓" }, needs: [], branch: live?.key ?? null } };
         }
@@ -246,8 +248,8 @@ it("expands a clicked branch to its timeline and moves through the timelines wit
   expect(header()).toBe("Nothing chosen");
   // A click on a branch expands it and shows its newest entry: the Run in progress.
   await fireEvent.click(name(/^app \/ feat\/x/));
-  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-2" } }));
-  expect(header()).toBe("run-2");
+  await waitFor(() => expect(header()).toBe("run-2"));
+  expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-2" } });
   const timeline = screen.getByRole("group", { name: "Runs of app feat/x" });
   // Each entry: its status and age, then its comment, or else its ID.
   expect(within(timeline).getAllByRole("button").map((entry) => entry.textContent?.replace(/\s+/g, " ").trim())).toEqual([
@@ -257,8 +259,10 @@ it("expands a clicked branch to its timeline and moves through the timelines wit
   // ↓ enters the timeline, then steps to the older Run; ← goes back to the branch, ← again folds it.
   entries.focus();
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
+  await waitFor(() => expect(timeline.querySelector(':scope > [role="treeitem"][aria-selected="true"] button[data-chip="run-2"]')).not.toBeNull());
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-1" } }));
+  await waitFor(() => expect(header()).toBe("run-1"));
+  expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-1" } });
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await waitFor(() => expect(screen.queryByRole("group", { name: "Runs of app feat/x" })).toBeNull());
@@ -386,13 +390,14 @@ it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest e
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
+  await within(screen.getByLabelText("Main area")).findByRole("heading", { name: "run-1" });
   await fireEvent.click(screen.getByRole("button", { name: "Older runs" }));
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ older: main.key }));
   // At the oldest entry, ↓ asks again instead of leaving for the next branch.
   const asked = navigations().filter((step) => step.older).length;
   entries.focus();
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-1" } }));
+  await waitFor(() => expect(screen.getByRole("group", { name: "Runs of app main" }).querySelector(':scope > [role="treeitem"][aria-selected="true"] button[data-chip="run-1"]')).not.toBeNull());
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(navigations().filter((step) => step.older)).toHaveLength(asked + 1));
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-1");
@@ -406,7 +411,7 @@ it("opens the latest session in Graph from a Run header, and rescans when that b
   render(App);
   await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
   const header = screen.getByLabelText("Main area").querySelector("header")!;
-  await fireEvent.click(within(header).getByRole("button", { name: "Open in Chat" }));
+  await fireEvent.click(await within(header).findByRole("button", { name: "Open in Chat" }));
   await waitFor(() => expect(scanned()).toBe(1));
   expect(calls.filter(({ command }) => command === "chat_latest_for_branch" || command === "chat_set_view"))
     .toEqual([{ command: "chat_latest_for_branch", args: { branch: main.key } }, { command: "chat_set_view", args: { id: saved.id, view: "graph" } }]);
@@ -430,7 +435,7 @@ it.each(["reference", "graph launch"])("opens New chat on the target branch when
   render(App);
   if (!launched) {
     await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
-    expect(screen.getByText("No Runs on this branch yet.")).toBeTruthy();
+    expect(await screen.findByText("No Runs on this branch yet.")).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: "Open in Chat" }));
   }
   const dialog = await screen.findByRole("dialog", { name: "New chat" });
@@ -578,24 +583,26 @@ it("paints nothing of a mode that is not shown, its graph included, and keeps it
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0");
 });
 
-it("reads at most twice for a burst of changes, and nothing for a mode not on screen until it is shown", async () => {
-  const { calls } = backend(monitor(), () => browseView(1, { waiting: [waitingRow("run-0-1")] }));
-  render(App);
-  await screen.findByRole("navigation", { name: "Modes" });
-  // Settled after launch: count from here.
-  await waitFor(() => expect(calls.some((call) => call.command === "human_search")).toBe(true));
-  await new Promise((settle) => setTimeout(settle, 50));
-  const count = (command: string) => calls.filter((call) => call.command === command).length;
-  const [searched, counted] = [count("human_search"), count("human_waiting_count")];
-  // A verify finishing: many changes at once.
-  await Promise.all(Array.from({ length: 30 }, () => emit("state-changed", { resync: false })));
-  await new Promise((settle) => setTimeout(settle, 50));
-  // Review is not on screen: its list is not searched again; the bar's count reads at most twice.
-  expect(count("human_search")).toBe(searched);
-  expect(count("human_waiting_count") - counted).toBeLessThanOrEqual(2);
-  // Shown, it reads once what changed meanwhile.
-  await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
-  await waitFor(() => expect(count("human_search")).toBe(searched + 1));
-  await new Promise((settle) => setTimeout(settle, 50));
-  expect(count("human_search")).toBe(searched + 1);
+it("coalesces changes and reads Review again only when shown", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "Date"] });
+  try {
+    let waiting = 1;
+    const { calls } = backend(monitor(), () => browseView(1, { waiting: [waitingRow("run-0-1"), ...(waiting === 2 ? [waitingRow("run-0-2")] : [])] }));
+    render(App);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByRole("button", { name: "Review, 1 waiting" })).toBeTruthy();
+    const count = (command: string) => calls.filter((call) => call.command === command).length;
+    const [searched, counted] = [count("human_search"), count("human_waiting_count")];
+    waiting = 2;
+    await Promise.all(Array.from({ length: 30 }, () => emit("state-changed", { resync: false })));
+    await vi.advanceTimersByTimeAsync(0);
+    const review = screen.getByRole("button", { name: "Review, 2 waiting" });
+    expect(count("human_search")).toBe(searched);
+    expect(count("human_waiting_count") - counted).toBeGreaterThan(0);
+    expect(count("human_waiting_count") - counted).toBeLessThanOrEqual(2);
+    await fireEvent.click(review);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    expect(count("human_search")).toBe(searched + 1);
+  } finally { vi.useRealTimers(); }
 });

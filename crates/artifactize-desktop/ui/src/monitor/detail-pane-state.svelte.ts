@@ -8,6 +8,7 @@ export class DetailPaneState {
   error = $state<string | null>(null);
   /** The node whose log shows rather than its Summary. */
   log = $state<string | null>(null);
+  readonly evalRequests = $state<Record<string, string | null>>({});
 }
 
 export const [getDetailPaneState, setDetailPaneState] = createContext<DetailPaneState>();

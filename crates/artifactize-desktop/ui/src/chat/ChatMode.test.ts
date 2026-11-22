@@ -108,13 +108,16 @@ function backend() {
         return { state: state.antigravitySignedIn ? "signedIn" : "signedOut" };
       case "models_list": {
         const { provider } = args as { provider: string };
-        if (provider === "antigravity") return [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }];
-        if (provider === "anthropic") throw { kind: "account", message: "Model listing timed out." };
-        return [
+        if (provider === "antigravity") return state.antigravitySignedIn
+          ? { kind: "models", models: [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }] }
+          : { kind: "notSetUp", reason: "Not signed in." };
+        if (provider === "gemini") return { kind: "notSetUp", reason: "No key is set." };
+        if (provider === "anthropic") return { kind: "failed", error: "Model listing timed out." };
+        return { kind: "models", models: [
           { slug: "claude-opus-5-5", displayName: "Opus 5.5", efforts: ["high", "low", "xhigh"], defaultEffort: "high" },
           { slug: "claude-sonnet-5-5", displayName: "Sonnet 5.5", efforts: ["high", "low"], defaultEffort: "high" },
           { slug: "quiet-id", displayName: "Quiet", efforts: [], defaultEffort: null },
-        ];
+        ] };
       }
       default:
         return null;
@@ -143,9 +146,9 @@ it("lists sessions by project, sends a message and shows the turn as the library
   await fireEvent.input(composer, { target: { value: "Fix it and verify." } });
   await fireEvent.keyDown(composer, { key: "Enter" });
   await waitFor(() => expect(calls.find((call) => call.cmd === "chat_send")?.args).toMatchObject({ id: "chat-1", text: "Fix it and verify.", selection: null }));
-  expect(composer.value).toBe("");
   // The turn runs: Send is Stop.
   await screen.findByRole("button", { name: "Stop (Esc)" });
+  expect(composer.value).toBe("");
   state.turns = [{
     user: "Fix it and verify.",
     blocks: [
@@ -230,7 +233,8 @@ it("reads Antigravity's account models after sign-in on reopening the Chat model
   await fireEvent.click(trigger);
   const menu = screen.getByRole("menu", { name: "Models" });
   await within(menu).findByText("Not set up: Gemini, Antigravity");
-  expect(calls.some(({ cmd, args }) => cmd === "models_list" && args.provider === "antigravity")).toBe(false);
+  expect(calls.some(({ cmd, args }) => cmd === "models_list" && args.provider === "antigravity")).toBe(true);
+  expect(calls.some(({ cmd }) => cmd === "antigravity_status")).toBe(false);
   await fireEvent.keyDown(within(menu).getByRole("searchbox"), { key: "Escape" });
   state.antigravitySignedIn = true;
 
@@ -513,8 +517,9 @@ it("shows Stopping until the turn settles, including after the stop request has 
   await screen.findByText("Stopping…");
   await fireEvent.keyDown(composer, { key: "Escape" });
   expect(calls.filter(({ cmd }) => cmd === "chat_stop")).toHaveLength(1);
+  state.turns = [{ ...state.turns[0], blocks: [{ kind: "text", text: "Still winding down." }] }];
   stop(true);
-  await waitFor(() => expect(calls.filter(({ cmd }) => cmd === "chat_open")).toHaveLength(2));
+  await screen.findByText("Still winding down.");
   expect(screen.getByText("Stopping…")).toBeTruthy();
   state.running = false;
   state.turns = [{ ...state.turns[0], state: { kind: "stopped" } }];

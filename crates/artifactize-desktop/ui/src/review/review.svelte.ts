@@ -33,38 +33,31 @@ export class FormDraft {
   readonly verdict: Verdict;
   readonly fields: FormField[];
   /** The library's draft. */
-  snapshot = $state.raw<Draft>(NO_DRAFT);
+  #snapshot!: Draft;
   /** The draft's values; assigned over, they show what was typed until the next answer. */
-  values = $derived<Record<string, FieldValue>>(Object.fromEntries(this.snapshot.fields));
+  values = $derived<Record<string, FieldValue>>(Object.fromEntries(this.#snapshot.fields));
   error = $state<string | null>(null);
   /** Counts edits: only the newest answer replaces the draft. */
   #edits = 0;
-  /** Edits sent and not answered yet. */
-  #pending = 0;
 
   constructor(
     id: string,
     view: FormView,
     readonly ipc: Commands,
+    readonly saved: () => Draft | undefined,
     /** Capture where the library's whole answer belongs before the edit leaves the window. */
     readonly answering: () => (draft: ReviewDraft) => void,
   ) {
     this.id = id;
     this.verdict = view.verdict;
     this.fields = view.fields;
-    this.snapshot = view.draft;
-  }
-
-  /** The library's draft of this verdict, read after a change made elsewhere; an edit on its
-   * way answers with a newer one. */
-  adopt(view: FormView): void {
-    if (this.#pending === 0) this.snapshot = view.draft;
+    this.#snapshot = $derived(this.saved() ?? NO_DRAFT);
   }
 
   draft(): Draft {
     return {
       verdict: this.verdict,
-      fields: this.snapshot.fields.map(([name]) => [name, this.values[name]] as [string, FieldValue]),
+      fields: this.#snapshot.fields.map(([name]) => [name, this.values[name]] as [string, FieldValue]),
     };
   }
 
@@ -87,22 +80,18 @@ export class FormDraft {
   async #ask(change: DraftChange): Promise<void> {
     const answered = this.answering();
     const mine = ++this.#edits;
-    this.#pending += 1;
     try {
       const answer = await call(this.ipc.humanDraftEdit(this.id, change));
-      this.#pending -= 1;
       // Only the newest answer is the draft: an older one would bring back what a newer edit
       // replaced, in this form and in the review's draft alike.
       if (mine === this.#edits) {
-        this.snapshot = (this.verdict === "GREEN" ? answer.green : answer.red).draft;
         this.error = null;
         answered(answer);
       }
     } catch (error) {
-      this.#pending -= 1;
       if (mine === this.#edits) {
-        // Rolled back: a new snapshot object derives the values from the draft again.
-        this.snapshot = { ...this.snapshot };
+        // Roll back the temporary override to the single saved draft.
+        this.values = Object.fromEntries(this.#snapshot.fields);
         this.error = message(error);
       }
     }
@@ -247,7 +236,6 @@ export class Review {
   #take(draft: ReviewDraft): void {
     const state = this.#state;
     this.#saveDraft(draft);
-    this.form?.adopt(this.form.verdict === "GREEN" ? draft.green : draft.red);
     // A draft saved with a verdict (before a restart, in another window) shows that verdict
     // chosen, its form open with what was entered; nothing is sent (J-HUMAN-DRAFT).
     if (!state.restored && this.owned) {
@@ -279,7 +267,9 @@ export class Review {
 
   /** Open verdict `verdict`'s form on the library's draft `draft`. */
   #open(verdict: Verdict, draft: ReviewDraft): void {
-    this.form = new FormDraft(this.id, verdict === "GREEN" ? draft.green : draft.red, this.ipc, () => this.#answering());
+    const state = this.#state;
+    const saved = () => (verdict === "GREEN" ? state.draft?.green : state.draft?.red)?.draft;
+    this.form = new FormDraft(this.id, verdict === "GREEN" ? draft.green : draft.red, this.ipc, saved, () => this.#answering());
   }
 
   #acted(acted: Pick<Acted, "notice" | "view">): void {

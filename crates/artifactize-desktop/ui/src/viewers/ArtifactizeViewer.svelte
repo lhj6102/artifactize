@@ -4,14 +4,13 @@
   // panned and zoomed as Verify's graph is. A click on an Artifact opens its panel at the right:
   // its evals with their kind, title, criteria and the Artifacts they read. While pointing, a
   // click on an Artifact or an eval appends its ID.
-  import { SvelteFlow, useSvelteFlow, type Edge, type Node, type Viewport } from "@xyflow/svelte";
+  import { SvelteFlow, useSvelteFlow, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
   import { onMount } from "svelte";
-  import { call, message } from "../ipc/client";
   import GraphTools from "../monitor/GraphTools.svelte";
   import { layered } from "../monitor/layout";
-  import { criteria, declared, edges as connections, evalsOf, type Declared } from "./declared";
+  import { criteria, edges as connections, evalsOf } from "./declared";
   import DeclaredNode from "./DeclaredNode.svelte";
   import { getViewerState } from "./viewer-state.svelte";
 
@@ -23,18 +22,15 @@
   const nodeTypes = { declared: DeclaredNode };
   /** The smallest grid cell, in screen pixels, still drawn. */
   const GRID_SHOWN = 8;
-  /** Where the graph is looked at from, as the canvas pans and zooms. */
-  let camera = $state<Viewport>({ x: 0, y: 0, zoom: 1 });
-  /** The grid's cell in graph units, as the --grid token says. */
-  let unit = $state(24);
-  const cell = $derived(unit * camera.zoom);
+  const state = v.project;
+  const graph = $derived(state.graph);
+  const selected = $derived(state.selected);
+  const camera = $derived(state.camera);
+  const cell = $derived(state.unit * camera.zoom);
   const gridCell: Attachment<HTMLElement> = (canvas) => {
-    unit = Number.parseFloat(getComputedStyle(canvas).getPropertyValue("--grid")) || unit;
+    const measured = Number.parseFloat(getComputedStyle(canvas).getPropertyValue("--grid"));
+    if (measured) state.unit = measured;
   };
-
-  let graph = $state.raw<Declared | null>(null);
-  let error = $state<string | null>(null);
-  let selected = $state<string | null>(null);
 
   /** Where each declared Artifact is drawn. */
   const places = $derived.by(() => {
@@ -59,7 +55,7 @@
 
   function clicked(name: string) {
     if (v.pointing) void v.point(name);
-    else selected = selected === name ? null : name;
+    else state.selected = selected === name ? null : name;
   }
 
   function pointEval(event: MouseEvent, id: string) {
@@ -68,13 +64,7 @@
     void v.point(id);
   }
 
-  onMount(async () => {
-    try {
-      graph = declared(await call(v.ipc.viewerDeclarations(v.session)));
-    } catch (failure) {
-      error = message(failure);
-    }
-  });
+  onMount(() => void v.loadDeclarations());
 </script>
 
 <div class="declared">
@@ -91,12 +81,12 @@
       style:background-position="{camera.x}px {camera.y}px"
       {@attach gridCell}
     >
-      {#if error}<p class="error">{error}</p>{/if}
+      {#if state.error}<p class="error">{state.error}</p>{/if}
       {#if graph}
         <SvelteFlow
           bind:nodes
           bind:edges
-          bind:viewport={camera}
+          bind:viewport={state.camera}
           {nodeTypes}
           fitView
           minZoom={MIN_ZOOM}

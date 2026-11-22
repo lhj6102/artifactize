@@ -2,7 +2,7 @@
 // files are the library's, read through the viewer session.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { call, message, type ViewerFile } from "../ipc/client";
-import { blocks, type Block } from "./markdown";
+import { blocks } from "./markdown";
 import type { ViewerState } from "./viewer-state.svelte";
 
 /** How deep into an Artifact's folders its Markdown files are looked for. */
@@ -16,8 +16,11 @@ export class MarkdownState {
   toggle(path: string): void {
     if (!this.unfolded.delete(path)) this.unfolded.add(path);
   }
-  shown = $state<string | null>(null);
-  read = $state.raw<Block[]>([]);
+  #document = $state.raw<{ path: string; text: string } | null>(null);
+  readonly shown = $derived(this.#document?.path ?? null);
+  readonly text = $derived(this.#document?.text ?? null);
+  #reads = 0;
+  readonly read = $derived(this.text === null ? [] : blocks(this.text));
   error = $state<string | null>(null);
 
   constructor(readonly viewer: ViewerState) {}
@@ -56,13 +59,14 @@ export class MarkdownState {
   }
 
   async show(path: string): Promise<void> {
-    this.shown = path;
+    const read = ++this.#reads;
     try {
       const text = await call(this.viewer.ipc.viewerReadText(this.viewer.session, path));
-      if (this.shown === path) this.read = blocks(text);
+      if (read !== this.#reads) return;
+      this.#document = { path, text };
       this.error = null;
     } catch (failure) {
-      if (this.shown === path) this.error = message(failure);
+      if (read === this.#reads) this.error = message(failure);
     }
   }
 }

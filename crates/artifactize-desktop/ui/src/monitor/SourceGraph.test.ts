@@ -349,5 +349,5 @@ it("leaves one quiet line in a graph's place when it cannot be read, its reason 
   const { app } = render(SourceGraph, { source: source("run-a"), revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByText("The graph could not be read.");
   expect(screen.queryByText("The Run's records cannot be read.")).toBeNull();
-  expect(app.monitor.graphError).toBe("The Run's records cannot be read.");
+  expect(app.monitor.graph.error).toBe("The Run's records cannot be read.");
 });

@@ -12,7 +12,7 @@
   import "@xyflow/svelte/dist/style.css";
   import { call, useIpc, message, type BranchKey, type Shape, type ShapeKey, type Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
-  import { SourceGraphState, setSourceGraphState } from "./source-graph-state.svelte";
+  import { setSourceGraphState } from "./source-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
   import GraphTools from "./GraphTools.svelte";
   import { relight } from "./graph";
@@ -47,10 +47,10 @@
   const commands = useIpc();
   const app = getAppState();
   const m = $derived(workspace ?? app.monitor);
-  const definitions = $derived(source.kind === "current" ? app.definitions : app.runDefinitions);
+  const definitions = $derived(branch ? app.definitionsFor(branch) : app.definitions);
   /** The places and comments of the branch's definitions as they are now; none until read. */
   const annotations = $derived(definitions.of(branch) ? definitions.annotations : NO_ANNOTATIONS);
-  const g = new SourceGraphState();
+  const g = untrack(() => m.graph);
   setSourceGraphState(g);
   const current = $derived(source.kind === "current");
   const key = $derived(keyOf(source));
@@ -128,18 +128,10 @@
     });
   }
 
-  /** The graph's read failure, told to the Main area's header notice while it lasts (D-MAIN-3). */
-  const report: Attachment = () => {
-    const error = g.error;
-    m.graphError = error;
-    return () => {
-      if (m.graphError === error) m.graphError = null;
-    };
-  };
 </script>
 
 <!-- The revision the graph was read at, and the one drawn: equal once the newest read shows. -->
-<div class="host" data-read={revision} data-drawn={g.drawn} {@attach reread} {@attach replace} {@attach report}>
+<div class="host" data-read={revision} data-drawn={g.drawn} {@attach reread} {@attach replace}>
 {#if g.error}
   <!-- Why stands in the header's notice; the graph's place says only that it is not drawn. -->
   <div class="pending"><GraphTools /><p class="note">The graph could not be read.</p></div>

@@ -8,6 +8,27 @@ import { call, message, type BranchKey, type ChatBranch, type ChatModel, type Ch
 import { keyOf } from "../monitor/monitor-state.svelte";
 import { providerEntries, readProvider, type MenuProvider } from "./model-providers";
 
+class Composer {
+  draft = $state("");
+  shown = $derived(this.draft);
+  #revision = 0;
+
+  type(text: string): void {
+    ++this.#revision;
+    this.draft = text;
+    this.shown = text;
+  }
+
+  begin(): (accepted: boolean) => void {
+    const at = this.#revision;
+    this.shown = "";
+    return (accepted) => {
+      if (at === this.#revision && (accepted || this.draft === "")) this.draft = "";
+      this.shown = this.draft;
+    };
+  }
+}
+
 export class ChatModeState {
   /** The library's sessions, newest activity first. */
   sessions = $state.raw<ChatSession[]>([]);
@@ -25,7 +46,8 @@ export class ChatModeState {
   /** A Run reference to bring into view once the shown session is read (J-RUN-ORIGIN). */
   reveal = $state<string | null>(null);
   /** What is typed in each session's composer, by session: kept while another is shown. */
-  readonly typed: Record<string, string> = $state({});
+  readonly #composers: Record<string, Composer> = Object.create(null);
+  composer(id: string): Composer | undefined { return this.#composers[id]; }
   /** Work tied to a session, even if the person switches away while the command runs. */
   readonly sending = new SvelteMap<string, boolean>();
   readonly stopping = new SvelteMap<string, boolean>();
@@ -99,6 +121,7 @@ export class ChatModeState {
       this.picking = false;
     }
     this.reveal = reveal;
+    this.#composers[id] ??= new Composer();
     this.selected = id;
     this.error = null;
     this.creating = false;
@@ -159,7 +182,7 @@ export class ChatModeState {
   }
 
   /** Read the shown session again: its turns stream and its Run cards change. */
-  async read(): Promise<void> {
+  async read(acknowledge = true): Promise<void> {
     const id = this.selected;
     if (id === null) return;
     const mine = ++this.#reads;
@@ -168,7 +191,7 @@ export class ChatModeState {
       if (mine !== this.#reads || this.selected !== id) return;
       this.view = view;
       if (!view.running) this.stopping.delete(id);
-      this.acknowledge();
+      if (acknowledge) this.acknowledge();
     } catch (failure) {
       if (mine === this.#reads && this.selected === id) this.error = message(failure);
     }
@@ -183,9 +206,7 @@ export class ChatModeState {
     this.#marking.add(id);
     try {
       await call(this.ipc.chatMarkSeen(id));
-      if (this.view?.session.id === id && this.view.session.unseen) {
-        this.view = { ...this.view, session: { ...this.view.session, unseen: false } };
-      }
+      if (this.selected === id) await this.read(false);
       await this.list();
     } catch (failure) {
       if (this.selected === id) this.error = message(failure);
@@ -200,18 +221,23 @@ export class ChatModeState {
     const view = this.view;
     if (!view || view.running || view.session.unavailable !== null) return;
     const id = view.session.id;
-    const text = this.typed[id] ?? "";
+    const composer = this.composer(id);
+    if (!composer) return;
+    const text = composer.shown;
     if (text.trim() === "" || this.sending.has(id) || this.choosing.has(id) || this.stopping.has(id)) return;
     this.sending.set(id, true);
-    this.typed[id] = "";
+    this.rejected.delete(id);
+    const finish = composer.begin();
     try {
       await call(this.ipc.chatSend(id, text, null));
+      finish(true);
       if (this.selected === id) {
         this.error = null;
         await this.read();
       }
       void this.list();
     } catch (failure) {
+      finish(false);
       this.rejected.set(id, { text, reason: message(failure) });
     } finally {
       this.sending.delete(id);
@@ -220,8 +246,9 @@ export class ChatModeState {
 
   restore(id: string): void {
     const rejected = this.rejected.get(id);
-    if (!rejected || (this.typed[id] ?? "") !== "") return;
-    this.typed[id] = rejected.text;
+    const composer = this.composer(id);
+    if (!rejected || !composer || composer.shown !== "") return;
+    composer.type(rejected.text);
     this.rejected.delete(id);
   }
 
@@ -289,10 +316,9 @@ export class ChatModeState {
       const listed = await call(this.ipc.providersList());
       if (mine !== this.#providerReads) return;
       const entries = providerEntries(listed);
-      this.providers = entries.map(([provider]) => ({ provider, listing: { kind: "loading" } }));
-      const read = readProvider(this.ipc, listed);
-      await Promise.all(entries.map(async ([provider, setup]) => {
-        const listing = await read(provider, setup);
+      this.providers = entries.map((provider) => ({ provider, listing: { kind: "loading" } }));
+      await Promise.all(entries.map(async (provider) => {
+        const listing = await readProvider(this.ipc, provider);
         if (mine === this.#providerReads) {
           this.providers = this.providers.map((entry) => entry.provider === provider ? { provider, listing } : entry);
         }
