@@ -185,7 +185,13 @@ impl Reviews {
         for id in ids {
             if store::read_request_as(state, id.as_str(), store::Shown::Requests)
                 .await
-                .is_ok_and(|view| !view.request.status().is_human_wait())
+                .is_ok_and(|view| {
+                    matches!(
+                        view.request.status(),
+                        artifactize_core::types::RequestStatus::Green
+                            | artifactize_core::types::RequestStatus::Red
+                    )
+                })
                 && let Some(log) = self.clear_log(&id)
             {
                 cleared.push(log);

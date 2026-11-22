@@ -256,7 +256,11 @@ pub async fn main_close(app: tauri::State<'_, App>) -> Result<(), Failure> {
                 "Release the review claims before closing this window.".into(),
             ));
         }
-        app.chat.stop_running().await.map_err(Failure::Action)?;
+        // A broken state store must not strand the windows. Locally owned turns are
+        // still stopped by close, even if other processes cannot be reached through it.
+        if let Err(error) = app.chat.stop_running().await {
+            eprintln!("Could not stop Chat turns in other processes: {error}");
+        }
         app.close().await;
         app.windows.act(&app, Action::CloseMain)
     }

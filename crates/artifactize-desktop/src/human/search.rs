@@ -97,7 +97,9 @@ async fn search_page(app: &App, parsed: &search::Query, start: u32) -> Result<Re
                 worktree: PathKey::new(&entry.repository),
                 project: label.project,
                 branch: label.branch,
-                age: monitor::duration(now - request.created_at.time()),
+                age: monitor::duration(
+                    now - request.started_at.unwrap_or(request.created_at).time(),
+                ),
                 mark: monitor::Status::from(entry.status).into(),
                 claimant: entry.claim.reviewer().map(str::to_owned),
                 mine: matches!(entry.claim, search::Claim::Mine(_)),
