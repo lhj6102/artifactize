@@ -5,7 +5,8 @@ import { it } from "node:test";
 import { runStep } from "./build.ts";
 import { own } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { nodeProgram } from "./platform.ts";
+import { PNG } from "pngjs";
+import { nodeProgram, xwdPng } from "./platform.ts";
 import { exists, nativePath, removeTree, scratchDirectory, suitePath, newDirectory } from "./portable.ts";
 import { batches } from "./run.ts";
 
@@ -16,6 +17,18 @@ it("batches scenarios in order, at most `size` apps at once, one that runs alone
   assert.deepEqual(batches(ids("a b c"), 1), [["a"], ["b"], ["c"]]);
   const again = (names: string) => names.split(" ").map((id) => ({ id, restarted: id.startsWith("r") ? async () => {} : undefined }));
   assert.deepEqual(batches(again("a r1 b c r2 d"), 3), [["a"], ["r1"], ["b", "c"], ["r2"], ["d"]]);
+});
+
+it("keeps a display frame as PNG without a WebDriver session", () => {
+  const frame = Buffer.alloc(116);
+  // 100-byte fixed header, one colormap entry, one 32-bit pixel in little-endian order.
+  for (const [offset, value] of [[0, 100], [4, 7], [8, 2], [16, 1], [20, 1], [44, 32], [48, 4], [56, 0xff0000], [60, 0xff00], [64, 0xff], [76, 1]]) {
+    frame.writeUInt32BE(value, offset);
+  }
+  frame.writeUInt32LE(0x1a63b4, 112);
+  const screenshot = PNG.sync.read(Buffer.from(xwdPng(frame)));
+  assert.deepEqual([screenshot.width, screenshot.height, ...screenshot.data], [1, 1, 0x1a, 0x63, 0xb4, 255]);
+  assert.throws(() => xwdPng(frame.subarray(0, 115)), /truncated/);
 });
 
 it("gives a fixture's programs homes inside it and none of the person's credentials", () => {

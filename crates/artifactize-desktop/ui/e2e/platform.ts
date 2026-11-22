@@ -13,7 +13,8 @@
 //   build's opener seam on Windows). The stand-in it runs is the same on every OS.
 import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { PNG } from "pngjs";
 import { release } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, sep, toNamespacedPath } from "node:path";
 import { callWindow, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
@@ -224,7 +225,39 @@ export function runnerCommand(args: string[], env: Environment = process.env): {
   const outer = { DESKTOP_TEST_OUTER_DISPLAY: env.DISPLAY ?? "", DESKTOP_TEST_OUTER_BUS: env.DBUS_SESSION_BUS_ADDRESS ?? "" };
   const headless: Environment = { ...env, ...outer, GDK_BACKEND: "x11" };
   delete headless.WAYLAND_DISPLAY;
-  return { program: "dbus-run-session", args: ["--", "xvfb-run", "-a", process.execPath, ...args], env: headless };
+  const framebuffer = env.DESKTOP_TEST_BATCH_OUTPUT ? ["-s", "-screen 0 1280x1024x24 -fbdir ."] : [];
+  return { program: "dbus-run-session", args: ["--", "xvfb-run", "-a", ...framebuffer, process.execPath, ...args], env: headless };
+}
+
+/** Last-resort evidence from the batch's private virtual display, not a WebDriver command:
+ * a failed New Session has no screenshot endpoint yet. Xvfb writes the screen in XWD format
+ * in the batch output directory. No pixels from it are used in scenario assertions. */
+export function displayScreenshot(output: NativePath): Uint8Array | undefined {
+  if (!LINUX) return undefined;
+  return xwdPng(readFileSync(nativePath(output, "Xvfb_screen0")));
+}
+
+/** Decode the Xvfb screen's ZPixmap into a portable evidence PNG. */
+export function xwdPng(frame: Buffer): Uint8Array {
+  if (frame.length < 100 || frame.readUInt32BE(4) !== 7 || frame.readUInt32BE(8) !== 2 || frame.readUInt32BE(44) !== 32) {
+    throw new Error("the isolated display did not write a 32-bit ZPixmap XWD frame");
+  }
+  const width = frame.readUInt32BE(16), height = frame.readUInt32BE(20);
+  const stride = frame.readUInt32BE(48);
+  const start = frame.readUInt32BE(0) + frame.readUInt32BE(76) * 12;
+  if (!width || !height || width * 4 > stride || start + stride * height > frame.length) throw new Error("the isolated display's XWD frame is truncated");
+  const littleEndian = frame.readUInt32BE(28) === 0;
+  const masks = [56, 60, 64].map((offset) => frame.readUInt32BE(offset));
+  const shifts = masks.map((mask) => 31 - Math.clz32(mask & -mask));
+  const image = new PNG({ width, height });
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const offset = start + y * stride + x * 4;
+    const pixel = littleEndian ? frame.readUInt32LE(offset) : frame.readUInt32BE(offset);
+    const dest = (y * width + x) * 4;
+    for (let c = 0; c < 3; c++) image.data[dest + c] = Math.round(255 * ((pixel & masks[c]) >>> shifts[c]) / (masks[c] >>> shifts[c]));
+    image.data[dest + 3] = 255;
+  }
+  return PNG.sync.write(image);
 }
 
 /** Fail unless this process runs where `runnerCommand` puts it: on Linux, a display and a

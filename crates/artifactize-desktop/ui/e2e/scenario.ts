@@ -94,6 +94,9 @@ export const LAST_WINDOW = "last-window.png";
 /** The file a scenario's spec writes into its folder once its run has passed to its end. */
 export const COMPLETED = "completed";
 
+/** The service did not confirm that it stopped all of the batch's apps. */
+export const APPS_UNRELEASED = "apps-unreleased";
+
 /** The file a scenario's first phase writes, with what its run returned, once it has passed:
  * its restarted phase starts from it. */
 export const FIRST = "first.json";

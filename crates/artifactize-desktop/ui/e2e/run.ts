@@ -13,7 +13,7 @@ import { cleanup, prepare, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { appsAtOnce, assertHeadless, desktopResources, nodeProgram, packageCommand, runnerCommand, systemName, variable } from "./platform.ts";
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
-import type { Scenario } from "./scenario.ts";
+import { APPS_UNRELEASED, type Scenario } from "./scenario.ts";
 
 /** Scenarios in batches of at most `size`, in their order; one that runs alone, or whose app
  * is started again (the service restarts it for the batch's second spec), has a batch of its
@@ -32,9 +32,9 @@ export function batches(scenarios: readonly Pick<Scenario, "id" | "alone" | "res
 let interrupted = false;
 
 /** Run `program` with this terminal's output until it exits; its exit code. */
-function child(program: string, args: string[], env: NodeJS.ProcessEnv): Promise<number> {
+function child(program: string, args: string[], env: NodeJS.ProcessEnv, cwd?: NativePath): Promise<number> {
   return new Promise((done, fail) => {
-    const started = spawn(program, args, { env, stdio: "inherit" });
+    const started = spawn(program, args, { env, cwd, stdio: "inherit" });
     started.once("error", fail);
     started.once("close", (code) => done(code ?? 1));
   });
@@ -94,11 +94,12 @@ async function suite(ids: string[]): Promise<void> {
         failures.push(new Error(`interrupted before the batch ${ids.join(", ")} started: ${left.length} scenarios did not run (${left.join(", ")})`));
         break;
       }
+      // The isolated display's framebuffer is written relative to this batch's own cwd.
+      const logs = makeDirectory(nativePath(output, `batch-${index + 1}`));
       const env = { ...process.env, DESKTOP_TEST_CANDIDATE: candidate.manifest, DESKTOP_TEST_BATCH: JSON.stringify(ids),
-        DESKTOP_TEST_BATCH_OUTPUT: nativePath(output, `batch-${index + 1}`), DESKTOP_TEST_EVIDENCE_RUN: evidence };
+        DESKTOP_TEST_BATCH_OUTPUT: logs, DESKTOP_TEST_EVIDENCE_RUN: evidence };
       const command = runnerCommand([suitePath("run.ts"), "batch"], env);
-      const passed = await child(command.program, command.args, command.env) === 0;
-      const logs = nativePath(output, `batch-${index + 1}`);
+      const passed = await child(command.program, command.args, command.env, logs) === 0;
       const left = groups.slice(index + 1).flat();
       const unrun = left.length ? `${left.length} scenarios did not run (${left.join(", ")})` : "no scenario was left to run";
       if (!passed) {
@@ -113,6 +114,10 @@ async function suite(ids: string[]): Promise<void> {
           break;
         }
         failed.push(...(kept.length ? kept : ids));
+        if (exists(nativePath(logs, APPS_UNRELEASED))) {
+          failures.push(new Error(`stopped because the batch ${ids.join(", ")} may still have live apps; ${unrun}`));
+          break;
+        }
         if (!whole && left.length) {
           failures.push(new Error(`stopped at the first failing batch; ${unrun} (CI runs them all)`));
           break;
@@ -203,8 +208,11 @@ async function launch(): Promise<void> {
     void (async () => {
       try {
         await internals.runner?.shutdown();
-        for (const service of internals._launcher ?? []) await service.onComplete?.(1, {}, []);
-        await loaded?.teardown();
+        try {
+          for (const service of internals._launcher ?? []) await service.onComplete?.(1, {}, []);
+        } finally {
+          await loaded?.teardown();
+        }
       } catch (error) { console.error(inspect(error)); }
       try { for (const log of logs()) console.error(log); } catch (error) { console.error(inspect(error)); }
       await printed();
@@ -227,9 +235,7 @@ async function launch(): Promise<void> {
   }
   // A service that failed to stop the apps fails the batch, each scenario keeping it as its
   // evidence with the window its flow left.
-  let shutdown: unknown;
-  try { configuration.assertServiceShutdown(); } catch (error) { shutdown = error; failures.push(error); }
-  try { await configuration.teardown(shutdown); } catch (error) { failures.push(error); }
+  try { await configuration.teardown(); } catch (error) { failures.push(error); }
   if (failures.length) {
     for (const log of logs()) console.error(log);
     throw new AggregateError(failures, "desktop WDIO batch failed");

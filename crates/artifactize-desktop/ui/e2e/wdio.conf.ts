@@ -7,9 +7,9 @@ import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { appsAtOnce, displayEnvironment, setVariable, variable, type Environment } from "./platform.ts";
-import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson } from "./portable.ts";
-import { COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
+import { appsAtOnce, displayEnvironment, displayScreenshot, setVariable, variable, type Environment } from "./platform.ts";
+import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson, writeText } from "./portable.ts";
+import { APPS_UNRELEASED, COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
 
 const candidate = readCandidate();
 const selected = selectedScenarios(JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[]);
@@ -29,13 +29,11 @@ if (restarts && selected.length > 1) throw new Error("a scenario that starts its
 type Service = { onComplete?: (...args: never[]) => Promise<void> };
 let observeService: (() => Service[]) | undefined;
 const shutdownFailures: unknown[] = [];
+const pendingStops = new Set<() => Promise<void>>();
+const workers = new Map<string, { id: string; restarted: boolean }>();
 
 /** WDIO can log an ordinary service error without propagating it to the batch result. */
 export function trackServiceShutdown(services: () => Service[]): void { observeService = services; }
-
-export function assertServiceShutdown(): void {
-  if (shutdownFailures.length) throw new AggregateError(shutdownFailures, "Tauri service failed to stop its apps");
-}
 
 export let preparationFailure: unknown;
 
@@ -51,17 +49,27 @@ export function assertCompleted(): void {
  * failure names it and is kept as its evidence, with the window as its flow left it. When the
  * service failed to stop the batch's apps (`serviceFailure`), every scenario of the batch keeps
  * that failure as its evidence, with the window as its flow left it, before its files go. */
-export async function teardown(serviceFailure?: unknown): Promise<void> {
+export async function teardown(): Promise<void> {
+  if (pendingStops.size) {
+    for (const stop of pendingStops) {
+      // Retry the service, not a PID found on the machine. It still owns an unsuccessful stop.
+      try { await stop(); pendingStops.delete(stop); } catch (error) { shutdownFailures.push(error); }
+    }
+  }
+  if (pendingStops.size) writeText(nativePath(output, APPS_UNRELEASED), "Tauri service did not confirm its apps exited. Inputs kept.\n");
+  const serviceFailure = shutdownFailures.length ? new AggregateError(shutdownFailures, "Tauri service failed to stop its apps") : undefined;
   const scopes = owned.splice(0);
   // Read before the folders go.
   const windows = scopes.map((scope) => nativePath(scope.root, LAST_WINDOW)).map((image) => (exists(image) ? readBytes(image) : undefined));
-  const failures: unknown[] = [];
+  const failures: unknown[] = serviceFailure ? [serviceFailure] : [];
   if (serviceFailure !== undefined) {
     for (const [index] of scopes.entries()) {
       const failure = new Error(`the Tauri service failed to stop the apps of the batch (${selected.map((each) => each.id).join(", ")}) once ${selected[index].id}'s flow had ended`, { cause: serviceFailure });
       await keepEvidence(selected[index].id, nativePath(evidence, selected[index].id), inspect(failure, { depth: null }), windows[index]).catch((cause: unknown) => failures.push(cause));
     }
   }
+  // The filesystem may allow removing files while a live app still uses them.
+  if (pendingStops.size) throw new AggregateError(failures, "apps not released; scenario inputs kept");
   const results = await Promise.allSettled(scopes.map((scope) => scope.close()));
   for (const [index, result] of results.entries()) {
     if (result.status !== "rejected") continue;
@@ -107,7 +115,9 @@ export const config = {
       for (const service of observeService?.() ?? []) {
         const original = service.onComplete?.bind(service);
         if (original) service.onComplete = async (...args) => {
-          try { await original(...args); }
+          const stop = () => original(...args);
+          pendingStops.add(stop);
+          try { await stop(); pendingStops.delete(stop); }
           catch (error) { shutdownFailures.push(error); throw error; }
         };
       }
@@ -154,6 +164,21 @@ export const config = {
       failure.cause = cause;
       throw failure;
     }
+  },
+  onWorkerStart(cid: string, capability: Capability, specs: string[]) {
+    workers.set(cid, { id: capability["artifactize:scenario"], restarted: specs.some((spec) => spec.endsWith("restarted.spec.ts")) });
+  },
+  async onWorkerEnd(cid: string, code: number) {
+    const worker = workers.get(cid);
+    workers.delete(cid);
+    if (code === 0 || !worker?.id) return;
+    const folder = nativePath(evidence, worker.restarted ? `${worker.id}-started-again` : worker.id);
+    if (exists(nativePath(folder, "failure.txt"))) return; // afterTest had a live session.
+    let screen: Uint8Array | undefined;
+    let capture = "";
+    try { screen = displayScreenshot(output); }
+    catch (error) { capture = `\nCould not capture the private display: ${String(error)}`; }
+    await keepEvidence(worker.id, folder, `WebdriverIO worker ${cid} exited ${code} before its test could keep evidence; see its session/setup error in the batch log.${capture}`, screen);
   },
   beforeSession(_config: unknown, capability: Capability) {
     setVariable("DESKTOP_TEST_SCENARIO", capability["artifactize:scenario"]);
