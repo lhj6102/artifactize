@@ -182,13 +182,16 @@ pub async fn viewer_window(
     session: u32,
     title: String,
 ) -> Result<(), Failure> {
-    // Reuse may drop the prepared session, so own the log until the window answers.
-    let pending = app.viewers.take_launch(session);
-    let result = app.windows.act(&app, Action::Viewer { session, title });
+    // Take the handoff once; a cancelled or already consumed handoff cannot open again.
+    let pending = app
+        .viewers
+        .take_launch(session)
+        .ok_or_else(|| Failure::Missing("Viewer launch is no longer available.".into()))?;
+    let result = pending.open(|| app.windows.act(&app, Action::Viewer { session, title }));
     if result.is_err() {
         app.viewers.drop_session(session);
     }
-    crate::viewer::finish_launch(pending, result)
+    result
 }
 
 /// Show the pet overlay for the active review `request`, or hide it for `None`.

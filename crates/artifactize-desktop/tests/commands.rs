@@ -1923,17 +1923,18 @@ fn a_direct_run_reference_reveals_its_branch_without_resetting_verify_search() {
         .request
         .run_id
         .to_string();
-    let query = "repo:other-project";
-    let filtered = invoke(&window, "browse", json!({"navigate": search(query)})).unwrap();
-    assert_eq!(filtered["branches"], json!([]));
-    let shown = invoke(
-        &window,
-        "browse",
-        json!({"navigate":{"run":{"kind":"reference","id":run},"full":false,"resync":false}}),
-    )
-    .unwrap();
-    assert_eq!(shown["query"]["text"], query);
-    assert_eq!(shown["branches"][0]["chips"][0]["id"], run);
+    for query in ["repo:other-project", "repo:"] {
+        let filtered = invoke(&window, "browse", json!({"navigate": search(query)})).unwrap();
+        assert_eq!(filtered["branches"], json!([]));
+        let shown = invoke(
+            &window,
+            "browse",
+            json!({"navigate":{"run":{"kind":"reference","id":run},"full":false,"resync":false}}),
+        )
+        .unwrap();
+        assert_eq!(shown["query"]["text"], query);
+        assert_eq!(shown["branches"][0]["chips"][0]["id"], run);
+    }
 }
 
 #[test]

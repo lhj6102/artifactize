@@ -199,8 +199,32 @@ pub async fn read_original_as(
     view: &RequestView,
     shown: Shown,
 ) -> Result<RequestView, String> {
-    let original = view
-        .execution
+    match original_id(view) {
+        Some(id) => read_request_by_id(state, id, shown).await,
+        None => Ok(view.clone()),
+    }
+}
+
+/// The recorded owner of a live review, or its exact receipt if that owner is gone.
+/// An operational read failure still propagates.
+pub async fn read_review_owner(state: &Path, view: &RequestView) -> Result<RequestView, String> {
+    let Some(id) = original_id(view).filter(|_| view.request.status().is_human_wait()) else {
+        return Ok(view.clone());
+    };
+    let found = read(
+        state,
+        Filter {
+            id: Some(id.clone()),
+            shown: Shown::Requests,
+            ..Filter::default()
+        },
+    )
+    .await?;
+    Ok(found.into_iter().next().unwrap_or_else(|| view.clone()))
+}
+
+fn original_id(view: &RequestView) -> Option<&crate::types::RequestId> {
+    view.execution
         .as_ref()
         .map(|execution| &execution.provenance.request_id)
         .or_else(|| {
@@ -208,11 +232,8 @@ pub async fn read_original_as(
                 .provenance
                 .as_ref()
                 .map(|source| &source.request_id)
-        });
-    match original.filter(|id| *id != &view.request.id) {
-        Some(id) => read_request_by_id(state, id, shown).await,
-        None => Ok(view.clone()),
-    }
+        })
+        .filter(|id| *id != &view.request.id)
 }
 
 /// One entry per waiting Human sign-off: followers collapse onto the original request that

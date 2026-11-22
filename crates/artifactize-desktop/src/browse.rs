@@ -344,7 +344,7 @@ impl Browse {
                 state: state.to_path_buf(),
                 launch: self.launch.clone(),
                 open: shown.opened.id().cloned(),
-                force: shown.opened.loaded().is_none(),
+                force: shown.opened.loaded().is_none() || shown.error.is_some(),
                 rescan: read.rescan || !shown.initialized,
                 changed: changed.clone(),
             };
@@ -391,7 +391,16 @@ impl Browse {
             let (number, waiting) = reads
                 .numbered(live::waiting(state, reviewer, &snapshot.labels))
                 .await;
-            Some((number, waiting.map_err(Failure::Read)?))
+            match waiting {
+                Ok(waiting) => Some((number, waiting)),
+                Err(error) => {
+                    // The loader advanced but this snapshot was never published. Force the
+                    // next read rather than accepting "unchanged" against the loader's cache.
+                    self.restore_changed(changed);
+                    self.shown().error = Some(format!("read failed: {error}"));
+                    return Err(Failure::Read(error));
+                }
+            }
         } else {
             None
         };

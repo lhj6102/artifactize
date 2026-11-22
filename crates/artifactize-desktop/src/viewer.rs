@@ -30,11 +30,30 @@ pub(crate) struct Sessions(Mutex<SessionsInner>, OnceLock<ActiveEvent>);
 struct SessionsInner {
     last: u32,
     live: BTreeMap<u32, Arc<viewer::Session>>,
-    launching: BTreeMap<u32, log::Run>,
+    launching: BTreeMap<u32, PendingLaunch>,
     /// What each live session shows: an Artifact of a worktree in one viewer.
     places: BTreeMap<u32, Place>,
     active: Option<ActiveReview>,
     activation: u64,
+}
+
+/// A handed-off tool is cancellable until its window starts opening.
+pub(crate) struct LaunchJob {
+    pub caller: crate::human::Caller,
+    pub id: crate::ids::JobId,
+    pub cancel: tokio_util::sync::CancellationToken,
+}
+
+pub(crate) struct PendingLaunch {
+    job: LaunchJob,
+    review: Option<RequestId>,
+    log: Option<log::Run>,
+}
+
+impl PendingLaunch {
+    fn cancelled(&self) -> bool {
+        self.job.cancel.is_cancelled()
+    }
 }
 
 /// The review as shown, and the original request whose claim, Artifact and draft it uses.
@@ -99,7 +118,7 @@ impl Sessions {
         &self,
         viewer: viewer::Session,
         worktree: PathBuf,
-        pending: Option<log::Run>,
+        pending: PendingLaunch,
     ) -> ViewerLaunch {
         let context = viewer.context(None);
         let title = format!("{} — {}", context.artifact, context.title);
@@ -115,9 +134,7 @@ impl Sessions {
         let session = self.remember(place);
         let mut sessions = self.0.lock().expect("viewer sessions");
         sessions.live.insert(session, Arc::new(viewer));
-        if let Some(pending) = pending {
-            sessions.launching.insert(session, pending);
-        }
+        sessions.launching.insert(session, pending);
         ViewerLaunch { session, title }
     }
 
@@ -149,12 +166,28 @@ impl Sessions {
             .ok_or_else(|| Failure::Missing("Artifact Viewer session closed.".into()))
     }
 
-    pub(crate) fn take_launch(&self, session: u32) -> Option<log::Run> {
+    pub(crate) fn take_launch(&self, session: u32) -> Option<PendingLaunch> {
         self.0
             .lock()
             .expect("viewer sessions")
             .launching
             .remove(&session)
+    }
+
+    pub(crate) fn cancel_job(&self, caller: &crate::human::Caller, id: crate::ids::JobId) {
+        for pending in self.0.lock().expect("viewer sessions").launching.values() {
+            if &pending.job.caller == caller && pending.job.id == id {
+                pending.job.cancel.cancel();
+            }
+        }
+    }
+
+    pub(crate) fn cancel_review(&self, review: &RequestId) {
+        for pending in self.0.lock().expect("viewer sessions").launching.values() {
+            if pending.review.as_ref() == Some(review) {
+                pending.job.cancel.cancel();
+            }
+        }
     }
 
     /// End viewer session `session`: its window closed, or another shows the same Artifact.
@@ -256,6 +289,7 @@ pub(crate) async fn launch(
     app: &App,
     outcome: &mut Outcome,
     source: Source,
+    job: LaunchJob,
 ) -> Result<Option<ViewerLaunch>, Failure> {
     let Outcome::Ran {
         result: Ok(result), ..
@@ -267,7 +301,15 @@ pub(crate) async fn launch(
         return Ok(None);
     };
     let artifact = artifact.clone();
-    let pending = result.take_viewer_launch();
+    let review = match &source {
+        Source::Review(id) => Some(id.clone()),
+        Source::Workspace(_) => None,
+    };
+    let pending = PendingLaunch {
+        job,
+        review,
+        log: result.take_viewer_launch(),
+    };
     let opened = async {
         let workspace = match source {
             Source::Review(id) => store::read_request_repo(&app.launch.state, id.as_str())
@@ -282,9 +324,22 @@ pub(crate) async fn launch(
         Ok::<_, Failure>((viewer, worktree))
     }
     .await;
+    if pending.cancelled() {
+        // Dropping the unfinished log reports Cancelled, never Launched.
+        return Ok(None);
+    }
     match opened {
         Ok((viewer, worktree)) => Ok(Some(app.viewers.keep(viewer, worktree, pending))),
-        Err(error) => finish_launch(pending, Err(error)),
+        Err(error) => finish_launch(pending.log, Err(error)),
+    }
+}
+
+impl PendingLaunch {
+    pub(crate) fn open(self, open: impl FnOnce() -> Result<(), Failure>) -> Result<(), Failure> {
+        if self.cancelled() {
+            return Err(Failure::Action("Viewer launch cancelled.".into()));
+        }
+        finish_launch(self.log, open())
     }
 }
 
@@ -524,13 +579,9 @@ pub async fn active_review_set(
             let exact = store::read_request_as(state, shown.as_str(), store::Shown::Requests)
                 .await
                 .map_err(Failure::Read)?;
-            let owner = if exact.request.status().is_human_wait() {
-                store::read_original_as(state, &exact, store::Shown::Requests)
-                    .await
-                    .map_err(Failure::Read)?
-            } else {
-                exact
-            };
+            let owner = store::read_review_owner(state, &exact)
+                .await
+                .map_err(Failure::Read)?;
             if let Some(error) =
                 artifactize_core::review::review_refusal(Some(&owner), &app.launch.reviewer)
             {
@@ -705,6 +756,29 @@ mod tests {
 #[cfg(test)]
 mod launch_tests {
     use super::*;
+
+    #[test]
+    fn a_cancelled_viewer_handoff_never_opens_a_native_window() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let (sink, mut events) = log::channel();
+        let review: RequestId = "run-1-1".parse().unwrap();
+        let run = sink.start(&review, "view", "notes");
+        let pending = PendingLaunch {
+            log: Some(run),
+            review: Some(review),
+            job: LaunchJob {
+                caller: crate::human::Caller::test_main(),
+                id: serde_json::from_str("1").unwrap(),
+                cancel: cancel.clone(),
+            },
+        };
+        cancel.cancel();
+        assert!(pending.open(|| panic!("cancelled before opening")).is_err());
+        let start = events.try_recv().unwrap();
+        let end = events.try_recv().unwrap();
+        assert_eq!(end.run, start.run);
+        assert_eq!(end.kind, log::Kind::End(log::End::Cancelled));
+    }
 
     #[test]
     fn a_viewer_handoff_reports_the_native_launch_result_on_the_same_log_run() {

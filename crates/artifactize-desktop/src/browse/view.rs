@@ -463,43 +463,41 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
                 .collect(),
         }
     });
-    let branches = match &shown.query.parsed {
-        Ok(query) => {
-            let none = std::collections::BTreeSet::new();
-            let starred = shown.starred.as_ref().unwrap_or(&none);
-            let (mut branches, _) = live::show(query, &shown.branches, &[], starred);
-            // A direct Run reference is visible without changing the saved Verify search.
-            if shown.reference
-                && let Some(place) = &shown.opened_branch
-                && !branches.iter().any(|branch| &branch.place == place)
-                && let Some(linked) = shown.branches.iter().find(|branch| &branch.place == place)
-            {
-                branches.insert(0, linked);
-            }
-            branches
-                .into_iter()
-                .map(|shown_branch| {
-                    let selected = shown
-                        .opened
-                        .id()
-                        .and_then(|id| shown_branch.timeline().position(|chip| &chip.id == id));
-                    let limit = shown
-                        .chips
-                        .get(&shown_branch.place)
-                        .copied()
-                        .unwrap_or(CHIPS)
-                        .max(selected.map_or(0, |at| at + 1));
-                    branch(
-                        shown_branch,
-                        limit,
-                        starred.contains(&shown_branch.place),
-                        now,
-                    )
-                })
-                .collect()
-        }
-        Err(_) => Vec::new(),
-    };
+    let none = std::collections::BTreeSet::new();
+    let starred = shown.starred.as_ref().unwrap_or(&none);
+    let mut branches = shown.query.parsed.as_ref().map_or_else(
+        |_| Vec::new(),
+        |query| live::show(query, &shown.branches, &[], starred).0,
+    );
+    // A direct Run reference is visible without changing the saved Verify search.
+    if shown.reference
+        && let Some(place) = &shown.opened_branch
+        && !branches.iter().any(|branch| &branch.place == place)
+        && let Some(linked) = shown.branches.iter().find(|branch| &branch.place == place)
+    {
+        branches.insert(0, linked);
+    }
+    let branches = branches
+        .into_iter()
+        .map(|shown_branch| {
+            let selected = shown
+                .opened
+                .id()
+                .and_then(|id| shown_branch.timeline().position(|chip| &chip.id == id));
+            let limit = shown
+                .chips
+                .get(&shown_branch.place)
+                .copied()
+                .unwrap_or(CHIPS)
+                .max(selected.map_or(0, |at| at + 1));
+            branch(
+                shown_branch,
+                limit,
+                starred.contains(&shown_branch.place),
+                now,
+            )
+        })
+        .collect();
     let waiting_rows = shown.waiting.iter().map(|row| waiting(row, now)).collect();
     let notice: Vec<String> = shown
         .error

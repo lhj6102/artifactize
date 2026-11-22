@@ -7,7 +7,15 @@ use tokio_util::sync::CancellationToken;
 use crate::{Failure, ids::JobId};
 
 /// Job numbers are local to the WebView that sent them, not part of the JSON payload.
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Caller(String);
+
+#[cfg(test)]
+impl Caller {
+    pub(crate) fn test_main() -> Self {
+        Self("main".into())
+    }
+}
 
 impl<'a, R: tauri::Runtime> tauri::ipc::CommandArg<'a, R> for Caller {
     fn from_command(

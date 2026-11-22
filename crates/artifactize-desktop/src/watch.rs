@@ -6,7 +6,12 @@ use crate::App;
 use artifactize_core::changes::{Change, Subscription};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::{collections::BTreeMap, path::PathBuf, sync::Mutex, time::Duration};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tauri::Manager;
 use tauri_specta::Event;
 
@@ -29,31 +34,67 @@ pub struct SessionChanged {
 }
 
 /// Chat sessions read by a window may be the only record of a live worktree.
-#[derive(Default)]
-pub(crate) struct ChatWorktrees(Mutex<BTreeMap<PathBuf, bool>>);
+#[derive(Default, Clone)]
+pub(crate) struct ChatWorktrees(Arc<Mutex<BTreeMap<PathBuf, Checkout>>>);
+
+#[derive(Clone, PartialEq, Eq)]
+enum Checkout {
+    Missing,
+    Folder,
+    Git { branch: Option<String> },
+}
+
+impl Checkout {
+    fn read(path: &std::path::Path, git: bool) -> Self {
+        if !path.is_dir() {
+            Self::Missing
+        } else if git {
+            Self::Git {
+                branch: artifactize_core::repository::checked_out_branch(path),
+            }
+        } else {
+            Self::Folder
+        }
+    }
+}
 
 impl ChatWorktrees {
     pub(crate) fn watch(&self, sessions: &[artifactize_core::chat::Session]) {
-        for session in sessions {
-            self.watch_path(session.worktree.clone());
-        }
-    }
-
-    fn watch_path(&self, path: PathBuf) {
         let mut known = self.0.lock().expect("Chat worktrees lock");
-        let present = path.is_dir();
-        known.entry(path).or_insert(present);
+        for session in sessions {
+            let saved = session
+                .repository
+                .as_ref()
+                .filter(|identity| identity.common_dir.is_some());
+            let checkout = if !session.worktree.is_dir() {
+                Checkout::Missing
+            } else if let Some(saved) = saved {
+                Checkout::Git {
+                    branch: saved.branch.clone(),
+                }
+            } else {
+                Checkout::Folder
+            };
+            // Once registered, only the rescan consumes filesystem transitions.
+            known.entry(session.worktree.clone()).or_insert(checkout);
+        }
     }
 
     fn rescan(&self) -> bool {
-        let mut known = self.0.lock().expect("Chat worktrees lock");
-        let mut changed = false;
-        for (path, before) in &mut *known {
-            let present = path.is_dir();
-            changed |= *before != present;
-            *before = present;
+        let snapshot = self.0.lock().expect("Chat worktrees lock").clone();
+        let changed: Vec<_> = snapshot
+            .into_iter()
+            .filter_map(|(path, before)| {
+                // If a removed checkout comes back, read its Git branch too.
+                let current = Checkout::read(&path, !matches!(before, Checkout::Folder));
+                (before != current).then_some((path, current))
+            })
+            .collect();
+        if changed.is_empty() {
+            return false;
         }
-        changed
+        self.0.lock().expect("Chat worktrees lock").extend(changed);
+        true
     }
 }
 
@@ -105,7 +146,11 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                 artifactize_core::store::retire_removed_signoffs(&app_state.launch.state).await;
             let branches_changed = crate::browse::rescan(&app_state).await;
             let review_worktrees_changed = app_state.human.review_worktrees_changed();
-            let chat_worktrees_changed = app_state.chat_worktrees.rescan();
+            let observed = app_state.chat_worktrees.clone();
+            let chat_worktrees_changed = crate::failure::joined(
+                tokio::task::spawn_blocking(move || observed.rescan()).await,
+            )
+            .unwrap_or(false);
             if (reviews_changed.unwrap_or(false)
                 || branches_changed.unwrap_or(false)
                 || review_worktrees_changed
@@ -128,7 +173,11 @@ mod tests {
         let worktree = root.path().join("chat-only");
         std::fs::create_dir(&worktree).unwrap();
         let watched = ChatWorktrees::default();
-        watched.watch_path(worktree.clone());
+        watched
+            .0
+            .lock()
+            .unwrap()
+            .insert(worktree.clone(), Checkout::Folder);
         assert!(!watched.rescan());
         std::fs::remove_dir(worktree).unwrap();
         assert!(watched.rescan());

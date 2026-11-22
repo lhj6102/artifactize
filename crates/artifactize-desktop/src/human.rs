@@ -485,11 +485,7 @@ async fn read(app: &App, id: &RequestId) -> Result<(u32, ReadReview), Failure> {
 }
 
 async fn resolve(app: &App, generation: u32, exact: RequestView) -> Result<ReadReview, String> {
-    let owner = if exact.request.status().is_human_wait() {
-        store::read_original_as(&app.launch.state, &exact, store::Shown::Requests).await?
-    } else {
-        exact.clone()
-    };
+    let owner = store::read_review_owner(&app.launch.state, &exact).await?;
     Ok(ReadReview {
         generation,
         exact,
@@ -686,7 +682,7 @@ pub async fn human_run(
 ) -> Result<Notice, Failure> {
     let id = id.into_inner();
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
-    let mut work = app.human.jobs.register(caller, job, Action::Tool)?;
+    let mut work = app.human.jobs.register(caller.clone(), job, Action::Tool)?;
     let request = guard(&app, &id, review::review_refusal).await?;
     let owner = request.request.id.clone();
     work.admit(vec![owner.clone()])?;
@@ -709,8 +705,17 @@ pub async fn human_run(
         .remove(&owner);
     let mut notice: Notice = outcome.notice().into();
     if !work.cancel.is_cancelled() {
-        notice.viewer =
-            crate::viewer::launch(&app, &mut outcome, crate::viewer::Source::Review(owner)).await?;
+        notice.viewer = crate::viewer::launch(
+            &app,
+            &mut outcome,
+            crate::viewer::Source::Review(owner),
+            crate::viewer::LaunchJob {
+                caller,
+                id: job,
+                cancel: work.cancel.clone(),
+            },
+        )
+        .await?;
     }
     Ok(notice)
 }
@@ -719,6 +724,7 @@ pub async fn human_run(
 #[tauri::command]
 #[specta::specta]
 pub fn human_cancel(app: tauri::State<'_, App>, caller: Caller, job: JobId) {
+    app.viewers.cancel_job(&caller, job);
     app.human.jobs.cancel(caller, job);
 }
 
@@ -846,6 +852,7 @@ async fn submit(
     answer: review::Answer,
 ) -> Result<Submitted, Failure> {
     work.admit(vec![owner.clone()])?;
+    app.viewers.cancel_review(&owner);
     work.ready().await?;
     let outcome = run_job(
         app,

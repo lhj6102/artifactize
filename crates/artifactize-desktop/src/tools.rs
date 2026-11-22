@@ -158,7 +158,7 @@ pub async fn artifact_tool_run(
 ) -> Result<Notice, Failure> {
     let artifact = artifact_name(&artifact)?;
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
-    let work = app.human.start_artifact(caller, job)?;
+    let work = app.human.start_artifact(caller.clone(), job)?;
     let workspace = work.prepare(app.current_workspace(&branch)).await?;
     let operation = review::Tool::operation_of(&tool, &artifact).to_owned();
     let run = app.human.log().start(
@@ -187,6 +187,11 @@ pub async fn artifact_tool_run(
             &app,
             &mut outcome,
             crate::viewer::Source::Workspace(workspace),
+            crate::viewer::LaunchJob {
+                caller,
+                id: job,
+                cancel: work.cancel.clone(),
+            },
         )
         .await?;
     }
