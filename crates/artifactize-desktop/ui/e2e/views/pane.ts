@@ -4,7 +4,7 @@ import { afterRender, press, typeText } from "../keys.ts";
 import { clickAt, visibleCenter } from "../input.ts";
 import { holds, until } from "./wait.ts";
 
-/** A timeline entry: the Run it shows (`current` for the Current), its status and age as they
+/** A timeline entry: the Run it shows, its status and age as they
  * read (`GREEN 5m ago`), the line under it, and whether it is the one shown. */
 export type Entry = { id: string; text: string; sub: string; shown: boolean };
 

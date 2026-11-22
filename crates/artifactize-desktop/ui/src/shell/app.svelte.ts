@@ -2,10 +2,11 @@
 // start, the mode shown above the bottom bar, each mode's state, the Panes and the dialogs.
 // Shared with createContext.
 import { createContext } from "svelte";
-import { call, commands as bindings, message, type KeyedLog, type LaunchView } from "../ipc/client";
+import { call, commands as bindings, message, type BranchKey, type KeyedLog, type LaunchView } from "../ipc/client";
 import { Activity, observeCommands } from "../ipc/activity.svelte";
 import { Browse } from "../monitor/browse.svelte";
-import { Current } from "../monitor/current.svelte";
+import { Current } from "../chat/current.svelte";
+import { loadWidth } from "../monitor/detail-width";
 import { Definitions } from "../monitor/definitions.svelte";
 import { MonitorState, keyOf } from "../monitor/monitor-state.svelte";
 import { ArtifactTools, toolsKey } from "../monitor/artifact-tools.svelte";
@@ -35,10 +36,14 @@ export class AppState {
   failure = $state<string | null>(null);
   /** The live branches, the waiting reviews and the shown Run. */
   readonly browse = new Browse(this.ipc);
-  /** The shown branch's Current. */
+  /** The Current of the branch shown in Chat's Graph. */
   readonly current: Current = new Current(this.ipc, (branch) => void this.definitions.load(branch));
   /** The shown branch's definitions, which its Current edits. */
   readonly definitions: Definitions = new Definitions(this.ipc, (branch) => void this.current.scan(branch, true));
+  /** A Run can read its placements without replacing the Current's editable definitions. */
+  readonly runDefinitions = new Definitions(this.ipc);
+  /** The dragged Detail width, shared by the graph workspaces and Review. */
+  detailWidth = $state<number | null>(loadWidth());
   /** The mode shown above the bottom bar; the others keep their place while hidden. */
   mode = $state<WindowMode>("verify");
   /** Every mode's Pane is shown; the bar's Pane switch and Ctrl+B hide them and show them again. */
@@ -203,11 +208,31 @@ export class AppState {
     }
   }
 
+  /** The persisted Graph view of the shown, usable session, while Chat is in front. */
+  readonly liveGraph = $derived(this.mode === "chat" && this.chat.view?.session.view === "graph" && this.chat.view.session.unavailable === null ? this.chat.view.session : null);
+
+  /** New chat on the indicated branch or, without one, where Verify is left. */
+  newChat(branch?: BranchKey): void {
+    this.browse.refresh();
+    const shown = this.monitor.shown;
+    const target = branch ?? (shown.kind === "none" ? null : shown.branch);
+    const workspace = target ? this.browse.branch(target)?.workspace : undefined;
+    this.chat.newChat(workspace ?? (branch ? null : this.browse.view?.branches[0]?.workspace ?? null));
+  }
+
+  /** Show a branch's Current in its most recent Chat session, or start New chat there. */
+  async showBranchGraph(branch: BranchKey): Promise<void> {
+    this.monitor.settings = false;
+    this.mode = "chat";
+    await this.chat.openBranchGraph(branch, () => {
+      if (this.mode === "chat") this.newChat(branch);
+    });
+  }
+
   /** Show Chat with session `id`, brought to Run `run`'s reference when one is named. */
   showChat(id: string, run: string | null = null): void {
     this.monitor.settings = false;
-    void this.chat.open(id);
-    this.chat.reveal = run;
+    void this.chat.open(id, run ? "conversation" : undefined, run);
     this.mode = "chat";
   }
 
@@ -236,7 +261,6 @@ export class AppState {
     m.selected = { kind: "chip", branch, chip: run };
     m.shown = { kind: "run", branch, run };
     m.opened = node === null ? null : { source: { kind: "run", run }, node, tab };
-    this.current.clear();
   }
 
   /** The backend's launch arrived: remember it; the first snapshot opens what it asks for. */

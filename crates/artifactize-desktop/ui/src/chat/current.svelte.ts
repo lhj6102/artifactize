@@ -1,8 +1,9 @@
 // The shown branch's Current: the backend scans its worktree as `artifactize status` does,
 // publishing the graph first and each Artifact's plan as it is known, and keeps the newest
 // step for its graph and Details; this holds the newest step for one branch.
-import { call, commands, message, type BranchKey, type Commands, type CurrentView } from "../ipc/client";
-import { keyOf } from "./monitor-state.svelte";
+import { SvelteMap } from "svelte/reactivity";
+import { call, commands, message, type BranchKey, type Commands, type BrowseView, type CurrentView } from "../ipc/client";
+import { keyOf } from "../monitor/monitor-state.svelte";
 
 export class Current {
   constructor(
@@ -36,7 +37,10 @@ export class Current {
    * dropped at once. */
   async scan(branch: BranchKey, refresh = false): Promise<void> {
     const scan = ++this.#scans;
-    if (this.view && !this.of(branch)) this.view = null;
+    if (this.#branch && keyOf(this.#branch) !== keyOf(branch)) {
+      this.view = null;
+      this.#failed = null;
+    }
     this.#branch = branch;
     this.#asking = true;
     this.onscan(branch);
@@ -71,12 +75,16 @@ export class Current {
     this.view = view;
   }
 
-  /** Nothing of a branch is shown any more. */
-  clear(): void {
-    this.#scans += 1;
-    this.#branch = null;
-    this.view = null;
-    this.#failed = null;
-    this.#asking = false;
+  /** A Run of the drawn branch ended: read what the worktree would do now. */
+  runsChanged(snapshot: BrowseView, branch: BranchKey, rescan = true): void {
+    const key = keyOf(branch);
+    const listed = snapshot.branches.find((item) => keyOf(item.key) === key);
+    if (!listed) return;
+    const now = listed.chips.filter((chip) => chip.running).map((chip) => chip.id);
+    const before = this.#running.get(key);
+    this.#running.set(key, now);
+    if (rescan && before?.some((id) => !now.includes(id))) void this.scan(branch);
   }
+
+  #running = new SvelteMap<string, string[]>();
 }

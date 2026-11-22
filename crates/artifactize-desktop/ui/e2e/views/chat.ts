@@ -14,6 +14,11 @@ export class Chat {
    * new, empty session shows. The starting model as the dialog said it (`{provider} · {model}`). */
   async create(): Promise<string> {
     await this.browser.$('[aria-label="Chats"]').$("button=New chat").click();
+    return this.createFromDialog();
+  }
+
+  /** Finish a New chat dialog already open, for example from a branch reference or launch. */
+  async createFromDialog(): Promise<string> {
     const dialog = this.browser.$('[role="dialog"].new-chat');
     const create = dialog.$("button=Create");
     await create.waitForEnabled({ timeoutMsg: "timed out: the starting model is ready and Create is enabled" });
@@ -21,6 +26,14 @@ export class Chat {
     await create.click();
     await this.browser.$(`${MAIN} textarea[aria-label="Message"]`).waitForDisplayed();
     return starting;
+  }
+
+  /** Show the active session's Graph through its header switch. */
+  async graph(): Promise<void> {
+    const graph = this.browser.$(`${MAIN} > header`).$("button=Graph");
+    await graph.waitForDisplayed();
+    if (await graph.getAttribute("aria-pressed") !== "true") await graph.click();
+    await holds(this.browser, async () => (await graph.getAttribute("aria-pressed")) === "true", "the session shows its Graph view");
   }
 
   /** The model the shown session's selector names. */

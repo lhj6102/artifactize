@@ -44,7 +44,8 @@
     /** Shown outside Review (a Human eval's tab in the Detail): open it there (D-INS-12). */
     onopenreview?: () => void;
   } = $props();
-  const { sections, monitor: m } = getAppState();
+  const app = getAppState();
+  const { sections } = app;
   const h = new HumanDetailState();
   setHumanDetailState(h);
 
@@ -57,7 +58,7 @@
   /** Two panels: the Main area is at least twice as wide as the Detail would be. */
   const split = $derived.by(() => {
     if (!wide || h.width === 0) return false;
-    const dock = clampWidth(m.detailWidth ?? Math.min(h.width * DOCK_SHARE, DOCK_MOST), h.width);
+    const dock = clampWidth(app.detailWidth ?? Math.min(h.width * DOCK_SHARE, DOCK_MOST), h.width);
     return h.width >= 2 * dock;
   });
 

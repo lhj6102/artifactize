@@ -4,14 +4,24 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, beforeAll, expect, it } from "vitest";
-import type { ChatSession, ChatTurn, ChatView } from "../ipc/client";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import type { ChatSession, ChatSessionView, ChatTurn, ChatView } from "../ipc/client";
 import { renderHosted } from "../test-host";
 import ChatMode from "./ChatMode.svelte";
 import { branch, branchKey, browseView, runChip } from "../monitor/fixtures";
 
+vi.mock("../monitor/layout", () => ({
+  NODE: { width: 168, height: 44 },
+  layout: async () => new Map(),
+}));
+
 beforeAll(() => {
   Element.prototype.scrollIntoView ??= () => {};
+  window.matchMedia ??= ((query: string) => ({
+    matches: false, media: query, onchange: null,
+    addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
   globalThis.ResizeObserver ??= class {
     observe() {}
     disconnect() {}
@@ -30,6 +40,8 @@ const session: ChatSession = {
   worktree: "/work/app",
   project: "app",
   branch: "fix/rounding",
+  branchKey: branchKey("fix/rounding"),
+  view: "conversation",
   unavailable: null,
   selection: { backend: "claude-agent", model: "claude-opus-5-5", effort: null },
   createdAt: "2026-11-21T00:00:00Z",
@@ -42,14 +54,21 @@ const session: ChatSession = {
 /** The library of one session: `turns` is what it holds, `running` whether a turn runs. */
 function backend() {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
-  const state = { turns: [] as ChatTurn[], running: false };
+  const state = { turns: [] as ChatTurn[], running: false, session };
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
     switch (cmd) {
       case "chat_list":
-        return [session];
+        return [state.session];
       case "chat_open":
-        return { session, running: state.running, turns: state.turns } satisfies ChatView;
+        return { session: state.session, running: state.running, turns: state.turns } satisfies ChatView;
+      case "chat_set_view":
+        state.session = { ...state.session, view: (args as { view: ChatSessionView }).view };
+        return state.session;
+      case "current_scan":
+        return { branch: session.branchKey, scannedAt: 1, fingerprint: "", revision: 1, scanning: false, checking: 0, artifacts: 0, failure: null };
+      case "graph":
+        return { source: (args as { source: unknown }).source, shape: 1, update: { kind: "shape", nodes: [], edges: [] } };
       case "chat_send":
         state.running = true;
         state.turns = [...state.turns, { user: (args as { text: string }).text, blocks: [], state: { kind: "running" } }];
@@ -206,9 +225,58 @@ it("says no provider lists a model once every provider has answered with none", 
   expect(calls.some((call) => call.cmd === "chat_create")).toBe(false);
 });
 
+it("switches a session to its library-owned Graph with the same composer, and keeps it through mode switches", async () => {
+  const { calls } = backend();
+  const { app } = show();
+  // The branch need not exist in Verify's current snapshot.
+  app.browse.view = browseView(1);
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  await screen.findByRole("log", { name: "Conversation" });
+  const composer = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
+  await fireEvent.input(composer, { target: { value: "Trace the graph" } });
+  await fireEvent.click(screen.getByRole("button", { name: "Graph" }));
+  const graph = await screen.findByRole("region", { name: "Current" });
+  await within(graph).findByText("This worktree defines no Artifacts.");
+  expect(screen.queryByRole("log", { name: "Conversation" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect(composer.value).toBe("Trace the graph");
+  expect(calls.find(({ cmd }) => cmd === "chat_set_view")?.args).toEqual({ id: session.id, view: "graph" });
+  expect(calls.find(({ cmd }) => cmd === "current_scan")?.args).toEqual({ branch: session.branchKey, refresh: false });
+  app.mode = "verify";
+  await waitFor(() => expect(app.mode).toBe("verify"));
+  app.mode = "chat";
+  expect((await screen.findByRole("button", { name: "Graph" })).getAttribute("aria-pressed")).toBe("true");
+  await fireEvent.click(screen.getByRole("button", { name: "Conversation" }));
+  await screen.findByRole("log", { name: "Conversation" });
+  expect(calls.filter(({ cmd }) => cmd === "chat_set_view").map(({ args }) => args)).toEqual([
+    { id: session.id, view: "graph" }, { id: session.id, view: "conversation" },
+  ]);
+});
+
+it("opens a Run origin in Conversation even when the session was saved in Graph", async () => {
+  const { calls, state } = backend();
+  state.session = { ...session, view: "graph" };
+  state.turns = [{
+    user: "Verify it", state: { kind: "completed" },
+    blocks: [{ kind: "run", card: { id: "run-9", state: "green", failed: [], waiting: [] } }],
+  }];
+  const { app } = show();
+  const revealed = vi.spyOn(Element.prototype, "scrollIntoView");
+  try {
+    app.showChat(session.id, "run-9");
+    const conversation = await screen.findByRole("log", { name: "Conversation" });
+    const card = conversation.querySelector('[data-run="run-9"]');
+    await waitFor(() => expect(revealed.mock.contexts).toContain(card));
+    expect(calls.find(({ cmd }) => cmd === "chat_set_view")?.args).toEqual({ id: session.id, view: "conversation" });
+    expect(calls.some(({ cmd }) => cmd === "current_scan")).toBe(false);
+  } finally {
+    revealed.mockRestore();
+  }
+});
+
 it("says why a session whose branch cannot be worked on now sends nothing, its composer off", async () => {
   const calls: string[] = [];
-  const gone: ChatSession = { ...session, unavailable: "The branch fix/rounding is no longer checked out." };
+  const gone: ChatSession = { ...session, view: "graph", unavailable: "The branch fix/rounding is no longer checked out." };
   mockIPC((cmd) => {
     calls.push(cmd);
     if (cmd === "chat_list") return [gone];
@@ -223,4 +291,7 @@ it("says why a session whose branch cannot be worked on now sends nothing, its c
   expect(screen.getByRole("button", { name: "Send (Enter)" }).hasAttribute("disabled")).toBe(true);
   await fireEvent.keyDown(composer, { key: "Enter" });
   expect(calls).not.toContain("chat_send");
+  expect(calls).not.toContain("current_scan");
+  expect(screen.queryByRole("region", { name: "Current" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Refresh/ })).toBeNull();
 });

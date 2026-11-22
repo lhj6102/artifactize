@@ -51,7 +51,7 @@
     /** The snapshot's or scan's revision: the Detail reads again when it grows. */
     revision: number;
     /** The branch shown: an Artifact's tools run in its worktree. */
-    branch: BranchView | null;
+    branch: Pick<BranchView, "key" | "workspace"> | null;
     /** The Artifact (or the Run) the Detail is of. */
     node: string;
     /** The eval whose tab is shown, or `null` for the Artifact's own. */

@@ -1,7 +1,6 @@
 <script lang="ts">
-  // An expanded branch's timeline, newest first: the Run in progress or else the Current, then
-  // its Runs, joined by a line through their dots. A Run requested with a comment shows it,
-  // cut short to one line, under its Run ID. The entry shown in the Main area is marked;
+  // An expanded branch's timeline, newest first: its Runs, led by the Run in progress, joined by a line through their dots. A Run requested with a comment shows it,
+  // cut short to one line, in place of its Run ID. The entry shown in the Main area is marked;
   // **Older runs** at the end brings older Runs in below the oldest.
   import type { BranchView, Chip } from "../ipc/client";
   import { tone, toneColour } from "../shell/tone";
@@ -37,20 +36,19 @@
         class="entry"
         data-chip={chipKey(chip)}
         class:filled={at === filled}
-        class:running={chip.kind === "run" && chip.running}
+        class:running={chip.running}
         tabindex="-1"
         aria-pressed={at === filled}
         onclick={() => onchoose(chip)}
       >
         <span
           class="dot"
-          class:hollow={chip.kind === "current"}
-          style:--dot={chip.kind === "run" ? toneColour(chip.mark.status) : null}
+          style:--dot={toneColour(chip.mark.status)}
           aria-hidden="true"
         ></span>
-        <span class="status {chip.kind === 'run' ? tone(chip.mark.status) : ''}">{chip.kind === "run" ? chip.status : "Current"}</span>
-        <span class="age">{chip.kind === "run" ? chip.age : ""}</span>
-        {#if chip.kind === "run"}<span class="sub">{chip.comment ?? chip.id}</span>{/if}
+        <span class="status {tone(chip.mark.status)}">{chip.status}</span>
+        <span class="age">{chip.age}</span>
+        <span class="sub">{chip.comment ?? chip.id}</span>
       </button>
     </li>
   {/each}
@@ -122,11 +120,6 @@
     height: 8px;
     border-radius: 50%;
     background: var(--dot);
-  }
-  /* The Current is no Run: a ring, not a light. */
-  .dot.hollow {
-    background: var(--surface-panel);
-    box-shadow: inset 0 0 0 1.5px var(--ink-2);
   }
   .status {
     grid-column: 2;

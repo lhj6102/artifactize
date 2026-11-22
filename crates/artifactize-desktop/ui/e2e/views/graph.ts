@@ -6,11 +6,12 @@ import { afterRender, press, typeText } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
 const REVIEW_MAIN = `section.panel[aria-label="Review's main area"]`;
-const MAIN = 'section.panel[aria-label="Main area"]';
+const MAIN = `:is(main[aria-label="Verify"]:not([hidden]) section.panel[aria-label="Main area"], main[aria-label="Chat"]:not([hidden]) section.panel[aria-label="Chat's main area"])`;
+const DETAIL = 'main:not([hidden]) aside[aria-label="Detail"]';
 /** The main area's graph, never the one a Detail draws of an Artifact's neighbours. */
 const GRAPH = `${MAIN} .graph`;
-const TOOLS = '[aria-label="Graph tools"]';
-const FIND = 'input[aria-label="Find in the graph"]';
+const TOOLS = `${MAIN} [aria-label="Graph tools"]`;
+const FIND = `${MAIN} input[aria-label="Find in the graph"]`;
 
 /** A drawn Artifact: its id (`a:name`, a part `a:whole/a:part`), what it reads aloud (its name
  * and verdict), its verdict's icon, its comment and whether a whole is minimized. */
@@ -52,7 +53,12 @@ export class Graph {
     await origin.click();
   }
 
-  /** The header's title: the Run's ID, `Current · {branch}`, `Review`, or `Nothing chosen`. */
+  /** Open in Chat from a Run's header or an empty branch. */
+  async openInChat(): Promise<void> {
+    await this.browser.$(MAIN).$("button=Open in Chat").click();
+  }
+
+  /** The header's title: the Run's ID, the Chat session's title, or `Nothing chosen`. */
   title(): Promise<string> {
     return this.browser.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? "", MAIN);
   }
@@ -115,7 +121,7 @@ export class Graph {
   /** Click the Run's headline: the Run's own Detail opens. */
   async openRunDetail(): Promise<void> {
     await this.browser.$(`${MAIN} > header button.headline`).click();
-    await holds(this.browser, async () => (await this.browser.$('aside[aria-label="Detail"] h2').isExisting()), "the Run's Detail opened");
+    await holds(this.browser, async () => (await this.browser.$(`${DETAIL} h2`).isExisting()), "the Run's Detail opened");
   }
 
   /** Whether the main area has the keyboard. */
@@ -178,16 +184,16 @@ export class Graph {
   async open(id: string, title: string): Promise<void> {
     await this.node(id);
     await this.browser.$(`${nodeAt(id)} .name`).click();
-    await until(this.browser, () => this.browser.execute(() => document.querySelector('aside[aria-label="Detail"] h2')?.textContent?.trim() ?? ""),
+    await until(this.browser, () => this.browser.execute((selector) => document.querySelector(`${selector} h2`)?.textContent?.trim() ?? "", DETAIL),
       (shown) => shown === title, `${id}'s Detail opened`);
   }
 
   /** Click the graph's background, once some of it shows (a dialog closing may still cover
    * it): an open Detail closes. */
   async clickBackground(): Promise<void> {
-    const point = await until(this.browser, () => this.browser.execute((graph) => {
+    const point = await until(this.browser, () => this.browser.execute((graph, dock) => {
       const canvas = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
-      const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const detail = document.querySelector(dock)?.getBoundingClientRect();
       const right = detail && detail.left > canvas.left ? detail.left : canvas.right;
       // The first empty point along the canvas's bottom edge, left of a Detail.
       for (let x = canvas.left + 12; x < right - 12; x += 16) {
@@ -197,7 +203,7 @@ export class Graph {
         }
       }
       return null;
-    }, GRAPH), (found) => found !== null, "the graph shows background to click");
+    }, GRAPH, DETAIL), (found) => found !== null, "the graph shows background to click");
     if (!point) throw new Error("the graph shows no background to click");
     await clickAt(this.browser, point);
   }
@@ -371,12 +377,12 @@ export class Graph {
 
   /** Click the graph `dx`, `dy` pixels from the middle of its view (as `offCentre` measures). */
   async clickFromMiddle(dx: number, dy: number): Promise<void> {
-    const middle = await this.browser.execute((graph) => {
+    const middle = await this.browser.execute((graph, dock) => {
       const canvas = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
-      const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const detail = document.querySelector(dock)?.getBoundingClientRect();
       const right = detail && detail.left > canvas.left && detail.left < canvas.right ? detail.left : canvas.right;
       return { x: (canvas.left + right) / 2, y: canvas.top + canvas.height / 2 };
-    }, GRAPH);
+    }, GRAPH, DETAIL);
     await clickAt(this.browser, { x: Math.round(middle.x + dx), y: Math.round(middle.y + dy) });
   }
 
@@ -443,7 +449,7 @@ export class Graph {
     for (const option of options) {
       if ((await option.$(".name").getText()).trim() === name) {
         await option.click();
-        await until(this.browser, () => this.browser.execute(() => document.querySelector('aside[aria-label="Detail"] h2')?.textContent?.trim() ?? ""),
+        await until(this.browser, () => this.browser.execute((selector) => document.querySelector(`${selector} h2`)?.textContent?.trim() ?? "", DETAIL),
           (shown) => shown === title, `${name} found and its Detail opened`);
         await until(this.browser, () => this.found(), (shown) => shown === null, `the find field closed once ${name} was chosen`);
         return;

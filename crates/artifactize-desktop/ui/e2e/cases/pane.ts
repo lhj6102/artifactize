@@ -97,7 +97,7 @@ export const scenarios: Scenario[] = [
       return { fixture, data: { newest: [...runs].reverse() } };
     },
     run: async (app, { data: { newest } }) => {
-      const listed = (entries: { id: string }[]) => entries.map((entry) => entry.id).filter((id) => id !== "current");
+      const listed = (entries: { id: string }[]) => entries.map((entry) => entry.id);
       await app.pane.selectBranch("repo  master");
       const first = listed((await app.pane.branch("repo  master", (branch) => listed(branch.entries).length > 0, "its timeline listed")).entries);
       assert.ok(first.length > 0 && first.length < newest.length, `the newest Runs listed, not all of them: ${first.length} of ${newest.length}`);

@@ -282,8 +282,7 @@ it("lists the branch's favorites with nothing typed, opens one as found, and say
     return null;
   });
   const onopen = vi.fn();
-  const { app } = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen, onclose: vi.fn() });
-  app.monitor.shown = { kind: "run", branch, run: "run-a" };
+  const { app } = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, branch, revision: 1, onopen, onclose: vi.fn() });
   await screen.findByLabelText("publish: GREEN");
   // The keys are Help's: nothing on the graph teaches them.
   expect(document.querySelector(".graph kbd")).toBeNull();

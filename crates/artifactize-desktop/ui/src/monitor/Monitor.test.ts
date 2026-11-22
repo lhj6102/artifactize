@@ -1,13 +1,13 @@
 // The window against a mocked command boundary: Verify's Pane lists the branches the backend
 // sends, expands them to their timelines and moves one selection through them; a timeline entry
-// shows its Run or the branch's Current; a Current scans again when chosen, refreshed or when a
+// shows its Run; Open in Chat finds the branch's Current, which can be refreshed or rescan when a
 // Run of its branch ends; the search's Esc puts sort:recent back. The bottom bar switches
 // modes, each kept as it was left, and counts the waiting reviews, which Review lists and opens.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
-import type { BrowseView, CurrentView, LaunchView, Navigate, RunPanel } from "../ipc/client";
+import type { BrowseView, ChatSession, ChatSessionView, CurrentView, LaunchView, Navigate, RunPanel } from "../ipc/client";
 import App from "../App.svelte";
 import { branch, branchKey, browseView, runChip, waitingRow } from "./fixtures";
 import { draftLibrary, humanView } from "../review/fixtures";
@@ -58,10 +58,18 @@ const current = (revision: number, checking = 0): CurrentView => ({
 /** The time a Current's header shows for a scan, as the app writes it. */
 const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
+const saved = {
+  id: "chat-main", title: "Work on main", worktree: "/work/main", project: "app", branch: "main",
+  branchKey: branchKey("main"), view: "conversation", unavailable: null,
+  selection: { backend: "fixture", model: "small", effort: null },
+  createdAt: "2026-11-21T00:00:00Z", updatedAt: "2026-11-21T00:00:00Z", running: false, outcome: null, unseen: false,
+} satisfies ChatSession;
+
 /** The backend: `snapshot` answers every browse; the calls are recorded. */
-function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: (scan: number) => CurrentView } = { view: current }, outside: string | null = null) {
+function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: (scan: number) => CurrentView } = { view: current }, outside: string | null = null, latest: ChatSession | null = saved) {
   const calls: { command: string; args: unknown }[] = [];
   let scans = 0;
+  let chat = latest;
   /** The newest step the backend holds. */
   let shown: CurrentView | null = null;
   let stage: "claim" | "review" = "claim";
@@ -83,7 +91,16 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
             next: null,
           };
         case "chat_list":
-          return [];
+          return chat ? [chat] : [];
+        case "chat_latest_for_branch":
+          return chat;
+        case "chat_set_view":
+          chat = chat && { ...chat, view: (args as { view: ChatSessionView }).view };
+          return chat;
+        case "chat_open":
+          return { session: chat, running: false, turns: [] };
+        case "chat_default_model":
+          return saved.selection;
         case "human_waiting_count":
           return snapshot().waiting.length;
         case "human_open_reference":
@@ -158,7 +175,7 @@ function workspace(mode: string): HTMLElement {
 const monitor = (request: string | null = null): LaunchView => ({ mode: "monitor", state: "/state", reviewer: "alice", request });
 
 it("opens on the Current of the branch it was started for, and scans it again on Refresh, Ctrl+R and F5", async () => {
-  const main = branch("main", [{ kind: "current" }]);
+  const main = branch("main", []);
   const { calls, scanned, navigations } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }));
   render(App);
   /** The header row shows the time of the scan with this revision, read aloud as when it was
@@ -170,11 +187,11 @@ it("opens on the Current of the branch it was started for, and scans it again on
     expect(time.getAttribute("datetime")).toBe(new Date(scannedAt(revision)).toISOString());
   };
   await header(1);
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Current · app  main");
+  expect(workspace("Chat").hidden).toBe(false);
+  expect(screen.getByLabelText("Chat's main area").querySelector("h2")?.textContent).toBe("Work on main");
   await waitFor(() => expect(screen.getByLabelText("graph: would run (1 eval)")).toBeTruthy());
   expect(screen.getByLabelText("app: reused")).toBeTruthy();
-  // The launched branch opens expanded; its Current is the entry shown.
-  expect(screen.getByRole("button", { name: /^Current\b/ }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("button", { name: "Graph" }).getAttribute("aria-pressed")).toBe("true");
   // No structure text: the graph is the Current's whole.
   expect(screen.queryByText(/Structure and evaluation criteria/)).toBeNull();
   await fireEvent.click(screen.getByRole("button", { name: /^Refresh/ }));
@@ -194,7 +211,7 @@ it("opens on the Current of the branch it was started for, and scans it again on
 });
 
 it("draws a Current's graph at once, counting the Artifacts still being checked until its scan ends", async () => {
-  const main = branch("main", [{ kind: "current" }]);
+  const main = branch("main", []);
   const { publish } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }), {
     view: (scan) => current(scan, 2),
   });
@@ -214,7 +231,7 @@ it("draws a Current's graph at once, counting the Artifacts still being checked 
 
 it("expands a clicked branch to its timeline and moves through the timelines with the keys", async () => {
   const feature = branch("feat/x", [runChip("run-2", "RUNNING", true, "Fixing the login form"), runChip("run-1", "GREEN")]);
-  const main = branch("main", [{ kind: "current" }, runChip("run-0", "RED")]);
+  const main = branch("main", [runChip("run-0", "RED")]);
   const { navigations, scanned } = backend(monitor(), () => browseView(1, { branches: [feature, main], waiting: [waitingRow("run-0-1")] }));
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
@@ -244,10 +261,10 @@ it("expands a clicked branch to its timeline and moves through the timelines wit
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await waitFor(() => expect(screen.queryByRole("group", { name: "Runs of app feat/x" })).toBeNull());
   expect(header()).toBe("run-1");
-  // ↓ to the next branch shows its newest entry, its Current; → expands it, → enters it, ↓ shows its Run.
+  // ↓ to the next branch shows its newest Run; → expands it and → enters the timeline.
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  await waitFor(() => expect(scanned()).toBe(1));
-  expect(header()).toBe("Current · app  main");
+  await waitFor(() => expect(header()).toBe("run-0"));
+  expect(scanned()).toBe(0);
   await fireEvent.keyDown(entries, { key: "ArrowRight" });
   expect(screen.getByRole("group", { name: "Runs of app main" })).toBeTruthy();
   await fireEvent.keyDown(entries, { key: "ArrowRight" });
@@ -320,8 +337,8 @@ it("says a Run's verdict and what needs attention in the header row, which opens
 });
 
 it("stars a branch from its entry, and takes a star away", async () => {
-  const starred = branch("feat/x", [{ kind: "current" }], false, true);
-  const main = branch("main", [{ kind: "current" }]);
+  const starred = branch("feat/x", [], false, true);
+  const main = branch("main", []);
   const { navigations } = backend(monitor(), () => browseView(1, { branches: [starred, main] }));
   render(App);
   const star = await screen.findByRole("button", { name: "Star app / main" });
@@ -335,8 +352,8 @@ it("stars a branch from its entry, and takes a star away", async () => {
 });
 
 it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest entry", async () => {
-  const main = branch("main", [{ kind: "current" }, runChip("run-1", "GREEN")], true);
-  const later = branch("later", [{ kind: "current" }]);
+  const main = branch("main", [runChip("run-1", "GREEN")], true);
+  const later = branch("later", []);
   const { navigations } = backend(monitor(), () => browseView(1, { branches: [main, later] }));
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
@@ -347,44 +364,52 @@ it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest e
   const asked = navigations().filter((step) => step.older).length;
   entries.focus();
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-1" } }));
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(navigations().filter((step) => step.older)).toHaveLength(asked + 1));
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-1");
 });
 
-it("scans the shown Current again when a Run of its branch ends", async () => {
+it("opens the latest session in Graph from a Run header, and rescans when that branch's Run ends", async () => {
   let ended = false;
   let revision = 0;
-  const snapshot = () =>
-    browseView(++revision, {
-      branches: [branch("main", ended ? [{ kind: "current" }, runChip("run-1", "GREEN")] : [runChip("run-1", "RUNNING", true)])],
-    });
-  const { scanned } = backend(monitor(), snapshot);
+  const main = () => branch("main", [ended ? runChip("run-1", "GREEN") : runChip("run-1", "RUNNING", true)]);
+  const { calls, scanned } = backend(monitor(), () => browseView(++revision, { branches: [main()] }));
   render(App);
-  // The Run in progress leads its timeline; once it ended, the Current leads it.
-  await fireEvent.click(await screen.findByRole("button", { name: "Expand app / main" }));
-  const current = () => screen.queryByRole("button", { name: /^Current\b/ });
-  await waitFor(() => expect(screen.getByRole("group", { name: "Runs of app main" })).toBeTruthy());
-  expect(current()).toBeNull();
-  ended = true;
-  await emit("state-changed", { resync: false });
-  await waitFor(() => expect(current()).toBeTruthy());
-  await fireEvent.click(current()!);
+  await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
+  const header = screen.getByLabelText("Main area").querySelector("header")!;
+  await fireEvent.click(within(header).getByRole("button", { name: "Open in Chat" }));
   await waitFor(() => expect(scanned()).toBe(1));
-  // Another Run starts and ends on the branch: the Current is scanned again by itself.
-  ended = false;
-  await emit("state-changed", { resync: false });
-  await waitFor(() => expect(current()).toBeNull());
-  expect(scanned()).toBe(1);
+  expect(calls.filter(({ command }) => command === "chat_latest_for_branch" || command === "chat_set_view"))
+    .toEqual([{ command: "chat_latest_for_branch", args: { branch: main().key } }, { command: "chat_set_view", args: { id: saved.id, view: "graph" } }]);
+  expect(workspace("Chat").hidden).toBe(false);
+  expect(screen.getByRole("button", { name: "Graph" }).getAttribute("aria-pressed")).toBe("true");
   ended = true;
   await emit("state-changed", { resync: false });
   await waitFor(() => expect(scanned()).toBe(2));
 });
 
+it.each(["reference", "graph launch"])("opens New chat on the target branch when %s finds no session", async (entry) => {
+  const other = branch("other", [runChip("run-other", "GREEN")]);
+  const main = branch("main", []);
+  const launched = entry === "graph launch";
+  const { calls } = backend({ ...monitor(), mode: launched ? "graph" : "monitor" }, () => browseView(1, { branches: [other, main], launch: launched ? main.key : null }), { view: current }, null, null);
+  render(App);
+  if (!launched) {
+    await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
+    expect(screen.getByText("No Runs on this branch yet.")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Open in Chat" }));
+  }
+  const dialog = await screen.findByRole("dialog", { name: "New chat" });
+  expect(workspace("Chat").hidden).toBe(false);
+  expect(within(dialog).getByRole<HTMLSelectElement>("combobox", { name: "Branch" }).value).toBe(main.workspace);
+  expect(calls.find(({ command }) => command === "chat_latest_for_branch")?.args).toEqual({ branch: main.key });
+  expect(calls.find(({ command }) => command === "chat_default_model")?.args).toEqual({ worktree: main.workspace });
+  expect(calls.some(({ command }) => command === "chat_set_view" || command === "current_scan")).toBe(false);
+});
+
 it("searches the Pane as typed, and Esc puts sort:recent back before leaving the field", async () => {
-  const { navigations } = backend(monitor(), () => browseView(1, { branches: [branch("main", [{ kind: "current" }])] }));
+  const { navigations } = backend(monitor(), () => browseView(1, { branches: [branch("main", [])] }));
   render(App);
   const field = await screen.findByLabelText<HTMLInputElement>("Search the branches");
   expect(field.value).toBe("sort:recent");

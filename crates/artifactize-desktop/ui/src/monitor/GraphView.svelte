@@ -34,6 +34,7 @@
   import { SvelteFlow, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import { PRECEDENCE, type Found, type Light, type Shape, type Source } from "../ipc/client";
+  import type { GraphWorkspace } from "./graph-workspace.svelte";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
   import GraphTools from "./GraphTools.svelte";
@@ -57,7 +58,9 @@
     minimized,
     positions,
     annotations = NO_ANNOTATIONS,
-    branch: owner = null,
+    branch = null,
+    workspace,
+    active,
     opened = null,
     current = false,
     empty = "",
@@ -80,6 +83,8 @@
     annotations?: Annotations;
     /** The branch the graph is of: a Current's edits write its definitions. */
     branch?: BranchKey | null;
+    workspace?: GraphWorkspace;
+    active?: boolean;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
     /** Open the Detail of the Artifact `id`, on the tab of its eval `tab` or its own. */
@@ -92,9 +97,8 @@
   const v = new GraphViewState();
   setGraphViewState(v);
   const app = getAppState();
-  const m = app.monitor;
-  /** The branch whose Run or Current is shown: its find field lists its project's favorites. */
-  const branch = $derived(m.shown.kind === "run" || m.shown.kind === "current" ? m.shown.branch : null);
+  const m = $derived(workspace ?? app.monitor);
+  const shown = $derived(active ?? (app.mode === "verify" && !app.monitor.settings));
 
   const flow = useSvelteFlow();
   const camera = useViewport();
@@ -129,7 +133,7 @@
   const rects = $derived(boxes(drawn, positions, roomOf(annotations)));
   const defs = app.definitions;
   /** A Current of a branch whose definitions are read: what is on it can be edited. */
-  const editable = $derived(current && owner !== null && defs.of(owner));
+  const editable = $derived(current && branch !== null && defs.of(branch));
   /** The graph's edges between copies, lit as their edges. */
   const lines = $derived(copyEdges(graph, drawn, current ? PRECEDENCE.current : PRECEDENCE.run).map(({ source, target, edge }) => ({ ...edge, source, target })));
   /** The copies edges reach, and those they leave: each shows its port on that side. */
@@ -429,7 +433,7 @@
    * whose button is focused, else the whole whose Detail is open (its first copy), while focus
    * is outside the Pane and no dialog is open. Focus stays on the whole or its button. */
   async function minimizeKey(event: KeyboardEvent) {
-    if (event.defaultPrevented || !plain(event, "m") || m.focus === "pane" || m.settings || app.palette || app.help || app.asking) return;
+    if (event.defaultPrevented || !plain(event, "m") || m.focus === "pane" || !shown || app.palette || app.help || app.asking) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('[role="dialog"], [role="alertdialog"]')) return;
     const held = target?.closest<HTMLElement>(".svelte-flow__node");
@@ -466,8 +470,8 @@
   /** Write `operation` to the branch's definitions, made on the graph: refused, what was moved
    * goes back where it was and the Main area's notice says why. Answers whether it was written. */
   async function edit(operation: EditOperation): Promise<boolean> {
-    if (!owner) return false;
-    const refused = await defs.edit(owner, operation, "graph");
+    if (!branch) return false;
+    const refused = await defs.edit(branch, operation, "graph");
     // What was dragged goes back where it was drawn.
     if (refused !== null) v.epoch += 1;
     return refused === null;
@@ -512,8 +516,8 @@
   function light(key: string, operation: EditOperation) {
     v.aim = key;
     if (v.target !== key) v.target = null;
-    if (!owner) return;
-    void defs.accepts(owner, operation).then((accepted) => {
+    if (!branch) return;
+    void defs.accepts(branch, operation).then((accepted) => {
       if (v.aim === key && (v.dragging !== null || v.comment !== null)) v.target = accepted ? key : null;
     });
   }
@@ -749,7 +753,7 @@
         if (key !== undefined) void minimize(key, !byKey.get(key)!.minimized);
       },
     },
-  ], () => app.mode === "verify" && !app.monitor.settings);
+  ], () => shown);
 
   /** Enter on a focused Artifact node opens its Detail, as a click does; on a button in it,
    * the button acts. */

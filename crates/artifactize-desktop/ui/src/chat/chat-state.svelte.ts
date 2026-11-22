@@ -2,7 +2,9 @@
 // the model chosen for its next turn, the Run reference to bring into view, the model menu's
 // providers and what is typed in each composer. One owner, kept in the AppState; sessions, turns,
 // Run cards, providers and models are the library's, read and changed through the IPC.
-import { call, message, type ChatModel, type ChatSession, type ChatView, type Commands, type Model } from "../ipc/client";
+import { SvelteMap } from "svelte/reactivity";
+import { GraphWorkspace } from "../monitor/graph-workspace.svelte";
+import { call, message, type BranchKey, type ChatModel, type ChatSession, type ChatSessionView, type ChatView, type Commands, type Model } from "../ipc/client";
 
 /** A provider of the model menu: its models once listed, or why it lists none. */
 export type MenuProvider = { provider: string; models: Model[] | null; error: string | null };
@@ -16,6 +18,10 @@ export class ChatModeState {
   selected = $state<string | null>(null);
   /** The shown session as the library last read it. */
   view = $state.raw<ChatView | null>(null);
+  /** A session's inspection controls and where its conversation is read, kept independently. */
+  readonly #graphs = new SvelteMap<string, GraphWorkspace>();
+  readonly graph = $derived(this.selected === null ? null : this.#graphs.get(this.selected) ?? null);
+  readonly scroll: Record<string, { top: number; following: boolean }> = $state({});
   /** A Run reference to bring into view once the shown session is read (J-RUN-ORIGIN). */
   reveal = $state<string | null>(null);
   /** What is typed in each session's composer, by session: kept while another is shown. */
@@ -40,6 +46,8 @@ export class ChatModeState {
 
   /** Counts reads of the shown session: only the newest answer is shown. */
   #reads = 0;
+  #opening = 0;
+  #views = 0;
 
   constructor(readonly ipc: Commands) {}
 
@@ -58,11 +66,64 @@ export class ChatModeState {
     }
   }
 
-  /** Show session `id` and read it. */
-  async open(id: string): Promise<void> {
+  /** Show session `id`, optionally selecting a library-owned view before reading it. */
+  async open(id: string, kind?: ChatSessionView, reveal: string | null = null): Promise<void> {
+    const opening = ++this.#opening;
+    if (kind) {
+      try {
+        await call(this.ipc.chatSetView(id, kind));
+      } catch (failure) {
+        if (opening === this.#opening) this.error = message(failure);
+        return;
+      }
+    }
+    if (opening !== this.#opening) return;
+    ++this.#views;
     if (this.selected !== id) this.view = null;
+    this.reveal = reveal;
     this.selected = id;
+    this.error = null;
+    this.creating = false;
+    if (!this.#graphs.has(id)) this.#graphs.set(id, new GraphWorkspace());
     await this.read();
+  }
+
+  /** A branch reference chooses the latest session in the library, not the visible list. */
+  async openBranchGraph(branch: BranchKey, withoutSession: () => void): Promise<void> {
+    const opening = ++this.#opening;
+    try {
+      const session = await call(this.ipc.chatLatestForBranch(branch));
+      if (opening !== this.#opening) return;
+      if (session) await this.open(session.id, "graph");
+      else withoutSession();
+    } catch (failure) {
+      if (opening === this.#opening) this.error = message(failure);
+    }
+  }
+
+  /** Change the shown session's view. The command's answer is the saved session. */
+  async setView(kind: ChatSessionView): Promise<void> {
+    const id = this.selected;
+    if (!id || !this.view || this.view.session.view === kind) return;
+    const changing = ++this.#views;
+    try {
+      const session = await call(this.ipc.chatSetView(id, kind));
+      if (changing !== this.#views || this.view?.session.id !== id) return;
+      // A read already in flight may have seen the old view. Read again for its transcript.
+      this.view = { ...this.view, session };
+      this.error = null;
+      await this.read();
+    } catch (failure) {
+      if (changing === this.#views) this.error = message(failure);
+    }
+  }
+
+  /** Open the new session dialog on `worktree` and read its library default. */
+  newChat(worktree: string | null): void {
+    ++this.#opening;
+    this.worktree = worktree;
+    this.creating = true;
+    if (worktree) void this.readStarting(worktree);
   }
 
   /** Read the shown session again: its turns stream and its Run cards change. */
@@ -105,8 +166,12 @@ export class ChatModeState {
   async stop(): Promise<void> {
     const id = this.view?.session.id;
     if (!id) return;
-    await this.ipc.chatStop(id);
-    await this.read();
+    try {
+      await call(this.ipc.chatStop(id));
+      await this.read();
+    } catch (failure) {
+      this.error = message(failure);
+    }
   }
 
   /** Read the providers Settings lists and the models each offers, for the model menu. */

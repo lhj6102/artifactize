@@ -1,6 +1,7 @@
 // Editing a branch's definitions on its Current: the Definition and Source, parts, new, renamed
 // and deleted Artifacts, places by hand and comments, each written into the files the CLI reads.
 import assert from "node:assert/strict";
+import { installChatProvider } from "../fixtures/chat.ts";
 import { CORE_NOTE, createEditing, definitionText, rewriteDefinition } from "../fixtures/repo.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -14,9 +15,12 @@ export const scenarios: Scenario[] = [
     journeys: ["J-DEFINITION", "J-DEFINITION-EDIT", "J-DEFINITION-DRAFT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
+      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog();
+      await app.chat.graph();
       await app.graph.open("a:core", "Artifact core");
       let shown = await app.detail.definitionUntil("core", (each) => each.file === ".artifactize/core.artf", "core's Definition names its file");
       assert.equal(shown.path, "core/");
@@ -70,9 +74,12 @@ export const scenarios: Scenario[] = [
     journeys: ["J-DEFINITION-CONFLICT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
+      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog();
+      await app.chat.graph();
       await app.graph.open("a:core", "Artifact core");
       await app.detail.definitionUntil("core", (each) => each.path === "core/", "core's Definition");
       const before = definitionText(fixture, "core")!;
@@ -98,9 +105,12 @@ export const scenarios: Scenario[] = [
     journeys: ["J-PARTS-EDIT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
+      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog();
+      await app.chat.graph();
       // docs, on its own at the top level, becomes core's part and then leaves it.
       await app.graph.node("a:docs");
       await app.graph.open("a:core", "Artifact core");
@@ -123,9 +133,12 @@ export const scenarios: Scenario[] = [
     journeys: ["J-NODE-NEW", "J-NODE-RENAME", "J-NODE-DELETE"],
     prepare: async (own) => {
       const fixture = createEditing(own);
+      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog();
+      await app.chat.graph();
       await app.graph.node("a:core");
       await app.graph.tool("New Artifact");
       assert.equal((await app.detail.dialog())?.title, "New Artifact");
@@ -174,9 +187,12 @@ export const scenarios: Scenario[] = [
     journeys: ["J-NODE-MOVE", "J-LAYOUT-RESET", "J-PARTS-DRAG"],
     prepare: async (own) => {
       const fixture = createEditing(own);
+      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog();
+      await app.chat.graph();
       await app.graph.node("a:core");
       assert.equal(await app.graph.hasTool("Reset layout"), false, "laid out automatically");
       // Where core is beside docs, at the zoom shown: whatever the camera does.
@@ -242,9 +258,12 @@ export const scenarios: Scenario[] = [
     journeys: ["J-COMMENT", "J-COMMENT-EDIT", "J-COMMENT-MOVE"],
     prepare: async (own) => {
       const fixture = createEditing(own, { comments: true });
+      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog();
+      await app.chat.graph();
       await app.graph.node("a:core", (node) => node.comment === CORE_NOTE, "core's comment drawn under it");
       // The first scan over, nothing redraws the Detail while a comment is typed.
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the Current scanned");

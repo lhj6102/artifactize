@@ -21,10 +21,11 @@
   import { providerName } from "../settings/provider-names";
   import { toolLine } from "./tool-line";
   import { useCommands } from "../shell/commands.svelte";
-  import { keyOf } from "../monitor/monitor-state.svelte";
+  import CurrentView from "./CurrentView.svelte";
+  import ScanState from "./ScanState.svelte";
 
   const app = getAppState();
-  const { browse, chat: c } = app;
+  const { browse, current, definitions, chat: c } = app;
 
   const branches = $derived(browse.view?.branches ?? []);
   /** Where a session works, as the library names it: its project and branch. */
@@ -42,6 +43,9 @@
   });
   const view = $derived(c.view);
   const session = $derived(view?.session ?? null);
+  const graph = $derived(session?.view === "graph");
+  const live = $derived(graph && session?.unavailable === null);
+  const mainNotice = $derived((live ? definitions.notice ?? c.graph?.graphError : null) ?? c.error);
   const running = $derived(view?.running ?? false);
   const model = $derived(session ? c.model(session) : null);
   const typed = $derived(session ? (c.typed[session.id] ?? "") : "");
@@ -111,17 +115,6 @@
     c.picking = false;
   }
 
-  function newChat() {
-    // The live branches as they are now: Verify reads them only while it is on screen.
-    browse.refresh();
-    // The branch selected in Verify comes first.
-    const shown = app.monitor.shown;
-    const selected = shown.kind === "none" ? undefined : branches.find((branch) => keyOf(branch.key) === keyOf(shown.branch));
-    c.worktree = selected?.workspace ?? branches[0]?.workspace ?? null;
-    c.creating = true;
-    if (c.worktree) void c.readStarting(c.worktree);
-  }
-
   // New chat from the palette too, whatever mode is shown: it shows Chat first (J-PALETTE).
   useCommands(() => [
     {
@@ -131,7 +124,7 @@
       run: () => {
         app.monitor.settings = false;
         app.mode = "chat";
-        newChat();
+        app.newChat();
       },
     },
   ]);
@@ -146,18 +139,32 @@
     }
   }
 
-  /** The conversation follows its newest line, and brings a Run reference it was opened for into
-   * view once that reference is drawn. */
+  /** Read the same place again after a view or session switch; only follow at the end. */
+  function remember(log: HTMLElement, id = session?.id) {
+    if (!id) return;
+    const top = log.scrollTop;
+    if (c.scroll[id]?.top === top) return; // The programmatic jump to a Run does not re-enable following.
+    c.scroll[id] = { top, following: log.scrollHeight - log.clientHeight - top <= 2 };
+  }
+
   const follow: Attachment<HTMLElement> = (log) => {
-    void view;
+    const id = view?.session.id;
     const reveal = c.reveal;
+    if (!id || app.mode !== "chat") return;
+    let attached = true;
     queueMicrotask(() => {
-      const card = reveal ? log.querySelector<HTMLElement>(`[data-run="${CSS.escape(reveal)}"]`) : null;
+      if (!attached) return;
+      const card = reveal ? [...log.querySelectorAll<HTMLElement>("[data-run]")].find((item) => item.dataset.run === reveal) : null;
       if (card) {
         card.scrollIntoView({ block: "center" });
+        c.scroll[id] = { top: log.scrollTop, following: false };
         c.reveal = null;
-      } else if (!reveal) log.scrollTop = log.scrollHeight;
+      } else if (!reveal) {
+        const kept = c.scroll[id];
+        log.scrollTop = !kept || kept.following ? log.scrollHeight : kept.top;
+      }
     });
+    return () => { attached = false; };
   };
 
   /** The shown session and the list read again as the library changes them, one read of each at
@@ -183,7 +190,11 @@
       rereading.request();
       listing.request();
     });
+    const unbrowse = browse.onShown((snapshot) => {
+      if (app.liveGraph) current.runsChanged(snapshot, app.liveGraph.branchKey);
+    });
     return () => {
+      unbrowse();
       unsession();
       unstate();
     };
@@ -207,7 +218,7 @@
     {#if app.paneShown}
       <Split id="chat-pane" order={1} defaultSize={20} minSize={12}>
         <section class="pane" aria-label="Chats" bind:this={c.panes.pane}>
-          <div class="head"><button class="button new" onclick={newChat}><Icon name="add" />New chat</button></div>
+          <div class="head"><button class="button new" onclick={() => app.newChat()}><Icon name="add" />New chat</button></div>
           <div class="sessions">
             {#each groups as [project, members] (project)}
               <p class="group">{project}</p>
@@ -227,15 +238,37 @@
       <PaneResizer class="resizer" />
     {/if}
     <Split id="chat-main" order={2} defaultSize={app.paneShown ? 80 : 100} minSize={30}>
-      <Panel title={session ? session.title || "New chat" : "Chat"} label="Chat's main area" focused={false} notice={c.error} bind:noticeOpen={c.noticeOpen} bind:element={c.panes.main}>
+      <Panel title={session ? session.title || "New chat" : "Chat"} label="Chat's main area" focused={false} notice={mainNotice} bind:noticeOpen={c.noticeOpen} bind:element={c.panes.main}>
         {#snippet headline()}
-          {#if session}<span class="branch mono">{session.branch || session.project}</span>{/if}
+          {#if session}
+            <span class="branch mono">{session.branch || session.project}</span>
+            <div class="views" role="group" aria-label="Session view">
+              <button type="button" aria-pressed={!graph} onclick={() => void c.setView("conversation")}>Conversation</button>
+              <button type="button" aria-pressed={graph} onclick={() => void c.setView("graph")}>Graph</button>
+            </div>
+            {#if live}<ScanState branch={session.branchKey} />{/if}
+          {/if}
+        {/snippet}
+        {#snippet actions()}
+          {#if session && live}
+            <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" onclick={() => void current.scan(session.branchKey, true)}>Refresh</button>
+          {/if}
         {/snippet}
         {#if !session}
           <p class="empty">{c.listed && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane."}</p>
         {:else}
           <div class="chat">
-            <div class="convo" role="log" aria-label="Conversation" {@attach follow}>
+            {#if graph}
+              {#if session.unavailable !== null}
+                <p class="empty" role="status">{session.unavailable}</p>
+              {:else if c.graph}
+                {#key session.id}
+                  <CurrentView branch={session.branchKey} worktree={session.worktree} workspace={c.graph} />
+                {/key}
+              {/if}
+            {:else}
+            {#key session.id}
+            <div class="convo" role="log" aria-label="Conversation" {@attach follow} onscroll={(event) => remember(event.currentTarget)}>
               <div class="column">
                 {#each view?.turns ?? [] as turn, at (at)}
                   <div class="message">{turn.user}</div>
@@ -265,8 +298,10 @@
                 {/each}
               </div>
             </div>
+            {/key}
+            {/if}
             <div class="composer">
-              {#if session.unavailable}
+              {#if !graph && session.unavailable}
                 <!-- The session's branch cannot be worked on now: it says why, and sends nothing. -->
                 <p class="unavailable" role="status">{session.unavailable}</p>
               {/if}
@@ -284,10 +319,10 @@
                 ></textarea>
                 <div class="row">
                   <div class="picker">
-                    <button class="model" aria-haspopup="menu" aria-expanded={c.picking} onclick={() => { c.picking = !c.picking; if (c.picking) void c.providersRead(); }}>
+                    <button class="model" disabled={session.unavailable !== null} aria-haspopup="menu" aria-expanded={c.picking} onclick={() => { c.picking = !c.picking; if (c.picking) void c.providersRead(); }}>
                       {model?.model ?? "Choose a model"}<Icon name="unfold" />
                     </button>
-                    {#if c.picking}
+                    {#if c.picking && session.unavailable === null}
                       <!-- The model menu, opening upward from the selector. -->
                       <div class="menu" role="menu" aria-label="Models">
                         {#each c.providers as entry (entry.provider)}
@@ -310,7 +345,7 @@
                   </div>
                   <span class="spacer"></span>
                   {#if running}
-                    <button class="button icon-button" aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
+                    <button class="button icon-button" disabled={session.unavailable !== null} aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
                   {:else}
                     <button class="button icon-button primary" aria-label="Send (Enter)" aria-keyshortcuts="Enter" disabled={typed.trim() === "" || session.unavailable !== null} onclick={() => void c.send()}><Icon name="send" /></button>
                   {/if}
@@ -446,6 +481,40 @@
     color: var(--ink-2);
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .views {
+    display: inline-flex;
+    flex: none;
+    height: 22px;
+    box-sizing: border-box;
+    margin-left: 12px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+  }
+  .views button {
+    border: 0;
+    padding: 0 10px;
+    background: none;
+    color: var(--ink-off);
+    font: inherit;
+    cursor: pointer;
+  }
+  .views button:first-child {
+    border-radius: calc(var(--radius-control) - 1px) 0 0 calc(var(--radius-control) - 1px);
+  }
+  .views button + button {
+    border-left: 1px solid var(--line-input);
+    border-radius: 0 calc(var(--radius-control) - 1px) calc(var(--radius-control) - 1px) 0;
+  }
+  .views button[aria-pressed="true"] {
+    color: var(--ink-bright);
+    box-shadow: inset 0 -2px 0 var(--current-mark);
+  }
+  .views button:focus-visible {
+    outline-offset: -2px;
+  }
+  .views + :global(.scan) {
+    margin-left: 12px;
   }
   .empty {
     margin: 0;

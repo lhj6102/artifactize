@@ -1,6 +1,7 @@
 // The window: how it opens, its one screen, the command palette and Help, opening a request by
 // ID, a newer release, refreshing and quitting.
 import assert from "node:assert/strict";
+import { installChatProvider } from "../fixtures/chat.ts";
 import { standInBrowser, browserHandoffs } from "../fixtures/browser.ts";
 import { addRepository, addWorktree, addWorktrees, createEmpty, createRelease, declareRelease, environment, newFixture, orderRuns, removeWorktree, request, requests, verifyWorktree } from "../fixtures/repo.ts";
 import { shortcutLabel } from "../platform.ts";
@@ -216,9 +217,12 @@ export const scenarios: Scenario[] = [
     prepare: async (own) => {
       const fixture = newFixture(own);
       declareRelease(fixture);
+      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: { definition: nativePath(fixture.repo, ".artifactize", "docs.artf") } };
     },
     run: async (app, { data: { definition } }) => {
+      await app.chat.createFromDialog();
+      await app.chat.graph();
       await app.graph.node("a:docs");
       await app.graph.open("a:docs", "Artifact docs");
       await app.detail.openEval("docs/lint");

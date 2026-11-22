@@ -2,6 +2,7 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
+import { installChatProvider } from "../fixtures/chat.ts";
 import { REVIEW_FINDING, REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
 import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -254,14 +255,16 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "current-scan",
-    title: "started with graph --repo it shows the branch's Current: its graph drawn at once, Artifacts being checked until their fingerprints are in, then coloured in place by what verify would do",
-    journeys: ["J-LAUNCH"],
+    title: "started with graph --repo on a branch without a session it offers New chat there, whose Graph shows the branch's Current: its graph drawn at once, Artifacts being checked until their fingerprints are in, then coloured in place by what verify would do",
+    journeys: ["J-LAUNCH", "J-CHAT-GRAPH"],
     prepare: async (own) => {
       const fixture = createChecking(own);
+      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: { gate: fixture.gate } };
     },
     run: async (app, { data: { gate } }) => {
-      await app.graph.titled("Current · repo  master");
+      await app.chat.createFromDialog();
+      await app.chat.graph();
       await app.graph.node("a:slow", (node) => node.label === "slow: checking", "slow is still being checked");
       await app.graph.node("a:quick", (node) => node.label === "quick: checking", "quick, which reads slow, too");
       await app.graph.node("a:other", (node) => node.label === "other: would run (1 eval)", "other's verdict is in");
@@ -276,19 +279,23 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "current-chosen",
-    title: "the Current chosen in a branch's timeline scans the worktree as it is now: its Artifacts checked, then coloured in place by what verify would do, a result whose input changed since the Run to run again",
-    journeys: ["J-MAIN-CURRENT"],
+    title: "Open in Chat from a Run shows its branch's latest session in Graph, which scans the worktree as it is now: its Artifacts checked, then coloured in place by what verify would do, a result whose input changed since the Run to run again",
+    journeys: ["J-MAIN-CURRENT", "J-OPEN-CHAT"],
     prepare: async (own) => {
       const fixture = await createCheckedOnce(own);
       // quick changes after the Run: its saved result is stale.
       writeText(nativePath(fixture.repo, "quick", "changed.md"), "quick changed after the Run\n");
+      await installChatProvider(own, fixture);
       return { fixture, data: { gate: fixture.gate } };
     },
     run: async (app, { data: { gate } }) => {
-      // Chosen, the branch shows its latest Run; its timeline offers the Current.
       await app.pane.selectBranch("repo  master");
-      await app.pane.choose("repo  master", "current");
-      await app.graph.titled("Current · repo  master");
+      // Save an empty conversation on the selected branch. The Run's link opens its Graph.
+      await app.mode("Chat");
+      await app.chat.create();
+      await app.mode("Verify");
+      await app.graph.openInChat();
+      await app.graph.until(async () => (await app.graph.scan()) !== "", "the Run's branch is being scanned in Chat");
       await app.graph.node("a:slow", (node) => node.label === "slow: checking", "slow is being checked");
       writeText(gate, "go");
       // slow and other did not change since the Run: their results would be reused; quick did.

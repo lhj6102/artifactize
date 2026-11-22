@@ -19,7 +19,7 @@ export class Browse {
   /** The query the search starts with and Esc puts back, as the library defines it. */
   readonly start = $derived(this.view?.query.start ?? "");
   /** Each branch as last listed, by its key: a branch the search filters out of the Pane keeps
-   * its project, name and workspace for the Run or Current still shown from it. */
+   * its project, name and workspace for the Run still shown from it. */
   #listed = new SvelteMap<string, BranchView>();
   #listeners: ((view: BrowseView) => void)[] = [];
   #draining = false;
@@ -58,7 +58,7 @@ export class Browse {
     return this.navigate({ run: { kind: "open", id: run } });
   }
 
-  /** Show no Run: the Main area shows a Current, a review or Settings. */
+  /** Show no Run. */
   close(): Promise<boolean> {
     return this.navigate({ run: { kind: "close" } });
   }

@@ -50,7 +50,7 @@
     const unwatched = release.watch();
     void app.countWaiting();
     // Each change reads again at most once at a time: the bar's count always, Verify's branches
-    // and Run only while Verify is on screen (once more when it is shown again).
+    // and Run while Verify or a live Chat graph is on screen.
     const unchanged = onStateChanged((resync) => {
       resyncing ||= resync;
       browsing.request();
@@ -114,12 +114,12 @@
       resyncing = false;
       browse.refresh(resync);
     },
-    () => app.mode === "verify",
+    () => app.mode === "verify" || app.liveGraph !== null,
   );
   const counting = new Coalesced(() => app.countWaiting());
   /** Verify shown again reads what changed while it was not. */
   const verifying: Attachment = () => {
-    if (app.mode === "verify") untrack(() => browsing.showing());
+    if (app.mode === "verify" || app.liveGraph !== null) untrack(() => browsing.showing());
   };
 
   const following: Attachment = () => {
@@ -136,8 +136,7 @@
 
   /** Read the state afresh and scan the branches again; a shown Current is scanned again too. */
   async function refresh() {
-    const shown = m.shown;
-    if (shown.kind === "current") void current.scan(shown.branch, true);
+    if (app.liveGraph) void current.scan(app.liveGraph.branchKey, true);
     const read = await browse.reload();
     // E2E builds only: witness this refresh once its own read succeeded and settled on screen.
     if (import.meta.env.MODE === "e2e" && read) {
@@ -242,6 +241,10 @@
     } else if (chord(event, "b") && free()) {
       event.preventDefault();
       void togglePane();
+    } else if (chord(event, "f") && app.liveGraph && !editable(event.target) && free()) {
+      event.preventDefault();
+      const graph = app.chat.graph;
+      if (graph) graph.finding = true;
     } else if (chord(event, "f") && app.mode === "verify" && sourceOf(m.shown) !== null && m.focus !== "pane" && !editable(event.target) && free()) {
       // Outside fields and the Pane, Ctrl+F finds in a graph. Otherwise it searches the Pane.
       event.preventDefault();
@@ -266,10 +269,11 @@
    * Review, or on the Detail's tab), or a graph with its Detail. */
   const focused = $derived.by((): Focused => {
     if (m.settings) return "settings";
+    if (app.mode === "chat") return app.liveGraph ? "current" : "pane";
     if (app.mode === "review") return r.focus === "pane" ? "pane" : "review";
     if (m.focus === "pane") return "pane";
     if (m.focus === "detail" && m.opened?.request !== undefined) return "review";
-    return m.shown.kind === "current" ? "current" : "graph";
+    return "graph";
   });
   const keys = $derived(help(focused));
 </script>

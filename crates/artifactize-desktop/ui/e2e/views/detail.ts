@@ -6,7 +6,7 @@ import { dispatchInput, visibleCenter } from "../input.ts";
 import { drawsEdge } from "./graph.ts";
 import { holds, until } from "./wait.ts";
 
-const DETAIL = 'aside[aria-label="Detail"]';
+const DETAIL = 'main:not([hidden]) aside[aria-label="Detail"]';
 const DIALOG = '[role="dialog"]';
 
 /** The Detail as read: its title, its chips (on an eval's tab), the evals its Artifact's tab
@@ -179,9 +179,10 @@ export class Detail {
   /** How wide the Detail is, and how far it lies from the main area's left and right edges. */
   placed(): Promise<{ width: number; left: number; right: number } | null> {
     return this.browser.execute((detail) => {
-      const dock = document.querySelector(detail)?.getBoundingClientRect();
-      const stage = document.querySelector(".stage")!.getBoundingClientRect();
-      return dock ? { width: Math.round(dock.width), left: Math.round(dock.left - stage.left), right: Math.round(stage.right - dock.right) } : null;
+      const aside = document.querySelector(detail);
+      const dock = aside?.getBoundingClientRect();
+      const stage = aside?.closest(".stage")?.getBoundingClientRect();
+      return dock && stage ? { width: Math.round(dock.width), left: Math.round(dock.left - stage.left), right: Math.round(stage.right - dock.right) } : null;
     }, DETAIL);
   }
 

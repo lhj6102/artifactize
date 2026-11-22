@@ -56,7 +56,7 @@
   const selectedChip = (branch: BranchView) =>
     selected?.kind === "chip" && keyOf(selected.branch) === keyOf(branch.key) ? selected.chip : null;
   /** A collapsed branch's line under its name: its newest Run, the one in progress first. */
-  const latest = (branch: BranchView) => branch.chips.find((chip) => chip.kind === "run") ?? null;
+  const latest = (branch: BranchView) => branch.chips[0] ?? null;
 
   function keydown(event: KeyboardEvent) {
     if (plain(event, "ArrowDown") || plain(event, "j")) onmove(1);

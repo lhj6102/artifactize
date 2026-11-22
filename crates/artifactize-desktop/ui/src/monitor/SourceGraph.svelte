@@ -17,17 +17,22 @@
   import GraphTools from "./GraphTools.svelte";
   import { relight } from "./graph";
   import { keyOf } from "./monitor-state.svelte";
-import { NO_ANNOTATIONS } from "./annotations";
+  import type { GraphWorkspace } from "./graph-workspace.svelte";
+  import { NO_ANNOTATIONS } from "./annotations";
 
   let {
     source,
     branch,
     revision,
     opened = null,
+    workspace,
+    active,
     onopen,
     onclose,
   }: {
     source: Source;
+    workspace?: GraphWorkspace;
+    active?: boolean;
     /** The branch the Run or Current is of: its graphs share their minimized wholes. */
     branch: BranchKey;
     /** The snapshot's or scan's revision: a new one means a new graph to read. */
@@ -40,7 +45,9 @@ import { NO_ANNOTATIONS } from "./annotations";
     onclose: () => void;
   } = $props();
   const commands = useIpc();
-  const { monitor: m, definitions } = getAppState();
+  const app = getAppState();
+  const m = $derived(workspace ?? app.monitor);
+  const definitions = $derived(source.kind === "current" ? app.definitions : app.runDefinitions);
   /** The places and comments of the branch's definitions as they are now; none until read. */
   const annotations = $derived(definitions.of(branch) ? definitions.annotations : NO_ANNOTATIONS);
   const g = new SourceGraphState();
@@ -88,10 +95,10 @@ import { NO_ANNOTATIONS } from "./annotations";
    * comments, and show it lit as `lit` says once laid out, while `still` holds; again if they
    * changed meanwhile. */
   function lay(at: Source, shape: ShapeKey, graph: Shape, still: () => boolean, lit: () => Shape): Promise<void> {
-    const [minimized, placed] = untrack(() => [m.minimizedOn(branch), annotations] as const);
+    const [minimized, placed] = untrack(() => [app.monitor.minimizedOn(branch), annotations] as const);
     return g.positions(at, shape, graph, minimized, placed).then((positions) => {
       if (!still()) return;
-      if (untrack(() => m.minimizedOn(branch) !== minimized || annotations !== placed)) return lay(at, shape, graph, still, lit);
+      if (untrack(() => app.monitor.minimizedOn(branch) !== minimized || annotations !== placed)) return lay(at, shape, graph, still, lit);
       g.shown = { source: at, shape, graph: lit(), minimized, positions, annotations: placed };
     });
   }
@@ -111,7 +118,7 @@ import { NO_ANNOTATIONS } from "./annotations";
   /** Minimize the whole `id` on the branch's graphs, or expand it; done once the graph shown is
    * laid out again for it. */
   function minimize(id: string, minimized: boolean): Promise<void> {
-    m.minimize(branch, id, minimized);
+    app.monitor.minimize(branch, id, minimized);
     const held = g.shown;
     if (!held) return Promise.resolve();
     const still = () => g.shown !== null && keyOf(g.shown.source) === keyOf(held.source) && g.shown.shape === held.shape;
@@ -149,6 +156,8 @@ import { NO_ANNOTATIONS } from "./annotations";
         annotations={g.shown.annotations}
         {branch}
         {current}
+        {workspace}
+        {active}
         empty={current ? "This worktree defines no Artifacts." : "This Run has no Artifacts."}
         {opened}
         {onopen}

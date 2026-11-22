@@ -1,33 +1,30 @@
 <script lang="ts">
   // Verify: the Pane on the left and the Main area on the right, with the divider between them
   // while the Pane is shown; the bar's Pane switch (Ctrl+B) hides both, the Main area taking the
-  // workspace's width, and shows them again at the width the Pane had. A chip shows its Run or
-  // the branch's Current in the Main area, under one header row with its headline. A click on an
-  // Artifact (or on the Run's headline) opens its Detail, a panel docked at the graph's right
+  // workspace's width, and shows them again at the width the Pane had. A chip shows its Run in
+  // the Main area, under its headline. A click on an Artifact (or the Run's headline) opens
+  // its Detail, a panel docked at the graph's right
   // edge under its tool strip; dragging its left edge sets its width, kept like the split ratio.
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
-  import type { Attachment } from "svelte/attachments";
   import type { BranchKey, BranchView, BrowseView, Chip } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { KEEP, MIN, clampWidth, saveWidth } from "./detail-width";
+  import { KEEP, MIN } from "./detail-width";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
   import GraphTools from "./GraphTools.svelte";
   import RunHeadline from "./RunHeadline.svelte";
-  import CurrentView from "./CurrentView.svelte";
-  import ScanState from "./ScanState.svelte";
+  import GraphStage from "./GraphStage.svelte";
   import DetailPane from "./DetailPane.svelte";
   import type { Review } from "../review/review.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
-  import EditDialogs from "./EditDialogs.svelte";
   import Reference from "../shell/Reference.svelte";
 
   const app = getAppState();
-  const { browse, current, definitions, monitor: m } = app;
+  const { browse, monitor: m } = app;
   const { panes } = m;
 
   const view = $derived(browse.view);
@@ -35,9 +32,9 @@
   const shown = $derived(m.shown);
   const run = $derived(shown.kind === "run" && view?.run.kind === "read" && view.run.id === shown.run ? view.run : null);
   const source = $derived(sourceOf(shown));
-  /** The branch whose Run or Current is shown, also while the Pane's search leaves it out. */
-  const branch = $derived(shown.kind === "run" || shown.kind === "current" ? browse.branch(shown.branch) : null);
-  const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
+  /** The shown branch, also while the Pane's search leaves it out. */
+  const branch = $derived(shown.kind === "none" ? null : browse.branch(shown.branch));
+  const revision = $derived(browse.revision);
   /** The pane's search: the library's, overridden while typed until a pause searches it; a
    * failed search puts the library's back. */
   let query = $derived(browse.query);
@@ -54,8 +51,8 @@
 
   /** The chip of `item` shown in the Main area, by its index. */
   function filled(item: BranchView): number | null {
-    if ((shown.kind !== "run" && shown.kind !== "current") || keyOf(shown.branch) !== keyOf(item.key)) return null;
-    const at = item.chips.findIndex((chip) => (shown.kind === "run" ? chip.kind === "run" && chip.id === shown.run : chip.kind === "current"));
+    if (shown.kind !== "run" || keyOf(shown.branch) !== keyOf(item.key)) return null;
+    const at = item.chips.findIndex((chip) => chip.id === shown.run);
     return at < 0 ? null : at;
   }
 
@@ -63,8 +60,7 @@
     if (m.opened && keyOf(m.opened.source) !== next) m.opened = null;
   }
 
-  /** Show `chip` of `item`, selected in its timeline: a Run its Run, the Current its Current,
-   * scanned again. */
+  /** Show `chip` of `item`, selected in its timeline. */
   function choose(item: BranchView, chip: Chip) {
     show(item, chip);
     m.selected = { kind: "chip", branch: item.key, chip: chipKey(chip) };
@@ -73,26 +69,21 @@
   /** Show `chip` of `item` in the Main area; a find field over the graph shown before closes. */
   function show(item: BranchView, chip: Chip) {
     m.finding = false;
-    if (chip.kind === "run") {
-      m.shown = { kind: "run", branch: item.key, run: chip.id };
-      closeDetailOf(keyOf({ kind: "run", run: chip.id }));
-      current.clear();
-      void browse.open(chip.id);
-    } else showCurrent(item);
+    m.shown = { kind: "run", branch: item.key, run: chip.id };
+    closeDetailOf(keyOf({ kind: "run", run: chip.id }));
+    void browse.open(chip.id);
   }
 
-  function showCurrent(item: BranchView) {
-    m.finding = false;
-    m.shown = { kind: "current", branch: item.key };
-    closeDetailOf(keyOf({ kind: "current", branch: item.key }));
-    void browse.close();
-    void current.scan(item.key);
-  }
-
-  /** Select a branch: its newest entry, the Run in progress or else its Current, shows. */
+  /** Select a branch: show its newest Run or the empty branch's reference to Chat. */
   function select(item: BranchView) {
     const first = item.chips[0];
     if (first) show(item, first);
+    else {
+      m.finding = false;
+      m.shown = { kind: "branch", branch: item.key };
+      closeDetailOf(null);
+      void browse.close();
+    }
     m.selected = { kind: "branch", branch: item.key };
   }
 
@@ -165,14 +156,6 @@
     // Detail finds as it reads its row.
     const opened = m.opened;
     if (opened?.source.kind === "run" && (next.run.kind !== "read" || opened.source.run !== next.run.id)) m.opened = null;
-    // A Run of the branch whose Current is shown ended: scan it again.
-    for (const item of next.branches) {
-      const now = item.chips.flatMap((chip) => (chip.kind === "run" && chip.running ? [chip.id] : []));
-      const before = m.running[keyOf(item.key)];
-      m.running[keyOf(item.key)] = now;
-      const ended = before !== undefined && before.some((id) => !now.includes(id));
-      if (ended && m.shown.kind === "current" && keyOf(m.shown.branch) === keyOf(item.key)) void current.scan(item.key);
-    }
     start(next);
   }
 
@@ -186,10 +169,12 @@
     if (mode === "review") return;
     // The launched branch opens expanded, so the entry it shows is in view.
     if (launched) m.expanded.add(keyOf(launched.key));
-    if (launched && mode === "graph") {
-      showCurrent(launched);
-      m.selected = { kind: "branch", branch: launched.key };
-    } else if (launched) select(launched);
+    if (mode === "graph" && next.launch) {
+      if (launched) select(launched);
+      void app.showBranchGraph(next.launch);
+      return;
+    }
+    if (launched) select(launched);
     void focus("pane");
   }
 
@@ -260,34 +245,8 @@
     event.preventDefault();
   }
 
-  /** Dragging the Detail's left edge: the mouse moves it wherever it goes until the button is
-   * released, as the pane dividers follow it. */
-  function grab(event: MouseEvent) {
-    if (event.button !== 0) return;
-    const stage = (event.currentTarget as HTMLElement).closest(".stage");
-    if (!stage) return;
-    event.preventDefault();
-    const drag = (moved: MouseEvent) => {
-      const room = stage.getBoundingClientRect();
-      m.detailWidth = clampWidth(room.right - moved.clientX, room.width);
-    };
-    const drop = () => {
-      window.removeEventListener("mousemove", drag);
-      window.removeEventListener("mouseup", drop);
-      if (m.detailWidth !== null) saveWidth(m.detailWidth);
-    };
-    window.addEventListener("mousemove", drag);
-    window.addEventListener("mouseup", drop);
-  }
-
-  const title = $derived.by(() => {
-    if (shown.kind === "run") return shown.run;
-    if (shown.kind === "current") return branch ? `Current · ${branch.project}${branch.name ? `  ${branch.name}` : ""}` : "Current";
-    return "Nothing chosen";
-  });
-  // A refused edit on a Current's graph says why here, before what else went wrong: it is what
-  // the person just did (D-CUR-7).
-  const notice = $derived((shown.kind === "current" ? definitions.notice : null) ?? m.graphError ?? browse.error ?? view?.notice ?? null);
+  const title = $derived(shown.kind === "run" ? shown.run : shown.kind === "branch" ? (branch?.name || branch?.project || "Branch") : "Nothing chosen");
+  const notice = $derived(m.graphError ?? browse.error ?? view?.notice ?? null);
 
   useCommands(() => [
     { id: "main.run", group: "Graph", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
@@ -301,41 +260,6 @@
     },
   ], () => app.mode === "verify" && !app.monitor.settings);
 
-  /** The graph's top within the stage, kept as `--graph-top`: the Detail docks from there, below
-   * the Main area's header and below what the view shows above its graph (a Run's headline, a
-   * Current's scan header). The graph's box fills the rest of the area, so a header that grows
-   * resizes it and the top is read again; a mutation only looks for a new graph box. */
-  const graphTop: Attachment<HTMLElement> = (stage) => {
-    let watched: Element | null = null;
-    const read = () => {
-      if (!watched) {
-        stage.style.removeProperty("--graph-top");
-        return;
-      }
-      const top = watched.getBoundingClientRect().top - stage.getBoundingClientRect().top;
-      stage.style.setProperty("--graph-top", `${top}px`);
-    };
-    const sized = new ResizeObserver(read);
-    const find = () => {
-      const area = stage.querySelector("[data-graph-area]");
-      if (area === watched) return;
-      if (watched) sized.unobserve(watched);
-      watched = area;
-      if (area) sized.observe(area);
-      // A Detail can already be open when the lazy graph first mounts. Dock against
-      // that layout now; the resize observer follows any later changes.
-      read();
-    };
-    sized.observe(stage);
-    const changed = new MutationObserver(find);
-    changed.observe(stage, { childList: true, subtree: true });
-    find();
-    return () => {
-      sized.disconnect();
-      changed.disconnect();
-    };
-  };
-
   /** The Pane's narrowest share of the window, in percent. */
   const PANE_MIN = 12;
   /** The window's width, as the Pane and the Main area share it. */
@@ -344,6 +268,28 @@
    * visible (D-INS-1), and never less than 30 percent. */
   const mainMin = $derived(Math.min(100 - PANE_MIN, Math.max(30, ((MIN + KEEP) / windowWidth) * 100)));
 </script>
+
+{#snippet detail()}
+  {#if m.opened}
+    <DetailPane
+      source={m.opened.source}
+      {revision}
+      {branch}
+      node={m.opened.node}
+      tab={m.opened.tab}
+      focused={m.focus === "detail"}
+      active={!m.settings && app.mode === "verify"}
+      review={reviewOf}
+      openReview={noteReview}
+      bind:element={panes.detail}
+      onfocus={() => (m.focus = "detail")}
+      ontab={showTab}
+      onopen={openNode}
+      onback={closeDetail}
+      ongone={() => (m.opened = null)}
+    />
+  {/if}
+{/snippet}
 
 <svelte:window bind:innerWidth={windowWidth} />
 
@@ -365,14 +311,7 @@
       <PaneResizer class="resizer" />
     {/if}
     <Split id="main" order={2} defaultSize={app.paneShown ? 76 : 100} minSize={mainMin}>
-      <!-- The dragged width is the stage's, so the Detail, the Navigator beside it and a review's
-           side column all take it. -->
-      <div
-        class="stage"
-        style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}
-        style:--detail-cover={m.opened ? "var(--dock-width)" : null}
-        {@attach graphTop}
-      >
+      <GraphStage detail={m.opened && source && keyOf(m.opened.source) === keyOf(source) ? detail : undefined}>
         <Panel
           {title}
           label="Main area"
@@ -393,13 +332,11 @@
           {#snippet headline()}
             {#if shown.kind === "run" && run}
               <RunHeadline {run} onrun={openRun} />
-            {:else if shown.kind === "current"}
-              <ScanState branch={shown.branch} />
             {/if}
           {/snippet}
           {#snippet actions()}
-            {#if shown.kind === "current"}
-              <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" onclick={() => void current.scan(shown.branch, true)}>Refresh</button>
+            {#if shown.kind === "run"}
+              <Reference onclick={() => void app.showBranchGraph(shown.branch)}>Open in Chat</Reference>
             {/if}
           {/snippet}
           {#if shown.kind === "run"}
@@ -410,50 +347,19 @@
             {:else}
               <div class="pending"><GraphTools /><p class="empty">Loading the Run…</p></div>
             {/if}
-          {:else if shown.kind === "current"}
-            <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
+          {:else if shown.kind === "branch"}
+            <div class="empty branch-empty">
+              <span>No Runs on this branch yet.</span>
+              <Reference onclick={() => void app.showBranchGraph(shown.branch)}>Open in Chat</Reference>
+            </div>
           {:else}
-            <p class="empty">{app.paneShown ? "Choose a branch in the Pane." : "Show the Pane with the Pane switch to choose a branch."}</p>
+            <p class="empty">{app.paneShown ? "Choose a branch in the Pane." : "Show the Pane from the command palette to choose a branch."}</p>
           {/if}
         </Panel>
-        {#if m.opened && source && keyOf(m.opened.source) === keyOf(source)}
-          <aside class="dock" aria-label="Detail">
-            <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
-                 the resize cursor. -->
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div class="edge" role="separator" aria-orientation="vertical" aria-label="Detail width" onmousedown={grab}></div>
-            <DetailPane
-              source={m.opened.source}
-              {revision}
-              {branch}
-              node={m.opened.node}
-              tab={m.opened.tab}
-              focused={m.focus === "detail"}
-              active={!m.settings && app.mode === "verify"}
-              review={reviewOf}
-              openReview={noteReview}
-              bind:element={panes.detail}
-              onfocus={() => (m.focus = "detail")}
-              ontab={showTab}
-              onopen={openNode}
-              onback={closeDetail}
-              ongone={() => (m.opened = null)}
-            />
-          </aside>
-        {/if}
-      </div>
+      </GraphStage>
     </Split>
   </PaneGroup>
 </div>
-
-<EditDialogs
-  branch={shown.kind === "current" ? shown.branch : null}
-  ondeleted={() => {
-    // Delete is offered only in the open Detail's Definition: that Artifact is gone.
-    closeDetail();
-  }}
-/>
-
 
 <style>
   .monitor {
@@ -464,50 +370,16 @@
   :global(.columns) {
     min-height: 0;
   }
-  /* The graph's own layers (canvas, Detail) stack inside the stage, so none of them covers the
-   * divider's grab zone on the graph's side, and the Detail never sits beside the Pane. */
-  /* The Detail's width, as the dock takes it: a drag's, or its default, within its bounds. */
-  .stage {
-    --dock-width: clamp(min(320px, 100%), var(--detail-width, min(46%, 680px)), calc(100% - 240px));
-    position: relative;
-    isolation: isolate;
-    height: 100%;
-    min-height: 0;
-    min-width: 0;
-  }
-  /* The inspector: a panel docked at the graph's right edge, panel meeting panel at a line,
-   * with the graph visible on its left. It sets its own width, by default or by a drag, within
-   * the graph's area (as detail-width.ts fits a drag); its content never sizes it, and wraps or
-   * scrolls in its own boxes. */
-  /* From the graph's top (--graph-top, below the Main area's header and the view's own header
-   * above its graph) to the area's bottom; under the header row alone until a graph is drawn. */
-  .dock {
-    position: absolute;
-    z-index: 20;
-    top: var(--graph-top, 32px);
-    right: 0;
-    bottom: 0;
-    width: var(--dock-width);
-    contain: inline-size;
-    overflow: hidden;
-    border-top: 1px solid var(--line-group);
-    border-left: 1px solid var(--line-panel);
-  }
-  .edge {
-    position: absolute;
-    z-index: 1;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 6px;
-    cursor: col-resize;
-    touch-action: none;
-  }
   /* What the Main area has to say where its graph would be: one line at the top of its body. */
   .empty {
     margin: 0;
     padding: 6px var(--pad);
     color: var(--ink-2);
+  }
+  .branch-empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   /* A chosen Run with nothing to act on yet: the tool strip in its place, the line below it. */
   .pending {
