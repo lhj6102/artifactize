@@ -515,9 +515,35 @@ pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<Br
     };
     let accepted = match navigate.run {
         RunStep::Open { id } if !read.full && !read.resync => {
-            app.browse
-                .open_reference(&app.launch.state, id.into_inner())
-                .await?
+            let id = id.into_inner();
+            let origin = app
+                .browse
+                .open_reference(&app.launch.state, id.clone())
+                .await?;
+            let needs_catalog = {
+                let shown = app.browse.shown();
+                shown.opened_branch.as_ref().is_some_and(|place| {
+                    !shown.branches.iter().any(|branch| {
+                        &branch.place == place && branch.runs.iter().any(|chip| chip.id == id)
+                    })
+                })
+            };
+            if needs_catalog {
+                app.browse
+                    .load(
+                        &app.launch.state,
+                        &app.launch.reviewer,
+                        &app.human.reads,
+                        Read {
+                            rescan: true,
+                            ..Read::default()
+                        },
+                    )
+                    .await?
+                    .or(origin)
+            } else {
+                origin
+            }
         }
         _ => {
             app.browse

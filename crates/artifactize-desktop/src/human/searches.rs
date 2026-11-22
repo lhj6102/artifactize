@@ -1,6 +1,7 @@
 //! Share an in-flight Review query across windows and hints, never a settled cache.
 use std::{
     collections::BTreeMap,
+    path::PathBuf,
     sync::{Arc, Mutex, Weak},
 };
 use tokio::sync::OnceCell;
@@ -17,9 +18,29 @@ pub(super) struct Searches {
     pending: Mutex<Queries>,
     // Different queries can still arrive from multiple windows. Keep one database reader.
     reader: tokio::sync::Mutex<()>,
+    listed: Mutex<BTreeMap<PathBuf, bool>>,
 }
 
 impl Searches {
+    pub(super) fn watch(&self, page: &ReviewPage) {
+        let mut listed = self.listed.lock().expect("Review repository list lock");
+        for review in &page.reviews {
+            listed.insert(review.worktree.to_path(), true);
+        }
+    }
+
+    /// A directory can be removed without any matching Verify or SQLite change.
+    pub(crate) fn rescan(&self) -> bool {
+        let mut listed = self.listed.lock().expect("Review repository list lock");
+        let mut changed = false;
+        for (path, exists) in &mut *listed {
+            let present = path.is_dir();
+            changed |= present != *exists;
+            *exists = present;
+        }
+        changed
+    }
+
     pub(super) async fn read(
         &self,
         query: String,

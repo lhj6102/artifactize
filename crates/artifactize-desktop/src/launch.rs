@@ -64,6 +64,14 @@ enum Screen {
 }
 
 impl Launch {
+    /// Account settings are machine-wide. A checkout that is gone no longer contributes a
+    /// credential-storage enclosure; other errors still go to the library's safety checks.
+    pub(crate) fn settings_repo(&self) -> Option<&std::path::Path> {
+        self.repo
+            .as_deref()
+            .filter(|path| !matches!(path.try_exists(), Ok(false)))
+    }
+
     /// Parse `args` (with the program name first).
     pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Self, String> {
         use clap::Parser;
@@ -115,4 +123,26 @@ pub fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
         reviewer: launch.reviewer.to_string(),
         request: launch.request.clone().map(Into::into),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn account_settings_keep_the_live_checkout_but_not_a_removed_one() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("checkout");
+        std::fs::create_dir(&repo).unwrap();
+        let launch = Launch {
+            mode: Mode::Monitor,
+            state: root.path().join("state"),
+            repo: Some(repo.clone()),
+            reviewer: "alice".parse().unwrap(),
+            request: None,
+        };
+        assert_eq!(launch.settings_repo(), Some(repo.as_path()));
+        std::fs::remove_dir(&repo).unwrap();
+        assert_eq!(launch.settings_repo(), None);
+    }
 }

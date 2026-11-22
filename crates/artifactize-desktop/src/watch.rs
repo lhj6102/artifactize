@@ -74,7 +74,10 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
             let reviews_changed =
                 artifactize_core::store::retire_removed_signoffs(&app_state.launch.state).await;
             let branches_changed = crate::browse::rescan(&app_state).await;
-            if (reviews_changed.unwrap_or(false) || branches_changed.unwrap_or(false))
+            let review_worktrees_changed = app_state.human.review_worktrees_changed();
+            if (reviews_changed.unwrap_or(false)
+                || branches_changed.unwrap_or(false)
+                || review_worktrees_changed)
                 && (StateChanged { resync: false }).emit(&app).is_err()
             {
                 return;

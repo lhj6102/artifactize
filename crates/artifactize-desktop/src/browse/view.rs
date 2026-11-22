@@ -471,11 +471,16 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
             branches
                 .into_iter()
                 .map(|shown_branch| {
+                    let selected = shown
+                        .opened
+                        .id()
+                        .and_then(|id| shown_branch.timeline().position(|chip| &chip.id == id));
                     let limit = shown
                         .chips
                         .get(&shown_branch.place)
                         .copied()
-                        .unwrap_or(CHIPS);
+                        .unwrap_or(CHIPS)
+                        .max(selected.map_or(0, |at| at + 1));
                     branch(
                         shown_branch,
                         limit,

@@ -141,7 +141,7 @@ fn fixed_time() -> Result<Option<artifactize_core::types::Timestamp>, Failure> {
 
 async fn remote_status_of(app: &App) -> Result<RemoteStatus, Failure> {
     let state = Some(app.launch.state.as_path());
-    let status = remote::status(state, app.launch.repo.as_deref())
+    let status = remote::status(state, app.launch.settings_repo())
         .await
         .map_err(Failure::Account)?;
     #[cfg(feature = "e2e")]
@@ -177,7 +177,7 @@ pub async fn remote_login(
     let url = remote::parse_url(&url).map_err(Failure::Invalid)?;
     remote::login(
         Some(&app.launch.state),
-        app.launch.repo.as_deref(),
+        app.launch.settings_repo(),
         url,
         share.into(),
         token
@@ -196,7 +196,7 @@ pub async fn remote_login(
 #[tauri::command]
 #[specta::specta]
 pub async fn remote_logout(app: tauri::State<'_, App>) -> Result<RemoteStatus, Failure> {
-    remote::logout(Some(&app.launch.state), app.launch.repo.as_deref())
+    remote::logout(Some(&app.launch.state), app.launch.settings_repo())
         .map_err(Failure::Account)?;
     remote_status_of(&app).await
 }
@@ -215,7 +215,7 @@ pub struct Pushed {
 #[specta::specta]
 pub async fn remote_push(app: tauri::State<'_, App>, dry_run: bool) -> Result<Pushed, Failure> {
     let state = Some(app.launch.state.as_path());
-    let repo = app.launch.repo.as_deref();
+    let repo = app.launch.settings_repo();
     #[cfg(not(feature = "e2e"))]
     let report = artifactize_core::remote::push(state, repo, dry_run).await;
     #[cfg(feature = "e2e")]

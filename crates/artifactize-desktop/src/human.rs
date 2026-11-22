@@ -202,6 +202,10 @@ impl Reviews {
         self.taken.lock().expect("taken lock").clear();
     }
 
+    pub(crate) fn review_worktrees_changed(&self) -> bool {
+        self.searches.rescan()
+    }
+
     pub fn cancel_all(&self) {
         self.jobs.cancel_all();
     }

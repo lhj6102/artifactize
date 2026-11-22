@@ -149,7 +149,7 @@ pub enum KeyInput {
 }
 
 fn location(app: &App) -> (Option<&std::path::Path>, Option<&std::path::Path>) {
-    (Some(&app.launch.state), app.launch.repo.as_deref())
+    (Some(&app.launch.state), app.launch.settings_repo())
 }
 
 /// `provider list`: the built-in keys and the custom providers, never a key's value.
@@ -285,7 +285,7 @@ pub async fn models_list(
     provider: String,
 ) -> Result<Vec<Model>, Failure> {
     let backend = provider.parse().map_err(Failure::Invalid)?;
-    let listing = llm::models::list(backend, Some(&app.launch.state), app.launch.repo.as_deref())
+    let listing = llm::models::list(backend, Some(&app.launch.state), app.launch.settings_repo())
         .await
         .map_err(Failure::Account)?;
     Ok(listing

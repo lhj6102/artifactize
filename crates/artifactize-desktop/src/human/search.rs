@@ -64,10 +64,13 @@ pub async fn human_search(
         .map_err(Failure::Invalid)?
         .for_places()
         .for_live_repositories();
-    app.human
+    let page = app
+        .human
         .searches
         .read(query, start, search_page(&app, &parsed, start))
-        .await
+        .await?;
+    app.human.searches.watch(&page);
+    Ok(page)
 }
 
 async fn search_page(app: &App, parsed: &search::Query, start: u32) -> Result<ReviewPage, Failure> {

@@ -70,7 +70,7 @@ pub enum CodexStatus {
 }
 
 fn read_codex(app: &App) -> Result<CodexStatus, Failure> {
-    let status = codex::status(Some(&app.launch.state), app.launch.repo.as_deref())
+    let status = codex::status(Some(&app.launch.state), app.launch.settings_repo())
         .map_err(Failure::Account)?;
     Ok(match status {
         codex::Status::Absent => CodexStatus::Absent,
@@ -124,7 +124,7 @@ pub async fn codex_login_start(
     browser: bool,
 ) -> Result<CodexPrompt, Failure> {
     let state = app.launch.state.clone();
-    let repo = app.launch.repo.clone();
+    let repo = app.launch.settings_repo().map(std::path::Path::to_owned);
     let (sign_in, prompt) = app
         .settings
         .codex_sign_ins
@@ -190,7 +190,7 @@ pub struct SignedOut {
 #[tauri::command]
 #[specta::specta]
 pub async fn codex_logout(app: tauri::State<'_, App>) -> Result<SignedOut, Failure> {
-    let revoked = codex::logout(Some(&app.launch.state), app.launch.repo.as_deref())
+    let revoked = codex::logout(Some(&app.launch.state), app.launch.settings_repo())
         .await
         .map_err(Failure::Account)?;
     Ok(SignedOut {
