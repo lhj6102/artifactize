@@ -224,7 +224,7 @@
     color: var(--ink-2);
   }
   /* A number takes a short one-line field. */
-  .number {
+  input.number:not([type="radio"]) {
     width: 120px;
   }
   /* A list of text is numbered items, each its field with the remove icon at its right. */

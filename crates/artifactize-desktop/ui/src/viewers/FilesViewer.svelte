@@ -60,7 +60,7 @@
   </ul>
   <section class="doc" aria-label="Document">
     {#if f.shown !== null}
-      <div class="head mono">{single ? (v.context?.target ?? "") : f.shown}</div>
+      <div class="head mono"><span>{single ? (v.context?.target ?? "") : f.shown}</span></div>
       {#if f.error}<p class="error" role="status">{f.error}</p>{/if}
       {#if f.text !== null}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
@@ -141,6 +141,7 @@
     min-height: 0;
     background: var(--surface-input);
   }
+  .head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .head {
     display: flex;
     align-items: center;

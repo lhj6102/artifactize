@@ -6,7 +6,7 @@
   // / [eval] [eval] …`, and shows its Summary or its log (an Agent's transcript, a runtime's
   // saved output), or in a Run the shared Human Detail. Its width is the Detail's: everything in
   // it wraps or scrolls in its own box.
-  import { tick, type Snippet } from "svelte";
+  import { tick, untrack, type Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, message, type BranchView, type RunPanel, type Source } from "../ipc/client";
   import type { Review } from "../review/review.svelte";
@@ -108,6 +108,13 @@
   const read: Attachment<HTMLElement> = () => {
     void revision;
     const [at, wanted, of] = [source, target, node];
+    const place = `${keyOf(at)}\n${wanted}`;
+    untrack(() => {
+      if (d.logTarget !== place) {
+        d.logTarget = place;
+        d.log = null;
+      }
+    });
     let current = true;
     call(commands.detailRow(at, of)).then(
       (view) => {

@@ -28,8 +28,7 @@
       <span class="point"><Icon name="point" /></span>
       <span class="text">{point.text}</span>
       {#if !compact}
-        {@const source = `${point.source} · ${time(point.at)}`}
-        <span class="source">{source}</span>
+        <span class="source"><span class="source-name">{point.source}</span><span>{` · ${time(point.at)}`}</span></span>
       {/if}
       <button class="button small" disabled={!review.form} onclick={() => insert(point.text)}>Insert</button>
       {#if !compact}
@@ -47,10 +46,10 @@
     list-style: none;
   }
   .points.limited { max-height: calc(5 * var(--row)); }
-  .points.compact { max-height: calc(3 * var(--row)); }
+  .points.compact { flex: none; max-height: calc(3 * var(--row)); }
   li {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, max-content) auto auto;
+    grid-template-columns: auto minmax(2ch, 1fr) minmax(0, 0.8fr) auto auto;
     align-items: center;
     gap: 6px;
     height: var(--row);
@@ -66,7 +65,9 @@
     white-space: nowrap;
   }
   .text { font-family: var(--mono); }
-  .source { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .source { display: flex; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .source-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .source > span:last-child { flex: none; }
   .remove {
     display: inline-grid;
     place-items: center;

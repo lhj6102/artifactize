@@ -66,7 +66,7 @@ const saved = {
 } satisfies ChatSession;
 
 /** The backend: `snapshot` answers every browse; the calls are recorded. */
-function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: (scan: number) => CurrentView } = { view: current }, outside: string | null = null, latest: ChatSession | null = saved) {
+function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: (scan: number) => CurrentView } = { view: current }, outside: string | null = null, latest: ChatSession | null = saved, open?: (id: string) => Promise<BrowseView> | undefined) {
   const calls: { command: string; args: unknown }[] = [];
   let scans = 0;
   let chat = latest;
@@ -122,6 +122,8 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
           const view = snapshot();
           if (step?.kind === "close") return { ...view, run: { kind: "none" } };
           if (step?.kind !== "open" && step?.kind !== "reference") return view;
+          const pending = open?.(step.id);
+          if (pending) return pending;
           if (view.run.kind === "read" && view.run.id === step.id) return view;
           const live = view.branches.find((each) => each.chips.some((chip) => chip.kind === "run" && chip.id === step.id));
           return { ...view, run: { kind: "read", id: step.id, origin: null, node: `r:${step.id}`, mark: { status: "GREEN", glyph: "✓" }, needs: [], branch: live?.key ?? null, chatBranch: live?.key ?? branchKey("main") } };
@@ -338,6 +340,29 @@ it("switches modes from the bottom bar, each kept as it was left, and lists and 
   await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
   expect(workspace("Review").hidden).toBe(false);
   expect(within(review).getByLabelText("Human review")).toBeTruthy();
+});
+
+it.each(["missing", "rejected"] as const)("shows the chosen Run loading before its %s read, not the previous graph", async (result) => {
+  const first = branch("main", [runChip("run-old", "GREEN")]);
+  const next = branch("feature", [runChip("run-new", "RED")]);
+  let settle!: () => void;
+  const held = new Promise<void>((resolve) => { settle = resolve; });
+  backend(monitor(), () => browseView(1, { branches: [first, next] }), undefined, null, saved, (id) => id === "run-new" ? held.then(() => {
+    if (result === "rejected") throw { kind: "read", message: "Recorded Run is unreadable." };
+    return browseView(2, { branches: [first, next], run: { kind: "missing" } });
+  }) : undefined);
+    render(App);
+    await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
+    await screen.findByLabelText("app: reused");
+    await fireEvent.click(screen.getByRole("button", { name: /^app \/ feature/ }));
+    const main = within(screen.getByLabelText("Main area"));
+    expect(main.getByRole("heading", { name: "run-new" })).toBeTruthy();
+    expect(main.getByText("Loading the Run…")).toBeTruthy();
+    expect((main.getByRole("button", { name: /^Zoom in/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByLabelText("app: reused")).toBeNull();
+    settle();
+    await main.findByText("This Run cannot be read; choose another.");
+    expect(main.getByRole("heading", { name: "run-new" })).toBeTruthy();
 });
 
 it("says a Run's verdict and what needs attention in the header row, which opens the Run's Detail", async () => {

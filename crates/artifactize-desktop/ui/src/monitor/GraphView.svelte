@@ -30,7 +30,7 @@
   // Artifact without one; a click on it opens its field. A drag on a whole's face pans, as one on
   // the background does. A Run's graph is a record: nothing on it moves.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
-  import { tick, untrack } from "svelte";
+  import { tick } from "svelte";
   import { SvelteFlow, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import { PRECEDENCE, type Found, type Light, type Shape, type Source } from "../ipc/client";
@@ -38,6 +38,7 @@
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
   import GraphTools from "./GraphTools.svelte";
+  import CommentField from "./CommentField.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
   import Navigator from "./Navigator.svelte";
@@ -563,7 +564,10 @@
     }
     const target = byKey.get(drop.key)!;
     const box = target.parts.length > 0 && !target.minimized;
-    const at = box ? freeIn(target, inside(to, target, rects.get(target.key)!, annotations), was) : ([0, 0] as [number, number]);
+    const targetRect = rects.get(target.key)!;
+    const release = now ?? to;
+    const at: [number, number] = box ? freeIn(target, inside(to, target, targetRect, annotations), was)
+      : [Math.max(0, Math.round(release.x - targetRect.x)), Math.max(0, Math.round(release.y - targetRect.y))];
     // A box laid out automatically is placed as shown, with the new part where it was dropped.
     const shown = box && !annotations.places.has(target.node.name) ? boxPlaces(drawn, rects, annotations, target, copy.node.name) : {};
     if (await edit({ kind: "movePart", part: copy.node.name, from: whole, to: target.node.name, at })) {
@@ -715,19 +719,16 @@
     }
   }
 
-  /** A comment field opened from the Definition's Comment button stands under its Artifact,
-   * which zoomed out to blocks is not an element: the Artifact is brought to the middle at a
-   * readable zoom, so its field shows (D-CUR-8). */
-  const fieldShown: Attachment<HTMLElement> = () => {
-    const field = defs.field;
-    if (!field || !untrack(() => painted)) return;
-    const first = keys.get(idOf(field.name) ?? "")?.[0];
-    const [at, canvas] = [first === undefined ? undefined : rects.get(first), v.canvas];
-    if (!at || !canvas) return;
-    const point = { x: at.x + at.width / 2, y: at.y + at.height / 2 };
-    const cover = m.panes.detail?.getBoundingClientRect() ?? null;
-    void flow.setViewport(centred(point, canvas.getBoundingClientRect(), cover, untrack(() => flow.getViewport().zoom), READABLE, MAX_ZOOM), { duration: 0 });
-  };
+  /** At block zoom render only the editor over its Artifact, without moving the camera. */
+  const blockField = $derived.by(() => {
+    const field = editable && painted ? defs.field : null;
+    if (!field) return null;
+    const key = keys.get(idOf(field.name) ?? "")?.[0];
+    const place = key === undefined ? undefined : rects.get(key);
+    if (!place) return null;
+    const { x, y, zoom } = camera.current;
+    return { name: field.name, x: x + place.x * zoom, y: y + (place.y + place.height) * zoom + 4 };
+  });
 
   /** An Artifact just created or renamed: once the scan draws it, its Detail opens; a created
    * one is brought to the middle of the graph left of the Detail, as a found Artifact is. */
@@ -799,7 +800,6 @@
     {@attach docked}
     {@attach grid}
     {@attach created}
-    {@attach fieldShown}
     {@attach escaping}
     {@attach measuring}
     onkeydown={keydown}
@@ -809,6 +809,11 @@
     tabindex="-1"
   >
     {#if graph.nodes.length === 0}<p class="empty">{empty}</p>{/if}
+    {#if blockField}
+      <div class="block-field" style:left="{blockField.x}px" style:top="{blockField.y}px">
+        <CommentField name={blockField.name} onclose={(written) => void closeField(written)} />
+      </div>
+    {/if}
     {#if canvased}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
     <SvelteFlow
       bind:nodes
@@ -854,6 +859,7 @@
 </div>
 
 <style>
+  .block-field { position: absolute; z-index: 2; width: 168px; }
   /* No Artifacts: the sentence stands at the top of the canvas, under the tool strip, which
      acts on the empty canvas as on any. */
   .empty {

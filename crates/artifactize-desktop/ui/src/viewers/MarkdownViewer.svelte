@@ -111,7 +111,7 @@
       {:else if block.kind === "paragraph"}
         <p>{#each block.lines as items, n (n)}{n ? " " : ""}<span data-line={block.line + n}>{@render spans(items)}</span>{/each}</p>
       {:else if block.kind === "list"}
-        <svelte:element this={block.ordered ? "ol" : "ul"} class="list">
+        <svelte:element this={block.ordered ? "ol" : "ul"} start={block.start} class="list">
           {#each block.items as item (item.line)}<li data-line={item.line}>{@render spans(item.spans)}</li>{/each}
         </svelte:element>
       {:else if block.kind === "code"}

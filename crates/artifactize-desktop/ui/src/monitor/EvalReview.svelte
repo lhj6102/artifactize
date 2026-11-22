@@ -80,12 +80,16 @@
   .review {
     display: flex;
     align-items: center;
-    gap: var(--gap);
-    flex-wrap: wrap;
-    min-height: var(--control);
-    padding: 2px var(--pad) 6px calc(var(--pad) + var(--icon) + 8px);
+    gap: 4px;
+    min-width: 0;
+    height: var(--control);
+    padding: 0 var(--pad) 0 calc(var(--pad) + var(--icon) + 8px);
     font-size: var(--text-small);
   }
+  .review > :global(.button) { flex: none; }
+  .review > :global(.reference) { min-width: 0; }
+  .review > :global(.busy) { flex: none; }
+  .review > :global(.error) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .stage {
     color: var(--ink-2);
   }

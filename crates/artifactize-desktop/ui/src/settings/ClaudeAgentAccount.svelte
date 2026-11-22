@@ -52,7 +52,7 @@
         <button class="button" type="submit" disabled={!s.claudeCode.trim()}>Finish sign-in</button>
       </form>
     </Section>
-  {:else}
+  {:else if s.claudeAttempt === null}
     <div class="row">
       <button class="button" disabled={s.claudeBusy} onclick={() => void s.loadClaude()}>Check again</button>
       {#if signedIn}

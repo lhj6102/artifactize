@@ -545,7 +545,7 @@
     color: var(--ink-bright);
     box-shadow: inset 0 -2px 0 var(--current-mark);
   }
-  .views button:hover { background: var(--surface-group); }
+  .views button:not([aria-pressed="true"]):hover { background: var(--surface-group); }
   .views button:focus-visible {
     outline-offset: -2px;
   }

@@ -39,7 +39,7 @@ export function activity(blocks: ChatBlock[]): Part[] {
 }
 
 function routine(block: ChatBlock): block is Tool {
-  return block.kind === "tool" && block.failed === false && (block.toolKind === "read" || block.toolKind === "edit" || block.toolKind === "command");
+  return block.kind === "tool" && block.failed === false;
 }
 
 export function activityLabel(tools: Tool[]): string {

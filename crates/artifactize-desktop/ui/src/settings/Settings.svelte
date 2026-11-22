@@ -114,7 +114,7 @@
     flex: none;
     align-items: center;
     gap: 16px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     margin-bottom: 12px;
   }
   .spacer {
@@ -122,12 +122,14 @@
   }
   /* The name the app claims reviews as, cut inside the header when long. */
   .reviewer {
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--ink-2);
   }
+  header > :global(button), .tabs { flex: none; }
   h1 {
     margin: 0;
     font-size: var(--text-title);

@@ -18,6 +18,15 @@ describe("blocks", () => {
     expect(read[3]).toMatchObject({ text: "artifactize --version" });
   });
 
+  it("renders Setext headings, separate mixed lists, the source start, and tilde code fences", () => {
+    expect(blocks("Guide\n=====\n\n7. Seven\n8. Eight\n- Bullet\n\n~~~~sh\n``` is content\n~~~~\n")).toMatchObject([
+      { kind: "heading", level: 1, line: 1 },
+      { kind: "list", ordered: true, start: 7, line: 4, items: [{ line: 4 }, { line: 5 }] },
+      { kind: "list", ordered: false, line: 6, items: [{ line: 6 }] },
+      { kind: "code", line: 8, text: "``` is content" },
+    ]);
+  });
+
   it("keeps web link destinations without turning raw markup into HTML", () => {
     expect(inline("see [the docs](https://example.com) <b>now</b>")).toEqual([
       { kind: "text", text: "see " },

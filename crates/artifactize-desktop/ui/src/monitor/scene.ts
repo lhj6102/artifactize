@@ -46,7 +46,7 @@ const WHOLE_FACE = 0.4;
 /** The icon set's own box, in which its shapes are drawn (icons.ts). */
 const ICON_BOX = 12;
 /** The smallest font, in device-independent pixels, at which a name still reads. */
-const LEGIBLE = 5;
+const LEGIBLE = 8;
 /** An edge's stroke in graph pixels, as the graph's elements draw it. */
 const EDGE_WIDTH = 1.25;
 /** How far a picture reaches beyond each side of the canvas, as a share of the canvas: the

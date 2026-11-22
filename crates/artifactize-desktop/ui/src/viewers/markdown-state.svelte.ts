@@ -5,9 +5,6 @@ import { call, message, type ViewerFile } from "../ipc/client";
 import { blocks } from "./markdown";
 import type { ViewerState } from "./viewer-state.svelte";
 
-/** How deep into an Artifact's folders its Markdown files are looked for. */
-const DEPTH = 4;
-
 export class MarkdownState {
   files = $state.raw<string[]>([]);
   tree = $state.raw(new SvelteMap<string, ViewerFile[]>());
@@ -30,16 +27,16 @@ export class MarkdownState {
     if (single) return this.show("");
     const found: string[] = [];
     const tree = new SvelteMap<string, ViewerFile[]>();
-    const walk = async (path: string, depth: number): Promise<boolean> => {
+    const walk = async (path: string): Promise<boolean> => {
       const entries = await call(this.viewer.ipc.viewerFiles(this.viewer.session, path));
       const visible: ViewerFile[] = [];
       for (const entry of entries.toSorted((a, b) => a.path.localeCompare(b.path))) {
         if (entry.kind === "file" && /\.(md|markdown)$/i.test(entry.name)) {
           found.push(entry.path);
           visible.push(entry);
-        } else if (entry.kind === "directory" && depth < DEPTH) {
+        } else if (entry.kind === "directory") {
           const first = found.length === 0;
-          if (await walk(entry.path, depth + 1)) {
+          if (await walk(entry.path)) {
             visible.push(entry);
             if (first) this.unfolded.add(entry.path);
           }
@@ -49,7 +46,7 @@ export class MarkdownState {
       return visible.length > 0;
     };
     try {
-      await walk("", 0);
+      await walk("");
       this.files = found;
       this.tree = tree;
       if (found.length > 0) await this.show(found[0]);

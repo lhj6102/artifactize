@@ -228,7 +228,7 @@
                 <li role="option" aria-selected={opened} class:selected={opened} class:cursor={r.selected === row.id} data-key={row.id} onclick={() => open(row)} onkeydown={() => {}}>
                   <span class="glyph {tone(row.mark.status)}"><Icon name={statusIcon(row.mark.status)} label={row.mark.status.replaceAll("_", " ")} /></span>
                   <span class="eval">{row.eval}</span>
-                  <span class="age" title={row.claimant ?? undefined}>{#if row.claimant}<span class="claimant">{row.claimant}</span> · {/if}{row.age}</span>
+                  <span class="age">{#if row.claimant}<span class="claimant">{row.claimant}</span> · {/if}{row.age}</span>
                 </li>
               {/each}
             {:else}

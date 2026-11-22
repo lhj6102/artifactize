@@ -134,7 +134,7 @@
   .after-headline {
     display: flex;
     align-items: center;
-    min-width: min-content;
+    min-width: 0;
     font-size: var(--text-small);
     white-space: nowrap;
   }

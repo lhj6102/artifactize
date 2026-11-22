@@ -140,6 +140,7 @@
   /* The canvas keeps the whole window; its faint grid moves and scales with the camera, left
      out once its cells are too small to read (D-GRAPH-1, D-GRAPH-6). */
   .canvas {
+    border-top: 1px solid var(--line-group);
     position: absolute;
     inset: 0;
     background-color: var(--surface-app);

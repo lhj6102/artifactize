@@ -29,11 +29,11 @@
       <dt>Status</dt>
       <!-- One line in its tone: signed in and the reviewer, or what a push or a check said. -->
       {#if s.remoteError}
-        <dd class="status-line error" role="alert" title={s.remoteError}>{s.remoteError}</dd>
+        <dd class="status-line error" role="alert">{s.remoteError}</dd>
       {:else if s.remoteNotice}
-        <dd class="status-line notice" role="status" title={s.remoteNotice.text}>{s.remoteNotice.text}{#if !s.remoteNotice.dryRun} · <span data-testid="remote-pushed">{pushedToday} pushed today</span>{/if}</dd>
+        <dd class="status-line notice" role="status">{s.remoteNotice.text}{#if !s.remoteNotice.dryRun} · <span data-testid="remote-pushed">{pushedToday} pushed today</span>{/if}</dd>
       {:else}
-        <dd class="status-line notice" title={`Signed in · ${connection.principal} (scopes: ${connection.scopes.join(", ")}) · ${pushedToday} pushed today`}>Signed in · <span data-testid="remote-principal">{connection.principal} (scopes: {connection.scopes.join(", ")})</span> · <span data-testid="remote-pushed">{pushedToday} pushed today</span></dd>
+        <dd class="status-line notice">Signed in · <span data-testid="remote-principal">{connection.principal} (scopes: {connection.scopes.join(", ")})</span> · <span data-testid="remote-pushed">{pushedToday} pushed today</span></dd>
       {/if}
     </dl>
     <div class="row">
@@ -60,9 +60,9 @@
       </div>
     </form>
     {#if s.remoteError}
-      <p class="status-line error" role="alert" aria-label="Remote store" title={s.remoteError}>{s.remoteError}</p>
+      <p class="status-line error" role="alert" aria-label="Remote store">{s.remoteError}</p>
     {:else if s.remote?.state === "configured" && !signedIn && s.remote.connection.state !== "signedIn"}
-      <p class="status-line error" aria-label="Remote store" title={s.remote.connection.error}><span data-testid="remote-status">{s.remote.url}</span> · {s.remote.connection.state === "unreachable" ? "unreachable" : "not signed in"}: {s.remote.connection.error}</p>
+      <p class="status-line error" aria-label="Remote store"><span data-testid="remote-status">{s.remote.url}</span> · {s.remote.connection.state === "unreachable" ? "unreachable" : "not signed in"}: {s.remote.connection.error}</p>
     {:else if s.remote?.state === "unconfigured"}
       <p class="muted" role="status" aria-label="Remote store">Signed out</p>
     {/if}

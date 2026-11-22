@@ -102,7 +102,7 @@
         {#if pointer === null}<span class="why">Open {view.artifact} in a viewer to point.</span>{/if}
         <span class="spacer"></span>
         {#if review.form}
-          <button class="button small primary" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+          <button class="button primary" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
         {/if}
       </div>
     {:else if view}

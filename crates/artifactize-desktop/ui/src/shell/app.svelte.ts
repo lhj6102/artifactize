@@ -286,6 +286,7 @@ export class AppState {
     } else {
       m.selected = null;
     }
+    m.runRead = null;
     m.shown = { kind: "run", branch, run };
     m.opened = node === null ? null : { source: { kind: "run", run }, node, tab };
   }

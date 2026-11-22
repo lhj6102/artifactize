@@ -30,7 +30,7 @@
   const view = $derived(browse.view);
   const branches = $derived(view?.branches ?? []);
   const shown = $derived(m.shown);
-  const run = $derived(shown.kind === "run" && view?.run.kind === "read" && view.run.id === shown.run ? view.run : null);
+  const run = $derived(shown.kind === "run" && view?.run.kind === "read" && view.run.id === shown.run && m.runRead?.id !== shown.run ? view.run : null);
   const source = $derived(sourceOf(shown));
   /** The shown branch, also while the Pane's search leaves it out. */
   const branch = $derived(shown.kind === "none" ? null : browse.branch(shown.branch));
@@ -60,18 +60,23 @@
     if (m.opened && keyOf(m.opened.source) !== next) m.opened = null;
   }
 
-  /** Choose a Run in the timeline, or a branch and its newest Run. Keep the previous view
-   * until Browse accepted the requested navigation. */
+  /** Choose the destination immediately. Its contents only follow a matching Browse reply. */
   let choosing = 0;
   async function navigate(item: BranchView, chip: Chip | null, selected: Entry) {
     const choice = ++choosing;
-    const accepted = await (chip ? browse.open(chip.id) : browse.close());
-    if (!accepted || choice !== choosing) return;
-    if (chip && (browse.view?.run.kind !== "read" || browse.view.run.id !== chip.id)) return;
+    if (chip && run?.id === chip.id) {
+      m.selected = selected;
+      return;
+    }
+    m.runRead = chip ? { id: chip.id, phase: "loading" } : null;
     m.finding = false;
     m.shown = chip ? { kind: "run", branch: item.key, run: chip.id } : { kind: "branch", branch: item.key };
     closeDetailOf(chip ? keyOf({ kind: "run", run: chip.id }) : null);
     m.selected = selected;
+    const accepted = await (chip ? browse.open(chip.id) : browse.close());
+    if (!chip || choice !== choosing || m.shown.kind !== "run" || m.shown.run !== chip.id) return;
+    m.runRead = accepted && browse.view?.run.kind === "read" && browse.view.run.id === chip.id
+      ? null : { id: chip.id, phase: "unreadable" };
   }
 
   function choose(item: BranchView, chip: Chip) {
@@ -244,7 +249,7 @@
   }
 
   const title = $derived(shown.kind === "run" ? shown.run : shown.kind === "branch" ? (branch?.name || branch?.project || "Branch") : "Nothing chosen");
-  const notice = $derived(m.graph.error ?? browse.error ?? view?.notice ?? null);
+  const notice = $derived((run ? m.graph.error : null) ?? browse.error ?? view?.notice ?? null);
 
   useCommands(() => [
     { id: "main.run", group: "Graph", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
@@ -338,7 +343,7 @@
           {#if shown.kind === "run"}
             {#if run}
               <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
-            {:else if view?.run.kind === "missing"}
+            {:else if (m.runRead?.id === shown.run && m.runRead.phase === "unreadable") || (!m.runRead && view?.run.kind === "missing")}
               <div class="pending"><GraphTools /><p class="empty">This Run cannot be read; choose another.</p></div>
             {:else}
               <div class="pending"><GraphTools /><p class="empty">Loading the Run…</p></div>

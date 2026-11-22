@@ -44,6 +44,7 @@ export class MonitorState extends GraphWorkspace {
   shown = $state.raw<Shown>({ kind: "none" });
   /** Settings show in the Main area over what it showed before. */
   settings = $state(false);
+  runRead = $state.raw<{ id: string; phase: "loading" | "unreadable" } | null>(null);
   /** The notice shows in full rather than cut to one line. */
   noticeOpen = $state(false);
   /** What the launch asked for was opened: only the first snapshot opens it. */

@@ -404,7 +404,7 @@ input[type="search"]::-webkit-search-decoration {
 
 /* Every field's placeholder is faint ink, never the browser's own colour. */
 ::placeholder {
-  color: var(--ink-3);
+  color: var(--ink-2);
   opacity: 1;
 }
 

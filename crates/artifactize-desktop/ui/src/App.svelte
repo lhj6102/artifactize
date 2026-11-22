@@ -261,7 +261,7 @@
   const focused = $derived.by((): Focused => {
     if (m.settings) return "settings";
     if (app.mode === "chat") return app.liveGraph ? "current" : "chat";
-    if (app.mode === "review") return r.focus === "pane" ? "pane" : "review";
+    if (app.mode === "review") return r.focus === "pane" ? "review-pane" : "review";
     if (m.focus === "pane") return "pane";
     if (m.focus === "detail" && m.opened?.request !== undefined) return "review";
     return "graph";

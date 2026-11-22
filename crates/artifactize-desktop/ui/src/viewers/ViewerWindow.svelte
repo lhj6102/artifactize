@@ -130,7 +130,7 @@
     <span class="name">{context?.artifact ?? ""}</span>
     <span class="kind">{context?.title ?? ""}</span>
     {#if v.error}
-      <span class="page silent" role="status" title={v.error}>{v.error}</span>
+      <span class="page silent" role="status">{v.error}</span>
     {:else if entry?.kind === "web" && v.page !== "connected"}
       <span class="page" class:silent={v.page === "silent"} role="status">
         {v.page === "loading" ? `Loading ${context?.title ?? "the viewer"}…` : `${context?.title ?? "The viewer"} did not connect: its page never asked the viewer for its context.`}

@@ -7,7 +7,7 @@ import { CURRENT_LEGEND, LEGEND } from "../monitor/graph";
 export type Section = { title: string; keys: [string, string][] };
 
 /** What has focus, as Help lists its keys. */
-export type Focused = "pane" | "chat" | "graph" | "current" | "review" | "settings";
+export type Focused = "pane" | "review-pane" | "chat" | "graph" | "current" | "review" | "settings";
 
 const WINDOW: Section = {
   title: "Window",
@@ -71,9 +71,9 @@ const KEYS: Record<Focused, Section[]> = {
     {
       title: "Pane",
       keys: [
-        ["↑ / ↓ · j / k", "Select a branch or a timeline entry; in Review, a review"],
+        ["↑ / ↓ · j / k", "Select a branch or a timeline entry"],
         ["← / →", "Fold or expand the branch, or step out of or into its timeline"],
-        ["Enter", "Go to the Main area; in Review, open the selected review"],
+        ["Enter", "Go to the Main area"],
       ],
     },
     {
@@ -84,6 +84,11 @@ const KEYS: Record<Focused, Section[]> = {
         ["Esc", "Close suggestions, then put sort:recent back, then back to the entries"],
       ],
     },
+    WINDOW,
+  ],
+  "review-pane": [
+    { title: "Reviews", keys: [["↑ / ↓ · j / k", "Move between reviews"], ["Enter", "Open the selected review"]] },
+    { title: "Filter", keys: [["↑ / ↓", "Choose a suggestion"], ["Tab / Enter", "Take it"], ["Esc", "Close suggestions, then restore type:human waiting, then back to the reviews"]] },
     WINDOW,
   ],
   chat: [COMPOSER, WINDOW],

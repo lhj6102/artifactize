@@ -146,8 +146,8 @@
       { id: "human.claim", group: "Human review", label: "Claim to review", keys: "c", enabled: () => ready() && review.claimable, run: () => void review.claim() },
       { id: "human.green", group: "Human review", label: "Open the GREEN form", keys: "g", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("GREEN") },
       { id: "human.red", group: "Human review", label: "Open the RED form", keys: "r", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("RED") },
-      { id: "human.to-green", group: "Human review", label: "Choose GREEN", enabled: () => ready() && review.editing, run: () => void review.choose("GREEN") },
-      { id: "human.to-red", group: "Human review", label: "Choose RED", enabled: () => ready() && review.editing, run: () => void review.choose("RED") },
+      { id: "human.to-green", group: "Human review", label: "Choose GREEN", keys: "g", enabled: () => ready() && review.editing, run: () => void review.choose("GREEN") },
+      { id: "human.to-red", group: "Human review", label: "Choose RED", keys: "r", enabled: () => ready() && review.editing, run: () => void review.choose("RED") },
       { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => review.submittable, run: () => void submit() },
       { id: "human.release", group: "Human review", label: "Release the claim", keys: "u", enabled: () => ready() && review.owned, run: () => void review.release() },
       { id: "human.cancel", group: "Human review", label: "Cancel the running work", keys: "Esc", enabled: () => review.busy !== null, run: () => review.cancel() },
@@ -237,13 +237,13 @@
   {#if view && !review.settled && review.owned}
     <div class="actions">
       {#if review.owned}
-        <button class="button small" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
+        <button class="button" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
       {/if}
       <span class="said">
         <ReviewProgress {review} />
       </span>
       {#if review.form}
-        <button class="button small primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+        <button class="button primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
       {/if}
     </div>
   {/if}
