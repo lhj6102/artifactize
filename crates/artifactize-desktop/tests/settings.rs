@@ -199,7 +199,14 @@ fn settings_command_probe() {
 
     // API keys: where each comes from, never its value.
     // Every built-in provider, in the library's order, with the name `backend` takes.
-    let builtin = json!(["codex", "claude-agent", "openai", "anthropic", "gemini"]);
+    let builtin = json!([
+        "codex",
+        "claude-agent",
+        "antigravity",
+        "openai",
+        "anthropic",
+        "gemini"
+    ]);
     let keys = |gemini: &str| {
         json!([
             {"provider": "openai", "variable": "OPENAI_API_KEY", "source": "environment", "saved": false},
