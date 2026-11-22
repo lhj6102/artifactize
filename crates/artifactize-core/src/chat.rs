@@ -1,5 +1,8 @@
 //! Artifactize's worktree-bound coding conversation. Provider selection changes the model,
 //! never the tools or the workflow.
+mod details;
+#[cfg(test)]
+mod tests;
 pub(crate) mod tools;
 mod transcript;
 
@@ -24,6 +27,7 @@ use crate::{
     types::{SessionId, Timestamp},
 };
 
+pub use details::ToolKind;
 pub use transcript::{Block, RunCard, Turn, TurnState};
 
 /// A description comes from the first nonempty prompt line, not another provider call.
@@ -38,6 +42,23 @@ pub struct Model {
     pub model: ModelId,
 }
 
+/// The state of the latest accepted turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Outcome {
+    Running,
+    Completed,
+    Failed,
+    Stopped,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct Activity {
+    outcome: Outcome,
+    unseen: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
@@ -50,6 +71,8 @@ pub struct Session {
     pub selection: Model,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    #[serde(default)]
+    activity: Option<Activity>,
     /// Live ownership of a turn, read separately from the saved session.
     #[serde(skip)]
     pub running: bool,
@@ -63,6 +86,64 @@ impl Session {
             &self.worktree,
             &self.repository.clone().unwrap_or_default(),
         )
+    }
+
+    pub fn outcome(&self) -> Option<Outcome> {
+        self.activity.map(|activity| activity.outcome)
+    }
+
+    pub fn unseen(&self) -> bool {
+        self.activity.is_some_and(|activity| activity.unseen)
+    }
+
+    pub(crate) fn refresh_activity(&mut self, state: &Path) {
+        let owner_gone = self.outcome() == Some(Outcome::Running) && !self.running;
+        if !owner_gone && self.activity.is_some() {
+            return;
+        }
+        // Do not present legacy history as new. If an owner died after flushing its
+        // answer and before updating the catalog, prefer that answer over Interrupted.
+        let outcome = Conversation::load(&path(state, &self.id))
+            .ok()
+            .flatten()
+            .as_ref()
+            .and_then(transcript::last_outcome);
+        self.activity = if owner_gone {
+            Some(Activity {
+                outcome: outcome.unwrap_or(Outcome::Interrupted),
+                unseen: true,
+            })
+        } else {
+            outcome.map(|outcome| Activity {
+                outcome: if self.running {
+                    Outcome::Running
+                } else {
+                    outcome
+                },
+                unseen: false,
+            })
+        };
+    }
+
+    pub(crate) fn mark_seen(&mut self) -> bool {
+        self.activity
+            .as_mut()
+            .is_some_and(|activity| std::mem::take(&mut activity.unseen))
+    }
+
+    fn matches(&self, words: &[String]) -> bool {
+        if words.is_empty() {
+            return true;
+        }
+        let label = self.label();
+        let fields = [
+            self.title.to_lowercase(),
+            label.project.to_lowercase(),
+            label.branch.to_lowercase(),
+        ];
+        words
+            .iter()
+            .all(|word| fields.iter().any(|field| field.contains(word)))
     }
 
     fn check_checkout(&self) -> Result<(), String> {
@@ -254,6 +335,7 @@ impl Chat {
             selection,
             created_at: now,
             updated_at: now,
+            activity: None,
             running: false,
             unavailable: None,
         };
@@ -268,12 +350,23 @@ impl Chat {
         Ok(session)
     }
 
-    pub async fn list(&self, worktree: Option<&Path>) -> Result<Vec<Session>, String> {
+    /// Keep the catalog's activity order while matching every word across its displayed labels.
+    pub async fn list(
+        &self,
+        worktree: Option<&Path>,
+        query: Option<&str>,
+    ) -> Result<Vec<Session>, String> {
+        let words = query
+            .unwrap_or_default()
+            .split_whitespace()
+            .map(str::to_lowercase)
+            .collect::<Vec<_>>();
         let sessions = store::chat::list(&self.state, worktree).await?;
         crate::task::blocking(move || {
             let mut identities = BTreeMap::new();
             sessions
                 .into_iter()
+                .filter(|session| session.matches(&words))
                 .map(|mut session| {
                     let checkout =
                         identities
@@ -293,6 +386,24 @@ impl Chat {
                 .collect()
         })
         .await
+    }
+
+    /// Acknowledge the latest settled outcome without changing the session's activity order.
+    /// A turn still running will become unseen when it settles, even if this is called now.
+    pub async fn mark_seen(&self, id: &SessionId) -> Result<(), String> {
+        let session = store::chat::load(&self.state, id).await?;
+        if !session.unseen() {
+            return Ok(());
+        }
+        let receipts = Receipts::open(&self.state, &session.worktree).await?;
+        let result = receipts.mark_chat_seen(&self.state, id).await;
+        let closed = receipts.close().await;
+        let changed = result.and_then(|changed| closed.map(|()| changed))?;
+        if changed {
+            crate::changes::Publisher::new(&self.state)
+                .notify(crate::changes::Change::SessionInvalidated(id.clone()));
+        }
+        Ok(())
     }
 
     /// The model's streamed text, tools, and current state of each referenced Run.
@@ -400,12 +511,16 @@ impl Chat {
                 recorder.message(1, &prompt, false);
                 recorder.check_saved()?;
                 session.updated_at = crate::broker::now();
+                session.activity = Some(Activity {
+                    outcome: Outcome::Running,
+                    unseen: false,
+                });
                 receipts.save_chat(&session).await?;
                 Ok::<_, String>((recorder, history))
             }
             .await;
             if prepared.is_err() {
-                let _ = receipts.finish_chat(id, &owner).await;
+                let _ = receipts.finish_chat(id, &owner, None).await;
             }
             prepared
         }
@@ -429,7 +544,7 @@ impl Chat {
 
     async fn finish(&self, prepared: Prepared, text: String, active: Active) {
         let Prepared {
-            session,
+            mut session,
             context,
             receipts,
             owner,
@@ -471,9 +586,16 @@ impl Chat {
                 message: Some(failure.message),
             },
         };
+        session.activity = Some(Activity {
+            outcome: transcript::outcome(&answer),
+            unseen: true,
+        });
+        session.updated_at = crate::broker::now().max(session.updated_at);
         recorder.event(Kind::Answer(answer));
-        // Clear active ownership before the last invalidation so readers see the settled state.
-        let _ = receipts.finish_chat(&session.id, &owner).await;
+        // Publish the settled outcome and release ownership together.
+        let _ = receipts
+            .finish_chat(&session.id, &owner, Some(&session))
+            .await;
         let _ = receipts.close().await;
         drop(active);
         recorder.notify();

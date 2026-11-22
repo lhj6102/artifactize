@@ -49,11 +49,15 @@ pub struct ChatSession {
     pub created_at: String,
     pub updated_at: String,
     pub running: bool,
+    pub outcome: Option<ChatOutcome>,
+    pub unseen: bool,
 }
 
 impl From<chat::Session> for ChatSession {
     fn from(session: chat::Session) -> Self {
         let label = session.label();
+        let outcome = session.outcome().map(Into::into);
+        let unseen = session.unseen();
         Self {
             id: session.id.into(),
             title: session.title,
@@ -65,6 +69,30 @@ impl From<chat::Session> for ChatSession {
             created_at: session.created_at.to_string(),
             updated_at: session.updated_at.to_string(),
             running: session.running,
+            outcome,
+            unseen,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatOutcome {
+    Running,
+    Completed,
+    Failed,
+    Stopped,
+    Interrupted,
+}
+
+impl From<chat::Outcome> for ChatOutcome {
+    fn from(outcome: chat::Outcome) -> Self {
+        match outcome {
+            chat::Outcome::Running => Self::Running,
+            chat::Outcome::Completed => Self::Completed,
+            chat::Outcome::Failed => Self::Failed,
+            chat::Outcome::Stopped => Self::Stopped,
+            chat::Outcome::Interrupted => Self::Interrupted,
         }
     }
 }
@@ -112,8 +140,34 @@ pub struct ChatRun {
     pub waiting: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatToolKind {
+    Read,
+    Edit,
+    Command,
+    Verify,
+    Other,
+}
+
+impl From<chat::ToolKind> for ChatToolKind {
+    fn from(kind: chat::ToolKind) -> Self {
+        match kind {
+            chat::ToolKind::Read => Self::Read,
+            chat::ToolKind::Edit => Self::Edit,
+            chat::ToolKind::Command => Self::Command,
+            chat::ToolKind::Verify => Self::Verify,
+            chat::ToolKind::Other => Self::Other,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ChatBlock {
     Text {
         text: String,
@@ -123,6 +177,11 @@ pub enum ChatBlock {
         arguments: String,
         output: Option<String>,
         failed: Option<bool>,
+        tool_kind: ChatToolKind,
+        summary: String,
+        exit_code: Option<i32>,
+        omitted_lines: u32,
+        output_truncated: bool,
     },
     Run {
         card: ChatRun,
@@ -138,11 +197,21 @@ impl From<chat::Block> for ChatBlock {
                 arguments,
                 output,
                 failed,
+                tool_kind,
+                summary,
+                exit_code,
+                omitted_lines,
+                output_truncated,
             } => Self::Tool {
                 name,
                 arguments,
                 output,
                 failed,
+                tool_kind: tool_kind.into(),
+                summary,
+                exit_code,
+                omitted_lines: u32::try_from(omitted_lines).unwrap_or(u32::MAX),
+                output_truncated,
             },
             chat::Block::Run { card } => Self::Run {
                 card: ChatRun {
@@ -227,19 +296,30 @@ pub async fn chat_create(
         .map_err(Failure::Action)
 }
 
-/// List saved sessions newest first. `null` lists all worktrees.
+/// List saved sessions newest first. `null` applies no worktree or query filter.
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_list(
     app: tauri::State<'_, App>,
     worktree: Option<PathKey>,
+    query: Option<String>,
 ) -> Result<Vec<ChatSession>, Failure> {
     let worktree = worktree.map(|key| key.to_path());
     app.chat
-        .list(worktree.as_deref())
+        .list(worktree.as_deref(), query.as_deref())
         .await
         .map(|sessions| sessions.into_iter().map(Into::into).collect())
         .map_err(Failure::Read)
+}
+
+/// Acknowledge the latest settled outcome for this machine user.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_mark_seen(app: tauri::State<'_, App>, id: SessionKey) -> Result<(), Failure> {
+    app.chat
+        .mark_seen(&id.into_inner())
+        .await
+        .map_err(Failure::Action)
 }
 
 /// Read a session and its live transcript. `sessionChanged` names sessions to refresh; Run

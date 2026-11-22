@@ -35,6 +35,8 @@ const session: ChatSession = {
   createdAt: "2026-11-21T00:00:00Z",
   updatedAt: "2026-11-21T00:00:00Z",
   running: false,
+  outcome: null,
+  unseen: false,
 };
 
 /** The library of one session: `turns` is what it holds, `running` whether a turn runs. */
@@ -98,7 +100,7 @@ it("lists sessions by project, sends a message and shows the turn as the library
     user: "Fix it and verify.",
     blocks: [
       { kind: "text", text: "Looking at the total." },
-      { kind: "tool", name: "edit", arguments: JSON.stringify({ path: "checkout/total.ts", old_text: "a", new_text: "b\nc" }), output: "ok", failed: false },
+      { kind: "tool", name: "edit", arguments: JSON.stringify({ path: "checkout/total.ts", old_text: "a", new_text: "b\nc" }), output: "ok", failed: false, toolKind: "edit", summary: "edit checkout/total.ts", exitCode: null, omittedLines: 0, outputTruncated: false },
       { kind: "run", card: { id: "run-9", state: "red", failed: ["checkout/unit"], waiting: [] } },
     ],
     state: { kind: "completed" },
@@ -120,7 +122,7 @@ it("lists sessions by project, sends a message and shows the turn as the library
 it("stops a running turn, which ends marked as stopped", async () => {
   const { state } = backend();
   state.running = true;
-  state.turns = [{ user: "Go", blocks: [{ kind: "tool", name: "read", arguments: '{"path":"a.ts"}', output: null, failed: null }], state: { kind: "running" } }];
+  state.turns = [{ user: "Go", blocks: [{ kind: "tool", name: "read", arguments: '{"path":"a.ts"}', output: null, failed: null, toolKind: "read", summary: "read a.ts", exitCode: null, omittedLines: 0, outputTruncated: false }], state: { kind: "running" } }];
   show();
   await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
   // A tool still running reads in the present tense.

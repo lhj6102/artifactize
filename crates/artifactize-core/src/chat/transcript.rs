@@ -1,7 +1,7 @@
 //! Chat presents the recorder's existing messages and streamed delivery, with typed Run links.
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use rig_core::message::{AssistantContent, Message, ToolResultContent, UserContent};
+use rig_core::message::{AssistantContent, Message, UserContent};
 use serde::Serialize;
 
 use crate::{
@@ -11,6 +11,11 @@ use crate::{
     },
     runs, store,
     types::{DeliveryBlock, EvalId, RequestStatus, RunId},
+};
+
+use super::{
+    Outcome,
+    details::{self, ResultView, ToolKind},
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,6 +33,11 @@ pub enum Block {
         arguments: String,
         output: Option<String>,
         failed: Option<bool>,
+        tool_kind: ToolKind,
+        summary: String,
+        exit_code: Option<i32>,
+        omitted_lines: usize,
+        output_truncated: bool,
     },
     Run {
         card: RunCard,
@@ -122,11 +132,17 @@ impl Fold {
                             AssistantContent::ToolCall(call) => {
                                 let index = blocks.len();
                                 self.calls.insert(call.id.wire().into_owned(), index);
+                                let name = call.function.name.as_str();
                                 blocks.push(Block::Tool {
-                                    name: call.function.name.as_str().to_owned(),
+                                    name: name.to_owned(),
                                     arguments: call.function.arguments.to_string(),
                                     output: None,
                                     failed: None,
+                                    tool_kind: ToolKind::for_name(name),
+                                    summary: details::summary(name, &call.function.arguments),
+                                    exit_code: None,
+                                    omitted_lines: 0,
+                                    output_truncated: false,
                                 });
                             }
                             _ => {}
@@ -142,26 +158,35 @@ impl Fold {
                         })
                         .enumerate()
                     {
-                        let Some(Block::Tool { output, failed, .. }) = self
+                        let Some(Block::Tool {
+                            output,
+                            failed,
+                            tool_kind,
+                            summary,
+                            exit_code,
+                            omitted_lines,
+                            output_truncated,
+                            ..
+                        }) = self
                             .calls
                             .get(result.call.wire().as_ref())
                             .and_then(|index| blocks.get_mut(*index))
                         else {
                             continue;
                         };
-                        *output = Some(
-                            result
-                                .content
-                                .iter()
-                                .map(|part| match part {
-                                    ToolResultContent::Text(text) => text.text.clone(),
-                                    ToolResultContent::Json { value } => value.to_string(),
-                                    _ => "[non-text output]".into(),
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n"),
-                        );
                         *failed = message.is_error.get(index).copied();
+                        // The final replay message can repeat an already streamed outcome.
+                        if output.is_some() {
+                            continue;
+                        }
+                        let view = ResultView::new(*tool_kind, result.content.iter());
+                        if let Some(code) = view.exit_code {
+                            summary.push_str(&format!(" (exit {code})"));
+                        }
+                        *exit_code = view.exit_code;
+                        *output = Some(view.output);
+                        *omitted_lines = view.omitted_lines;
+                        *output_truncated = view.truncated;
                     }
                 }
                 Message::System { .. } => {}
@@ -175,8 +200,11 @@ impl Fold {
                 },
             }),
             Kind::Answer(answer) => {
-                self.turn.state = match answer {
-                    Answer::Completed(text) => {
+                self.turn.state = match outcome(answer) {
+                    Outcome::Completed => {
+                        let Answer::Completed(text) = answer else {
+                            unreachable!("completed answer")
+                        };
                         if !text.is_empty()
                             && !blocks
                                 .iter()
@@ -186,16 +214,19 @@ impl Fold {
                         }
                         TurnState::Completed
                     }
-                    Answer::Failed {
-                        code: Some(Code::Cancelled),
-                        ..
-                    } => TurnState::Stopped,
-                    Answer::Failed { message, .. } => TurnState::Failed {
-                        message: message
-                            .clone()
-                            .unwrap_or_else(|| "The Chat turn failed.".into()),
-                    },
-                    Answer::Empty => TurnState::Interrupted,
+                    Outcome::Stopped => TurnState::Stopped,
+                    Outcome::Failed => {
+                        let Answer::Failed { message, .. } = answer else {
+                            unreachable!("failed answer")
+                        };
+                        TurnState::Failed {
+                            message: message
+                                .clone()
+                                .unwrap_or_else(|| "The Chat turn failed.".into()),
+                        }
+                    }
+                    Outcome::Interrupted => TurnState::Interrupted,
+                    Outcome::Running => unreachable!("an answer ends the turn"),
                 };
             }
             _ => {}
@@ -266,4 +297,28 @@ pub(super) async fn update_runs(context: &runs::Context, turns: &mut [Turn]) {
             }
         }
     }
+}
+
+pub(super) fn outcome(answer: &Answer) -> Outcome {
+    match answer {
+        Answer::Completed(_) => Outcome::Completed,
+        Answer::Failed {
+            code: Some(Code::Cancelled),
+            ..
+        } => Outcome::Stopped,
+        Answer::Failed { .. } => Outcome::Failed,
+        Answer::Empty => Outcome::Interrupted,
+    }
+}
+
+pub(super) fn last_outcome(conversation: &Conversation) -> Option<Outcome> {
+    conversation
+        .events()
+        .iter()
+        .rev()
+        .find_map(|event| match &event.kind {
+            Kind::Answer(answer) => Some(outcome(answer)),
+            Kind::Send(_) => Some(Outcome::Interrupted),
+            _ => None,
+        })
 }

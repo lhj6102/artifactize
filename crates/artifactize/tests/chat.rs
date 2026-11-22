@@ -17,7 +17,7 @@ use std::{
 
 use artifactize_core::{
     changes::Subscription,
-    chat::{Block, Chat, Model, TurnState, View},
+    chat::{Block, Chat, Model, Outcome, ToolKind, TurnState, View},
     runs, store,
     types::{RunId, SessionId},
 };
@@ -61,6 +61,13 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     let state = root.path().join("state");
     fs::create_dir(&worktree).unwrap();
     fs::write(worktree.join("notes.txt"), "before").unwrap();
+    let lines = (1..=160)
+        .map(|line| format!("output {line:03}\n"))
+        .collect::<String>();
+    fs::write(worktree.join("lines.txt"), lines).unwrap();
+    let long = format!("begin {} end", "한".repeat(7_000));
+    let noisy = support::os::exiting_program(root.path(), 7, &long);
+
     support::declaration::write(&worktree, worktree.join("index.artf"), json!({
         "name":"app", "fingerprint":false, "evals":[{
             "id":"test", "title":"Check", "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
@@ -113,6 +120,12 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
                         "run_command",
                         &json!({"program":support::os::cat_program(),"args":["notes.txt"]}),
                     ),
+                    openai::function_call(
+                        "call_lines",
+                        "run_command",
+                        &json!({"program":support::os::cat_program(),"args":["lines.txt"]}),
+                    ),
+                    openai::function_call("call_bytes", "run_command", &json!({"program":noisy})),
                     openai::function_call(
                         "call_verify",
                         "verify_start",
@@ -182,6 +195,8 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         .await
         .unwrap();
     assert!(chat.open(&session.id).await.unwrap().turns.is_empty());
+    assert_eq!(session.outcome(), None);
+    assert!(!session.unseen());
     let mut changes = Subscription::new(&state).await;
     chat.send(&session.id, "Edit and verify the notes".into(), None)
         .await
@@ -191,8 +206,11 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     })
     .await;
     let reader = Chat::new(state.clone(), cli.clone());
-    let entries = reader.list(Some(&worktree)).await.unwrap();
+    let entries = reader.list(Some(&worktree), None).await.unwrap();
     assert_eq!(entries[0].id, session.id);
+    assert_eq!(entries[0].outcome(), Some(Outcome::Running));
+    assert!(!entries[0].unseen());
+    reader.mark_seen(&session.id).await.unwrap();
     assert!(
         entries[0].running,
         "a separately opened catalog sees the live owner"
@@ -203,12 +221,60 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             .iter()
             .any(|block| matches!(block, Block::Text { text } if text == "Reading the notes."))
     );
-    assert!(mid.turns[0].blocks.iter().any(|block| matches!(block, Block::Tool { name, output: Some(output), failed: Some(false), .. } if name == "read" && output.contains("before"))));
+    assert!(mid.turns[0].blocks.iter().any(|block| matches!(block, Block::Tool { tool_kind: ToolKind::Read, summary, output: Some(output), failed: Some(false), .. } if summary == "read notes.txt" && output.contains("before"))));
     assert_eq!(
         fs::read_to_string(worktree.join("notes.txt")).unwrap(),
         "after"
     );
     assert!(mid.turns[0].blocks.iter().any(|block| matches!(block, Block::Tool { name, output: Some(output), failed: Some(false), .. } if name == "run_command" && output.contains("after"))));
+    let lines = mid.turns[0]
+        .blocks
+        .iter()
+        .find_map(|block| match block {
+            Block::Tool {
+                tool_kind: ToolKind::Command,
+                summary,
+                exit_code: Some(0),
+                output: Some(output),
+                omitted_lines,
+                output_truncated: true,
+                ..
+            } if summary.ends_with("lines.txt (exit 0)") => Some((output, *omitted_lines)),
+            _ => None,
+        })
+        .expect("the command discloses its bounded line excerpt");
+    assert!(lines.0.starts_with("output 001\n"));
+    assert!(lines.0.trim_end().ends_with("output 160"));
+    assert!(!lines.0.contains("output 080"));
+    assert!(lines.0.lines().count() <= 80);
+    assert_eq!(
+        lines.1,
+        160 - lines
+            .0
+            .lines()
+            .filter(|line| line.starts_with("output "))
+            .count()
+    );
+    let noisy = mid.turns[0]
+        .blocks
+        .iter()
+        .find_map(|block| match block {
+            Block::Tool {
+                tool_kind: ToolKind::Command,
+                summary,
+                exit_code: Some(7),
+                output: Some(output),
+                omitted_lines: 0,
+                output_truncated: true,
+                failed: Some(true),
+                ..
+            } if summary.ends_with(" (exit 7)") => Some(output),
+            _ => None,
+        })
+        .expect("the failing command reports its exit and clips a long UTF-8 line");
+    assert!(noisy.contains("begin 한"));
+    assert!(noisy.trim_end().ends_with("한 end"));
+    assert!(noisy.len() <= 8 * 1024);
     let run = cards(&mid).remove(0);
     let run_view = store::read_run(&state, run.as_str()).await.unwrap();
     assert_eq!(
@@ -221,12 +287,21 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     final_answer.open();
     let ended = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
     assert!(matches!(ended.turns[0].state, TurnState::Completed));
+    assert_eq!(ended.session.outcome(), Some(Outcome::Completed));
+    assert!(ended.session.unseen());
 
     // New handle and connection: no in-memory message map participates in the restored view.
-    let restarted = Chat::new(state.clone(), cli);
+    let restarted = Chat::new(state.clone(), cli.clone());
     let restored = restarted.open(&session.id).await.unwrap();
     assert_eq!(cards(&restored), [run]);
-    let entries = restarted.list(Some(&worktree)).await.unwrap();
+    assert!(restored.session.unseen());
+    restarted.mark_seen(&session.id).await.unwrap();
+    let restarted = Chat::new(state.clone(), cli);
+    let seen = restarted.open(&session.id).await.unwrap().session;
+    assert_eq!(seen.outcome(), Some(Outcome::Completed));
+    assert!(!seen.unseen());
+    assert_eq!(seen.updated_at, ended.session.updated_at);
+    let entries = restarted.list(Some(&worktree), None).await.unwrap();
     assert_eq!(entries[0].id, session.id);
     assert!(!entries[0].running);
     assert_eq!(
@@ -250,6 +325,8 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     })
     .await;
     assert!(matches!(stopped.turns[1].state, TurnState::Stopped));
+    assert_eq!(stopped.session.outcome(), Some(Outcome::Stopped));
+    assert!(stopped.session.unseen());
     interrupted.open();
     let changed = Model {
         model: "second-model".parse().unwrap(),
@@ -654,6 +731,15 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     let interrupted = chat.open(&session.id).await.unwrap();
     assert!(!interrupted.running);
     assert!(matches!(interrupted.turns[0].state, TurnState::Interrupted));
+    assert_eq!(interrupted.session.outcome(), Some(Outcome::Interrupted));
+    assert!(interrupted.session.unseen());
+    chat.mark_seen(&session.id).await.unwrap();
+    let recovered = Chat::new(state.clone(), cli.clone())
+        .open(&session.id)
+        .await
+        .unwrap();
+    assert_eq!(recovered.session.outcome(), Some(Outcome::Interrupted));
+    assert!(!recovered.session.unseen());
     let mut changes = Subscription::new(&state).await;
     chat.send(&session.id, "Resume the interrupted session".into(), None)
         .await

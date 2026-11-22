@@ -49,6 +49,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             chat::chat_create,
             chat::chat_default_model,
             chat::chat_list,
+            chat::chat_mark_seen,
             chat::chat_open,
             chat::chat_send,
             chat::chat_stop,

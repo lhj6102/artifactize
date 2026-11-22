@@ -21,8 +21,10 @@ export const commands = {
 	backend: string,
 	model: string,
 } | null, Failure>(__TAURI_INVOKE("chat_default_model", { worktree })),
-	/**  List saved sessions newest first. `null` lists all worktrees. */
-	chatList: (worktree: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree })),
+	/**  List saved sessions newest first. `null` applies no worktree or query filter. */
+	chatList: (worktree: string | null, query: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree, query })),
+	/**  Acknowledge the latest settled outcome for this machine user. */
+	chatMarkSeen: (id: string) => typedError<null, Failure>(__TAURI_INVOKE("chat_mark_seen", { id })),
 	/**
 	 *  Read a session and its live transcript. `sessionChanged` names sessions to refresh; Run
 	 *  cards can change separately on `stateChanged`, after their originating turn has ended.
@@ -466,12 +468,14 @@ export type CardView = {
 	model: string | null,
 };
 
-export type ChatBlock = { kind: "text"; text: string } | { kind: "tool"; name: string; arguments: string; output: string | null; failed: boolean | null } | { kind: "run"; card: ChatRun };
+export type ChatBlock = { kind: "text"; text: string } | { kind: "tool"; name: string; arguments: string; output: string | null; failed: boolean | null; toolKind: ChatToolKind; summary: string; exitCode: number | null; omittedLines: number; outputTruncated: boolean } | { kind: "run"; card: ChatRun };
 
 export type ChatModel = {
 	backend: string,
 	model: string,
 };
+
+export type ChatOutcome = "running" | "completed" | "failed" | "stopped" | "interrupted";
 
 export type ChatRun = {
 	id: string,
@@ -493,7 +497,11 @@ export type ChatSession = {
 	createdAt: string,
 	updatedAt: string,
 	running: boolean,
+	outcome: ChatOutcome | null,
+	unseen: boolean,
 };
+
+export type ChatToolKind = "read" | "edit" | "command" | "verify" | "other";
 
 export type ChatTurn = {
 	user: string,

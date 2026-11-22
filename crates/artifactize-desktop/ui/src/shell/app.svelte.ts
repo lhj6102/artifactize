@@ -54,7 +54,7 @@ export class AppState {
   readonly leaving = Object.assign(new Leaving(this.ipc), {
     turns: async () => {
       try {
-        const sessions = await call(this.ipc.chatList(null));
+        const sessions = await call(this.ipc.chatList(null, null));
         return sessions.filter((session) => session.running).map((session) => session.title || "New chat");
       } catch {
         // Unread, no turn is named; the claims are still asked about.

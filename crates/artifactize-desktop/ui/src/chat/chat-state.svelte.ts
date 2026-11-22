@@ -51,7 +51,7 @@ export class ChatModeState {
   /** Read the sessions again. */
   async list(): Promise<void> {
     try {
-      this.sessions = await call(this.ipc.chatList(null));
+      this.sessions = await call(this.ipc.chatList(null, null));
       this.listed = true;
     } catch (failure) {
       this.error = message(failure);

@@ -61,13 +61,14 @@ pub(crate) async fn list(state: &Path, worktree: Option<&Path>) -> Result<Vec<Se
         .map_err(|error| error.to_string())?
         .as_deref()
         .map(crate::platform::path_text);
+    let state_path = state.to_owned();
     Ok(read(state, move |db| {
         let mut statement = db.prepare(
             "SELECT s.data, a.data FROM chat_sessions s LEFT JOIN chat_active_turns a ON a.session_id=s.id \
              WHERE ?1 IS NULL OR s.worktree=?1 ORDER BY s.updated_at DESC,s.id DESC",
         )?;
         let rows = statement.query_map([worktree], session_row)?
-            .map(|row| session(row?)).collect::<Result<Vec<_>, Error>>()?;
+            .map(|row| session(row?, &state_path)).collect::<Result<Vec<_>, Error>>()?;
         Ok(rows)
     }).await?.unwrap_or_default())
 }
@@ -103,28 +104,32 @@ pub(crate) async fn latest_model(
 
 pub(crate) async fn load(state: &Path, id: &SessionId) -> Result<Session, String> {
     let id = id.clone();
-    read(state, move |db| {
-        let row = db.query_row(
-            "SELECT s.data, a.data FROM chat_sessions s LEFT JOIN chat_active_turns a ON a.session_id=s.id WHERE s.id=?1",
-            [&id], session_row,
-        ).optional()?.ok_or_else(|| Error::Invalid(format!("No Chat session {id}.")))?;
-        session(row)
-    })
-    .await?
-    .ok_or("No Chat sessions have been saved.".into())
+    let state_path = state.to_owned();
+    read(state, move |db| load_session(db, &state_path, &id))
+        .await?
+        .ok_or("No Chat sessions have been saved.".into())
 }
 
 fn session_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(String, Option<String>)> {
     Ok((row.get(0)?, row.get(1)?))
 }
 
-fn session((data, owner): (String, Option<String>)) -> Result<Session, Error> {
+fn load_session(db: &Connection, state: &Path, id: &SessionId) -> Result<Session, Error> {
+    let row = db.query_row(
+        "SELECT s.data, a.data FROM chat_sessions s LEFT JOIN chat_active_turns a ON a.session_id=s.id WHERE s.id=?1",
+        [id], session_row,
+    ).optional()?.ok_or_else(|| Error::Invalid(format!("No Chat session {id}.")))?;
+    session(row, state)
+}
+
+fn session((data, owner): (String, Option<String>), state: &Path) -> Result<Session, Error> {
     let mut session: Session = serde_json::from_str(&data)?;
     if let Some(owner) = owner {
         session.running = serde_json::from_str::<Owner>(&owner)?
             .live()
             .map_err(Error::Invalid)?;
     }
+    session.refresh_activity(state);
     Ok(session)
 }
 
@@ -163,16 +168,28 @@ impl Receipts {
     pub(crate) async fn save_chat(&self, session: &Session) -> Result<(), String> {
         let session = session.clone();
         self.connection
+            .call(move |db| save(db, &session))
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) async fn mark_chat_seen(
+        &self,
+        state: &Path,
+        id: &SessionId,
+    ) -> Result<bool, String> {
+        let state = state.to_owned();
+        let id = id.clone();
+        self.connection
             .call(move |db| {
-                db.execute(
-                    "UPDATE chat_sessions SET updated_at=?, data=? WHERE id=?",
-                    params![
-                        session.updated_at,
-                        serde_json::to_string(&session)?,
-                        session.id
-                    ],
-                )?;
-                Ok::<_, Error>(())
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut session = load_session(&transaction, &state, &id)?;
+                let changed = session.mark_seen();
+                if changed {
+                    save(&transaction, &session)?;
+                }
+                transaction.commit()?;
+                Ok::<_, Error>(changed)
             })
             .await
             .map_err(|error| error.to_string())
@@ -199,12 +216,35 @@ impl Receipts {
         }).await.map_err(|error| error.to_string())
     }
 
-    pub(crate) async fn finish_chat(&self, id: &SessionId, owner: &Owner) -> Result<(), String> {
+    pub(crate) async fn finish_chat(
+        &self,
+        id: &SessionId,
+        owner: &Owner,
+        settled: Option<&Session>,
+    ) -> Result<(), String> {
         let id = id.clone();
         let token = owner.token.clone();
+        let settled = settled.cloned();
         self.connection.call(move |db| {
-            db.execute("DELETE FROM chat_active_turns WHERE session_id=? AND json_extract(data,'$.token')=?", params![id, token])?;
+            let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let released = transaction.execute("DELETE FROM chat_active_turns WHERE session_id=? AND json_extract(data,'$.token')=?", params![id, token])?;
+            if released != 0 && let Some(session) = settled {
+                save(&transaction, &session)?;
+            }
+            transaction.commit()?;
             Ok::<_, Error>(())
         }).await.map_err(|error| error.to_string())
     }
+}
+
+fn save(db: &Connection, session: &Session) -> Result<(), Error> {
+    db.execute(
+        "UPDATE chat_sessions SET updated_at=?, data=? WHERE id=?",
+        params![
+            session.updated_at,
+            serde_json::to_string(session)?,
+            session.id
+        ],
+    )?;
+    Ok(())
 }
