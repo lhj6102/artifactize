@@ -2,12 +2,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { it } from "node:test";
-import { runStep } from "./build.ts";
+import { setTimeout as delay } from "node:timers/promises";
+import { PNG } from "pngjs";
+import { checkE2eApp, runStep } from "./build.ts";
 import { own } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { PNG } from "pngjs";
-import { nodeProgram, xwdPng } from "./platform.ts";
-import { exists, nativePath, removeTree, scratchDirectory, suitePath, newDirectory } from "./portable.ts";
+import { checkForeground, nodeProgram, processRunning, quarantineForeground, releaseForeground, xwdPng } from "./platform.ts";
+import { exists, nativePath, newDirectory, readTextIfExists, removeTree, scratchDirectory, suitePath, withMachineLock, writeText } from "./portable.ts";
 import { batches } from "./run.ts";
 
 it("batches scenarios in order, at most `size` apps at once, one that runs alone or is started again by itself", () => {
@@ -83,4 +84,55 @@ it("returns a build step's output and fails a step that fails", async () => {
   const cwd = scratchDirectory();
   assert.equal(await runStep(nodeProgram, ["-e", "process.stdout.write('built')"], { env: process.env, cwd, capture: true }), "built");
   await assert.rejects(runStep(nodeProgram, ["-e", "process.exit(3)"], { env: process.env, cwd }), /exited 3/);
+});
+
+it("rejects an executable without the E2E build metadata before starting a session", () => {
+  assert.throws(() => checkE2eApp(nodeProgram, scratchDirectory()), /not an E2E test app/);
+});
+
+it("does not admit another foreground owner after the batch process's lock unwinds without release", async (test) => {
+  const root = newDirectory(scratchDirectory(), "desktop-foreground-test-");
+  test.after(() => removeTree(root));
+  const marker = nativePath(root, "foreground-unreleased");
+  const lock = `test-foreground-${process.pid}`;
+  await assert.rejects(withMachineLock(lock, async () => {
+    checkForeground(marker);
+    quarantineForeground(marker, "an app did not release the foreground");
+    throw new Error("shutdown failed");
+  }), /shutdown failed/);
+  await assert.rejects(withMachineLock(lock, async () => checkForeground(marker)), /foreground is quarantined/);
+  releaseForeground(marker);
+  await withMachineLock(lock, async () => checkForeground(marker));
+});
+
+it("fails a build interrupted after its root exits but while a descendant holds stdout", async (test) => {
+  const root = newDirectory(scratchDirectory(), "desktop-interrupt-test-");
+  test.after(() => removeTree(root));
+  const pidFile = nativePath(root, "pid");
+  const gate = nativePath(root, "done");
+  const holder = `const fs = require('node:fs');
+    const poll = setInterval(() => { if (fs.existsSync(process.argv[1])) clearInterval(poll); }, 20);
+    setTimeout(() => clearInterval(poll), 5000).unref();`;
+  const launcher = `const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', process.argv[3], process.argv[2]], { stdio: 'inherit' });
+    child.once('spawn', () => require('node:fs').writeFileSync(process.argv[1], String(process.pid)));
+    child.unref();`;
+  let finished = false;
+  const step = runStep(nodeProgram, ["-e", launcher, pidFile, gate, holder], { env: process.env, cwd: root, capture: true });
+  void step.then(() => (finished = true), () => (finished = true));
+  try {
+    const deadline = Date.now() + 3000;
+    for (;;) {
+      const pid = Number(readTextIfExists(pidFile));
+      if (pid > 0 && !processRunning(pid)) break;
+      assert.ok(Date.now() < deadline && !finished, "the build command exited with its pipe still open");
+      await delay(10);
+    }
+    assert.equal(finished, false, "the descendant still holds stdout");
+    process.emit("SIGINT", "SIGINT");
+    await assert.rejects(step, /was interrupted/);
+  } finally {
+    writeText(gate, "");
+    await step.catch(() => undefined);
+  }
 });

@@ -3,11 +3,11 @@
 // after (teardown).
 import { inspect } from "node:util";
 import { SevereServiceError } from "webdriverio";
-import { readCandidate } from "./build.ts";
+import { checkE2eApp, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { appsAtOnce, displayEnvironment, displayScreenshot, setVariable, variable, type Environment } from "./platform.ts";
+import { appsAtOnce, displayEnvironment, displayScreenshot, foregroundQuarantine, quarantineForeground, releaseForeground, setVariable, variable, type Environment } from "./platform.ts";
 import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson, writeText } from "./portable.ts";
 import { APPS_UNRELEASED, COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
 
@@ -26,10 +26,18 @@ const restarts = selected.some((item) => item.restarted);
 if (restarts && selected.length > 1) throw new Error("a scenario that starts its app again runs alone");
 
 /** Why preparing the batch failed, for the runner: WDIO wraps it. */
-type Service = { onComplete?: (...args: never[]) => Promise<void> };
+export type Service = {
+  onPrepare?: (...args: never[]) => Promise<void>;
+  onComplete?: (code: number, config: unknown, caps: unknown) => Promise<void>;
+  // The pinned service correlates its app child handles with the configured embedded ports.
+  embeddedConfigs?: Map<string, { port: number }>;
+  embeddedProcesses?: Map<string, { proc: { pid?: number; exitCode: number | null; signalCode: string | null } }>;
+};
+const foreground = foregroundQuarantine();
+const scenarioPorts = new Map<string, number>();
 let observeService: (() => Service[]) | undefined;
 const shutdownFailures: unknown[] = [];
-const pendingStops = new Set<() => Promise<void>>();
+const pendingStops = new Map<Service, () => Promise<void>>();
 const workers = new Map<string, { id: string; restarted: boolean }>();
 
 /** WDIO can log an ordinary service error without propagating it to the batch result. */
@@ -49,14 +57,25 @@ export function assertCompleted(): void {
  * failure names it and is kept as its evidence, with the window as its flow left it. When the
  * service failed to stop the batch's apps (`serviceFailure`), every scenario of the batch keeps
  * that failure as its evidence, with the window as its flow left it, before its files go. */
-export async function teardown(): Promise<void> {
+let tearingDown: Promise<void> | undefined;
+export function teardown(): Promise<void> {
+  return tearingDown ??= finishTeardown();
+}
+
+async function finishTeardown(): Promise<void> {
   if (pendingStops.size) {
-    for (const stop of pendingStops) {
+    for (const [service, stop] of pendingStops) {
       // Retry the service, not a PID found on the machine. It still owns an unsuccessful stop.
-      try { await stop(); pendingStops.delete(stop); } catch (error) { shutdownFailures.push(error); }
+      try { await stop(); pendingStops.delete(service); } catch (error) { shutdownFailures.push(error); }
     }
   }
-  if (pendingStops.size) writeText(nativePath(output, APPS_UNRELEASED), "Tauri service did not confirm its apps exited. Inputs kept.\n");
+  if (pendingStops.size) {
+    const failure = `Tauri service did not confirm that the apps in ${selected.map((item) => item.id).join(", ")} exited. Candidate and inputs kept at ${candidate.root}.`;
+    quarantineForeground(foreground, failure);
+    writeText(nativePath(output, APPS_UNRELEASED), `${failure}\n`);
+  } else {
+    releaseForeground(foreground);
+  }
   const serviceFailure = shutdownFailures.length ? new AggregateError(shutdownFailures, "Tauri service failed to stop its apps") : undefined;
   const scopes = owned.splice(0);
   // Read before the folders go.
@@ -113,39 +132,52 @@ export const config = {
   async onPrepare(_config: unknown, capabilities: Capability[]) {
     try {
       for (const service of observeService?.() ?? []) {
-        const original = service.onComplete?.bind(service);
-        if (original) service.onComplete = async (...args) => {
-          const stop = () => original(...args);
-          pendingStops.add(stop);
-          try { await stop(); pendingStops.delete(stop); }
+        const complete = service.onComplete?.bind(service);
+        if (!complete) continue;
+        const prepare = service.onPrepare?.bind(service);
+        if (prepare) service.onPrepare = async (...args) => {
+          // A failed service startup may leave an app but skip the usual completion hook.
+          pendingStops.set(service, () => complete(1, {}, []));
+          await prepare(...args);
+        };
+        service.onComplete = async (...args) => {
+          const stop = () => complete(...args);
+          pendingStops.set(service, stop);
+          try { await stop(); pendingStops.delete(service); }
           catch (error) { shutdownFailures.push(error); throw error; }
         };
       }
       const unset = new Set<string>();
-      const prepared: { scope: Owned; input: Awaited<ReturnType<typeof selected[number]["prepare"]>>; env: Environment }[] = [];
+      const prepared: { scope: Owned; input: Awaited<ReturnType<typeof selected[number]["prepare"]>>; env: Environment; app: Context["root"] }[] = [];
       for (const item of selected) {
         const scope = own(nativePath(candidate.root, "fixtures"));
         owned.push(scope);
-        const input = await item.prepare(scope).catch(async (cause: unknown) => {
+        const entry = await (async () => {
+          const input = await item.prepare(scope);
+          const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
+          const app = asNativePath(input.app ?? candidate.app);
+          checkE2eApp(app, scope.root, env);
+          return { scope, input, env, app };
+        })().catch(async (cause: unknown) => {
           // The scenario whose preparation failed is the one that failed: the failure names it
           // and is kept as its evidence. No scenario of its batch ran.
           const failure = new Error(`preparing ${item.id} failed, before any app of its batch (${selected.map((each) => each.id).join(", ")}) started: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
           await keepEvidence(item.id, nativePath(evidence, item.id), inspect(failure, { depth: null }), undefined);
           throw failure;
         });
-        const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
-        for (const [name, value] of Object.entries(env)) if (value === undefined) unset.add(name);
-        prepared.push({ scope, input, env });
+        for (const [name, value] of Object.entries(entry.env)) if (value === undefined) unset.add(name);
+        prepared.push(entry);
       }
       // Ports of this batch's own (their claims last as long as this process), taken once
       // every fixture is ready.
       const { ports, close } = await embeddedPorts(selected.length);
       prepared[0]?.scope.defer(close);
-      for (const [index, { scope, input, env }] of prepared.entries()) {
+      for (const [index, { scope, input, env, app }] of prepared.entries()) {
+        scenarioPorts.set(selected[index].id, ports[index]);
         const context = nativePath(scope.root, "context.json");
         writeJson(context, { ...input, root: scope.root, port: ports[index], evidence: nativePath(evidence, selected[index].id) } satisfies Context);
         capabilities[index]["artifactize:context"] = context;
-        if (input.app) capabilities[index]["tauri:options"] = { application: input.app };
+        capabilities[index]["tauri:options"] = { application: app };
         capabilities[index]["wdio:tauriServiceOptions"] = {
           appArgs: ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])], env: set(env), embeddedPort: ports[index],
         };
@@ -176,8 +208,13 @@ export const config = {
     if (exists(nativePath(folder, "failure.txt"))) return; // afterTest had a live session.
     let screen: Uint8Array | undefined;
     let capture = "";
-    try { screen = displayScreenshot(output); }
-    catch (error) { capture = `\nCould not capture the private display: ${String(error)}`; }
+    const port = scenarioPorts.get(worker.id);
+    const process = (observeService?.() ?? []).flatMap((service) => [...(service.embeddedConfigs ?? [])]
+      .filter(([, config]) => config.port === port)
+      .map(([key]) => service.embeddedProcesses?.get(key)?.proc))
+      .find((child) => child?.exitCode === null && child.signalCode === null);
+    try { screen = displayScreenshot(output, process?.pid); }
+    catch (error) { capture = `\nCould not capture the owned window: ${String(error)}`; }
     await keepEvidence(worker.id, folder, `WebdriverIO worker ${cid} exited ${code} before its test could keep evidence; see its session/setup error in the batch log.${capture}`, screen);
   },
   beforeSession(_config: unknown, capability: Capability) {

@@ -11,7 +11,7 @@ import { inspect } from "node:util";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { appsAtOnce, assertHeadless, desktopResources, nodeProgram, packageCommand, runnerCommand, systemName, variable } from "./platform.ts";
+import { appsAtOnce, assertHeadless, checkForeground, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, quarantineForeground, releaseForeground, runnerCommand, systemName, variable } from "./platform.ts";
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
 import { APPS_UNRELEASED, type Scenario } from "./scenario.ts";
 
@@ -184,7 +184,17 @@ async function holding(body: () => Promise<void>): Promise<void> {
 
 async function batch(): Promise<void> {
   assertHeadless();
-  await holding(launch);
+  const foreground = foregroundQuarantine();
+  await holding(async () => {
+    checkForeground(foreground);
+    quarantineForeground(foreground, `Batch ${variable("DESKTOP_TEST_BATCH") ?? ""} owns the foreground; its output is at ${variable("DESKTOP_TEST_BATCH_OUTPUT")}.`);
+    try { await launch(); }
+    finally {
+      // If configuration never loaded, the service cannot have started an app. Otherwise only
+      // its teardown, including on interruption, can confirm release.
+      if (!loaded) releaseForeground(foreground);
+    }
+  });
 }
 
 
@@ -224,7 +234,7 @@ async function launch(): Promise<void> {
   await launcher.initialize();
   const configuration = await import("./wdio.conf.ts");
   loaded = configuration;
-  configuration.trackServiceShutdown(() => (launcher as unknown as { _launcher?: { onComplete?: (...args: never[]) => Promise<void> }[] })._launcher ?? []);
+  configuration.trackServiceShutdown(() => (launcher as unknown as { _launcher?: import("./wdio.conf.ts").Service[] })._launcher ?? []);
   const failures: unknown[] = [];
   try {
     const code = await launcher.run();
@@ -252,8 +262,8 @@ async function unit(): Promise<void> {
 if (import.meta.main === undefined) throw new Error(`the desktop test runner needs Node 24.2 or later, not ${process.version}`);
 if (import.meta.main) {
   const mode = process.argv[2] ?? "suite";
-  // The suite waits for its running batch; a batch, like any other mode, ends on an interrupt.
-  if (mode === "suite") {
+  // Track interruption separately from the child status, including between prepare's steps.
+  if (mode === "suite" || mode === "prepare") {
     process.on("SIGINT", interrupt);
     process.on("SIGTERM", interrupt);
   }
@@ -265,7 +275,15 @@ if (import.meta.main) {
       await batch();
       process.exitCode = 0;
     }
-    else if (mode === "prepare") console.log((await prepare()).manifest);
+    else if (mode === "prepare") {
+      const candidate = await prepare();
+      await turned();
+      if (interrupted) {
+        cleanup(candidate.root);
+        throw new Error("interrupted while preparing the E2E candidate");
+      }
+      console.log(candidate.manifest);
+    }
     else if (mode === "cleanup") cleanup(readCandidate(process.argv[3]).root);
     else if (mode === "unit") await unit();
     else throw new Error(`unknown desktop test runner mode: ${mode}`);

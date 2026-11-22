@@ -14,9 +14,16 @@ export type Candidate = { root: NativePath; cli: NativePath; app: NativePath; ma
  * is returned. An interrupt of this process ends its whole process tree. */
 export async function runStep(program: string, args: readonly string[], options: { env: Environment; cwd: NativePath; capture?: boolean }): Promise<string> {
   const child = startTree(program, args, { cwd: options.cwd, env: options.env, capture: options.capture ?? false });
-  const interrupt = () => stopTree(child);
-  process.once("SIGINT", interrupt);
-  process.once("SIGTERM", interrupt);
+  let interrupted = false;
+  let stopFailure: unknown;
+  const interrupt = () => {
+    interrupted = true;
+    try { stopTree(child); } catch (error) { stopFailure = error; }
+    // A descendant can still have the pipe open after the command itself has exited.
+    child.stdout?.destroy();
+  };
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
   let stdout = "";
   child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
   try {
@@ -24,6 +31,7 @@ export async function runStep(program: string, args: readonly string[], options:
       child.once("error", fail);
       child.once("close", (status) => done(status));
     });
+    if (interrupted) throw new Error(`${program} ${args.join(" ")} was interrupted`, { cause: stopFailure });
     if (code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${code}`);
     return stdout;
   } finally {
@@ -106,16 +114,21 @@ export function readCandidate(manifest = variable("DESKTOP_TEST_CANDIDATE")): Ca
   for (const path of [candidate.cli, candidate.app]) {
     if (typeof path !== "string" || !exists(asNativePath(path))) throw new Error(`the candidate's ${path} is missing`);
   }
-  const checked = runProgram(candidate.app, ["--check-e2e-build"], { cwd: candidate.root });
+  checkE2eApp(candidate.app, candidate.root);
+  verifiedCandidates.set(manifest, candidate);
+  return candidate;
+}
+
+/** Check the actual executable that will be handed to the service, without opening a window. */
+export function checkE2eApp(app: NativePath, cwd: NativePath, env?: Environment): void {
+  const checked = runProgram(app, ["--check-e2e-build"], { cwd, env, timeout: 15000 });
   // This is not a manifest field or a caller-provided stamp. The E2E-only binary's
   // `check_build` (desktop src/e2e_metadata.rs) reads the compiled Tauri context and its
   // embedded asset manifest, before the window builder runs.
   const facts = checked.status === 0 ? JSON.parse(checked.stdout) as { embeddedDriver?: boolean; globalTauri?: boolean; testFrontend?: boolean; missingWindowAccess?: string[] } : null;
   if (!facts || facts.embeddedDriver !== true || facts.globalTauri !== true || facts.testFrontend !== true || facts.missingWindowAccess?.length !== 0) {
-    throw new Error(`the candidate is not an E2E test app: ${checked.stderr.trim() || checked.stdout.trim()}`);
+    throw new Error(`not an E2E test app: ${app}: ${checked.stderr.trim() || checked.stdout.trim() || `metadata probe exited ${checked.status}`}`);
   }
-  verifiedCandidates.set(manifest, candidate);
-  return candidate;
 }
 
 /** Makes `candidate` the one this process's fixtures belong to. */

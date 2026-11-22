@@ -13,11 +13,11 @@
 //   build's opener seam on Windows). The stand-in it runs is the same on every OS.
 import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { PNG } from "pngjs";
-import { release } from "node:os";
+import { homedir, release } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, sep, toNamespacedPath } from "node:path";
-import { callWindow, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
+import { callWindow, makeDirectory, nativePath, newDirectory, readTextIfExists, removeTree, writeText, type NativePath } from "./portable.ts";
 
 const WINDOWS = process.platform === "win32";
 const MACOS = process.platform === "darwin";
@@ -184,7 +184,7 @@ export function startTree(program: string, args: readonly string[], options: { c
 
 /** End the process tree `startTree` started, its root and every descendant. */
 export function stopTree(child: ChildProcess): void {
-  if (child.pid === undefined || child.exitCode !== null) return;
+  if (child.pid === undefined || (WINDOWS && child.exitCode !== null)) return;
   const pid = child.pid;
   if (WINDOWS) {
     // taskkill from the system's own folder, whatever PATH holds; 128: no such process.
@@ -229,12 +229,81 @@ export function runnerCommand(args: string[], env: Environment = process.env): {
   return { program: "dbus-run-session", args: ["--", "xvfb-run", "-a", ...framebuffer, process.execPath, ...args], env: headless };
 }
 
-/** Last-resort evidence from the batch's private virtual display, not a WebDriver command:
- * a failed New Session has no screenshot endpoint yet. Xvfb writes the screen in XWD format
- * in the batch output directory. No pixels from it are used in scenario assertions. */
-export function displayScreenshot(output: NativePath): Uint8Array | undefined {
-  if (!LINUX) return undefined;
-  return xwdPng(readFileSync(nativePath(output, "Xvfb_screen0")));
+/** Use a native capture tool only for failure evidence, never for test input or assertions. */
+function capture(program: string, args: string[]): string {
+  const result = spawnSync(program, args, { encoding: "utf8", windowsHide: true, timeout: 20000 });
+  if (result.error || result.status !== 0) throw new Error(`${program} could not capture the owned window: ${result.error ?? (result.stderr.trim() || result.status)}`);
+  return result.stdout.trim();
+}
+
+const MAC_WINDOW = `
+ObjC.import('CoreGraphics');
+function run(args) {
+  const pid = Number(args[0]);
+  const windows = ObjC.deepUnwrap($.CGWindowListCopyWindowInfo(17, 0));
+  const window = windows.find(w => w.kCGWindowOwnerPID === pid && w.kCGWindowLayer === 0 && w.kCGWindowBounds.Width > 0 && w.kCGWindowBounds.Height > 0);
+  if (!window) throw new Error('no visible window for the owned app');
+  return String(window.kCGWindowNumber);
+}`;
+
+const WINDOWS_WINDOW = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class E2eWindowCapture {
+  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect bounds);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+}
+'@
+[void][E2eWindowCapture]::SetProcessDPIAware()
+$owner = Get-Process -Id $env:DESKTOP_EVIDENCE_PID
+$window = $owner.MainWindowHandle
+$bounds = New-Object E2eWindowCapture+Rect
+$windowOwner = [uint32]0
+if ($window -eq 0 -or -not [E2eWindowCapture]::GetWindowRect($window, [ref]$bounds)) { throw 'no visible window for the owned app' }
+[void][E2eWindowCapture]::GetWindowThreadProcessId($window, [ref]$windowOwner)
+if ($windowOwner -ne $owner.Id -or $owner.HasExited) { throw 'the owned app no longer holds the window' }
+$width = $bounds.Right - $bounds.Left
+$height = $bounds.Bottom - $bounds.Top
+$image = New-Object System.Drawing.Bitmap -ArgumentList $width, $height
+try {
+  $graphics = [System.Drawing.Graphics]::FromImage($image)
+  try {
+    $dc = $graphics.GetHdc()
+    try { if (-not [E2eWindowCapture]::PrintWindow($window, $dc, 2)) { throw 'PrintWindow failed' } }
+    finally { $graphics.ReleaseHdc($dc) }
+  } finally { $graphics.Dispose() }
+  $image.Save($env:DESKTOP_EVIDENCE_IMAGE, [System.Drawing.Imaging.ImageFormat]::Png)
+} finally { $image.Dispose() }
+`;
+
+/** New Session can fail after the window opens but before WebDriver can capture it. The private
+ * Xvfb screen is available directly; other systems capture only the service-owned app window. */
+export function displayScreenshot(output: NativePath, pid?: number): Uint8Array {
+  if (LINUX) return xwdPng(readFileSync(nativePath(output, "Xvfb_screen0")));
+  if (!pid) throw new Error("there is no live service-owned app to capture");
+  const scratch = newDirectory(output, "window-evidence-");
+  const image = nativePath(scratch, "window.png");
+  try {
+    if (MACOS) {
+      const id = capture("/usr/bin/osascript", ["-l", "JavaScript", "-e", MAC_WINDOW, String(pid)]);
+      if (!/^\d+$/.test(id)) throw new Error("the owned window ID was not returned");
+      capture("/usr/sbin/screencapture", ["-x", `-l${id}`, image]);
+    } else {
+      // An encoded, fixed script and environment values avoid shell parsing of the path.
+      const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+      const script = Buffer.from(WINDOWS_WINDOW, "utf16le").toString("base64");
+      const env = { ...process.env, DESKTOP_EVIDENCE_PID: String(pid), DESKTOP_EVIDENCE_IMAGE: image };
+      const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", script], { env, windowsHide: true, timeout: 20000, encoding: "utf8" });
+      if (result.error || result.status !== 0) throw new Error(`could not capture the owned window: ${result.error ?? (result.stderr.trim() || result.status)}`);
+    }
+    return readFileSync(image);
+  } finally { removeTree(scratch); }
 }
 
 /** Decode the Xvfb screen's ZPixmap into a portable evidence PNG. */
@@ -293,6 +362,33 @@ export const systemName = `${process.platform} ${release()} (${process.arch})`;
 /** The machine-wide resources a batch holds while its apps run: on Windows the desktop's
  * foreground window, which another suite run's app would take away. */
 export const desktopResources: readonly string[] = WINDOWS ? ["foreground"] : [];
+
+/** The foreground lock's fail-closed marker survives a batch process that must exit without
+ * having confirmed it stopped its app. The path is shared by suite runs in this desktop's
+ * user account, independent of the per-run scratch, state and sanitized environment. */
+export function foregroundQuarantine(): NativePath | null {
+  return WINDOWS ? nativePath(homedir(), ".artifactize-desktop-e2e", "foreground-unreleased") : null;
+}
+
+/** Check under the foreground lock before letting a second suite open another app. */
+export function checkForeground(path: NativePath | null): void {
+  if (!path) return;
+  const failure = readTextIfExists(path);
+  if (failure !== null) throw new Error(`the desktop foreground is quarantined: ${failure.trim()} Confirm the orphaned fixture app has exited before removing ${path}.`);
+}
+
+/** Persist foreground ownership before launch, while holding the loopback lock. The marker
+ * remains if recovery cannot confirm exit or the batch is killed. */
+export function quarantineForeground(path: NativePath | null, failure: string): void {
+  if (!path) return;
+  makeDirectory(nativePath(path, ".."), { private: true });
+  writeText(path, failure);
+}
+
+/** Only once every app is stopped, clear the persistent half of the foreground lock. */
+export function releaseForeground(path: NativePath | null): void {
+  if (path) rmSync(path, { force: true });
+}
 
 /** On Windows, give the scenario's window the desktop's focus before it starts (see
  * appsAtOnce); other systems deliver focus events to a page in any window. */
