@@ -23,6 +23,8 @@ const PORT: &str = "ARTIFACTIZE_ACP_MCP_PORT";
 const CAPABILITY: &str = "ARTIFACTIZE_ACP_MCP_CAPABILITY";
 /// Local connections are immediate; do not let an idle peer monopolize the listener.
 const CONNECT: Duration = Duration::from_secs(2);
+/// Keep only one pending tool call; a stopped turn must not admit queued work.
+const QUEUED_CALLS: usize = 1;
 
 pub(crate) struct Bridge {
     port: String,
@@ -48,8 +50,7 @@ impl Bridge {
             .port()
             .to_string();
         let capability = crate::agent::uuid()?;
-        // Dispatch one call at a time; no unbounded work is admitted when a model races Stop.
-        let (send, calls) = mpsc::channel(1);
+        let (send, calls) = mpsc::channel(QUEUED_CALLS);
         let task = tokio::spawn(serve(listener, capability.clone(), tools, send));
         Ok(Self {
             port,
