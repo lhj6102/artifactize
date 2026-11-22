@@ -570,7 +570,7 @@ fn verify_browse_and_review_search_are_independent() {
     invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
     assert_eq!(
         invoke(&window, "human_waiting_count", json!({})).unwrap(),
-        1
+        0
     );
     let exact = invoke(
         &window,
@@ -1040,11 +1040,9 @@ payload.instruction = "Read the page separately."
     assert_eq!(wrong_worktree["review"], id);
     assert_eq!(wrong_worktree["artifact"], active["artifact"]);
     assert_eq!(active["petMatch"], true);
-    assert_eq!(wrong_worktree["petMatch"], false);
-    // The global badge counts pending verdicts even while the selected review is claimed.
     assert_eq!(
-        invoke(&window, "human_waiting_count", json!({})).unwrap(),
-        2
+        wrong_worktree["petMatch"], true,
+        "the shown follower's viewer can point at the shared draft"
     );
 
     let result = invoke(
@@ -2169,10 +2167,10 @@ fn a_direct_run_reference_reveals_its_branch_without_resetting_verify_search() {
         let shown = invoke(
             &window,
             "browse",
-            json!({"navigate":{"run":{"kind":"reference","id":run},"full":false,"resync":false}}),
+            json!({"navigate":{"run":{"kind":"reference","id":run},"query":format!("{query} other"),"full":false,"resync":false}}),
         )
         .unwrap();
-        assert_eq!(shown["query"]["text"], query);
+        assert_eq!(shown["query"]["text"], format!("{query} other"));
         assert_eq!(shown["branches"][0]["chips"][0]["id"], run);
     }
 }

@@ -49,7 +49,7 @@ pub(crate) struct PendingLaunch {
 struct ActiveReview {
     shown: RequestId,
     owner: RequestId,
-    address: Option<Address>,
+    addresses: Vec<Address>,
 }
 
 impl ActiveReview {
@@ -379,7 +379,7 @@ pub async fn viewer_context(
             let matches = sessions
                 .places
                 .get(&session)
-                .is_some_and(|place| review.address.as_ref() == Some(&place.address));
+                .is_some_and(|place| review.addresses.contains(&place.address));
             (Some(review.shown.into()), matches)
         })
     };
@@ -590,32 +590,55 @@ async fn read_active(app: &App, shown: Option<RequestId>) -> Result<Option<Activ
     if artifactize_core::review::review_refusal(Some(&owner), &app.launch.reviewer).is_some() {
         return Ok(None);
     }
-    let artifact = &owner.request.target;
-    let target = owner
-        .request
-        .human_definition
-        .as_ref()
-        .and_then(|definition| definition.artifacts.value())
-        .and_then(|artifacts| artifacts.get(artifact))
-        .and_then(|saved| saved.path.value());
-    let address = if let Some(target) = target {
-        let (worktree, checkout) = store::viewer_checkout(state, &owner.request.run_id)
-            .await
-            .map_err(Failure::Read)?;
-        Some(Address {
-            worktree,
-            checkout,
-            artifact: artifact.clone(),
-            target: target.clone(),
-        })
-    } else {
-        None
-    };
+    let mut addresses = Vec::new();
+    if let Some(address) = review_address(state, &owner, None).await {
+        addresses.push(address);
+    }
+    if exact.request.id != owner.request.id {
+        let target =
+            store::read_request_as(state, exact.request.id.as_str(), store::Shown::Definitions)
+                .await
+                .ok()
+                .and_then(|view| {
+                    view.definition
+                        .and_then(|definition| definition.artifact().path.value().cloned())
+                });
+        if let Some(address) = review_address(state, &exact, target).await {
+            addresses.push(address);
+        }
+    }
     Ok(Some(ActiveReview {
         shown,
         owner: owner.request.id.clone(),
-        address,
+        addresses,
     }))
+}
+
+async fn review_address(
+    state: &std::path::Path,
+    request: &store::RequestView,
+    recorded_target: Option<Target>,
+) -> Option<Address> {
+    let artifact = &request.request.target;
+    let target = recorded_target.or_else(|| {
+        request
+            .request
+            .human_definition
+            .as_ref()
+            .and_then(|definition| definition.artifacts.value())
+            .and_then(|artifacts| artifacts.get(artifact))
+            .and_then(|saved| saved.path.value())
+            .cloned()
+    })?;
+    let (worktree, checkout) = store::viewer_checkout(state, &request.request.run_id)
+        .await
+        .ok()?;
+    Some(Address {
+        worktree,
+        checkout,
+        artifact: artifact.clone(),
+        target,
+    })
 }
 
 /// Claims from any surface can activate or deactivate the most recently shown Review.
@@ -662,7 +685,7 @@ mod tests {
             Some(ActiveReview {
                 shown: id.clone(),
                 owner: id.clone(),
-                address: None,
+                addresses: Vec::new(),
             })
         };
         let (entered, wait_for_older) = tokio::sync::oneshot::channel();

@@ -267,7 +267,10 @@ impl Browse {
             && *query != shown.query.text
         {
             shown.query = Search::new(query.clone());
-            shown.reference = false;
+            // A reference in the same request takes precedence over the new filter.
+            if !matches!(step.run, RunStep::Reference { .. }) {
+                shown.reference = false;
+            }
         }
         if let Some(branch) = &step.older {
             let place = branch.to_place();
