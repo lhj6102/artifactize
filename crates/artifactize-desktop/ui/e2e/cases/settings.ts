@@ -1,10 +1,12 @@
 // Settings: the modal and its tabs, each provider's setup (keys, custom providers and their
 // models, the Codex and Claude Code sign-ins), the shared review store and the sign-off grace.
 import assert from "node:assert/strict";
-import { standInBrowser } from "../fixtures/browser.ts";
+import { renameSync } from "node:fs";
+import { antigravity, AGY_MODELS, SIGN_IN_CODE, SIGN_IN_URL } from "../fixtures/antigravity.ts";
+import { browserHandoffs, standInBrowser } from "../fixtures/browser.ts";
 import { claudeCode } from "../fixtures/claude.ts";
 import { check } from "../fixtures/declarations.ts";
-import { artifactizeAsync, createEmpty, createProject, createRelease, environment, signoffGrace, type Fixture } from "../fixtures/repo.ts";
+import { artifactizeAsync, createEmpty, createProject, createRelease, declareRelease, environment, newFixture, signoffGrace, type Fixture } from "../fixtures/repo.ts";
 import { appendText, nativePath, readText, serveLoopbackHttp, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -39,7 +41,7 @@ export const scenarios: Scenario[] = [
       let shown = await app.settings.open();
       shown = await app.settings.until((each) => each.providers.length > 1, "the providers listed");
       assert.deepEqual(shown.tabs, [{ name: "Providers", selected: true }, { name: "Remote", selected: false }, { name: "Limits", selected: false }]);
-      assert.deepEqual(shown.providers.map((provider) => provider.name), ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "Custom provider"]);
+      assert.deepEqual(shown.providers.map((provider) => provider.name), ["Codex", "Claude Agent", "Antigravity", "OpenAI", "Anthropic", "Gemini", "Custom provider"]);
       shown = await app.settings.tab("Limits");
       assert.match(shown.text, /Sign-off idle grace/);
       await app.settings.tab("Providers");
@@ -140,7 +142,7 @@ export const scenarios: Scenario[] = [
       await app.settings.button("Sign in with Codex");
       await app.settings.factUntil("codex-status", (text) => text === "sign-in in progress", "the sign-in in progress");
       await app.settings.button("Cancel sign-in");
-      await app.settings.factUntil("codex-status", (text) => /Not signed in/.test(text), "the sign-in cancelled");
+      await app.settings.factUntil("codex-status", (text) => /Codex sign-in was cancelled/.test(text), "the sign-in cancelled");
       // The browser cannot return: Finish by hand takes the redirect URL.
       await app.settings.button("Sign in with Codex");
       await app.settings.button("Finish by hand");
@@ -178,6 +180,58 @@ export const scenarios: Scenario[] = [
       writeText(signedIn, "claude.ai");
       await app.settings.button("Check again");
       await app.settings.factUntil("claude-agent-status", (text) => text === "Signed in · claude.ai · max", "Check again shows it signed in");
+    },
+  }),
+
+  scenario({
+    id: "settings-antigravity",
+    title: "Antigravity checks its CLI installation, cancels and finishes sign-in by hand, lists the Google account's models in Settings and Chat, and signs out",
+    journeys: ["J-SET-ANTIGRAVITY"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["--repo", fixture.repo], ...antigravity(fixture, standInBrowser(fixture, environment(fixture))) };
+    },
+    run: async (app, { fixture, data: { staged, installed, version } }) => {
+      const status = (ok: (text: string) => boolean, what: string) => app.settings.factUntil("antigravity-status", ok, what);
+      await app.settings.open();
+      const shown = await app.settings.provider("Antigravity");
+      assert.match(shown.text, /Login kept by Antigravity CLI.*Serves Chat only/);
+      await status((text) => text === "agy not found", "Antigravity CLI not installed");
+      renameSync(staged, installed);
+      await app.settings.button("Check again");
+      await status((text) => /1\.5\.0.*too old.*1\.5\.1/.test(text), "the installed and required CLI versions");
+      writeText(version, "not-a-version");
+      await app.settings.button("Check again");
+      await status((text) => /Cannot read the Antigravity CLI version/.test(text), "the CLI's failed version probe");
+      writeText(version, "1.5.1");
+      await app.settings.button("Check again");
+      await status((text) => text === "Not signed in", "Antigravity CLI signed out");
+      await app.settings.button("Sign in with Antigravity");
+      await status((text) => text === "sign-in in progress", "the sign-in in progress");
+      await app.settings.button("Finish by hand");
+      assert.equal(await app.settings.shownAddress(), SIGN_IN_URL);
+      await app.eventually(() => browserHandoffs(fixture).includes(SIGN_IN_URL), "the fixture browser got the CLI's sign-in URL");
+      await app.settings.button("Cancel sign-in");
+      await status((text) => /sign-in was cancelled/.test(text), "the sign-in was cancelled");
+      await app.settings.button("Check again");
+      await status((text) => text === "Not signed in", "the CLI stayed signed out after cancellation");
+      await app.settings.button("Sign in with Antigravity");
+      await app.settings.button("Finish by hand");
+      assert.equal(await app.settings.shownAddress(), SIGN_IN_URL);
+      await app.settings.enterCode(SIGN_IN_CODE);
+      await app.settings.button("Finish sign-in");
+      await status((text) => text === "Signed in with Google", "Antigravity CLI signed in with Google");
+      await app.settings.button("List models");
+      const models = await app.settings.modelsUntil((list) => list.length === AGY_MODELS.length, "the CLI's account models");
+      assert.deepEqual(models, AGY_MODELS.map(({ name, value }) => `${name} · ${value}`));
+      await app.settings.close("Close");
+      await app.mode("Chat");
+      await app.chat.create();
+      await app.chat.model(AGY_MODELS[1].name);
+      await app.settings.open();
+      await app.settings.provider("Antigravity");
+      await app.settings.button("Sign out of Antigravity");
+      await status((text) => text === "Not signed in", "Antigravity CLI signed out again");
     },
   }),
 
@@ -233,22 +287,30 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "settings-grace",
-    title: "the Limits tab's sign-off idle grace holds the grace in force, and Save, usable once the field holds another value, changes it as the CLI reads it",
+    title: "Save changes the grace in force, and a new Run ends YELLOW with an unclaimed sign-off after the saved grace",
     journeys: ["J-SET-SIGNOFF-GRACE"],
     prepare: async (own) => {
-      const fixture = createEmpty(own);
-      return { fixture, data: null };
+      const fixture = newFixture(own);
+      declareRelease(fixture);
+      return { fixture, args: ["--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
       await app.settings.open();
       await app.settings.tab("Limits");
       assert.equal(await app.settings.value("grace-seconds"), "120", "the grace in force");
       assert.equal(await app.settings.usable("Save"), false, "Save waits for another value");
-      await app.settings.enter("grace-seconds", "45");
+      await app.settings.enter("grace-seconds", "1");
       await app.settings.button("Save");
-      await app.eventually(() => signoffGrace(fixture) === 45, "the CLI reads the new grace");
+      await app.eventually(() => signoffGrace(fixture) === 1, "the CLI reads the new grace");
       // Saved, the field holds the grace in force and Save waits for another value again.
-      await app.until(async () => !(await app.settings.usable("Save")) && (await app.settings.value("grace-seconds")) === "45", "the window shows the grace saved");
+      await app.until(async () => !(await app.settings.usable("Save")) && (await app.settings.value("grace-seconds")) === "1", "the window shows the grace saved");
+      await app.settings.close("Close");
+      const started = await artifactizeAsync(fixture, ["verify", "--all", "--json"]);
+      assert.equal(started.status, 0, started.stderr);
+      const { run } = JSON.parse(started.stdout) as { run: string };
+      await app.pane.choose("repo  master", run);
+      await app.graph.titled(run);
+      await app.until(async () => (await app.graph.headline()).includes("YELLOW"), "the new Run ends YELLOW within the short grace, not the default 120 seconds");
     },
   }),
 ];

@@ -2,7 +2,7 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
-import { CHAT_MODEL, installChatProvider } from "../fixtures/chat.ts";
+import { CHAT_MODEL, GRAPH_ANSWER, GRAPH_PROMPT, installChatProvider } from "../fixtures/chat.ts";
 import { REVIEW_FINDING, REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
 import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -274,6 +274,12 @@ export const scenarios: Scenario[] = [
       await app.graph.node("a:quick", (node) => /^quick: (would run|waiting)/.test(node.label), "quick too");
       // Every Artifact checked, the scan still ends after its last one: the header then says when.
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
+      await app.chat.model(CHAT_MODEL);
+      await app.chat.send(GRAPH_PROMPT, false);
+      await app.chat.viewShown("Graph");
+      await app.graph.node("a:slow");
+      await app.chat.show("Conversation");
+      await app.chat.says(GRAPH_ANSWER);
     },
   }),
 
@@ -310,6 +316,12 @@ export const scenarios: Scenario[] = [
       await app.graph.node("a:quick", (node) => node.label === "quick: would run (1 eval)", "quick, changed since the Run, would run again");
       // Every Artifact checked, the scan still ends after its last one: the header then says when.
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
+      await app.chat.model(CHAT_MODEL);
+      await app.chat.send(GRAPH_PROMPT, false);
+      await app.chat.viewShown("Graph");
+      await app.graph.node("a:slow");
+      await app.chat.show("Conversation");
+      await app.chat.says(GRAPH_ANSWER);
     },
   }),
 

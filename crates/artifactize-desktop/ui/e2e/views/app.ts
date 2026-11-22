@@ -58,6 +58,14 @@ export class App {
     await holds(this.browser, async () => (await button.getAttribute("aria-label")) === (count ? `Review, ${count} waiting` : "Review"), `${count} Human reviews waiting`);
   }
 
+  /** The shared bar's top, once it spans the bottom edge of the visible viewport. */
+  async bottomBar(): Promise<number> {
+    return (await until(this.browser, () => this.browser.execute(() => {
+      const box = document.querySelector('footer[aria-label="Bottom bar"]')?.getBoundingClientRect();
+      return box && Math.abs(box.bottom - innerHeight) < 1 && Math.abs(box.width - innerWidth) < 1 ? box.top : null;
+    }), (top) => top !== null && top > 0, "the shared bar spans the window's bottom edge"))!;
+  }
+
   /** The window's text. */
   text(): Promise<string> {
     return this.browser.execute(() => document.body.innerText);

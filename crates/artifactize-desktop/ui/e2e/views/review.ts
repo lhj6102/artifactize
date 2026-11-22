@@ -1,6 +1,7 @@
 // A Human review as its reviewer reads it, in the main area or in a Detail: its stage, its
 // instruction, its tools and their Tool log, its result form and its Debug facts; each action
 // waits for what it shows.
+import { clickRowGutter } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { nativeInput } from "../input.ts";
 import { chooseOption, holds, until } from "./wait.ts";
@@ -103,10 +104,11 @@ export class Review {
     await fill(this.browser, 'input[aria-label="Filter the reviews"]', query);
   }
 
-  async openListed(id: string): Promise<void> {
+  async openListed(id: string, gutter = false): Promise<void> {
     const row = this.browser.$(`[aria-label="Human reviews"] [data-key=${JSON.stringify(id)}]`);
     await row.waitForDisplayed();
-    await row.click();
+    if (gutter) await clickRowGutter(this.browser, await row.getElement());
+    else await row.click();
     await holds(this.browser, async () => (await row.getAttribute("aria-selected")) === "true", `${id} selected in Review`);
   }
 

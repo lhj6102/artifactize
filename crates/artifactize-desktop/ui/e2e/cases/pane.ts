@@ -9,7 +9,7 @@ export const scenarios: Scenario[] = [
   scenario({
     id: "pane-toggle-resize",
     title: "the Pane switch hides the pane and its divider, the main area taking the window's width with its view, and shows it again as it was; dragging the divider and the Detail's edge resizes them, kept when shown again",
-    journeys: ["J-PANE-TOGGLE", "J-RESIZE"],
+    journeys: ["J-PANE-TOGGLE", "J-RESIZE", "J-PANE-ROWS"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       await addRepository(fixture, "other");
@@ -39,8 +39,12 @@ export const scenarios: Scenario[] = [
       assert.equal((await app.pane.search()).query, "sort:name", "its search as it was");
       assert.deepEqual(await held(), before, "its selection and expanded branches as they were");
       // The split stays as dragged whatever the main area shows.
-      const other = await app.pane.selectBranch("other  master");
+      const other = await app.pane.selectBranch("other  master", true);
       assert.notEqual(other.entries[0].id, run, "another branch's Run");
+      await app.graph.titled(other.entries[0].id);
+      await app.pane.choose("repo  master", run, true);
+      await app.graph.titled(run);
+      await app.pane.choose("other  master", other.entries[0].id);
       await app.graph.titled(other.entries[0].id);
       assert.ok(Math.abs((await app.pane.shown()).width - width) <= 2, "the split stays as dragged");
       // The Detail's left edge sets its width, kept when it opens again.

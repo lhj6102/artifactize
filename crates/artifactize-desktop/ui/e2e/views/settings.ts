@@ -101,6 +101,10 @@ export class Settings {
     await fill(this.browser, `${SETTINGS} #${id}`, text);
   }
 
+  async enterCode(text: string): Promise<void> {
+    await fill(this.browser, `${SETTINGS} input[aria-label="Code"]`, text);
+  }
+
   /** Choose `option` of the choice field `id`. */
   async select(id: string, option: string): Promise<void> {
     await chooseOption(this.browser, `${SETTINGS} #${id}`, option);

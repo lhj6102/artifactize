@@ -1,4 +1,5 @@
 // Chat through the same visible controls a person uses.
+import { clickRowGutter, scrollViewport } from "../input.ts";
 import { fill } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
@@ -75,21 +76,46 @@ export class Chat {
     await holds(this.browser, async () => (await this.browser.$(`${MAIN} button[aria-haspopup="menu"]`).getText()) === name, `${name} selected`);
   }
 
-  async openSaved(title: string): Promise<void> {
+  async openSaved(title: string, gutter = false): Promise<void> {
     const saved = this.browser.$('[aria-label="Chats"]').$(`button.session*=${title}`);
     await saved.waitForDisplayed();
-    await saved.click();
+    if (gutter) await clickRowGutter(this.browser, await saved.getElement());
+    else await saved.click();
     await holds(this.browser, async () => (await saved.getAttribute("aria-current")) === "true", `the saved session ${title} is selected`);
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, conversation = true): Promise<void> {
     await fill(this.browser, `${MAIN} textarea[aria-label="Message"]`, text);
     await this.browser.$(`${MAIN} button[aria-label="Send (Enter)"]`).click();
-    await this.says(text);
+    if (conversation) await this.says(text);
   }
 
   async says(text: string): Promise<void> {
     await holds(this.browser, async () => (await this.browser.$(LOG).getText()).includes(text), `Chat shows ${text}`);
+  }
+
+  reading(run: string): Promise<{ top: number; atEnd: boolean; reference: boolean }> {
+    return this.browser.execute((selector, id) => {
+      const log = document.querySelector<HTMLElement>(selector);
+      if (!log) return { top: -1, atEnd: false, reference: false };
+      const frame = log.getBoundingClientRect();
+      const card = log.querySelector(`[data-run=${JSON.stringify(id)}]`)?.getBoundingClientRect();
+      return { top: log.scrollTop, atEnd: log.scrollHeight - log.clientHeight - log.scrollTop <= 2,
+        reference: !!card && frame.height > 0 && card.top >= frame.top && card.bottom <= frame.bottom };
+    }, `${MAIN} ${LOG}`, run);
+  }
+
+  async scrollUp(run: string): Promise<void> {
+    const before = await this.reading(run);
+    await scrollViewport(this.browser, await this.browser.$(`${MAIN} ${LOG}`).getElement(), -10000);
+    await holds(this.browser, async () => (await this.reading(run)).top < before.top && !(await this.reading(run)).atEnd, "the conversation is scrolled up");
+  }
+
+  async scrollToEnd(run: string): Promise<void> {
+    const button = this.browser.$(MAIN).$("button=Scroll to end");
+    await button.waitForDisplayed({ timeoutMsg: "Scroll to end shows while reading an earlier part of the conversation" });
+    await button.click();
+    await holds(this.browser, async () => (await this.reading(run)).atEnd && !(await button.isDisplayed()), "the conversation is back at its end and follows again");
   }
 
   async runCard(): Promise<string> {

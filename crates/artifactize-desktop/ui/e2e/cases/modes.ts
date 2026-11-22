@@ -1,7 +1,8 @@
 // Mode references as a person follows them across Verify, Review and Chat.
 import assert from "node:assert/strict";
-import { CHAT_ANSWER, CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
+import { CHAT_ANSWER, CHAT_GATE, CHAT_MODEL, NEXT_DELTA, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
 import { artifactize, createRelease, request } from "../fixtures/repo.ts";
+import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { windows } from "../views/viewers.ts";
 
@@ -9,7 +10,7 @@ export const scenarios: Scenario[] = [
   scenario<{ id: string; runId: string }>({
     id: "review-reference",
     title: "Claim from Verify; open the claimed review outside the default filter, keep its draft on release and restart, submit it and go back to its Run and Artifact",
-    journeys: ["J-DETAIL-REVIEW", "J-REVIEW-REF", "J-REVIEW-BACK", "J-HUMAN-DRAFT"],
+    journeys: ["J-DETAIL-REVIEW", "J-REVIEW-REF", "J-REVIEW-BACK", "J-HUMAN-DRAFT", "J-PANE-ROWS"],
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
       const { id, runId } = request(fixture);
@@ -42,7 +43,7 @@ export const scenarios: Scenario[] = [
     },
     restarted: async (app, { fixture, data: { id, runId } }) => {
       await app.mode("Review");
-      await app.review.openListed(id);
+      await app.review.openListed(id, true);
       await app.review.claim();
       await app.review.until((shown) => shown.verdict === "RED", "Review automatically opens the saved RED verdict after restart");
       assert.equal(await app.review.value("reason"), "Check the linked notes again");
@@ -66,15 +67,19 @@ export const scenarios: Scenario[] = [
   scenario({
     id: "chat-verify-stop",
     title: "New Chat uses a listed fixture model, reads and verifies, opens the Run and returns by the origin chip, then stops an in-flight turn",
-    journeys: ["J-BAR", "J-MODES", "J-CHAT", "J-CHAT-NEW", "J-CHAT-MODEL", "J-CHAT-SEND", "J-CHAT-RUN", "J-CHAT-STOP", "J-RUN-ORIGIN"],
+    journeys: ["J-BAR", "J-MODES", "J-CHAT", "J-CHAT-NEW", "J-CHAT-MODEL", "J-CHAT-SEND", "J-CHAT-RUN", "J-CHAT-STOP", "J-RUN-ORIGIN", "J-CHAT-READ", "J-PANE-ROWS"],
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
       await installChatProvider(owned, fixture);
       return { fixture, args: ["--repo", fixture.repo], data: { firstRun: request(fixture).runId } };
     },
-    run: async (app, { data: { firstRun } }) => {
+    run: async (app, { fixture, data: { firstRun } }) => {
       await app.graph.titled(firstRun);
+      const bar = await app.bottomBar();
+      await app.mode("Review");
+      assert.equal(await app.bottomBar(), bar, "Review keeps the shared bar in place");
       await app.mode("Chat");
+      assert.equal(await app.bottomBar(), bar, "Chat keeps the shared bar in place");
       // The branch has no session yet: it starts on the first model listed, not the one chosen
       // next, which the fixture provider lists second.
       const starting = await app.chat.create();
@@ -88,6 +93,7 @@ export const scenarios: Scenario[] = [
       assert.notEqual(run, firstRun);
       await app.chat.says(CHAT_ANSWER);
       await app.chat.runStatus(run, "GREEN");
+      await app.until(async () => { const where = await app.chat.reading(run); return where.atEnd && !where.reference; }, "the completed turn follows its long answer beyond the Run reference");
       await app.mode("Verify");
       await app.graph.titled(firstRun);
       await app.mode("Chat");
@@ -101,17 +107,26 @@ export const scenarios: Scenario[] = [
       await app.mode("Verify");
       await app.graph.titled(run);
       await app.graph.openOrigin(WORK_PROMPT);
-      await app.chat.says(CHAT_ANSWER);
+      await app.until(async () => { const where = await app.chat.reading(run); return where.reference && !where.atEnd; }, "the origin opens at the Run reference, not the conversation's end");
+      await app.chat.scrollToEnd(run);
       await app.chat.send(STOP_PROMPT);
       await app.chat.says(PARTIAL_ANSWER);
       await app.chat.working();
+      await app.chat.scrollUp(run);
+      const reading = await app.chat.reading(run);
+      writeText(nativePath(fixture.root, CHAT_GATE), "continue streaming");
+      await app.chat.says(NEXT_DELTA);
+      const streamed = await app.chat.reading(run);
+      assert.equal(streamed.top, reading.top, "a new streamed line does not move what is being read");
+      assert.equal(streamed.atEnd, false);
+      await app.chat.scrollToEnd(run);
       await app.chat.stop();
       await app.chat.send(CONTINUE_PROMPT);
       await app.chat.says(CONTINUE_ANSWER);
     },
     restarted: async (app) => {
       await app.mode("Chat");
-      await app.chat.openSaved(WORK_PROMPT);
+      await app.chat.openSaved(WORK_PROMPT, true);
       await app.chat.says(CONTINUE_ANSWER);
     },
   }),

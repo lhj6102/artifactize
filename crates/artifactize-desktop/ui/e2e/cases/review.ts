@@ -21,7 +21,7 @@ async function slowProcess(app: App, pids: NativePath, run: number): Promise<num
 export const scenarios: Scenario[] = [
   scenario({
     id: "human-claim",
-    title: "a waiting review opened from its Artifact's Detail reads instruction, Tools, Tool log, Result and Debug; another reviewer's claim shows as taken, and Claim to review and Release claim claim and release it, the draft kept",
+    title: "a waiting review opened from its Artifact's Detail reads instruction, Tools, Result and Debug without an empty Tool log; another reviewer's claim shows as taken, and Claim to review and Release claim claim and release it, the draft kept",
     journeys: ["J-HUMAN-CLAIM", "J-HUMAN-LAYOUT"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -32,7 +32,7 @@ export const scenarios: Scenario[] = [
       await app.graph.open("a:release", "Artifact release");
       await app.detail.openEval("release/signoff");
       const shown = await review.until((each) => each.stage === "CLAIM", "the review opens at its claim stage");
-      assert.deepEqual(shown.sections, ["Instruction", "Tools", "Tool log", "Result", "Debug"], "one order");
+      assert.deepEqual(shown.sections, ["Instruction", "Tools", "Result", "Debug"], "one order, without an empty Tool log");
       assert.equal(await review.instruction(), "Read the release notes and approve them.");
       assert.match(await review.debugState(), new RegExp(`^Request ${id} · DEFERRED · unclaimed`), "its facts under Debug");
       // Another reviewer's claim shows as taken, the review read-only.

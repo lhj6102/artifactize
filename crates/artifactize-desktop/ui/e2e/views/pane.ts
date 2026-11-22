@@ -1,7 +1,7 @@
 // The left pane as a person reads it: the search field, the branches with their timelines, and
 // the waiting reviews; each action waits for what it shows.
 import { afterRender, press, typeText } from "../keys.ts";
-import { clickAt, visibleCenter } from "../input.ts";
+import { clickAt, clickRowGutter, visibleCenter } from "../input.ts";
 import { holds, until } from "./wait.ts";
 
 /** A timeline entry: the Run it shows, its status and age as they
@@ -65,10 +65,12 @@ export class Pane {
     return `[aria-label="Branches"] > [role="treeitem"]:nth-child(${at + 1})`;
   }
 
-  /** Click the branch's name: it is selected and expanded. */
-  async selectBranch(name: string): Promise<Branch> {
+  /** Click the branch row: it is selected and expanded. */
+  async selectBranch(name: string, gutter = false): Promise<Branch> {
     await this.branch(name);
-    await this.browser.$(`${await this.row(name)} button.name`).click();
+    const row = this.browser.$(`${await this.row(name)} button.name`);
+    if (gutter) await clickRowGutter(this.browser, await row.getElement());
+    else await row.click();
     return this.branch(name, (entry) => entry.selected && entry.expanded, `${name} selected and expanded`);
   }
 
@@ -88,10 +90,12 @@ export class Pane {
 
   /** Click the timeline entry `id` (a Run's ID) of the branch, expanding it first:
    * it is the one shown. */
-  async choose(name: string, id: string): Promise<void> {
+  async choose(name: string, id: string, gutter = false): Promise<void> {
     if (!(await this.branch(name)).expanded) await this.toggle(name);
     await this.branch(name, (entry) => entry.entries.some((chip) => chip.id === id), `${name} lists ${id}`);
-    await this.browser.$(`${await this.row(name)} button[data-chip=${JSON.stringify(id)}]`).click();
+    const row = this.browser.$(`${await this.row(name)} button[data-chip=${JSON.stringify(id)}]`);
+    if (gutter) await clickRowGutter(this.browser, await row.getElement());
+    else await row.click();
     await this.branch(name, (entry) => entry.entries.some((chip) => chip.id === id && chip.shown), `${name}'s ${id} shown`);
   }
 
