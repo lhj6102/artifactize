@@ -198,10 +198,11 @@ pub async fn viewer_window(
             {
                 return Err(Failure::Action(reason));
             }
-            let (_, saved) = artifactize_core::store::run_checkout(state, &view.request.run_id)
-                .await
-                .map_err(Failure::Read)?;
-            if prepared.checkout() != &saved {
+            let (worktree, saved) =
+                artifactize_core::store::viewer_checkout(state, &view.request.run_id)
+                    .await
+                    .map_err(Failure::Read)?;
+            if prepared.workspace() != worktree || prepared.checkout() != &saved {
                 return Err(Failure::Action(
                     "Check out the review's branch to open its Artifact Viewer.".into(),
                 ));

@@ -1,6 +1,76 @@
 use super::*;
 
 #[tokio::test]
+async fn moving_a_branch_prefers_a_usable_session_but_keeps_stranded_history_readable() {
+    let root = crate::test_os::tempdir();
+    let worktree = root.path().join("current");
+    let state = root.path().join("state");
+    std::fs::create_dir(&worktree).unwrap();
+    let worktree = crate::test_os::canonical(&worktree);
+    crate::test_os::git(&worktree, &["init", "--quiet", "--initial-branch=main"]);
+    let identity = repository::identify(&worktree);
+    let make = |id: &str, path: PathBuf, repository, stamp: &str| Session {
+        id: id.parse().unwrap(),
+        title: id.into(),
+        worktree: path,
+        repository: Some(repository),
+        selection: Model {
+            backend: "codex".parse().unwrap(),
+            model: "fixture-model".parse().unwrap(),
+            effort: None,
+        },
+        view: SessionView::Graph,
+        created_at: stamp.parse().unwrap(),
+        updated_at: stamp.parse().unwrap(),
+        activity: None,
+        running: false,
+        unavailable: None,
+    };
+    let usable = make(
+        "chat-live",
+        worktree.clone(),
+        identity.clone(),
+        "2026-11-01T10:00:00Z",
+    );
+    let old_path = worktree.with_file_name("moved-away");
+    let stranded = make(
+        "chat-stranded",
+        old_path.clone(),
+        repository::Identity {
+            worktree_path: Some(old_path),
+            ..identity
+        },
+        "2026-11-02T10:00:00Z",
+    );
+    let branch = usable.branch();
+    let receipts = store::OwnedReceipts::open(&state, &worktree).await.unwrap();
+    receipts.create_chat(&usable).await.unwrap();
+    receipts.create_chat(&stranded).await.unwrap();
+    drop(receipts);
+    let chat = Chat::discover(state);
+    let preferred = chat.latest_for_navigation(&branch).await.unwrap().unwrap();
+    assert_eq!(preferred.id, usable.id);
+    assert!(preferred.unavailable.is_none());
+    crate::test_os::git(&worktree, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+    let fallback = chat.latest_for_navigation(&branch).await.unwrap().unwrap();
+    assert_eq!(fallback.id, stranded.id);
+    assert_eq!(
+        fallback.unavailable.as_deref(),
+        Some("This Chat's worktree no longer exists.")
+    );
+    assert_eq!(
+        chat.open(&fallback.id).await.unwrap().session.title,
+        stranded.title
+    );
+    assert!(
+        chat.latest_for_navigation(&Place::Folder(root.path().join("never-used")))
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn catalog_search_matches_all_words_across_labels_without_reordering() {
     let root = crate::test_os::tempdir();
     let state = root.path().join("state");

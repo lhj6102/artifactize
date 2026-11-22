@@ -489,6 +489,26 @@ impl Chat {
         crate::task::blocking(move || sessions.next().map(Session::with_checkout)).await
     }
 
+    /// Prefer the newest usable session for branch navigation. If the checkout moved and none
+    /// can work on it, keep the newest saved conversation reachable with its diagnostic.
+    pub async fn latest_for_navigation(&self, branch: &Place) -> Result<Option<Session>, String> {
+        let sessions = store::chat::for_branch(&self.state, branch).await?;
+        crate::task::blocking(move || {
+            let mut fallback = None;
+            for session in sessions {
+                let session = session.with_checkout();
+                if session.unavailable.is_none() {
+                    return Some(session);
+                }
+                if fallback.is_none() {
+                    fallback = Some(session);
+                }
+            }
+            fallback
+        })
+        .await
+    }
+
     /// The latest session whose exact checkout can be worked on now.
     pub async fn latest_available_for_branch(
         &self,

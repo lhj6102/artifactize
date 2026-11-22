@@ -87,6 +87,23 @@ pub async fn run_checkout(
         .ok_or_else(|| "Run's checkout was not found.".into())
 }
 
+/// Resolve the Run's recorded workspace. Older records did not retain Git metadata; in that
+/// case use the live identity of the exact recorded directory, never a different worktree.
+pub async fn viewer_checkout(
+    state: &Path,
+    run: &crate::types::RunId,
+) -> Result<(PathBuf, Identity), String> {
+    let (worktree, saved) = run_checkout(state, run).await?;
+    if saved != Identity::default() {
+        return Ok((worktree, saved));
+    }
+    crate::task::blocking(move || {
+        let identity = crate::repository::identify(&worktree);
+        (worktree, identity)
+    })
+    .await
+}
+
 /// Only the saved display identities of the named Runs. No Run states, attention counts or
 /// definitions are returned to Review, which already has the request page.
 pub(crate) async fn places(

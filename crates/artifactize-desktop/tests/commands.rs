@@ -1104,6 +1104,64 @@ payload.instruction = "Read the page separately."
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_legacy_git_run_can_prepare_and_open_its_scoped_viewer() {
+    let fixture = fixture_with(&[(
+        "page",
+        r#"name = "page"
+type = "files"
+[evals.approve]
+title = "Review the page"
+profile = { kind = "human" }
+payload.instruction = "Read the page."
+"#,
+    )]);
+    let request = saved(&fixture, "page/approve").request;
+    tauri::async_runtime::block_on(async {
+        let mut run = artifactize_core::store::read_run(&fixture.state, &request.run_id)
+            .await
+            .unwrap()
+            .run;
+        assert!(run.repository.common_dir.is_some());
+        run.repository = Default::default();
+        let store = artifactize_core::store::OwnedReceipts::open(&fixture.state, &fixture.repo)
+            .await
+            .unwrap();
+        store.save_run(&run).await.unwrap();
+    });
+    let window = window(&fixture, Mode::Review);
+    let id = &request.id;
+    invoke(&window, "human_claim", json!({"id":id,"job":1})).unwrap();
+    invoke(&window, "active_review_set", json!({"request":id})).unwrap();
+    let launch = invoke(
+        &window,
+        "human_run",
+        json!({"id":id,"tool":"view_page","job":2}),
+    )
+    .unwrap();
+    let viewer = &launch["viewer"];
+    let context = invoke(
+        &window,
+        "viewer_context",
+        json!({"session":viewer["session"]}),
+    )
+    .unwrap();
+    assert_eq!(context["petMatch"], true);
+    // These command fixtures have no window actions attached. This error is after the real
+    // checkout and scope checks: older Git records reach the same native opener as new ones.
+    let native = invoke(
+        &window,
+        "viewer_window",
+        json!({"session":viewer["session"],"title":viewer["title"]}),
+    )
+    .unwrap_err();
+    assert_eq!(
+        native,
+        json!({"kind":"action","message":"The app has no windows yet."})
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_new_branch_target_matches_the_pet_instead_of_the_old_viewer() {
     let root = os::tempdir();
     let repo = root.path().join("repo");

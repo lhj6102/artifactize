@@ -584,7 +584,7 @@ async fn read_active(app: &App, shown: Option<RequestId>) -> Result<Option<Activ
         .and_then(|artifacts| artifacts.get(artifact))
         .and_then(|saved| saved.path.value());
     let address = if let Some(target) = target {
-        let (worktree, checkout) = store::run_checkout(state, &owner.request.run_id)
+        let (worktree, checkout) = store::viewer_checkout(state, &owner.request.run_id)
             .await
             .map_err(Failure::Read)?;
         Some(Address {

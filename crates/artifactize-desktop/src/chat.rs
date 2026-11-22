@@ -408,7 +408,7 @@ pub async fn chat_list(
         .map_err(Failure::Read)
 }
 
-/// Find the newest saved Chat session for the chosen branch, independent of Verify Runs.
+/// Navigate to the newest usable Chat of a branch, or its newest saved Chat if none can work.
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_latest_for_branch(
@@ -416,7 +416,7 @@ pub async fn chat_latest_for_branch(
     branch: BranchKey,
 ) -> Result<Option<ChatSession>, Failure> {
     app.chat
-        .latest_for_branch(&branch.to_place())
+        .latest_for_navigation(&branch.to_place())
         .await
         .map(|session| session.map(Into::into))
         .map_err(Failure::Read)
