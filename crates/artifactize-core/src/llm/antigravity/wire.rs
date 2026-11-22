@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{agent::error::Failure, config::ModelId, llm::stdio_mcp::RpcId};
+use crate::llm::{models::ListedModel, stdio_mcp::RpcId};
 
 pub(super) const PROTOCOL: u32 = 1;
 /// ACP's standard authentication-required JSON-RPC error.
@@ -151,57 +151,81 @@ pub(super) enum ConfigOption {
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub(super) enum Choice {
-    Model { value: ModelId, name: String },
+    Value { value: String, name: String },
     Group { options: Vec<Choice> },
     Other(serde::de::IgnoredAny),
 }
 
 impl Choice {
-    fn models(&self, models: &mut Vec<crate::llm::models::ListedModel>) {
+    fn values(&self, values: &mut Vec<(String, String)>) {
         match self {
-            Self::Model { value, name } => {
-                if !models.iter().any(|model| model.slug == *value) {
-                    models.push(crate::llm::models::ListedModel {
-                        slug: value.clone(),
-                        display_name: name.clone(),
-                    });
+            Self::Value { value, name } => {
+                if !values.iter().any(|(listed, _)| listed == value) {
+                    values.push((value.clone(), name.clone()));
                 }
             }
-            Self::Group { options } => options.iter().for_each(|choice| choice.models(models)),
+            Self::Group { options } => options.iter().for_each(|choice| choice.values(values)),
             Self::Other(_) => {}
         }
     }
 }
 
-impl Session {
-    pub fn model_option(
-        &self,
-    ) -> Result<(&str, &str, Vec<crate::llm::models::ListedModel>), Failure> {
-        let option = self
-            .config_options
+pub(super) struct Selection<'a> {
+    pub id: &'a str,
+    pub current: &'a str,
+    choices: &'a [Choice],
+}
+
+impl Selection<'_> {
+    pub fn values(&self) -> Vec<(String, String)> {
+        let mut values = Vec::new();
+        self.choices
             .iter()
-            .flatten()
-            .find_map(|option| match option {
-                ConfigOption::Select {
-                    id,
-                    category,
-                    current_value,
-                    options,
-                } if category.as_deref() == Some("model") || id == "model" => {
-                    Some((id, current_value, options))
-                }
-                _ => None,
-            });
-        let Some((id, current, choices)) = option else {
-            return Err(super::Problem::Failed(
-                "Antigravity did not advertise an ACP model option.".into(),
-            )
-            .into());
-        };
-        let mut models = Vec::new();
-        choices.iter().for_each(|choice| choice.models(&mut models));
-        Ok((id, current, models))
+            .for_each(|choice| choice.values(&mut values));
+        values
     }
+
+    pub fn models(&self) -> Vec<ListedModel> {
+        self.values()
+            .into_iter()
+            .filter_map(|(value, name)| Some(ListedModel::new(value.parse().ok()?, name)))
+            .collect()
+    }
+}
+
+pub(super) fn select(
+    config: &[ConfigOption],
+    matches: impl Fn(&str, Option<&str>) -> bool,
+) -> Option<Selection<'_>> {
+    config.iter().find_map(|option| match option {
+        ConfigOption::Select {
+            id,
+            category,
+            current_value,
+            options,
+        } if matches(id, category.as_deref()) => Some(Selection {
+            id,
+            current: current_value,
+            choices: options,
+        }),
+        _ => None,
+    })
+}
+
+pub(super) fn model_option(config: &[ConfigOption]) -> Result<Selection<'_>, super::Problem> {
+    select(config, |id, category| {
+        category == Some("model") || id == "model"
+    })
+    .ok_or_else(|| {
+        super::Problem::Failed("Antigravity did not advertise an ACP model option.".into())
+    })
+}
+
+pub(super) fn thought_option(config: &[ConfigOption]) -> Option<Selection<'_>> {
+    select(config, |id, category| {
+        category == Some("thought_level")
+            || matches!(id, "thought_level" | "thinking" | "thinking_level")
+    })
 }
 
 #[derive(Deserialize)]

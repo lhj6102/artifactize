@@ -10,7 +10,8 @@ pub mod search;
 pub use crate::{human::Submission, tools::human::log};
 pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
 pub use draft::{
-    Draft, DraftEdit, DraftFields, FieldValue, append_draft, edit_draft, read_draft, values_of,
+    Draft, DraftEdit, DraftFields, FieldValue, Point, append_point, edit_draft, read_draft,
+    remove_point, values_of,
 };
 pub use form::{Field, Form, Input, Key, Row, Specification};
 pub use runs::Runs;

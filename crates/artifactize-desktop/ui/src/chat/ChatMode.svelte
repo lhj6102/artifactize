@@ -107,7 +107,7 @@
   }
 
   function pick(backend: string, slug: string) {
-    if (session) c.chosen[session.id] = { backend, model: slug };
+    if (session) c.chosen[session.id] = { backend, model: slug, effort: null };
     c.picking = false;
   }
 

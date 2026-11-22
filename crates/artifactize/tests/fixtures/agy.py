@@ -28,14 +28,22 @@ def answer(request, payload):
     write({"id": request["id"], "result": payload})
 
 
-def config(current):
-    return [{"id": "account-model", "category": "model", "type": "select",
+def config(current, thought):
+    options = [{"id": "account-model", "category": "model", "type": "select",
              "currentValue": current, "options": [
                  {"value": "first-model", "name": "First"},
                  {"group": "other", "name": "Other", "options": [
                      {"value": "chosen-model", "name": "Chosen"}
                  ]}
              ]}]
+
+    if current == "chosen-model":
+        options.append({"id": "think", "category": "thought_level", "type": "select",
+                        "currentValue": thought, "options": [
+                            {"value": "balanced", "name": "Balanced"},
+                            {"value": "deep-thinking", "name": "Deep"},
+                        ]})
+    return options
 
 
 def tool(child, request_id, method, params):
@@ -124,6 +132,7 @@ def run():
         return
     assert sys.argv[1] == "acp" and "--login" not in sys.argv
     model = "first-model"
+    thought = "balanced"
     child = None
     try:
         while (request := receive()) is not None:
@@ -152,15 +161,18 @@ def run():
                 if servers:
                     assert len(servers) == 1
                     child = open_tools(servers[0])
-                answer(request, {"sessionId": "fixture-session", "configOptions": config(model),
+                answer(request, {"sessionId": "fixture-session", "configOptions": config(model, thought),
                                  "models": {"availableModels": [{"modelId": "legacy-only", "name": "Legacy only"}]}})
             elif method == "session/set_config_option":
                 params = request["params"]
-                assert params["configId"] == "account-model"
-                model = params["value"]
-                answer(request, {"configOptions": config(model)})
+                if params["configId"] == "account-model":
+                    model = params["value"]
+                else:
+                    assert params["configId"] == "think" and model == "chosen-model", params
+                    thought = params["value"]
+                answer(request, {"configOptions": config(model, thought)})
             elif method == "session/prompt":
-                assert child is not None
+                assert child is not None and thought == "deep-thinking", thought
                 prompt(request, child, model)
             elif method == "logout":
                 MODE.write_text("signed-out", encoding="utf-8")

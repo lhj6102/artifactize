@@ -40,6 +40,8 @@ const PROMPT_BYTES: usize = 256 * 1024;
 pub struct Model {
     pub backend: Backend,
     pub model: ModelId,
+    #[serde(default)]
+    pub effort: Option<String>,
 }
 
 /// The state of the latest accepted turn.
@@ -298,6 +300,7 @@ impl Chat {
                 listing.models.into_iter().next().map(|model| Model {
                     backend: listing.backend,
                     model: model.slug,
+                    effort: model.default_effort,
                 })
             }))
     }
@@ -318,8 +321,13 @@ impl Chat {
         .await?;
         let selection = match selection {
             Some(selection) => {
-                self.check_model(worktree, &selection).await?;
-                selection
+                let previous = if selection.effort.is_none() {
+                    store::chat::latest_model(&self.state, worktree, &repository).await?
+                } else {
+                    None
+                };
+                self.resolve_model(worktree, selection, previous.as_ref())
+                    .await?
             }
             None => self
                 .starting_model(worktree, &repository)
@@ -471,12 +479,13 @@ impl Chat {
             return Err(reason);
         }
         let context = self.context(&session.worktree)?;
-        if let Some(selection) = selection.filter(|selection| *selection != session.selection) {
-            tokio::select! {
+        if let Some(selection) = selection
+            .filter(|selection| selection.effort.is_none() || *selection != session.selection)
+        {
+            session.selection = tokio::select! {
                 _ = cancel.cancelled() => return Err("Chat stopped before accepting the turn.".into()),
-                listed = self.check_model(context.repo(), &selection) => listed?,
-            }
-            session.selection = selection;
+                resolved = self.resolve_model(context.repo(), selection, Some(&session.selection)) => resolved?,
+            };
         }
         let file = path(&self.state, id);
         let owner = store::chat::Owner::current()?;
@@ -610,21 +619,44 @@ impl Chat {
         })
     }
 
-    async fn check_model(&self, worktree: &Path, selection: &Model) -> Result<(), String> {
+    async fn resolve_model(
+        &self,
+        worktree: &Path,
+        mut selection: Model,
+        previous: Option<&Model>,
+    ) -> Result<Model, String> {
         let listing =
             llm::models::list(selection.backend.clone(), Some(&self.state), Some(worktree)).await?;
-        if listing
+        let model = listing
             .models
-            .iter()
-            .any(|model| model.slug == selection.model)
-        {
-            Ok(())
+            .into_iter()
+            .find(|model| model.slug == selection.model)
+            .ok_or_else(|| {
+                format!(
+                    "{} does not list model {}.",
+                    selection.backend, selection.model
+                )
+            })?;
+        if let Some(effort) = &selection.effort {
+            if !model.efforts.contains(effort) {
+                let allowed = if model.efforts.is_empty() {
+                    "none".to_owned()
+                } else {
+                    model.efforts.join(", ")
+                };
+                return Err(format!(
+                    "{} model {} does not offer effort {effort:?}. Available efforts: {allowed}.",
+                    selection.backend, selection.model
+                ));
+            }
         } else {
-            Err(format!(
-                "{} does not list model {}.",
-                selection.backend, selection.model
-            ))
+            selection.effort = previous
+                .and_then(|previous| previous.effort.as_ref())
+                .filter(|effort| model.efforts.contains(effort))
+                .cloned()
+                .or(model.default_effort);
         }
+        Ok(selection)
     }
 
     fn claim(&self, id: &SessionId) -> Result<Active, String> {

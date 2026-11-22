@@ -15,7 +15,6 @@
   import type { Review } from "./review.svelte";
   import Tools from "./Tools.svelte";
   import ToolLog from "./ToolLog.svelte";
-  import NotesField from "./NotesField.svelte";
   import VerdictForm from "./VerdictForm.svelte";
   import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
@@ -191,7 +190,7 @@
   {/if}
 {/snippet}
 
-<!-- The Result: once claimed, the Notes, then the verdict and its form; settled, the result. -->
+<!-- The Result: once claimed, the Points, then the verdict and its form; settled, the result. -->
 {#snippet result()}
   {#if view}
     <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
@@ -204,10 +203,9 @@
         <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
         {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
       {:else if review.owned}
-        <label class="notes">
-          <span class="label">Notes</span>
-          <NotesField value={review.notes} pointed={review.pointed} oninput={(text) => review.writeNotes(text)} />
-        </label>
+        {#if review.draft?.points.length}
+          <div class="notes"><span class="label">Points</span>{#each review.draft.points as point (point)}<span>{point.text}</span>{/each}</div>
+        {/if}
         {#if review.form}
           <VerdictForm {review} form={review.form} />
         {:else}
@@ -445,7 +443,6 @@
   .result p {
     margin: 0;
   }
-  /* The review's free text, whatever the verdict: a field of three lines that grows. */
   .notes {
     display: grid;
     gap: 4px;

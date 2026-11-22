@@ -1,4 +1,4 @@
-//! A single draft holds both verdict forms and a shared free-form response.
+//! A single draft holds both verdict forms and the places a reviewer pointed at.
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use crate::{
     human,
     runtime::Verdict,
     store::{Receipts, Request},
-    types::{RequestId, ReviewerId},
+    types::{RequestId, ReviewerId, Timestamp},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,7 +32,27 @@ pub struct Draft {
     pub verdict: Option<Verdict>,
     pub green: DraftFields,
     pub red: DraftFields,
-    pub notes: String,
+    #[serde(default)]
+    pub points: Vec<Point>,
+}
+
+/// A location recorded alongside the draft, not part of the verdict's answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Point {
+    pub text: String,
+    pub source: String,
+    pub at: Timestamp,
+}
+
+impl Point {
+    pub(crate) fn earlier_notes(text: String) -> Self {
+        // Drafts used to have no timestamp. The epoch denotes an unknown original time.
+        Self {
+            text,
+            source: "Earlier notes".into(),
+            at: Timestamp::new(time::OffsetDateTime::UNIX_EPOCH).expect("epoch is sortable"),
+        }
+    }
 }
 
 /// Changes are applied to the saved draft, not a caller's potentially stale snapshot.
@@ -56,11 +76,6 @@ pub enum DraftEdit {
         name: String,
         item: u32,
     },
-    /// Rebase over Points appended since the editor read the saved text.
-    Notes {
-        previous: String,
-        text: String,
-    },
 }
 
 impl Draft {
@@ -78,7 +93,7 @@ impl Draft {
         self.form(request, verdict)?.submission()
     }
 
-    /// Notes can keep changing until settlement; a different answer must be submitted again.
+    /// Points can keep changing until settlement; a different answer must be submitted again.
     pub(crate) fn same_answer(&self, other: &Self) -> bool {
         self.verdict == other.verdict && self.green == other.green && self.red == other.red
     }
@@ -100,13 +115,6 @@ impl Draft {
     pub(crate) fn edit(&mut self, request: &Request, edit: DraftEdit) -> Result<(), String> {
         match edit {
             DraftEdit::Verdict { verdict } => self.verdict = Some(verdict),
-            DraftEdit::Notes { previous, text } => {
-                let suffix = self
-                    .notes
-                    .strip_prefix(&previous)
-                    .ok_or("Review notes changed; reload the draft before saving.")?;
-                self.notes = text + suffix;
-            }
             DraftEdit::Field {
                 verdict,
                 name,
@@ -155,13 +163,6 @@ impl Draft {
         edit(&mut form, index);
         *self.fields_mut(verdict) = values_of(&form.fields);
         Ok(())
-    }
-
-    pub(crate) fn append(&mut self, text: &str) {
-        if !self.notes.is_empty() && !self.notes.ends_with('\n') {
-            self.notes.push('\n');
-        }
-        self.notes.push_str(text);
     }
 }
 
@@ -248,22 +249,50 @@ pub async fn edit_draft(
     .await
 }
 
-/// Append a Point as its own line, preserving the existing notes and verdict fields. Only the
-/// current claimant can append; the claim check and the append are one write transaction.
-pub async fn append_draft(
+/// Record one Point. The append and claim check share a write transaction.
+pub async fn append_point(
     state: &Path,
     request: &RequestId,
     reviewer: &ReviewerId,
     text: &str,
+    source: &str,
 ) -> Result<Draft, String> {
-    if text.trim().is_empty() {
-        return Err("There is no text to append to the review draft.".into());
+    if text.trim().is_empty() || source.trim().is_empty() {
+        return Err("A review point needs text and a source.".into());
     }
     let text = text.to_owned();
+    let source = source.to_owned();
     with_receipts(state, request, async |receipts| {
         receipts
             .change_review_draft(request, reviewer, move |_, draft| {
-                draft.append(&text);
+                draft.points.push(Point {
+                    text,
+                    source,
+                    at: Timestamp::now(),
+                });
+                Ok(())
+            })
+            .await
+    })
+    .await
+}
+
+/// Remove the point the caller saw, not whichever point now occupies its old position.
+pub async fn remove_point(
+    state: &Path,
+    request: &RequestId,
+    reviewer: &ReviewerId,
+    point: Point,
+) -> Result<Draft, String> {
+    with_receipts(state, request, async |receipts| {
+        receipts
+            .change_review_draft(request, reviewer, move |_, draft| {
+                let index = draft
+                    .points
+                    .iter()
+                    .position(|saved| *saved == point)
+                    .ok_or("This point is no longer in the review draft.")?;
+                draft.points.remove(index);
                 Ok(())
             })
             .await

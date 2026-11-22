@@ -120,7 +120,9 @@ impl Session {
         review: &Review,
         text: &str,
     ) -> Result<crate::review::Draft, String> {
-        crate::review::append_draft(state, &review.id, &review.reviewer, text).await
+        let context = self.context(None);
+        let source = format!("{} · {}", context.artifact, context.title);
+        crate::review::append_point(state, &review.id, &review.reviewer, text, &source).await
     }
 
     pub fn read_text(&self, path: &InputPath) -> Result<String, String> {

@@ -184,6 +184,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     let selection = Model {
         backend: "scripted".parse().unwrap(),
         model: "scripted-model".parse().unwrap(),
+        effort: None,
     };
     let chat = Chat::new(state.clone(), cli.clone());
     let wrong = Model {
@@ -510,14 +511,22 @@ const FILE_AND_VERIFY_TOOLS: &[&str] = &[
 
 #[tokio::test]
 async fn chat_completions_anthropic_and_gemini_get_the_worktree_and_verify_tools() {
-    for api in ["openai-chat", "anthropic", "gemini"] {
+    for (api, model, pointer) in [
+        ("openai-chat", "o3-mini", "/reasoning_effort"),
+        ("anthropic", "claude-opus-4-6", "/output_config/effort"),
+        (
+            "gemini",
+            "gemini-3.1-pro-preview",
+            "/generationConfig/thinkingConfig/thinkingLevel",
+        ),
+    ] {
         let provider = FakeProvider::start(move |request| match (api, request.method.as_str()) {
-            ("openai-chat", "GET") => openai::models(&["model"]),
+            ("openai-chat", "GET") => openai::models(&[model]),
             ("openai-chat", "POST") => support::chat::text(request, "Ready.", 4, 2),
-            ("anthropic", "GET") => support::anthropic::models(&["model"]),
+            ("anthropic", "GET") => support::anthropic::models(&[model]),
             ("anthropic", "POST") => support::anthropic::text(request, "Ready.", 4, 2),
-            ("gemini", "GET") => support::gemini::models(&["model"]),
-            ("gemini", "POST") => support::gemini::text("model", "Ready.", 4, 2),
+            ("gemini", "GET") => support::gemini::models(&[model]),
+            ("gemini", "POST") => support::gemini::text(model, "Ready.", 4, 2),
             _ => unreachable!("fixture provider and HTTP method"),
         });
         let root = owned_run::Root::from(support::os::tempdir());
@@ -547,7 +556,8 @@ async fn chat_completions_anthropic_and_gemini_get_the_worktree_and_verify_tools
                 &repo,
                 Some(Model {
                     backend: "scripted".parse().unwrap(),
-                    model: "model".parse().unwrap(),
+                    model: model.parse().unwrap(),
+                    effort: Some("high".into()),
                 }),
             )
             .await
@@ -563,12 +573,17 @@ async fn chat_completions_anthropic_and_gemini_get_the_worktree_and_verify_tools
             view.turns[0].state
         );
         let requests = provider.requests();
-        let names = offered(
-            requests
-                .iter()
-                .find(|request| request.method == "POST")
-                .unwrap(),
+        let request = requests
+            .iter()
+            .find(|request| request.method == "POST")
+            .unwrap();
+        assert_eq!(
+            request.body.pointer(pointer),
+            Some(&json!("high")),
+            "{api}: {}",
+            request.body
         );
+        let names = offered(request);
         for name in FILE_AND_VERIFY_TOOLS {
             assert!(names.contains(name), "{api} did not get {name}: {names:?}");
         }
@@ -589,6 +604,7 @@ async fn codex_chat_fixture() {
     let model = Model {
         backend: "codex".parse().unwrap(),
         model: "fake-codex".parse().unwrap(),
+        effort: Some("medium".into()),
     };
     assert_eq!(
         chat.default_model(&repo).await.unwrap(),
@@ -597,14 +613,39 @@ async fn codex_chat_fixture() {
     let session = chat.create(&repo, None).await.unwrap();
     assert_eq!(session.selection, model);
     let mut changes = Subscription::new(&state).await;
-    chat.send(&session.id, "What can you do?".into(), None)
-        .await
-        .unwrap();
+    let rejected = Model {
+        effort: Some("bogus".into()),
+        ..model.clone()
+    };
+    assert!(
+        chat.send(&session.id, "Reject this effort".into(), Some(rejected))
+            .await
+            .unwrap_err()
+            .contains("does not offer effort")
+    );
+    let selection = Model {
+        effort: Some("high".into()),
+        ..model
+    };
+    chat.send(
+        &session.id,
+        "What can you do?".into(),
+        Some(selection.clone()),
+    )
+    .await
+    .unwrap();
     let view = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
     assert!(
         matches!(&view.turns[0].state, TurnState::Completed),
         "{:?}",
         view.turns[0].state
+    );
+    assert_eq!(
+        Chat::new(state, support::os::cli())
+            .default_model(&repo)
+            .await
+            .unwrap(),
+        Some(selection)
     );
     changes.close().await.unwrap();
 }
@@ -620,7 +661,7 @@ fn codex_account_transport_gets_the_worktree_and_verify_tools() {
         if request.method == "GET" {
             Reply::Json(
                 200,
-                json!({"models":[{"slug":"fake-codex","visibility":"list"}]}),
+                json!({"models":[{"slug":"fake-codex","visibility":"list","supported_reasoning_levels":[{"effort":"medium"},{"effort":"high"}],"default_reasoning_level":"medium"}]}),
             )
         } else {
             support::codex::completed(
@@ -647,15 +688,95 @@ fn codex_account_transport_gets_the_worktree_and_verify_tools() {
         String::from_utf8_lossy(&output.stderr)
     );
     let requests = provider.requests();
-    let names = offered(
-        requests
-            .iter()
-            .find(|request| request.method == "POST")
-            .unwrap(),
-    );
+    let request = requests
+        .iter()
+        .find(|request| request.method == "POST")
+        .unwrap();
+    assert_eq!(request.body["reasoning"]["effort"], "high");
+    let names = offered(request);
     for name in FILE_AND_VERIFY_TOOLS {
         assert!(names.contains(name), "Codex did not get {name}: {names:?}");
     }
+}
+
+const CLAUDE_FIXTURE: &str = "ARTIFACTIZE_CHAT_CLAUDE_FIXTURE";
+
+#[test]
+fn claude_code_lists_the_models_efforts_and_gets_the_selection_as_an_argument() {
+    let root = support::os::tempdir();
+    let script = root.path().join("claude-chat.py");
+    fs::write(&script, include_str!("fixtures/claude-chat.py")).unwrap();
+    support::os::compiled_program(
+        root.path(),
+        "claude",
+        &format!(
+            r#"
+fn main() -> std::process::ExitCode {{
+    let code = std::process::Command::new({python:?}).args(["-I", "-X", "utf8", {script:?}])
+        .args(std::env::args_os().skip(1)).status().unwrap();
+    if code.success() {{ std::process::ExitCode::SUCCESS }} else {{ std::process::ExitCode::FAILURE }}
+}}
+"#,
+            python = support::os::python_program(),
+            script = script.to_str().unwrap()
+        ),
+    );
+    let output = support::os::run_test(
+        "claude_chat_fixture",
+        &[
+            (CLAUDE_FIXTURE, "1".into()),
+            ("PATH", support::os::prepend_path(root.path())),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+async fn claude_chat_fixture() {
+    if std::env::var_os(CLAUDE_FIXTURE).is_none() {
+        return;
+    }
+    let root = owned_run::Root::from(support::os::tempdir());
+    let (repo, state) = worktree(&root);
+    let backend = "claude-agent"
+        .parse::<artifactize_core::config::Backend>()
+        .unwrap();
+    let listed = artifactize_core::llm::models::list(backend.clone(), Some(&state), Some(&repo))
+        .await
+        .unwrap();
+    assert_eq!(listed.models[0].efforts, ["high", "low"]);
+    assert_eq!(listed.models[0].default_effort.as_deref(), Some("high"));
+    assert!(listed.models[1].efforts.is_empty());
+    let chat = Chat::new(state.clone(), support::os::cli());
+    let mut selection = Model {
+        backend,
+        model: "claude-fixture".parse().unwrap(),
+        effort: Some("max".into()),
+    };
+    assert!(
+        chat.create(&repo, Some(selection.clone()))
+            .await
+            .unwrap_err()
+            .contains("does not offer effort")
+    );
+    selection.effort = Some("low".into());
+    let session = chat.create(&repo, Some(selection)).await.unwrap();
+    owned_run::subscribed(&state, async |changes| {
+        chat.send(&session.id, "Ready?".into(), None).await.unwrap();
+        let view = observe(&chat, &session.id, changes, |view| !view.running).await;
+        assert!(
+            matches!(&view.turns[0].state, TurnState::Completed),
+            "{:?}",
+            view.turns[0].state
+        );
+    })
+    .await;
+    chat.close().await;
 }
 
 const RESTART_STATE: &str = "ARTIFACTIZE_CHAT_RESTART_STATE";
@@ -737,6 +858,7 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
             Some(Model {
                 backend: "scripted".parse().unwrap(),
                 model: "restart-model".parse().unwrap(),
+                effort: None,
             }),
         )
         .await

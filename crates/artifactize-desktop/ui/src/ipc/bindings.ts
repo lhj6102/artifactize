@@ -12,6 +12,7 @@ export const commands = {
 	chatCreate: (worktree: PathKey, selection: {
 	backend: string,
 	model: string,
+	effort: string | null,
 } | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, selection })),
 	/**
 	 *  Read the starting model for a new session. The pending call is the loading state;
@@ -20,6 +21,7 @@ export const commands = {
 	chatDefaultModel: (worktree: PathKey) => typedError<{
 	backend: string,
 	model: string,
+	effort: string | null,
 } | null, Failure>(__TAURI_INVOKE("chat_default_model", { worktree })),
 	/**  List saved sessions newest first. `null` applies no worktree or query filter. */
 	chatList: (worktree: string | null, query: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree, query })),
@@ -37,6 +39,7 @@ export const commands = {
 	chatSend: (id: string, text: string, selection: {
 	backend: string,
 	model: string,
+	effort: string | null,
 } | null) => typedError<null, Failure>(__TAURI_INVOKE("chat_send", { id, text, selection })),
 	/**  Stop this process's in-flight turn; Verify Runs already accepted keep running. */
 	chatStop: (id: string) => __TAURI_INVOKE<boolean>("chat_stop", { id }),
@@ -104,11 +107,11 @@ export const commands = {
 } | null) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict, kept })),
 	/**  Read the saved response and both verdict forms. A released review retains its draft. */
 	humanDraft: (id: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft", { id })),
-	/**  Change one field, verdict or the common notes of the current reviewer's saved draft. */
+	/**  Change one field or verdict of the current reviewer's saved draft. */
 	humanDraftEdit: (id: string, change: DraftChange) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_edit", { id, change })),
-	/**  Append a line to the current reviewer's draft without submitting it. */
-	humanDraftAppend: (id: string, text: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_append", { id, text })),
-	/**  Submit the current reviewer's saved fields and notes. */
+	/**  Remove a Point from the current reviewer's draft without submitting it. */
+	humanDraftRemovePoint: (id: string, point: ReviewPoint) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_remove_point", { id, point })),
+	/**  Submit the current reviewer's saved form fields. */
 	humanDraftSubmit: (id: string, job: JobId) => typedError<Submitted_Serialize, Failure>(__TAURI_INVOKE("human_draft_submit", { id, job })),
 	/**  `draft` of request `id` with field `name` set to `value`, as the library's form takes it. */
 	humanEditField: (id: string, draft: Draft, name: string, value: FieldValue) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_field", { id, draft, name, value })),
@@ -207,7 +210,7 @@ export const commands = {
 	viewerDeclarations: (session: number) => typedError<string, Failure>(__TAURI_INVOKE("viewer_declarations", { session })),
 	viewerClose: (session: number) => __TAURI_INVOKE<void>("viewer_close", { session }),
 	/**  Append to the review that was active when Point began, never to its replacement. */
-	viewerPoint: (session: number, review: string, text: string) => typedError<string, Failure>(__TAURI_INVOKE("viewer_point", { session, review, text })),
+	viewerPoint: (session: number, review: string, text: string) => typedError<null, Failure>(__TAURI_INVOKE("viewer_point", { session, review, text })),
 	activeReviewSet: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("active_review_set", { request })),
 	/**
 	 *  Open the Artifact Viewer of viewer session `session`, titled `title`; one already showing the
@@ -473,6 +476,7 @@ export type ChatBlock = { kind: "text"; text: string } | { kind: "tool"; name: s
 export type ChatModel = {
 	backend: string,
 	model: string,
+	effort: string | null,
 };
 
 export type ChatOutcome = "running" | "completed" | "failed" | "stopped" | "interrupted";
@@ -693,7 +697,7 @@ export type Draft = {
 	fields: ([string, FieldValue])[],
 };
 
-export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number } | { kind: "notes"; previous: string; text: string };
+export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number };
 
 /**
  *  What the library says of an edit before it is made: the definition files it would write, by
@@ -993,6 +997,8 @@ export type Mode =
 export type Model = {
 	slug: string,
 	displayName: string,
+	efforts: string[],
+	defaultEffort: string | null,
 };
 
 export type Movement = { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" };
@@ -1152,7 +1158,7 @@ export type ResultItem = {
 
 export type ReviewDraft = {
 	verdict: Verdict | null,
-	notes: string,
+	points: ReviewPoint[],
 	green: FormView,
 	red: FormView,
 };
@@ -1174,6 +1180,12 @@ export type ReviewMatch = {
 export type ReviewPage = {
 	reviews: ReviewMatch[],
 	next: number | null,
+};
+
+export type ReviewPoint = {
+	text: string,
+	source: string,
+	at: string,
 };
 
 export type ReviewTarget = {

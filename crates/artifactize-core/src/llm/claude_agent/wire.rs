@@ -85,6 +85,9 @@ pub struct Model {
     pub resolved_model: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    pub supports_effort: Option<bool>,
+    pub supported_effort_levels: Option<Vec<String>>,
+    pub default_effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

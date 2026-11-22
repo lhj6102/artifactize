@@ -1,7 +1,7 @@
 <script lang="ts">
   // The pet overlay (J-PET, D-PET-1): a small frameless window above every window while this
   // reviewer works away from the active review's evaluation space. It holds the review's eval and
-  // Run (a link to the review in Review), the same library draft's Notes, the GREEN and RED
+  // Run (a link to the review in Review), the same library draft's Points, the GREEN and RED
   // choice and the open form, Point (pointing in an open viewer of the review's Artifact) and
   // Submit. The main window shows and hides it; it follows the active review as it changes.
   import { emit, listen } from "@tauri-apps/api/event";
@@ -10,7 +10,6 @@
   import { commands, onActiveReviewChanged, onHumanDraftChanged, subscribe } from "../ipc/client";
   import { Jobs } from "../ipc/jobs.svelte";
   import { Review } from "../review/review.svelte";
-  import NotesField from "../review/NotesField.svelte";
   import { followPointed } from "../review/pointed";
   import VerdictForm from "../review/VerdictForm.svelte";
   import Icon from "../shell/Icon.svelte";
@@ -85,10 +84,9 @@
     </button>
     {#if view && review.owned}
       <div class="scroll">
-        <label class="notes">
-          <span class="label">Notes</span>
-          <NotesField value={review.notes} pointed={review.pointed} oninput={(text) => review.writeNotes(text)} />
-        </label>
+        {#if review.draft?.points.length}
+          <div class="notes"><span class="label">Points</span>{#each review.draft.points as point (point)}<span>{point.text}</span>{/each}</div>
+        {/if}
         <!-- The verdict's form carries the GREEN / RED choice once open, as the review's does. -->
         {#if review.form}
           <VerdictForm {review} form={review.form} />

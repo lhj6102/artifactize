@@ -326,17 +326,18 @@ pub(super) async fn follow_up(
 
 /// Adapt Claude Code's model transport to the same Chat tools and persisted history.
 pub(super) async fn chat(
-    model: &ModelId,
+    selection: &crate::chat::Model,
     tools: &crate::chat::tools::Tools<'_>,
     history: Vec<Message>,
     text: &str,
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
 ) -> Result<String, Failure> {
+    let model = &selection.model;
     let offered = definitions(tools.list());
     let launch = Launch {
         model: Some(model.as_str()),
-        effort: None,
+        effort: selection.effort.as_deref(),
         system: Some(super::chat::SYSTEM),
         tools: offered.iter().map(|tool| tool.name.as_str()).collect(),
         schema: None,

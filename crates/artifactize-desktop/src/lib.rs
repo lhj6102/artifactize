@@ -66,7 +66,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             human::human_form,
             human::draft::human_draft,
             human::draft::human_draft_edit,
-            human::draft::human_draft_append,
+            human::draft::human_draft_remove_point,
             human::draft::human_draft_submit,
             human::human_edit_field,
             human::human_add_item,

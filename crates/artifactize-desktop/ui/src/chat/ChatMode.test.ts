@@ -31,7 +31,7 @@ const session: ChatSession = {
   project: "app",
   branch: "fix/rounding",
   unavailable: null,
-  selection: { backend: "claude-agent", model: "claude-opus-5-5" },
+  selection: { backend: "claude-agent", model: "claude-opus-5-5", effort: null },
   createdAt: "2026-11-21T00:00:00Z",
   updatedAt: "2026-11-21T00:00:00Z",
   running: false,
@@ -148,7 +148,7 @@ it("opens the model menu upward with each provider's models, and a model chosen 
   await fireEvent.input(composer, { target: { value: "Again" } });
   await fireEvent.click(screen.getByRole("button", { name: "Send (Enter)" }));
   await waitFor(() =>
-    expect(calls.find((call) => call.cmd === "chat_send")?.args.selection).toEqual({ backend: "claude-agent", model: "claude-sonnet-5-5" }),
+    expect(calls.find((call) => call.cmd === "chat_send")?.args.selection).toEqual({ backend: "claude-agent", model: "claude-sonnet-5-5", effort: null }),
   );
 });
 
@@ -159,7 +159,7 @@ function unlisted(models: { slug: string; displayName: string }[]) {
   let answer: () => void = () => {};
   const answered = new Promise<void>((done) => (answer = done));
   // The library's default: the custom provider `lab`'s first model, once its providers answered.
-  const starting = models[0] ? { backend: "lab", model: models[0].slug } : null;
+  const starting = models[0] ? { backend: "lab", model: models[0].slug, effort: null } : null;
   mockIPC(async (cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
     switch (cmd) {

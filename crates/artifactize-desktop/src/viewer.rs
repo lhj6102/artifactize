@@ -416,7 +416,7 @@ pub async fn viewer_point(
     session: u32,
     review: RequestKey,
     text: String,
-) -> Result<String, Failure> {
+) -> Result<(), Failure> {
     let viewer = app.viewers.get(session)?;
     let expected = review.into_inner();
     let active = active(&app)
@@ -430,7 +430,7 @@ pub async fn viewer_point(
     viewer
         .pointing(&app.launch.state, &owner, &text)
         .await
-        .map(|draft| draft.notes)
+        .map(|_| ())
         .map_err(Failure::Action)
 }
 

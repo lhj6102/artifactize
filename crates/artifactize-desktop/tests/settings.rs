@@ -266,7 +266,7 @@ fn settings_command_probe() {
         let models = call("models_list", json!({"provider": name})).unwrap();
         assert_eq!(
             models,
-            json!([{"slug": "gpt-fake", "displayName": "gpt-fake"}])
+            json!([{"slug": "gpt-fake", "displayName": "gpt-fake", "efforts": [], "defaultEffort": null}])
         );
     }
     call("provider_custom_remove", json!({"name": "local"})).unwrap();
@@ -290,7 +290,7 @@ fn settings_command_probe() {
     let models = call("models_list", json!({"provider": "openai"})).unwrap();
     assert_eq!(
         models,
-        json!([{"slug": "gpt-fake", "displayName": "gpt-fake"}])
+        json!([{"slug": "gpt-fake", "displayName": "gpt-fake", "efforts": [], "defaultEffort": null}])
     );
     let missing = call("models_list", json!({"provider": "anthropic"})).unwrap_err();
     assert_eq!(
@@ -338,7 +338,7 @@ fn settings_command_probe() {
     let models = call("models_list", json!({"provider": "codex"})).unwrap();
     assert_eq!(
         models,
-        json!([{"slug": "gpt-6-luna", "displayName": "GPT-6 Luna"}])
+        json!([{"slug": "gpt-6-luna", "displayName": "GPT-6 Luna", "efforts": [], "defaultEffort": null}])
     );
     // A finished sign-in takes no more pastes.
     let late = call("codex_login_paste", json!({"redirect": redirect}));

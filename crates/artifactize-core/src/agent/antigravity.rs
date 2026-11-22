@@ -12,8 +12,7 @@ use super::{
     tool_content,
 };
 use crate::{
-    chat::tools::Tools,
-    config::ModelId,
+    chat::{Model, tools::Tools},
     llm::{
         antigravity::{
             Acp, Content, Event, Problem, PromptEvent, StopReason,
@@ -26,7 +25,7 @@ use crate::{
 };
 
 pub(super) async fn turn(
-    model: &ModelId,
+    selection: &Model,
     context: &runs::Context,
     tools: &Tools<'_>,
     history: Vec<Message>,
@@ -50,7 +49,7 @@ pub(super) async fn turn(
                     biased;
                     () = cancel.cancelled() => return Err(Failure::cancelled()),
                     () = tokio::time::sleep_until(deadline) => return Err(Failure::timeout()),
-                    result = acp.open(model, &server, super::chat::SYSTEM) => result?,
+                    result = acp.open(&selection.model, selection.effort.as_deref(), &server, super::chat::SYSTEM) => result?,
                 };
                 let id = session.insert(id);
                 let prompt = super::chat::replay(&history, text);

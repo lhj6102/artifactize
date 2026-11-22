@@ -64,11 +64,7 @@ it("converges when original and follower handles both exist before either read f
   await originalRead;
   original.area = "tools";
   expect(follower.area).toBe("tools");
-  // The Notes as typed and what Point marked in them are the request's, read the same through
-  // either handle.
-  follower.notes = "Typed through the follower.";
   original.pointed = ["install.md L2:C1"];
-  expect(original.notes).toBe("Typed through the follower.");
   expect(follower.pointed).toEqual(["install.md L2:C1"]);
   expect(app.reviews["run-a-2"]).toBe(original);
   expect(app.reviews["run-follower-2"]).toBe(original);

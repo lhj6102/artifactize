@@ -994,13 +994,13 @@ payload.instruction = "Read the page separately."
     assert_eq!(active["petMatch"], true);
     assert_eq!(wrong_worktree["petMatch"], false);
 
-    let notes = invoke(
+    let result = invoke(
         &window,
         "viewer_point",
         json!({"session": session, "review": id, "text": "Original worktree"}),
     )
     .unwrap();
-    assert_eq!(notes, "Original worktree");
+    assert!(result.is_null());
     let other = saved(&fixture, "page/another").request.id.to_string();
     invoke(&window, "human_claim", json!({"id": other, "job": 4})).unwrap();
     invoke(&window, "active_review_set", json!({"request": other})).unwrap();
@@ -1012,20 +1012,30 @@ payload.instruction = "Read the page separately."
     .unwrap_err();
     assert_eq!(refused["kind"], "action");
     for (review, expected) in [
-        (&original, "Original worktree"),
-        (&id, "Original worktree"),
-        (&other, ""),
+        (&original, Some("Original worktree")),
+        (&id, Some("Original worktree")),
+        (&other, None),
     ] {
         let draft = invoke(&window, "human_draft", json!({"id": review})).unwrap();
-        assert_eq!(draft["notes"], expected);
+        assert_eq!(draft["points"][0]["text"].as_str(), expected);
     }
-    let notes = invoke(
+    let result = invoke(
         &window,
         "viewer_point",
         json!({"session": session, "review": other, "text": "content.txt L1:C1"}),
     )
     .unwrap();
-    assert_eq!(notes, "content.txt L1:C1");
+    assert!(result.is_null());
+    let draft = invoke(&window, "human_draft", json!({"id": other})).unwrap();
+    let point = &draft["points"][0];
+    assert_eq!(point["text"], "content.txt L1:C1");
+    let edited = invoke(
+        &window,
+        "human_draft_remove_point",
+        json!({"id": other, "point": point}),
+    )
+    .unwrap();
+    assert_eq!(edited["points"], json!([]));
 }
 
 #[test]

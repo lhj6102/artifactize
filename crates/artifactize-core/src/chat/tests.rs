@@ -56,6 +56,7 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
             selection: Model {
                 backend: "codex".parse().unwrap(),
                 model: "fixture-model".parse().unwrap(),
+                effort: None,
             },
             created_at: time,
             updated_at: time,

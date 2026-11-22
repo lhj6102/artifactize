@@ -45,19 +45,12 @@ pub(crate) async fn turn(
     let route = match route {
         Route::Http(route) => route,
         Route::ClaudeAgent => {
-            return claude_agent::chat(
-                &selection.model,
-                tools,
-                history,
-                &text,
-                recorder,
-                cancellation,
-            )
-            .await;
+            return claude_agent::chat(selection, tools, history, &text, recorder, cancellation)
+                .await;
         }
         Route::Antigravity => {
             return super::antigravity::turn(
-                &selection.model,
+                selection,
                 context,
                 tools,
                 history,
@@ -72,7 +65,11 @@ pub(crate) async fn turn(
     let mut request = CompletionRequest::new(text).preamble(SYSTEM);
     request.chat_history.splice(..0, history);
     request.tools = definitions(tools.list());
-    request.additional_params = Some(Client::parameters(client.api(), None, recorder.id())?);
+    request.additional_params = Some(Client::chat_parameters(
+        client.api(),
+        selection.effort.as_deref(),
+        recorder.id(),
+    ));
     let mut turns = Turns {
         client: &client,
         registry: Toolset::Chat(tools),

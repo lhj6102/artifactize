@@ -155,6 +155,12 @@ struct PickerModel {
     visibility: crate::json::Optional<String>,
     slug: crate::json::Optional<String>,
     display_name: crate::json::Optional<String>,
+    supported_reasoning_levels: crate::json::Optional<Vec<crate::json::Optional<PickerEffort>>>,
+    default_reasoning_level: crate::json::Optional<String>,
+}
+#[derive(serde::Deserialize)]
+struct PickerEffort {
+    effort: String,
 }
 impl<'de> serde::Deserialize<'de> for ModelCatalog {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -200,6 +206,12 @@ impl<'de> serde::Deserialize<'de> for PickerModel {
                         "visibility" => model.visibility = map.next_value()?,
                         "slug" => model.slug = map.next_value()?,
                         "display_name" => model.display_name = map.next_value()?,
+                        "supported_reasoning_levels" => {
+                            model.supported_reasoning_levels = map.next_value()?
+                        }
+                        "default_reasoning_level" => {
+                            model.default_reasoning_level = map.next_value()?
+                        }
                         _ => {
                             map.next_value::<crate::json::Ignored>()?;
                         }
@@ -228,10 +240,15 @@ fn picker_models(data: &[u8]) -> Result<Vec<super::models::ListedModel>, String>
                 .0
                 .and_then(|slug| slug.parse().ok())
                 .ok_or_else(invalid)?;
-            Ok(super::models::ListedModel {
-                display_name: model.display_name.0.unwrap_or_else(|| slug.to_string()),
-                slug,
-            })
+            let name = model.display_name.0.unwrap_or_else(|| slug.to_string());
+            let efforts = model
+                .supported_reasoning_levels
+                .0
+                .into_iter()
+                .flatten()
+                .filter_map(|value| value.0.map(|level| level.effort));
+            Ok(super::models::ListedModel::new(slug, name)
+                .with_efforts(efforts, model.default_reasoning_level.0))
         })
         .collect()
 }

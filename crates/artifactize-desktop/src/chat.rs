@@ -14,6 +14,7 @@ use crate::{
 pub struct ChatModel {
     pub backend: String,
     pub model: String,
+    pub effort: Option<String>,
 }
 
 impl TryFrom<ChatModel> for chat::Model {
@@ -23,6 +24,7 @@ impl TryFrom<ChatModel> for chat::Model {
         Ok(Self {
             backend: model.backend.parse().map_err(Failure::Invalid)?,
             model: model.model.parse().map_err(Failure::Invalid)?,
+            effort: model.effort,
         })
     }
 }
@@ -32,6 +34,7 @@ impl From<chat::Model> for ChatModel {
         Self {
             backend: model.backend.to_string(),
             model: model.model.to_string(),
+            effort: model.effort,
         }
     }
 }

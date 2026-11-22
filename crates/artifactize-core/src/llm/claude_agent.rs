@@ -100,10 +100,22 @@ fn listed(models: Vec<wire::Model>) -> Vec<ListedModel> {
         if listed.iter().any(|entry| entry.slug == slug) {
             continue;
         }
-        listed.push(ListedModel {
+        let entry = ListedModel::new(
             slug,
-            display_name: model.display_name.clone().unwrap_or_else(|| id.clone()),
+            model.display_name.clone().unwrap_or_else(|| id.clone()),
+        );
+        if model.supports_effort == Some(false) {
+            listed.push(entry);
+            continue;
+        }
+        // Earlier Claude Code versions only advertised model names. Their `--effort`
+        // switch is still available; newer versions publish the allowed levels per model.
+        let levels = model.supported_effort_levels.clone().unwrap_or_else(|| {
+            ["low", "medium", "high", "xhigh", "max"]
+                .map(str::to_owned)
+                .into()
         });
+        listed.push(entry.with_efforts(levels, model.default_effort.clone()));
     }
     listed
 }
@@ -129,6 +141,9 @@ mod tests {
             value: value.into(),
             resolved_model: Some(resolved.into()),
             display_name: Some(name.into()),
+            supports_effort: None,
+            supported_effort_levels: None,
+            default_effort: None,
         }
     }
 

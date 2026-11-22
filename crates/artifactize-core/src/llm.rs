@@ -293,7 +293,16 @@ impl Client {
         if let Some(reasoning) = reasoning {
             api.validate_reasoning(reasoning)?;
         }
-        Ok(match api {
+        Ok(Self::chat_parameters(api, reasoning, session))
+    }
+
+    // Chat checks the provider's advertised per-model levels before saving a selection.
+    pub(crate) fn chat_parameters(
+        api: Api,
+        reasoning: Option<&str>,
+        session: &crate::types::SessionId,
+    ) -> Value {
+        match api {
             Api::OpenaiChat => reasoning.map_or(
                 json!({}),
                 |effort| json!({"reasoning_effort":effort, "parallel_tool_calls":false}),
@@ -337,7 +346,7 @@ impl Client {
                 }
                 value
             }
-        })
+        }
     }
 
     /// Structured output constrains the final answer only; tool calls keep their contract.

@@ -10,9 +10,38 @@ use crate::{App, Failure, ids::RequestKey};
 #[serde(rename_all = "camelCase")]
 pub struct ReviewDraft {
     pub verdict: Option<Verdict>,
-    pub notes: String,
+    pub points: Vec<ReviewPoint>,
     pub green: FormView,
     pub red: FormView,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ReviewPoint {
+    pub text: String,
+    pub source: String,
+    pub at: String,
+}
+
+impl From<review::Point> for ReviewPoint {
+    fn from(point: review::Point) -> Self {
+        Self {
+            text: point.text,
+            source: point.source,
+            at: point.at.to_string(),
+        }
+    }
+}
+
+impl TryFrom<ReviewPoint> for review::Point {
+    type Error = Failure;
+
+    fn try_from(point: ReviewPoint) -> Result<Self, Failure> {
+        Ok(Self {
+            text: point.text,
+            source: point.source,
+            at: point.at.parse().map_err(Failure::Invalid)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -34,10 +63,6 @@ pub enum DraftChange {
         verdict: Verdict,
         name: String,
         item: u32,
-    },
-    Notes {
-        previous: String,
-        text: String,
     },
 }
 
@@ -69,7 +94,6 @@ impl From<DraftChange> for review::DraftEdit {
                 name,
                 item,
             },
-            DraftChange::Notes { previous, text } => Self::Notes { previous, text },
         }
     }
 }
@@ -94,7 +118,7 @@ fn view(
         .map_err(Failure::Invalid)?;
     Ok(ReviewDraft {
         verdict: draft.verdict.map(Into::into),
-        notes: draft.notes,
+        points: draft.points.into_iter().map(Into::into).collect(),
         green: super::form::project(Verdict::Green, &green),
         red: super::form::project(Verdict::Red, &red),
     })
@@ -115,7 +139,7 @@ pub async fn human_draft(
     view(&request.request, draft)
 }
 
-/// Change one field, verdict or the common notes of the current reviewer's saved draft.
+/// Change one field or verdict of the current reviewer's saved draft.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_draft_edit(
@@ -135,27 +159,27 @@ pub async fn human_draft_edit(
     view(&request.request, draft)
 }
 
-/// Append a line to the current reviewer's draft without submitting it.
+/// Remove a Point from the current reviewer's draft without submitting it.
 #[tauri::command]
 #[specta::specta]
-pub async fn human_draft_append(
+pub async fn human_draft_remove_point(
     app: tauri::State<'_, App>,
     id: RequestKey,
-    text: String,
+    point: ReviewPoint,
 ) -> Result<ReviewDraft, Failure> {
     let request = read(&app, &id.into_inner()).await?.1.owner;
-    let draft = review::append_draft(
+    let draft = review::remove_point(
         &app.launch.state,
         &request.request.id,
         &app.launch.reviewer,
-        &text,
+        point.try_into()?,
     )
     .await
     .map_err(Failure::Action)?;
     view(&request.request, draft)
 }
 
-/// Submit the current reviewer's saved fields and notes.
+/// Submit the current reviewer's saved form fields.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_draft_submit(

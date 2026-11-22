@@ -1,5 +1,5 @@
 // The Review state against a mocked command boundary: verdict forms that answer out of
-// order, the library's draft per verdict and its Notes, and the Tool log the backend's lines
+// order, the library's draft per verdict and its Points, and the Tool log the backend's lines
 // build.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { waitFor } from "@testing-library/svelte";
@@ -105,18 +105,19 @@ describe("Review", () => {
     expect(review.form?.values.comment).toEqual({ kind: "text", value: "x" });
   });
 
-  it("writes the Notes in order, keeping a Point the library appended meanwhile", async () => {
+  it("reloads a Point independently of the verdict fields", async () => {
     const { library } = backend();
+    library.draft.verdict = "GREEN";
     const review = new Review("run-a-2", new Jobs());
     await review.load();
-    await waitFor(() => expect(review.draft).not.toBeNull());
-    review.writeNotes("Total");
-    review.writeNotes("Total still");
-    // A viewer's Point lands while the typing is on its way.
-    library.answer("human_draft_append", { text: "#checkout .total" });
-    review.writeNotes("Total still wrong");
-    await waitFor(() => expect(library.draft.notes).toBe("Total still wrong\n#checkout .total"));
-    await waitFor(() => expect(review.notes).toBe("Total still wrong\n#checkout .total"));
+    await waitFor(() => expect(review.form?.verdict).toBe("GREEN"));
+    await review.form?.set("comment", { kind: "text", value: "Total still wrong" });
+    await waitFor(() => expect(library.draft.green.draft.fields[1][1]).toEqual({ kind: "text", value: "Total still wrong" }));
+    const point = { text: "#checkout .total", source: "Checkout", at: "2026-11-22T22:00:00Z" };
+    library.draft.points.push(point);
+    await review.readDraft();
+    expect(review.draft?.points).toEqual([point]);
+    expect(review.form?.values.comment).toEqual({ kind: "text", value: "Total still wrong" });
   });
 
   it("keeps the claim and the open form when a read from before the claim answers after it", async () => {

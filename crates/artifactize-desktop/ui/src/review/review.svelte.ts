@@ -4,7 +4,6 @@
 // library's, one per review and reviewer, shared with the pet overlay and a viewer's Point.
 import type { Jobs } from "../ipc/jobs.svelte";
 import { CommandError, call, commands, message, type Commands } from "../ipc/client";
-import { announceEdited } from "./pointed";
 import type {
   Acted,
   Draft,
@@ -127,15 +126,8 @@ class ReviewState {
   form = $state<FormDraft | null>(null);
   /** The library's draft of this review for this reviewer, as last read or answered. */
   draft = $state.raw<ReviewDraft | null>(null);
-  /** The draft's Notes; typed text shows at once, as an override, until the library answers. */
-  notes = $derived(this.draft?.notes ?? "");
-  /** What Point appended to the Notes since they were last edited: those lines stand out. */
   pointed = $state.raw<string[]>([]);
   choice = 0;
-  /** Notes typed and not sent yet; the text the next send is based on; one send at a time. */
-  pending: string | null = null;
-  base: string | null = null;
-  sending = false;
   /** The saved draft's verdict was brought back as its open form: once per review shown, so
    * leaving the form is not undone by the next read. */
   restored = false;
@@ -163,10 +155,6 @@ export class Review {
   set form(value: FormDraft | null) { this.#state.form = value; }
   get draft(): ReviewDraft | null { return this.#state.draft; }
 
-  /** The draft's Notes and what Point appended to them: the request's own, the same for every
-   * handle of it. */
-  get notes(): string { return this.#state.notes; }
-  set notes(value: string) { this.#state.notes = value; }
   get pointed(): string[] { return this.#state.pointed; }
   set pointed(value: string[]) { this.#state.pointed = value; }
 
@@ -222,13 +210,12 @@ export class Review {
   }
 
   /** Read the library's draft again: after a change made elsewhere (the pet overlay, a Point,
-   * another window), unless Notes typed here are still on their way. */
+   * another window). */
   async readDraft(): Promise<void> {
     const state = this.#state;
-    if (state.sending) return;
     try {
       const draft = await call(this.ipc.humanDraft(this.id));
-      if (state !== this.#state || state.sending) return;
+      if (state !== this.#state) return;
       this.#take(draft);
     } catch (error) {
       this.notice = { text: message(error), error: true };
@@ -239,7 +226,6 @@ export class Review {
   #take(draft: ReviewDraft): void {
     const state = this.#state;
     state.draft = draft;
-    state.base = draft.notes;
     this.form?.adopt(this.form.verdict === "GREEN" ? draft.green : draft.red);
     // A draft saved with a verdict (before a restart, in another window) shows that verdict
     // chosen, its form open with what was entered; nothing is sent (J-HUMAN-DRAFT).
@@ -253,45 +239,8 @@ export class Review {
   #open(verdict: Verdict, draft: ReviewDraft): void {
     const state = this.#state;
     this.form = new FormDraft(this.id, verdict === "GREEN" ? draft.green : draft.red, this.ipc, (answer) => {
-      if (state === this.#state && !state.sending) state.draft = answer;
+      if (state === this.#state) state.draft = answer;
     });
-  }
-
-  /** Write the Notes: what is typed shows at once and is sent in order, one edit at a time, each
-   * based on the text the one before sent, so a Point appended meanwhile is kept. */
-  writeNotes(text: string): void {
-    this.notes = text;
-    // Edited: what was pointed reads as the rest of the Notes, here and in every other window.
-    this.pointed = [];
-    announceEdited(this.id);
-    const state = this.#state;
-    state.pending = text;
-    if (!state.sending) void this.#sendNotes(state);
-  }
-
-  async #sendNotes(state: ReviewState): Promise<void> {
-    state.sending = true;
-    let last: ReviewDraft | null = null;
-    try {
-      while (state.pending !== null) {
-        const text = state.pending;
-        state.pending = null;
-        const previous = state.base ?? state.draft?.notes ?? "";
-        last = await call(this.ipc.humanDraftEdit(this.id, { kind: "notes", previous, text }));
-        state.base = text;
-      }
-    } catch (error) {
-      state.pending = null;
-      last = null;
-      // Refused: the Notes show what the library last accepted, until it is read again.
-      if (state === this.#state) this.notes = state.draft?.notes ?? "";
-      this.notice = { text: message(error), error: true };
-    } finally {
-      state.sending = false;
-    }
-    if (state !== this.#state) return;
-    if (last) this.#take(last);
-    else void this.readDraft();
   }
 
   #acted(acted: Pick<Acted, "notice" | "view">): void {
@@ -360,7 +309,7 @@ export class Review {
     }
     // Another verdict was chosen, or editing stopped, while this form was on its way.
     if (state !== this.#state || choice !== state.choice) return;
-    if (!state.sending) state.draft = answer;
+    state.draft = answer;
     state.restored = true;
     this.#open(verdict, answer);
   }
@@ -389,7 +338,6 @@ export class Review {
     try {
       const submitted = await this.#job(`Submitting ${form.verdict}`, async (job) => {
         // What is typed reaches the library first: it submits the draft it keeps.
-        await this.#settledNotes();
         return call(this.ipc.humanDraftSubmit(this.id, job));
       });
       if (!submitted) return null;
@@ -410,9 +358,7 @@ export class Review {
   }
 
   /** Settles once no Notes are on their way to the library. */
-  async #settledNotes(): Promise<void> {
-    while (this.#state.sending) await new Promise((resolve) => setTimeout(resolve, 20));
-  }
+
 
   /** Run a tool at once; the backend checks the claim when it starts. What the tool prints
    * reaches the Tool log as it runs ([`logged`](#logged)); a launch tool returns at once. */

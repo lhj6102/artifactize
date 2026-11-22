@@ -85,16 +85,15 @@ export class ViewerState {
     await emit(PRESENCE, presence).catch(() => {});
   }
 
-  /** Append `text` to the active review's Notes through the library; the Notes it answers. The
-   * windows showing those Notes are told what was pointed, which stands out there. */
-  async append(text: string): Promise<string> {
+  /** Record `text` in the active review through the library. */
+  async append(text: string): Promise<null> {
     // The review pointing was started for; the library refuses it once another is active.
     const review = this.armedFor ?? this.context?.review ?? null;
     this.arm(false);
     if (review === null) throw new Error("Pointing needs an active Human review.");
-    const notes = await call(this.ipc.viewerPoint(this.session, review, text));
+    await call(this.ipc.viewerPoint(this.session, review, text));
     announcePointed(review, text);
-    return notes;
+    return null;
   }
 
   /** Append `text`, a place pointed at, to the review pointing was for; pointing ends. A

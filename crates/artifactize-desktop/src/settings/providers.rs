@@ -273,6 +273,8 @@ pub async fn provider_custom_remove(
 pub struct Model {
     pub slug: String,
     pub display_name: String,
+    pub efforts: Vec<String>,
+    pub default_effort: Option<String>,
 }
 
 /// `models <provider>`: what a built-in or custom provider offers to this key or account.
@@ -292,6 +294,8 @@ pub async fn models_list(
         .map(|model| Model {
             slug: model.slug.to_string(),
             display_name: model.display_name,
+            efforts: model.efforts,
+            default_effort: model.default_effort,
         })
         .collect())
 }

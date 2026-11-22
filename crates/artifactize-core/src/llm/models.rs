@@ -14,6 +14,41 @@ pub(super) const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct ListedModel {
     pub slug: crate::config::ModelId,
     pub display_name: String,
+    pub efforts: Vec<String>,
+    pub default_effort: Option<String>,
+}
+
+impl ListedModel {
+    pub(super) fn new(slug: crate::config::ModelId, display_name: String) -> Self {
+        Self {
+            slug,
+            display_name,
+            efforts: Vec::new(),
+            default_effort: None,
+        }
+    }
+
+    pub(super) fn with_efforts(
+        mut self,
+        efforts: impl IntoIterator<Item = String>,
+        default: Option<String>,
+    ) -> Self {
+        for effort in efforts {
+            if !effort.is_empty() && !self.efforts.contains(&effort) {
+                self.efforts.push(effort);
+            }
+        }
+        // The picker and new sessions share one order: a provider's declared default
+        // first, otherwise the first advertised level is the starting choice.
+        if let Some(index) =
+            default.and_then(|default| self.efforts.iter().position(|effort| *effort == default))
+        {
+            let default = self.efforts.remove(index);
+            self.efforts.insert(0, default);
+        }
+        self.default_effort = self.efforts.first().cloned();
+        self
+    }
 }
 
 #[derive(Serialize)]
@@ -96,10 +131,14 @@ async fn list_at(api: Api, key: &str, base: &str) -> Result<Vec<ListedModel>, St
     Ok(models
         .into_iter()
         .filter_map(|model| {
-            Some(ListedModel {
-                slug: model.id.parse().ok()?,
-                display_name: model.name.unwrap_or(model.id),
-            })
+            let slug = model.id.parse().ok()?;
+            let (efforts, default) = super::api::model_efforts(api, &model.id);
+            Some(
+                ListedModel::new(slug, model.name.unwrap_or(model.id)).with_efforts(
+                    efforts.iter().map(|effort| (*effort).to_owned()),
+                    default.map(str::to_owned),
+                ),
+            )
         })
         .collect())
 }
@@ -128,8 +167,8 @@ mod tests {
                 assert_eq!(
                     serde_json::to_value(models).unwrap(),
                     json!([
-                        {"slug":"z-model","display_name":"z-model"},
-                        {"slug":"a-model","display_name":"A model"}
+                        {"slug":"z-model","display_name":"z-model","efforts":[],"default_effort":null},
+                        {"slug":"a-model","display_name":"A model","efforts":[],"default_effort":null}
                     ])
                 );
                 let requests = openai.requests();
@@ -145,14 +184,14 @@ mod tests {
             vec![
                 MockHttpResponse::success(
                     json!({
-                        "data":[{"id":"first", "display_name":"First"}],
+                        "data":[{"id":"first", "display_name":"First","efforts":[],"default_effort":null}],
                         "has_more":true,
                         "last_id":"first",
                     })
                     .to_string(),
                 ),
                 MockHttpResponse::success(
-                    json!({"data":[{"id":"second", "display_name":"Second"}],"has_more":false})
+                    json!({"data":[{"id":"second", "display_name":"Second","efforts":[],"default_effort":null}],"has_more":false})
                         .to_string(),
                 ),
             ],
@@ -163,8 +202,8 @@ mod tests {
                 assert_eq!(
                     serde_json::to_value(models).unwrap(),
                     json!([
-                        {"slug":"first","display_name":"First"},
-                        {"slug":"second","display_name":"Second"}
+                        {"slug":"first","display_name":"First","efforts":[],"default_effort":null},
+                        {"slug":"second","display_name":"Second","efforts":[],"default_effort":null}
                     ])
                 );
                 let requests = anthropic.requests();

@@ -33,23 +33,17 @@ async fn draft_fixture_writer() {
     };
     let id = std::env::var(DRAFT_REQUEST).unwrap().parse().unwrap();
     let reviewer = "alice".parse().unwrap();
-    artifactize_core::review::edit_draft(
-        &state,
-        &id,
-        &reviewer,
-        artifactize_core::review::DraftEdit::Notes {
-            previous: String::new(),
-            text: "Initial response".into(),
-        },
-    )
-    .await
-    .unwrap();
+    artifactize_core::review::append_point(&state, &id, &reviewer, "L42:C9", "Second process")
+        .await
+        .unwrap();
     artifactize_core::changes::drain().await;
 }
 
 #[tokio::test]
 async fn draft_is_shared_across_processes_and_cleared_on_submission() {
-    use artifactize_core::review::{DraftEdit, append_draft, edit_draft, read_draft};
+    use artifactize_core::review::{
+        self, Answer, DraftEdit, Job, append_point, edit_draft, read_draft, remove_point,
+    };
 
     let fixture = Fixture::new(false);
     let run = fixture.verify(returning()).await;
@@ -98,10 +92,10 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
     noticed.expect("a subscribed window is told to reload the separate writer's draft");
     changes.close().await.unwrap();
     let initial = read_draft(state, id, &alice).await.unwrap().unwrap();
-    assert_eq!(initial.notes, "Initial response");
+    assert_eq!(initial.points[0].text, "L42:C9");
     assert_eq!(read_draft(state, id, &bob).await.unwrap(), None);
     assert!(
-        append_draft(state, id, &bob, "#unauthorized")
+        append_point(state, id, &bob, "#unauthorized", "fixture")
             .await
             .is_err()
     );
@@ -111,7 +105,11 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
         read_draft(state, id, &alice).await.unwrap(),
         Some(initial.clone())
     );
-    assert!(append_draft(state, id, &alice, "#released").await.is_err());
+    assert!(
+        append_point(state, id, &alice, "#released", "fixture")
+            .await
+            .is_err()
+    );
     human::claim(&receipts, id, &alice).await.unwrap();
     fs::write(fixture.repo.join("preview.md"), "# Preview").unwrap();
     fs::write(
@@ -126,12 +124,26 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
         id: id.clone(),
         reviewer: alice.clone(),
     };
-    let (first, second) = tokio::join!(
-        viewer.pointing(state, &active, "#checkout .total"),
-        append_draft(state, id, &alice, "L42:C9"),
-    );
-    first.unwrap();
-    second.unwrap();
+    let form = edit_draft(
+        state,
+        id,
+        &alice,
+        DraftEdit::Verdict {
+            verdict: artifactize_core::runtime::Verdict::Green,
+        },
+    )
+    .await
+    .unwrap();
+    let pointed = viewer
+        .pointing(state, &active, "#checkout .total")
+        .await
+        .unwrap();
+    assert_eq!(pointed.green, form.green);
+    assert_eq!(pointed.red, form.red);
+    assert_eq!(pointed.verdict, form.verdict);
+    assert_eq!(pointed.points.len(), 2);
+    assert_eq!(pointed.points[1].text, "#checkout .total");
+    assert!(pointed.points[1].source.starts_with("preview · "));
     assert!(
         store::read_request(state, id.as_str())
             .await
@@ -140,49 +152,45 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
             .status()
             .is_human_wait()
     );
-    let pointed = read_draft(state, id, &alice).await.unwrap().unwrap().notes;
-    let mut points = pointed.lines();
-    assert_eq!(points.next(), Some("Initial response"));
-    let mut points = points.collect::<Vec<_>>();
-    points.sort_unstable();
-    assert_eq!(points, ["#checkout .total", "L42:C9"]);
-    let rebased = edit_draft(
-        state,
-        id,
-        &alice,
-        DraftEdit::Notes {
-            previous: initial.notes.clone(),
-            text: "Revised response".into(),
-        },
-    )
-    .await
-    .unwrap();
-    let pointed = pointed.replacen("Initial response", "Revised response", 1);
-    assert_eq!(rebased.notes, pointed);
-    assert!(
-        edit_draft(
-            state,
-            id,
-            &alice,
-            DraftEdit::Notes {
-                previous: initial.notes,
-                text: "Incompatible edit".into(),
-            }
-        )
-        .await
-        .is_err()
-    );
-
-    human::submit(&receipts, id, &alice, &green(), CancellationToken::new())
+    let removed = remove_point(state, id, &alice, initial.points[0].clone())
         .await
         .unwrap();
+    assert_eq!(removed.points, pointed.points[1..]);
+    drop(receipts);
+    assert_eq!(
+        read_draft(state, id, &alice).await.unwrap(),
+        Some(removed.clone())
+    );
+
+    let submitted = Job::Submit {
+        id: id.clone(),
+        answer: Answer::SavedDraft,
+        claim: false,
+    }
+    .run(
+        state.clone(),
+        alice.clone(),
+        CancellationToken::new(),
+        review::log::channel().0,
+    )
+    .await;
+    assert!(
+        matches!(submitted, review::Outcome::Submitted { result: Ok(_), .. }),
+        "{:?}",
+        submitted.notice()
+    );
     assert_eq!(read_draft(state, id, &alice).await.unwrap(), None);
     let saved = store::read_request(state, id.as_str()).await.unwrap();
+    assert_eq!(saved.request.review_notes, None);
     assert_eq!(
-        saved.request.review_notes.as_deref(),
-        Some(pointed.as_str())
+        serde_json::to_value(saved.request.result().unwrap()).unwrap(),
+        json!({"verdict":"GREEN","approved":true})
     );
-    assert!(append_draft(state, id, &alice, "#settled").await.is_err());
+    assert!(
+        append_point(state, id, &alice, "#settled", "fixture")
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -198,10 +206,36 @@ async fn schema_ten_reviews_keep_their_receipts_and_gain_drafts() {
     let receipts = fixture.receipts().await;
     assert_eq!(store::state_schema(&fixture.state).unwrap(), Some(11));
     human::claim(&receipts, id, &alice).await.unwrap();
-    let draft = artifactize_core::review::append_draft(&fixture.state, id, &alice, "L3:C4")
+    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    db.execute(
+        "INSERT INTO review_drafts(request_id, reviewer, data) VALUES (?, 'alice', ?)",
+        rusqlite::params![
+            id,
+            json!({"verdict":null,"green":[],"red":[],"notes":"A note\nwith a second line"})
+                .to_string()
+        ],
+    )
+    .unwrap();
+    drop(db);
+    let draft = artifactize_core::review::read_draft(&fixture.state, id, &alice)
         .await
+        .unwrap()
         .unwrap();
-    assert_eq!(draft.notes, "L3:C4");
+    assert_eq!(draft.points.len(), 1);
+    assert_eq!(draft.points[0].text, "A note\nwith a second line");
+    assert_eq!(draft.points[0].source, "Earlier notes");
+    let updated =
+        artifactize_core::review::append_point(&fixture.state, id, &alice, "L3:C4", "fixture")
+            .await
+            .unwrap();
+    assert_eq!(updated.points[0], draft.points[0]);
+    assert_eq!(updated.points[1].text, "L3:C4");
+    assert_eq!(
+        artifactize_core::review::read_draft(&fixture.state, id, &alice)
+            .await
+            .unwrap(),
+        Some(updated)
+    );
 }
 
 #[tokio::test]

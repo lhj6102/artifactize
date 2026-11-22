@@ -234,10 +234,52 @@ impl Acp {
     pub(crate) async fn inspect(&mut self) -> Result<Vec<ListedModel>, Problem> {
         self.wire.initialize().await?;
         let session = self.wire.session(self.directory.path(), &[], None).await?;
-        session
-            .model_option()
-            .map(|(_, _, models)| models)
-            .map_err(|error| Problem::Failed(error.message))
+        let mut config = session.config_options.unwrap_or_default();
+        let selected = wire::model_option(&config)?;
+        let model_id = selected.id.to_owned();
+        let current = selected.current.to_owned();
+        let mut models = selected.models();
+        // The thinking option can change with the model. Sample the initial model before
+        // switching, then use each set response without making a model call.
+        for model in models
+            .iter_mut()
+            .filter(|model| model.slug.as_str() == current)
+        {
+            *model = listed_with_thought(model, &config);
+        }
+        for model in models
+            .iter_mut()
+            .filter(|model| model.slug.as_str() != current)
+        {
+            config = self
+                .set(&session.session_id, &model_id, model.slug.as_str())
+                .await?;
+            *model = listed_with_thought(model, &config);
+        }
+        Ok(models)
+    }
+
+    async fn set(
+        &mut self,
+        session: &str,
+        id: &str,
+        value: &str,
+    ) -> Result<Vec<wire::ConfigOption>, Problem> {
+        let updated: SessionOptions = self
+            .wire
+            .request(
+                "session/set_config_option",
+                json!({"sessionId": session, "configId": id, "value": value}),
+            )
+            .await?;
+        if !wire::select(&updated.config_options, |selected, _| selected == id)
+            .is_some_and(|option| option.current == value)
+        {
+            return Err(Problem::Failed(format!(
+                "Antigravity did not confirm {id} = {value:?}."
+            )));
+        }
+        Ok(updated.config_options)
     }
 
     pub(crate) async fn logout(&mut self) -> Result<(), Problem> {
@@ -252,6 +294,7 @@ impl Acp {
     pub(crate) async fn open(
         &mut self,
         model: &ModelId,
+        effort: Option<&str>,
         server: &McpServer<'_>,
         system: &str,
     ) -> Result<(String, bool), Failure> {
@@ -270,20 +313,26 @@ impl Acp {
                 append.then_some(system),
             )
             .await?;
-        let (id, current, models) = session.model_option()?;
-        if !models.iter().any(|listed| &listed.slug == model) {
+        let mut config = session.config_options.unwrap_or_default();
+        let model_option = wire::model_option(&config)?;
+        if !model_option
+            .models()
+            .iter()
+            .any(|listed| &listed.slug == model)
+        {
             return Err(Problem::Failed(format!("Antigravity does not list model {model:?} for this account. Choose a model from `artifactize models antigravity`." )).into());
         }
-        if current != model.as_str() {
-            let updated: SessionOptions = self
-                .wire
-                .request(
-                    "session/set_config_option",
-                    json!({"sessionId":session.session_id,"configId":id,"value":model}),
-                )
+        if model_option.current != model.as_str() {
+            config = self
+                .set(&session.session_id, model_option.id, model.as_str())
                 .await?;
-            if !updated.config_options.iter().any(|option| matches!(option, wire::ConfigOption::Select {id: selected, current_value, ..} if selected == id && current_value == model.as_str())) {
-                return Err(Problem::Failed("Antigravity did not confirm the selected model.".into()).into());
+        }
+        if let Some(effort) = effort {
+            let option = wire::thought_option(&config).filter(|option| {
+                option.values().iter().any(|(value, _)| value == effort)
+            }).ok_or_else(|| Problem::Failed(format!("Antigravity model {model} no longer offers effort {effort:?}. Choose another effort.")))?;
+            if option.current != effort {
+                self.set(&session.session_id, option.id, effort).await?;
             }
         }
         Ok((session.session_id, append))
@@ -333,6 +382,17 @@ impl Acp {
             Problem::reported(&text)
         }
     }
+}
+
+fn listed_with_thought(model: &ListedModel, config: &[wire::ConfigOption]) -> ListedModel {
+    let base = ListedModel::new(model.slug.clone(), model.display_name.clone());
+    let Some(option) = wire::thought_option(config) else {
+        return base;
+    };
+    base.with_efforts(
+        option.values().into_iter().map(|(value, _)| value),
+        Some(option.current.into()),
+    )
 }
 
 #[derive(serde::Deserialize)]

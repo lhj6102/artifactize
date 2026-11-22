@@ -2,9 +2,27 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use super::{Error, Receipts, Request, claimant, waiting};
 use crate::{
-    review::Draft,
+    review::{Draft, Point},
     types::{RequestId, ReviewerId},
 };
+
+#[derive(serde::Deserialize)]
+struct SavedDraft {
+    #[serde(flatten)]
+    draft: Draft,
+    #[serde(default)]
+    notes: String,
+}
+
+impl From<SavedDraft> for Draft {
+    fn from(saved: SavedDraft) -> Self {
+        let mut draft = saved.draft;
+        if !saved.notes.is_empty() {
+            draft.points.insert(0, Point::earlier_notes(saved.notes));
+        }
+        draft
+    }
+}
 
 pub(super) fn read(
     db: &Connection,
@@ -18,8 +36,12 @@ pub(super) fn read(
             |row| row.get(0),
         )
         .optional()?;
-    data.map(|data| serde_json::from_str(&data).map_err(Error::from))
-        .transpose()
+    data.map(|data| {
+        serde_json::from_str::<SavedDraft>(&data)
+            .map(Draft::from)
+            .map_err(Error::from)
+    })
+    .transpose()
 }
 
 pub(super) fn clear(db: &Connection, id: &RequestId) -> Result<(), Error> {

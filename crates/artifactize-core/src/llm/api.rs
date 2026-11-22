@@ -68,6 +68,79 @@ impl Api {
     }
 }
 
+/// Standard model-list APIs publish names but not the allowable request effort values.
+/// Recognize the API's named families (including dated snapshots); unknown endpoints' model
+/// IDs get no options rather than a guess. `None` leaves the default to the provider.
+pub(super) fn model_efforts(
+    api: Api,
+    model: &str,
+) -> (&'static [&'static str], Option<&'static str>) {
+    const REASONING: &[&str] = &["low", "medium", "high"];
+    const CLAUDE: &[&str] = &["low", "medium", "high", "max"];
+    const OPENAI_NONE: &[&str] = &["none", "low", "medium", "high", "xhigh"];
+    // Match a family or a dated snapshot, without assuming an unlisted variant has
+    // the same capabilities.
+    let named = |name: &str| {
+        model == name
+            || model.strip_prefix(name).is_some_and(|suffix| {
+                suffix
+                    .strip_prefix('-')
+                    .is_some_and(|date| date.starts_with("20"))
+            })
+    };
+    let family = |prefix: &str| model.starts_with(prefix);
+    match api {
+        Api::OpenaiResponses | Api::OpenaiChat
+            if ["o1", "o3", "o3-mini", "o4-mini"].into_iter().any(named) =>
+        {
+            (REASONING, Some("medium"))
+        }
+        Api::OpenaiResponses if named("o3-pro") => (&["high"], Some("high")),
+        Api::OpenaiResponses | Api::OpenaiChat
+            if ["gpt-5", "gpt-5-mini", "gpt-5-nano"].into_iter().any(named) =>
+        {
+            (&["minimal", "low", "medium", "high"], Some("medium"))
+        }
+        Api::OpenaiResponses | Api::OpenaiChat if named("gpt-5.1") => {
+            (&["none", "low", "medium", "high"], Some("none"))
+        }
+        Api::OpenaiResponses | Api::OpenaiChat
+            if [
+                "gpt-5.2",
+                "gpt-5.4",
+                "gpt-5.4-mini",
+                "gpt-5.4-nano",
+                "gpt-5.5",
+            ]
+            .into_iter()
+            .any(named) =>
+        {
+            (OPENAI_NONE, Some("none"))
+        }
+        Api::OpenaiResponses
+            if ["gpt-5.2-pro", "gpt-5.4-pro", "gpt-5.5-pro"]
+                .into_iter()
+                .any(named) =>
+        {
+            (&["medium", "high", "xhigh"], Some("medium"))
+        }
+        Api::Anthropic
+            if ["claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8"]
+                .into_iter()
+                .any(named) =>
+        {
+            (CLAUDE, Some("high"))
+        }
+        Api::Anthropic if named("claude-sonnet-4-6") => (REASONING, Some("high")),
+        Api::Gemini if family("gemini-3-pro-") => (&["low", "high"], Some("high")),
+        Api::Gemini if family("gemini-3.1-pro-") => (REASONING, Some("high")),
+        Api::Gemini if family("gemini-3-flash-") || family("gemini-3.1-flash-") => {
+            (&["minimal", "low", "medium", "high"], None)
+        }
+        _ => (&[], None),
+    }
+}
+
 /// The API a custom endpoint speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "kebab-case")]

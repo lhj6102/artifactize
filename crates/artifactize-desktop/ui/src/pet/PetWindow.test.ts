@@ -1,5 +1,5 @@
 // The pet overlay against a mocked command boundary: it holds the active review's library
-// draft (Notes, the verdict and its form), points in an open viewer of the review's Artifact
+// draft (Points, the verdict and its form), points in an open viewer of the review's Artifact
 // only, submits as Review does, and leads back to the review in the main window.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -26,7 +26,7 @@ function backend() {
       case "human_open":
         return humanView("review");
       case "human_draft_submit":
-        return { notice: { text: "Submitted.", error: false }, view: humanView("completed", { notes: library.draft.notes }), settled: "published" };
+        return { notice: { text: "Submitted.", error: false }, view: humanView("completed"), settled: "published" };
       default:
         return null;
     }
@@ -34,7 +34,7 @@ function backend() {
   return { calls, library };
 }
 
-it("writes the review's Notes and opens the verdict the draft holds", async () => {
+it("writes the review's form and opens the verdict the draft holds", async () => {
   const { calls, library } = backend();
   // Saved before (another window, an earlier run of the app): GREEN was chosen.
   library.draft.verdict = "GREEN";
@@ -42,8 +42,8 @@ it("writes the review's Notes and opens the verdict the draft holds", async () =
   await screen.findByRole("button", { name: "Show release/signoff in Review" });
   // The draft holds GREEN: its form is open, Submit names it.
   await screen.findByRole("button", { name: "Submit GREEN" });
-  await fireEvent.input(screen.getByLabelText("Notes"), { target: { value: "Looks right." } });
-  await waitFor(() => expect(library.draft.notes).toBe("Looks right."));
+  await fireEvent.input(screen.getByLabelText(/comment/i), { target: { value: "Looks right." } });
+  await waitFor(() => expect(library.draft.green.draft.fields[1][1]).toEqual({ kind: "text", value: "Looks right." }));
   await fireEvent.click(screen.getByRole("radio", { name: "RED" }));
   await screen.findByRole("button", { name: "Submit RED" });
   expect(library.draft.verdict).toBe("RED");
@@ -85,19 +85,14 @@ it("leads back to the review in the main window", async () => {
   expect(calls.some((call) => call.cmd === "main_focus")).toBe(true);
 });
 
-it("marks what a viewer's Point appended in the Notes until they are next edited", async () => {
+it("reloads a viewer Point when the library reports that the draft changed", async () => {
   const { library } = backend();
   library.draft.verdict = "GREEN";
-  const { container } = render(PetWindow, { request: "run-a-2" });
+  render(PetWindow, { request: "run-a-2" });
   await screen.findByRole("button", { name: "Submit GREEN" });
-  // A viewer's Point appended a line through the library, and says so.
-  library.draft.notes = "Read it.\nrelease.md L2:C4";
-  await emit("notes-pointed", { review: "run-a-2", text: "release.md L2:C4" });
+  library.draft.points.push({ text: "release.md L2:C4", source: "Release", at: "2026-11-22T22:00:00Z" });
   await emit("human-draft-changed", { id: "run-a-2" });
-  await waitFor(() => expect([...container.querySelectorAll(".backdrop mark")].map((mark) => mark.textContent)).toEqual(["release.md L2:C4"]));
-  // Edited, the Notes read as one text again.
-  await fireEvent.input(screen.getByLabelText("Notes"), { target: { value: "Read it.\nrelease.md L2:C4\nFine." } });
-  await waitFor(() => expect(container.querySelector(".backdrop")).toBeNull());
+  await screen.findByText("release.md L2:C4");
 });
 
 it("shows a saved verdict's form with what was entered, sending nothing; a fresh draft opens none", async () => {

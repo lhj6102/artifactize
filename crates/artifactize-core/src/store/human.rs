@@ -372,7 +372,6 @@ impl Receipts {
                         {
                             return Err(Error::Invalid("The review's verdict or fields changed while submitting. Review the saved draft and submit again.".into()));
                         }
-                        request.review_notes = latest.map(|draft| draft.notes).filter(|notes| !notes.is_empty());
                         draft::clear(&transaction, &current.id)?;
                         super::RequestState::completed(result, crate::broker::now())
                     }

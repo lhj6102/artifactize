@@ -165,8 +165,8 @@ impl Fixture {
             serde_json::from_slice::<Value>(&models.stdout).unwrap(),
             json!({
                 "backend":"antigravity", "models":[
-                    {"slug":"first-model", "display_name":"First"},
-                    {"slug":"chosen-model", "display_name":"Chosen"}
+                    {"slug":"first-model", "display_name":"First", "efforts":[], "default_effort":null},
+                    {"slug":"chosen-model", "display_name":"Chosen", "efforts":["balanced","deep-thinking"], "default_effort":"balanced"}
                 ]
             })
         );
@@ -214,6 +214,7 @@ impl Fixture {
         let mut model = Model {
             backend: "antigravity".parse().unwrap(),
             model: "not-listed".parse().unwrap(),
+            effort: None,
         };
         assert!(
             chat.create(&self.repo, Some(model.clone()))
@@ -222,6 +223,14 @@ impl Fixture {
                 .contains("does not list")
         );
         model.model = "chosen-model".parse().unwrap();
+        model.effort = Some("unsupported".into());
+        assert!(
+            chat.create(&self.repo, Some(model.clone()))
+                .await
+                .unwrap_err()
+                .contains("does not offer effort")
+        );
+        model.effort = Some("deep-thinking".into());
         let session = chat.create(&self.repo, Some(model.clone())).await.unwrap();
         let bad_cli = self.root.join(os::non_unicode_component());
         let bad_path_chat = Chat::new(self.state.clone(), bad_cli);
