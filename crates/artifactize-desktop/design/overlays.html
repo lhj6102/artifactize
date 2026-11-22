@@ -50,10 +50,11 @@
     <div class="m-scrim"></div>
     <div class="m-dialog m-palette" style="top: 60px">
       <div class="m-palette-input">Type a command…</div>
-      <div class="m-palette-group" style="max-height: 372px">
-        <span class="m-scrollthumb" style="top: 6px; height: 300px"></span>
+      <div class="m-palette-group" style="height: 360px">
+        <span class="m-scrollthumb" style="top: 82px; height: 284px"></span>
+        <div style="margin-top: -96px">
         <div class="m-palette-heading">App</div>
-        <div class="m-palette-item selected"><span>Keyboard shortcuts</span><span class="m-kbd">?</span></div>
+        <div class="m-palette-item"><span>Keyboard shortcuts</span><span class="m-kbd">?</span></div>
         <div class="m-palette-item"><span>Show Settings</span><span class="m-kbd">Ctrl+,</span></div>
         <div class="m-palette-item"><span>Show Chat</span><span class="m-kbd">Ctrl+1</span></div>
         <div class="m-palette-item"><span>Show Verify</span><span class="m-kbd">Ctrl+2</span></div>
@@ -70,7 +71,8 @@
         <div class="m-palette-item"><span>Choose RED</span><span class="m-kbd">r</span></div>
         <div class="m-palette-item"><span>Submit</span><span class="m-kbd">Ctrl+S</span></div>
         <div class="m-palette-item"><span>Release the claim</span><span class="m-kbd">u</span></div>
-        <div class="m-palette-item"><span>Show or hide Debug</span><span class="m-kbd">t</span></div>
+        <div class="m-palette-item selected"><span>Show or hide Debug</span><span class="m-kbd">t</span></div>
+        </div>
       </div>
     </div>
   </div>
@@ -78,7 +80,7 @@
 <span class="callout" style="left: 300px; top: 34px">1</span>
 <span class="callout" style="left: 300px; top: 114px">2</span>
 </div>
-<figcaption>Stage 1280 × 560. The command palette, opened over a review whose form is being edited: the app's commands, then the review's.</figcaption>
+<figcaption>Stage 1280 × 560. The command palette, opened over a review whose form is being edited: the app's commands, then the review's. Its list holds fifteen whole rows above the bottom bar; ↓ has moved the selection to its last command, so the list is scrolled to its end, the thumb at the bottom.</figcaption>
 </figure>
 
 <figure class="figure">
@@ -141,7 +143,7 @@
     <div class="m-dialog" style="top: 32px; left: 28%; width: 480px">
       <h2>Keyboard shortcuts</h2>
       <p class="m-section-label" style="margin: 0 0 6px">Pane</p>
-      <dl class="m-kv" style="grid-template-columns: max-content 1fr"><dt style="text-align: left"><span class="m-kbd">↑</span> <span class="m-kbd">↓</span></dt><dd>Move through the branches and the timelines of expanded branches</dd><dt style="text-align: left"><span class="m-kbd">j</span> <span class="m-kbd">k</span></dt><dd>The same as ↓ and ↑</dd><dt style="text-align: left"><span class="m-kbd">Ctrl+B</span></dt><dd>Show or hide the Pane</dd><dt style="text-align: left"><span class="m-kbd">Ctrl+K</span></dt><dd>Open the command palette</dd><dt style="text-align: left"><span class="m-kbd">→</span></dt><dd>Expand the selected branch, or enter its timeline</dd><dt style="text-align: left"><span class="m-kbd">←</span></dt><dd>Step back out of the timeline, or fold the branch</dd><dt style="text-align: left"><span class="m-kbd">↓</span></dt><dd>Past a timeline's oldest entry, bring older Runs</dd><dt style="text-align: left"><span class="m-kbd">Enter</span></dt><dd>Move into the Main area</dd><dt style="text-align: left"><span class="m-kbd">/</span> <span class="m-kbd">Ctrl+F</span></dt><dd>Focus the Search</dd><dt style="text-align: left"><span class="m-kbd">↑</span> <span class="m-kbd">↓</span></dt><dd>In the Search: choose a suggestion</dd><dt style="text-align: left"><span class="m-kbd">Tab</span> <span class="m-kbd">Enter</span></dt><dd>In the Search: take the chosen suggestion, or the first</dd><dt style="text-align: left"><span class="m-kbd">Esc</span></dt><dd>In the Search: close the suggestions, then put back <code>sort:recent</code>, then return to the list</dd></dl>
+      <dl class="m-kv m-scrolls" style="grid-template-columns: max-content 1fr"><dt style="text-align: left"><span class="m-kbd">↑</span> <span class="m-kbd">↓</span></dt><dd>Move through the branches and the timelines of expanded branches</dd><dt style="text-align: left"><span class="m-kbd">j</span> <span class="m-kbd">k</span></dt><dd>The same as ↓ and ↑</dd><dt style="text-align: left"><span class="m-kbd">Ctrl+B</span></dt><dd>Show or hide the Pane</dd><dt style="text-align: left"><span class="m-kbd">Ctrl+K</span></dt><dd>Open the command palette</dd><dt style="text-align: left"><span class="m-kbd">→</span></dt><dd>Expand the selected branch, or enter its timeline</dd><dt style="text-align: left"><span class="m-kbd">←</span></dt><dd>Step back out of the timeline, or fold the branch</dd><dt style="text-align: left"><span class="m-kbd">↓</span></dt><dd>Past a timeline's oldest entry, bring older Runs</dd><dt style="text-align: left"><span class="m-kbd">Enter</span></dt><dd>Move into the Main area</dd><dt style="text-align: left"><span class="m-kbd">/</span> <span class="m-kbd">Ctrl+F</span></dt><dd>Focus the Search</dd><dt style="text-align: left"><span class="m-kbd">↑</span> <span class="m-kbd">↓</span></dt><dd>In the Search: choose a suggestion</dd><dt style="text-align: left"><span class="m-kbd">Tab</span> <span class="m-kbd">Enter</span></dt><dd>In the Search: take the chosen suggestion, or the first</dd><dt style="text-align: left"><span class="m-kbd">Esc</span></dt><dd>In the Search: close the suggestions, then put back <code>sort:recent</code>, then return to the list</dd></dl>
       <div class="m-dialog-actions"><span class="m-button">Close</span></div>
     </div>
     <div class="m-dialog" style="top: 32px; left: 74%; width: 320px">
@@ -369,7 +371,7 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-OVL-1">D-OVL-1</dt>
-  <dd>A dialog is a <code>--surface-raised</code> panel with a 1px <code>--line-panel</code> border, <code>--radius-chip</code> corners, 16px padding and a shadow no stronger than 8px offset, 24px blur in <code>--scrim</code>, over a <code>--scrim</code> overlay; its title is <code>--text-title</code> semibold; its actions are right-aligned 24px buttons, at most one primary. A dialog's buttons carry no key cap (D-SYS-12), but for the Leave dialog's two, which may show their keys as hints at the end of their labels. <span class="avoid">a 12px radius; a borderless card floating on a blur; a key cap on any other dialog's button.</span></dd>
+  <dd>A dialog stays inside the work area, between the window's top and the bottom bar: taller than the room, its content scrolls under its title and above its actions, which stay in view, a 4px <code>--line-input</code> thumb showing there is more. It is a <code>--surface-raised</code> panel with a 1px <code>--line-panel</code> border, <code>--radius-chip</code> corners, 16px padding and a shadow no stronger than 8px offset, 24px blur in <code>--scrim</code>, over a <code>--scrim</code> overlay; its title is <code>--text-title</code> semibold; its actions are right-aligned 24px buttons, at most one primary. A dialog's buttons carry no key cap (D-SYS-12), but for the Leave dialog's two, which may show their keys as hints at the end of their labels. <span class="avoid">a 12px radius; a borderless card floating on a blur; a key cap on any other dialog's button.</span></dd>
   <dt id="D-OVL-2">D-OVL-2</dt>
   <dd>The command palette, which a click on the bar's brand opens (D-BAR-1), is 640px wide near the top: its input a field as Find's is, <code>--surface-input</code> inside a 1px <code>--line-input</code> edge with the 1px <code>--current-mark</code> editing outline while typed in, group headings at <code>--text-label</code> uppercase in <code>--ink-2</code>, its list bounded above the bottom bar and scrolling on its own, a 4px <code>--line-input</code> thumb at its right showing how much is out of view; items of <code>--row</code> with the label left in <code>--ink-2</code> and its key cap, if it has one, right, the selected item the darker <code>--selection</code> row with its label in <code>--ink</code>; typing filters the rows: only the commands whose names contain the typed text stay, in their order, each group heading kept only while one of its commands does (typing <i>rel</i> here would leave Release the claim alone, under Human review), and the selected row among them on <code>--selection</code>. It lists every command that is enabled now, each with its key cap where the app offers a key (J-PALETTE): the app's first, under App, then those of what is shown, each under its group (Graph, Human review, and Settings while Settings is open); the Graph group holds a graph's commands that can run now, <i>Minimize or expand the whole</i> among them while a whole's Detail is open (J-GRAPH-MINIMIZE); while a graph's Detail shows a Human review on a Human eval's tab, that review's commands are listed too, under the review's group, as they are for a review in the Main area. <span class="avoid">icons per command; the selection shown by colour alone; a command that opens the palette itself.</span></dd>
   <dt id="D-OVL-3">D-OVL-3</dt>

@@ -110,7 +110,7 @@
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
       <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
-      <div class="m-providers">
+      <div class="m-providers m-scrolls">
         <div>
           <div class="m-choice current">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice">Antigravity</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
         </div>
@@ -158,7 +158,7 @@
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
       <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
-      <div class="m-providers">
+      <div class="m-providers m-scrolls">
         <div>
           <div class="m-choice">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice current">Antigravity</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
         </div>
@@ -268,7 +268,7 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-SET-1">D-SET-1</dt>
-  <dd>Settings is a <code>--surface-raised</code> dialog with a 1px <code>--line-panel</code> border and <code>--radius-chip</code> corners over a <code>--scrim</code>, at most 900px wide and the window's height less 80px, 12–16px padding; the bar stays above the scrim. Its header row holds the title at <code>--text-title</code> semibold, the tabs, then at the right this machine's reviewer as <i>Reviewer {name}</i> in <code>--ink-2</code>, the name the app claims reviews as, the release notice while a newer release is out, and Close at the end. The release notice, <i>{version} available</i> as a button before Close, shows only while the app's release lookup (at start and once a day) has found a stable release newer than the running one, and never on a Microsoft Store install, which the Store updates; a click on it opens the Update dialog (D-OVL-5), and it stays after that dialog closes; the tab's content follows right under it. It opens on Providers. <span class="avoid">a full-screen page; a 20px radius; a line that explains the dialog; a key cap on Close; a release notice for the running version, a pre-release or a Store install; a badge or dot standing in for it.</span></dd>
+  <dd>Settings is a <code>--surface-raised</code> dialog with a 1px <code>--line-panel</code> border and <code>--radius-chip</code> corners over a <code>--scrim</code>, at most 900px wide and the window's height less 80px, never past the bottom bar: shorter than its content, the tab's content scrolls under the header row, which stays, 12–16px padding; the bar stays above the scrim. Its header row holds the title at <code>--text-title</code> semibold, the tabs, then at the right this machine's reviewer as <i>Reviewer {name}</i> in <code>--ink-2</code>, the name the app claims reviews as, the release notice while a newer release is out, and Close at the end. The release notice, <i>{version} available</i> as a button before Close, shows only while the app's release lookup (at start and once a day) has found a stable release newer than the running one, and never on a Microsoft Store install, which the Store updates; a click on it opens the Update dialog (D-OVL-5), and it stays after that dialog closes; the tab's content follows right under it. It opens on Providers. <span class="avoid">a full-screen page; a 20px radius; a line that explains the dialog; a key cap on Close; a release notice for the running version, a pre-release or a Store install; a badge or dot standing in for it.</span></dd>
   <dt id="D-SET-2">D-SET-2</dt>
   <dd>The tabs are text: <code>--ink-2</code>, the active one <code>--ink</code> at the same weight with a 2px <code>--current-mark</code> line below (D-SYS-13); a click on one shows that tab; they are a tab list: the active tab takes keyboard focus as a control, with the 2px <code>--focus</code> ring (D-SYS-7), and the active one is read aloud as selected. <span class="avoid">pill tabs; the active tab filled.</span></dd>
   <dt id="D-SET-3">D-SET-3</dt>

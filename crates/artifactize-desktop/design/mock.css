@@ -725,18 +725,17 @@
    the keyboard moves focus. */
 .m-node.selected,
 .m-whole.selected {
-  border-color: var(--current-mark);
-  box-shadow: 0 0 0 1px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
 }
 .m-whole.selected {
-  box-shadow: 0 0 0 1px var(--current-mark);
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark);
 }
 .m-node.hovered:not(.selected) {
   border-color: var(--ink-3);
 }
 .m-node.focused {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: 5px;
 }
 /* Ports: where edges reach a node or a box, a triangle pointing in on its left side; where they
    leave it, a square on its right; each in the edges' neutral colour, straddling its outline. */
@@ -1390,6 +1389,37 @@
   border: 1px solid var(--line-panel);
   border-radius: var(--radius-chip);
   box-shadow: 0 8px 24px var(--scrim);
+}
+/* A dialog never leaves the work area: taller than the room, its content scrolls under its
+   title and above its actions, which stay in view; a thin thumb shows there is more. */
+.m-dialog {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: calc(100% - 64px);
+}
+.m-dialog > * {
+  flex: none;
+}
+.m-dialog > .m-kv,
+.m-dialog > .m-providers {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.m-scrolls {
+  position: relative;
+  padding-right: 12px;
+}
+.m-scrolls::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 4px;
+  height: 55%;
+  border-radius: 2px;
+  background: var(--line-input);
 }
 .m-dialog h2 {
   margin: 0 0 10px;
