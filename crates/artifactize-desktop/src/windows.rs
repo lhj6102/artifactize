@@ -182,37 +182,33 @@ pub async fn viewer_window(
     session: u32,
     title: String,
 ) -> Result<(), Failure> {
-    if let Some(review) = app.viewers.pending_review(session) {
-        let view = artifactize_core::store::read_request_as(
-            &app.launch.state,
-            review.as_str(),
-            artifactize_core::store::Shown::Requests,
-        )
-        .await
-        .map_err(Failure::Read)?;
-        if let Some(reason) =
-            artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer)
-        {
-            app.viewers.drop_session(session);
-            return Err(Failure::Action(reason));
+    let ready = async {
+        if let Some(review) = app.viewers.pending_review(session) {
+            let view = artifactize_core::store::read_request_as(
+                &app.launch.state,
+                review.as_str(),
+                artifactize_core::store::Shown::Requests,
+            )
+            .await
+            .map_err(Failure::Read)?;
+            if let Some(reason) =
+                artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer)
+            {
+                return Err(Failure::Action(reason));
+            }
         }
+        let prepared = app.viewers.get(session)?;
+        crate::failure::joined(tokio::task::spawn_blocking(move || prepared.check_scope()).await)?
+            .map_err(Failure::Read)
     }
-    let prepared = app.viewers.get(session)?;
-    let scope =
-        crate::failure::joined(tokio::task::spawn_blocking(move || prepared.check_scope()).await)?;
-    if let Err(error) = scope {
-        if let Some(pending) = app.viewers.take_launch(session) {
-            let _ = pending.open(|| Err(Failure::Read(error.clone())));
-        }
-        app.viewers.drop_session(session);
-        return Err(Failure::Read(error));
-    }
-    // Take the handoff once; a cancelled or already consumed handoff cannot open again.
+    .await;
+    // Take the handoff once, including on a failed read, to end its log and release the job.
     let pending = app
         .viewers
         .take_launch(session)
         .ok_or_else(|| Failure::Missing("Viewer launch is no longer available.".into()))?;
-    let result = pending.open(|| app.windows.act(&app, Action::Viewer { session, title }));
+    let result = pending
+        .open(|| ready.and_then(|()| app.windows.act(&app, Action::Viewer { session, title })));
     if result.is_err() {
         app.viewers.drop_session(session);
     }

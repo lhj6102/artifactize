@@ -987,6 +987,9 @@ pub async fn human_release_taken(
         .human
         .jobs
         .begin(caller, job, ids.clone(), Action::Finish)?;
+    for id in &ids {
+        app.viewers.cancel_review(id);
+    }
     work.ready().await?;
     let mut failed = Vec::new();
     for claim in claims {

@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::{
     collections::BTreeMap,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tauri_specta::Event;
@@ -49,7 +50,7 @@ struct Running {
     scan: crate::ids::ScanId,
     token: CancellationToken,
     stage: watch::Receiver<Stage>,
-    again: bool,
+    again: Option<PathBuf>,
 }
 
 /// A scan to run: its number, how to stop it, and where it tells how far it is.
@@ -57,6 +58,7 @@ struct Fresh {
     scan: crate::ids::ScanId,
     token: CancellationToken,
     stage: watch::Sender<Stage>,
+    workspace: PathBuf,
 }
 
 /// What a scan request does: show the branch's scan still running, or run a new one.
@@ -123,20 +125,27 @@ impl Currents {
     /// afresh once its fingerprints are in, so the one running also sees a Run that ended
     /// meanwhile. A `refresh` is for the files as they are now, which the running scan may
     /// have read before they changed: a new scan follows it.
-    fn request(&self, place: &Place, refresh: bool) -> Request {
+    fn request(&self, place: &Place, workspace: PathBuf, refresh: bool) -> Request {
         let mut running = self.running.lock().expect("scans lock");
         // A scan whose task is gone without ending (its sender dropped) is not waited for.
         if let Some(scan) = running.get_mut(place)
             && scan.stage.has_changed().is_ok()
         {
-            scan.again |= refresh;
+            if refresh {
+                scan.again = Some(workspace);
+            }
             return Request::Join(scan.stage.clone());
         }
-        Request::Run(self.start(&mut running, place))
+        Request::Run(self.start(&mut running, place, workspace))
     }
 
     /// Note a new scan of `place` as running.
-    fn start(&self, running: &mut BTreeMap<Place, Running>, place: &Place) -> Fresh {
+    fn start(
+        &self,
+        running: &mut BTreeMap<Place, Running>,
+        place: &Place,
+        workspace: PathBuf,
+    ) -> Fresh {
         let scan = crate::ids::ScanId::allocate(&self.scans);
         let token = CancellationToken::new();
         let (stage, receiver) = watch::channel(Stage::Started);
@@ -146,11 +155,16 @@ impl Currents {
                 scan,
                 token: token.clone(),
                 stage: receiver,
-                again: false,
+                again: None,
             },
         );
         self.failed.lock().expect("failures lock").remove(place);
-        Fresh { scan, token, stage }
+        Fresh {
+            scan,
+            token,
+            stage,
+            workspace,
+        }
     }
 
     /// Keep a step of scan `scan` of `place`, unless the state was replaced since.
@@ -189,12 +203,12 @@ impl Currents {
     ) -> Option<Option<Fresh>> {
         let mut running = self.running.lock().expect("scans lock");
         let again = match running.get(place) {
-            Some(running) if running.scan == scan => running.again,
+            Some(running) if running.scan == scan => running.again.clone(),
             _ => return None,
         };
         running.remove(place);
-        if again {
-            return Some(Some(self.start(&mut running, place)));
+        if let Some(workspace) = again {
+            return Some(Some(self.start(&mut running, place, workspace)));
         }
         if let Some(failure) = failure {
             self.failed
@@ -533,7 +547,7 @@ pub async fn current_scan(
 ) -> Result<CurrentView, Failure> {
     let place = branch.to_place();
     let workspace = app.current_workspace(&branch).await?;
-    let mut stage = match app.currents.request(&place, refresh) {
+    let mut stage = match app.currents.request(&place, workspace, refresh) {
         Request::Join(stage) => stage,
         Request::Run(fresh) => {
             let receiver = fresh.stage.subscribe();
@@ -542,10 +556,16 @@ pub async fn current_scan(
             let key = branch.clone();
             tauri::async_runtime::spawn(async move {
                 let mut next = Some(fresh);
-                while let Some(Fresh { scan, token, stage }) = next.take() {
+                while let Some(Fresh {
+                    scan,
+                    token,
+                    stage,
+                    workspace,
+                }) = next.take()
+                {
                     let found = async {
                         // A queued refresh can outlive the checkout it was requested for.
-                        let workspace = place.checked_workspace(workspace.clone()).await?;
+                        let workspace = place.checked_workspace(workspace).await?;
                         live::scan(&workspace, &state, token, |current| {
                             if currents.publish(&place, scan, current) {
                                 stage.send_replace(Stage::Published);

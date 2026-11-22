@@ -19,7 +19,7 @@ use crate::{
 
 /// Relative file reads and directory listings use the selected Artifact's own scope, not the
 /// workspace or the rest of the review's scope. A viewer cannot choose its own scope.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Session {
     root: PathBuf,
     checkout: repository::Identity,
@@ -170,9 +170,8 @@ impl Session {
         review: &Review,
         text: &str,
     ) -> Result<crate::review::Draft, String> {
-        let path = self.root.clone();
-        let checkout = self.checkout.clone();
-        crate::task::blocking(move || check_checkout(&path, &checkout)).await??;
+        let session = self.clone();
+        crate::task::blocking(move || session.check_scope()).await??;
         let context = self.context(None);
         let source = format!("{} · {}", context.artifact, context.title);
         crate::review::append_point(state, &review.id, &review.reviewer, text, &source).await

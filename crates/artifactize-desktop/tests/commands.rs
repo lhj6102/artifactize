@@ -1210,6 +1210,13 @@ payload.instruction = "Read the page."
     assert_eq!(new["target"], "alternate");
     assert_eq!(old["petMatch"], false);
     assert_eq!(new["petMatch"], true);
+    let release = invoke(
+        &window,
+        "human_release_taken",
+        json!({"ids":[new["review"]],"job":11}),
+    )
+    .unwrap();
+    assert_eq!(release["notice"]["error"], false);
 }
 
 #[test]

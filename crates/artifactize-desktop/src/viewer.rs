@@ -351,10 +351,9 @@ pub async fn viewer_context(
 ) -> Result<ViewerContext, Failure> {
     let viewer = app.viewers.get(session)?;
     let checked = viewer.clone();
-    let checkout = crate::failure::joined(
-        tokio::task::spawn_blocking(move || checked.check_checkout()).await,
-    )?
-    .is_ok();
+    let checkout =
+        crate::failure::joined(tokio::task::spawn_blocking(move || checked.check_scope()).await)?
+            .is_ok();
     let active = if checkout { active(&app).await } else { None };
     let (review, pet_match) = {
         let sessions = app.viewers.0.lock().expect("viewer sessions");

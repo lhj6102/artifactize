@@ -1,6 +1,7 @@
 use super::{Currents, Fresh, Request, Stage, view};
 use crate::{browse::BranchKey, ids::ScanId};
 use artifactize_core::monitor::live::{Current, Place};
+use std::path::PathBuf;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
@@ -27,7 +28,9 @@ fn failure(currents: &Currents) -> Option<String> {
 /// The scan a request started.
 fn started(request: Request) -> (ScanId, CancellationToken, watch::Sender<Stage>) {
     match request {
-        Request::Run(Fresh { scan, token, stage }) => (scan, token, stage),
+        Request::Run(Fresh {
+            scan, token, stage, ..
+        }) => (scan, token, stage),
         Request::Join(_) => panic!("joined a running scan instead of starting one"),
     }
 }
@@ -43,8 +46,9 @@ fn joined(request: Request) -> watch::Receiver<Stage> {
 #[test]
 fn a_request_while_the_scan_runs_shows_it_and_gets_its_outcome() {
     let currents = Currents::default();
-    let (scan, token, stage) = started(currents.request(&place(), false));
-    let mut shown = joined(currents.request(&place(), false));
+    let (scan, token, stage) =
+        started(currents.request(&place(), PathBuf::from("worktree"), false));
+    let mut shown = joined(currents.request(&place(), PathBuf::from("worktree"), false));
     assert_eq!(*shown.borrow(), Stage::Started, "nothing published yet");
     assert!(
         !token.is_cancelled(),
@@ -65,7 +69,7 @@ fn a_request_while_the_scan_runs_shows_it_and_gets_its_outcome() {
         Some("the worktree is unreadable")
     );
     // Once it ended, the next request scans again, its failure forgotten.
-    let (next, ..) = started(currents.request(&place(), false));
+    let (next, ..) = started(currents.request(&place(), PathBuf::from("worktree"), false));
     assert!(next > scan);
     assert_eq!(failure(&currents), None);
 }
@@ -73,16 +77,17 @@ fn a_request_while_the_scan_runs_shows_it_and_gets_its_outcome() {
 #[test]
 fn a_scan_whose_task_is_gone_is_not_waited_for() {
     let currents = Currents::default();
-    let (scan, _token, stage) = started(currents.request(&place(), false));
+    let (scan, _token, stage) =
+        started(currents.request(&place(), PathBuf::from("worktree"), false));
     drop(stage);
-    let (next, ..) = started(currents.request(&place(), false));
+    let (next, ..) = started(currents.request(&place(), PathBuf::from("worktree"), false));
     assert!(next > scan);
 }
 
 #[test]
 fn stopping_cancels_the_running_scan_and_ends_once_its_task_lets_go() {
     let currents = Currents::default();
-    let (_, token, stage) = started(currents.request(&place(), false));
+    let (_, token, stage) = started(currents.request(&place(), PathBuf::from("worktree"), false));
     let mut stopped = std::pin::pin!(currents.stop());
     assert!(token.is_cancelled());
     let mut context = std::task::Context::from_waker(std::task::Waker::noop());
@@ -93,35 +98,43 @@ fn stopping_cancels_the_running_scan_and_ends_once_its_task_lets_go() {
     drop(stage);
     assert!(stopped.as_mut().poll(&mut context).is_ready());
     // A later request scans again rather than joining the stopped scan.
-    started(currents.request(&place(), false));
+    started(currents.request(&place(), PathBuf::from("worktree"), false));
 }
 
 #[test]
 fn a_replaced_state_stops_the_scan_and_keeps_nothing_it_finds() {
     let currents = Currents::default();
-    let (scan, token, _stage) = started(currents.request(&place(), false));
+    let (scan, token, _stage) =
+        started(currents.request(&place(), PathBuf::from("worktree"), false));
     currents.reset();
     assert!(token.is_cancelled());
     assert!(
         currents.end(&place(), scan, None).is_none(),
         "its end is not announced"
     );
-    let (next, ..) = started(currents.request(&place(), false));
+    let (next, ..) = started(currents.request(&place(), PathBuf::from("worktree"), false));
     assert!(next > scan);
 }
 
 #[test]
 fn a_refresh_while_the_scan_runs_shows_it_then_scans_once_more() {
     let currents = Currents::default();
-    let (scan, token, _stage) = started(currents.request(&place(), false));
+    let (scan, token, _stage) =
+        started(currents.request(&place(), PathBuf::from("worktree"), false));
     // Files may have changed after the running scan read them.
-    joined(currents.request(&place(), true));
-    joined(currents.request(&place(), true));
+    joined(currents.request(&place(), PathBuf::from("moved-worktree"), true));
+    joined(currents.request(&place(), PathBuf::from("moved-worktree"), true));
     assert!(!token.is_cancelled(), "a refresh never stops the scan");
-    let Some(Some(Fresh { scan: next, .. })) = currents.end(&place(), scan, None) else {
+    let Some(Some(Fresh {
+        scan: next,
+        workspace,
+        ..
+    })) = currents.end(&place(), scan, None)
+    else {
         panic!("no scan followed the refresh");
     };
     assert!(next > scan);
     // The two refreshes asked for one scan more, not two.
+    assert_eq!(workspace, PathBuf::from("moved-worktree"));
     assert!(matches!(currents.end(&place(), next, None), Some(None)));
 }
