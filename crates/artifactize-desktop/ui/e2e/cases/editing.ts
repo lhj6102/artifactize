@@ -86,7 +86,7 @@ export const scenarios: Scenario[] = [
       const unsaved = `${before}# Unsaved review comment\n`;
       await app.detail.editSource("core", unsaved);
       await app.graph.drag("a:core", 0, 60);
-      await app.until(async () => (await app.text()).includes(".artifactize/core.artf has unsaved text in its Source; nothing written."), "the graph refused to write the file with unsaved Source text");
+      await app.graph.expandNotice("Has unsaved text", ".artifactize/core.artf has unsaved text in its Source; nothing written.");
       await app.detail.definitionUntil("core", (shown) => shown.source === unsaved, "the typed Source text stayed in the editor");
       assert.equal(definitionText(fixture, "core"), before, "the graph edit left the file untouched");
       await app.detail.sourceAction("Revert");

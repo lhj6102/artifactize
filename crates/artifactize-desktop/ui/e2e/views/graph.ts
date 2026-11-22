@@ -49,6 +49,13 @@ export class Graph {
   // -------------------------------------------------------------------------------
   // The main area's header
 
+  async expandNotice(summary: string, full: string): Promise<void> {
+    const notice = this.browser.$(`${MAIN} > header .notice button`);
+    await holds(this.browser, async () => await notice.isDisplayed() && (await notice.getText()).includes(summary), `the header summarizes: ${summary}`);
+    await notice.click();
+    await holds(this.browser, async () => await notice.getAttribute("aria-expanded") === "true" && (await notice.getText()).includes(full), `the expanded header explains: ${full}`);
+  }
+
   async openOrigin(session: string): Promise<void> {
     const origin = this.browser.$(`${MAIN} > header`).$(`button=Chat · ${session}`);
     await origin.waitForDisplayed();
