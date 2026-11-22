@@ -27,7 +27,7 @@ export const scenarios: Scenario[] = [
       await stage("claimable");
       await app.detail.reviewAction("Claim to review");
       await stage("yours");
-      await app.waitingBadge(0);
+      await app.waitingBadge(1);
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
       await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the direct reference shows the claimed review");
@@ -59,6 +59,7 @@ export const scenarios: Scenario[] = [
       assert.match(completed.completed, /Release notes checked/);
       const saved = request(fixture);
       assert.equal(saved.status, "GREEN");
+      await app.waitingBadge(0);
       await app.review.back();
       await app.graph.titled(runId);
       await app.detail.until((detail) => detail.tabs.some((tab) => tab.name === "signoff" && tab.selected), "the originating Artifact Detail is open on its sign-off");

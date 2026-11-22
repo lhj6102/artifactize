@@ -170,10 +170,10 @@ export const scenarios: Scenario[] = [
       await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "only the other repository's review matches the new filter");
       await app.waitingBadge(2);
       assert.equal(artifactize(fixture, ["request", "claim", older, "--reviewer", "bob"]).status, 0);
-      await app.waitingBadge(1);
-      // Edited back to the waiting reviews, the one bob claimed is no longer listed.
+      // The claimed request is absent from the waiting filter but still needs its verdict.
       await app.review.filterFor("type:human waiting");
-      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "the claimed review no longer waits");
+      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "the claimed review is absent from the waiting filter");
+      await app.waitingBadge(2);
       await app.review.openListed(newer);
       assert.match(await app.review.debugState(), new RegExp(`^Request ${newer} `));
     },
