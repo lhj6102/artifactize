@@ -148,13 +148,12 @@
   );
   /** What the canvas paints from: the layout, with a dragged node and the parts inside it where
    * the drag has taken them. */
-  const paintedAt = $derived.by(() => {
-    const moved = v.moved;
-    if (!moved || !canvased) return laid;
+  let paintedAt = $derived(laid);
+  function dragScene(moved: { key: string; x: number; y: number }) {
     const inside = (copy: Copy | undefined): boolean => !!copy && (copy.key === moved.key || inside(copy.parent === null ? undefined : byKey.get(copy.parent)));
     const shifted = new Map([...rects].map(([key, rect]) => [key, inside(byKey.get(key)) ? { ...rect, x: rect.x + moved.x, y: rect.y + moved.y } : rect]));
     return scene(shifted, new Set(drawn.filter((copy) => copy.parts.length > 0).map((copy) => copy.key)), new Map(drawn.map((copy) => [copy.key, copy.node.id])));
-  });
+  }
   /** The whole graph, as Fit View fits it. */
   const bounds = $derived(laid.bounds);
   /** More Artifacts than the window keeps as elements: the canvas draws what they do not. */
@@ -223,7 +222,7 @@
           },
           draggable: editable && !painted,
           connectable: false,
-          ariaLabel: `${node.name}: ${node.note ?? (current ? currentWords(node.light, node.tally) : `${WORDS[node.light]}${tallyWords(node.tally)}`)}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
+          ariaLabel: `${node.name}: ${node.note ?? (current ? currentWords(node.light) : `${WORDS[node.light]}${tallyWords(node.tally)}`)}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
           domAttributes: { "data-light": node.light, "data-artifact": node.id },
         };
       });
@@ -504,7 +503,7 @@
   function dragMove(key: string, event: MouseEvent | TouchEvent) {
     if (!v.dragging || v.dragging.cancelled) return;
     const [from, now] = [v.pressed, pointOf(event)];
-    if (canvased && from && now) v.moved = { key, x: now.x - from.x, y: now.y - from.y };
+    if (canvased && from && now) paintedAt = dragScene({ key, x: now.x - from.x, y: now.y - from.y });
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
     const fromWhole = copy?.parent ? byKey.get(copy.parent)?.node.name ?? null : null;
     const next = copy && drop?.kind === "join" ? drop.key : null;
@@ -526,7 +525,7 @@
     try {
       await release(node, event);
     } finally {
-      v.moved = null;
+      paintedAt = laid;
     }
   }
 
@@ -603,6 +602,8 @@
       zoom,
     };
     let [moved, cancelled] = [false, false];
+    let intended: Copy | null = null;
+    let checked = 0;
     const move = (next: PointerEvent) => {
       if (cancelled || (!moved && Math.hypot(next.clientX - start.x, next.clientY - start.y) < DRAG)) return;
       moved = true;
@@ -610,9 +611,14 @@
       if (box) v.comment = { key, x: next.clientX - box.left, y: next.clientY - box.top, shape };
       const at = pointOf(next);
       const target = at ? under(drawn, rects, at) : null;
-      // Only a different Artifact without a comment gets the visual drop target.
-      const definition = target && defs.node(target.node.name);
-      v.target = target && target.node.name !== copy.node.name && definition?.comment === null && definition.commentError === null ? target.key : null;
+      if (intended?.key === target?.key) return;
+      intended = target;
+      const request = ++checked;
+      v.target = null;
+      const owner = branch;
+      if (owner && target) void defs.check(owner, { kind: "moveComment", from: copy.node.name, to: target.node.name }).then((result) => {
+        if (request === checked && result.kind === "checked") v.target = target.key;
+      }, () => {});
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -621,7 +627,8 @@
     };
     const up = () => {
       stop();
-      const target = cancelled || v.target === null ? null : byKey.get(v.target);
+      ++checked;
+      const target = intended;
       [v.comment, v.target] = [null, null];
       if (cancelled) return;
       if (!moved) defs.openField(copy.node.name, "graph");
@@ -632,6 +639,7 @@
       next.preventDefault();
       next.stopPropagation();
       cancelled = true;
+      ++checked;
       [v.comment, v.target] = [null, null];
     };
     window.addEventListener("pointermove", move);
@@ -683,7 +691,7 @@
     event.preventDefault();
     event.stopPropagation();
     v.dragging = { ...v.dragging, cancelled: true };
-    v.moved = null;
+    paintedAt = laid;
     v.target = null;
     v.epoch += 1;
     // Svelte Flow's drag ends on the button's release; this release ends it now.

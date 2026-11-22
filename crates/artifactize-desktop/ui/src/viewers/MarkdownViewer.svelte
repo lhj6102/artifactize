@@ -14,7 +14,7 @@
   const m = new MarkdownState(v);
   const single = $derived(v.context?.targetKind === "file");
 
-  let handle = $state.raw<{ left: number; top: number; width: number; height: number } | null>(null);
+  const handle = $derived(v.markdownHandle);
 
   function sourceLine(event: MouseEvent) {
     return (event.target as HTMLElement).closest<HTMLElement>("[data-line]");
@@ -30,24 +30,24 @@
     before.selectNodeContents(line);
     if (caret && line.contains(caret.node)) before.setEnd(caret.node, caret.offset);
     else before.collapse(true);
-    handle = null;
+    v.markdownHandle = null;
     void v.point(position(single || m.files.length < 2 ? null : m.shown, Number(line.dataset.line), before.toString().length + 1));
   }
 
   /** Highlight only the visible line, even when a single source line wraps. */
   function hover(event: MouseEvent) {
     const line = v.pointing ? sourceLine(event) : null;
-    if (!line) { handle = null; return; }
+    if (!line) { v.markdownHandle = null; return; }
     const range = document.createRange();
     range.selectNodeContents(line);
     const band = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.top <= event.clientY && rect.bottom >= event.clientY);
     const rects = band.length ? band : line.matches("tr, .code-line") ? [line.getBoundingClientRect()] : [];
-    if (!rects.length) { handle = null; return; }
+    if (!rects.length) { v.markdownHandle = null; return; }
     const page = event.currentTarget as HTMLElement;
     const bounds = page.getBoundingClientRect();
     const left = Math.min(...rects.map((rect) => rect.left));
     const top = Math.min(...rects.map((rect) => rect.top));
-    handle = {
+    v.markdownHandle = {
       left: left - bounds.left + page.scrollLeft,
       top: top - bounds.top + page.scrollTop,
       width: Math.max(...rects.map((rect) => rect.right)) - left,
@@ -100,7 +100,7 @@
     </ul>
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-  <article class="page" class:pointing={v.pointing} aria-label="Document" onclick={pointAt} onmousemove={hover} onmouseleave={() => (handle = null)} onscroll={() => (handle = null)}>
+  <article class="page" class:pointing={v.pointing} aria-label="Document" onclick={pointAt} onmousemove={hover} onmouseleave={() => (v.markdownHandle = null)} onscroll={() => (v.markdownHandle = null)}>
     {#if v.pointing && handle}
       <span class="handle" aria-hidden="true" style:left="{handle.left}px" style:top="{handle.top}px" style:width="{handle.width}px" style:height="{handle.height}px"></span>
     {/if}

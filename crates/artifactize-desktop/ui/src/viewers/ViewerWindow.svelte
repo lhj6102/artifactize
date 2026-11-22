@@ -24,7 +24,7 @@
   const entry = $derived(v.entry);
   const context = $derived(v.context);
   /** The plugin page's frame: the one source the bridge answers. */
-  let frame = $state<HTMLIFrameElement>();
+  const frame = $derived(v.frame);
   const CHANNEL = "artifactize-viewer/v1";
 
   /** Answer one bridge call of the plugin's page, from its own frame only. */
@@ -68,8 +68,9 @@
 
   /** The plugin page's frame loads from the viewer scheme, under its own policy. */
   const page: Attachment<HTMLIFrameElement> = (element) => {
-    frame = element;
+    v.frame = element;
     element.src = convertFileSrc(String(session), "viewer");
+    return () => { if (v.frame === element) v.frame = undefined; };
   };
 
   /** The page finished loading: one that has not asked the bridge for anything yet did not

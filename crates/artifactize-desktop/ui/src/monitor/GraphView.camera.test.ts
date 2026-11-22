@@ -81,7 +81,9 @@ beforeEach(() => {
   });
 });
 
+const fixtureElements: HTMLElement[] = [];
 afterEach(() => {
+  for (const element of fixtureElements.splice(0)) element.remove();
   cleanup();
   clearMocks();
   vi.resetAllMocks();
@@ -222,6 +224,7 @@ it("finds Artifacts and evals by name and brings the opened one to the middle of
   const detail = document.createElement("div");
   detail.tabIndex = -1;
   detail.getBoundingClientRect = () => DETAIL;
+  fixtureElements.push(detail);
   document.body.append(detail);
   app.monitor.panes.detail = detail;
   // The person zoomed far out: names are too small to read.
@@ -308,6 +311,7 @@ it("lists the branch's favorites with nothing typed, opens one as found, and say
 it("says when nothing matches, and Esc closes the field leaving the graph and focus as they were", async () => {
   const { app, onopen } = await drawn();
   const before = document.createElement("button");
+  fixtureElements.push(before);
   document.body.append(before);
   before.focus();
   const kept = viewport;

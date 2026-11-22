@@ -9,7 +9,8 @@
   import { composing } from "../shell/keys";
 
   let { name, onclose }: { name: string; onclose: (written: string | null) => void } = $props();
-  const { definitions: defs } = getAppState();
+  const app = getAppState();
+  const defs = $derived(app.definitions);
 
   /** Focused when it opens, the caret at the end of the text. */
   const focus: Attachment<HTMLTextAreaElement> = (field) => {

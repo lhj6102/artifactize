@@ -59,7 +59,7 @@ export class ChatModeState {
   modelQuery = $state("");
   /** The model a new session on a worktree starts with, as the library says: `known` once it
    * answered, `model` null when no provider lists one. */
-  starting = $state.raw<{ worktree: string; branch: BranchKey | null; known: boolean; model: ChatModel | null } | null>(null);
+  starting = $state.raw<{ worktree: string; branch: BranchKey | null; known: boolean; model: ChatModel | null; error?: string } | null>(null);
   /** What went wrong, for the main area's notice. */
   error = $state<string | null>(null);
   noticeOpen = $state(false);
@@ -295,7 +295,7 @@ export class ChatModeState {
       const saved = await call(this.ipc.chatSetModel(id, selection));
       if (this.view?.session.id === id) {
         ++this.#reads; // An earlier in-flight read could still hold the previous selection.
-        this.view = { ...this.view, session: { ...this.view.session, selection: saved.selection } };
+        this.view = { ...this.view, session: saved };
         this.error = null;
         await this.read();
       }
@@ -338,7 +338,7 @@ export class ChatModeState {
       if (mine === this.#defaults) this.starting = { worktree, branch, known: true, model };
     } catch (failure) {
       if (mine !== this.#defaults) return;
-      this.starting = { worktree, branch, known: true, model: null };
+      this.starting = { worktree, branch, known: true, model: null, error: message(failure) };
       this.error = message(failure);
     }
   }

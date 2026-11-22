@@ -75,7 +75,7 @@
         // The first layout waits for the branch's places, so that it shows where they are.
         // Places that cannot be read leave the graph laid out automatically.
         Promise.resolve()
-          .then(() => definitions.ready(branch))
+          .then(() => app.prepareDefinitions(branch).ready(branch))
           .catch(() => {})
           .then(() => lay(next.source, next.shape, graph, () => read === g.reads, () => graph))
           .then(() => {

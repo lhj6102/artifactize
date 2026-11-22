@@ -9,10 +9,11 @@
   import { composing } from "../shell/keys";
 
   let { branch, ondeleted }: { branch: BranchKey | null; ondeleted: () => void } = $props();
-  const { definitions: defs } = getAppState();
+  const app = getAppState();
+  const defs = $derived(branch ? app.definitionsFor(branch) : app.definitions);
 
   /** What the dialog holds: its name and Path typed, and why the last try wrote nothing. */
-  const form = defs.dialogForm;
+  const form = $derived(defs.dialogForm);
   const open = $derived(defs.dialog !== null);
 
   /** The field a refusal concerns: the Path's when it names the path, else the name's. */

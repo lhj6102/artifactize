@@ -55,7 +55,9 @@ beforeEach(() => {
   });
 });
 
+const fixtureElements: HTMLElement[] = [];
 afterEach(() => {
+  for (const element of fixtureElements.splice(0)) element.remove();
   cleanup();
   clearMocks();
   vi.resetAllMocks();
@@ -201,6 +203,7 @@ it("ignores m typed in a field, during a composition, with a modifier or with fo
   await fireEvent.keyDown(document.body, { key: "m" });
   app.monitor.focus = "detail";
   const field = document.createElement("input");
+  fixtureElements.push(field);
   document.body.append(field);
   await fireEvent.keyDown(field, { key: "m" });
   // The real Detail's non-editable focus cannot host native preedit; exercise

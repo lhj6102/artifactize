@@ -46,7 +46,7 @@ export class FormDraft {
     readonly ipc: Commands,
     readonly saved: () => Draft | undefined,
     /** Capture where the library's whole answer belongs before the edit leaves the window. */
-    readonly answering: () => (draft: ReviewDraft) => void,
+    readonly answering: () => (draft: ReviewDraft) => Promise<void>,
   ) {
     this.id = id;
     this.verdict = view.verdict;
@@ -86,7 +86,7 @@ export class FormDraft {
       // replaced, in this form and in the review's draft alike.
       if (mine === this.#edits) {
         this.error = null;
-        answered(answer);
+        await answered(answer);
       }
     } catch (error) {
       if (mine === this.#edits) {
@@ -114,7 +114,8 @@ class ReviewState {
   /** Settles once the running work has ended, its busy state cleared. */
   idle: Promise<void> = Promise.resolve();
   notice = $state.raw<Notice | null>(null);
-  form = $state<FormDraft | null>(null);
+  formOpen = $state(false);
+  forms = $state.raw<Record<Verdict, FormDraft> | null>(null);
   /** The library's draft of this review for this reviewer, as last read or answered. */
   draft = $state.raw<ReviewDraft | null>(null);
   /** The newest point seen; removing it does not make another point look newly added. */
@@ -146,8 +147,7 @@ export class Review {
   set busy(value: Busy | null) { this.#state.busy = value; }
   get notice(): Notice | null { return this.#state.notice; }
   set notice(value: Notice | null) { this.#state.notice = value; }
-  get form(): FormDraft | null { return this.#state.form; }
-  set form(value: FormDraft | null) { this.#state.form = value; }
+  readonly form = $derived(this.#state.formOpen && this.draft?.verdict ? this.#state.forms?.[this.draft.verdict] ?? null : null);
   get draft(): ReviewDraft | null { return this.#state.draft; }
 
   get latestPoint(): ReviewPoint | null { return this.#state.latestPoint; }
@@ -226,7 +226,7 @@ export class Review {
     const state = this.#state;
     const answered = this.#answering();
     try {
-      answered(await call(this.ipc.humanDraftRemovePoint(this.id, point)));
+      await answered(await call(this.ipc.humanDraftRemovePoint(this.id, point)));
     } catch (error) {
       if (state === this.#state && this.owned) this.notice = { text: message(error), error: true };
     }
@@ -240,7 +240,7 @@ export class Review {
     // chosen, its form open with what was entered; nothing is sent (J-HUMAN-DRAFT).
     if (!state.restored && this.owned) {
       state.restored = true;
-      if (draft.verdict !== null && !this.form) this.#open(draft.verdict, draft);
+      state.formOpen = draft.verdict !== null;
     }
   }
 
@@ -248,6 +248,13 @@ export class Review {
     const state = this.#state;
     state.draftRevision += 1;
     state.draft = draft;
+    if (!state.forms || state.forms.GREEN.id !== this.id) {
+      const form = (verdict: Verdict) => {
+        const view = verdict === "GREEN" ? draft.green : draft.red;
+        return new FormDraft(this.id, view, this.ipc, () => (verdict === "GREEN" ? state.draft?.green : state.draft?.red)?.draft, () => this.#answering());
+      };
+      state.forms = { GREEN: form("GREEN"), RED: form("RED") };
+    }
     const newest = draft.points.at(-1);
     // The library timestamps in fixed-width UTC RFC3339, so this preserves nanosecond order.
     if (newest && (!state.latestPoint || newest.at > state.latestPoint.at)) state.latestPoint = newest;
@@ -255,21 +262,14 @@ export class Review {
 
   /** A local write and a draft invalidation can overlap (e.g. typing while Point arrives).
    * An answer from before another observed snapshot cannot replace it: re-read instead. */
-  #answering(): (draft: ReviewDraft) => void {
+  #answering(): (draft: ReviewDraft) => Promise<void> {
     const state = this.#state;
     const revision = state.draftRevision;
-    return (draft) => {
+    return async (draft) => {
       if (state !== this.#state || !this.owned) return;
-      if (revision !== state.draftRevision || state.draftReading) void this.readDraft();
+      if (revision !== state.draftRevision || state.draftReading) await this.readDraft();
       else this.#take(draft);
     };
-  }
-
-  /** Open verdict `verdict`'s form on the library's draft `draft`. */
-  #open(verdict: Verdict, draft: ReviewDraft): void {
-    const state = this.#state;
-    const saved = () => (verdict === "GREEN" ? state.draft?.green : state.draft?.red)?.draft;
-    this.form = new FormDraft(this.id, verdict === "GREEN" ? draft.green : draft.red, this.ipc, saved, () => this.#answering());
   }
 
   #acted(acted: Pick<Acted, "notice" | "view">): void {
@@ -340,14 +340,14 @@ export class Review {
     // Another verdict was chosen, or editing stopped, while this form was on its way.
     if (state !== this.#state || choice !== state.choice) return;
     state.restored = true;
-    this.#open(verdict, answer);
-    answered(answer);
+    await answered(answer);
+    if (state === this.#state && choice === state.choice && this.owned) state.formOpen = true;
   }
 
   /** Leave the form; the library keeps its draft, and the same verdict reopens it. */
   stopEditing(): void {
     this.#state.choice += 1;
-    this.form = null;
+    this.#state.formOpen = false;
   }
 
   /** Submit the open form; the result says how the settled request stands, or `null` when
@@ -372,7 +372,7 @@ export class Review {
       });
       if (!submitted) return null;
       form.error = null;
-      this.form = null;
+      this.#state.formOpen = false;
       this.#state.draft = null;
       this.log = [];
       this.#acted(submitted);

@@ -47,6 +47,7 @@ export class DefinitionForm {
   path = $state<string | null>(null);
   /** The Parts field's text while a part is being added. */
   adding = $state<string | null>(null);
+  options = $state.raw<{ input: string; parts: string[] } | null>(null);
   chosen = $state(0);
   refused = $state<{ at: Place; text: string } | null>(null);
 }

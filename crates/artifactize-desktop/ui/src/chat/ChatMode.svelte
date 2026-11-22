@@ -100,6 +100,8 @@
         return { word: "Queued", status: "QUEUED" };
       case "running":
         return { word: "Running", status: "RUNNING" };
+      case "cancelling":
+        return { word: "Cancelling", status: "RUNNING" };
       default:
         return { word: "Status unavailable", status: "INCOMPLETE" };
     }
@@ -392,6 +394,8 @@
                 No checked-out branch.
               {:else if c.worktree === null}
                 Choose a branch.
+              {:else if answer?.error}
+                {answer.error}
               {:else if starting}
                 {providerName(starting.backend)} · {starting.model}{starting.effort ? ` · ${starting.effort}` : ""}
               {:else if reading}

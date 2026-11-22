@@ -1,21 +1,15 @@
 <script lang="ts">
-  import type { Attachment } from "svelte/attachments";
+  import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
   import type { Review } from "./review.svelte";
 
   let { review }: { review: Review } = $props();
-  let now = $state(Date.now());
-  const seconds = $derived(review.busy ? Math.max(0, Math.floor((now - review.busy.since) / 1000)) : 0);
-  const clock: Attachment = () => {
-    const update = () => (now = Date.now());
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  };
+  const app = getAppState();
+  const seconds = $derived(review.busy ? Math.max(0, Math.floor((app.now - review.busy.since) / 1000)) : 0);
 </script>
 
 {#if review.busy}
-  <span class="busy" role="status" {@attach clock}>
+  <span class="busy" role="status">
     <span class="tone-running"><Icon name="running" label={review.busy.label} /></span>
     <span class="seconds">{seconds}s</span>
     <button class="button small" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button>

@@ -1,13 +1,11 @@
 // @vitest-environment node
 // Exercise the installable example's own scripts at its message boundary, without
 // asking WebDriver to cross the opaque origin of the webview's sandbox.
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import example from "@html-example?raw";
 import { waitFor } from "@testing-library/dom";
 import { JSDOM } from "jsdom";
 import { expect, it, vi } from "vitest";
 
-const example = fileURLToPath(new URL("../../../../../examples/plugins/html/viewer.html", import.meta.url));
 const checkout = '<title>Checkout</title><main id="checkout"><p class="total">$42.00</p></main>';
 const channel = "artifactize-viewer/v1";
 
@@ -26,7 +24,7 @@ function exampleWindow(dom: JSDOM) {
     deliver(viewer, host, { channel, id: request.id, result });
   });
   host.postMessage = sent;
-  viewer.document.write(readFileSync(example, "utf8"));
+  viewer.document.write(example);
   viewer.document.close();
   const frame = viewer.document.querySelector("iframe")!;
   const child = frame.contentWindow!;

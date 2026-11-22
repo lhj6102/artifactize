@@ -32,12 +32,8 @@ export function tallyWords(tally: Tally | null): string {
   return tally === null ? "" : `, ${tally.passed} of ${tally.of} evals GREEN`;
 }
 
-/** Fallback for a Current without a library note. Non-reused evals might wait or be blocked,
- * so the reuse tally alone cannot provide a positive count of evals that would run. */
-export function currentWords(light: Light, tally: Tally | null): string {
-  const zero = light !== "checking" && (light !== "run" || tally === null);
-  return `${WORDS[light]}${zero ? ", 0 evals would run" : ""}`;
-}
+/** A Current with no plan note can still name its observed mark. */
+export function currentWords(light: Light): string { return WORDS[light]; }
 
 export type Point = { x: number; y: number };
 

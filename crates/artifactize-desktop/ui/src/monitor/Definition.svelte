@@ -6,6 +6,8 @@
   // Delete (their dialogs). Source follows, folded until unfolded: the file's text, typed over
   // in place, written by Save or Ctrl+S and put back by Revert. Every edit names the text it was
   // shown; a refusal is said under what it concerns, and what was typed stays.
+  import { untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import type { BranchKey } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
@@ -14,7 +16,8 @@
   import type { Place } from "./definitions.svelte";
 
   let { branch, name }: { branch: BranchKey; name: string } = $props();
-  const { definitions: defs } = getAppState();
+  const app = getAppState();
+  const defs = $derived(app.definitionsFor(branch));
 
   const node = $derived(defs.node(name));
   const file = $derived(node ? (defs.view?.files[node.definition] ?? "") : "");
@@ -30,16 +33,30 @@
   /** The line a refused Source names, marked in its margin. */
   const marked = $derived(refused?.at === "source" ? Number(/line (\d+)/.exec(refused.text)?.[1] ?? 0) : 0);
 
-  /** The project's Artifacts the Parts field suggests: not this one, not its parts, those whose
-   * names hold what is typed. */
-  const suggested = $derived.by(() => {
-    if (adding === null || !defs.view || !node) return [];
-    const typed = adding.trim().toLowerCase();
-    return defs.view.nodes
-      .map((other) => other.name)
-      .filter((other) => other !== name && !node.parts.includes(other) && other.toLowerCase().includes(typed))
-      .slice(0, 8);
-  });
+  const suggested = $derived(adding !== null && form.options?.input === adding ? form.options.parts : []);
+
+  /** Text matching is presentation; only the engine admits a candidate as a new part. */
+  const readParts: Attachment = () => {
+    const [text, owner, whole, at] = [adding, defs, name, branch];
+    const definitions = owner.view;
+    if (text === null || !definitions) return;
+    const typed = text.trim().toLowerCase();
+    const options = definitions.nodes.map((candidate) => candidate.name).filter((candidate) => candidate.toLowerCase().includes(typed));
+    let live = true;
+    const target = untrack(() => owner.form(whole));
+    void (async () => {
+      const parts: string[] = [];
+      for (let index = 0; live && parts.length < 8 && index < options.length; index += 8) {
+        const admitted = await Promise.all(options.slice(index, index + 8).map(async (part) => {
+          try { return (await owner.check(at, { kind: "addPart", whole, part, at: null })).kind === "checked" ? [part] : []; }
+          catch { return []; }
+        }));
+        parts.push(...admitted.flat());
+      }
+      if (live) target.options = { input: text, parts: parts.slice(0, 8) };
+    })();
+    return () => { live = false; };
+  };
 
   async function edit(at: Place, operation: Parameters<typeof defs.edit>[1]): Promise<boolean> {
     const typing = defs.form(name);
@@ -155,6 +172,7 @@
           <input
             class="field-input"
             aria-label="Add a part to {name}"
+            {@attach readParts}
             role="combobox"
             aria-expanded={suggested.length > 0}
             aria-controls="parts-of-{name}"

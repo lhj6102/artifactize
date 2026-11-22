@@ -44,9 +44,9 @@ export class Browse {
   async #read(step: Partial<Navigate>): Promise<BrowseView | null> {
     try {
       const snapshot = await call(this.ipc.browse({ ...still, ...step }));
-      this.#show(snapshot);
+      const accepted = this.#show(snapshot);
       this.error = null;
-      return snapshot;
+      return accepted ? snapshot : null;
     } catch (error) {
       this.error = message(error);
       return null;
@@ -126,10 +126,11 @@ export class Browse {
 
   /** Responses may arrive in any order; one older than the shown snapshot is dropped. A
    * redraw that already carries a newer read's snapshot advances the revision too. */
-  #show(view: BrowseView): void {
-    if (this.view && view.revision < this.view.revision) return;
+  #show(view: BrowseView): boolean {
+    if (this.view && view.revision < this.view.revision) return false;
     for (const branch of view.branches) this.#listed.set(JSON.stringify(branch.key), branch);
     this.view = view;
     for (const listener of this.#listeners) listener(view);
+    return true;
   }
 }

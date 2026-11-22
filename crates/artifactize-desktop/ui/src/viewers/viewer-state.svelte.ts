@@ -31,9 +31,11 @@ export class ViewerState {
   entry = $state.raw<ViewerEntry | null>(null);
   context = $state.raw<ViewerContext | null>(null);
   /** Pointing: the next click on a place in the Artifact appends it to the draft. */
-  pointing = $state(false);
+  frame = $state<HTMLIFrameElement>();
+  markdownHandle = $state.raw<{ left: number; top: number; width: number; height: number } | null>(null);
   /** The active review pointing was started for: what is pointed goes to that review only. */
   armedFor = $state<string | null>(null);
+  readonly pointing = $derived(this.armedFor !== null);
   error = $state<string | null>(null);
   /** A plugin's page: loading until it first reaches the bridge (it asks for `context` when it
    * starts), or silent when it finished loading without having asked for anything yet. */
@@ -89,8 +91,7 @@ export class ViewerState {
 
   /** Start pointing for the active review, or stop. */
   arm(on: boolean): void {
-    this.pointing = on && this.pointable;
-    this.armedFor = this.pointing ? (this.context?.review ?? null) : null;
+    this.armedFor = on && this.pointable ? (this.context?.review ?? null) : null;
   }
 
   /** Tell the other windows this viewer is open, for which Artifact and review. */

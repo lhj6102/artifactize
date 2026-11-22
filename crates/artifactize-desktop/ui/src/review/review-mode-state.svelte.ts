@@ -12,6 +12,7 @@ export type ReviewShown = { kind: "none" } | { kind: "review"; id: string } | { 
 export class ReviewModeState {
   focus = $state<ReviewFocus>("pane");
   /** The filter the list was last searched with; the field shows it, overridden while typed. */
+  invalidFilter = $state<string | null>(null);
   query = $state<string>(REVIEW_DEFAULT_QUERY);
   /** The reviews the library found for the filter, newest first. */
   matches = $state.raw<ReviewMatch[]>([]);

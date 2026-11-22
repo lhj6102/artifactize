@@ -39,7 +39,8 @@
     // Filtering and selection publish across microtasks. Activate at the next render
     // boundary, when a just-typed query's public selection has reached the options.
     requestAnimationFrame(() => {
-      if (open && palette.input === input && input?.value === query && palette.selected) run(palette.selected);
+      const selected = palette.selected;
+      if (open && palette.input === input && input?.value === query && groups.some((group) => group.commands.some((command) => command.id === selected))) run(selected);
     });
   }
 </script>

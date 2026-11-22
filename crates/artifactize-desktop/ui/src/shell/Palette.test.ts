@@ -71,9 +71,11 @@ describe("command palette", () => {
 
   it("does not run the old selection when the new query has no matches", async () => {
     const { monitor, review } = setup();
-    enterQuery(await focusedInput(), "no such command");
+    const field = await focusedInput();
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+    enterQuery(field, "no such command");
     await screen.findByText("No matching command.");
-    await new Promise<void>((done) => requestAnimationFrame(() => done()));
+    await activationFrame();
     expect(screen.getByRole("dialog")).not.toBeNull();
     expect(monitor).not.toHaveBeenCalled();
     expect(review).not.toHaveBeenCalled();

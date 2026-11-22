@@ -48,6 +48,7 @@ it("lists the Artifact's tools and runs one at once, its Tool log shown from the
   await fireEvent.click(await within(tools).findByRole("button", { name: "open" }));
   await waitFor(() => expect(runs).toEqual([{ branch: branchKey("main"), artifact: "notes", tool: "open_notes", job: expect.any(Number) }]));
   // What ended well is the log's to say: no notice beside the tools.
+  await waitFor(() => expect((within(tools).getByRole("button", { name: "open" }) as HTMLButtonElement).disabled).toBe(false));
   expect(within(tools).queryByText("Started open.")).toBeNull();
   app.logged([{ key: { kind: "artifact", workspace: "/work/main", branch: branchKey("main"), artifact: "notes" }, entries: [{ run: "1", at: 0, operation: "open", artifact: "notes", lines: [], end: { text: "■ launched", error: false } }] }]);
   await screen.findByRole("log", { name: "Tool log" });
@@ -93,7 +94,7 @@ it("routes a Tool log to the Artifact of its worktree only", () => {
   expect(other.log).toEqual([]);
   expect(switched.log).toEqual([]);
   // The same worktree and Artifact are one owner, whichever Detail asks again.
-  expect(app.artifactTools("/work/main", branchKey("main"), "notes")).toBe(main);
+  expect(app.knownTools("/work/main", branchKey("main"), "notes")).toBe(main);
 });
 
 it("shares one read between the Details that open the Artifact while it runs", async () => {
@@ -137,6 +138,6 @@ it("reads the tools again after a run only when the run failed", async () => {
   expect(reads).toBe(1);
   notice = { text: "open_notes did not run.", error: true };
   await fireEvent.click(run);
+  expect(await within(tools).findByText("open_notes did not run.")).toBeTruthy();
   await waitFor(() => expect(reads).toBe(2));
-  expect(within(tools).getByRole("status").textContent).toBe("open_notes did not run.");
 });

@@ -4,6 +4,7 @@
 import { createContext } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
 import { call, commands as bindings, message, type BranchKey, type KeyedLog, type LaunchView } from "../ipc/client";
+import { ArtifactStarState } from "../monitor/artifact-star-state.svelte";
 import { Activity, observeCommands } from "../ipc/activity.svelte";
 import { Browse } from "../monitor/browse.svelte";
 import { Current } from "../chat/current.svelte";
@@ -32,19 +33,28 @@ export const MODES: { mode: WindowMode; label: string; keys: string }[] = [
 export class AppState {
   readonly activity = new Activity();
   readonly ipc = observeCommands(bindings, this.activity);
+  readonly artifactStars = new ArtifactStarState(this.ipc);
   /** The backend's launch, replaced whole. */
   launch = $state.raw<LaunchView | null>(null);
   failure = $state<string | null>(null);
   /** The live branches, the waiting reviews and the shown Run. */
   readonly browse = new Browse(this.ipc);
   /** The Current of the branch shown in Chat's Graph. */
-  readonly current: Current = new Current(this.ipc, (branch) => void this.definitionsFor(branch).load(branch));
+  readonly current: Current = new Current(this.ipc, (branch) => void this.prepareDefinitions(branch).load(branch));
   /** The shown branch's definitions, which its Current edits. */
-  readonly #definitions: Record<string, Definitions> = Object.create(null);
-  definitionsFor(branch: BranchKey): Definitions {
-    return this.#definitions[keyOf(branch)] ??= new Definitions(this.ipc, (each) => void this.current.scan(each, true));
+  #definitions = $state.raw<Record<string, Definitions>>({});
+  prepareDefinitions(branch: BranchKey): Definitions {
+    const key = keyOf(branch);
+    const existing = this.#definitions[key];
+    if (existing) return existing;
+    const owner = new Definitions(this.ipc, (each) => void this.current.scan(each, true));
+    this.#definitions = { ...this.#definitions, [key]: owner };
+    return owner;
   }
   readonly #emptyDefinitions = new Definitions(this.ipc);
+  definitionsFor(branch: BranchKey): Definitions {
+    return this.#definitions[keyOf(branch)] ?? this.#emptyDefinitions;
+  }
   get definitions(): Definitions {
     const branch = this.chat.view?.session.branchKey;
     return branch ? this.definitionsFor(branch) : this.#emptyDefinitions;

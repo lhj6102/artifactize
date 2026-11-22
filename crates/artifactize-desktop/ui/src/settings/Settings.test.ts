@@ -27,7 +27,8 @@ const signedIn: RemoteStatus = {
   share: "summary",
   tokenSource: "file",
   connection: { state: "signedIn", principal: "alice-laptop", scopes: ["read", "publish"] },
-  // Two pushes on the frozen day, one two days before it.
+  // The library reports the tally independently of the visible ledger window.
+  pushedToday: 5,
   pushes: [
     { at: NOON - 2 * 86400000, count: 9 },
     { at: NOON - 3600000, count: 2 },
@@ -153,7 +154,7 @@ function backend(options: {
         return result;
       }
       case "remote_push":
-        if (!payload.dryRun && remote.state === "configured") remote = { ...remote, pushes: [...remote.pushes, { at: NOON, count: 2 }] };
+        if (!payload.dryRun && remote.state === "configured") remote = { ...remote, pushedToday: remote.pushedToday + 2, pushes: [...remote.pushes, { at: NOON, count: 2 }] };
         return { pushed: 2, existing: 1, skipped: 0 };
       case "remote_logout":
         remote = none;

@@ -1,16 +1,19 @@
 // Open by ID uses the Human review layout in every Human stage, as a reference does.
+import { waitFor } from "@testing-library/svelte";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { HumanView } from "../ipc/client";
 import { AppState } from "../shell/app.svelte";
-import { humanView } from "./fixtures";
+import { draftLibrary, humanView } from "./fixtures";
 
 afterEach(() => clearMocks());
 
 /** The library holding request `id` as the Human review `view`. */
-function backend(view: HumanView) {
+function backend(view: HumanView, draft?: ReturnType<typeof draftLibrary>) {
   mockIPC((command, args) => {
     const id = (args as { id: string }).id;
+    const saved = draft?.answer(command, args);
+    if (saved) return saved;
     switch (command) {
       case "request_detail":
         return { source: { kind: "run", run: "run-a" }, node: "e:release/signoff", target: "eval", title: "release/signoff", summary: "", request: id, profile: "human", mark: null, plan: null, outcome: null, sections: [], evidence: null, card: null, running: false };
@@ -45,19 +48,22 @@ describe("openRequest", () => {
 });
 
 it("routes a shared review's draft and Tool log notifications by their original request", async () => {
-  const view = humanView("claim", { id: "follower", owner: "owner" });
-  backend(view);
+  const view = humanView("review", { id: "follower", owner: "owner" });
+  const library = draftLibrary();
+  backend(view, library);
   const app = new AppState();
   await app.openRequest("follower");
   const review = app.reviews.follower;
-  const drafts = vi.spyOn(review, "readDraft");
+  await waitFor(() => expect(review.draft?.points).toEqual([]));
+  const point = { text: "L2:C1", at: "2026-11-23T00:00:00Z", source: "release · Markdown" };
+  library.draft.points.push(point);
   const entry = { run: "tool-1", at: 0, operation: "show", artifact: "release", lines: [], end: null };
   app.draftChanged("follower");
   app.logged([{ key: { kind: "review", request: "follower" }, entries: [entry] }]);
-  expect(drafts).not.toHaveBeenCalled();
+  expect(review.draft?.points).toEqual([]);
   expect(review.log).toEqual([]);
   app.draftChanged("owner");
   app.logged([{ key: { kind: "review", request: "owner" }, entries: [entry] }]);
-  expect(drafts).toHaveBeenCalledOnce();
+  await waitFor(() => expect(review.draft?.points).toEqual([point]));
   expect(review.log).toEqual([entry]);
 });

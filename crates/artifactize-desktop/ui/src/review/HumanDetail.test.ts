@@ -437,6 +437,20 @@ describe("HumanDetail", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: "Points" })).toBeNull());
   });
 
+  it("follows the saved verdict when another window changes it while the form is open", async () => {
+    const library = draftLibrary();
+    library.draft.verdict = "GREEN";
+    backend("review", undefined, library);
+    const review = new Review("run-a-2", new Jobs());
+    renderHosted(HumanDetail, { review, onback: () => {} });
+    await screen.findByRole("button", { name: "Submit GREEN (Ctrl+S)" });
+    library.draft.verdict = "RED";
+    await review.readDraft();
+    await screen.findByRole("button", { name: "Submit RED (Ctrl+S)" });
+    expect(screen.queryByRole("button", { name: "Submit GREEN (Ctrl+S)" })).toBeNull();
+    expect(screen.getByLabelText(/^reason/)).toBeTruthy();
+  });
+
   it("keeps an in-flight edit and a Point that arrives before the edit's answer", async () => {
     const kept = draftLibrary();
     kept.draft.verdict = "GREEN";

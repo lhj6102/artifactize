@@ -2,9 +2,10 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-/** The one input the UI takes from outside its folder: the project's brand marks, which the
- * app and its tests import as `@brand/...`. */
+/** The project's brand marks, imported by the app and tests. */
 const brand = fileURLToPath(new URL("../../../assets/brand", import.meta.url));
+/** The real installable plugin is an explicit input of the bridge integration test only. */
+const htmlExample = fileURLToPath(new URL("../../../examples/plugins/html/viewer.html", import.meta.url));
 
 // The Tauri window loads the built files (or this dev server on port 1420).
 export default defineConfig({
@@ -16,5 +17,6 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
+    alias: [{ find: /^@html-example(?=\?|$)/, replacement: htmlExample }],
   },
 });

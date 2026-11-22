@@ -178,13 +178,15 @@
     return browse.onShown(accept);
   });
 
+  let queryRevision = 0;
   function setQuery(text: string) {
+    const typed = ++queryRevision;
     query = text;
     clearTimeout(typing);
     typing = setTimeout(
       () =>
         void browse.search(text).then((searched) => {
-          if (!searched) query = browse.query;
+          if (!searched && typed === queryRevision) query = browse.query;
         }),
       120,
     );

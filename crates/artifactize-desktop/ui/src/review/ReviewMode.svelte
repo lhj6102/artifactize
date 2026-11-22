@@ -10,7 +10,7 @@
   import { onMount, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { Coalesced } from "../ipc/coalesced";
-  import { REVIEW_DEFAULT_QUERY, call, message, onStateChanged, type BrowseView, type ReviewMatch } from "../ipc/client";
+  import { REVIEW_DEFAULT_QUERY, call, CommandError, message, onStateChanged, type BrowseView, type ReviewMatch } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import Panel from "../shell/Panel.svelte";
   import Icon from "../shell/Icon.svelte";
@@ -27,7 +27,7 @@
   const app = getAppState();
   const { browse, reviewMode: r } = app;
 
-  const rows = $derived(r.matches);
+  const rows = $derived(r.invalidFilter ? [] : r.matches);
   /** The reviews grouped by project, each group in the list's order. */
   const groups = $derived.by(() => {
     const byProject: [string, ReviewMatch[]][] = [];
@@ -43,7 +43,7 @@
   /** Its window is shown with Review: only then the review offers palette commands. */
   const active = $derived(app.mode === "review" && !app.monitor.settings);
   /** The filter as typed: the searched one, overridden while typed until a pause searches it. */
-  let query = $derived(r.query);
+  let query = $derived(r.invalidFilter ?? r.query);
   let typing: ReturnType<typeof setTimeout> | undefined;
 
   const title = $derived.by(() => {
@@ -56,30 +56,34 @@
 
   /** Search the library for `text`; the newest search wins. */
   let searches = 0;
-  async function search(text: string): Promise<void> {
+  let typingRevision = 0;
+  async function search(text: string, typed?: number): Promise<void> {
     const mine = ++searches;
     try {
       const page = await call(app.ipc.humanSearch(text, null));
-      if (mine !== searches) return;
+      if (mine !== searches || (typed !== undefined && typed !== typingRevision)) return;
       r.query = text;
+      if (typed !== undefined) r.invalidFilter = null;
       r.matches = page.reviews;
       r.next = page.next;
       r.searched = true;
       r.error = null;
     } catch (failure) {
-      if (mine !== searches) return;
-      // A filter the library cannot read lists nothing, and says why under it.
-      r.query = text;
-      r.matches = [];
-      r.next = null;
+      if (mine !== searches || (typed !== undefined && typed !== typingRevision)) return;
+      if (typed !== undefined) {
+        if (failure instanceof CommandError && failure.failure.kind === "invalid") r.invalidFilter = text;
+        else { r.invalidFilter = null; query = r.query; }
+      }
       r.error = message(failure);
     }
   }
 
   function setQuery(text: string) {
+    const typed = ++typingRevision;
+    r.invalidFilter = null;
     query = text;
     clearTimeout(typing);
-    typing = setTimeout(() => void search(text), 120);
+    typing = setTimeout(() => void search(text, typed), 120);
   }
 
   /** Open the review of `row` in the main area, the keyboard following it. */
@@ -176,7 +180,7 @@
 
   /** A claim, a submission or a new review elsewhere: the list follows it, one search at a time
    * and only while Review is on screen; a change missed while it was not is read when it is. */
-  const refresh = new Coalesced(() => search(r.query), () => app.mode === "review");
+  const refresh = new Coalesced(() => r.invalidFilter === null ? search(r.query) : Promise.resolve(), () => app.mode === "review");
   const following: Attachment = () => {
     if (app.mode === "review") untrack(() => refresh.showing());
   };
