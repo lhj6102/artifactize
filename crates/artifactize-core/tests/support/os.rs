@@ -456,7 +456,7 @@ raise SystemExit(subprocess.call([node, entry], env=env))
 
 /// Build a program named `name` in `directory` from Rust `source`. A compiled program runs the
 /// same on every system and needs no shell.
-fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::PathBuf {
+pub fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::PathBuf {
     let file = directory.join(format!("{name}-source.rs"));
     std::fs::write(&file, source).unwrap();
     let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));

@@ -404,6 +404,14 @@ pub async fn save_custom(
             "{provider} is a built-in provider; give the custom provider another name."
         ));
     }
+    if matches!(
+        custom,
+        Custom::Alias {
+            provider: Provider::Antigravity
+        }
+    ) {
+        return Err("Antigravity is Chat only and cannot be aliased by a custom provider.".into());
+    }
     update(state, repo, |saved| {
         if let Custom::Endpoint { key: slot, .. } = &mut custom {
             *slot = match key {

@@ -33,6 +33,15 @@ pub(crate) const PROBE_TIMEOUT: Duration = super::models::LIST_TIMEOUT;
 const LINE_BYTES: u64 = 32 * 1024 * 1024;
 /// Cancel is best effort, even if the child is no longer reading its input.
 const CANCEL_GRACE: Duration = Duration::from_millis(250);
+/// Some versions print this before returning an auth error. Never relay it from a probe.
+const AUTH_LINK: &str = "Open the following link to authenticate the ACP server:";
+/// Avoid selecting a key or enterprise credentials from env instead of the CLI's login.
+const ALTERNATE_AUTH: &[&str] = &[
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_GENAI_USE_VERTEXAI",
+];
 
 #[derive(Debug)]
 pub(crate) enum Problem {
@@ -59,6 +68,7 @@ impl Problem {
             "select an authentication method",
             "no auth method",
             "credentials not found",
+            "no browser is available here",
         ]) {
             Some(Self::SignedOut)
         } else if contains(&[
@@ -118,11 +128,16 @@ pub(crate) fn eval_refusal() -> Failure {
 }
 
 pub(crate) fn command(args: &[&str], cwd: &Path, deadline: Instant) -> process::Command {
+    let mut env = platform::environment::for_command();
+    for name in ALTERNATE_AUTH {
+        platform::environment::remove(&mut env, name);
+    }
+    platform::environment::set(&mut env, "AGY_CLI_DISABLE_AUTO_UPDATE", "1");
     process::Command {
         program: "agy".into(),
         args: args.iter().map(Into::into).collect(),
         cwd: cwd.to_owned(),
-        env: platform::environment::for_command(),
+        env,
         timeout: deadline.saturating_duration_since(Instant::now()),
     }
 }
@@ -311,7 +326,12 @@ impl Acp {
         drop(wire);
         let stderr = running.reap().await;
         drop(directory);
-        Problem::reported(&platform::output_text(&stderr))
+        let text = platform::output_text(&stderr);
+        if text.contains(AUTH_LINK) {
+            Some(Problem::SignedOut)
+        } else {
+            Problem::reported(&text)
+        }
     }
 }
 
@@ -407,6 +427,9 @@ impl Channel {
                 return Err(Problem::Failed(
                     "Antigravity wrote an oversized ACP message.".into(),
                 ));
+            }
+            if self.line.starts_with(AUTH_LINK.as_bytes()) {
+                return Err(Problem::SignedOut);
             }
             let line = serde_json::from_slice(&self.line)
                 .map_err(|_| Problem::Failed("Antigravity wrote an invalid ACP message.".into()));

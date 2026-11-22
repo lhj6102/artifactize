@@ -1,7 +1,7 @@
 //! Stdio MCP adapter launched by ACP. The port and one-turn capability lead only to
 //! the Chat recorder's checked dispatch, not the general Artifactize MCP server.
 use std::{
-    io::{self, Write},
+    io::{self, BufRead, Read, Write},
     net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream},
     path::Path,
     time::Duration,
@@ -138,7 +138,9 @@ async fn serve_stdio(
         if line.len() as u64 > LINE_BYTES {
             return Err(io::ErrorKind::InvalidData.into());
         }
-        let reply = match serde_json::from_slice(&line) {
+        let request = serde_json::from_slice(&line);
+        line.clear();
+        let reply = match request {
             Ok(stdio_mcp::Rpc::Unknown { id: None, .. }) => continue,
             Ok(rpc) => match tools.answer(rpc) {
                 stdio_mcp::Answer::Reply(reply) => reply,
@@ -168,7 +170,6 @@ async fn serve_stdio(
             },
             Err(_) => return Err(io::ErrorKind::InvalidData.into()),
         };
-        line.clear();
         serde_json::to_writer(&mut line, &reply)?;
         line.push(b'\n');
         output.write_all(&line).await?;
@@ -196,10 +197,28 @@ pub fn stdio() -> Result<(), String> {
     std::thread::Builder::new()
         .name("chat-mcp-stdin".into())
         .spawn(move || {
-            let _ = io::copy(&mut io::stdin().lock(), &mut send);
+            let _ = relay(io::stdin().lock(), &mut send);
             let _ = send.shutdown(Shutdown::Write);
         })
         .map_err(|_| unavailable())?;
-    io::copy(&mut stream, &mut io::stdout().lock()).map_err(|_| unavailable())?;
+    relay(io::BufReader::new(&mut stream), &mut io::stdout().lock()).map_err(|_| unavailable())?;
+    Ok(())
+}
+
+/// Forward complete MCP lines promptly in either direction, including to piped stdout.
+fn relay(mut read: impl BufRead, write: &mut impl Write) -> io::Result<()> {
+    let mut line = Vec::new();
+    while (&mut read)
+        .take(LINE_BYTES + 1)
+        .read_until(b'\n', &mut line)?
+        != 0
+    {
+        if line.len() as u64 > LINE_BYTES {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        write.write_all(&line)?;
+        write.flush()?;
+        line.clear();
+    }
     Ok(())
 }

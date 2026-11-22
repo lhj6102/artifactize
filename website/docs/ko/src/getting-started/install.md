@@ -62,9 +62,9 @@ Runtime eval과 Human eval에는 모델 서비스가 필요하지 않으므로 �
 
 ### Chat 전용 Antigravity {#antigravity-for-chat-only}
 
-Google의 Antigravity CLI(`agy` 1.5.1 이상)를 설치하고 `PATH`에 추가하세요. Antigravity에 Google 계정으로 이미 로그인했다면 Artifactize에서도 바로 쓸 수 있습니다. 로그인하지 않았다면 **Settings → Providers → Antigravity**를 열거나 `artifactize login antigravity`를 실행하세요. Google 로그인 링크를 열고 Antigravity 페이지에 표시된 코드를 붙여 넣으세요. 로그인 정보는 Antigravity CLI에서만 보관합니다.
+Google의 Antigravity CLI(`agy` 1.5.1 이상)를 설치하고 `PATH`에 추가하세요. Antigravity에 Google 계정으로 이미 로그인했다면 Artifactize에서도 바로 쓸 수 있습니다. 로그인하지 않았다면 `artifactize login antigravity`를 실행하세요. Google 로그인 링크를 열고 Antigravity 페이지에 표시된 코드를 붙여 넣으세요. 로그인 정보는 Antigravity CLI에서만 보관합니다.
 
-Chat에서 Antigravity 모델을 고르세요. 계정에서 쓸 수 있는 모델은 `artifactize models antigravity`로 확인할 수 있습니다(MCP에서는 `models`에 `provider: "antigravity"` 지정). 로그아웃하려면 Settings에서 로그아웃하거나 `artifactize logout antigravity`를 실행하세요. CLI 버전에서 이 기능을 지원하지 않으면 Antigravity에서 `/logout`을 실행하세요. Agent eval에는 API 키를 쓰는 `gemini` 백엔드를 사용하세요.
+Chat에서 Antigravity 모델을 고르세요. 계정에서 쓸 수 있는 모델은 `artifactize models antigravity`로 확인할 수 있습니다. MCP에서는 `models`에 `provider: "antigravity"`를 지정하세요. 로그아웃하려면 `artifactize logout antigravity`를 실행하세요. 사용 중인 CLI가 이 명령을 지원하지 않으면 Antigravity에서 `/logout`을 실행하세요. Agent eval에는 API 키를 쓰는 `gemini` 백엔드를 사용하세요. Antigravity는 사용자 지정 프로바이더의 별칭 대상으로 지정할 수 없습니다.
 
 ## 업데이트와 제거 {#3-update-and-uninstall}
 

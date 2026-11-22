@@ -62,9 +62,9 @@ Run `artifactize doctor` at any time to check your state directory, configured c
 
 ### Antigravity for Chat only
 
-Install Google's Antigravity CLI (`agy` 1.5.1 or newer) and make it available on `PATH`. If you already signed into Antigravity with your Google account, Artifactize uses that sign-in. Otherwise, open **Settings → Providers → Antigravity**, or run `artifactize login antigravity`. Open the Google link and paste the code from the Antigravity page. The Antigravity CLI keeps your sign-in; Artifactize does not store it.
+Install Google's Antigravity CLI (`agy` 1.5.1 or newer) and make it available on `PATH`. If you already signed into Antigravity with your Google account, Artifactize uses that sign-in. Otherwise, run `artifactize login antigravity`. Open the Google link and paste the code from the Antigravity page. The Antigravity CLI keeps your sign-in; Artifactize does not store it.
 
-Select an Antigravity model in Chat, or see your account's list with `artifactize models antigravity` (MCP: `models` with `provider: "antigravity"`). Sign out in Settings or with `artifactize logout antigravity`; if your CLI does not support this, use `/logout` in Antigravity. For Agent evals, use the `gemini` API-key backend instead.
+Select an Antigravity model in Chat, or see your account's list with `artifactize models antigravity` (MCP: `models` with `provider: "antigravity"`). Sign out with `artifactize logout antigravity`; if your CLI does not support this, use `/logout` in Antigravity. For Agent evals, use the `gemini` API-key backend instead. Antigravity cannot be the target of a custom provider alias.
 
 ## Update and uninstall {#3-update-and-uninstall}
 
