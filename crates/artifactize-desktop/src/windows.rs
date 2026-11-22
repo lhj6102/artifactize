@@ -195,9 +195,22 @@ pub async fn main_close(app: tauri::State<'_, App>) -> Result<(), Failure> {
     result
 }
 
+/// Tauri still sends `tauri://close-requested` to the main webview. Its Leaving flow
+/// checks claims and running Chat turns, then calls `main_close` to settle and destroy the
+/// window. Prevent the native default even before the webview has installed its listener.
+pub(crate) fn on_event<R: Runtime>(window: &tauri::Window<R>, event: &tauri::WindowEvent) {
+    match event {
+        tauri::WindowEvent::CloseRequested { api, .. } if window.label() == MAIN => {
+            api.prevent_close();
+        }
+        tauri::WindowEvent::Destroyed => destroyed(window),
+        _ => {}
+    }
+}
+
 /// What a window's destruction ends: the main window takes the app's work and every other window
 /// with it; a viewer window its viewer session.
-pub(crate) fn destroyed<R: Runtime>(window: &tauri::Window<R>) {
+fn destroyed<R: Runtime>(window: &tauri::Window<R>) {
     let label = window.label();
     if label == MAIN {
         for (other, webview) in window.app_handle().webview_windows() {

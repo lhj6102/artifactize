@@ -267,9 +267,5 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
                 responder.respond(windows::page(context.app_handle(), &request));
             },
         )
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                windows::destroyed(window);
-            }
-        })
+        .on_window_event(windows::on_event)
 }

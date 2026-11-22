@@ -138,7 +138,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "quit-with-claims",
-    title: "the palette's Quit asks first while this window holds a claim, naming it: Stay keeps the window and the claim, Release and quit releases it and the app exits",
+    title: "Quit and the window's close request both ask while a claim is held; Stay keeps it, Release and quit releases it and exits",
     journeys: ["J-QUIT"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -154,7 +154,7 @@ export const scenarios: Scenario[] = [
       await app.dialogClosed();
       assert.equal(request(fixture).claim?.reviewer, "alice", "Stay keeps the claim");
       await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the window and its review stay");
-      await app.command("Quit");
+      await app.closeWindow();
       await app.dialogTitled("Leave the review?");
       await app.exitsBy(() => app.dialogButton("Release and quit"), port);
       assert.equal(request(fixture).claim, null, "Release and quit released the claim");

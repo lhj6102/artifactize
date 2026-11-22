@@ -2,6 +2,7 @@
 
 use std::{
     collections::BTreeMap,
+    future::Future,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
 };
@@ -18,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_specta::Event;
 
-use crate::{App, Failure, ids::RequestKey};
+use crate::{App, Failure, generation::Generation, ids::RequestKey};
 
 type ActiveEvent = Box<dyn Fn(ActiveReviewChanged) + Send + Sync>;
 
@@ -32,6 +33,7 @@ struct SessionsInner {
     /// What each live session shows: an Artifact of a worktree in one viewer.
     places: BTreeMap<u32, Place>,
     active: Option<ActiveReview>,
+    activation: u64,
 }
 
 /// The review as shown, and the original request whose claim, Artifact and draft it uses.
@@ -165,11 +167,54 @@ impl Sessions {
         self.0.lock().expect("viewer sessions").active.clone()
     }
 
+    /// Reserve the selection before its first read. Lookup completion order never changes
+    /// which request may publish, even when both requests use the same state generation.
+    async fn activate(
+        &self,
+        state: &Generation,
+        read: impl Future<Output = Result<Option<ActiveReview>, Failure>>,
+    ) -> Result<(), Failure> {
+        let activation = {
+            let mut sessions = self.0.lock().expect("viewer sessions");
+            sessions.advance_activation()
+        };
+        let generation = state.current();
+        let review = read.await;
+        state
+            .if_current(generation, || {
+                let mut sessions = self.0.lock().expect("viewer sessions");
+                if sessions.activation != activation {
+                    return Ok(());
+                }
+                let review = review?;
+                if sessions.active != review {
+                    let request = review.as_ref().map(|review| review.shown.clone().into());
+                    sessions.active = review;
+                    self.notify(request);
+                }
+                Ok(())
+            })
+            .ok_or_else(|| {
+                Failure::Read("The state was replaced while reading the review; reopen it.".into())
+            })?
+    }
+
     pub(crate) fn reset(&self) {
         let mut sessions = self.0.lock().expect("viewer sessions");
+        sessions.advance_activation();
         sessions.active = None;
         sessions.live.clear();
         sessions.places.clear();
+    }
+}
+
+impl SessionsInner {
+    fn advance_activation(&mut self) -> u64 {
+        self.activation = self
+            .activation
+            .checked_add(1)
+            .expect("unique viewer activation");
+        self.activation
     }
 }
 
@@ -419,64 +464,55 @@ pub async fn active_review_set(
     app: tauri::State<'_, App>,
     request: Option<RequestKey>,
 ) -> Result<(), Failure> {
-    let generation = app.generation.current();
-    let active = if let Some(request) = &request {
-        let state = &app.launch.state;
-        let shown = request.clone().into_inner();
-        let exact = store::read_request_as(state, shown.as_str(), store::Shown::Requests)
-            .await
-            .map_err(Failure::Read)?;
-        let owner = if exact.request.status().is_human_wait() {
-            store::read_original_as(state, &exact, store::Shown::Requests)
-                .await
-                .map_err(Failure::Read)?
-        } else {
-            exact
-        };
-        if let Some(error) =
-            artifactize_core::review::review_refusal(Some(&owner), &app.launch.reviewer)
-        {
-            return Err(Failure::Action(error));
-        }
-        let artifact = &owner.request.target;
-        let target = owner
-            .request
-            .human_definition
-            .as_ref()
-            .and_then(|definition| definition.artifacts.value())
-            .and_then(|artifacts| artifacts.get(artifact))
-            .and_then(|saved| saved.path.value());
-        let address = if let Some(target) = target {
-            let worktree = store::read_request_repo(state, owner.request.id.as_str())
+    app.viewers
+        .activate(&app.generation, async {
+            let Some(request) = request else {
+                return Ok(None);
+            };
+            let state = &app.launch.state;
+            let shown = request.into_inner();
+            let exact = store::read_request_as(state, shown.as_str(), store::Shown::Requests)
                 .await
                 .map_err(Failure::Read)?;
-            Some(Address {
-                worktree,
-                artifact: artifact.clone(),
-                target: target.clone(),
-            })
-        } else {
-            None
-        };
-        Some(ActiveReview {
-            shown,
-            owner: owner.request.id.clone(),
-            address,
-        })
-    } else {
-        None
-    };
-    app.generation
-        .if_current(generation, || {
-            let mut sessions = app.viewers.0.lock().expect("viewer sessions");
-            if sessions.active != active {
-                sessions.active = active;
-                app.viewers.notify(request);
+            let owner = if exact.request.status().is_human_wait() {
+                store::read_original_as(state, &exact, store::Shown::Requests)
+                    .await
+                    .map_err(Failure::Read)?
+            } else {
+                exact
+            };
+            if let Some(error) =
+                artifactize_core::review::review_refusal(Some(&owner), &app.launch.reviewer)
+            {
+                return Err(Failure::Action(error));
             }
+            let artifact = &owner.request.target;
+            let target = owner
+                .request
+                .human_definition
+                .as_ref()
+                .and_then(|definition| definition.artifacts.value())
+                .and_then(|artifacts| artifacts.get(artifact))
+                .and_then(|saved| saved.path.value());
+            let address = if let Some(target) = target {
+                let worktree = store::read_request_repo(state, owner.request.id.as_str())
+                    .await
+                    .map_err(Failure::Read)?;
+                Some(Address {
+                    worktree,
+                    artifact: artifact.clone(),
+                    target: target.clone(),
+                })
+            } else {
+                None
+            };
+            Ok(Some(ActiveReview {
+                shown,
+                owner: owner.request.id.clone(),
+                address,
+            }))
         })
-        .ok_or_else(|| {
-            Failure::Read("The state was replaced while reading the review; reopen it.".into())
-        })
+        .await
 }
 
 /// A submission or release from another surface must also hide pointing. Watch hints never
@@ -496,6 +532,53 @@ pub(crate) async fn refresh_active(app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_late_lookup_cannot_publish_an_earlier_review_selection() {
+        let sessions = Sessions::default();
+        let generation = Generation::default();
+        let applied = Arc::new(Mutex::new(Vec::new()));
+        let observed = applied.clone();
+        assert!(
+            sessions
+                .1
+                .set(Box::new(move |event| {
+                    observed
+                        .lock()
+                        .unwrap()
+                        .push(event.request.unwrap().into_inner());
+                }))
+                .is_ok()
+        );
+        let first = "run-first-1".parse::<RequestId>().unwrap();
+        let latest = "run-latest-1".parse::<RequestId>().unwrap();
+        let review = |id: &RequestId| {
+            Some(ActiveReview {
+                shown: id.clone(),
+                owner: id.clone(),
+                address: None,
+            })
+        };
+        let (entered, wait_for_older) = tokio::sync::oneshot::channel();
+        let (finish, wait_for_newer) = tokio::sync::oneshot::channel();
+        let older = sessions.activate(&generation, async {
+            entered.send(()).unwrap();
+            wait_for_newer.await.unwrap();
+            Ok(review(&first))
+        });
+        let newer = async {
+            wait_for_older.await.unwrap();
+            sessions
+                .activate(&generation, std::future::ready(Ok(review(&latest))))
+                .await
+                .unwrap();
+            finish.send(()).unwrap();
+        };
+        let (stale, ()) = tokio::join!(older, newer);
+        stale.unwrap();
+        assert_eq!(sessions.active().unwrap().shown, latest);
+        assert_eq!(applied.lock().unwrap().as_slice(), &[latest]);
+    }
 
     fn place(worktree: &str, target: &str, viewer: &str) -> Place {
         Place {
