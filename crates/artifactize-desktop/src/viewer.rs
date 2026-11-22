@@ -549,6 +549,16 @@ async fn active(app: &App) -> Option<ActiveReview> {
     review.claimed(app).await.ok()?.then_some(review)
 }
 
+pub(crate) async fn pet_is_claimed(app: &App, id: &RequestId) -> bool {
+    active(app).await.is_some_and(|review| &review.shown == id)
+}
+
+pub(crate) fn pet_is_current(app: &App, id: &RequestId) -> bool {
+    app.viewers
+        .active()
+        .is_some_and(|review| &review.shown == id)
+}
+
 pub(crate) fn settled(app: &App, id: &RequestId) {
     let mut sessions = app.viewers.0.lock().expect("viewer sessions");
     if sessions
@@ -559,6 +569,8 @@ pub(crate) fn settled(app: &App, id: &RequestId) {
         sessions.advance_activation();
         sessions.active = None;
         app.viewers.notify(None);
+        drop(sessions);
+        app.windows.hide_pet(app);
     }
 }
 
@@ -653,7 +665,12 @@ pub(crate) async fn refresh_active(app: &App) {
         if sessions.activation == revision && sessions.active != active {
             app.viewers
                 .notify(active.as_ref().map(|review| review.shown.clone().into()));
+            let hidden = active.is_none();
             sessions.active = active;
+            drop(sessions);
+            if hidden {
+                app.windows.hide_pet(app);
+            }
         }
     }
 }

@@ -980,6 +980,23 @@ additionalProperties = false
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_delayed_pet_show_cannot_redisplay_a_released_review() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.clone();
+    invoke(&window, "human_claim", json!({"id":id,"job":1})).unwrap();
+    invoke(&window, "active_review_set", json!({"request":id})).unwrap();
+    let shown = invoke(&window, "pet_show", json!({"request":id})).unwrap_err();
+    assert_eq!(shown["message"], "The app has no windows yet.");
+    invoke(&window, "human_release", json!({"ids":[id],"job":2})).unwrap();
+    assert_eq!(
+        invoke(&window, "pet_show", json!({"request":id})).unwrap(),
+        Value::Null
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_shared_review_opens_the_original_artifact_viewer_not_the_followers() {
     const PAGE: &str = r#"name = "page"
 type = "files"

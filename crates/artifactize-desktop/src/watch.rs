@@ -38,11 +38,14 @@ pub struct RunFinished {
 struct Finished(BTreeSet<artifactize_core::types::RunId>);
 
 impl Finished {
-    fn seed(runs: Vec<artifactize_core::store::CatalogRun>) -> Self {
+    fn seed(
+        runs: &[artifactize_core::store::CatalogRun],
+        before: artifactize_core::types::Timestamp,
+    ) -> Self {
         Self(
-            runs.into_iter()
-                .filter(|run| run.completed_at.is_some())
-                .map(|run| run.id)
+            runs.iter()
+                .filter(|run| run.completed_at.is_some_and(|at| at < before))
+                .map(|run| run.id.clone())
                 .collect(),
         )
     }
@@ -145,22 +148,28 @@ pub(crate) async fn reconcile_runs(app: &App) {
 /// reconciles missed commits and database replacement every few seconds. Every [`RESCAN`]
 /// the live branches are listed again, and a change is a hint as well.
 pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
+    let boot = artifactize_core::types::Timestamp::now();
     let hub = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut changes = Subscription::new(&state).await;
         let initial = artifactize_core::store::read_catalog(&state).await;
         let mut retry = initial.is_err();
-        let mut finished = Finished::seed(initial.unwrap_or_default());
+        let mut first = Some(initial.unwrap_or_default());
+        let mut finished = Finished::seed(first.as_deref().unwrap_or_default(), boot);
         loop {
-            let change = if retry {
+            let starting = first.is_some();
+            let change = if starting {
+                None
+            } else if retry {
                 tokio::time::timeout(RESCAN, changes.next()).await.ok()
             } else {
                 Some(changes.next().await)
             };
             // A failed point read may have missed the only completion hint. Reconcile the
             // catalog after a bounded wait even when no further state changes arrive.
-            let runs = if retry || matches!(change, Some(Change::StateInvalidated | Change::Resync))
-            {
+            let runs = if let Some(initial) = first.take() {
+                Ok(initial)
+            } else if retry || matches!(change, Some(Change::StateInvalidated | Change::Resync)) {
                 artifactize_core::store::read_catalog(&state).await
             } else if let Some(Change::RunInvalidated(id)) = &change {
                 artifactize_core::store::read_catalog_run(&state, id)
@@ -169,7 +178,7 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
             } else {
                 Ok(Vec::new())
             };
-            retry = runs.is_err();
+            retry = runs.is_err() || (starting && retry);
             let runs = runs.unwrap_or_default();
             let state = hub.state::<App>();
             for run in runs {
@@ -274,10 +283,14 @@ mod tests {
             error: 0,
             waiting: vec![],
         };
-        let mut finished = Finished::seed(vec![run.clone()]);
+        let cutoff = "2026-11-21T00:01:00Z".parse().unwrap();
+        let mut finished = Finished::seed(std::slice::from_ref(&run), cutoff);
         assert!(finished.observed(run.clone()).await.is_none());
         run.status = RunStatus::Green;
         run.completed_at = Some("2026-11-21T00:01:00Z".parse().unwrap());
+        // A completion already present in the first catalog is still new if it happened
+        // during startup, even when its notification was in flight while seeding.
+        let mut finished = Finished::seed(std::slice::from_ref(&run), cutoff);
         let event = serde_json::to_value(finished.observed(run.clone()).await.unwrap()).unwrap();
         assert_eq!(event["run"], "run-finished");
         assert_eq!(

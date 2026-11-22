@@ -45,6 +45,7 @@ pub(crate) struct Windows {
     action: OnceLock<Act>,
     closing: AtomicBool,
     viewing: Mutex<()>,
+    pet_visibility: Mutex<()>,
 }
 
 impl Windows {
@@ -60,6 +61,11 @@ impl Windows {
 
     pub(crate) fn close_viewers(&self, app: &App) {
         let _ = self.act(app, Action::CloseViewers);
+    }
+
+    pub(crate) fn hide_pet(&self, app: &App) {
+        let _visibility = self.pet_visibility.lock().expect("pet visibility lock");
+        let _ = self.act(app, Action::Pet(None));
     }
 
     fn act(&self, app: &App, action: Action) -> Result<(), Failure> {
@@ -258,8 +264,24 @@ pub async fn pet_show(
     app: tauri::State<'_, App>,
     request: Option<RequestKey>,
 ) -> Result<(), Failure> {
-    let request = request.map(|request| request.into_inner().as_str().to_owned());
-    app.windows.act(&app, Action::Pet(request))
+    let request = request.map(RequestKey::into_inner);
+    if let Some(id) = &request
+        && !crate::viewer::pet_is_claimed(&app, id).await
+    {
+        return Ok(());
+    }
+    let _visibility = app
+        .windows
+        .pet_visibility
+        .lock()
+        .expect("pet visibility lock");
+    if let Some(id) = &request
+        && !crate::viewer::pet_is_current(&app, id)
+    {
+        return Ok(());
+    }
+    app.windows
+        .act(&app, Action::Pet(request.map(|id| id.as_str().to_owned())))
 }
 
 /// Bring the main window to the front: the pet overlay leads back to its review there.
