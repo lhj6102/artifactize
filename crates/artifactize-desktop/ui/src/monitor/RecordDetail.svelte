@@ -257,8 +257,7 @@
 </div>
 
 <style>
-  /* A plain text switch, a level below the Detail's chips: the chosen view bold in the strong
-   * text colour, the other in the quieter one. Hover only highlights. */
+  /* A plain text switch: the chosen view is brighter and carries the current underline. */
   .views {
     display: flex;
     flex-wrap: wrap;
@@ -268,21 +267,20 @@
   }
   .view {
     margin: 0 -4px;
-    padding: 0 4px;
+    padding: 0 4px 2px;
     border: 0;
     background: none;
     font: inherit;
     color: var(--ink-2);
-    font-weight: 400;
     cursor: pointer;
   }
-  .view:hover {
+  .view:not([aria-selected="true"]):hover {
     color: var(--ink);
     background: var(--surface-group);
   }
   .view[aria-selected="true"] {
     color: var(--ink);
-    font-weight: 700;
+    box-shadow: inset 0 -2px 0 var(--current-mark);
   }
   .view:focus-visible {
     outline: 2px solid var(--focus);
@@ -310,7 +308,7 @@
     min-height: 0;
     overflow-wrap: anywhere;
   }
-  /* The status line: the verdict's icon and word bold in its colour, the rest in secondary ink. */
+  /* The status line: the verdict's icon and word in its colour, the rest in secondary ink. */
   .summary {
     margin: 0 0 8px;
     padding: 0 var(--pad);
@@ -320,7 +318,6 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-weight: 700;
     margin-right: 10px;
   }
   dd.status {

@@ -56,13 +56,13 @@
   {/each}
 </ol>
 {#if branch.older}
-  <button class="older" tabindex="-1" onclick={onolder}>Older runs</button>
+  <button class="older" onclick={onolder} onkeydown={(event) => { if (event.key === "Enter") event.stopPropagation(); }}>Older runs</button>
 {/if}
 
 <style>
   .timeline {
     list-style: none;
-    margin: 2px 0 0;
+    margin: 0;
     padding: 0;
   }
   .timeline li {
@@ -72,9 +72,11 @@
   .timeline li:not(:last-child)::before {
     content: "";
     position: absolute;
-    left: 8.5px;
-    top: 16px;
-    bottom: -8px;
+    z-index: 1;
+    pointer-events: none;
+    left: 38.5px;
+    top: 17px;
+    bottom: -10px;
     width: 1px;
     background: var(--line-group);
   }
@@ -85,28 +87,34 @@
     grid-template-columns: 18px minmax(0, 1fr) auto;
     column-gap: 8px;
     align-items: baseline;
+    align-content: center;
+    height: var(--row-pane);
     margin: 0;
-    padding: 3px 8px 3px 0;
+    padding: 0 var(--pad) 0 30px;
     border: 0;
-    border-radius: var(--radius-control);
     background: none;
-    color: var(--ink);
+    color: var(--ink-2);
     font: inherit;
+    line-height: 15px;
     text-align: left;
     cursor: pointer;
   }
-  .entry:hover {
+  li:not(.selected) .entry:not(.filled):hover {
     background: var(--surface-group);
   }
-  /* What the Main area shows: a soft grey pill around the entry; the selected entry takes the
-   * selection background over it. */
-  .entry.filled {
-    background: var(--surface-group);
-  }
+  /* Selection and the view shown in Main are independent of the keyboard ring. */
+  .entry.filled,
   li.selected .entry {
     background: var(--selection);
+    color: var(--ink);
+  }
+  .entry.filled .sub,
+  li.selected .sub {
+    color: var(--ink);
   }
   .dot {
+    position: relative;
+    z-index: 2;
     grid-row: 1;
     align-self: center;
     justify-self: center;
@@ -122,7 +130,6 @@
   }
   .status {
     grid-column: 2;
-    font-weight: 600;
     font-size: var(--text-small);
   }
   .age {
@@ -142,17 +149,20 @@
     white-space: nowrap;
   }
   .older {
-    margin: 2px 0 0 26px;
-    padding: 2px 0;
+    width: 100%;
+    height: var(--row-pane);
+    margin: 0;
+    padding: 0 var(--pad) 0 56px;
     border: 0;
     background: none;
-    color: var(--accent);
+    color: var(--ink-2);
+    text-align: left;
     font: inherit;
     font-size: var(--text-small);
     cursor: pointer;
   }
   .older:hover {
     background: var(--surface-group);
-    border-radius: var(--radius-control);
+    color: var(--ink);
   }
 </style>

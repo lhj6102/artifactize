@@ -23,7 +23,7 @@
     border: 0;
     border-radius: var(--radius-control);
     background: none;
-    color: var(--accent);
+    color: var(--ink-2);
     font: inherit;
     font-size: var(--text-small);
     white-space: nowrap;

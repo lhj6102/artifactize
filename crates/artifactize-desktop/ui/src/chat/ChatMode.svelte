@@ -13,6 +13,8 @@
   import { onSessionChanged, onStateChanged, type ChatRun, type ChatSession } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
+  import { statusIcon } from "../shell/icons";
+  import { tone } from "../shell/tone";
   import Panel from "../shell/Panel.svelte";
   import Reference from "../shell/Reference.svelte";
   import { composing } from "../shell/keys";
@@ -79,8 +81,6 @@
         return { word: "Running", status: "RUNNING" };
     }
   }
-  const ICON = { RUNNING: "running", GREEN: "green", RED: "red", ERROR: "error", YELLOW: "human", WAITING_HUMAN: "human", QUEUED: "queued" } as const;
-  const TONE = { RUNNING: "tone-running", GREEN: "tone-green", RED: "tone-red", ERROR: "tone-error", YELLOW: "tone-yellow", WAITING_HUMAN: "tone-human", QUEUED: "tone-queued" } as const;
 
   function write(text: string) {
     if (session) c.typed[session.id] = text;
@@ -194,9 +194,9 @@
   {@const status = runStatus(card)}
   {@const attention = [...card.failed, ...card.waiting.map((name) => `${name} waits for a person`)].join(", ")}
   <div class="run" data-run={card.id}>
-    <span class={TONE[status.status]}><Icon name={ICON[status.status]} /></span>
+    <span class={tone(status.status)}><Icon name={statusIcon(status.status)} /></span>
     <span class="mono">{card.id}</span>
-    <b class={TONE[status.status]}>{status.word}</b>
+    <span class={tone(status.status)}>{status.word}</span>
     <span class="what">{attention}</span>
     <Reference onclick={() => app.showRun(card.id)}>Open in Verify</Reference>
   </div>
@@ -272,6 +272,7 @@
               {/if}
               <div class="box" class:off={session.unavailable !== null}>
                 <textarea
+                  class="bare-field"
                   rows="2"
                   aria-label="Message"
                   disabled={session.unavailable !== null}
@@ -309,9 +310,9 @@
                   </div>
                   <span class="spacer"></span>
                   {#if running}
-                    <button class="icon-button" aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
+                    <button class="button icon-button" aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
                   {:else}
-                    <button class="icon-button primary" aria-label="Send (Enter)" aria-keyshortcuts="Enter" disabled={typed.trim() === "" || session.unavailable !== null} onclick={() => void c.send()}><Icon name="send" /></button>
+                    <button class="button icon-button primary" aria-label="Send (Enter)" aria-keyshortcuts="Enter" disabled={typed.trim() === "" || session.unavailable !== null} onclick={() => void c.send()}><Icon name="send" /></button>
                   {/if}
                 </div>
               </div>
@@ -329,26 +330,28 @@
     <Dialog.Overlay class="overlay" />
     <Dialog.Content class="dialog new-chat">
       <Dialog.Title class="dialog-title">New chat</Dialog.Title>
-      <form onsubmit={create}>
-        <label class="field">
-          <span class="field-name">Branch</span>
-          <select bind:value={c.worktree} onchange={() => c.worktree && void c.readStarting(c.worktree)}>
-            {#each branches as branch (branch.workspace)}
-              <option value={branch.workspace}>{branch.name ? `${branch.project} / ${branch.name}` : branch.project}</option>
-            {/each}
-          </select>
-        </label>
-        <div class="field">
-          <span class="field-name" id="new-chat-model">Model</span>
-          <p class="starting" class:quiet={!starting} role="status" aria-labelledby="new-chat-model">
-            {#if starting}
-              {providerName(starting.backend)} · {starting.model}
-            {:else if reading}
-              Reading the providers' models…
-            {:else}
-              No provider lists a model. Connect one in Settings.
-            {/if}
-          </p>
+      <form class="dialog-layout" onsubmit={create}>
+        <div class="dialog-body">
+          <label class="field">
+            <span class="field-name">Branch</span>
+            <select bind:value={c.worktree} onchange={() => c.worktree && void c.readStarting(c.worktree)}>
+              {#each branches as branch (branch.workspace)}
+                <option value={branch.workspace}>{branch.name ? `${branch.project} / ${branch.name}` : branch.project}</option>
+              {/each}
+            </select>
+          </label>
+          <div class="field">
+            <span class="field-name" id="new-chat-model">Model</span>
+            <p class="starting" class:quiet={!starting} role="status" aria-labelledby="new-chat-model">
+              {#if starting}
+                {providerName(starting.backend)} · {starting.model}
+              {:else if reading}
+                Reading the providers' models…
+              {:else}
+                No provider lists a model. Connect one in Settings.
+              {/if}
+            </p>
+          </div>
         </div>
         <div class="dialog-actions">
           <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
@@ -410,21 +413,22 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    min-height: var(--row);
+    height: var(--row-pane);
     margin: 0;
     padding: 0 var(--pad);
     border: 0;
     background: none;
-    color: var(--ink);
+    color: var(--ink-2);
     font: inherit;
     text-align: left;
     cursor: pointer;
   }
-  .session:hover {
+  .session:not(.selected):hover {
     background: var(--surface-group);
   }
   .session.selected {
     background: var(--selection);
+    color: var(--ink);
   }
   .session .title {
     flex: 1;
@@ -434,7 +438,7 @@
     white-space: nowrap;
   }
   .age {
-    color: var(--ink-3);
+    color: var(--ink-2);
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
   }
@@ -576,9 +580,12 @@
     font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
-  .box:focus-within {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
+  .box:has(textarea:focus) {
+    outline: 1px solid var(--current-mark);
+    outline-offset: -2px;
+  }
+  .box:has(textarea:focus-visible) {
+    box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 4px var(--focus);
   }
   textarea {
     min-height: 36px;
@@ -670,17 +677,17 @@
     border: 0;
     border-radius: var(--radius-control);
     background: none;
-    color: var(--ink);
+    color: var(--ink-2);
     font: inherit;
     text-align: left;
     cursor: pointer;
   }
-  .item:hover {
+  .item:not(.on):hover {
     background: var(--surface-group);
   }
   .item.on {
     background: var(--selection);
-    font-weight: 600;
+    color: var(--ink);
   }
   hr {
     margin: 4px 0;
@@ -691,23 +698,7 @@
     display: inline-grid;
     place-items: center;
     width: var(--control);
-    height: var(--control);
-    margin: 0;
     padding: 0;
-    border: 1px solid var(--line-group);
-    border-radius: var(--radius-control);
-    background: var(--surface-group);
-    color: var(--ink);
-    cursor: pointer;
-  }
-  .icon-button.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--ink-on-accent);
-  }
-  .icon-button:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
   :global(.dialog.new-chat) {
     width: min(420px, 92vw);
@@ -718,7 +709,7 @@
   }
   .field-name {
     font-size: var(--text-small);
-    font-weight: 600;
+    color: var(--label);
   }
   .starting {
     margin: 0;

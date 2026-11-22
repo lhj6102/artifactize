@@ -207,7 +207,7 @@
     width: 100%;
     text-align: left;
     font: inherit;
-    color: var(--ink);
+    color: var(--ink-2);
     background: none;
     border: 0;
     border-radius: var(--radius-control);
@@ -216,16 +216,12 @@
     cursor: pointer;
     overflow-wrap: anywhere;
   }
-  .choice:hover {
+  .choice:not([aria-current="true"]):hover {
     background: var(--surface-group);
   }
   .choice[aria-current="true"] {
     background: var(--selection);
-    font-weight: 600;
-  }
-  /* While the keyboard is in the list, the chosen provider carries the selection's bar. */
-  nav:focus-within .choice[aria-current="true"] {
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
   .setup {
     min-width: 0;

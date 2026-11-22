@@ -142,10 +142,6 @@
     background: var(--surface-input);
     color: var(--ink);
   }
-  .query:focus {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
-  }
   .suggestions {
     position: absolute;
     z-index: 10;
@@ -163,6 +159,7 @@
   }
   /* A long name is cut with an ellipsis inside its row. */
   .suggestions li {
+    color: var(--ink-2);
     min-height: var(--row-dense);
     padding: 2px 8px;
     font: var(--text-small) var(--mono);
@@ -176,6 +173,6 @@
   }
   .suggestions .active {
     background: var(--selection);
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
 </style>

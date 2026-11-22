@@ -25,7 +25,8 @@ const GRAIN = 8;
 const FAR = 1024;
 const SPAN = 2 * FAR + 1;
 /** The width of the ring around the opened Artifact, as its element draws it. */
-const RING = 2;
+const RING = 1;
+const RING_GAP = 2;
 /** A node's anatomy in graph pixels, as ArtifactNode.svelte draws it: its padding on the left
  * and the right, and the gap after its icon, before its tally. Its corner radius, its icon's
  * box, its strip, its port and its fonts are the theme's tokens, read when painting. */
@@ -506,22 +507,23 @@ export class Picture {
     return painted;
   }
 
-  /** Every copy that shows the opened Artifact: its own outline turned 2px and neutral-bright,
-   * as its elements draw it. */
+  /** A 1px current ring outside each open copy, clear of its face and any minimized stack. */
   #ring(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     if (what.opened.size === 0) return;
     const { viewport, ratio } = what;
     const style = getComputedStyle(document.documentElement);
     const corner = Number.parseFloat(style.getPropertyValue("--radius-control")) || 0;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.strokeStyle = style.getPropertyValue("--outline-selected").trim();
+    context.strokeStyle = style.getPropertyValue("--current-mark").trim();
     context.lineWidth = RING;
     at.ids.forEach((key, number) => {
       if (!what.opened.has(key)) return;
       const place = at.places[number];
       const [x, y] = [place.x * viewport.zoom + viewport.x, place.y * viewport.zoom + viewport.y];
+      const stack = what.minimized.has(key) ? Math.ceil(STACK * Math.SQRT2 * viewport.zoom) : 0;
+      const offset = stack + RING_GAP + RING / 2;
       context.beginPath();
-      context.roundRect(x, y, place.width * viewport.zoom, place.height * viewport.zoom, Math.min(corner * viewport.zoom, corner));
+      context.roundRect(x - offset, y - offset, place.width * viewport.zoom + 2 * offset, place.height * viewport.zoom + 2 * offset, Math.min(corner * viewport.zoom, corner) + offset);
       context.stroke();
     });
   }

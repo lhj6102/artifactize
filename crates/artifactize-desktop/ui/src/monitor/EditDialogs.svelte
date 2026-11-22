@@ -80,30 +80,34 @@
     <Dialog.Content class="dialog edit" onOpenAutoFocus={reset}>
       {#if defs.dialog?.kind === "delete"}
         <Dialog.Title class="dialog-title">Delete {defs.dialog.name}?</Dialog.Title>
-        <p class="sentence">{defs.node(defs.dialog.name)?.definition ?? defs.dialog.name} is removed.</p>
-        {#if form.refused}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
+        <div class="dialog-body">
+          <p class="sentence">{defs.node(defs.dialog.name)?.definition ?? defs.dialog.name} is removed.</p>
+          {#if form.refused}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
+        </div>
         <div class="dialog-actions">
           <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
           <button class="button primary" type="button" disabled={defs.busy} onclick={() => void remove()}>Delete</button>
         </div>
       {:else if defs.dialog}
         <Dialog.Title class="dialog-title">{defs.dialog.kind === "new" ? "New Artifact" : `Rename ${defs.dialog.name}`}</Dialog.Title>
-        <form onsubmit={(event) => void submit(event)}>
-          {#if defs.dialog.kind === "new"}
-            <label class="field">
-              <span class="label">Name</span>
-              <input class="field-input text" bind:value={form.name} autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused?.field === "name"} />
-            </label>
-            {#if form.refused?.field === "name"}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
-            <label class="field">
-              <span class="label">Path</span>
-              <input class="field-input" bind:value={form.path} autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused?.field === "path"} />
-            </label>
-            {#if form.refused?.field === "path"}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
-          {:else}
-            <input class="field-input text" bind:value={form.name} aria-label="Name" autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused !== null} />
-            {#if form.refused}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
-          {/if}
+        <form class="dialog-layout" onsubmit={(event) => void submit(event)}>
+          <div class="dialog-body">
+            {#if defs.dialog.kind === "new"}
+              <label class="field">
+                <span class="label">Name</span>
+                <input class="field-input text" bind:value={form.name} autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused?.field === "name"} />
+              </label>
+              {#if form.refused?.field === "name"}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
+              <label class="field">
+                <span class="label">Path</span>
+                <input class="field-input" bind:value={form.path} autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused?.field === "path"} />
+              </label>
+              {#if form.refused?.field === "path"}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
+            {:else}
+              <input class="field-input text" bind:value={form.name} aria-label="Name" autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused !== null} />
+              {#if form.refused}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
+            {/if}
+          </div>
           <div class="dialog-actions">
             <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
             <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={defs.busy}>{defs.dialog.kind === "new" ? "Create" : "Rename"}</button>
@@ -127,7 +131,7 @@
     margin-top: 0;
   }
   .label {
-    font-weight: 600;
+    color: var(--label);
   }
   .sentence {
     margin: 0 0 8px;

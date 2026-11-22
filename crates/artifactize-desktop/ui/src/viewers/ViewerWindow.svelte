@@ -130,7 +130,7 @@
       <span class="review"><span class="tone-human"><Icon name="human" /></span>{v.evalId ?? context.review}</span>
     {/if}
     {#if v.pointable}
-      <button class="button small" class:on={v.pointing} aria-pressed={v.pointing} onclick={() => point(!v.pointing)}><Icon name="point" />Point</button>
+      <button class="button small point" class:on={v.pointing} aria-pressed={v.pointing} onclick={() => point(!v.pointing)}><Icon name="point" />Point</button>
     {/if}
   </header>
   {#if v.error}<p class="error" role="status">{v.error}</p>{/if}
@@ -218,10 +218,12 @@
     display: inline-flex;
     color: var(--human);
   }
-  /* Pointing: Point reads as on, outlined in the accent (D-VIEW-2). */
-  .on {
-    border-color: var(--accent);
-    box-shadow: inset 0 0 0 1px var(--accent);
+  /* Point is an on/off toggle: only its ink changes. */
+  .point {
+    color: var(--ink-2);
+  }
+  .point.on {
+    color: var(--ink-bright);
   }
   .error {
     margin: 0;

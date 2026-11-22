@@ -107,17 +107,18 @@
     padding: 0 var(--pad) 0 calc(var(--pad) + var(--depth, 0) * 14px);
     border: 0;
     background: none;
-    color: var(--ink);
+    color: var(--ink-2);
     font: inherit;
     text-align: left;
     white-space: nowrap;
     cursor: pointer;
   }
-  .tree button:hover {
+  .tree button:not(.selected):hover {
     background: var(--surface-group);
   }
   .tree button.selected {
     background: var(--selection);
+    color: var(--ink);
   }
   .quiet {
     display: inline-flex;
@@ -161,7 +162,7 @@
     display: inline-block;
     width: 36px;
     margin-right: 8px;
-    color: var(--ink-3);
+    color: var(--ink-2);
     text-align: right;
     user-select: none;
   }

@@ -265,6 +265,10 @@ it("switches modes from the bottom bar, each kept as it was left, and lists and 
   render(App);
   const modes = await screen.findByRole("navigation", { name: "Modes" });
   const mode = (name: RegExp) => within(modes).getByRole("button", { name });
+  const settings = screen.getByRole("button", { name: "Settings" });
+  expect(settings.title).toBe("Settings");
+  expect(settings.textContent?.trim()).toBe("");
+  expect(settings.querySelector("svg")?.getAttribute("data-icon")).toBe("settings");
   // Verify shows first; Review carries the count of the reviews waiting.
   expect(mode(/^Verify/).getAttribute("aria-current")).toBe("page");
   await waitFor(() => expect(mode(/^Review/).getAttribute("aria-label")).toBe("Review, 1 waiting"));
@@ -288,13 +292,13 @@ it("switches modes from the bottom bar, each kept as it was left, and lists and 
 });
 
 it("says a Run's verdict and what needs attention in the header row, which opens the Run's Detail", async () => {
-  const feature = branch("feat/x", [runChip("run-2", "RED", false, "Fixing the login form")]);
+  const feature = branch("feat/x", [runChip("run-2", "YELLOW", false, "Fixing the login form")]);
   const run: RunPanel = {
     id: "run-2",
     branch: feature.key,
     origin: null,
     node: "run:run-2",
-    mark: { status: "RED", glyph: "✗" },
+    mark: { status: "YELLOW", glyph: "✓" },
     needs: [
       { mark: { status: "RED", glyph: "✗" }, text: "cli/tests" },
       { mark: { status: "DEFERRED", glyph: "?" }, text: "release/signoff" },
@@ -309,8 +313,8 @@ it("says a Run's verdict and what needs attention in the header row, which opens
   const headline = await within(header).findByRole("button", { name: /open the Run's Detail/ });
   // One row: the Run's ID, then its verdict's icon and word, then each eval that needs attention.
   expect(within(header).getByRole("heading").textContent).toBe("run-2");
-  expect([...headline.children].map((part) => part.textContent?.trim())).toEqual(["RED", "cli/tests", "release/signoff"]);
-  expect(headline.querySelectorAll("svg")).toHaveLength(3);
+  expect([...headline.children].map((part) => part.textContent?.trim())).toEqual(["YELLOW", "cli/tests", "release/signoff"]);
+  expect([...headline.querySelectorAll("svg")].map((icon) => icon.getAttribute("data-icon"))).toEqual(["yellow", "red", "human"]);
   // Its comment is the Run's Detail's and the timeline's, not the Main area's.
   expect(within(main).queryByText("Fixing the login form")).toBeNull();
 });

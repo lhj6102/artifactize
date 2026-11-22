@@ -298,8 +298,10 @@
     <Dialog.Overlay class="overlay" />
     <Dialog.Content class="dialog open-id">
       <Dialog.Title class="dialog-title">Open a request by ID</Dialog.Title>
-      <form onsubmit={openWanted}>
-        <input class="input" placeholder="req-…" bind:value={wanted} aria-label="Request ID" />
+      <form class="dialog-layout" onsubmit={openWanted}>
+        <div class="dialog-body">
+          <input class="field-input text" placeholder="req-…" bind:value={wanted} aria-label="Request ID" />
+        </div>
         <div class="dialog-actions">
           <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
           <button class="button primary" type="submit" aria-keyshortcuts="Enter">Open</button>
@@ -360,19 +362,6 @@
   }
   :global(.dialog.open-id) {
     width: min(480px, 92vw);
-  }
-  .input::placeholder {
-    color: var(--ink-3);
-  }
-  .input {
-    width: 100%;
-    height: var(--control);
-    font: inherit;
-    padding: 0 8px;
-    border: 1px solid var(--line-input);
-    border-radius: var(--radius-control);
-    background: var(--surface-input);
-    color: var(--ink);
   }
   main {
     min-height: 0;

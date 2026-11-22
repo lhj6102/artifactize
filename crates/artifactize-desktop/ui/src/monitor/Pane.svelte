@@ -162,8 +162,10 @@
     min-height: 0;
     outline: none;
   }
-  /* The keyboard on the entries: the focus ring, apart from the selected row's bar. */
-  .entries:focus-visible {
+  /* Keyboard focus follows the row; it is not part of its selection paint. */
+  .entries:focus-visible:not(:has(.head.selected, :global(li.selected))),
+  .entries:focus-visible .head.selected,
+  .entries:focus-visible :global(li.selected > .entry) {
     outline: 2px solid var(--focus);
     outline-offset: -2px;
   }
@@ -179,22 +181,15 @@
   }
   .branch {
     min-width: 0;
-    padding: 4px var(--pad) 6px 6px;
     border-bottom: 1px solid var(--line-group);
   }
   /* A chevron, then the name over its newest Run's status, then the star. */
   .head {
-    display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
-    align-items: start;
-    column-gap: 4px;
-    min-width: 0;
-    min-height: 28px;
-    border-radius: var(--radius-control);
+    position: relative;
+    height: var(--row-pane);
   }
   /* Hover only highlights the branch under the pointer, and the control under it. */
-  .head:not(.selected):hover,
-  .chevron:hover {
+  .head:not(.selected):hover {
     background: var(--surface-group);
   }
   /* The fold icon in a 20px box, the unfold icon while expanded. */
@@ -203,7 +198,10 @@
     place-items: center;
     width: 20px;
     height: 20px;
-    margin: 2px 0 0;
+    position: absolute;
+    top: 50%;
+    left: 6px;
+    transform: translateY(-50%);
     padding: 0;
     border: 0;
     background: none;
@@ -212,20 +210,31 @@
   }
   .name {
     display: grid;
-    gap: 3px;
+    align-content: center;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    height: 100%;
     min-width: 0;
     margin: 0;
-    padding: 2px 0;
+    padding: 0 calc(var(--pad) + 24px) 0 30px;
     border: 0;
     background: none;
-    color: var(--ink);
+    color: var(--ink-2);
     font: inherit;
+    line-height: 15px;
     text-align: left;
     cursor: pointer;
+  }
+  .head.selected {
+    background: var(--selection);
+  }
+  .head.selected .name {
+    color: var(--ink);
   }
   /* The branch reads first; its project is the quieter half of the name. */
   .label {
     font-size: var(--text-title);
+    line-height: 18px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -249,50 +258,34 @@
     border-radius: 50%;
     background: var(--dot);
   }
-  .latest .status {
-    font-weight: 600;
-    letter-spacing: 0.02em;
-  }
   .latest .age {
     justify-self: end;
     color: var(--ink-2);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
-  /* A star is quiet until it is on; on, it carries the amber of attention. */
-  /* The star icon in faint ink until on, then the filled star in ink. */
+  /* The star is its own 24px target over the branch's full-width button. */
   .star {
     display: grid;
     place-items: center;
-    width: 20px;
-    height: 20px;
-    margin: 2px 0 0;
+    width: 24px;
+    height: 24px;
+    position: absolute;
+    top: 50%;
+    right: calc(var(--pad) - 4px);
+    transform: translateY(-50%);
     padding: 0;
     border: 0;
     background: none;
-    color: var(--ink-3);
+    color: var(--ink-2);
     cursor: pointer;
-  }
-  .star:hover {
-    background: var(--surface-group);
-    border-radius: var(--radius-control);
   }
   .star.on {
     color: var(--ink);
   }
-  .branch :global(.timeline) {
-    margin-left: 24px;
-  }
-  .branch :global(.older) {
-    margin-left: 50px;
-  }
-  /* A selected timeline entry is the one shown, already in its grey pill; keys add the bar. */
-  .selected {
-    background: var(--selection);
-  }
-  .entries:focus-within .selected,
-  .entries:focus-within .branch :global(li.selected > .entry) {
-    box-shadow: inset 2px 0 0 var(--accent);
+  .chevron:hover,
+  .star:hover {
+    color: var(--ink-bright);
   }
   .empty {
     color: var(--ink-2);

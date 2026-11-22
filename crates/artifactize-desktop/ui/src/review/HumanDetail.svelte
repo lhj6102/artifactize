@@ -402,15 +402,10 @@
   }
   .stage {
     font-size: var(--text-label);
-    font-weight: 600;
     padding: 1px 8px;
     border-radius: var(--radius-chip);
     background: var(--surface-group);
     color: var(--ink-2);
-  }
-  .stage[data-stage="review"] {
-    background: var(--accent-soft);
-    color: var(--accent);
   }
   .claimant,
   .muted,
@@ -449,7 +444,7 @@
   }
   .label {
     font-size: var(--text-small);
-    font-weight: 600;
+    color: var(--label);
   }
   .notes-done {
     display: grid;

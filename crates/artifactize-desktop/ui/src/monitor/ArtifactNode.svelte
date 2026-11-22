@@ -24,7 +24,7 @@
   const comment = $derived(v?.comment?.key === id ? null : (data.comment ?? null));
 </script>
 
-<div class="artifact ported light-{data.light}" class:selected class:open={data.open} class:target class:inward={data.inward} class:outward={data.outward}>
+<div class="artifact graph-face ported light-{data.light}" class:selected class:open={data.open} class:target class:inward={data.inward} class:outward={data.outward}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="light"><Icon name={LIGHTS[data.light].icon} /></span>
   <span class="name">{data.name}</span>
@@ -44,26 +44,14 @@
     border: 1px solid var(--line-node);
     border-radius: var(--radius-control);
     background: var(--surface-panel);
-    box-shadow: inset 0 calc(-1 * var(--strip)) 0 var(--light);
+    --node-decoration: inset 0 calc(-1 * var(--strip)) 0 var(--light);
     color: var(--ink);
     font-size: var(--text-body);
     font-weight: 500;
   }
-  /* The pointer only steps the outline up. */
-  .artifact:hover {
+  /* The pointer only steps up the outline of a node that is not current or a drop target. */
+  .artifact:hover:not(.selected, .open, .target) {
     border-color: var(--ink-3);
-  }
-  /* The opened Artifact: its own outline turned neutral-bright and 2px, with no gap; its face
-     and strip unchanged. */
-  .artifact.selected,
-  .artifact.open {
-    border-color: var(--outline-selected);
-    box-shadow: 0 0 0 1px var(--outline-selected), inset 0 calc(-1 * var(--strip)) 0 var(--light);
-  }
-  /* The Artifact a release would make the dragged one's whole. */
-  .artifact.target {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent), inset 0 calc(-1 * var(--strip)) 0 var(--light);
   }
   .artifact {
     position: relative;

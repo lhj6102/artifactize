@@ -89,7 +89,11 @@
     background: var(--surface-panel);
     outline: none;
   }
-  /* A 32px header row; which panel has focus shows in its title's ink, not a line. */
+  .panel:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  /* A 32px header row; the view name does not change with focus. */
   header {
     display: flex;
     align-items: center;
@@ -101,7 +105,7 @@
     margin: 0;
     font-size: var(--text-small);
     font-weight: 600;
-    color: var(--ink-2);
+    color: var(--ink);
     flex: 0 1 auto;
     white-space: nowrap;
     overflow: hidden;
@@ -112,9 +116,6 @@
     overflow: visible;
     text-overflow: clip;
     overflow-wrap: anywhere;
-  }
-  .focused h2 {
-    color: var(--ink);
   }
   /* The view's headline takes the room it needs, cut at the row's end when the row is short. */
   .headline {

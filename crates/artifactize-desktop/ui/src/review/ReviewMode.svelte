@@ -317,7 +317,8 @@
     list-style: none;
     outline: none;
   }
-  .list:focus-visible {
+  .list:focus-visible:not(:has(li.selected)),
+  .list:focus-visible li.selected {
     outline: 2px solid var(--focus);
     outline-offset: -2px;
   }
@@ -337,18 +338,17 @@
     grid-template-columns: var(--icon) minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
-    min-height: var(--row);
+    height: var(--row-pane);
     padding: 0 var(--pad);
+    color: var(--ink-2);
     cursor: pointer;
   }
-  .list li[role="option"]:hover {
+  .list li[role="option"]:not(.selected):hover {
     background: var(--surface-group);
   }
   .list li.selected {
     background: var(--selection);
-  }
-  .list:focus-within li.selected {
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
   .glyph {
     display: inline-flex;
@@ -361,7 +361,7 @@
     white-space: nowrap;
   }
   .age {
-    color: var(--ink-3);
+    color: var(--ink-2);
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;

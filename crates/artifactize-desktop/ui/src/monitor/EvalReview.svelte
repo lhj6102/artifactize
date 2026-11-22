@@ -64,7 +64,7 @@
     color: var(--ink-2);
   }
   .stage.yours {
-    color: var(--accent);
+    color: var(--ink);
   }
   .error {
     color: var(--red);

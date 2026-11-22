@@ -189,7 +189,7 @@
         {#each { length: lines } as _, at (at)}<li class:marked={at + 1 === marked}>{at + 1}</li>{/each}
       </ol>
       <textarea
-        class="text"
+        class="text bare-field"
         aria-label="Source of {name}"
         spellcheck="false"
         autocomplete="off"
@@ -275,6 +275,7 @@
     font: var(--text-small) var(--mono);
   }
   .suggested li {
+    color: var(--ink-2);
     padding: 2px 8px;
     min-height: var(--row-dense);
     cursor: pointer;
@@ -285,12 +286,9 @@
   .suggested li:not([aria-selected="true"]):hover {
     background: var(--surface-group);
   }
-  /* The chosen suggestion, with the inset bar while the keyboard is in the field. */
   .suggested li[aria-selected="true"] {
     background: var(--selection);
-  }
-  dd:focus-within .suggested li[aria-selected="true"] {
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
   .actions {
     display: flex;
@@ -320,13 +318,10 @@
     margin: 0;
     padding: 6px 8px 6px 0;
     list-style: none;
-    color: var(--ink-3);
+    color: var(--ink-2);
     text-align: right;
     min-width: 28px;
     user-select: none;
-  }
-  .margin li.marked {
-    color: var(--ink);
   }
   /* A refused line: the selection's background across its number and its text. */
   .mark {
@@ -359,8 +354,11 @@
   .text:focus-visible {
     outline: none;
   }
-  .source:focus-within {
+  .source:has(.text:focus) {
+    box-shadow: inset 0 0 0 1px var(--current-mark);
+  }
+  .source:has(.text:focus-visible) {
     outline: 2px solid var(--focus);
-    outline-offset: -1px;
+    outline-offset: 2px;
   }
 </style>

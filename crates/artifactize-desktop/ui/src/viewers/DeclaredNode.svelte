@@ -7,7 +7,7 @@
   let { data }: NodeProps & { data: Data } = $props();
 </script>
 
-<div class="node" class:selected={data.selected} class:pointing={data.pointing}>
+<div class="node graph-face" class:selected={data.selected} class:pointing={data.pointing}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="name">{data.name}</span>
   <span class="tag">{data.kind || "custom"}</span>
@@ -29,10 +29,6 @@
     color: var(--ink);
     font-size: var(--text-small);
     cursor: pointer;
-  }
-  .node.selected {
-    border-color: var(--outline-selected);
-    box-shadow: 0 0 0 1px var(--outline-selected);
   }
   .node.pointing:hover {
     outline: 2px solid var(--accent);

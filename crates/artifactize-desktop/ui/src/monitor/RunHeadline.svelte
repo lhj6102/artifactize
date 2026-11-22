@@ -45,7 +45,6 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-weight: 700;
   }
   .need {
     flex: none;

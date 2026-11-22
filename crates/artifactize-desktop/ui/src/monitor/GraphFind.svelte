@@ -156,10 +156,6 @@
     background: var(--surface-input);
     color: var(--ink);
   }
-  .query:focus {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
-  }
   .found {
     flex: 0 1 auto;
     min-height: 0;
@@ -169,6 +165,7 @@
     overflow: auto;
   }
   .found li {
+    color: var(--ink-2);
     display: flex;
     gap: 6px;
     min-height: var(--row-dense);
@@ -181,10 +178,9 @@
   .found li:not(.active):hover {
     background: var(--surface-group);
   }
-  /* The chosen result: the selection background and a 2px inset bar. */
   .found .active {
     background: var(--selection);
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
   .glyph {
     display: inline-flex;

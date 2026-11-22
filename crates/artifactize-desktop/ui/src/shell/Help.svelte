@@ -22,28 +22,30 @@
     <Dialog.Overlay class="overlay" />
     <Dialog.Content class="dialog help">
       <Dialog.Title class="dialog-title">Keyboard shortcuts</Dialog.Title>
-      <div class="help-grid">
-        {#each sections as section (section.title)}
-          <section>
-            <h3>{section.title}</h3>
-            <dl>
-              {#each section.keys as [keys, action] (keys)}
-                <dt><kbd>{label(keys)}</kbd></dt>
-                <dd>{action}</dd>
-              {/each}
-            </dl>
-          </section>
-        {/each}
-        {#if marks.length > 0}
-          <section>
-            <h3>Marks</h3>
-            <ul class="marks" aria-label="Marks">
-              {#each marks as light (light)}
-                <li class="light-{light}"><span class="mark"><Icon name={LIGHTS[light].icon} /></span>{WORDS[light]}</li>
-              {/each}
-            </ul>
-          </section>
-        {/if}
+      <div class="dialog-body">
+        <div class="help-grid">
+          {#each sections as section (section.title)}
+            <section>
+              <h3>{section.title}</h3>
+              <dl>
+                {#each section.keys as [keys, action] (keys)}
+                  <dt><kbd>{label(keys)}</kbd></dt>
+                  <dd>{action}</dd>
+                {/each}
+              </dl>
+            </section>
+          {/each}
+          {#if marks.length > 0}
+            <section>
+              <h3>Marks</h3>
+              <ul class="marks" aria-label="Marks">
+                {#each marks as light (light)}
+                  <li class="light-{light}"><span class="mark"><Icon name={LIGHTS[light].icon} /></span>{WORDS[light]}</li>
+                {/each}
+              </ul>
+            </section>
+          {/if}
+        </div>
       </div>
       <div class="dialog-actions">
         <Dialog.Close class="button" aria-keyshortcuts="Escape">Close</Dialog.Close>

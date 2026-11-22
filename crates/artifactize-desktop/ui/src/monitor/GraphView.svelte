@@ -902,39 +902,10 @@
   }
   /* A node being dragged floats: raised one step with the faint shadow, its face and strip as
      they were; a whole's box keeps its face and takes the shadow. */
-  .canvas :global(.svelte-flow__node.dragging .artifact),
-  .canvas :global(.svelte-flow__node.dragging .whole.minimized) {
+  /* Lift the face without replacing its status strip, stack, or current ring. */
+  .canvas :global(.svelte-flow__node.dragging .graph-face) {
     background: var(--surface-raised);
-    box-shadow: 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
-  }
-  /* Opened, it keeps its selected outline; minimized, its second outline too. */
-  .canvas :global(.svelte-flow__node.dragging .artifact.open),
-  .canvas :global(.svelte-flow__node.dragging .artifact.selected) {
-    box-shadow: 0 0 0 1px var(--outline-selected), 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
-  }
-  .canvas :global(.svelte-flow__node.dragging .whole.minimized) {
-    box-shadow:
-      0 2px 8px var(--scrim),
-      3px 3px 0 -1px var(--surface-app),
-      3px 3px 0 0 var(--line-node),
-      inset 0 calc(-1 * var(--strip)) 0 var(--light);
-  }
-  .canvas :global(.svelte-flow__node.dragging .whole.minimized.open),
-  .canvas :global(.svelte-flow__node.dragging .whole.minimized.selected) {
-    box-shadow:
-      0 0 0 1px var(--outline-selected),
-      0 2px 8px var(--scrim),
-      3px 3px 0 -1px var(--surface-app),
-      3px 3px 0 0 var(--line-node),
-      inset 0 calc(-1 * var(--strip)) 0 var(--light);
-  }
-  .canvas :global(.svelte-flow__node.dragging .whole.open:not(.minimized)),
-  .canvas :global(.svelte-flow__node.dragging .whole.selected:not(.minimized)) {
-    box-shadow: 0 0 0 1px var(--outline-selected), 0 2px 8px var(--scrim);
-  }
-  .canvas :global(.svelte-flow__node.dragging .whole:not(.minimized)) {
-    background: var(--surface-raised);
-    box-shadow: 0 2px 8px var(--scrim);
+    --node-lift: 0 2px 8px var(--scrim);
   }
   /* A comment being dragged: its text alone follows the pointer, in the ink, width and lines it
      has under its node, lifted by a faint shadow on its letters, with no surface or box. */
@@ -961,5 +932,11 @@
     outline: 2px solid var(--focus);
     outline-offset: 2px;
     border-radius: var(--radius-control);
+  }
+  .canvas :global(.svelte-flow__node:focus-visible:has(.graph-face:is(.selected, .open))) {
+    outline-offset: 5px;
+  }
+  .canvas :global(.svelte-flow__node:focus-visible:has(.minimized)) {
+    outline-offset: 9px;
   }
 </style>

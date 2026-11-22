@@ -94,17 +94,18 @@
     padding: 0 var(--pad);
     border: 0;
     background: none;
-    color: var(--ink);
+    color: var(--ink-2);
     font: inherit;
     text-align: left;
     white-space: nowrap;
     cursor: pointer;
   }
-  .tree button:hover {
+  .tree button:not(.selected):hover {
     background: var(--surface-group);
   }
   .tree button.selected {
     background: var(--selection);
+    color: var(--ink);
   }
   .quiet {
     display: inline-flex;
@@ -155,7 +156,7 @@
     overflow-wrap: anywhere;
   }
   .link {
-    color: var(--accent);
+    color: var(--ink-2);
   }
   table {
     margin: 0 0 8px;

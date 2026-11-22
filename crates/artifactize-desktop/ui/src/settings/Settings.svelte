@@ -88,15 +88,15 @@
     {#if onclose}<button class="button" aria-keyshortcuts="Escape" onclick={onclose}>Close</button>{/if}
   </header>
   {#if s.tab === "providers"}
-    <div id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
+    <div class="dialog-body" id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
       <ProvidersTab />
     </div>
   {:else if s.tab === "remote"}
-    <div id="settings-panel-remote" role="tabpanel" aria-labelledby="settings-tab-remote">
+    <div class="dialog-body" id="settings-panel-remote" role="tabpanel" aria-labelledby="settings-tab-remote">
       <RemoteStore />
     </div>
   {:else}
-    <div id="settings-panel-limits" role="tabpanel" aria-labelledby="settings-tab-limits">
+    <div class="dialog-body" id="settings-panel-limits" role="tabpanel" aria-labelledby="settings-tab-limits">
       <LimitsTab />
     </div>
   {/if}
@@ -104,12 +104,13 @@
 
 <style>
   .settings {
-    height: 100%;
-    overflow: auto;
-    padding: 4px 0 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
   header {
     display: flex;
+    flex: none;
     align-items: center;
     gap: 16px;
     flex-wrap: wrap;
@@ -135,7 +136,7 @@
     display: flex;
     gap: 2px;
   }
-  /* Text tabs: the active one in ink with an accent line under it. */
+  /* Text tabs: the active one in ink with the current mark beneath it. */
   .tab {
     font: inherit;
     border: 0;
@@ -146,14 +147,13 @@
     color: var(--ink-2);
     cursor: pointer;
   }
-  .tab:hover {
+  .tab:not([aria-selected="true"]):hover {
     background: var(--surface-group);
     color: var(--ink);
   }
   .tab[aria-selected="true"] {
     color: var(--ink);
-    font-weight: 600;
-    border-bottom-color: var(--accent);
+    border-bottom-color: var(--current-mark);
   }
   .settings :global(.muted) {
     color: var(--ink-2);
@@ -180,6 +180,9 @@
     grid-template-columns: max-content 1fr;
     gap: 4px 16px;
     margin: 0 0 8px;
+  }
+  .settings :global(label) {
+    color: var(--label);
   }
   .settings :global(dt) {
     color: var(--ink-2);

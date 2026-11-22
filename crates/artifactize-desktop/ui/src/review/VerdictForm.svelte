@@ -189,8 +189,11 @@
     flex-wrap: wrap;
     gap: 6px;
   }
-  /* The chosen verdict takes its colour as text and border; the face stays. */
+  /* Both verdicts carry their own dot; selection brightens the label and outline only. */
   .verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font: inherit;
     height: var(--control);
     border: 1px solid var(--line-group);
@@ -201,18 +204,24 @@
     cursor: pointer;
   }
   /* Hover only highlights: the face stays and the edge steps up to a field's line. */
-  .verdict:hover {
+  .verdict:not([aria-checked="true"]):hover {
     border-color: var(--line-input);
   }
-  .verdict.green[aria-checked="true"] {
-    color: var(--green);
-    border-color: var(--green);
-    font-weight: 600;
+  .verdict::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
   }
-  .verdict.red[aria-checked="true"] {
-    color: var(--red);
-    border-color: var(--red);
-    font-weight: 600;
+  .verdict.green::before {
+    background: var(--green);
+  }
+  .verdict.red::before {
+    background: var(--red);
+  }
+  .verdict[aria-checked="true"] {
+    color: var(--ink);
+    border-color: var(--outline-selected);
   }
   .field {
     display: grid;
@@ -220,7 +229,7 @@
     gap: 4px;
   }
   .name {
-    font-weight: 600;
+    color: var(--label);
   }
   .required {
     color: var(--red);
@@ -231,7 +240,7 @@
     font-size: var(--text-small);
   }
   /* Fields sit one step below the panel, outlined by the faintest line. */
-  input,
+  input:not([type="radio"]),
   textarea,
   select {
     font: inherit;
@@ -287,9 +296,6 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .choices input {
-    accent-color: var(--accent);
-  }
   .remove {
     display: inline-grid;
     place-items: center;
@@ -328,19 +334,15 @@
     color: var(--ink-2);
     font-size: var(--text-small);
   }
-  input:focus,
-  textarea:focus,
-  select:focus {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
-  }
   .choices {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
   }
-  .choices input {
-    width: auto;
+  .choices label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .error {
     color: var(--red);

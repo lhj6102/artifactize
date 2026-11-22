@@ -32,13 +32,18 @@
         aria-keyshortcuts={item.keys.replace("Ctrl", "Control")}
         onclick={() => (app.mode = item.mode)}
       >
-        <Icon name={ICON[item.mode]} />{item.label}
-        {#if count > 0}<span class="count" aria-hidden="true">{count}</span>{/if}
+        <span class="mode-mark">
+          <Icon name={ICON[item.mode]} />
+          {#if count > 0}<span class="count" aria-hidden="true">{count}</span>{/if}
+        </span>
+        {item.label}
       </button>
     {/each}
   </nav>
   <div class="side end">
-    <button class="button" aria-pressed={m.settings} aria-label="Settings (Ctrl+,)" aria-keyshortcuts="Control+," data-settings-toggle onclick={onsettings}>Settings</button>
+    <button class="mode settings" aria-pressed={m.settings} aria-label="Settings" title="Settings" aria-keyshortcuts="Control+," data-settings-toggle onclick={onsettings}>
+      <Icon name="settings" />
+    </button>
   </div>
 </footer>
 
@@ -50,7 +55,6 @@
     align-items: stretch;
     gap: var(--gap);
     height: var(--bar-height);
-    padding: 0 var(--pad);
     border-top: 1px solid var(--line-panel);
     background: var(--surface-bar);
   }
@@ -61,17 +65,20 @@
   }
   .side {
     display: flex;
-    align-items: center;
-    gap: var(--gap);
+    align-items: stretch;
     min-width: 0;
+  }
+  .side:first-child {
+    padding-left: var(--pad);
   }
   .side.end {
     justify-content: flex-end;
   }
-  /* The brand, borderless; hovering only steps its face up. */
+  /* The brand, borderless; hovering only steps its ink up. */
   .brand {
     display: flex;
     align-items: center;
+    align-self: center;
     flex: none;
     gap: 8px;
     height: var(--control);
@@ -80,62 +87,72 @@
     border: 0;
     border-radius: var(--radius-control);
     background: none;
-    color: var(--ink);
+    color: var(--bar-ink);
     font: inherit;
     font-weight: 600;
     letter-spacing: 0.01em;
     cursor: pointer;
   }
   .brand:hover {
-    background: var(--surface-group);
+    color: var(--ink);
   }
-  /* Borderless as tall as the bar: the shown one on the group surface, in ink, semibold, under
-     a 2px accent line along its top. */
   .modes {
     display: flex;
     align-items: stretch;
-    gap: 2px;
   }
   .mode {
+    position: relative;
     flex: none;
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
+    gap: 3px;
+    width: 80px;
     margin: 0;
-    padding: 0 12px;
+    padding: 0;
     border: 0;
-    border-radius: 0;
     background: none;
-    color: var(--ink-2);
+    color: var(--bar-ink);
     font: inherit;
+    font-size: var(--text-label);
+    line-height: 1;
     cursor: pointer;
-    box-shadow: inset 0 2px 0 transparent;
+  }
+  .mode-mark {
+    position: relative;
+    display: flex;
+  }
+  .mode :global(svg) {
+    width: var(--icon-bar);
+    height: var(--icon-bar);
   }
   .mode:not(.on):hover {
-    background: var(--surface-group);
+    color: var(--ink);
   }
   .mode.on {
-    background: var(--surface-group);
-    color: var(--ink);
-    font-weight: 600;
-    box-shadow: inset 0 2px 0 var(--accent);
+    background: var(--bar-active);
+    color: var(--bar-ink-on);
+    box-shadow: inset 0 -2px 0 var(--bar-mark);
   }
-  /* The count of Human reviews waiting for a person, in their colour. */
+  .settings {
+    width: 44px;
+  }
+  /* The count sits beside Review's icon without moving the icon or the label. */
   .count {
-    min-width: 18px;
-    height: 16px;
-    padding: 0 5px;
-    box-sizing: border-box;
-    border: 1px solid var(--line-group);
+    position: absolute;
+    top: 0;
+    left: calc(100% + 3px);
+    min-width: 16px;
+    height: 14px;
+    padding: 0 4px;
+    border: 1px solid var(--line-input);
     border-radius: var(--radius-chip);
+    background: var(--bar-active);
     color: var(--human);
     font-size: var(--text-label);
     font-weight: 600;
-    line-height: 14px;
+    line-height: 12px;
     text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-  .side :global(.button) {
-    flex: none;
   }
 </style>

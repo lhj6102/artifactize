@@ -56,10 +56,6 @@
   textarea::placeholder {
     color: var(--ink-3);
   }
-  textarea:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
-  }
   .backdrop {
     overflow: hidden;
     background: var(--surface-input);

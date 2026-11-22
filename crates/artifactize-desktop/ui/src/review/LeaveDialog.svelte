@@ -47,15 +47,17 @@
     <AlertDialog.Overlay class="overlay" />
     <AlertDialog.Content class="dialog" onkeydown={keydown}>
       <AlertDialog.Title class="dialog-title">{taken.length > 0 ? "Leave the review?" : "Quit while the agent works?"}</AlertDialog.Title>
-      <AlertDialog.Description class="held">
-        {#if taken.length > 0}
-          This window holds {taken.length === 1 ? "1 review claim" : `${taken.length} review claims`}: {taken.join(", ")}.
-        {/if}
-        {#if turns.length > 0}
-          A Chat turn is running in {turns.join(", ")}; quitting stops it.
-        {/if}
-      </AlertDialog.Description>
-      {#if l.error}<p class="error" role="alert">{l.error}</p>{/if}
+      <div class="dialog-body">
+        <AlertDialog.Description class="held">
+          {#if taken.length > 0}
+            This window holds {taken.length === 1 ? "1 review claim" : `${taken.length} review claims`}: {taken.join(", ")}.
+          {/if}
+          {#if turns.length > 0}
+            A Chat turn is running in {turns.join(", ")}; quitting stops it.
+          {/if}
+        </AlertDialog.Description>
+        {#if l.error}<p class="error" role="alert">{l.error}</p>{/if}
+      </div>
       <div class="dialog-actions">
         <AlertDialog.Cancel class="button" aria-keyshortcuts="Escape">Stay <kbd>Esc</kbd></AlertDialog.Cancel>
         <button class="button primary" aria-keyshortcuts="u" disabled={l.working} onclick={() => void release()}>{taken.length > 0 ? "Release and quit" : "Quit"} <kbd>u</kbd></button>
