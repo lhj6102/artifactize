@@ -430,7 +430,7 @@ it.each(["reference", "graph launch"])("opens New chat on the target branch when
   expect(workspace("Chat").hidden).toBe(false);
   expect(within(dialog).getByRole<HTMLSelectElement>("combobox", { name: "Branch" }).value).toBe(main.workspace);
   expect(calls.find(({ command }) => command === "chat_latest_for_branch")?.args).toEqual({ branch: main.key });
-  expect(calls.find(({ command }) => command === "chat_default_model")?.args).toEqual({ worktree: main.workspace });
+  expect(calls.find(({ command }) => command === "chat_default_model")?.args).toEqual({ worktree: main.workspace, branch: main.key });
   expect(calls.some(({ command }) => command === "chat_set_view" || command === "current_scan")).toBe(false);
 });
 

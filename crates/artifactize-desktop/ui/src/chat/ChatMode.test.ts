@@ -284,7 +284,9 @@ it("offers Create in New chat only once the model the session starts with is kno
   await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("lab · lab-large · medium"));
   expect(create.hasAttribute("disabled")).toBe(false);
   await fireEvent.click(create);
-  await waitFor(() => expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({ worktree: "/work/app", selection: null }));
+  await waitFor(() => expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({
+    worktree: session.worktree, branch: session.branchKey, selection: null,
+  }));
 });
 
 it("says no provider lists a model once every provider has answered with none", async () => {
