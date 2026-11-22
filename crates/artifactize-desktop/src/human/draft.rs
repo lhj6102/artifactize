@@ -147,6 +147,7 @@ pub async fn human_draft_edit(
     id: RequestKey,
     change: DraftChange,
 ) -> Result<ReviewDraft, Failure> {
+    let _claim = app.human.claim_gate.lock().await;
     let request = read(&app, &id.into_inner()).await?.1.owner;
     let draft = review::edit_draft(
         &app.launch.state,
@@ -167,6 +168,7 @@ pub async fn human_draft_remove_point(
     id: RequestKey,
     point: ReviewPoint,
 ) -> Result<ReviewDraft, Failure> {
+    let _claim = app.human.claim_gate.lock().await;
     let request = read(&app, &id.into_inner()).await?.1.owner;
     let draft = review::remove_point(
         &app.launch.state,

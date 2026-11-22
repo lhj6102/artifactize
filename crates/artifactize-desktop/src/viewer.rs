@@ -501,6 +501,7 @@ pub async fn viewer_point(
     review: RequestKey,
     text: String,
 ) -> Result<(), Failure> {
+    let _claim = app.human.claim_gate.lock().await;
     let viewer = app.viewers.get(session)?;
     let expected = review.into_inner();
     let active = active(&app)

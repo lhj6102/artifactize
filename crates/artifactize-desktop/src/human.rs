@@ -903,6 +903,10 @@ pub async fn human_release(
 ) -> Result<Acted, Failure> {
     let ids: Vec<RequestId> = ids.into_iter().map(RequestKey::into_inner).collect();
     let mut work = app.human.jobs.register(caller, job, Action::Ordinary)?;
+    // Earlier draft writes (including from the pet) finish before releasing the claim.
+    let _claim = work
+        .prepare(async { Ok(app.human.claim_gate.lock().await) })
+        .await?;
     let mut owners = BTreeSet::new();
     for id in &ids {
         let view = if ids.len() == 1 {
@@ -999,6 +1003,9 @@ pub async fn human_release_taken(
         app.viewers.cancel_review(id);
     }
     work.ready().await?;
+    let _claim = work
+        .prepare(async { Ok(app.human.claim_gate.lock().await) })
+        .await?;
     let mut failed = Vec::new();
     for claim in claims {
         let id = claim.request_id.clone();
