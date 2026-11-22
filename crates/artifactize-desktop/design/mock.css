@@ -165,6 +165,9 @@
   width: var(--icon-bar);
   height: var(--icon-bar);
 }
+.m-mode.m-bar-icon {
+  width: 44px;
+}
 .m-mode.on {
   background: var(--bar-active);
   color: var(--ink);
