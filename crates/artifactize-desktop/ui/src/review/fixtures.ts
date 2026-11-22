@@ -1,8 +1,8 @@
 // Backend answers for component tests: what the commands would return for one request.
-import type { DraftChange, FieldValue, FormView, HumanView, ReviewDraft, Verdict } from "../ipc/client";
+import type { DraftChange, FieldValue, FormView, HumanView, ReviewDraft, ReviewPoint, Verdict } from "../ipc/client";
 
 /** The library's draft of one review, kept as the backend keeps it: `answer` takes the draft
- * commands (`human_draft`, `human_draft_edit`) and returns what the backend
+ * commands (`human_draft`, `human_draft_edit`, `human_draft_remove_point`) and returns what the backend
  * would, `undefined` for any other command. A list item added is `empty` of that list. */
 export function draftLibrary(green: FormView = greenForm, red: FormView = redForm, empty: Record<string, unknown> = {}) {
   const draft: ReviewDraft = { verdict: null, points: [], green: structuredClone(green), red: structuredClone(red) };
@@ -14,6 +14,12 @@ export function draftLibrary(green: FormView = greenForm, red: FormView = redFor
   };
   const answer = (cmd: string, args: unknown): ReviewDraft | undefined => {
     if (cmd === "human_draft") return structuredClone(draft);
+    if (cmd === "human_draft_remove_point") {
+      const { point } = args as { point: ReviewPoint };
+      const at = draft.points.findIndex((saved) => saved.text === point.text && saved.source === point.source && saved.at === point.at);
+      if (at >= 0) draft.points.splice(at, 1);
+      return structuredClone(draft);
+    }
     if (cmd !== "human_draft_edit") return undefined;
     const change = (args as { change: DraftChange }).change;
     if (change.kind === "verdict") draft.verdict = change.verdict;

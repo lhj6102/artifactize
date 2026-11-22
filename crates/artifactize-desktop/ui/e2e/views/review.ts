@@ -110,13 +110,11 @@ export class Review {
     await holds(this.browser, async () => (await row.getAttribute("aria-selected")) === "true", `${id} selected in Review`);
   }
 
-  outside(): Promise<string> { return this.browser.$('.outside-line').getText(); }
+  hasOutsideHint(): Promise<boolean> {
+    return this.browser.execute((root) => /outside the filter/i.test(document.querySelector(root)?.textContent ?? ""), this.root);
+  }
 
   back(): Promise<void> { return this.browser.$(`section.panel[aria-label="Review's main area"] > header`).$("button*=Verify").click(); }
-
-  notes(): Promise<string> { return this.browser.$(`${this.root} textarea[placeholder="Optional"]`).getValue(); }
-
-  async writeNotes(text: string): Promise<void> { await fill(this.browser, `${this.root} textarea[placeholder="Optional"]`, text); }
 
   /** The review's instruction. */
   instruction(): Promise<string> {
@@ -148,13 +146,21 @@ export class Review {
     await press(this.browser, keys, done, what);
   }
 
+  async showFullLog(): Promise<void> {
+    const header = this.browser.$(this.root).$("button.head=Tool log");
+    if (await header.getAttribute("aria-expanded") === "false") await header.click();
+    await holds(this.browser, async () => await header.getAttribute("aria-expanded") === "true", "the Tool log unfolded");
+  }
+
   /** Click the tool `name`: its run starts in the Tool log. */
   async runTool(name: string): Promise<void> {
     const button = this.browser.$(this.root).$('[role="group"][aria-label="Tools"]').$(`button=${name}`);
     await button.waitForEnabled({ timeout: 15000, timeoutMsg: `the tool ${name} is usable` });
-    const before = (await this.log()).filter((row) => row.startsWith(`▶ HH:MM:SS · ${name} ·`)).length;
+    const prior = await this.log();
+    const head = `▶ HH:MM:SS · ${name} ·`;
+    const before = prior.filter((row) => row.startsWith(head)).length;
     await button.click();
-    await until(this.browser, () => this.log(), (rows) => rows.filter((row) => row.startsWith(`▶ HH:MM:SS · ${name} ·`)).length > before, `${name}'s run started in the Tool log`);
+    await until(this.browser, () => this.log(), (rows) => rows.filter((row) => row.startsWith(head)).length > before || (rows.some((row) => row.startsWith(head)) && JSON.stringify(rows) !== JSON.stringify(prior)), `${name}'s run started in the Tool log`);
   }
 
   /** Click Cancel beside the running work: it stops. */
@@ -167,7 +173,7 @@ export class Review {
    * error line (stderr, a failed end) as the log marks it. */
   log(): Promise<string[]> {
     return this.browser.execute((root) => [...document.querySelectorAll(`${root} [role="log"][aria-label="Tool log"] p:not(.muted)`)]
-      .map((row) => `${(row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS ")}${row.classList.contains("error") || row.classList.contains("stderr") ? " [red]" : ""}`), this.root);
+      .map((row) => `${(row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS ")}${row.querySelector(".red") || row.classList.contains("stderr") ? " [red]" : ""}`), this.root);
   }
 
   /** The rows of the last run of the tool `name`, from its start line on. */

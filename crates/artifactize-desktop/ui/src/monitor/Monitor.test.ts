@@ -436,13 +436,13 @@ it("opens the newest waiting review when started with review alone", async () =>
   expect(within(main).getByLabelText("Human review")).toBeTruthy();
 });
 
-it("opens a review by reference outside the filter, says why, and leads back to its Run in Verify", async () => {
+it("opens a review by reference without changing the filter or adding a banner, and leads back to Verify", async () => {
   const main = branch("main", [runChip("run-a", "GREEN")]);
   backend({ ...monitor("run-a-2"), mode: "review" }, () => browseView(1, { branches: [main] }), { view: current }, "claimed by you");
   render(App);
   const area = await screen.findByLabelText("Review's main area");
   await within(area).findByLabelText("Human review");
-  expect(within(area).getByRole("status").textContent).toBe("Opened from a reference · outside the filter (claimed by you)");
+  expect(within(area).queryByText(/outside the filter/)).toBeNull();
   // The filter is left as it was.
   expect((screen.getByLabelText("Filter the reviews") as HTMLInputElement).value).toBe("type:human waiting");
   await fireEvent.click(within(area).getByRole("button", { name: "Verify · run-a › release" }));

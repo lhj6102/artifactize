@@ -46,7 +46,9 @@ for (const [first, second] of [["run-a-2", "run-follower-2"], ["run-follower-2",
 
 it("converges when original and follower handles both exist before either read finishes", async () => {
   const answers: Record<string, () => void> = {};
+  const library = draftLibrary();
   mockIPC(async (command, args) => {
+    if (command === "human_draft") return library.answer(command, args);
     if (command !== "human_open") throw new Error(`Unexpected command: ${command}`);
     const id = (args as { id: string }).id;
     await new Promise<void>((answer) => (answers[id] = answer));
@@ -64,8 +66,10 @@ it("converges when original and follower handles both exist before either read f
   await originalRead;
   original.area = "tools";
   expect(follower.area).toBe("tools");
-  original.pointed = ["install.md L2:C1"];
-  expect(follower.pointed).toEqual(["install.md L2:C1"]);
+  const point = { text: "install.md L2:C1", source: "release · File Explorer", at: "2026-11-23T00:00:00Z" };
+  library.draft.points.push(point);
+  await original.readDraft();
+  expect(follower.draft?.points).toEqual([point]);
   expect(app.reviews["run-a-2"]).toBe(original);
   expect(app.reviews["run-follower-2"]).toBe(original);
 });

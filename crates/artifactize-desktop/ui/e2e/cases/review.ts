@@ -56,7 +56,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "human-tools",
-    title: "the review's tools run once it is claimed, each run logged as it happens: its start, its lines with stderr in red, and its end, red when it failed or could not run; a launched application's lines keep arriving under its run",
+    title: "the review's tools run once it is claimed, each run logged as it happens: its start, its lines with stderr marked with a red rule, and its end, with a mark for failures; a launched application's lines keep arriving under its run",
     journeys: ["J-HUMAN-TOOL", "J-HUMAN-LOG"],
     prepare: async (own) => {
       const fixture = await createRelease(own, { missing: true });
@@ -68,6 +68,9 @@ export const scenarios: Scenario[] = [
       assert.ok(before.tools.every((tool) => !tool.enabled), "no tool runs before the claim");
       await review.claim();
       await review.runTool("notes");
+      assert.deepEqual(await review.runUntil("notes", (rows) => rows.at(-1)?.startsWith("■") === true, "the folded last run shows its count"),
+        ["▶ HH:MM:SS · notes · release", "■ exit 0 · 2 lines"]);
+      await review.showFullLog();
       assert.deepEqual(await review.runUntil("notes", (rows) => rows.at(-1)?.startsWith("■") === true, "notes ended"),
         ["▶ HH:MM:SS · notes · release", "# Release notes", "- Ready to ship.", "■ exit 0"]);
       await review.runTool("fail");
@@ -76,14 +79,14 @@ export const scenarios: Scenario[] = [
       await review.until((shown) => shown.notice === "fail_release failed; a tool error is not a verdict.", "the failed tool notice arrived without a verdict");
       await review.runTool("gone");
       const gone = await review.runUntil("gone", (rows) => rows.at(-1)?.startsWith("■") === true, "the missing tool ended");
-      assert.match(gone.at(-1)!, /^■ error: \S.* \[red\]$/, "a tool that could not run ends with its error, in red");
+      assert.match(gone.at(-1)!, /^■ error: \S.* \[red\]$/, "a tool that could not run ends with its error, the prefix marked");
       // A launched application keeps logging under its own run after its button returned.
       await review.runTool("talk");
       await review.runUntil("talk", (rows) => rows.includes("opened the stand-in"), "the launched application's first line");
       writeText(gate, "go");
-      const talk = await review.runUntil("talk", (rows) => rows.at(-1)?.startsWith("■") === true, "the launched application ended");
+      const talk = await review.runUntil("talk", (rows) => rows.at(-1)?.startsWith("■ exit ") === true, "the launched application ended");
       assert.deepEqual(talk.filter((row) => !row.endsWith("[red]")), ["▶ HH:MM:SS · talk · release", "opened the stand-in", "chose: B", "■ exit 0"]);
-      assert.deepEqual(talk.filter((row) => row.endsWith("[red]")), ["warning: B is slower [red]"], "its stderr in red");
+      assert.deepEqual(talk.filter((row) => row.endsWith("[red]")), ["warning: B is slower [red]"], "its stderr marked with a red rule");
       assert.equal(request(fixture).status, "DEFERRED", "tools are no verdict");
     },
   }),

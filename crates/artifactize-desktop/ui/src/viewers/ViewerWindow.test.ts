@@ -70,7 +70,7 @@ function backend(entry: ViewerEntry, files: Record<string, string>, shown: Viewe
       case "viewer_declarations":
         return declarations;
       case "viewer_point":
-        return String(given.text);
+        return null;
       case "human_open":
         return { id: given.id, target: { run: "run-a", node: "e:checkout/signoff" }, read: 0 };
       default:
@@ -85,8 +85,6 @@ const pointed = (calls: Call[]) => calls.filter((call) => call.cmd === "viewer_p
 describe("File Explorer", () => {
   it("lists folders before files, unfolds a folder, shows a file with its lines and points at a line", async () => {
     const calls = backend({ kind: "builtin", viewer: "files" }, { "README.md": "# Checkout", "src/": "", "src/total.ts": "export const total = 1;\nexport const tax = 2;" });
-    const told: unknown[] = [];
-    await listen("notes-pointed", (event) => told.push(event.payload));
     const { container } = render(ViewerWindow, { session: 7 });
     // The strip names the active review by its eval.
     await waitFor(() => expect(container.querySelector("header.strip .review")?.textContent).toBe("checkout/signoff"));
@@ -105,8 +103,6 @@ describe("File Explorer", () => {
     // It goes to the review pointing was started for.
     expect(calls.find((call) => call.cmd === "viewer_point")?.args.review).toBe("run-a-2");
     expect(screen.getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false");
-    // The windows showing the review's Notes are told what was pointed, to mark it there.
-    await waitFor(() => expect(told).toEqual([{ review: "run-a-2", text: "src/total.ts L2:C1" }]));
   });
 
   it("stops pointing, adding nothing, when the active review changes while it points", async () => {
@@ -155,14 +151,16 @@ describe("File Explorer", () => {
     await waitFor(() =>
       expect(present).toEqual(
         expect.arrayContaining([
-          { session: 1, artifact: "checkout", review: "run-a-2", open: true, pointable: true, petMatch: false },
-          { session: 2, artifact: "checkout", review: "run-a-2", open: true, pointable: true, petMatch: true },
+          { session: 1, artifact: "checkout", review: "run-a-2", open: true, pointable: true, pointing: false, petMatch: false },
+          { session: 2, artifact: "checkout", review: "run-a-2", open: true, pointable: true, pointing: false, petMatch: true },
         ]),
       ),
     );
     await emit("point-arm", { session: 2 });
     await waitFor(() => expect(strip(original).getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("true"));
     expect(strip(elsewhere).getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false");
+    await emit("point-arm", { session: 2 });
+    await waitFor(() => expect(strip(original).getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false"));
     // Even asked by its own session, a viewer the library does not match stays unarmed.
     await emit("point-arm", { session: 1 });
     expect(strip(elsewhere).getByRole("button", { name: "Point" }).getAttribute("aria-pressed")).toBe("false");

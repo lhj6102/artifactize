@@ -6,9 +6,11 @@
   import type { Attachment } from "svelte/attachments";
   import type { FieldValue, FormField } from "../ipc/client";
   import type { FormDraft, Review } from "./review.svelte";
+  import type { FormCaret } from "./form-caret";
+  import VerdictChoices from "./VerdictChoices.svelte";
   import Icon from "../shell/Icon.svelte";
 
-  let { review, form }: { review: Review; form: FormDraft } = $props();
+  let { review, form, caret }: { review: Review; form: FormDraft; caret: FormCaret } = $props();
   /** What a person enters: constants are the form's own. */
   const entered = (fields: FormField[]) => fields.filter((field) => field.input.kind !== "fixed");
   const shown = $derived(entered(form.fields));
@@ -48,7 +50,7 @@
 
 <!-- One scalar input: `id` names it for its label, `label` for screen readers, `onset` takes
      the new value. -->
-{#snippet scalar(field: FormField, value: FieldValue | undefined, id: string, onset: (value: FieldValue) => void)}
+{#snippet scalar(field: FormField, value: FieldValue | undefined, id: string, onset: (value: FieldValue) => void, comment = false)}
   {#if field.input.kind === "bool"}
     {@const chosen = value?.kind === "bool" ? value.value : null}
     <div class="choices" role="radiogroup" aria-labelledby={id}>
@@ -84,6 +86,7 @@
   {:else if field.input.kind === "text"}
     <textarea
       {id}
+      data-comment={comment || undefined}
       rows="2"
       placeholder={placeholder(field.required)}
       value={text(value)}
@@ -102,19 +105,8 @@
   {/if}
 {/snippet}
 
-<div class="form" {@attach takeFocus}>
-  <div class="verdicts" role="radiogroup" aria-label="Verdict">
-    {#each ["GREEN", "RED"] as const as verdict (verdict)}
-      <button
-        role="radio"
-        aria-checked={form.verdict === verdict}
-        class="verdict {verdict.toLowerCase()}"
-        onclick={() => void review.choose(verdict)}
-      >
-        {verdict}
-      </button>
-    {/each}
-  </div>
+<div class="form" {@attach caret.attach} {@attach takeFocus}>
+  <VerdictChoices {review} selected={form.verdict} />
 
   {#each shown as field (field.name)}
       {@const value = form.values[field.name]}
@@ -166,7 +158,7 @@
           </div>
           <button class="button small add" onclick={() => void form.add(field.name)}><Icon name="add" />Add</button>
         {:else}
-          {@render scalar(field, value, `field-${field.name}`, (next) => set(field.name, next))}
+          {@render scalar(field, value, `field-${field.name}`, (next) => set(field.name, next), field.name === "comment")}
         {/if}
         {#if field.hint}<span class="hint">{field.hint}</span>{/if}
       </div>
@@ -183,45 +175,6 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     overflow-wrap: anywhere;
-  }
-  .verdicts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  /* Both verdicts carry their own dot; selection brightens the label and outline only. */
-  .verdict {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font: inherit;
-    height: var(--control);
-    border: 1px solid var(--line-group);
-    background: var(--surface-group);
-    color: var(--ink-2);
-    border-radius: var(--radius-control);
-    padding: 0 12px;
-    cursor: pointer;
-  }
-  /* Hover only highlights: the face stays and the edge steps up to a field's line. */
-  .verdict:not([aria-checked="true"]):hover {
-    border-color: var(--line-input);
-  }
-  .verdict::before {
-    content: "";
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-  }
-  .verdict.green::before {
-    background: var(--green);
-  }
-  .verdict.red::before {
-    background: var(--red);
-  }
-  .verdict[aria-checked="true"] {
-    color: var(--ink);
-    border-color: var(--outline-selected);
   }
   .field {
     display: grid;
@@ -260,13 +213,13 @@
   }
   /* An empty choice reads as a placeholder does. */
   select.empty {
-    color: var(--ink-3);
+    color: var(--ink-2);
   }
   select.empty option {
     color: var(--ink);
   }
   ::placeholder {
-    color: var(--ink-3);
+    color: var(--ink-2);
   }
   /* A number takes a short one-line field. */
   .number {

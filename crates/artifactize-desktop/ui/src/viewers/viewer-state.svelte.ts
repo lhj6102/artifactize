@@ -5,12 +5,11 @@
 import { createContext } from "svelte";
 import { emit } from "@tauri-apps/api/event";
 import { call, commands, message, type Commands, type ViewerContext, type ViewerEntry } from "../ipc/client";
-import { announcePointed } from "../review/pointed";
 
 /** What a viewer window tells the others about itself: the pet overlay points through the one
  * whose session the library matches to the active review's original request (`petMatch`: that
  * request's worktree and Artifact), never through a same-named Artifact elsewhere. */
-export type Presence = { session: number; artifact: string; review: string | null; open: boolean; pointable: boolean; petMatch: boolean };
+export type Presence = { session: number; artifact: string; review: string | null; open: boolean; pointable: boolean; pointing: boolean; petMatch: boolean };
 
 /** The app-wide events between the windows. */
 export const PRESENCE = "viewer-presence";
@@ -80,6 +79,7 @@ export class ViewerState {
       review: this.context?.review ?? null,
       open,
       pointable: this.pointable,
+      pointing: this.pointing,
       petMatch: this.context?.petMatch ?? false,
     };
     await emit(PRESENCE, presence).catch(() => {});
@@ -88,12 +88,11 @@ export class ViewerState {
   /** Record `text` in the active review through the library. */
   async append(text: string): Promise<null> {
     // The review pointing was started for; the library refuses it once another is active.
-    const review = this.armedFor ?? this.context?.review ?? null;
+    const review = this.armedFor;
+    if (review === null) throw new Error("Pointing needs an armed, active Human review.");
     this.arm(false);
-    if (review === null) throw new Error("Pointing needs an active Human review.");
-    await call(this.ipc.viewerPoint(this.session, review, text));
-    announcePointed(review, text);
-    return null;
+    void this.announce();
+    return await call(this.ipc.viewerPoint(this.session, review, text));
   }
 
   /** Append `text`, a place pointed at, to the review pointing was for; pointing ends. A

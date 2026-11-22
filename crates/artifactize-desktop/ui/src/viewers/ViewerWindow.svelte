@@ -49,7 +49,12 @@
         } catch (failure) {
           v.error = message(failure);
           throw failure;
+        } finally {
+          tellPoint();
         }
+      } else if (data.method === "cancelPoint") {
+        point(false);
+        result = null;
       } else if (data.method === "status") {
         v.status = args.text?.trim() || null;
         result = null;
@@ -75,6 +80,11 @@
   /** Start or stop pointing; a plugin's page is told, and points in its own document. */
   function point(on: boolean) {
     v.arm(on);
+    void v.announce();
+    tellPoint();
+  }
+
+  function tellPoint() {
     if (entry?.kind === "web") frame?.contentWindow?.postMessage({ channel: CHANNEL, event: "point", armed: v.pointing }, "*");
   }
 
@@ -88,14 +98,14 @@
   onMount(() => {
     void v.load();
     const unreview = onActiveReviewChanged(() => {
-      void v.refresh();
+      void v.refresh().then(tellPoint);
       frame?.contentWindow?.postMessage({ channel: CHANNEL, event: "activeReviewChanged" }, "*");
     });
     // The pet overlay's Point points in this session only (the library matched it to the active
     // review's original request), and asks which viewers are open.
     const unarm = subscribe<{ session: number }>((handler) => listen(ARM, handler), (asked) => {
       if (!v.pointable || asked.session !== session || !context?.petMatch) return;
-      point(true);
+      point(!v.pointing);
       void getCurrentWindow().setFocus().catch(() => {});
     });
     const unask = subscribe<unknown>((handler) => listen(ASK, handler), () => void v.announce());
@@ -156,7 +166,7 @@
     height: 100%;
     background: var(--surface-app);
   }
-  .pointing {
+  .pointing .body {
     cursor: crosshair;
   }
   /* The app's strip: the same for every viewer (D-VIEW-1). */

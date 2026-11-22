@@ -1,12 +1,6 @@
 <script lang="ts">
-  // The one Human review component, shared by the Detail and the Review view. It has one order,
-  // the instruction, the Tools, their Tool log and the Result with its row of actions, then
-  // Debug, and two arrangements by the room it has. In one column (a Human eval's tab in the
-  // Detail, or a Main area narrower than twice the Detail's width) it reads top to bottom, no
-  // wider than the measure, the Tool log a box between the Tools and the Result. In two (a Main
-  // area at least twice as wide), the Tool log is the view, a panel filling the left, and the
-  // rest is a column at the right, where the Detail docks and of its width. Its eval's title is
-  // said once, above it; the review opens with its stage alone.
+  // Review and Detail share the instruction, Tools, Tool log, Points, Result and Debug.
+  // With room for two columns the Result moves to the dock at the right.
   import { HumanDetailState, setHumanDetailState } from "./human-detail-state.svelte";
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -15,6 +9,9 @@
   import type { Review } from "./review.svelte";
   import Tools from "./Tools.svelte";
   import ToolLog from "./ToolLog.svelte";
+  import ReviewPoints from "./ReviewPoints.svelte";
+  import { FormCaret } from "./form-caret";
+  import VerdictChoices from "./VerdictChoices.svelte";
   import VerdictForm from "./VerdictForm.svelte";
   import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
@@ -36,7 +33,7 @@
     review: Review;
     /** Its screen is shown: only then it offers palette commands. */
     active?: boolean;
-    /** It fills the Main area: with room for two, the Tool log is the view at the left. */
+    /** It fills the Main area: with room for two, the Result moves to the right. */
     wide?: boolean;
     onback: () => void;
     /** A submission settled the request, published or saved locally only. */
@@ -48,6 +45,7 @@
   const { sections } = app;
   const h = new HumanDetailState();
   setHumanDetailState(h);
+  const caret = new FormCaret();
 
   const view = $derived(review.view);
   /** The stage pill's words; a submitted review has none. */
@@ -191,29 +189,37 @@
   {/if}
 {/snippet}
 
-<!-- The Result: once claimed, the Points, then the verdict and its form; settled, the result. -->
+{#snippet evidence()}
+  {#if split || !review.settled || review.log.length > 0}
+    <div class="tool-log">
+      <Section name="Tool log" preview unfolded={h.logOpen} ontoggle={() => (h.logOpen = !h.logOpen)}>
+        <ToolLog entries={review.log} folded={!h.logOpen} empty={review.settled ? null : "What the tools print shows here."} />
+      </Section>
+    </div>
+  {/if}
+  {#if review.owned && review.draft?.points.length}
+    <Section name="Points" folds={false}>
+      <ReviewPoints {review} limited={split} insert={(text) => caret.insert(text)} />
+    </Section>
+  {/if}
+{/snippet}
+
+<!-- The Result: once claimed, the verdict and its form; settled, the result. -->
 {#snippet result()}
   {#if view}
     <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
       {#if review.settled}
         <!-- The completed result by field, read-only; a request settled without one, its error. -->
         <div class="completed">
-          {#if view.notes}<p class="notes-done"><span class="label">Notes</span>{view.notes}</p>{/if}
           {#if view.completed}<ResultEntries entries={view.completed} />{:else}<pre>{view.result}</pre>{/if}
         </div>
         <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
         {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
       {:else if review.owned}
-        {#if review.draft?.points.length}
-          <div class="notes"><span class="label">Points</span>{#each review.draft.points as point (point)}<span>{point.text}</span>{/each}</div>
-        {/if}
         {#if review.form}
-          <VerdictForm {review} form={review.form} />
+          {#key review.form}<VerdictForm {review} form={review.form} {caret} />{/key}
         {:else}
-          <div class="verdicts">
-            <button class="button" aria-label="GREEN (g)" aria-keyshortcuts="g" onclick={() => void review.choose("GREEN")}>GREEN</button>
-            <button class="button" aria-label="RED (r)" aria-keyshortcuts="r" onclick={() => void review.choose("RED")}>RED</button>
-          </div>
+          <VerdictChoices {review} shortcuts />
         {/if}
       {:else if view.claim}
         <p class="muted">Read-only until released.</p>
@@ -268,13 +274,10 @@
   {#if !view}
     <p class="loading">{review.notice?.text ?? "Loading…"}</p>
   {:else if split}
-    <!-- The review at the left: the instruction, the Tools and the Tool log taking the rest. -->
+    <!-- The review at the left: the instruction, Tools, Tool log, Points and Debug. -->
     <div class="reviewing">
       {@render reading()}
-      <Section name="Tool log" folds={false}>
-        <!-- Submitted, the box stays where it was, empty (D-REV-1). -->
-        <div class="fill"><ToolLog entries={review.log} empty={review.settled ? null : "What the tools print shows here."} /></div>
-      </Section>
+      {@render evidence()}
       {@render debug()}
     </div>
     <!-- The Evaluation at the right, of the Detail's width: the stage, the Result scrolling on
@@ -288,11 +291,7 @@
     <div class="one">
       <div class="head">{@render stagePill()}</div>
       {@render reading()}
-      {#if !(review.settled && review.log.length === 0)}
-        <Section name="Tool log" folds={false}>
-          <ToolLog entries={review.log} empty="What the tools print shows here." />
-        </Section>
-      {/if}
+      {@render evidence()}
       <Section name="Result" folds={false}>
         {@render result()}
         {@render actions()}
@@ -329,7 +328,7 @@
     grid-template-columns: minmax(0, 1fr) var(--dock-width);
     border-top: 1px solid var(--line-panel);
   }
-  /* The review: the instruction and the Tools, then the Tool log taking the rest of the height. */
+  /* The review: evidence at the left, with no extra height added to a short log. */
   .reviewing {
     display: flex;
     flex-direction: column;
@@ -339,8 +338,7 @@
     overflow: auto;
     background: var(--surface-panel);
   }
-  /* Nothing is cut off: the Tools and Debug keep their height, a long instruction scrolls in its
-     own box, and the Tool log takes what is left, never less than a few lines. */
+  /* Tools, Points and Debug keep their height; the instruction and log scroll as needed. */
   .reviewing > :global(*) {
     flex: none;
   }
@@ -349,27 +347,20 @@
     min-height: 4em;
     overflow: auto;
   }
-  .reviewing > :global(section:has(.fill)) {
-    flex: 1 1 120px;
+  .reviewing > .tool-log {
+    flex: 0 1 auto;
+    min-height: 64px;
+    display: flex;
+  }
+  .reviewing .tool-log :global(.section),
+  .reviewing .tool-log :global(.section > .body) {
     display: flex;
     flex-direction: column;
+    width: 100%;
     min-height: 0;
   }
-  .reviewing :global(section:has(.fill) > .body),
-  .fill {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .fill > :global(*) {
-    flex: 1 1 auto;
-    min-height: 0;
-  }
-  /* In two columns the log's box takes the rest of the panel's height, uncapped (D-REV-3). */
-  .fill :global(.log) {
-    max-height: none;
-  }
+  .reviewing .tool-log :global(.head) { flex: none; }
+  .reviewing .tool-log :global(.log) { max-height: none; }
   /* The Evaluation: its head row, the Result scrolling on its own, the actions along its bottom. */
   .evaluation {
     display: grid;
@@ -423,6 +414,7 @@
   }
   .text {
     margin: 0;
+    font-size: var(--text-lead);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -438,25 +430,6 @@
   }
   .result p {
     margin: 0;
-  }
-  .notes {
-    display: grid;
-    gap: 4px;
-  }
-  .label {
-    font-size: var(--text-small);
-    color: var(--label);
-  }
-  .notes-done {
-    display: grid;
-    gap: 2px;
-    margin: 0 0 8px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .verdicts {
-    display: flex;
-    gap: 6px;
   }
   /* The last row of the Result: Release claim at the left, Submit at the column's right edge. */
   /* One row, also in the narrowest (320px) Detail: compact buttons at both ends, what the work

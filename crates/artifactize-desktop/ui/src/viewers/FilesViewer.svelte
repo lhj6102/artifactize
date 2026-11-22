@@ -166,10 +166,12 @@
     text-align: right;
     user-select: none;
   }
-  /* While pointing, the line under the pointer is outlined in the accent. */
+  /* While pointing, the line under the pointer is outlined by the viewer's handle edge. */
   .source.pointing li:hover {
-    outline: 2px solid var(--accent);
-    outline-offset: -1px;
+    outline: 2px dashed var(--handle);
+    box-shadow: inset 0 0 0 2px var(--handle-edge);
+    outline-offset: -2px;
+    cursor: crosshair;
   }
   .empty,
   .error {

@@ -167,7 +167,7 @@ export class AppState {
   }
 
   /** Show Review with the Human review `id` open, as a reference opens it: its exact request,
-   * whether or not Review's filter lists it, which then says why (J-REVIEW-REF). */
+   * without changing Review's filter or list (J-REVIEW-REF). */
   async showReview(id: string): Promise<void> {
     const r = this.reviewMode;
     this.mode = "review";
@@ -176,7 +176,6 @@ export class AppState {
       const review = this.review(opened.view.id);
       review.adopt(opened.view);
       r.shown = { kind: "review", id: opened.view.id };
-      r.outside = opened.outsideFilter ? (opened.outsideReason ?? "outside the filter") : null;
       r.selected = id;
       r.error = null;
     } catch (failure) {
@@ -200,7 +199,6 @@ export class AppState {
       }
       r.folds = { log: false };
       r.shown = { kind: "request", detail };
-      r.outside = null;
       r.selected = null;
       r.error = null;
     } catch (failure) {

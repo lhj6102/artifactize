@@ -172,10 +172,11 @@
     border: 0;
     border-top: 1px solid var(--line-group);
   }
-  /* While pointing, the block under the pointer is outlined in the accent. */
+  /* While pointing, the block under the pointer is outlined by the viewer's handle edge. */
   .pointing :global(:is(h1, h2, h3, p, li, pre, table):hover) {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: 2px dashed var(--handle);
+    box-shadow: inset 0 0 0 2px var(--handle-edge);
+    outline-offset: -2px;
     cursor: crosshair;
   }
   .error {

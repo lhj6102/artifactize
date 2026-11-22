@@ -22,8 +22,6 @@ export class ReviewModeState {
   /** The review chosen in the list, by its request ID. */
   selected = $state<string | null>(null);
   shown = $state.raw<ReviewShown>({ kind: "none" });
-  /** Why the shown review, opened by a reference, is outside the filter; `null` while listed. */
-  outside = $state<string | null>(null);
   /** The read-only request shows its log rather than its Summary. */
   folds = $state({ log: false });
   /** The notice shows in full rather than cut to one line. */

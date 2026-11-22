@@ -1,5 +1,5 @@
 // Artifact Viewers, Point and the pet overlay: a review's viewer tool opens its Artifact in a
-// window of its own; Point appends a place there to the review's Notes; the pet overlay keeps
+// window of its own; Point appends a place there to the review's Points; the pet overlay keeps
 // the review at hand while its evaluation space is not in front, and submits it.
 import assert from "node:assert/strict";
 import { request } from "../fixtures/repo.ts";
@@ -10,8 +10,8 @@ import { windows } from "../views/viewers.ts";
 export const scenarios: Scenario[] = [
   scenario({
     id: "viewer-point-pet",
-    title: "a review's viewer tool opens the File Explorer in a window of its own; Point appends the line clicked to the review's Notes; away from Review the pet overlay holds the same Notes and submits the review",
-    journeys: ["J-VIEWER", "J-VIEWER-FILES", "J-POINT", "J-PET"],
+    title: "a review's viewer tool opens the File Explorer in a window of its own; Point appends the line clicked to the review's Points; away from Review the pet overlay holds the same Points and submits the review",
+    journeys: ["J-VIEWER", "J-VIEWER-FILES", "J-POINT", "J-PET", "J-HUMAN-POINTS"],
     // Its windows take the display's focus from one another.
     alone: true,
     prepare: async (own) => {
@@ -21,7 +21,6 @@ export const scenarios: Scenario[] = [
     run: async (app, { fixture }) => {
       const w = windows();
       await w.claimReview("notes/signoff");
-      await app.review.writeNotes("Check the rounding.");
       const label = await w.runTool("view");
       assert.equal(await w.viewer(label), "notes — File Explorer", "titled {Artifact} — {viewer}");
       const strip = await w.stripUntil((shown) => shown.point, "Point offered for the claimed review");
@@ -34,36 +33,32 @@ export const scenarios: Scenario[] = [
       await w.choose("Files", "release.md");
       const shown = await w.documentUntil((doc) => doc.lines.length >= 3, "release.md shown");
       assert.deepEqual(shown.lines.slice(0, 3), ["# Release", "Totals are rounded.", "Ship it."]);
-      // Point, then a click on line 2: its place reaches the review's Notes.
       await w.point();
       await w.clickLine(2);
-      const notes = await w.notesUntil((text) => /^Check the rounding\.\nrelease\.md L2:C\d+$/.test(text.trim()), "the pointed line in the Notes");
-      // It stands out there as pointed.
-      await w.pointedUntil((lines) => lines.length === 1 && lines[0] === notes.trim().split("\n").at(-1), "the pointed line marked in the Notes");
-      // Away from Review the pet overlay holds the review, its Notes the same draft's.
+      const points = await w.pointsUntil((rows) => rows.length === 1 && /^release\.md L2:C\d+$/.test(rows[0]), "the line is in Points");
+      // Away from Review the pet shows the same draft's Points.
       await w.mode("Verify");
       await w.pet();
       assert.equal(await w.title(), "Artifactize review");
       const pet = await w.petUntil((shown) => shown.choices.length > 0, "the pet offers the verdicts of the claimed review");
       assert.match(pet.head, /^notes\/signoff · run-/);
-      assert.equal(pet.notes, notes);
+      assert.deepEqual(pet.points, points);
       assert.equal(pet.point, true, "Point while the notes' viewer is open");
       // No verdict has been chosen: the pet offers the buttons but no verdict form.
       assert.deepEqual([pet.choices, pet.radios, pet.verdict], [["GREEN", "RED"], 0, ""]);
-      const edited = `${pet.notes.trim()}\nThe rounding reads right.`;
-      await w.petNotes(edited);
       await w.petChoose("RED");
       await w.petChoose("GREEN");
       const chosen = await w.readPet();
       assert.deepEqual([chosen.choices, chosen.radios], [["GREEN", "RED"], 2], "one verdict choice, the form's radios");
-      await w.petEnter("comment", "Checked the totals.");
+      await w.petEnter("comment", "Checked the totals: ");
+      assert.equal(await w.petInsert(), `Checked the totals: ${points[0]}`);
       const done = await w.petSubmit();
       assert.equal(done.refusal, "", "submitted");
       const saved = request(fixture, "notes/signoff");
       assert.notEqual(saved.status, "DEFERRED", "the review is settled");
-      assert.equal(saved.result?.comment, "Checked the totals.");
+      assert.equal(saved.result?.comment, `Checked the totals: ${points[0]}`);
       await w.mode("Review");
-      await app.review.until((shown) => shown.completed.includes(edited), "the submitted review shows the Notes edited in the pet");
+      await app.review.until((shown) => shown.completed.includes(`Checked the totals: ${points[0]}`) && !shown.sections.includes("Points"), "the submitted review shows the form without Points");
       // Closing the viewer's window closes it alone.
       await w.closeViewer(label);
       assert.deepEqual(await w.viewers(), []);

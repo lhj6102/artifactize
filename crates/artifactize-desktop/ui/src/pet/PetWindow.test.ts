@@ -3,7 +3,8 @@
 // only, submits as Review does, and leads back to the review in the main window.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit, listen } from "@tauri-apps/api/event";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import { draftLibrary, humanView } from "../review/fixtures";
 import PetWindow from "./PetWindow.svelte";
@@ -59,19 +60,19 @@ it("points only in the open viewer matched to the review's original request, say
   const point = await screen.findByRole("button", { name: "Point" });
   expect(point.hasAttribute("disabled")).toBe(true);
   screen.getByText("Open release in a viewer to point.");
-  await emit("viewer-presence", { session: 3, artifact: "other", review: "run-a-2", open: true, pointable: true, petMatch: false });
+  await emit("viewer-presence", { session: 3, artifact: "other", review: "run-a-2", open: true, pointable: true, pointing: false, petMatch: false });
   // The same-named Artifact in another worktree: the library does not match it.
-  await emit("viewer-presence", { session: 5, artifact: "release", review: "run-a-2", open: true, pointable: true, petMatch: false });
+  await emit("viewer-presence", { session: 5, artifact: "release", review: "run-a-2", open: true, pointable: true, pointing: false, petMatch: false });
   // Matched, but for a review that is no longer the active one.
-  await emit("viewer-presence", { session: 6, artifact: "release", review: "run-b-3", open: true, pointable: true, petMatch: true });
+  await emit("viewer-presence", { session: 6, artifact: "release", review: "run-b-3", open: true, pointable: true, pointing: false, petMatch: true });
   expect(point.hasAttribute("disabled")).toBe(true);
-  await emit("viewer-presence", { session: 4, artifact: "release", review: "run-a-2", open: true, pointable: true, petMatch: true });
+  await emit("viewer-presence", { session: 4, artifact: "release", review: "run-a-2", open: true, pointable: true, pointing: false, petMatch: true });
   await waitFor(() => expect(point.hasAttribute("disabled")).toBe(false));
   await fireEvent.click(point);
   // Point arms that viewer's session alone.
   await waitFor(() => expect(armed).toEqual([{ session: 4 }]));
   // The viewer closed: Point is disabled again.
-  await emit("viewer-presence", { session: 4, artifact: "release", review: "run-a-2", open: false, pointable: true, petMatch: true });
+  await emit("viewer-presence", { session: 4, artifact: "release", review: "run-a-2", open: false, pointable: true, pointing: false, petMatch: true });
   await waitFor(() => expect(point.hasAttribute("disabled")).toBe(true));
 });
 
@@ -83,16 +84,6 @@ it("leads back to the review in the main window", async () => {
   await fireEvent.click(await screen.findByRole("button", { name: "Show release/signoff in Review" }));
   await waitFor(() => expect(asked).toEqual(["run-a-2"]));
   expect(calls.some((call) => call.cmd === "main_focus")).toBe(true);
-});
-
-it("reloads a viewer Point when the library reports that the draft changed", async () => {
-  const { library } = backend();
-  library.draft.verdict = "GREEN";
-  render(PetWindow, { request: "run-a-2" });
-  await screen.findByRole("button", { name: "Submit GREEN" });
-  library.draft.points.push({ text: "release.md L2:C4", source: "Release", at: "2026-11-22T22:00:00Z" });
-  await emit("human-draft-changed", { id: "run-a-2" });
-  await screen.findByText("release.md L2:C4");
 });
 
 it("shows a saved verdict's form with what was entered, sending nothing; a fresh draft opens none", async () => {
@@ -114,4 +105,30 @@ it("shows a saved verdict's form with what was entered, sending nothing; a fresh
   expect(chosen.getAttribute("aria-checked")).toBe("true");
   expect((await screen.findByDisplayValue("The total is wrong.")).tagName).toMatch(/INPUT|TEXTAREA/);
   expect(saved.calls.some((call) => call.cmd === "human_draft_edit")).toBe(false);
+});
+
+it("reads compact Points from the shared draft and inserts only when a form is open", async () => {
+  const { library } = backend();
+  const user = userEvent.setup();
+  render(PetWindow, { request: "run-a-2" });
+  const point = await screen.findByRole<HTMLButtonElement>("button", { name: "Point" });
+  expect(point.disabled).toBe(true);
+  expect(screen.queryByRole("list", { name: "Points" })).toBeNull();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  const text = "release.md L2:C4";
+  library.draft.points = [{ text, source: "release · File Explorer", at: "2026-11-23T00:00:00Z" }];
+  await emit("human-draft-changed", { id: "run-a-2" });
+  const points = await screen.findByRole("list", { name: "Points" });
+  expect(within(points).getByText(text)).toBeTruthy();
+  expect(points.textContent).not.toContain("File Explorer");
+  const insert = within(points).getByRole<HTMLButtonElement>("button", { name: "Insert" });
+  expect(insert.disabled).toBe(true);
+  expect(within(points).queryByRole("button", { name: /remove/i })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "GREEN" }));
+  const comment = await screen.findByLabelText<HTMLTextAreaElement>(/^comment/);
+  await user.type(comment, "Here: ");
+  await user.click(insert);
+  expect(comment.value).toBe(`Here: ${text}`);
+  await waitFor(() => expect(library.draft.green.draft.fields).toContainEqual(["comment", { kind: "text", value: `Here: ${text}` }]));
+  expect(library.draft.points).toHaveLength(1);
 });

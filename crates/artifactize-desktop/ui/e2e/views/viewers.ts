@@ -1,6 +1,6 @@
 // The app's windows beside the main one, as a person sees them: an Artifact Viewer (its strip,
 // File Explorer, Markdown, Artifactize Viewer, a plugin's page) and the pet overlay; and, in the
-// main window, what leads to them: Review's list and review, its Notes and the bottom bar's
+// main window, what leads to them: Review's list and review, its Points and the bottom bar's
 // modes. WebDriver reaches one window at a time: each view switches to its window first.
 import { fill } from "../keys.ts";
 import { callWindow } from "../portable.ts";
@@ -11,10 +11,10 @@ const PET = "pet";
 const VIEWER = "viewer-";
 const REVIEW = `[aria-label="Review's main area"] section[aria-label="Human review"]`;
 
-/** The pet overlay as read: its head row, its Notes, its GREEN and RED buttons as they read in
+/** The pet overlay as read: its head row, its Points, its GREEN and RED buttons as they read in
  * order, how many of them are the open form's Verdict radios, the verdict whose form is open,
  * Point and why it is off, and what it says went wrong. */
-export type Pet = { head: string; notes: string; choices: string[]; radios: number; verdict: string; point: boolean; why: string; refusal: string };
+export type Pet = { head: string; points: string[]; choices: string[]; radios: number; verdict: string; point: boolean; why: string; refusal: string };
 
 export class Windows {
   private readonly browser: WebdriverIO.Browser;
@@ -56,7 +56,7 @@ export class Windows {
     await holds(this.browser, () => this.browser.execute((shown) => document.querySelector(`main[aria-label="${shown}"]`)?.hasAttribute("hidden") === false, name), `${name} shown`);
   }
 
-  /** Open the review of `evalId` from Review's list, and claim it: its Notes show. */
+  /** Open the review of `evalId` from Review's list, and claim it. */
   async claimReview(evalId: string): Promise<void> {
     await this.main();
     const option = this.browser.$('[role="listbox"][aria-label="Human reviews"]').$(`[role="option"]*=${evalId}`);
@@ -64,7 +64,7 @@ export class Windows {
     await option.click();
     await holds(this.browser, () => this.browser.execute((expected) => document.querySelector(`[aria-label="Review's main area"] > header h2`)?.textContent?.trim() === expected, evalId), `the review of ${evalId} opened`);
     await this.browser.$(REVIEW).$("button=Claim to review").click();
-    await holds(this.browser, () => this.browser.$(`${REVIEW} label.notes textarea`).isExisting(), `the review of ${evalId} claimed`);
+    await holds(this.browser, async () => (await this.browser.$(`${REVIEW} .stage`).getText()) === "REVIEW (yours)", `the review of ${evalId} claimed`);
   }
 
   /** Click the shown review's tool `name`: a viewer tool's window opens; its label. */
@@ -77,22 +77,10 @@ export class Windows {
     return until(this.browser, async () => (await this.viewers()).find((label) => !before.includes(label)) ?? "", (label) => label !== "", `${name} opened an Artifact Viewer`);
   }
 
-  /** The shown review's Notes. */
-  async notes(): Promise<string> {
+  /** The shown review's Points as read once `ok` holds. */
+  async pointsUntil(ok: (points: string[]) => boolean, what: string): Promise<string[]> {
     await this.main();
-    return this.browser.$(`${REVIEW} label.notes textarea`).getValue();
-  }
-
-  /** The shown review's Notes once `ok` holds for them. */
-  async notesUntil(ok: (notes: string) => boolean, what: string): Promise<string> {
-    await this.main();
-    return until(this.browser, () => this.browser.$(`${REVIEW} label.notes textarea`).getValue(), ok, what);
-  }
-
-  /** The lines of the shown review's Notes that stand out as pointed, once `ok` holds for them. */
-  async pointedUntil(ok: (lines: string[]) => boolean, what: string): Promise<string[]> {
-    await this.main();
-    const read = () => this.browser.execute((root) => [...document.querySelectorAll(`${root} label.notes mark`)].map((mark) => mark.textContent ?? ""), REVIEW);
+    const read = () => this.browser.execute((root) => [...document.querySelectorAll(`${root} [aria-label="Points"] li .text`)].map((point) => point.textContent ?? ""), REVIEW);
     return until(this.browser, read, ok, what);
   }
 
@@ -245,7 +233,7 @@ export class Windows {
       const point = [...(card?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.trim() === "Point");
       return {
         head: [...(card?.querySelector(".head")?.children ?? [])].map((part) => part.textContent?.trim() ?? "").filter(Boolean).join(" "),
-        notes: card?.querySelector<HTMLTextAreaElement>(".notes textarea")?.value ?? "",
+        points: [...(card?.querySelectorAll('[aria-label="Points"] li .text') ?? [])].map((point) => point.textContent ?? ""),
         choices: [...(card?.querySelectorAll("button") ?? [])].map((button) => button.textContent?.trim() ?? "").filter((text) => text === "GREEN" || text === "RED"),
         radios: card?.querySelectorAll('[role="radiogroup"][aria-label="Verdict"] [role="radio"]').length ?? 0,
         verdict: card?.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
@@ -260,11 +248,6 @@ export class Windows {
     return until(this.browser, () => this.readPet(), ok, what);
   }
 
-  /** Type `text` as the pet's Notes. */
-  async petNotes(text: string): Promise<void> {
-    await fill(this.browser, ".card .notes textarea", text);
-  }
-
   /** Click GREEN or RED in the pet: that verdict's form opens. */
   async petChoose(verdict: "GREEN" | "RED"): Promise<void> {
     await this.browser.$(".card .verdicts").$(`button=${verdict}`).click();
@@ -274,6 +257,11 @@ export class Windows {
   /** Type `text` into the pet's form field `id`. */
   async petEnter(id: string, text: string): Promise<void> {
     await fill(this.browser, `.card #field-${id}`, text);
+  }
+
+  async petInsert(): Promise<string> {
+    await this.browser.$('.card [aria-label="Points"]').$('button=Insert').click();
+    return this.browser.$(".card #field-comment").getValue();
   }
 
   /** Click Submit in the pet: the review is submitted. */

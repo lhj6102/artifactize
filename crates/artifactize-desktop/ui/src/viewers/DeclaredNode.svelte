@@ -1,6 +1,6 @@
 <script lang="ts">
   // A declared Artifact in the Artifactize Viewer (D-VIEW-5): its name and its type as a small
-  // tag (`custom` for a Custom Artifact), no status. Selected, it carries the selected outline; while pointing, the accent.
+  // tag (`custom` for a Custom Artifact), no status. Selected, it carries the selected outline; while pointing, the handle edge.
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
 
   type Data = { name: string; kind: string; selected: boolean; pointing: boolean };
@@ -31,8 +31,9 @@
     cursor: pointer;
   }
   .node.pointing:hover {
-    outline: 2px solid var(--accent);
-    outline-offset: -1px;
+    outline: 2px dashed var(--handle);
+    box-shadow: inset 0 0 0 2px var(--handle-edge);
+    outline-offset: -2px;
     cursor: crosshair;
   }
   .name {

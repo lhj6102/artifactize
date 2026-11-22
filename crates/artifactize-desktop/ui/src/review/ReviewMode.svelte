@@ -65,12 +65,6 @@
       r.next = page.next;
       r.searched = true;
       r.error = null;
-      // Whether the shown review is outside this filter, and why, is the library's answer.
-      if (shown.kind === "review") {
-        const id = shown.id;
-        const opened = await call(app.ipc.humanOpenReference(id, text));
-        if (mine === searches && r.shown.kind === "review" && r.shown.id === id) r.outside = opened.outsideFilter ? opened.outsideReason : null;
-      }
     } catch (failure) {
       if (mine !== searches) return;
       // A filter the library cannot read lists nothing, and says why under it.
@@ -265,10 +259,7 @@
               <button class="button small" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={close}>Close</button>
             {/if}
           {/snippet}
-          <div class="body" class:outside={r.outside !== null}>
-            {#if r.outside !== null && shown.kind === "review"}
-              <p class="outside-line" role="status"><Icon name="open" />Opened from a reference · outside the filter ({r.outside})</p>
-            {/if}
+          <div class="body">
             {#if shown.kind === "review"}
               {#if review}
                 {#key review}
@@ -381,21 +372,6 @@
     grid-template-rows: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
-  }
-  .body.outside {
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-  /* Under the header row: a review opened from a reference outside the filter (D-REV-8). */
-  .outside-line {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 0;
-    min-height: var(--row-dense);
-    padding: 0 var(--pad);
-    border-top: 1px solid var(--line-group);
-    color: var(--ink-2);
-    font-size: var(--text-small);
   }
   .record {
     height: 100%;

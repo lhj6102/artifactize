@@ -1,8 +1,8 @@
 <script lang="ts">
   // A section of the inspector, a review or Settings under its header row: the fold icon and its
   // name, nothing else. The whole row folds or unfolds the section, which keeps that by its name
-  // (sections.svelte.ts); folded, the section is its row alone. A section that does not fold
-  // (a review's Tools, Tool log and Result, Settings' sections) has its row without the icon.
+  // (sections.svelte.ts); folded, only its row and any preview remain. A section that does not fold
+  // (a review's Tools and Result, Settings' sections) has its row without the icon.
   import type { Snippet } from "svelte";
   import { getAppState } from "./app.svelte";
   import Icon from "./Icon.svelte";
@@ -12,6 +12,7 @@
     folds = true,
     unfolded = undefined,
     ontoggle,
+    preview = false,
     label,
     children,
   }: {
@@ -22,6 +23,8 @@
     /** Whether it is unfolded, when its owner keeps that rather than the folds by name. */
     unfolded?: boolean;
     ontoggle?: () => void;
+    /** Its body can summarize itself instead of disappearing when folded. */
+    preview?: boolean;
     /** Its accessible name, when it is not the shown one. */
     label?: string;
     children: Snippet;
@@ -43,7 +46,7 @@
   {:else}
     <h3 class="head">{name}</h3>
   {/if}
-  {#if open}<div class="body">{@render children()}</div>{/if}
+  {#if open || preview}<div class="body">{@render children()}</div>{/if}
 </section>
 
 <style>

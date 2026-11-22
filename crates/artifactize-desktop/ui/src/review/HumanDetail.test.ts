@@ -10,7 +10,7 @@ import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
 import { draftLibrary, greenForm, humanView } from "./fixtures";
-import type { FormView, ToolView } from "../ipc/client";
+import type { FormView, ReviewPoint, ToolView } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
@@ -344,10 +344,118 @@ describe("HumanDetail", () => {
       { run: "2", at: 0, operation: "notes", artifact: "release", lines: [], end: { text: "■ exit 0", error: false } },
     ]);
     const log = screen.getByRole("log", { name: "Tool log" });
+    const fold = screen.getByRole("button", { name: "Tool log" });
+    await waitFor(() => expect(log.textContent).toContain("■ exit 0 · 0 lines"));
+    expect(log.textContent).not.toContain("clicked");
+    fold.focus();
+    await user.keyboard("{Enter}");
+    expect(fold.getAttribute("aria-expanded")).toBe("true");
     await waitFor(() => expect(log.textContent).toContain("clicked (412, 2)"));
     const rows = [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
     expect(rows).toEqual(["▶ HH:MM:SS · preview · brand", "clicked (412, 1)", "clicked (412, 2)", "▶ HH:MM:SS · notes · release", "■ exit 0"]);
-    expect(screen.getByText("clicked (412, 2)").classList.contains("error")).toBe(true);
+    expect(screen.getByText("clicked (412, 2)").classList.contains("stderr")).toBe(true);
+  });
+
+  it("summarizes a running tool and folds failures without losing earlier runs", async () => {
+    backend("review");
+    const user = userEvent.setup();
+    const review = new Review("run-a-2", new Jobs());
+    renderHosted(HumanDetail, { review, onback: () => {} });
+    const header = await screen.findByRole("button", { name: "Tool log" });
+    const log = screen.getByRole("log", { name: "Tool log" });
+    const rows = () => [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
+    const run = { run: "1", at: 0, operation: "scan", artifact: "release", lines: [
+      { text: "early", error: false }, { text: "warning: missing title", error: true }, { text: "still checking", error: false },
+    ] };
+    review.logged([{ ...run, end: null }]);
+    await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "still checking"]));
+    review.logged([{ ...run, end: { text: "■ exit 1", error: true } }]);
+    await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "warning: missing title", "■ exit 1 · 3 lines"]));
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect([...log.querySelectorAll(".red")].map((mark) => mark.textContent)).toEqual(["warning:", "■"]);
+    await user.click(header);
+    expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "early", "warning: missing title", "still checking", "■ exit 1"]);
+    await user.click(header);
+    expect(rows()).toHaveLength(3);
+  });
+
+  it("shows Points below the log, inserts at the text caret and removes by point identity", async () => {
+    const old: ReviewPoint = { text: "L2:C9", at: "2026-11-23T00:01:00Z", source: "release · Markdown" };
+    const fresh: ReviewPoint = { text: "#checkout .total", at: "2026-11-23T00:02:00Z", source: "checkout · HTML Viewer" };
+    const form: FormView = { ...greenForm, fields: [
+      { name: "quantity", required: false, hint: "", input: { kind: "number" } },
+      ...greenForm.fields,
+      { name: "details", required: false, hint: "", input: { kind: "text" } },
+    ], draft: { ...greenForm.draft, fields: [
+      ["quantity", { kind: "number", value: "2" }], ...greenForm.draft.fields, ["details", { kind: "text", value: "left  right" }],
+    ] } };
+    const kept = draftLibrary(form);
+    const calls = backend("review", undefined, kept);
+    const user = userEvent.setup();
+    const review = new Review("run-a-2", new Jobs());
+    renderHosted(HumanDetail, { review, onback: () => {} });
+    await screen.findByText("REVIEW (yours)");
+    expect(screen.queryByRole("region", { name: "Points" })).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    kept.draft.points = [old, fresh];
+    await review.readDraft();
+    const points = await screen.findByRole("region", { name: "Points" });
+    const [first, second] = within(points).getAllByRole("listitem");
+    expect(first.textContent).toContain(old.text);
+    expect(second.textContent).toContain(fresh.text);
+    expect(second.textContent).toContain(`${fresh.source} · ${new Date(fresh.at).toTimeString().slice(0, 5)}`);
+    expect(second.classList.contains("newest")).toBe(true);
+    const regions = [...screen.getByLabelText("Human review").querySelectorAll("section[aria-label]")];
+    expect(regions.map((region) => region.getAttribute("aria-label"))).toEqual(["Tools", "Tool log", "Points", "Result", "Debug"]);
+    const insert = within(second).getByRole<HTMLButtonElement>("button", { name: "Insert" });
+    expect(insert.disabled).toBe(true);
+    await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
+    const quantity = await screen.findByRole<HTMLInputElement>("textbox", { name: "quantity" });
+    quantity.focus();
+    const comment = screen.getByLabelText<HTMLTextAreaElement>(/^comment/);
+    await user.click(insert);
+    expect(comment.value).toBe(fresh.text);
+    expect(quantity.value).toBe("2");
+    const details = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "details" });
+    details.focus();
+    details.setSelectionRange(5, 5);
+    quantity.focus();
+    await user.click(insert);
+    expect(details.value).toBe(`left ${fresh.text} right`);
+    expect(comment.value).toBe(fresh.text);
+    expect(saved("GREEN")).toContainEqual(["details", { kind: "text", value: `left ${fresh.text} right` }]);
+    await user.click(within(second).getByRole("button", { name: `Remove point: ${fresh.text}` }));
+    await waitFor(() => expect(within(points).getAllByRole("listitem")).toHaveLength(1));
+    expect(first.classList.contains("newest")).toBe(false);
+    expect(calls.filter((call) => call.cmd === "human_draft_remove_point")).toEqual([
+      { cmd: "human_draft_remove_point", args: { id: "run-a-2", point: fresh } },
+    ]);
+    await user.click(within(first).getByRole("button", { name: `Remove point: ${old.text}` }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Points" })).toBeNull());
+  });
+
+  it("keeps an in-flight edit and a Point that arrives before the edit's answer", async () => {
+    const kept = draftLibrary();
+    kept.draft.verdict = "GREEN";
+    let finish: (() => void) | undefined;
+    mockIPC(async (cmd, args) => {
+      if (cmd === "human_open") return humanView("review");
+      const answer = kept.answer(cmd, args);
+      if (cmd === "human_draft_edit") await new Promise<void>((resolve) => (finish = resolve));
+      return answer ?? null;
+    }, { shouldMockEvents: true });
+    const review = new Review("run-a-2", new Jobs());
+    renderHosted(HumanDetail, { review, onback: () => {} });
+    const comment = await screen.findByLabelText<HTMLTextAreaElement>(/^comment/);
+    await fireEvent.input(comment, { target: { value: "Still typing" } });
+    await waitFor(() => expect(finish).toBeDefined());
+    kept.draft.points.push({ text: "L2:C9", source: "release · Markdown", at: "2026-11-23T00:00:01Z" });
+    await review.readDraft();
+    await screen.findByText("L2:C9");
+    expect(comment.value).toBe("Still typing");
+    finish?.();
+    await waitFor(() => expect(screen.getByText("L2:C9")).toBeTruthy());
+    expect(comment.value).toBe("Still typing");
   });
 
   it("enters a list of flat objects as groups of fields, added and removed", async () => {

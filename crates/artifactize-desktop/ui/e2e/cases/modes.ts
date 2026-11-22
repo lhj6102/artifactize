@@ -9,7 +9,7 @@ export const scenarios: Scenario[] = [
   scenario<{ id: string; runId: string }>({
     id: "review-reference",
     title: "Claim from Verify; open the claimed review outside the default filter, keep its draft on release and restart, submit it and go back to its Run and Artifact",
-    journeys: ["J-DETAIL-REVIEW", "J-REVIEW-REF", "J-REVIEW-BACK", "J-HUMAN-DRAFT", "J-HUMAN-NOTES"],
+    journeys: ["J-DETAIL-REVIEW", "J-REVIEW-REF", "J-REVIEW-BACK", "J-HUMAN-DRAFT"],
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
       const { id, runId } = request(fixture);
@@ -29,10 +29,10 @@ export const scenarios: Scenario[] = [
       await app.waitingBadge(0);
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
-      await app.until(async () => /outside the filter.*Claimed by you/i.test(await app.review.outside()), "the direct reference explains the claim");
+      await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the direct reference shows the claimed review");
+      assert.equal(await app.review.hasOutsideHint(), false);
       assert.equal(await app.review.filter(), "type:human waiting");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${id} `));
-      await app.review.writeNotes("Keep the checked selector.");
       await app.review.choose("GREEN");
       await app.review.enter("comment", "Release notes checked");
       await app.review.choose("RED");
@@ -46,17 +46,16 @@ export const scenarios: Scenario[] = [
       await app.review.claim();
       await app.review.until((shown) => shown.verdict === "RED", "Review automatically opens the saved RED verdict after restart");
       assert.equal(await app.review.value("reason"), "Check the linked notes again");
-      assert.equal(await app.review.notes(), "Keep the checked selector.");
       // Without any new verdict selection, the pet also opens the draft's last verdict.
       const w = windows();
       await w.mode("Verify");
       await w.pet();
-      await w.petUntil((shown) => shown.verdict === "RED" && shown.notes === "Keep the checked selector.", "the pet opens the persisted RED verdict and Notes after restart");
+      await w.petUntil((shown) => shown.verdict === "RED", "the pet opens the persisted RED verdict after restart");
       await w.mode("Review");
       await app.review.choose("GREEN");
-      await app.until(async () => (await app.review.notes()) === "Keep the checked selector." && (await app.review.value("comment")) === "Release notes checked", "reclaim after restart restored the Notes and GREEN draft");
+      await app.until(async () => (await app.review.value("comment")) === "Release notes checked", "reclaim after restart restored the GREEN draft");
       const completed = await app.review.submit();
-      assert.match(completed.completed, /Keep the checked selector\./);
+      assert.match(completed.completed, /Release notes checked/);
       const saved = request(fixture);
       assert.equal(saved.status, "GREEN");
       await app.review.back();
