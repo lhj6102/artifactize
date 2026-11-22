@@ -2,6 +2,51 @@ use super::*;
 use serde_json::json;
 
 #[tokio::test]
+async fn observer_reconciles_a_saved_run_without_a_matching_owner() {
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&repo).unwrap();
+    crate::test_declaration::write(
+        &repo,
+        repo.join("index.artf"),
+        "name = 'app'\nbasis = true\n",
+    )
+    .unwrap();
+    let (id, _) = crate::project::verify::reserve(
+        &repo,
+        Some(&state),
+        &Selection::All,
+        &VerifyOptions::default(),
+        None,
+        &Origin::Cli,
+    )
+    .await
+    .unwrap();
+    let mut launcher = crate::process::child_identity(std::process::id()).unwrap();
+    launcher.start_time = launcher.start_time.wrapping_add(1);
+    let writer = store::OwnedReceipts::open(&state, &repo).await.unwrap();
+    writer
+        .control(&id, move |status, control| {
+            assert!(status.is_open());
+            control.as_mut().unwrap().worker = Worker::Starting { launcher };
+            Ok(())
+        })
+        .await
+        .unwrap();
+    drop(writer);
+
+    assert!(reconcile_interrupted(&state, &id).await.unwrap());
+    let saved = store::read_run(&state, &id).await.unwrap().run;
+    assert_eq!(saved.status(), crate::types::RunStatus::Error);
+    assert_eq!(
+        saved.control.unwrap().failure_code,
+        Some(crate::types::FailureCode::OwnerDied)
+    );
+    assert!(!reconcile_interrupted(&state, &id).await.unwrap());
+}
+
+#[tokio::test]
 async fn reservation_retry_cancel_and_failed_launch_release_their_writer_before_return() {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");

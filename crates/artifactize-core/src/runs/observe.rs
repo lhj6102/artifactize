@@ -138,18 +138,7 @@ pub async fn status(context: &Context, id: &RunId) -> Result<RunObservation, Str
     if !crate::platform::paths_equal(&saved.repo, &context.repo) {
         return Err("Run not found in this repository.".into());
     }
-    let owner = saved
-        .control
-        .as_ref()
-        .and_then(|control| match control.worker {
-            super::Worker::Starting { launcher } => Some(launcher),
-            super::Worker::Admitted { owner } => Some(owner),
-            super::Worker::Legacy => None,
-        });
-    if saved.status.is_open()
-        && owner.is_some()
-        && !crate::process::is_alive(owner).map_err(|e| e.to_string())?
-    {
+    if super::owner_died(saved.status, saved.control.as_ref())? {
         view(context, id).await?;
         saved = store::run_control::observe(&context.state, id).await?;
     }
@@ -169,6 +158,17 @@ pub async fn status(context: &Context, id: &RunId) -> Result<RunObservation, Str
             NEXT_CHECK
         },
     })
+}
+
+/// Reconcile a known open Run if its owning process died without committing a result.
+/// The cheap observation does not decode the saved graph unless recovery is needed.
+pub async fn reconcile_interrupted(state: &std::path::Path, id: &RunId) -> Result<bool, String> {
+    let saved = store::run_control::observe(state, id).await?;
+    if !super::owner_died(saved.status, saved.control.as_ref())? {
+        return Ok(false);
+    }
+    let settled = super::reconcile(state, store::read_run(state, id).await?).await?;
+    Ok(!settled.run.status().is_open())
 }
 
 /// The optional bound covers registration and all reads. At its deadline return the last

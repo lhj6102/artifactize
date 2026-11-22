@@ -138,3 +138,23 @@ fn a_refresh_while_the_scan_runs_shows_it_then_scans_once_more() {
     assert_eq!(workspace, PathBuf::from("moved-worktree"));
     assert!(matches!(currents.end(&place(), next, None), Some(None)));
 }
+
+#[test]
+fn a_run_finishing_during_the_scan_queues_a_fresh_forecast() {
+    let currents = Currents::default();
+    let workspace = PathBuf::from("worktree");
+    let (scan, token, _stage) = started(currents.request(&place(), workspace.clone(), false));
+    currents.recheck_after_run(&place());
+    joined(currents.request(&place(), workspace.clone(), false));
+    assert!(!token.is_cancelled());
+    let Some(Some(Fresh {
+        scan: next,
+        workspace: queued,
+        ..
+    })) = currents.end(&place(), scan, None)
+    else {
+        panic!("completion did not schedule a new forecast");
+    };
+    assert_eq!(queued, workspace);
+    assert!(matches!(currents.end(&place(), next, None), Some(None)));
+}

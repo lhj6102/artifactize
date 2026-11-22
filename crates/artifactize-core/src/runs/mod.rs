@@ -11,7 +11,9 @@ use crate::{
     store::{self, Receipts},
     types::{FailureCode, RequestKey, RunId},
 };
-pub use observe::{Counts, RunObservation, State, status, view, wait, wait_observing};
+pub use observe::{
+    Counts, RunObservation, State, reconcile_interrupted, status, view, wait, wait_observing,
+};
 pub use result::{
     Finding, PAGE_SIZE as RESULT_PAGE_SIZE, ResultCursor, ResultState, RunResultPage, RunVerdict,
     result,
@@ -278,22 +280,25 @@ pub async fn cancel(context: &Context, id: &RunId) -> Result<CancelAcknowledgeme
     })
 }
 
+fn owner_died(status: crate::types::RunStatus, control: Option<&Control>) -> Result<bool, String> {
+    if !status.is_open() {
+        return Ok(false);
+    }
+    let owner = control.and_then(|control| match control.worker {
+        Worker::Starting { launcher } => Some(launcher),
+        Worker::Admitted { owner } => Some(owner),
+        Worker::Legacy => None,
+    });
+    Ok(owner.is_some() && !process::is_alive(owner).map_err(|error| error.to_string())?)
+}
+
 pub(crate) async fn reconcile(
     state: &Path,
     view: store::RunView,
 ) -> Result<store::RunView, String> {
-    if view.run.status().is_open()
-        && let Some(control) = &view.run.control
-    {
-        let owner = match control.worker {
-            Worker::Starting { launcher } => Some(launcher),
-            Worker::Admitted { owner } => Some(owner),
-            Worker::Legacy => None,
-        };
-        if owner.is_some() && !process::is_alive(owner).map_err(|e| e.to_string())? {
-            worker::recover(state, &view).await?;
-            return store::read_run(state, &view.run.id).await;
-        }
+    if owner_died(view.run.status(), view.run.control.as_ref())? {
+        worker::recover(state, &view).await?;
+        return store::read_run(state, &view.run.id).await;
     }
     Ok(view)
 }

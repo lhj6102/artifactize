@@ -51,6 +51,7 @@ struct Running {
     token: CancellationToken,
     stage: watch::Receiver<Stage>,
     again: Option<PathBuf>,
+    workspace: PathBuf,
 }
 
 /// A scan to run: its number, how to stop it, and where it tells how far it is.
@@ -139,6 +140,14 @@ impl Currents {
         Request::Run(self.start(&mut running, place, workspace))
     }
 
+    /// A completion can land after an in-flight scan's last local store read. Preserve the
+    /// displayed scan but make sure its final forecast includes that completed Run.
+    pub(crate) fn recheck_after_run(&self, place: &Place) {
+        if let Some(scan) = self.running.lock().expect("scans lock").get_mut(place) {
+            scan.again.get_or_insert_with(|| scan.workspace.clone());
+        }
+    }
+
     /// Note a new scan of `place` as running.
     fn start(
         &self,
@@ -156,6 +165,7 @@ impl Currents {
                 token: token.clone(),
                 stage: receiver,
                 again: None,
+                workspace: workspace.clone(),
             },
         );
         self.failed.lock().expect("failures lock").remove(place);

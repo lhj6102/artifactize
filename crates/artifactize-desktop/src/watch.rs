@@ -105,6 +105,13 @@ impl ChatWorktrees {
     }
 }
 
+/// Run owners can die silently; the state hub only announces actual commits.
+pub(crate) async fn reconcile_runs(app: &App) {
+    for run in app.browse.open_runs() {
+        let _ = artifactize_core::runs::reconcile_interrupted(&app.launch.state, &run).await;
+    }
+}
+
 /// Forward the hub's hints to every window until the app exits. The subscription itself
 /// reconciles missed commits and database replacement every few seconds. Every [`RESCAN`]
 /// the live branches are listed again, and a change is a hint as well.
@@ -130,14 +137,15 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                 }
                 _ => Vec::new(),
             };
+            let state = hub.state::<App>();
             for run in runs {
-                if let Some(event) = finished.observed(run).await
-                    && event.emit(&hub).is_err()
-                {
-                    return;
+                if let Some(event) = finished.observed(run).await {
+                    state.currents.recheck_after_run(&event.branch.to_place());
+                    if event.emit(&hub).is_err() {
+                        return;
+                    }
                 }
             }
-            let state = hub.state::<App>();
             state.browse.invalidate(&change);
             if !matches!(change, Change::SessionInvalidated(_)) {
                 crate::viewer::refresh_active(&state).await;
@@ -178,6 +186,7 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
             // A failed read is the next load's notice; the rescan tries again next tick.
             let app_state = app.state::<App>();
             let _ = app_state.chat.reconcile_interrupted().await;
+            reconcile_runs(&app_state).await;
             let reviews_changed =
                 artifactize_core::store::retire_removed_signoffs(&app_state.launch.state).await;
             let branches_changed = crate::browse::rescan(&app_state).await;
