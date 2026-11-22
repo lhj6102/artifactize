@@ -472,7 +472,17 @@ impl Browse {
                     _footprint: footprint,
                 }));
             }
-            live::OpenRun::Absent => shown.opened = open.map_or(Opened::None, Opened::Missing),
+            live::OpenRun::Absent => {
+                let unreadable = open.as_ref().is_some_and(|id| {
+                    shown
+                        .unreadable
+                        .iter()
+                        .any(|record| record.kind == "run" && record.id == id.as_str())
+                });
+                if !unreadable || shown.opened.loaded().is_none() {
+                    shown.opened = open.map_or(Opened::None, Opened::Missing);
+                }
+            }
             live::OpenRun::Unchanged => {}
         }
         shown.initialized = true;

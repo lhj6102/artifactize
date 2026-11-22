@@ -64,7 +64,7 @@ pub use requests::{
 };
 pub(crate) use requests::{
     read_request_by_id, read_request_by_session, read_request_id, read_request_repo_by_id,
-    read_requests_for_run,
+    read_requests_for_run, read_review_batch,
 };
 
 /// How long one database operation waits for the state other processes are writing before it

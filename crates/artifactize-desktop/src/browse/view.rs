@@ -501,6 +501,15 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         .chain(shown.unreadable.iter().map(ToString::to_string))
         .chain(
             shown
+                .opened
+                .loaded()
+                .into_iter()
+                .flat_map(|selected| &selected.run.unreadable)
+                .filter(|record| !shown.unreadable.contains(record))
+                .map(ToString::to_string),
+        )
+        .chain(
+            shown
                 .unstarred
                 .iter()
                 .map(|error| format!("Starred branches: {error}")),

@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use serde::Serialize;
 
@@ -90,6 +94,7 @@ struct Filter<'a> {
     /// A bounded slice of the ordered requests: offset and count.
     slice: Option<(u64, u32)>,
     shown: Shown,
+    newest_waiting: bool,
 }
 
 /// What the views of a read show besides their requests.
@@ -306,6 +311,27 @@ pub async fn read_request_batch(
     .await
 }
 
+/// Desktop review pages start with the requests that began waiting most recently.
+pub(crate) async fn read_review_batch(
+    state: &Path,
+    statuses: &[crate::types::RequestStatus],
+    offset: u64,
+    limit: u32,
+    shown: Shown,
+) -> Result<Vec<(RequestView, PathBuf)>, String> {
+    read_with_repo(
+        state,
+        Filter {
+            statuses,
+            slice: Some((offset, limit)),
+            shown,
+            newest_waiting: true,
+            ..Filter::default()
+        },
+    )
+    .await
+}
+
 /// WAITING_HUMAN requests, newest Run first, from the canonical `repo`'s Runs or every Run.
 /// Their views have no definitions: what waits, not what it reviews, so the read does not grow
 /// with the waiting Runs' workspaces.
@@ -413,6 +439,7 @@ async fn read_with_repo(
         statuses,
         slice,
         session,
+        newest_waiting,
         ..
     } = filter;
     let statuses = statuses.to_vec();
@@ -436,6 +463,7 @@ async fn read_with_repo(
                 statuses,
                 slice,
                 ids: None,
+                newest_waiting,
             };
             let rows = rows(&transaction, &filter)?;
             let ids: std::collections::BTreeSet<_> = rows.iter().map(|row| &row.run).collect();
@@ -502,6 +530,7 @@ pub(super) struct Query {
     pub session: Option<crate::types::SessionId>,
     pub statuses: Vec<crate::types::RequestStatus>,
     pub slice: Option<(u64, u32)>,
+    pub newest_waiting: bool,
     /// Only these requests.
     pub ids: Option<Vec<crate::types::RequestId>>,
 }
@@ -570,6 +599,10 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
     };
     let order = if filter.run.is_some() {
         "q.ordinal"
+    } else if filter.newest_waiting {
+        // Saved timestamps are UTC RFC3339. Remove the trailing Z so a whole second sorts
+        // before a fractional value in that second. Invalid records still reach decoding.
+        "CASE WHEN json_valid(q.data) THEN rtrim(coalesce(json_extract(q.data,'$.startedAt'),json_extract(q.data,'$.createdAt')),'Z') END DESC,r.rowid DESC,q.ordinal"
     } else {
         "r.rowid DESC,q.ordinal"
     };

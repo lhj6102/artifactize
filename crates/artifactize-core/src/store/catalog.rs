@@ -35,8 +35,13 @@ pub struct CatalogRun {
 
 impl CatalogRun {
     /// The Run's recorded branch, independent of the current checkout or any search filter.
-    pub fn branch(&self) -> crate::monitor::live::Place {
-        crate::monitor::live::Place::for_checkout(&self.repo_path, &self.repository)
+    pub async fn branch(&self) -> Result<crate::monitor::live::Place, String> {
+        let place = crate::monitor::live::Place::for_checkout;
+        if self.repository.common_dir.is_some() && self.repository.worktree_path.is_some() {
+            return Ok(place(&self.repo_path, &self.repository));
+        }
+        let repo = self.repo_path.clone();
+        crate::task::blocking(move || place(&repo, &crate::repository::identify(&repo))).await
     }
 }
 

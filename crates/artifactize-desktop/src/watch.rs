@@ -47,9 +47,14 @@ impl Finished {
         )
     }
 
-    fn observed(&mut self, run: artifactize_core::store::CatalogRun) -> Option<RunFinished> {
-        (run.completed_at.is_some() && self.0.insert(run.id.clone())).then(|| RunFinished {
-            branch: crate::browse::BranchKey::new(&run.branch()),
+    async fn observed(&mut self, run: artifactize_core::store::CatalogRun) -> Option<RunFinished> {
+        if run.completed_at.is_none() || self.0.contains(&run.id) {
+            return None;
+        }
+        let branch = crate::browse::BranchKey::new(&run.branch().await.ok()?);
+        self.0.insert(run.id.clone());
+        Some(RunFinished {
+            branch,
             run: run.id.into(),
         })
     }
@@ -125,8 +130,10 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                 }
                 _ => Vec::new(),
             };
-            for event in runs.into_iter().filter_map(|run| finished.observed(run)) {
-                if event.emit(&hub).is_err() {
+            for run in runs {
+                if let Some(event) = finished.observed(run).await
+                    && event.emit(&hub).is_err()
+                {
                     return;
                 }
             }
@@ -199,8 +206,8 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_run_completion_names_its_recorded_branch_once_without_browse() {
+    #[tokio::test]
+    async fn a_run_completion_names_its_recorded_branch_once_without_browse() {
         use artifactize_core::{store::CatalogRun, types::RunStatus};
         let mut run = CatalogRun {
             id: "run-finished".parse().unwrap(),
@@ -219,16 +226,16 @@ mod tests {
             waiting: vec![],
         };
         let mut finished = Finished::seed(vec![run.clone()]);
-        assert!(finished.observed(run.clone()).is_none());
+        assert!(finished.observed(run.clone()).await.is_none());
         run.status = RunStatus::Green;
         run.completed_at = Some("2026-11-21T00:01:00Z".parse().unwrap());
-        let event = serde_json::to_value(finished.observed(run.clone()).unwrap()).unwrap();
+        let event = serde_json::to_value(finished.observed(run.clone()).await.unwrap()).unwrap();
         assert_eq!(event["run"], "run-finished");
         assert_eq!(
             event["branch"],
             serde_json::json!({"kind":"branch","common":"repository","branch":"filtered-out"})
         );
-        assert!(finished.observed(run).is_none());
+        assert!(finished.observed(run).await.is_none());
     }
 
     #[test]

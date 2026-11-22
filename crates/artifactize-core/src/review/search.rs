@@ -774,7 +774,11 @@ async fn read_matching(
     let mut position = start;
     let mut exists = std::collections::BTreeMap::new();
     loop {
-        let batch = store::read_request_batch(state, &statuses, position, BATCH, shown).await?;
+        let batch = if query.live {
+            store::read_review_batch(state, &statuses, position, BATCH, shown).await?
+        } else {
+            store::read_request_batch(state, &statuses, position, BATCH, shown).await?
+        };
         let read = batch.len() as u64;
         let labels = if query.wants_labels() {
             let ids: BTreeSet<_> = batch
