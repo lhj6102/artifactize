@@ -1794,13 +1794,12 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
         );
     });
     let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
-    // The Run ended: the timeline starts with the Current, then the Run with its final status.
+    // The Run ended: the timeline shows the Run with its final status.
     let chips = &view["branches"][0]["chips"];
-    assert_eq!(chips[0], json!({"kind": "current"}));
-    assert_eq!(chips[1]["running"], json!(false));
-    assert_eq!(chips[1]["status"], "GREEN", "{view}");
+    assert_eq!(chips[0]["running"], json!(false));
+    assert_eq!(chips[0]["status"], "GREEN", "{view}");
     assert!(
-        chips[1]["age"].as_str().unwrap().ends_with(" ago"),
+        chips[0]["age"].as_str().unwrap().ends_with(" ago"),
         "{view}"
     );
     // The shape the caller holds comes back as its lights alone, in its order.
@@ -1940,11 +1939,11 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
         state,
     };
     let viewer = window(&fixture, Mode::Graph);
-    // The folder the app was started for is listed before its first Run, ending with Current.
+    // The folder the app was started for is listed before its first Run.
     let view = invoke(&viewer, "browse", json!({"navigate": STILL()})).unwrap();
     let branch = view["launch"].clone();
     assert_eq!(view["branches"][0]["key"], branch);
-    assert_eq!(view["branches"][0]["chips"], json!([{"kind": "current"}]));
+    assert_eq!(view["branches"][0]["chips"], json!([]));
 
     let structure = artifactize_core::graph_structure::read(&fixture.repo).unwrap();
     // The first step is the graph, its evals still being checked, the rest come as they are

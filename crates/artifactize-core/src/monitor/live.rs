@@ -103,6 +103,34 @@ pub enum Place {
 }
 
 impl Place {
+    /// A saved or live checkout's branch. Both the workspace and Git identity are canonical.
+    pub(crate) fn for_checkout(workspace: &Path, identity: &Identity) -> Self {
+        match (&identity.common_dir, &identity.worktree_path) {
+            (Some(common), Some(tree)) => Self::Git {
+                common: common.clone(),
+                head: checkout_head(identity.branch.clone(), || tree.clone()),
+            },
+            _ => Self::Folder(workspace.to_owned()),
+        }
+    }
+
+    /// Refuse a stale path rather than scanning or editing a different branch.
+    pub async fn checked_workspace(&self, workspace: PathBuf) -> Result<PathBuf, String> {
+        let place = self.clone();
+        crate::task::blocking(move || {
+            if !workspace.is_dir() {
+                return Err("This worktree no longer exists.".into());
+            }
+            let path =
+                crate::platform::canonicalize(&workspace).map_err(|error| error.to_string())?;
+            if Self::for_checkout(&path, &repository::identify(&path)) != place {
+                return Err("This branch is no longer checked out in the worktree.".into());
+            }
+            Ok(path)
+        })
+        .await?
+    }
+
     /// The project the branch belongs to: every branch of a Git repository shares one.
     pub fn project(&self) -> Project {
         match self {
@@ -238,10 +266,14 @@ impl DirectoryKeys {
     }
 
     fn head(&mut self, branch: Option<String>, tree: &Path) -> Head {
-        branch
-            .and_then(|name| BranchName::try_from(name).ok())
-            .map_or_else(|| Head::Detached(self.resolve(tree)), Head::Branch)
+        checkout_head(branch, || self.resolve(tree))
     }
+}
+
+fn checkout_head(branch: Option<String>, detached: impl FnOnce() -> PathBuf) -> Head {
+    branch
+        .and_then(|name| BranchName::try_from(name).ok())
+        .map_or_else(|| Head::Detached(detached()), Head::Branch)
 }
 
 /// Where `identity` (of the workspace `repo`) lives, and `repo` relative to its worktree.

@@ -101,7 +101,7 @@ impl BranchKey {
     }
 }
 
-/// One entry of a branch's timeline: a Run, or the branch's Current.
+/// One Run in a branch's timeline.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Chip {
@@ -116,8 +116,6 @@ pub enum Chip {
         /// What its requester said it is working on (`verify --comment`).
         comment: Option<String>,
     },
-    /// The worktree as it is now.
-    Current,
 }
 
 /// One live branch of the pane: `project / branch`, then its timeline, newest first.
@@ -130,7 +128,7 @@ pub struct BranchView {
     pub name: String,
     /// Where its Current is scanned and its tools run.
     pub workspace: PathKey,
-    /// Its timeline: its newest Runs, newest first, led by the one in progress or else the Current.
+    /// Its timeline: its newest Runs, newest first, led by the one in progress.
     pub chips: Vec<Chip>,
     /// Older Runs than the timeline holds exist: **Older runs** at its end shows them.
     pub older: bool,
@@ -395,11 +393,11 @@ fn status_word(status: RunStatus) -> String {
 fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> BranchView {
     let skipped = branch.runs.len().saturating_sub(limit);
     let kept = &branch.runs[skipped..];
-    // The newest Run, when one is in progress, stands where the Current would.
     let running = branch.running().is_some() && !kept.is_empty();
-    let mut chips: Vec<Chip> = kept
+    let chips = kept
         .iter()
         .enumerate()
+        .rev()
         .map(|(at, chip)| {
             let running = running && at + 1 == kept.len();
             let age = monitor::duration(now - chip.created_at.time());
@@ -414,11 +412,6 @@ fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> 
             }
         })
         .collect();
-    if !running {
-        chips.push(Chip::Current);
-    }
-    // What is happening now comes first, right under the branch's name.
-    chips.reverse();
     BranchView {
         key: BranchKey::new(&branch.place),
         project: branch.project.clone(),

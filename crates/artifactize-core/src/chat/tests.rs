@@ -58,6 +58,7 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
                 model: "fixture-model".parse().unwrap(),
                 effort: None,
             },
+            view: SessionView::Conversation,
             created_at: time,
             updated_at: time,
             activity: None,

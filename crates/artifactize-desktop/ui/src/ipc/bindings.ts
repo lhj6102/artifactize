@@ -16,6 +16,25 @@ export const commands = {
 } | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, selection })),
 	/**  Save the selected model and effort for the next turn without sending a message. */
 	chatSetModel: (id: string, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_model", { id, selection })),
+	/**  Keep the chosen view for this session without sending a message or reordering Chat. */
+	chatSetView: (id: string, view: ChatSessionView) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_view", { id, view })),
+	/**  Find the newest usable Chat session for the chosen branch, independent of Verify Runs. */
+	chatLatestForBranch: (branch: BranchKey) => typedError<{
+	id: string,
+	title: string,
+	worktree: PathKey,
+	project: string,
+	branch: string,
+	branchKey: BranchKey,
+	view: ChatSessionView,
+	unavailable: string | null,
+	selection: ChatModel,
+	createdAt: string,
+	updatedAt: string,
+	running: boolean,
+	outcome: ChatOutcome | null,
+	unseen: boolean,
+} | null, Failure>(__TAURI_INVOKE("chat_latest_for_branch", { branch })),
 	/**
 	 *  Read the starting model for a new session. The pending call is the loading state;
 	 *  `null` means no provider lists a model and the worktree has no previous session.
@@ -424,7 +443,7 @@ export type BranchView = {
 	name: string,
 	/**  Where its Current is scanned and its tools run. */
 	workspace: PathKey,
-	/**  Its timeline: its newest Runs, newest first, led by the one in progress or else the Current. */
+	/**  Its timeline: its newest Runs, newest first, led by the one in progress. */
 	chips: Chip[],
 	/**  Older Runs than the timeline holds exist: **Older runs** at its end shows them. */
 	older: boolean,
@@ -498,6 +517,8 @@ export type ChatSession = {
 	worktree: PathKey,
 	project: string,
 	branch: string,
+	branchKey: BranchKey,
+	view: ChatSessionView,
 	unavailable: string | null,
 	selection: ChatModel,
 	createdAt: string,
@@ -506,6 +527,8 @@ export type ChatSession = {
 	outcome: ChatOutcome | null,
 	unseen: boolean,
 };
+
+export type ChatSessionView = "conversation" | "graph";
 
 export type ChatToolKind = "read" | "edit" | "command" | "verify" | "other";
 
@@ -523,16 +546,14 @@ export type ChatView = {
 	turns: ChatTurn[],
 };
 
-/**  One entry of a branch's timeline: a Run, or the branch's Current. */
+/**  One Run in a branch's timeline. */
 export type Chip = { kind: "run"; id: string; mark: Mark; 
 /**  Its status in words: `GREEN`, `RED`, `Running`, `Waiting for sign-off`. */
 status: string; 
 /**  How long ago it started, `25m ago`; an open one's time so far, `2m 22s`. */
 age: string; running: boolean; 
 /**  What its requester said it is working on (`verify --comment`). */
-comment: string | null } | 
-/**  The worktree as it is now. */
-{ kind: "current" };
+comment: string | null };
 
 export type Claimant = {
 	reviewer: string,

@@ -295,10 +295,6 @@ fn view(project: edit::Project, config: &Config) -> DefinitionsView {
     DefinitionsView { nodes, files }
 }
 
-async fn workspace(app: &App, branch: &BranchKey) -> Result<PathBuf, Failure> {
-    Ok(app.browse.branch(&branch.to_place())?.workspace)
-}
-
 /// The definitions of `branch`'s worktree as they are now.
 #[tauri::command]
 #[specta::specta]
@@ -306,7 +302,7 @@ pub async fn definitions(
     app: tauri::State<'_, App>,
     branch: BranchKey,
 ) -> Result<DefinitionsView, Failure> {
-    let workspace = workspace(&app, &branch).await?;
+    let workspace = app.current_workspace(&branch).await?;
     crate::failure::joined(
         tokio::task::spawn_blocking(move || {
             let project = edit::read_project(&workspace)?;
@@ -335,7 +331,7 @@ pub async fn definition_check(
     branch: BranchKey,
     operation: EditOperation,
 ) -> Result<EditCheck, Failure> {
-    let workspace = workspace(&app, &branch).await?;
+    let workspace = app.current_workspace(&branch).await?;
     let operation = edit::Operation::try_from(operation)?;
     crate::failure::joined(
         tokio::task::spawn_blocking(move || {
@@ -366,7 +362,7 @@ pub async fn definition_edit(
     shown: BTreeMap<String, String>,
     operation: EditOperation,
 ) -> Result<EditOutcome, Failure> {
-    let workspace = workspace(&app, &branch).await?;
+    let workspace = app.current_workspace(&branch).await?;
     let operation = edit::Operation::try_from(operation)?;
     let applied = crate::failure::joined(
         tokio::task::spawn_blocking(move || {

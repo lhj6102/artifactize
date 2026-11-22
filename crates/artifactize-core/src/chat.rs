@@ -22,7 +22,9 @@ use crate::{
     },
     auth::providers,
     config::{Backend, ModelId, Provider},
-    llm, repository, runs,
+    llm,
+    monitor::live::Place,
+    repository, runs,
     store::{self, Receipts},
     types::{SessionId, Timestamp},
 };
@@ -55,6 +57,15 @@ pub enum Outcome {
     Interrupted,
 }
 
+/// The workspace view last used in this session, independent of its turn activity.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionView {
+    #[default]
+    Conversation,
+    Graph,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 struct Activity {
     outcome: Outcome,
@@ -71,6 +82,8 @@ pub struct Session {
     #[serde(default)]
     pub repository: Option<repository::Identity>,
     pub selection: Model,
+    #[serde(default)]
+    pub view: SessionView,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     #[serde(default)]
@@ -83,6 +96,16 @@ pub struct Session {
 }
 
 impl Session {
+    /// Stable across branch switches or removal of the saved checkout.
+    pub fn branch(&self) -> Place {
+        Place::for_checkout(
+            &self.worktree,
+            self.repository
+                .as_ref()
+                .unwrap_or(&repository::Identity::default()),
+        )
+    }
+
     pub fn label(&self) -> crate::monitor::live::Label {
         crate::monitor::live::Label::for_identity(
             &self.worktree,
@@ -341,6 +364,7 @@ impl Chat {
             worktree: worktree.into(),
             repository: Some(repository),
             selection,
+            view: SessionView::default(),
             created_at: now,
             updated_at: now,
             activity: None,
@@ -394,6 +418,31 @@ impl Chat {
                 .collect()
         })
         .await
+    }
+
+    /// The most recently active session on this branch whose checkout is still usable.
+    pub async fn latest_for_branch(&self, branch: &Place) -> Result<Option<Session>, String> {
+        let sessions = store::chat::for_branch(&self.state, branch).await?;
+        crate::task::blocking(move || {
+            sessions
+                .into_iter()
+                .find(|session| session.check_checkout().is_ok())
+        })
+        .await
+    }
+
+    /// Save a view without changing the session's activity order or requiring a live checkout.
+    pub async fn set_view(&self, id: &SessionId, view: SessionView) -> Result<Session, String> {
+        let session = store::chat::load(&self.state, id).await?;
+        let receipts = Receipts::open(&self.state, &session.worktree).await?;
+        let result = receipts.set_chat_view(&self.state, id, view).await;
+        let closed = receipts.close().await;
+        let (saved, changed) = result.and_then(|saved| closed.map(|()| saved))?;
+        if changed {
+            crate::changes::Publisher::new(&self.state)
+                .notify(crate::changes::Change::SessionInvalidated(id.clone()));
+        }
+        crate::task::blocking(move || saved.with_checkout()).await
     }
 
     /// Acknowledge the latest settled outcome without changing the session's activity order.

@@ -48,6 +48,8 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             launch::launch,
             chat::chat_create,
             chat::chat_set_model,
+            chat::chat_set_view,
+            chat::chat_latest_for_branch,
             chat::chat_default_model,
             chat::chat_list,
             chat::chat_mark_seen,
@@ -196,6 +198,27 @@ impl App {
             viewers: viewer::Sessions::default(),
             windows: windows::Windows::default(),
         }
+    }
+
+    /// Current belongs to a live checkout, not to the presence of a Run in Browse.
+    async fn current_workspace(
+        &self,
+        branch: &browse::BranchKey,
+    ) -> Result<std::path::PathBuf, Failure> {
+        let place = branch.to_place();
+        if let Some(session) = self
+            .chat
+            .latest_for_branch(&place)
+            .await
+            .map_err(Failure::Read)?
+        {
+            return Ok(session.worktree);
+        }
+        let workspace = self.browse.branch(&place)?.workspace;
+        place
+            .checked_workspace(workspace)
+            .await
+            .map_err(Failure::Missing)
     }
 
     /// Note the state origin a read found and return the state's generation. A replaced state

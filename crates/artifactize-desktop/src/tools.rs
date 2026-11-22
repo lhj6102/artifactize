@@ -121,7 +121,7 @@ pub async fn artifact_tools(
     artifact: String,
 ) -> Result<Vec<ToolView>, Failure> {
     let artifact = artifact_name(&artifact)?;
-    let workspace = app.browse.branch(&branch.to_place())?.workspace;
+    let workspace = app.current_workspace(&branch).await?;
     let listed = app
         .sites
         .declarations(&workspace, &artifact)
@@ -158,7 +158,7 @@ pub async fn artifact_tool_run(
 ) -> Result<Notice, Failure> {
     let artifact = artifact_name(&artifact)?;
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
-    let workspace = app.browse.branch(&branch.to_place())?.workspace;
+    let workspace = app.current_workspace(&branch).await?;
     let work = app.human.start_artifact(caller, job)?;
     let operation = review::Tool::operation_of(&tool, &artifact).to_owned();
     let run = app.human.log().start(

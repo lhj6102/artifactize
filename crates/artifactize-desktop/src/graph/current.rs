@@ -532,7 +532,7 @@ pub async fn current_scan(
     refresh: bool,
 ) -> Result<CurrentView, Failure> {
     let place = branch.to_place();
-    let listed = app.browse.branch(&place)?;
+    let workspace = app.current_workspace(&branch).await?;
     let mut stage = match app.currents.request(&place, refresh) {
         Request::Join(stage) => stage,
         Request::Run(fresh) => {
@@ -543,7 +543,7 @@ pub async fn current_scan(
             tauri::async_runtime::spawn(async move {
                 let mut next = Some(fresh);
                 while let Some(Fresh { scan, token, stage }) = next.take() {
-                    let found = live::scan(&listed.workspace, &state, token, |current| {
+                    let found = live::scan(&workspace, &state, token, |current| {
                         if currents.publish(&place, scan, current) {
                             stage.send_replace(Stage::Published);
                             currents.announce(&key);

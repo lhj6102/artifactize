@@ -5,7 +5,7 @@ use specta::Type;
 
 use crate::{
     App, Failure,
-    browse::PathKey,
+    browse::{BranchKey, PathKey},
     ids::{RunKey, SessionKey},
 };
 
@@ -39,6 +39,13 @@ impl From<chat::Model> for ChatModel {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatSessionView {
+    Conversation,
+    Graph,
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSession {
@@ -47,6 +54,8 @@ pub struct ChatSession {
     pub worktree: PathKey,
     pub project: String,
     pub branch: String,
+    pub branch_key: BranchKey,
+    pub view: ChatSessionView,
     pub unavailable: Option<String>,
     pub selection: ChatModel,
     pub created_at: String,
@@ -59,6 +68,7 @@ pub struct ChatSession {
 impl From<chat::Session> for ChatSession {
     fn from(session: chat::Session) -> Self {
         let label = session.label();
+        let branch_key = BranchKey::new(&session.branch());
         let outcome = session.outcome().map(Into::into);
         let unseen = session.unseen();
         Self {
@@ -67,6 +77,11 @@ impl From<chat::Session> for ChatSession {
             worktree: PathKey::new(&session.worktree),
             project: label.project,
             branch: label.branch,
+            branch_key,
+            view: match session.view {
+                chat::SessionView::Conversation => ChatSessionView::Conversation,
+                chat::SessionView::Graph => ChatSessionView::Graph,
+            },
             unavailable: session.unavailable,
             selection: session.selection.into(),
             created_at: session.created_at.to_string(),
@@ -328,6 +343,39 @@ pub async fn chat_list(
         .await
         .map(|sessions| sessions.into_iter().map(Into::into).collect())
         .map_err(Failure::Read)
+}
+
+/// Find the newest usable Chat session for the chosen branch, independent of Verify Runs.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_latest_for_branch(
+    app: tauri::State<'_, App>,
+    branch: BranchKey,
+) -> Result<Option<ChatSession>, Failure> {
+    app.chat
+        .latest_for_branch(&branch.to_place())
+        .await
+        .map(|session| session.map(Into::into))
+        .map_err(Failure::Read)
+}
+
+/// Keep the chosen view for this session without sending a message or reordering Chat.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_set_view(
+    app: tauri::State<'_, App>,
+    id: SessionKey,
+    view: ChatSessionView,
+) -> Result<ChatSession, Failure> {
+    let view = match view {
+        ChatSessionView::Conversation => chat::SessionView::Conversation,
+        ChatSessionView::Graph => chat::SessionView::Graph,
+    };
+    app.chat
+        .set_view(&id.into_inner(), view)
+        .await
+        .map(Into::into)
+        .map_err(Failure::Action)
 }
 
 /// Acknowledge the latest settled outcome for this machine user.

@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{Receipts, receipts::Error};
 use crate::{
-    chat::{Model, Session},
+    chat::{Model, Session, SessionView},
+    monitor::live::Place,
     process::{self, ChildIdentity},
     types::SessionId,
 };
@@ -73,6 +74,26 @@ pub(crate) async fn list(state: &Path, worktree: Option<&Path>) -> Result<Vec<Se
     }).await?.unwrap_or_default())
 }
 
+pub(crate) async fn for_branch(state: &Path, branch: &Place) -> Result<Vec<Session>, String> {
+    let branch = branch.clone();
+    let state_path = state.to_owned();
+    Ok(read(state, move |db| {
+        let mut statement = db.prepare(
+            "SELECT s.data, a.data FROM chat_sessions s LEFT JOIN chat_active_turns a ON a.session_id=s.id \
+             ORDER BY s.updated_at DESC,s.id DESC",
+        )?;
+        let mut sessions = Vec::new();
+        for row in statement.query_map([], session_row)? {
+            let (data, owner) = row?;
+            let saved: Session = serde_json::from_str(&data)?;
+            if saved.branch() == branch {
+                sessions.push(with_activity(saved, owner, &state_path)?);
+            }
+        }
+        Ok(sessions)
+    }).await?.unwrap_or_default())
+}
+
 pub(crate) async fn latest_model(
     state: &Path,
     worktree: &Path,
@@ -123,7 +144,14 @@ fn load_session(db: &Connection, state: &Path, id: &SessionId) -> Result<Session
 }
 
 fn session((data, owner): (String, Option<String>), state: &Path) -> Result<Session, Error> {
-    let mut session: Session = serde_json::from_str(&data)?;
+    with_activity(serde_json::from_str(&data)?, owner, state)
+}
+
+fn with_activity(
+    mut session: Session,
+    owner: Option<String>,
+    state: &Path,
+) -> Result<Session, Error> {
     if let Some(owner) = owner {
         session.running = serde_json::from_str::<Owner>(&owner)?
             .live()
@@ -175,10 +203,9 @@ impl Receipts {
         self.connection
             .call(move |db| {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                session.selection = match selection {
-                    Some(selection) => selection,
-                    None => saved_chat(&transaction, &session.id)?.selection,
-                };
+                let current = saved_chat(&transaction, &session.id)?;
+                session.selection = selection.unwrap_or(current.selection);
+                session.view = current.view;
                 save(&transaction, &session)?;
                 transaction.commit()?;
                 Ok::<_, Error>(session.selection)
@@ -206,6 +233,30 @@ impl Receipts {
                 }
                 transaction.commit()?;
                 Ok::<_, Error>(session)
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) async fn set_chat_view(
+        &self,
+        state: &Path,
+        id: &SessionId,
+        view: SessionView,
+    ) -> Result<(Session, bool), String> {
+        let state = state.to_owned();
+        let id = id.clone();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut session = load_session(&transaction, &state, &id)?;
+                let changed = session.view != view;
+                if changed {
+                    session.view = view;
+                    save(&transaction, &session)?;
+                }
+                transaction.commit()?;
+                Ok::<_, Error>((session, changed))
             })
             .await
             .map_err(|error| error.to_string())
@@ -270,6 +321,7 @@ impl Receipts {
                 // A selector change accepted during the turn is for the next message.
                 let current = saved_chat(&transaction, &id)?;
                 session.selection = current.selection;
+                session.view = current.view;
                 session.updated_at = session.updated_at.max(current.updated_at);
                 save(&transaction, &session)?;
             }
