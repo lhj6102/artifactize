@@ -48,7 +48,8 @@
 
   /* The bottom bar, a page bar: its items' muted ink, the shown mode's black cell and the mark
      along that cell's bottom, which is the bar's alone and no status */
-  --bar-ink: #8d9099;
+  --bar-ink: #909296;
+  --bar-ink-on: #ffffff;
   --bar-active: #0b0b0d;
   --bar-mark: #e0443c;
 

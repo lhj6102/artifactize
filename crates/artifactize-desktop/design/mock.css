@@ -172,8 +172,7 @@
 }
 .m-mode.on {
   background: var(--bar-active);
-  color: var(--ink);
-  font-weight: 600;
+  color: var(--bar-ink-on);
   box-shadow: inset 0 -2px 0 var(--bar-mark);
 }
 /* The count of Human reviews waiting for a person, at the top right of Review's icon. */
@@ -1969,6 +1968,28 @@
 }
 /* Chat's Pane: New chat across its top, the search field, then the sessions under their
    project's label, one line each: the title, and at the right its state or its age. */
+/* A Chat session's view switch, Conversation or Graph: two quiet text segments in one bordered
+   group, the shown one lifted by its grey level alone. */
+.m-viewswitch {
+  display: inline-flex;
+  align-items: stretch;
+  height: 22px;
+  margin-left: 12px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  font-size: var(--text-small);
+}
+.m-viewswitch > span {
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  color: var(--ink-2);
+}
+.m-viewswitch > span.on {
+  background: var(--surface-group);
+  color: var(--ink);
+}
 .m-chat-search {
   padding: 8px var(--pad) 0;
 }

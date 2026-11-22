@@ -25,11 +25,12 @@
   </nav>
 </header>
 <main data-screen="current">
-<h1>Current: a branch's worktree as it is now</h1>
+<h1>Current: a branch's worktree as it is now, in Chat's Graph view</h1>
 <p class="lead">
-  The Main area when a branch's Current is chosen: the header row with the scan's state, the
-  tool strip and the Current graph lit by what <code>verify</code> would do. The bar and the Pane are
-  as on the Monitor page; the Pane's Current entry sits in its pill. A Current is also where the
+  A Chat session's Graph view: the session's header row with the view switch on Graph and the
+  scan's state, the tool strip, the Current graph of the session's branch lit by what
+  <code>verify</code> would do, and the composer still under it. The bar and the Pane are Chat's;
+  Verify shows Runs only. A Current is also where the
   branch's Artifacts are defined: the second figure shows an Artifact dragged into a whole's
   box, the third a drop that was refused, the fourth two refusals for the file an edit would write, and the last two a comment being written and, separately,
   another being moved.
@@ -41,43 +42,22 @@
 <div class="m-window">
   <header class="m-bar">
     <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
-    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
+    <span class="m-modes"><span class="m-mode on"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-icon i-review"></span>Review<span class="m-count-pill">2</span></span></span>
     <span class="m-bar-side end"><span class="m-mode m-bar-icon" aria-label="Settings" title="Settings"><span class="m-icon i-settings"></span></span></span>
   </header>
   <div class="m-screen">
     <section class="m-pane">
-      <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
-      <div class="m-branches">
-        <div class="m-branch open">
-          <div class="m-branch-head">
-            <span class="m-chevron"></span>
-            <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
-            <span class="m-star on m-icon i-star-on"></span>
-          </div>
-          <div class="m-timeline">
-            <div class="m-entry filled">
-              <span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span>
-              
-            </div>
-            <div class="m-entry">
-              <span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span>
-              <span class="m-sub">dogfood: desktop design pages and the restyle…</span>
-            </div>
-          </div>
-        </div>
-        <div class="m-branch">
-          <div class="m-branch-head">
-            <span class="m-chevron"></span>
-            <span class="m-branch-name"><span class="m-project">shop /</span> <b>main</b></span>
-            <span class="m-star m-icon i-star"></span>
-          </div>
-          <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
-        </div>
-      </div>
+      <div class="m-pane-head"><span class="m-new"><span class="m-icon i-add"></span>New chat</span></div>
+      <div class="m-chat-search"><div class="m-input text"><span class="m-placeholder">Search chats</span></div></div>
+      <p class="m-group-label">artifactize / dev</p>
+      <div class="m-session selected"><span class="m-item-name">Desktop design pages</span><span class="m-age">now</span></div>
+      <div class="m-session"><span class="m-item-name">Release notes wording</span><span class="m-age">1d</span></div>
+      <p class="m-group-label">shop / main</p>
+      <div class="m-session"><span class="m-item-name">Gift card balance</span><span class="m-age">2d</span></div>
     </section>
     <div class="m-divider"></div>
     <section class="m-main focused">
-      <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 1 left</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
+      <div class="m-main-head"><h2>Desktop design pages</h2><span class="m-headline"><span class="m-text m-mono">dev</span></span><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 1 left</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
       <div class="m-strip">
         <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
         <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
@@ -93,19 +73,27 @@
         <div class="m-node in out light-run" style="left: 548px; top: 234px"><span class="m-light"></span><span class="m-name">cli</span><span class="m-tally">1/3</span></div>
         <div class="m-node in light-run" style="left: 808px; top: 234px"><span class="m-light"></span><span class="m-name">docs</span><span class="m-tally">0/2</span></div>
       </div>
+      <div class="m-composer" style="margin-top: 8px">
+        <div class="m-composer-box">
+          <div class="m-composer-text"><span style="color: var(--ink-2)">Ask the agent to work on this branch…</span></div>
+          <div class="m-composer-row"><span class="m-picker">Opus 5.5 <span class="m-picker-effort">· high</span><span class="m-icon i-unfold"></span></span><span class="m-spacer"></span><span class="m-icon-button primary" aria-label="Send"><span class="m-icon i-send"></span></span></div>
+        </div>
+      </div>
     </section>
   </div>
 </div>
-<span class="callout" style="left: 645px; top: 7px">1</span>
+<span class="callout" style="left: 724px; top: 7px">1</span>
+<span class="callout" style="left: 1110px; top: 680px">12</span>
 <span class="callout" style="left: 560px; top: 204px">2</span>
 <span class="callout" style="left: 660px; top: 38px">3</span>
 </div>
-<figcaption>Stage 1280 × 800. A Current's lights say what verify would do: reused, would run, waiting, blocked, checking.</figcaption>
+<figcaption>Stage 1280 × 800. A Chat session in its Graph view: the branch's Current, its lights saying what verify would do (reused, would run, waiting, blocked, checking), and the composer under the graph. The other figures are cut to the session's header row and the graph.</figcaption>
 </figure>
 
 <ol class="notes">
   <li><span class="n">1</span><div><b>Scan state</b><span>In the Main area's header row, after the view's name: while the scan runs, the checking icon and how many Artifacts are still being checked, as a count that falls (<i>1 left</i>: here release, the one node still checking); once it ends, the time it was scanned at; only a failure is said in words. Refresh at the row's end.</span></div></li>
   <li><span class="n">2</span><div><b>Current graph</b><span>Drawn at once from the definitions, every node first <i>checking</i>, then lit in place as the scan learns what verify would do.</span></div></li>
+  <li><span class="n">12</span><div><b>Composer under the graph</b><span>The session's composer stays under the Graph view, as in Conversation: what is asked of the agent and the graph it changes are seen together; the view switch in the header row goes back to the conversation.</span></div></li>
   <li><span class="n">3</span><div><b>New Artifact</b><span>In the tool strip after Fit, only on a Current: a dialog asks for the name and the Path and writes the definition file.</span></div></li>
 </ol>
 
@@ -114,7 +102,7 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:02:11</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
+    <div class="m-main-head"><h2>Desktop design pages</h2><span class="m-headline"><span class="m-text m-mono">dev</span></span><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span><span class="m-headline"><span class="m-text">14:02:11</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
     <div class="m-strip">
       <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
       <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
@@ -156,7 +144,7 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:03:40</span></span><span class="m-notice">release cannot be a part of media-brand, which is a part of release</span><span class="m-button small">Refresh</span></div>
+    <div class="m-main-head"><h2>Desktop design pages</h2><span class="m-headline"><span class="m-text m-mono">dev</span></span><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span><span class="m-headline"><span class="m-text">14:03:40</span></span><span class="m-notice">release cannot be a part of media-brand, which is a part of release</span><span class="m-button small">Refresh</span></div>
     <div class="m-strip">
       <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
       <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
@@ -186,7 +174,7 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr) minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 4 left</span></span><span class="m-notice">.artifactize/desktop/desktop-design.artf changed on disk; nothing written</span><span class="m-button small">Refresh</span></div>
+    <div class="m-main-head"><h2>Desktop design pages</h2><span class="m-headline"><span class="m-text m-mono">dev</span></span><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 4 left</span></span><span class="m-notice">.artifactize/desktop/desktop-design.artf changed on disk; nothing written</span><span class="m-button small">Refresh</span></div>
     <div class="m-strip">
       <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
       <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
@@ -205,7 +193,7 @@
     </div>
   </section>
   <section class="m-main" style="border-top: 1px solid var(--line-panel)">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:06:30</span></span><span class="m-notice">.artifactize/desktop/desktop-design.artf has unsaved text in its Source; nothing written</span><span class="m-button small">Refresh</span></div>
+    <div class="m-main-head"><h2>Desktop design pages</h2><span class="m-headline"><span class="m-text m-mono">dev</span></span><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span><span class="m-headline"><span class="m-text">14:06:30</span></span><span class="m-notice">.artifactize/desktop/desktop-design.artf has unsaved text in its Source; nothing written</span><span class="m-button small">Refresh</span></div>
     <div class="m-strip">
       <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
       <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
@@ -240,7 +228,7 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:05:02</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
+    <div class="m-main-head"><h2>Desktop design pages</h2><span class="m-headline"><span class="m-text m-mono">dev</span></span><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span><span class="m-headline"><span class="m-text">14:05:02</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
     <div class="m-strip">
       <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
       <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
@@ -274,7 +262,7 @@ a node with its own evals.</div>
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:05:02</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
+    <div class="m-main-head"><h2>Desktop design pages</h2><span class="m-headline"><span class="m-text m-mono">dev</span></span><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span><span class="m-headline"><span class="m-text">14:05:02</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
     <div class="m-strip">
       <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
       <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
@@ -302,7 +290,9 @@ a node with its own evals.</div>
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-CUR-1">D-CUR-1</dt>
-  <dd>The Current's scan state is the headline of the Main area's header row (D-MAIN-1), after <i>Current · {project} {branch}</i>: the scan's state in <code>--ink-2</code> with tabular figures, said without a sentence: while it runs, the checking icon in <code>--checking</code> and <i>n left</i>, how many Artifacts are still being checked, a count that falls to none and is read aloud as <i>Checking, n Artifacts left</i>; once it ends, the time it was scanned at, <i>HH:MM:SS</i>, read aloud as <i>Scanned at HH:MM:SS</i>; only a failure is said in words, why it failed in <code>--red</code>. A small Refresh button sits at the row's end; a refresh asked while a scan runs keeps that scan shown, the header still counting, and one more scan follows once it ends. <span class="avoid">a sentence for a scan that runs or ended well; a ratio that reads like a node's tally (<i>3/24</i>); a spinner without the count; the state in a banner; a second row for the scan's state; a key cap on Refresh.</span></dd>
+  <dd>The Current's scan state stands in the Chat session's header row (D-CHAT-2), after the view switch on Graph (D-CHAT-10): the scan's state in <code>--ink-2</code> with tabular figures, said without a sentence: while it runs, the checking icon in <code>--checking</code> and <i>n left</i>, how many Artifacts are still being checked, a count that falls to none and is read aloud as <i>Checking, n Artifacts left</i>; once it ends, the time it was scanned at, <i>HH:MM:SS</i>, read aloud as <i>Scanned at HH:MM:SS</i>; only a failure is said in words, why it failed in <code>--red</code>. A small Refresh button sits at the row's end; a refresh asked while a scan runs keeps that scan shown, the header still counting, and one more scan follows once it ends. <span class="avoid">a sentence for a scan that runs or ended well; a ratio that reads like a node's tally (<i>3/24</i>); a spinner without the count; the state in a banner; a second row for the scan's state; a key cap on Refresh.</span></dd>
+  <dt id="D-CUR-10">D-CUR-10</dt>
+  <dd>The Graph view of a Chat session (J-CHAT-GRAPH) takes the conversation's place under the session's header row: the graph's tool strip (D-GRAPH-4, D-CUR-3), the canvas (D-GRAPH-1), the Detail docked at its right as in Verify (D-INS-1), and under the canvas, 8px below it, the composer as in Conversation (D-CHAT-6), in the same <code>--measure</code> column centred on the area, so what is typed and the graph are seen together. For a session whose branch cannot be worked on now, the graph's place holds one <code>--ink-2</code> line saying why, as the library says it (its worktree gone, its branch no longer checked out), with no tool strip, nothing live and the composer off (D-CHAT-9). <span class="avoid">the Current in Verify; a second Current per session on one branch; the composer hidden in Graph view; the graph under the composer.</span></dd>
   <dt id="D-CUR-2">D-CUR-2</dt>
   <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) under the same tool strip (D-GRAPH-4), with marks of its own (reused, would run, waiting, blocked, checking, each with its icon, named in Help, D-OVL-5); a node still being checked uses <code>--checking</code> and recolours in place. Read aloud, a node says its name and what verify would do with it (reused, would run, waiting or blocked), with how many of its evals would run, whatever it would do once it is checked (none, for a reused one), or that it is still being checked (J-MAIN-CURRENT). <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
   <dt id="D-CUR-3">D-CUR-3</dt>
