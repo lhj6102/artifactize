@@ -298,18 +298,19 @@ fn destroyed<R: Runtime>(window: &tauri::Window<R>) {
     }
 }
 
+fn page_session(webview: &str, address: &str) -> Option<u32> {
+    let session = address.strip_prefix('/')?.parse().ok()?;
+    (webview == format!("{VIEWER}{session}")).then_some(session)
+}
+
 /// Serve viewer session `/{session}`'s plugin page under its own policy.
 pub(crate) fn page<R: Runtime>(
     handle: &tauri::AppHandle<R>,
+    webview: &str,
     request: &Request<Vec<u8>>,
 ) -> Response<Vec<u8>> {
-    let session = request
-        .uri()
-        .path()
-        .trim_start_matches('/')
-        .parse::<u32>()
-        .ok();
-    let html = session.and_then(|session| handle.state::<App>().viewers.web_page(session));
+    let html = page_session(webview, request.uri().path())
+        .and_then(|session| handle.state::<App>().viewers.web_page(session));
     let Some(html) = html else {
         return Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -327,6 +328,13 @@ pub(crate) fn page<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_documents_are_available_only_in_their_own_viewer_webview() {
+        assert_eq!(page_session("viewer-5", "/5"), Some(5));
+        assert_eq!(page_session("viewer-7", "/5"), None);
+        assert_eq!(page_session("main", "/5"), None);
+    }
 
     #[test]
     fn a_reused_pet_window_loads_the_review_it_is_shown_for() {

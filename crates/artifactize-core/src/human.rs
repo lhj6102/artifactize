@@ -121,7 +121,30 @@ pub async fn tool_commands(
 {
     let request = receipts.waiting_human(request).await?;
     let config = reconnect(receipts, &request).await?;
-    let registry = Registry::new(&config, &request.eval_id)?;
+    commands_for(&config, &request.eval_id)
+}
+
+/// Resolve display-only command lines without retiring a request or changing its claim.
+pub async fn preview_tool_commands(
+    request: std::sync::Arc<Request>,
+) -> Result<std::collections::BTreeMap<crate::config::ToolName, Result<CommandLine, String>>, String>
+{
+    crate::task::blocking(move || {
+        let config = declarations(&request).map_err(|mismatch| match mismatch {
+            Mismatch::Unreadable(error) => error,
+            Mismatch::Changed(reason) => reason.into(),
+        })?;
+        commands_for(&config, &request.eval_id)
+    })
+    .await?
+}
+
+fn commands_for(
+    config: &RepoConfig,
+    eval: &crate::types::EvalId,
+) -> Result<std::collections::BTreeMap<crate::config::ToolName, Result<CommandLine, String>>, String>
+{
+    let registry = Registry::new(config, eval)?;
     Ok(registry
         .list()
         .filter(|tool| registry.is_command(&tool.name))

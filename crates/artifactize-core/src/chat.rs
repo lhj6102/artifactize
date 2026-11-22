@@ -482,16 +482,26 @@ impl Chat {
         crate::task::blocking(move || sessions.next().map(Session::with_checkout)).await
     }
 
-    /// The branch's Current can use any saved session whose exact checkout is still usable.
-    pub async fn current_worktree(&self, branch: &Place) -> Result<Option<PathBuf>, String> {
+    /// The latest session whose exact checkout can be worked on now.
+    pub async fn latest_available_for_branch(
+        &self,
+        branch: &Place,
+    ) -> Result<Option<Session>, String> {
         let sessions = store::chat::for_branch(&self.state, branch).await?;
         crate::task::blocking(move || {
             sessions
                 .into_iter()
                 .find(|session| session.check_checkout().is_ok())
-                .map(|session| session.worktree)
         })
         .await
+    }
+
+    /// The branch's Current can use any saved session whose exact checkout is still usable.
+    pub async fn current_worktree(&self, branch: &Place) -> Result<Option<PathBuf>, String> {
+        Ok(self
+            .latest_available_for_branch(branch)
+            .await?
+            .map(|session| session.worktree))
     }
 
     /// Save a view without changing the session's activity order or requiring a live checkout.

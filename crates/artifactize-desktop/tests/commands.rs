@@ -1978,6 +1978,36 @@ fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, 
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn opening_a_review_does_not_retire_its_claim_when_declarations_change() {
+    let fixture = fixture();
+    let owner = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.clone();
+    invoke(&owner, "human_claim", json!({"id":id,"job":1})).unwrap();
+    let changed = RELEASE.replace(
+        "Read the release notes and approve them.",
+        "Read again and approve.",
+    );
+    support::declaration::write(
+        &fixture.repo,
+        fixture.repo.join("release/index.artf"),
+        &changed,
+    )
+    .unwrap();
+    let viewer = launched_window(&fixture, Mode::Review, None);
+    let opened = invoke(
+        &viewer,
+        "human_open_reference",
+        json!({"id":id,"query":"type:human waiting"}),
+    )
+    .unwrap();
+    assert_eq!(opened["view"]["stage"], "review");
+    let retained = saved(&fixture, "release/signoff");
+    assert!(retained.request.status().is_human_wait());
+    assert_eq!(retained.claim.unwrap().reviewer.as_str(), "alice");
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_direct_run_reference_reveals_its_branch_without_resetting_verify_search() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);

@@ -221,7 +221,7 @@ impl Browse {
     /// Apply `step` to the shown selection; a star is kept in `state` at once.
     fn navigate(&self, state: &Path, step: &Navigate) {
         let mut shown = self.shown();
-        if shown.starred.is_none() {
+        if shown.starred.is_none() || step.resync {
             let read = live::starred(Some(state));
             shown.unstarred = read.as_ref().err().cloned();
             shown.starred = Some(read.unwrap_or_default());

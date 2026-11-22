@@ -495,7 +495,6 @@ async fn resolve(app: &App, generation: u32, exact: RequestView) -> Result<ReadR
 
 async fn loaded(app: &App, number: u32, read: ReadReview) -> Result<ReadReview, Failure> {
     let view = &read.owner;
-    let state = &app.launch.state;
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
     let resolve = view.request.status().is_human_wait()
         && view.request.human_definition.is_some()
@@ -506,16 +505,7 @@ async fn loaded(app: &App, number: u32, read: ReadReview) -> Result<ReadReview, 
             .expect("commands lock")
             .contains_key(&view.request.id);
     let commands = if resolve {
-        Some(
-            async {
-                let (receipts, _) = artifactize_core::human::open(state, &view.request.id).await?;
-                let result =
-                    artifactize_core::human::tool_commands(&receipts, &view.request.id).await;
-                let closed = receipts.close().await;
-                result.and_then(|commands| closed.map(|()| commands))
-            }
-            .await,
-        )
+        Some(artifactize_core::human::preview_tool_commands(view.request.clone()).await)
     } else {
         None
     };

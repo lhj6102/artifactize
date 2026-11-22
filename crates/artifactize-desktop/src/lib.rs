@@ -296,7 +296,11 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
         .register_asynchronous_uri_scheme_protocol(
             windows::SCHEME,
             |context, request, responder| {
-                responder.respond(windows::page(context.app_handle(), &request));
+                responder.respond(windows::page(
+                    context.app_handle(),
+                    context.webview_label(),
+                    &request,
+                ));
             },
         )
         .on_window_event(windows::on_event)
