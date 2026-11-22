@@ -451,13 +451,22 @@ impl Chat {
         .await
     }
 
-    /// The most recently active session on this branch whose checkout is still usable.
+    /// The most recently active saved session on this branch, even if its checkout is gone.
     pub async fn latest_for_branch(&self, branch: &Place) -> Result<Option<Session>, String> {
+        let mut sessions = store::chat::for_branch(&self.state, branch)
+            .await?
+            .into_iter();
+        crate::task::blocking(move || sessions.next().map(Session::with_checkout)).await
+    }
+
+    /// The branch's Current can use any saved session whose exact checkout is still usable.
+    pub async fn current_worktree(&self, branch: &Place) -> Result<Option<PathBuf>, String> {
         let sessions = store::chat::for_branch(&self.state, branch).await?;
         crate::task::blocking(move || {
             sessions
                 .into_iter()
                 .find(|session| session.check_checkout().is_ok())
+                .map(|session| session.worktree)
         })
         .await
     }

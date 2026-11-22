@@ -18,7 +18,7 @@ export const commands = {
 	chatSetModel: (id: string, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_model", { id, selection })),
 	/**  Keep the chosen view for this session without sending a message or reordering Chat. */
 	chatSetView: (id: string, view: ChatSessionView) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_view", { id, view })),
-	/**  Find the newest usable Chat session for the chosen branch, independent of Verify Runs. */
+	/**  Find the newest saved Chat session for the chosen branch, independent of Verify Runs. */
 	chatLatestForBranch: (branch: BranchKey) => typedError<{
 	id: string,
 	title: string,

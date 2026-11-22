@@ -1150,6 +1150,29 @@ payload.instruction = "Read the page."
     assert_eq!(context(&old)["petMatch"], true);
 
     os::git(&repo, &["switch", "-qc", "alternate"]);
+    invoke(&window, "browse", json!({"navigate":STILL()})).unwrap();
+    let other = invoke(&window, "browse", json!({"navigate":STILL()})).unwrap()["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["name"] == "alternate")
+        .unwrap()["key"]
+        .clone();
+    let elsewhere = invoke(
+        &window,
+        "artifact_tool_run",
+        json!({
+            "branch": other, "artifact": "page", "tool": "view_page", "job": 8,
+        }),
+    )
+    .unwrap()["viewer"]["session"]
+        .clone();
+    assert_eq!(context(&elsewhere)["target"], "primary");
+    assert_eq!(
+        context(&elsewhere)["petMatch"],
+        false,
+        "the name and path did not change, only the branch"
+    );
     declare("alternate");
     let new = open_review_viewer(3);
     let old = context(&old);
@@ -1992,8 +2015,8 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
     let other = make();
     assert_ne!(other["branchKey"], branch);
     assert_eq!(
-        invoke(&first, "chat_latest_for_branch", json!({"branch": branch})).unwrap(),
-        Value::Null
+        invoke(&first, "chat_latest_for_branch", json!({"branch": branch})).unwrap()["unavailable"],
+        "Check out main in this worktree to continue this Chat."
     );
     os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);
     drop(first);
@@ -2088,6 +2111,21 @@ fn a_cancelled_release_does_not_mutate_the_saved_claim() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Review);
     let id = saved(&fixture, "release/signoff").request.id.clone();
+    let cancelled = tokio_util::sync::CancellationToken::new();
+    cancelled.cancel();
+    let (log, _events) = artifactize_core::review::log::channel();
+    let claimed = tauri::async_runtime::block_on(
+        artifactize_core::review::Job::Claim { id: id.clone() }.run(
+            fixture.state.clone(),
+            "alice".parse().unwrap(),
+            cancelled,
+            log,
+        ),
+    );
+    assert!(
+        matches!(claimed, artifactize_core::review::Outcome::Claimed { result: Err(error) } if error == "Review action cancelled.")
+    );
+    assert!(saved(&fixture, "release/signoff").claim.is_none());
     invoke(&monitor, "human_claim", json!({"id":id,"job":1})).unwrap();
     let cancel = tokio_util::sync::CancellationToken::new();
     cancel.cancel();

@@ -7,7 +7,7 @@ use crate::{App, Failure, browse::BranchKey};
 use artifactize_core::{config::edit, types::ArtifactName};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::collections::BTreeMap;
 
 /// A place on a graph, `[x, y]`.
 pub type Place = [f64; 2];
@@ -366,34 +366,17 @@ pub async fn definition_edit(
     let operation = edit::Operation::try_from(operation)?;
     let applied = crate::failure::joined(
         tokio::task::spawn_blocking(move || {
-            if matches!(&operation, edit::Operation::MoveComment { .. }) {
-                // A move creates no definition. Give the library the shown bases
-                // directly so its conflict check runs before any semantic refusal.
-                let based_on = shown
-                    .into_iter()
-                    .map(|(file, source)| (PathBuf::from(file), Some(source)))
-                    .collect();
-                return edit::apply(&workspace, &based_on, operation);
-            }
-            let project = edit::read_project(&workspace)?;
-            let footprint = edit::footprint(&project, &operation)?;
-            let mut based_on = edit::BasedOn::default();
-            for (file, current) in footprint.files {
-                let base = match current {
-                    None => None,
-                    Some(current) => match shown.get(&text(&file)) {
-                        Some(text) => Some(text.clone()),
-                        None => {
-                            return Err(edit::Refusal::Changed {
-                                file,
-                                current: Some(current),
-                            });
-                        }
-                    },
-                };
-                based_on.insert(file, base);
-            }
-            edit::apply(&workspace, &based_on, operation)
+            let based_on = shown
+                .into_iter()
+                .map(|(file, source)| {
+                    artifactize_tools::files::path_from_text(&file)
+                        .map(|file| (file, Some(source)))
+                        .map_err(|error| edit::Refusal::NotAllowed {
+                            reason: error.to_string(),
+                        })
+                })
+                .collect::<Result<edit::BasedOn, _>>()?;
+            edit::apply_shown(&workspace, &based_on, operation)
         })
         .await,
     )?;

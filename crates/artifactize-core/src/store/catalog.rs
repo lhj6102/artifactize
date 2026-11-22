@@ -62,6 +62,19 @@ pub(crate) struct RunPlace {
     pub repository: Identity,
 }
 
+/// The saved repository identity of one Run, without decoding its definitions.
+pub async fn run_checkout(
+    state: &Path,
+    run: &crate::types::RunId,
+) -> Result<(PathBuf, Identity), String> {
+    places(state, vec![run.clone()])
+        .await?
+        .into_iter()
+        .next()
+        .map(|(_, place)| (place.repo_path, place.repository))
+        .ok_or_else(|| "Run's checkout was not found.".into())
+}
+
 /// Only the saved display identities of the named Runs. No Run states, attention counts or
 /// definitions are returned to Review, which already has the request page.
 pub(crate) async fn places(

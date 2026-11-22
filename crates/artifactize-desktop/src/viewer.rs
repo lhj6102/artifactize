@@ -90,6 +90,7 @@ struct Place {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Address {
     worktree: PathBuf,
+    checkout: artifactize_core::repository::Identity,
     artifact: ArtifactName,
     target: Target,
 }
@@ -118,6 +119,7 @@ impl Sessions {
         &self,
         viewer: viewer::Session,
         worktree: PathBuf,
+        checkout: artifactize_core::repository::Identity,
         pending: PendingLaunch,
     ) -> ViewerLaunch {
         let context = viewer.context(None);
@@ -125,6 +127,7 @@ impl Sessions {
         let place = Place {
             address: Address {
                 worktree,
+                checkout,
                 artifact: context.artifact.clone(),
                 target: context.target.clone(),
             },
@@ -318,10 +321,12 @@ pub(crate) async fn launch(
             Source::Workspace(workspace) => workspace,
         };
         let worktree = workspace.clone();
-        let open =
-            tokio::task::spawn_blocking(move || viewer::Session::open(&workspace, &artifact));
-        let viewer = crate::failure::joined(open.await)?.map_err(Failure::Read)?;
-        Ok::<_, Failure>((viewer, worktree))
+        let open = tokio::task::spawn_blocking(move || {
+            let checkout = artifactize_core::repository::identify(&workspace);
+            viewer::Session::open(&workspace, &artifact).map(|viewer| (viewer, checkout))
+        });
+        let (viewer, checkout) = crate::failure::joined(open.await)?.map_err(Failure::Read)?;
+        Ok::<_, Failure>((viewer, worktree, checkout))
     }
     .await;
     if pending.cancelled() {
@@ -329,7 +334,9 @@ pub(crate) async fn launch(
         return Ok(None);
     }
     match opened {
-        Ok((viewer, worktree)) => Ok(Some(app.viewers.keep(viewer, worktree, pending))),
+        Ok((viewer, worktree, checkout)) => {
+            Ok(Some(app.viewers.keep(viewer, worktree, checkout, pending)))
+        }
         Err(error) => finish_launch(pending.log, Err(error)),
     }
 }
@@ -596,11 +603,12 @@ pub async fn active_review_set(
                 .and_then(|artifacts| artifacts.get(artifact))
                 .and_then(|saved| saved.path.value());
             let address = if let Some(target) = target {
-                let worktree = store::read_request_repo(state, owner.request.id.as_str())
+                let (worktree, checkout) = store::run_checkout(state, &owner.request.run_id)
                     .await
                     .map_err(Failure::Read)?;
                 Some(Address {
                     worktree,
+                    checkout,
                     artifact: artifact.clone(),
                     target: target.clone(),
                 })
@@ -689,6 +697,7 @@ mod tests {
         Place {
             address: Address {
                 worktree: PathBuf::from(worktree),
+                checkout: Default::default(),
                 artifact: "checkout".parse().unwrap(),
                 target: serde_json::from_value(serde_json::json!(target)).unwrap(),
             },

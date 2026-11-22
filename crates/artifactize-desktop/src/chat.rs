@@ -348,7 +348,7 @@ pub async fn chat_list(
         .map_err(Failure::Read)
 }
 
-/// Find the newest usable Chat session for the chosen branch, independent of Verify Runs.
+/// Find the newest saved Chat session for the chosen branch, independent of Verify Runs.
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_latest_for_branch(

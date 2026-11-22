@@ -251,8 +251,17 @@ impl Job {
         match self {
             Job::Claim { id } => {
                 let result = async {
-                    let (receipts, _) = human::open(&state, &id).await?;
-                    let result = human::claim_acquisition(&receipts, &id, &reviewer).await;
+                    let cancelled = || "Review action cancelled.".to_owned();
+                    let (receipts, _) = tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => return Err(cancelled()),
+                        opened = human::open(&state, &id) => opened?,
+                    };
+                    let result = if cancel.is_cancelled() {
+                        Err(cancelled())
+                    } else {
+                        human::claim_acquisition(&receipts, &id, &reviewer).await
+                    };
                     let closed = receipts.close().await;
                     result.and_then(|claim| closed.map(|()| claim))
                 }

@@ -169,19 +169,25 @@ pub async fn human_open_reference(
         .human
         .reads
         .numbered(async {
+            let exact = || {
+                artifactize_core::store::read_request_as(
+                    &app.launch.state,
+                    &id,
+                    artifactize_core::store::Shown::Requests,
+                )
+            };
             let (exact, reason) = match query {
                 Ok(query) => {
-                    let opened =
-                        search::open(&app.launch.state, &id, &query, &app.launch.reviewer).await?;
-                    (opened.view, opened.outside_reason)
+                    match search::open(&app.launch.state, &id, &query, &app.launch.reviewer).await {
+                        Ok(opened) => (opened.view, opened.outside_reason),
+                        Err(error) => (
+                            exact().await?,
+                            Some(format!("The current filter could not be checked: {error}")),
+                        ),
+                    }
                 }
                 Err(_) => (
-                    artifactize_core::store::read_request_as(
-                        &app.launch.state,
-                        &id,
-                        artifactize_core::store::Shown::Requests,
-                    )
-                    .await?,
+                    exact().await?,
                     Some("The current filter is incomplete or invalid.".into()),
                 ),
             };

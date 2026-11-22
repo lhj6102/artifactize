@@ -212,13 +212,13 @@ impl App {
         branch: &browse::BranchKey,
     ) -> Result<std::path::PathBuf, Failure> {
         let place = branch.to_place();
-        if let Some(session) = self
+        if let Some(worktree) = self
             .chat
-            .latest_for_branch(&place)
+            .current_worktree(&place)
             .await
             .map_err(Failure::Read)?
         {
-            return Ok(session.worktree);
+            return Ok(worktree);
         }
         let workspace = self.browse.branch(&place)?.workspace;
         place
