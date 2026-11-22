@@ -142,6 +142,18 @@ impl Lease<'_> {
         Ok(())
     }
 
+    /// A lookup does not hold a job open after its caller cancels it.
+    pub(crate) async fn prepare<T>(
+        &self,
+        read: impl Future<Output = Result<T, Failure>>,
+    ) -> Result<T, Failure> {
+        tokio::select! {
+            biased;
+            () = self.cancel.cancelled() => Err(Failure::Action("Review action cancelled.".into())),
+            result = read => result,
+        }
+    }
+
     pub(super) async fn ready(&self) -> Result<(), Failure> {
         for tool in &self.tools {
             tool.cancelled().await;
@@ -165,6 +177,26 @@ impl Drop for Lease<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn cancelling_an_artifact_tool_while_its_checkout_is_resolved_prevents_execution() {
+        let reviews = crate::human::Reviews::default();
+        let job = serde_json::from_str("1").unwrap();
+        let work = reviews.start_artifact(Caller("main".into()), job).unwrap();
+        let mut lookup =
+            std::pin::pin!(work.prepare(std::future::pending::<Result<(), Failure>>()));
+        assert!(futures_pending(lookup.as_mut()).await);
+        reviews.jobs.cancel(Caller("main".into()), job);
+        assert_eq!(
+            lookup.await,
+            Err(Failure::Action("Review action cancelled.".into()))
+        );
+    }
+
+    async fn futures_pending(mut future: std::pin::Pin<&mut impl Future>) -> bool {
+        std::future::poll_fn(|cx| std::task::Poll::Ready(future.as_mut().poll(cx).is_pending()))
+            .await
+    }
 
     #[tokio::test]
     async fn cancel_during_owner_lookup_prevents_admission_and_leaves_the_tool_running() {

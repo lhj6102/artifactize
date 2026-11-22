@@ -167,15 +167,19 @@ pub async fn codex_login_wait(
 /// Finish the sign-in with the URL the browser was sent to, as the CLI accepts on stdin.
 #[tauri::command]
 #[specta::specta]
-pub fn codex_login_paste(app: tauri::State<'_, App>, redirect: String) -> Result<(), Failure> {
-    app.settings.codex_sign_ins.paste(redirect)
+pub fn codex_login_paste(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+    redirect: String,
+) -> Result<(), Failure> {
+    app.settings.codex_sign_ins.paste(sign_in, redirect)
 }
 
 /// Stop the sign-in in progress; nothing is saved, even if the browser returns later.
 #[tauri::command]
 #[specta::specta]
-pub fn codex_login_cancel(app: tauri::State<'_, App>) {
-    app.settings.codex_sign_ins.cancel();
+pub fn codex_login_cancel(app: tauri::State<'_, App>, sign_in: SignInId) {
+    app.settings.codex_sign_ins.cancel(sign_in);
 }
 
 #[derive(Debug, Clone, Serialize, Type)]

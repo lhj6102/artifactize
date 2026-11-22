@@ -274,6 +274,7 @@ describe("Settings", () => {
     await fireEvent.input(field, { target: { value: " http://localhost:1455/auth/callback?code=c&state=s " } });
     await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
     expect(calls.find((call) => call.cmd === "codex_login_paste")?.args).toEqual({
+      signIn: 7,
       redirect: "http://localhost:1455/auth/callback?code=c&state=s",
     });
     finish({ state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } });
@@ -382,7 +383,7 @@ describe("Settings", () => {
     const field = screen.getByLabelText("Code");
     await fireEvent.input(field, { target: { value: " abc#def " } });
     await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
-    expect(calls.find((call) => call.cmd === "claude_agent_login_paste")?.args).toEqual({ code: "abc#def" });
+    expect(calls.find((call) => call.cmd === "claude_agent_login_paste")?.args).toEqual({ signIn: 9, code: "abc#def" });
     finish({ state: "signedIn", method: "claude.ai", plan: "max" });
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();

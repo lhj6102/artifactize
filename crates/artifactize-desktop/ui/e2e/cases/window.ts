@@ -201,10 +201,10 @@ export const scenarios: Scenario[] = [
       await app.dialogTitled("Update artifactize");
       const dialog = (await app.releaseDialog())!;
       assert.match(dialog.versions, / → 9\.9\.9$/, "the running and the new version");
-      assert.equal(dialog.link, `${site}/releases/latest`, "how to update: the release page");
+      assert.equal(dialog.link, `${site}/releases/tag/v9.9.9`, "how to update: the release page");
       await app.followReleaseLink();
       await app.eventually(async () => browserHandoffs(fixture).includes(dialog.link), "the release page opened in the browser");
-      await app.eventually(async () => readText(visits).split("\n").includes("/releases/latest"), "the browser fetched the release page");
+      await app.eventually(async () => readText(visits).split("\n").includes("/releases/tag/v9.9.9"), "the browser fetched the release page");
       await app.closeRelease();
       await app.settings.close("Close");
     },

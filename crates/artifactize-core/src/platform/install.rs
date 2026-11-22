@@ -202,11 +202,11 @@ pub(crate) fn update(channel: Channel, latest: &semver::Version, site: &str) -> 
         Channel::HomebrewCask => command("brew upgrade --cask artifactize"),
         Channel::Cargo => command("cargo install artifactize artifactize-tools --locked"),
         Channel::Dmg => Some(Update::Download {
-            url: format!("{site}/releases/latest/download/Artifactize.dmg"),
+            url: format!("{site}/releases/download/v{latest}/Artifactize.dmg"),
             command: None,
         }),
         Channel::Deb => Some(Update::Download {
-            url: format!("{site}/releases/latest/download/Artifactize-amd64.deb"),
+            url: format!("{site}/releases/download/v{latest}/Artifactize-amd64.deb"),
             command: Some("sudo apt install ./Artifactize-amd64.deb".into()),
         }),
         Channel::AppImage => Some(Update::Download {
@@ -216,7 +216,7 @@ pub(crate) fn update(channel: Channel, latest: &semver::Version, site: &str) -> 
             command: None,
         }),
         Channel::Unknown => Some(Update::Page {
-            url: format!("{site}/releases/latest"),
+            url: format!("{site}/releases/tag/v{latest}"),
         }),
     }
 }

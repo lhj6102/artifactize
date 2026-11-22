@@ -158,8 +158,8 @@ pub async fn artifact_tool_run(
 ) -> Result<Notice, Failure> {
     let artifact = artifact_name(&artifact)?;
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
-    let workspace = app.current_workspace(&branch).await?;
     let work = app.human.start_artifact(caller, job)?;
+    let workspace = work.prepare(app.current_workspace(&branch)).await?;
     let operation = review::Tool::operation_of(&tool, &artifact).to_owned();
     let run = app.human.log().start(
         Key::Artifact {
@@ -176,16 +176,19 @@ pub async fn artifact_tool_run(
             Err(error.to_string())
         }
     };
-    let outcome = Outcome::Ran {
+    let mut outcome = Outcome::Ran {
         tool,
         claimed: None,
         result,
     };
     let mut notice: Notice = outcome.notice().into();
     if !work.cancel.is_cancelled() {
-        notice.viewer =
-            crate::viewer::launch(&app, &outcome, crate::viewer::Source::Workspace(workspace))
-                .await?;
+        notice.viewer = crate::viewer::launch(
+            &app,
+            &mut outcome,
+            crate::viewer::Source::Workspace(workspace),
+        )
+        .await?;
     }
     Ok(notice)
 }

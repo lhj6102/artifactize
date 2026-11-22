@@ -984,6 +984,7 @@ payload.instruction = "Read the page separately."
     assert_eq!(claim["view"]["stage"], "review");
     assert_eq!(claim["view"]["id"], id);
     assert_eq!(claim["view"]["target"]["run"], follower_run);
+    assert_eq!(claim["view"]["owner"], original);
     let reopened = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
     assert_eq!(reopened["target"], claim["view"]["target"]);
     assert_eq!(reopened["id"], id);

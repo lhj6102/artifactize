@@ -182,7 +182,13 @@ pub async fn viewer_window(
     session: u32,
     title: String,
 ) -> Result<(), Failure> {
-    app.windows.act(&app, Action::Viewer { session, title })
+    // Reuse may drop the prepared session, so own the log until the window answers.
+    let pending = app.viewers.take_launch(session);
+    let result = app.windows.act(&app, Action::Viewer { session, title });
+    if result.is_err() {
+        app.viewers.drop_session(session);
+    }
+    crate::viewer::finish_launch(pending, result)
 }
 
 /// Show the pet overlay for the active review `request`, or hide it for `None`.

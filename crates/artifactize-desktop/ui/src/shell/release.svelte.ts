@@ -41,10 +41,10 @@ export class Release {
   }
 
   /** Open the release's download or page in the browser. */
-  async follow(): Promise<void> {
+  async follow(latest: string): Promise<void> {
     this.failure = null;
     try {
-      await call(this.#ipc.releaseOpen());
+      await call(this.#ipc.releaseOpen(latest));
     } catch (error) {
       this.failure = message(error);
     }

@@ -139,7 +139,7 @@ fn every_channel_but_the_store_says_how_to_update() {
     assert_eq!(
         update(Channel::Deb, &latest, SITE),
         Some(Update::Download {
-            url: "https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb".into(),
+            url: "https://github.com/lhj6102/artifactize/releases/download/v0.16.0/Artifactize-amd64.deb".into(),
             command: Some("sudo apt install ./Artifactize-amd64.deb".into()),
         })
     );
@@ -153,7 +153,7 @@ fn every_channel_but_the_store_says_how_to_update() {
     assert_eq!(
         update(Channel::Unknown, &latest, SITE),
         Some(Update::Page {
-            url: "https://github.com/lhj6102/artifactize/releases/latest".into()
+            url: "https://github.com/lhj6102/artifactize/releases/tag/v0.16.0".into()
         })
     );
 }

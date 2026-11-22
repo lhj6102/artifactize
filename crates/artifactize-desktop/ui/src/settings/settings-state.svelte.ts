@@ -296,16 +296,16 @@ export class SettingsState {
 
   async paste() {
     const text = this.redirect.trim();
-    if (!text) return;
+    if (!text || !this.prompt) return;
     try {
-      await call(this.#commands.codexLoginPaste(text));
+      await call(this.#commands.codexLoginPaste(this.prompt.signIn, text));
     } catch (failure) {
       this.codexError = message(failure);
     }
   }
 
   cancelSignIn() {
-    void this.#commands.codexLoginCancel();
+    if (this.prompt) void this.#commands.codexLoginCancel(this.prompt.signIn);
   }
 
   async signOut() {
@@ -370,16 +370,16 @@ export class SettingsState {
 
   async claudePaste() {
     const code = this.claudeCode.trim();
-    if (!code) return;
+    if (!code || !this.claudePrompt) return;
     try {
-      await call(this.#commands.claudeAgentLoginPaste(code));
+      await call(this.#commands.claudeAgentLoginPaste(this.claudePrompt.signIn, code));
     } catch (failure) {
       this.claudeError = message(failure);
     }
   }
 
   cancelClaudeSignIn() {
-    void this.#commands.claudeAgentLoginCancel();
+    if (this.claudePrompt) void this.#commands.claudeAgentLoginCancel(this.claudePrompt.signIn);
   }
 
   async claudeSignOut() {

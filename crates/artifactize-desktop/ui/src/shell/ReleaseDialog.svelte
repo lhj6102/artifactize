@@ -20,10 +20,10 @@
           {#if update.kind === "command"}
             <pre class="command">{update.command}</pre>
           {:else if update.kind === "download"}
-            <button class="link" onclick={() => void release.follow()}>{update.url}</button>
+            <button class="link" onclick={() => void release.follow(latest)}>{update.url}</button>
             {#if update.command}<pre class="command">{update.command}</pre>{/if}
           {:else}
-            <button class="link" onclick={() => void release.follow()}>{update.url}</button>
+            <button class="link" onclick={() => void release.follow(latest)}>{update.url}</button>
           {/if}
           {#if release.failure}<p class="failure">{release.failure}</p>{/if}
         </div>

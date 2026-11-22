@@ -188,6 +188,21 @@ pub fn recheck_interval() -> Duration {
     }
 }
 
+/// Where a particular displayed release can be downloaded; never re-query latest on click.
+pub fn shown_update(version: &str) -> Result<Update, String> {
+    let latest =
+        Version::parse(version).map_err(|error| format!("Invalid release version: {error}"))?;
+    let running = running();
+    let channel = crate::platform::install::channel();
+    let source = source(&running, channel, crate::platform::environment::var)
+        .map_err(|_| "This install has no available release link.")?;
+    if let Outcome::Newer { update, .. } = decide(&running, channel, latest, &source.site) {
+        Ok(update)
+    } else {
+        Err("This install has no available release link for that version.".into())
+    }
+}
+
 /// This copy's version.
 pub fn running() -> Version {
     Version::parse(env!("CARGO_PKG_VERSION")).expect("the crate version is semantic")

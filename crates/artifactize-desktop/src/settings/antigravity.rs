@@ -121,15 +121,19 @@ pub async fn antigravity_login_wait(
 /// Give the sign-in the code Antigravity's sign-in page shows, as the CLI accepts on stdin.
 #[tauri::command]
 #[specta::specta]
-pub fn antigravity_login_paste(app: tauri::State<'_, App>, code: String) -> Result<(), Failure> {
-    app.settings.antigravity_sign_ins.paste(code)
+pub fn antigravity_login_paste(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+    code: String,
+) -> Result<(), Failure> {
+    app.settings.antigravity_sign_ins.paste(sign_in, code)
 }
 
 /// Stop the sign-in in progress: Antigravity is stopped before it saves a login.
 #[tauri::command]
 #[specta::specta]
-pub fn antigravity_login_cancel(app: tauri::State<'_, App>) {
-    app.settings.antigravity_sign_ins.cancel();
+pub fn antigravity_login_cancel(app: tauri::State<'_, App>, sign_in: SignInId) {
+    app.settings.antigravity_sign_ins.cancel(sign_in);
 }
 
 /// `logout antigravity`: run ACP `logout`; returns the sign-in as Antigravity then

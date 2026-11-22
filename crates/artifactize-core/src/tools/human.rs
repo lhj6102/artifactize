@@ -62,10 +62,20 @@ impl ErrorText {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum ToolResult {
     Success(artifactize_tools::result::ContentBlocks<Content>),
     Error(ErrorText),
+    Viewer {
+        content: artifactize_tools::result::ContentBlocks<Content>,
+        pending: Option<Run>,
+    },
+}
+
+impl PartialEq for ToolResult {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_error() == other.is_error() && self.content() == other.content()
+    }
 }
 
 impl ToolResult {
@@ -92,13 +102,21 @@ impl ToolResult {
         Self::Error(ErrorText::new(content).expect("Human failures contain nonblank text"))
     }
 
+    /// Transfer the unfinished Viewer log to the desktop that performs the actual launch.
+    pub fn take_viewer_launch(&mut self) -> Option<Run> {
+        match self {
+            Self::Viewer { pending, .. } => pending.take(),
+            _ => None,
+        }
+    }
+
     pub fn is_error(&self) -> bool {
         matches!(self, Self::Error(_))
     }
 
     pub fn content(&self) -> &[Content] {
         match self {
-            Self::Success(content) => content.as_slice(),
+            Self::Success(content) | Self::Viewer { content, .. } => content.as_slice(),
             Self::Error(content) => content.0.as_slice(),
         }
     }
@@ -311,10 +329,18 @@ impl<'a> Registry<'a> {
         }
         let declaration = match tool.declaration {
             HumanTool::Viewer(_) => {
-                run.end(End::Launched);
-                return ToolResult::success(Content::Viewer {
-                    artifact: tool.definition.artifact_id.clone(),
-                });
+                let content =
+                    artifactize_tools::result::ContentBlocks::new(vec![Content::Viewer {
+                        artifact: tool.definition.artifact_id.clone(),
+                    }])
+                    .expect("a Viewer result always has one block");
+                let pending = if run.waits_for_viewer() {
+                    Some(run)
+                } else {
+                    run.end(End::Done);
+                    None
+                };
+                return ToolResult::Viewer { content, pending };
             }
             HumanTool::Builtin(declaration) => {
                 return self

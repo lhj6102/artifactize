@@ -9,7 +9,7 @@ use std::{
 
 use artifactize_core::{
     config::{Target, plugins},
-    review::Outcome,
+    review::{Outcome, log},
     store,
     tools::human::Content,
     types::{ArtifactName, RequestId},
@@ -30,6 +30,7 @@ pub(crate) struct Sessions(Mutex<SessionsInner>, OnceLock<ActiveEvent>);
 struct SessionsInner {
     last: u32,
     live: BTreeMap<u32, Arc<viewer::Session>>,
+    launching: BTreeMap<u32, log::Run>,
     /// What each live session shows: an Artifact of a worktree in one viewer.
     places: BTreeMap<u32, Place>,
     active: Option<ActiveReview>,
@@ -94,7 +95,12 @@ impl Sessions {
         }
     }
 
-    fn keep(&self, viewer: viewer::Session, worktree: PathBuf) -> ViewerLaunch {
+    fn keep(
+        &self,
+        viewer: viewer::Session,
+        worktree: PathBuf,
+        pending: Option<log::Run>,
+    ) -> ViewerLaunch {
         let context = viewer.context(None);
         let title = format!("{} — {}", context.artifact, context.title);
         let place = Place {
@@ -107,11 +113,11 @@ impl Sessions {
             scope: viewer.scope(),
         };
         let session = self.remember(place);
-        self.0
-            .lock()
-            .expect("viewer sessions")
-            .live
-            .insert(session, Arc::new(viewer));
+        let mut sessions = self.0.lock().expect("viewer sessions");
+        sessions.live.insert(session, Arc::new(viewer));
+        if let Some(pending) = pending {
+            sessions.launching.insert(session, pending);
+        }
         ViewerLaunch { session, title }
     }
 
@@ -143,9 +149,18 @@ impl Sessions {
             .ok_or_else(|| Failure::Missing("Artifact Viewer session closed.".into()))
     }
 
+    pub(crate) fn take_launch(&self, session: u32) -> Option<log::Run> {
+        self.0
+            .lock()
+            .expect("viewer sessions")
+            .launching
+            .remove(&session)
+    }
+
     /// End viewer session `session`: its window closed, or another shows the same Artifact.
     pub(crate) fn drop_session(&self, session: u32) {
         let mut sessions = self.0.lock().expect("viewer sessions");
+        sessions.launching.remove(&session);
         sessions.live.remove(&session);
         sessions.places.remove(&session);
     }
@@ -214,6 +229,7 @@ impl Sessions {
         let mut sessions = self.0.lock().expect("viewer sessions");
         sessions.advance_activation();
         sessions.active = None;
+        sessions.launching.clear();
         sessions.live.clear();
         sessions.places.clear();
     }
@@ -238,7 +254,7 @@ pub(crate) enum Source {
 /// A viewer is minted only when the library has run an admitted viewer Human tool.
 pub(crate) async fn launch(
     app: &App,
-    outcome: &Outcome,
+    outcome: &mut Outcome,
     source: Source,
 ) -> Result<Option<ViewerLaunch>, Failure> {
     let Outcome::Ran {
@@ -250,17 +266,40 @@ pub(crate) async fn launch(
     let [Content::Viewer { artifact }] = result.content() else {
         return Ok(None);
     };
-    let workspace = match source {
-        Source::Review(id) => store::read_request_repo(&app.launch.state, id.as_str())
-            .await
-            .map_err(Failure::Read)?,
-        Source::Workspace(workspace) => workspace,
-    };
     let artifact = artifact.clone();
-    let worktree = workspace.clone();
-    let open = tokio::task::spawn_blocking(move || viewer::Session::open(&workspace, &artifact));
-    let viewer = crate::failure::joined(open.await)?.map_err(Failure::Read)?;
-    Ok(Some(app.viewers.keep(viewer, worktree)))
+    let pending = result.take_viewer_launch();
+    let opened = async {
+        let workspace = match source {
+            Source::Review(id) => store::read_request_repo(&app.launch.state, id.as_str())
+                .await
+                .map_err(Failure::Read)?,
+            Source::Workspace(workspace) => workspace,
+        };
+        let worktree = workspace.clone();
+        let open =
+            tokio::task::spawn_blocking(move || viewer::Session::open(&workspace, &artifact));
+        let viewer = crate::failure::joined(open.await)?.map_err(Failure::Read)?;
+        Ok::<_, Failure>((viewer, worktree))
+    }
+    .await;
+    match opened {
+        Ok((viewer, worktree)) => Ok(Some(app.viewers.keep(viewer, worktree, pending))),
+        Err(error) => finish_launch(pending, Err(error)),
+    }
+}
+
+/// Report the platform result, not the success of preparing the handoff.
+pub(crate) fn finish_launch<T>(
+    pending: Option<log::Run>,
+    result: Result<T, Failure>,
+) -> Result<T, Failure> {
+    if let Some(run) = pending {
+        run.end(match &result {
+            Ok(_) => log::End::Launched,
+            Err(error) => log::End::Failed(error.to_string()),
+        });
+    }
+    result
 }
 
 #[derive(Serialize, Type)]
@@ -659,6 +698,34 @@ mod tests {
         assert!(mock.get_webview_window(&format!("viewer-{new}")).is_some());
         for window in mock.webview_windows().into_values() {
             window.destroy().unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+
+    #[test]
+    fn a_viewer_handoff_reports_the_native_launch_result_on_the_same_log_run() {
+        let (sink, mut events) = log::channel();
+        let id: RequestId = "run-1-1".parse().unwrap();
+        let failure = Failure::Action("Window could not be created.".into());
+        for (result, end) in [
+            (Err(failure.clone()), log::End::Failed(failure.to_string())),
+            (Ok(()), log::End::Launched),
+        ] {
+            let run = sink.start(&id, "view", "notes");
+            let started = events.try_recv().unwrap();
+            assert!(matches!(started.kind, log::Kind::Start { .. }));
+            assert!(
+                events.try_recv().is_err(),
+                "preparation never logs a launch"
+            );
+            assert_eq!(finish_launch(Some(run), result.clone()), result);
+            let ended = events.try_recv().unwrap();
+            assert_eq!(ended.run, started.run);
+            assert_eq!(ended.kind, log::Kind::End(end));
         }
     }
 }

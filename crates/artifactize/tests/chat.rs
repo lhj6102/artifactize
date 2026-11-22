@@ -909,6 +909,24 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
         String::from_utf8_lossy(&output.stdout)
     );
     hold.open();
+    let mut death_changes = Subscription::new(&state).await;
+    assert_eq!(
+        chat.reconcile_interrupted().await.unwrap(),
+        [session.id.clone()]
+    );
+    let notified = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+        loop {
+            if matches!(death_changes.next().await, artifactize_core::changes::Change::SessionInvalidated(id) if id == session.id) {
+                break;
+            }
+        }
+    }).await;
+    death_changes.close().await.unwrap();
+    assert!(
+        notified.is_ok(),
+        "live readers receive a session change when its owner dies"
+    );
+    assert!(chat.reconcile_interrupted().await.unwrap().is_empty());
     let interrupted = chat.open(&session.id).await.unwrap();
     assert!(!interrupted.running);
     assert!(matches!(interrupted.turns[0].state, TurnState::Interrupted));

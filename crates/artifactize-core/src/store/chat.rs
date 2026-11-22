@@ -97,6 +97,26 @@ pub(crate) async fn for_branch(state: &Path, branch: &Place) -> Result<Vec<Sessi
     }).await?.unwrap_or_default())
 }
 
+/// Find departed writers without reading any inactive Chats or their transcripts.
+pub(crate) async fn departed(state: &Path) -> Result<Vec<(Session, Owner)>, String> {
+    let state_path = state.to_owned();
+    Ok(read(state, move |db| {
+        let mut query = db.prepare("SELECT s.data, a.data FROM chat_active_turns a JOIN chat_sessions s ON s.id=a.session_id")?;
+        let rows = query.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        let mut departed = Vec::new();
+        for row in rows {
+            let (data, owner) = row?;
+            let owner: Owner = serde_json::from_str(&owner)?;
+            if !owner.live().map_err(Error::Invalid)? {
+                let mut session: Session = serde_json::from_str(&data)?;
+                session.refresh_activity(&state_path);
+                departed.push((session, owner));
+            }
+        }
+        Ok(departed)
+    }).await?.unwrap_or_default())
+}
+
 pub(crate) async fn turn_owner(state: &Path, id: &SessionId) -> Result<Option<Owner>, String> {
     let id = id.clone();
     Ok(read(state, move |db| owner(db, &id)).await?.flatten())
@@ -326,7 +346,7 @@ impl Receipts {
         id: &SessionId,
         owner: &Owner,
         settled: Option<&Session>,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let id = id.clone();
         let token = owner.token.clone();
         let settled = settled.cloned();
@@ -342,7 +362,7 @@ impl Receipts {
                 save(&transaction, &session)?;
             }
             transaction.commit()?;
-            Ok::<_, Error>(())
+            Ok::<_, Error>(released != 0)
         }).await.map_err(|error| error.to_string())
     }
 }

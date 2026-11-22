@@ -254,7 +254,7 @@ export const commands = {
 	 */
 	releaseNotice: () => typedError<ReleaseView, Failure>(__TAURI_INVOKE("release_notice")),
 	/**  Open the newer release's download or page in the browser. */
-	releaseOpen: () => typedError<null, Failure>(__TAURI_INVOKE("release_open")),
+	releaseOpen: (latest: string) => typedError<null, Failure>(__TAURI_INVOKE("release_open", { latest })),
 	/**  Claims this window took and has neither submitted nor released, for the quit prompt. */
 	humanTaken: () => typedError<string[], Failure>(__TAURI_INVOKE("human_taken")),
 	/**  Release and quit only releases claims this app took and still owns. */
@@ -301,9 +301,9 @@ export const commands = {
 	 */
 	codexLoginWait: (signIn: SignInId) => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_login_wait", { signIn })),
 	/**  Finish the sign-in with the URL the browser was sent to, as the CLI accepts on stdin. */
-	codexLoginPaste: (redirect: string) => typedError<null, Failure>(__TAURI_INVOKE("codex_login_paste", { redirect })),
+	codexLoginPaste: (signIn: SignInId, redirect: string) => typedError<null, Failure>(__TAURI_INVOKE("codex_login_paste", { signIn, redirect })),
 	/**  Stop the sign-in in progress; nothing is saved, even if the browser returns later. */
-	codexLoginCancel: () => __TAURI_INVOKE<void>("codex_login_cancel"),
+	codexLoginCancel: (signIn: SignInId) => __TAURI_INVOKE<void>("codex_login_cancel", { signIn }),
 	/**  `logout codex`: revoke and remove artifactize's own tokens. */
 	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),
 	/**  Ask Antigravity whether it is signed in (an ACP probe without a prompt). */
@@ -319,9 +319,9 @@ export const commands = {
 	 */
 	antigravityLoginWait: (signIn: SignInId) => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_login_wait", { signIn })),
 	/**  Give the sign-in the code Antigravity's sign-in page shows, as the CLI accepts on stdin. */
-	antigravityLoginPaste: (code: string) => typedError<null, Failure>(__TAURI_INVOKE("antigravity_login_paste", { code })),
+	antigravityLoginPaste: (signIn: SignInId, code: string) => typedError<null, Failure>(__TAURI_INVOKE("antigravity_login_paste", { signIn, code })),
 	/**  Stop the sign-in in progress: Antigravity is stopped before it saves a login. */
-	antigravityLoginCancel: () => __TAURI_INVOKE<void>("antigravity_login_cancel"),
+	antigravityLoginCancel: (signIn: SignInId) => __TAURI_INVOKE<void>("antigravity_login_cancel", { signIn }),
 	/**
 	 *  `logout antigravity`: run ACP `logout`; returns the sign-in as Antigravity then
 	 *  reports it.
@@ -340,9 +340,9 @@ export const commands = {
 	 */
 	claudeAgentLoginWait: (signIn: SignInId) => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_login_wait", { signIn })),
 	/**  Give the sign-in the code Claude Code's sign-in page shows, as the CLI accepts on stdin. */
-	claudeAgentLoginPaste: (code: string) => typedError<null, Failure>(__TAURI_INVOKE("claude_agent_login_paste", { code })),
+	claudeAgentLoginPaste: (signIn: SignInId, code: string) => typedError<null, Failure>(__TAURI_INVOKE("claude_agent_login_paste", { signIn, code })),
 	/**  Stop the sign-in in progress: Claude Code is stopped before it saves a login. */
-	claudeAgentLoginCancel: () => __TAURI_INVOKE<void>("claude_agent_login_cancel"),
+	claudeAgentLoginCancel: (signIn: SignInId) => __TAURI_INVOKE<void>("claude_agent_login_cancel", { signIn }),
 	/**
 	 *  `logout claude-agent`: run `claude auth logout`; returns the sign-in as Claude Code then
 	 *  reports it.
@@ -884,6 +884,8 @@ export type HumanToolLog = {
 /**  One request in the shared Human Detail. */
 export type HumanView = {
 	id: string,
+	/**  Draft and Tool log events use this original request ID, including for followers. */
+	owner: string,
 	target: ReviewTarget,
 	notes: string | null,
 	title: string,

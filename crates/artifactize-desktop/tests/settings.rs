@@ -327,7 +327,11 @@ fn settings_command_probe() {
     let wait = |prompt: &Value| json!({"signIn": prompt["signIn"]});
     let status = std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("codex_login_wait", wait(&prompt)));
-        call("codex_login_paste", json!({"redirect": redirect})).unwrap();
+        call(
+            "codex_login_paste",
+            json!({"signIn": prompt["signIn"], "redirect": redirect}),
+        )
+        .unwrap();
         waiting.join().unwrap()
     })
     .unwrap();
@@ -341,26 +345,29 @@ fn settings_command_probe() {
         json!([{"slug": "gpt-6-luna", "displayName": "GPT-6 Luna", "efforts": [], "defaultEffort": null}])
     );
     // A finished sign-in takes no more pastes.
-    let late = call("codex_login_paste", json!({"redirect": redirect}));
+    let late = call(
+        "codex_login_paste",
+        json!({"signIn": prompt["signIn"], "redirect": redirect}),
+    );
     assert_eq!(late.unwrap_err()["kind"], "missing");
 
     // Signing in again while signed in is the CLI's re-login; cancelling it keeps the old one.
-    let cancel_while_waiting = |then: &dyn Fn(&str)| {
+    let cancel_while_waiting = |then: &dyn Fn(&str, &Value)| {
         let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
         let url = prompt["url"].as_str().unwrap().to_owned();
         // The cancel reaches the sign-in whether or not its waiter has taken it yet.
         let cancelled = std::thread::scope(|scope| {
             let waiting = scope.spawn(|| call("codex_login_wait", wait(&prompt)));
-            call("codex_login_cancel", json!({})).unwrap();
+            call("codex_login_cancel", wait(&prompt)).unwrap();
             waiting.join().unwrap()
         });
         assert_eq!(
             cancelled.unwrap_err(),
             json!({"kind": "account", "message": "Codex sign-in was cancelled."})
         );
-        then(&url);
+        then(&url, &prompt);
     };
-    cancel_while_waiting(&|_| {});
+    cancel_while_waiting(&|_, _| {});
     assert_eq!(call("codex_status", json!({})).unwrap()["state"], "stored");
 
     // Sign out: revoked at the fake, removed locally.
@@ -370,11 +377,11 @@ fn settings_command_probe() {
 
     // A cancelled sign-in stores nothing and a late redirect paste finds no sign-in.
     // Do not probe the released callback port: another fixture or app could own it now.
-    cancel_while_waiting(&|url| {
+    cancel_while_waiting(&|url, prompt| {
         let callback = format!("/auth/callback?code=late-code&state={}", oauth_state(url));
         let late = call(
             "codex_login_paste",
-            json!({"redirect": format!("http://localhost:1455{callback}")}),
+            json!({"signIn": prompt["signIn"], "redirect": format!("http://localhost:1455{callback}")}),
         );
         assert_eq!(late.unwrap_err()["kind"], "missing");
     });
@@ -403,7 +410,20 @@ fn settings_command_probe() {
         "http://localhost:1455/auth/callback?code=newer-code&state={}",
         oauth_state(newer["url"].as_str().unwrap())
     );
-    call("codex_login_paste", json!({"redirect": redirect})).unwrap();
+    call("codex_login_cancel", wait(&older)).unwrap();
+    assert_eq!(
+        call(
+            "codex_login_paste",
+            json!({"signIn": older["signIn"], "redirect": redirect})
+        )
+        .unwrap_err()["kind"],
+        "missing"
+    );
+    call(
+        "codex_login_paste",
+        json!({"signIn": newer["signIn"], "redirect": redirect}),
+    )
+    .unwrap();
     let status = call("codex_login_wait", wait(&newer)).unwrap();
     assert_eq!(status["state"], "stored");
     call("codex_logout", json!({})).unwrap();
@@ -555,7 +575,7 @@ fn claude_agent_command_probe() {
     );
     std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
-        call("claude_agent_login_cancel", json!({})).unwrap();
+        call("claude_agent_login_cancel", wait(&prompt)).unwrap();
         assert_eq!(
             waiting.join().unwrap().unwrap_err(),
             json!({"kind": "account", "message": "Claude Code sign-in was cancelled."})
@@ -563,7 +583,11 @@ fn claude_agent_command_probe() {
     });
     assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_out);
     assert_eq!(
-        call("claude_agent_login_paste", json!({"code": "good-code"})).unwrap_err(),
+        call(
+            "claude_agent_login_paste",
+            json!({"signIn": prompt["signIn"], "code": "good-code"})
+        )
+        .unwrap_err(),
         json!({"kind": "missing", "message": "No Claude Code sign-in is waiting for a code."})
     );
 
@@ -571,7 +595,11 @@ fn claude_agent_command_probe() {
     let prompt = call("claude_agent_login_start", json!({})).unwrap();
     let status = std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
-        call("claude_agent_login_paste", json!({"code": " good-code\n"})).unwrap();
+        call(
+            "claude_agent_login_paste",
+            json!({"signIn": prompt["signIn"], "code": " good-code\n"}),
+        )
+        .unwrap();
         waiting.join().unwrap().unwrap()
     });
     let signed_in = json!({"state": "signedIn", "method": "claude.ai", "plan": "max"});
@@ -582,7 +610,11 @@ fn claude_agent_command_probe() {
     let prompt = call("claude_agent_login_start", json!({})).unwrap();
     let refused = std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
-        call("claude_agent_login_paste", json!({"code": "bad-code"})).unwrap();
+        call(
+            "claude_agent_login_paste",
+            json!({"signIn": prompt["signIn"], "code": "bad-code"}),
+        )
+        .unwrap();
         waiting.join().unwrap().unwrap_err()
     });
     assert_eq!(

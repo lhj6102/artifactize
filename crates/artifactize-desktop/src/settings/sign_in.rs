@@ -193,10 +193,11 @@ impl<F: Flow> SignIns<F> {
         }
     }
 
-    pub(super) fn paste(&self, text: String) -> Result<(), Failure> {
+    pub(super) fn paste(&self, id: SignInId, text: String) -> Result<(), Failure> {
         let paste = self
             .current()
             .as_mut()
+            .filter(|sign_in| sign_in.id == id)
             .and_then(|sign_in| sign_in.paste.take())
             .ok_or_else(|| Failure::Missing(F::NOT_WAITING.into()))?;
         paste
@@ -204,9 +205,9 @@ impl<F: Flow> SignIns<F> {
             .map_err(|_| Failure::Missing(F::ENDED.into()))
     }
 
-    pub(super) fn cancel(&self) {
+    pub(super) fn cancel(&self, id: SignInId) {
         let mut current = self.current();
-        if let Some(sign_in) = current.as_mut() {
+        if let Some(sign_in) = current.as_mut().filter(|sign_in| sign_in.id == id) {
             sign_in.abort.abort();
             // No paste can reach a cancelled sign-in.
             sign_in.paste = None;
@@ -280,7 +281,7 @@ mod tests {
             .await
             .unwrap();
         assert!(started.is_none());
-        assert!(sign_ins.paste("there is no prompt".into()).is_err());
+        assert!(sign_ins.current().is_none());
     }
 
     #[tokio::test]
@@ -292,7 +293,8 @@ mod tests {
             poll_once(&mut start).await.is_none(),
             "waiting for its prompt"
         );
-        sign_ins.cancel();
+        let id = sign_ins.current().as_ref().unwrap().id;
+        sign_ins.cancel(id);
         // The prompt would come now; the stopped sign-in never shows it.
         let _ = go.send(());
         assert_eq!(
@@ -300,7 +302,9 @@ mod tests {
             Failure::Account("Sign-in was cancelled.".into())
         );
         assert_eq!(
-            sign_ins.paste("http://localhost:1455/".into()).unwrap_err(),
+            sign_ins
+                .paste(id, "http://localhost:1455/".into())
+                .unwrap_err(),
             Failure::Missing("No sign-in is waiting for a paste.".into())
         );
     }
@@ -325,7 +329,10 @@ mod tests {
         let (id, prompt) = second.await.unwrap().expect("the URL is ready");
         assert_eq!(prompt, "http://127.0.0.1:9/oauth/authorize");
         sign_ins
-            .paste("http://localhost:1455/auth/callback?code=c&state=s".into())
+            .paste(
+                id,
+                "http://localhost:1455/auth/callback?code=c&state=s".into(),
+            )
             .unwrap();
         assert_eq!(sign_ins.take(id).unwrap().await.unwrap(), Ok(()));
         sign_ins.finish(id);
@@ -358,9 +365,14 @@ mod tests {
         let ended = held.await;
         assert!(ended.unwrap_err().is_cancelled());
         sign_ins.finish(older);
+        assert!(sign_ins.paste(older, "stale code".into()).is_err());
+        sign_ins.cancel(older);
         // The newer one is untouched: a paste reaches it and its waiter takes it.
         sign_ins
-            .paste("http://localhost:1455/auth/callback?code=c&state=s".into())
+            .paste(
+                newer,
+                "http://localhost:1455/auth/callback?code=c&state=s".into(),
+            )
             .unwrap();
         let task = sign_ins.take(newer).unwrap();
         task.abort();

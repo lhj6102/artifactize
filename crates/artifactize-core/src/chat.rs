@@ -289,6 +289,27 @@ impl Chat {
         }
     }
 
+    /// Reconcile exact turn ownership after a process dies without a final change hint.
+    /// Returns only sessions this observer actually reconciled.
+    pub async fn reconcile_interrupted(&self) -> Result<Vec<SessionId>, String> {
+        let mut changed = Vec::new();
+        for (session, owner) in store::chat::departed(&self.state).await? {
+            let receipts = Receipts::open(&self.state, &session.worktree).await?;
+            let settled = receipts
+                .finish_chat(&session.id, &owner, Some(&session))
+                .await;
+            let closed = receipts.close().await;
+            if settled.and_then(|settled| closed.map(|()| settled))? {
+                changed.push(session.id);
+            }
+        }
+        let publisher = crate::changes::Publisher::new(&self.state);
+        for session in &changed {
+            publisher.notify(crate::changes::Change::SessionInvalidated(session.clone()));
+        }
+        Ok(changed)
+    }
+
     /// The starting model for a new session: the worktree's last choice, or the first
     /// listed model in Settings order after every provider has answered.
     pub async fn default_model(&self, worktree: &Path) -> Result<Option<Model>, String> {

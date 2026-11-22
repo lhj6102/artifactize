@@ -103,6 +103,7 @@ struct Logs {
 impl Default for Reviews {
     fn default() -> Self {
         let (log, events) = review::log::channel();
+        let log = log.with_viewer_launch();
         Self {
             views: Mutex::default(),
             reads: Reads::default(),
@@ -215,7 +216,7 @@ impl Reviews {
         caller: Caller,
         job: JobId,
     ) -> Result<jobs::Lease<'_>, Failure> {
-        self.jobs.begin(caller, job, Vec::new(), Action::Tool)
+        self.jobs.register(caller, job, Action::Tool)
     }
 
     /// Freshen the cached views of requests the waiting stack read as read number `read`, so
@@ -307,6 +308,8 @@ pub struct Claimant {
 #[serde(rename_all = "camelCase")]
 pub struct HumanView {
     pub id: RequestKey,
+    /// Draft and Tool log events use this original request ID, including for followers.
+    pub owner: RequestKey,
     pub target: search::ReviewTarget,
     pub notes: Option<String>,
     pub title: String,
@@ -411,6 +414,7 @@ fn view(
     });
     HumanView {
         id: request.id.clone().into(),
+        owner: request.id.clone().into(),
         target: review::Target::from(request.as_ref()).into(),
         notes: request.review_notes.clone(),
         title: format!("{} · {}", request.eval_id, request.title),
@@ -687,7 +691,7 @@ pub async fn human_run(
     let owner = request.request.id.clone();
     work.admit(vec![owner.clone()])?;
     work.ready().await?;
-    let outcome = run_job(
+    let mut outcome = run_job(
         &app,
         Job::Run {
             id: owner.clone(),
@@ -706,7 +710,7 @@ pub async fn human_run(
     let mut notice: Notice = outcome.notice().into();
     if !work.cancel.is_cancelled() {
         notice.viewer =
-            crate::viewer::launch(&app, &outcome, crate::viewer::Source::Review(owner)).await?;
+            crate::viewer::launch(&app, &mut outcome, crate::viewer::Source::Review(owner)).await?;
     }
     Ok(notice)
 }

@@ -40,6 +40,7 @@ export function draftLibrary(green: FormView = greenForm, red: FormView = redFor
 export function humanView(stage: HumanView["stage"], overrides: Partial<HumanView> = {}): HumanView {
   return {
     id: "run-a-2",
+    owner: overrides.id ?? "run-a-2",
     target: { run: "run-a", node: "e:release/signoff" },
     notes: null,
     title: "release/signoff · A person approves the release",
