@@ -158,3 +158,23 @@ fn a_run_finishing_during_the_scan_queues_a_fresh_forecast() {
     assert_eq!(queued, workspace);
     assert!(matches!(currents.end(&place(), next, None), Some(None)));
 }
+
+#[test]
+fn ordinary_completion_and_failure_each_invalidate_the_last_published_scan() {
+    let currents = Currents::default();
+    let mut changes = currents.take_changes().unwrap();
+    for failure in [None, Some("fixture checkout failed".to_owned())] {
+        let branch = place();
+        let (scan, _, _stage) =
+            started(currents.request(&branch, PathBuf::from("worktree"), false));
+        assert!(currents.publish(&branch, scan, empty()));
+        assert!(matches!(
+            currents.end(&branch, scan, failure.clone()),
+            Some(None)
+        ));
+        assert_eq!(changes.try_recv().unwrap(), BranchKey::new(&branch));
+        let view = view(&currents, BranchKey::new(&branch)).unwrap();
+        assert!(!view.scanning);
+        assert_eq!(view.failure, failure);
+    }
+}

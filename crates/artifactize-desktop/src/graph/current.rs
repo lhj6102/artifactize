@@ -217,16 +217,22 @@ impl Currents {
             _ => return None,
         };
         running.remove(place);
-        if let Some(workspace) = again {
-            return Some(Some(self.start(&mut running, place, workspace)));
-        }
-        if let Some(failure) = failure {
-            self.failed
-                .lock()
-                .expect("failures lock")
-                .insert(place.clone(), failure);
-        }
-        Some(None)
+        let next = if let Some(workspace) = again {
+            Some(self.start(&mut running, place, workspace))
+        } else {
+            if let Some(failure) = failure {
+                self.failed
+                    .lock()
+                    .expect("failures lock")
+                    .insert(place.clone(), failure);
+            }
+            None
+        };
+        drop(running);
+        // Every accepted settlement changes the visible scan state, even when there is no
+        // queued follow-up. A replaced scan returned before reaching this publication.
+        self.announce(&BranchKey::new(place));
+        Some(next)
     }
 
     /// Tell the window that `branch`'s Current changed.
@@ -589,7 +595,6 @@ pub async fn current_scan(
                         currents.publish(&place, scan, current);
                     });
                     if let Some(again) = currents.end(&place, scan, outcome.clone().err()) {
-                        currents.announce(&key);
                         next = again;
                     }
                     stage.send_replace(Stage::Ended(outcome));

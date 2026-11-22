@@ -145,6 +145,20 @@ impl Sessions {
         }
     }
 
+    /// The same viewer for this Artifact and checkout, even after it was retargeted.
+    pub(crate) fn same_artifact(&self, one: u32, other: u32) -> bool {
+        let sessions = self.0.lock().expect("viewer sessions");
+        match (sessions.places.get(&one), sessions.places.get(&other)) {
+            (Some(one), Some(other)) => {
+                one.address.worktree == other.address.worktree
+                    && one.address.checkout == other.address.checkout
+                    && one.address.artifact == other.address.artifact
+                    && one.viewer == other.viewer
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn get(&self, session: u32) -> Result<Arc<viewer::Session>, Failure> {
         self.0
             .lock()

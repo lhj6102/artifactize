@@ -677,7 +677,7 @@ pub async fn human_claim(
     let id = id.into_inner();
     let mut work = app.human.jobs.register(caller, job, Action::Ordinary)?;
     // Someone else's claim, or a settled request, is refused in the library's words.
-    let (_, views) = read(&app, &id).await?;
+    let (_, views) = work.prepare(read(&app, &id)).await?;
     let view = views.owner;
     review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
     let owner = view.request.id.clone();
@@ -731,7 +731,9 @@ pub async fn human_run(
     let id = id.into_inner();
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
     let mut work = app.human.jobs.register(caller, job, Action::Tool)?;
-    let request = guard(&app, &id, review::review_refusal).await?;
+    let request = work
+        .prepare(guard(&app, &id, review::review_refusal))
+        .await?;
     let owner = request.request.id.clone();
     work.admit(vec![owner.clone()])?;
     work.ready().await?;

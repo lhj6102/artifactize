@@ -2,7 +2,7 @@
 //! the pet overlay (J-PET), and the `viewer:` scheme that serves a plugin viewer's page into its
 //! sandboxed frame with a policy of its own. Closing the main window closes the others.
 use std::sync::{
-    OnceLock,
+    Mutex, OnceLock,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -43,6 +43,7 @@ type Act = Box<dyn Fn(&App, Action) -> Result<(), String> + Send + Sync>;
 pub(crate) struct Windows {
     action: OnceLock<Act>,
     closing: AtomicBool,
+    viewing: Mutex<()>,
 }
 
 impl Windows {
@@ -90,17 +91,29 @@ pub(super) fn viewer<R: Runtime>(
     session: u32,
     title: String,
 ) -> tauri::Result<()> {
-    // The same Artifact of the same worktree in the same viewer, whatever the windows' titles.
-    let open = handle.webview_windows().into_iter().find(|(label, _)| {
-        label
+    let _viewing = app
+        .windows
+        .viewing
+        .lock()
+        .expect("native viewer windows lock");
+    for (label, window) in handle.webview_windows() {
+        let Some(shown) = label
             .strip_prefix(VIEWER)
-            .and_then(|shown| shown.parse().ok())
-            .is_some_and(|shown| shown != session && app.viewers.same_place(shown, session))
-    });
-    if let Some((_, window)) = open {
-        app.viewers.drop_session(session);
-        let _ = window.unminimize();
-        return window.set_focus();
+            .and_then(|label| label.parse().ok())
+        else {
+            continue;
+        };
+        if shown == session || !app.viewers.same_artifact(shown, session) {
+            continue;
+        }
+        if app.viewers.same_place(shown, session) {
+            app.viewers.drop_session(session);
+            let _ = window.unminimize();
+            return window.set_focus();
+        }
+        // A retargeted Artifact needs a freshly scoped bridge. Retire the old window rather
+        // than leaving an unusable copy open or assigning the new files to its old session.
+        window.destroy()?;
     }
     WebviewWindowBuilder::new(
         handle,
