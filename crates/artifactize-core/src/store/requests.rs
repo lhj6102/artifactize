@@ -153,7 +153,18 @@ pub(crate) async fn read_request_by_id(
     id: &crate::types::RequestId,
     shown: Shown,
 ) -> Result<RequestView, String> {
-    read(
+    read_optional_request(state, id, shown)
+        .await?
+        .ok_or_else(|| "Review request not found.".into())
+}
+
+/// Read an exact request if it still exists, distinguishing absence from a store error.
+pub async fn read_optional_request(
+    state: &Path,
+    id: &crate::types::RequestId,
+    shown: Shown,
+) -> Result<Option<RequestView>, String> {
+    Ok(read(
         state,
         Filter {
             id: Some(id.clone()),
@@ -162,8 +173,7 @@ pub(crate) async fn read_request_by_id(
         },
     )
     .await?
-    .pop()
-    .ok_or_else(|| "Review request not found.".into())
+    .pop())
 }
 
 /// The request whose Agent review ran as session `id`, if this state has it.

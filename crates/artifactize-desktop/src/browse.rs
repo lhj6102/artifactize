@@ -503,19 +503,6 @@ impl Browse {
         }
     }
 
-    pub(crate) fn live_branches(&self) -> Vec<super::chat::ChatBranch> {
-        self.shown()
-            .branches
-            .iter()
-            .map(|branch| super::chat::ChatBranch {
-                key: BranchKey::new(&branch.place),
-                project: branch.project.clone(),
-                name: branch.name.clone(),
-                workspace: PathKey::new(&branch.workspace),
-            })
-            .collect()
-    }
-
     /// The listed branch at `place`: where its Current is scanned and its tools run.
     pub fn branch(&self, place: &Place) -> Result<Branch, Failure> {
         self.shown()
@@ -644,13 +631,17 @@ pub(crate) async fn rescan(app: &App) -> Result<bool, Failure> {
         rescan: true,
         ..Read::default()
     };
-    app.browse
+    if let Some(origin) = app
+        .browse
         .load(
             &app.launch.state,
             &app.launch.reviewer,
             &app.human.reads,
             read,
         )
-        .await?;
+        .await?
+    {
+        app.observe(origin);
+    }
     Ok(app.browse.shown().revision != before)
 }

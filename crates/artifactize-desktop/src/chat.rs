@@ -295,8 +295,26 @@ pub struct ChatBranch {
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_branches(app: tauri::State<'_, App>) -> Result<Vec<ChatBranch>, Failure> {
-    crate::browse::rescan(&app).await?;
-    let mut branches = app.browse.live_branches();
+    let runs = artifactize_core::store::read_catalog(&app.launch.state)
+        .await
+        .map_err(Failure::Read)?;
+    let launch = app.launch.repo.clone();
+    let mut branches = crate::failure::joined(
+        tokio::task::spawn_blocking(move || {
+            use artifactize_core::monitor::live;
+            live::branches(&runs, launch.as_deref(), &mut live::Discovery::default())
+                .branches
+                .into_iter()
+                .map(|branch| ChatBranch {
+                    key: BranchKey::new(&branch.place),
+                    project: branch.project,
+                    name: branch.name,
+                    workspace: PathKey::new(&branch.workspace),
+                })
+                .collect::<Vec<_>>()
+        })
+        .await,
+    )?;
     let sessions = app.chat.list(None, None).await.map_err(Failure::Read)?;
     app.chat_worktrees.watch(&sessions);
     for session in sessions

@@ -108,7 +108,7 @@ impl Sessions {
         viewer: viewer::Session,
         worktree: PathBuf,
         pending: PendingLaunch,
-    ) -> ViewerLaunch {
+    ) -> Option<ViewerLaunch> {
         let context = viewer.context(None);
         let title = format!("{} — {}", context.artifact, context.title);
         let place = Place {
@@ -121,20 +121,19 @@ impl Sessions {
             viewer: context.type_name.to_string(),
             scope: viewer.scope(),
         };
-        let session = self.remember(place);
         let mut sessions = self.0.lock().expect("viewer sessions");
+        if pending.job.cancel.is_cancelled() {
+            return None;
+        }
+        let session = sessions.remember(place);
         sessions.live.insert(session, Arc::new(viewer));
         sessions.launching.insert(session, pending);
-        ViewerLaunch { session, title }
+        Some(ViewerLaunch { session, title })
     }
 
-    /// Number a new session showing `place`.
+    #[cfg(test)]
     fn remember(&self, place: Place) -> u32 {
-        let mut sessions = self.0.lock().expect("viewer sessions");
-        sessions.last = sessions.last.checked_add(1).expect("unique viewer session");
-        let session = sessions.last;
-        sessions.places.insert(session, place);
-        session
+        self.0.lock().expect("viewer sessions").remember(place)
     }
 
     /// Sessions `one` and `other` show the same current Artifact scope and viewer.
@@ -276,6 +275,12 @@ impl Sessions {
 }
 
 impl SessionsInner {
+    fn remember(&mut self, place: Place) -> u32 {
+        self.last = self.last.checked_add(1).expect("unique viewer session");
+        self.places.insert(self.last, place);
+        self.last
+    }
+
     fn advance_activation(&mut self) -> u64 {
         self.activation = self
             .activation
@@ -299,14 +304,9 @@ pub(crate) fn launch(
         return None;
     };
     let (viewer, log) = result.take_viewer_launch()?;
-    if job.cancel.is_cancelled() {
-        return None;
-    }
     let worktree = viewer.workspace().to_owned();
-    Some(
-        app.viewers
-            .keep(*viewer, worktree, PendingLaunch { job, review, log }),
-    )
+    app.viewers
+        .keep(*viewer, worktree, PendingLaunch { job, review, log })
 }
 
 impl PendingLaunch {

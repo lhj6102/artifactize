@@ -49,6 +49,13 @@ pub struct Model {
     pub effort: Option<String>,
 }
 
+/// Whether an accepted quit could read active ownership and deliver Stop to those turns.
+#[derive(Debug)]
+pub enum StopRunningError {
+    Unreadable(String),
+    Turns(Vec<String>),
+}
+
 /// The state of the latest accepted turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -791,11 +798,21 @@ impl Chat {
 
     /// The desktop's quit prompt names every running Chat. Deliver the same Stop to those
     /// turns even when another process owns them, before the desktop window closes.
-    pub async fn stop_running(&self) -> Result<(), String> {
-        for (session, owner) in store::chat::active_turns(&self.state, true).await? {
-            self.stop_exact(&session, owner).await?;
+    pub async fn stop_running(&self) -> Result<(), StopRunningError> {
+        let mut failed = Vec::new();
+        let turns = store::chat::active_turns(&self.state, true)
+            .await
+            .map_err(StopRunningError::Unreadable)?;
+        for (session, owner) in turns {
+            if let Err(error) = self.stop_exact(&session, owner).await {
+                failed.push(format!("{}: {error}", session.id));
+            }
         }
-        Ok(())
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(StopRunningError::Turns(failed))
+        }
     }
 
     async fn stop_exact(

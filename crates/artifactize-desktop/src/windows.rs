@@ -258,8 +258,17 @@ pub async fn main_close(app: tauri::State<'_, App>) -> Result<(), Failure> {
         }
         // A broken state store must not strand the windows. Locally owned turns are
         // still stopped by close, even if other processes cannot be reached through it.
-        if let Err(error) = app.chat.stop_running().await {
-            eprintln!("Could not stop Chat turns in other processes: {error}");
+        match app.chat.stop_running().await {
+            Ok(()) => {}
+            Err(artifactize_core::chat::StopRunningError::Unreadable(error)) => {
+                eprintln!("Could not inspect Chat turns in other processes: {error}");
+            }
+            Err(artifactize_core::chat::StopRunningError::Turns(errors)) => {
+                return Err(Failure::Action(format!(
+                    "Could not stop Chat turns: {}",
+                    errors.join("; ")
+                )));
+            }
         }
         app.close().await;
         app.windows.act(&app, Action::CloseMain)

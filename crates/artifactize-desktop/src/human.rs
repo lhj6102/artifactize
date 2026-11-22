@@ -729,8 +729,8 @@ pub async fn human_run(
 #[tauri::command]
 #[specta::specta]
 pub fn human_cancel(app: tauri::State<'_, App>, caller: Caller, job: JobId) {
+    app.human.jobs.cancel(caller.clone(), job);
     app.viewers.cancel_job(&caller, job);
-    app.human.jobs.cancel(caller, job);
 }
 
 /// Where a submission's settled result stands.
@@ -961,12 +961,10 @@ pub(crate) async fn live_claims(app: &App) -> Result<Vec<RequestKey>, Failure> {
     let claims = app.human.taken.lock().expect("taken lock").clone();
     let mut live = Vec::new();
     for (id, claim) in claims {
-        if store::read_request_as(&app.launch.state, &id, store::Shown::Requests)
+        if store::read_optional_request(&app.launch.state, &id, store::Shown::Requests)
             .await
             .map_err(Failure::Read)?
-            .claim
-            .as_ref()
-            == Some(&claim)
+            .is_some_and(|view| view.claim.as_ref() == Some(&claim))
         {
             live.push(id.into());
         }
