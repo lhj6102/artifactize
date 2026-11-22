@@ -245,7 +245,7 @@ export class AppState {
 
   /** The library reads Run `run` by its ID, whatever the Pane lists, and says its live branch. */
   async #showRun(run: string, node: string | null, tab: string | null): Promise<void> {
-    if (!(await this.browse.open(run))) return;
+    if (!(await this.browse.navigate({ run: { kind: "reference", id: run } }))) return;
     const shown = this.browse.view?.run;
     if (shown?.kind !== "read" || shown.id !== run) return;
     const branch = shown.branch;

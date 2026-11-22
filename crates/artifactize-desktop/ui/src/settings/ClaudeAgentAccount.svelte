@@ -24,7 +24,7 @@
   <dl class="facts" aria-label="Claude Code sign-in">
     <dt>Sign-in</dt>
     <dd data-testid="claude-agent-status" class:warn={s.claudePrompt !== null} class:error={s.claude?.state === "failed" && !s.claudePrompt}>
-      {#if s.claudePrompt}
+      {#if s.claudeAttempt !== null}
         sign-in in progress
       {:else if !s.claude}
         …
@@ -43,10 +43,12 @@
       <dd class="error" role="alert">{s.claudeError}</dd>
     {/if}
   </dl>
-  {#if s.claudePrompt}
+  {#if s.claudeAttempt !== null}
     <div class="row">
       <button class="button" type="button" onclick={() => s.cancelClaudeSignIn()}>Cancel sign-in</button>
     </div>
+  {/if}
+  {#if s.claudePrompt}
     <Section name="Finish by hand" unfolded={s.byHand} ontoggle={() => (s.byHand = !s.byHand)}>
       <pre class="url">{s.claudePrompt.url}</pre>
       <form class="row" onsubmit={paste}>

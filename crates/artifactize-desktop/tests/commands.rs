@@ -1916,6 +1916,28 @@ fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, 
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_direct_run_reference_reveals_its_branch_without_resetting_verify_search() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Monitor);
+    let run = saved(&fixture, "release/signoff")
+        .request
+        .run_id
+        .to_string();
+    let query = "repo:other-project";
+    let filtered = invoke(&window, "browse", json!({"navigate": search(query)})).unwrap();
+    assert_eq!(filtered["branches"], json!([]));
+    let shown = invoke(
+        &window,
+        "browse",
+        json!({"navigate":{"run":{"kind":"reference","id":run},"full":false,"resync":false}}),
+    )
+    .unwrap();
+    assert_eq!(shown["query"]["text"], query);
+    assert_eq!(shown["branches"][0]["chips"][0]["id"], run);
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
     let root = os::tempdir();
     let repo = root.path().join("repo");

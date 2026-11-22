@@ -276,19 +276,24 @@ export class SettingsState {
     }
   }
 
+  codexAttempt = $state<number | null>(null);
+  claudeAttempt = $state<number | null>(null);
+
   async signIn() {
     this.codexError = null;
     this.codexWarning = null;
     this.byHand = false;
     this.busy = true;
     try {
-      this.prompt = await call(this.#commands.codexLoginStart(true));
+      this.codexAttempt = await call(this.#commands.codexLoginStart(true));
+      this.prompt = await call(this.#commands.codexLoginPrompt(this.codexAttempt));
       this.codex = await call(this.#commands.codexLoginWait(this.prompt.signIn));
     } catch (failure) {
       this.codexError = message(failure);
       await this.loadCodex();
     } finally {
       this.prompt = null;
+      this.codexAttempt = null;
       this.redirect = "";
       this.busy = false;
     }
@@ -305,7 +310,7 @@ export class SettingsState {
   }
 
   cancelSignIn() {
-    if (this.prompt) void this.#commands.codexLoginCancel(this.prompt.signIn);
+    if (this.codexAttempt !== null) void this.#commands.codexLoginCancel(this.codexAttempt);
   }
 
   async signOut() {
@@ -342,7 +347,8 @@ export class SettingsState {
     this.byHand = false;
     this.claudeBusy = true;
     try {
-      const started = await call(this.#commands.claudeAgentLoginStart());
+      this.claudeAttempt = await call(this.#commands.claudeAgentLoginStart());
+      const started = await call(this.#commands.claudeAgentLoginPrompt(this.claudeAttempt));
       if ("signIn" in started) {
         this.claudePrompt = started;
         this.claude = await call(this.#commands.claudeAgentLoginWait(started.signIn));
@@ -353,6 +359,7 @@ export class SettingsState {
       this.claudeError = message(failure);
     } finally {
       this.claudePrompt = null;
+      this.claudeAttempt = null;
       this.claudeCode = "";
       this.claudeBusy = false;
     }
@@ -379,7 +386,7 @@ export class SettingsState {
   }
 
   cancelClaudeSignIn() {
-    if (this.claudePrompt) void this.#commands.claudeAgentLoginCancel(this.claudePrompt.signIn);
+    if (this.claudeAttempt !== null) void this.#commands.claudeAgentLoginCancel(this.claudeAttempt);
   }
 
   async claudeSignOut() {

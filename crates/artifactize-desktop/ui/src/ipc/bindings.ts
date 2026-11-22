@@ -289,11 +289,10 @@ export const commands = {
 	providerCustomRemove: (name: string) => typedError<null, Failure>(__TAURI_INVOKE("provider_custom_remove", { name })),
 	/**  The Codex sign-in state, offline. */
 	codexStatus: () => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_status")),
-	/**
-	 *  Start `login codex`: the sign-in URL to show (the system browser gets it too when
-	 *  `browser`), and whether the browser can return here. Finish with [`codex_login_wait`].
-	 */
-	codexLoginStart: (browser: boolean) => typedError<CodexPrompt, Failure>(__TAURI_INVOKE("codex_login_start", { browser })),
+	/**  Start sign-in and return its ID immediately, so it can be cancelled before any prompt. */
+	codexLoginStart: (browser: boolean) => typedError<SignInId, Failure>(__TAURI_INVOKE("codex_login_start", { browser })),
+	/**  Read the attempt's prompt or the updated status if it already signed in. */
+	codexLoginPrompt: (signIn: SignInId) => typedError<CodexPrompt, Failure>(__TAURI_INVOKE("codex_login_prompt", { signIn })),
 	/**
 	 *  Wait for sign-in `sign_in` (from [`codex_login_start`]) to finish; returns the new state.
 	 *  The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it; one that a
@@ -308,11 +307,10 @@ export const commands = {
 	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),
 	/**  Ask Antigravity whether it is signed in (an ACP probe without a prompt). */
 	antigravityStatus: () => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_status")),
-	/**
-	 *  Start `login antigravity`: `agy acp --login` prints a Google sign-in URL. Returns the URL
-	 *  it printed; finish with [`antigravity_login_wait`].
-	 */
-	antigravityLoginStart: () => typedError<NativeStart<AntigravityPrompt, AntigravityStatus>, Failure>(__TAURI_INVOKE("antigravity_login_start")),
+	/**  Start sign-in and return its ID immediately, so it can be cancelled before any prompt. */
+	antigravityLoginStart: () => typedError<SignInId, Failure>(__TAURI_INVOKE("antigravity_login_start")),
+	/**  Read the attempt's prompt or the updated status if it already signed in. */
+	antigravityLoginPrompt: (signIn: SignInId) => typedError<NativeStart<AntigravityPrompt, AntigravityStatus>, Failure>(__TAURI_INVOKE("antigravity_login_prompt", { signIn })),
 	/**
 	 *  Wait for sign-in `sign_in` (from [`antigravity_login_start`]) to end; returns Antigravity's
 	 *  sign-in as it then reports it.
@@ -329,11 +327,10 @@ export const commands = {
 	antigravityLogout: () => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_logout")),
 	/**  Ask Claude Code whether it is signed in (`claude auth status`). */
 	claudeAgentStatus: () => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_status")),
-	/**
-	 *  Start `login claude-agent`: `claude auth login` runs and opens the browser. Returns the URL
-	 *  it printed; finish with [`claude_agent_login_wait`].
-	 */
-	claudeAgentLoginStart: () => typedError<NativeStart<ClaudeAgentPrompt, ClaudeAgentStatus>, Failure>(__TAURI_INVOKE("claude_agent_login_start")),
+	/**  Start sign-in and return its ID immediately, so it can be cancelled before any prompt. */
+	claudeAgentLoginStart: () => typedError<SignInId, Failure>(__TAURI_INVOKE("claude_agent_login_start")),
+	/**  Read the attempt's prompt or the updated status if it already signed in. */
+	claudeAgentLoginPrompt: (signIn: SignInId) => typedError<NativeStart<ClaudeAgentPrompt, ClaudeAgentStatus>, Failure>(__TAURI_INVOKE("claude_agent_login_prompt", { signIn })),
 	/**
 	 *  Wait for sign-in `sign_in` (from [`claude_agent_login_start`]) to end; returns Claude Code's
 	 *  sign-in as it then reports it.
@@ -1272,6 +1269,8 @@ export type RunStep =
 { kind: "keep" } | 
 /**  Show this Run. */
 { kind: "open"; id: string } | 
+/**  Follow a link, showing this Run's branch even outside the saved search. */
+{ kind: "reference"; id: string } | 
 /**  Show no Run: the Main area shows a Current, a review or Settings. */
 { kind: "close" };
 

@@ -86,6 +86,8 @@ function backend(options: {
       case "codex_status":
         return options.codex?.() ?? { state: "absent" };
       case "codex_login_start":
+        return 7;
+      case "codex_login_prompt":
         return { url: "http://127.0.0.1:9/oauth/authorize?state=s", callback: false, signIn: 7 };
       case "codex_login_wait":
         return options.wait?.() ?? { state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } };
@@ -97,6 +99,8 @@ function backend(options: {
       case "claude_agent_status":
         return options.claude?.() ?? { state: "signedOut" };
       case "claude_agent_login_start":
+        return 9;
+      case "claude_agent_login_prompt":
         return { url: "https://claude.example/oauth/authorize?code=true", signIn: 9 };
       case "claude_agent_login_wait":
         return options.claudeWait?.() ?? { state: "signedIn", method: "claude.ai", plan: "max" };
@@ -265,7 +269,7 @@ describe("Settings", () => {
     expect(screen.queryByText("http://127.0.0.1:9/oauth/authorize?state=s")).toBeNull();
     expect(calls.find((call) => call.cmd === "codex_login_start")?.args).toEqual({ browser: true });
     // The wait names the sign-in the start returned.
-    expect(calls.find((call) => call.cmd === "codex_login_wait")?.args).toEqual({ signIn: 7 });
+    await waitFor(() => expect(calls.find((call) => call.cmd === "codex_login_wait")?.args).toEqual({ signIn: 7 }));
     await fireEvent.click(screen.getByRole("button", { name: "Finish by hand" }));
     await screen.findByText("http://127.0.0.1:9/oauth/authorize?state=s");
     // The port was taken: only a pasted URL finishes it.
@@ -293,8 +297,9 @@ describe("Settings", () => {
     });
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Codex" }));
+    await waitFor(() => expect(calls.filter((call) => call.cmd === "codex_login_wait")).toHaveLength(1));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
-    expect(calls.some((call) => call.cmd === "codex_login_cancel")).toBe(true);
+    expect(calls.find((call) => call.cmd === "codex_login_cancel")?.args).toEqual({ signIn: 7 });
     fail({ kind: "account", message: "Codex sign-in was cancelled." });
     expect((await screen.findByText("Codex sign-in was cancelled.")).classList.contains("error")).toBe(true);
     await waitFor(() => {
@@ -303,6 +308,7 @@ describe("Settings", () => {
     });
     state = { state: "file", path: "/home/a/.codex/auth.json", expiry: { state: "usable", expiresAt: null } };
     await fireEvent.click(screen.getByRole("button", { name: "Sign in with Codex" }));
+    await waitFor(() => expect(calls.filter((call) => call.cmd === "codex_login_wait")).toHaveLength(2));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
     fail({ kind: "account", message: "Codex sign-in was cancelled." });
     // A read-only auth file is never changed here: no sign-in.
@@ -398,8 +404,9 @@ describe("Settings", () => {
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Claude Code" }));
+    await waitFor(() => expect(calls.find((call) => call.cmd === "claude_agent_login_wait")?.args).toEqual({ signIn: 9 }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
-    expect(calls.some((call) => call.cmd === "claude_agent_login_cancel")).toBe(true);
+    expect(calls.find((call) => call.cmd === "claude_agent_login_cancel")?.args).toEqual({ signIn: 9 });
     // Claude Code was signed in elsewhere meanwhile: only a status read after the cancellation shows it.
     state = { state: "signedIn", method: "claude.ai", plan: "max" };
     fail({ kind: "account", message: "Claude Code sign-in was cancelled." });

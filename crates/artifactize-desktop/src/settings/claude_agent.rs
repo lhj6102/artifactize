@@ -73,27 +73,30 @@ pub struct ClaudeAgentPrompt {
     pub sign_in: SignInId,
 }
 
-/// Start `login claude-agent`: `claude auth login` runs and opens the browser. Returns the URL
-/// it printed; finish with [`claude_agent_login_wait`].
+/// Start sign-in and return its ID immediately, so it can be cancelled before any prompt.
 #[tauri::command]
 #[specta::specta]
-pub async fn claude_agent_login_start(
-    app: tauri::State<'_, App>,
-) -> Result<NativeStart<ClaudeAgentPrompt, ClaudeAgentStatus>, Failure> {
-    let started = app
-        .settings
-        .claude_sign_ins
-        .start(|pasted, shown| {
-            tokio::spawn(async move {
-                claude_agent::login_with(Some(pasted), |prompt| {
-                    let _ = shown.send(prompt.clone());
-                })
-                .await
+pub async fn claude_agent_login_start(app: tauri::State<'_, App>) -> Result<SignInId, Failure> {
+    Ok(app.settings.claude_sign_ins.start(|pasted, shown| {
+        tokio::spawn(async move {
+            claude_agent::login_with(Some(pasted), |prompt| {
+                let _ = shown.send(prompt.clone());
             })
+            .await
         })
-        .await?;
-    Ok(match started {
-        Some((sign_in, prompt)) => NativeStart::Prompt(ClaudeAgentPrompt {
+    }))
+}
+
+/// Read the attempt's prompt or the updated status if it already signed in.
+#[tauri::command]
+#[specta::specta]
+pub async fn claude_agent_login_prompt(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+) -> Result<NativeStart<ClaudeAgentPrompt, ClaudeAgentStatus>, Failure> {
+    let prompt = app.settings.claude_sign_ins.prompt(sign_in).await?;
+    Ok(match prompt {
+        Some(prompt) => NativeStart::Prompt(ClaudeAgentPrompt {
             url: prompt.url.to_string(),
             sign_in,
         }),

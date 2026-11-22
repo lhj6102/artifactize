@@ -6,7 +6,7 @@ use crate::App;
 use artifactize_core::changes::{Change, Subscription};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::{path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf, sync::Mutex, time::Duration};
 use tauri::Manager;
 use tauri_specta::Event;
 
@@ -26,6 +26,35 @@ pub struct StateChanged {
 #[serde(rename_all = "camelCase")]
 pub struct SessionChanged {
     pub session: crate::ids::SessionKey,
+}
+
+/// Chat sessions read by a window may be the only record of a live worktree.
+#[derive(Default)]
+pub(crate) struct ChatWorktrees(Mutex<BTreeMap<PathBuf, bool>>);
+
+impl ChatWorktrees {
+    pub(crate) fn watch(&self, sessions: &[artifactize_core::chat::Session]) {
+        for session in sessions {
+            self.watch_path(session.worktree.clone());
+        }
+    }
+
+    fn watch_path(&self, path: PathBuf) {
+        let mut known = self.0.lock().expect("Chat worktrees lock");
+        let present = path.is_dir();
+        known.entry(path).or_insert(present);
+    }
+
+    fn rescan(&self) -> bool {
+        let mut known = self.0.lock().expect("Chat worktrees lock");
+        let mut changed = false;
+        for (path, before) in &mut *known {
+            let present = path.is_dir();
+            changed |= *before != present;
+            *before = present;
+        }
+        changed
+    }
 }
 
 /// Forward the hub's hints to every window until the app exits. The subscription itself
@@ -76,13 +105,33 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                 artifactize_core::store::retire_removed_signoffs(&app_state.launch.state).await;
             let branches_changed = crate::browse::rescan(&app_state).await;
             let review_worktrees_changed = app_state.human.review_worktrees_changed();
+            let chat_worktrees_changed = app_state.chat_worktrees.rescan();
             if (reviews_changed.unwrap_or(false)
                 || branches_changed.unwrap_or(false)
-                || review_worktrees_changed)
+                || review_worktrees_changed
+                || chat_worktrees_changed)
                 && (StateChanged { resync: false }).emit(&app).is_err()
             {
                 return;
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_chat_only_worktree_disappearing_invalidates_once() {
+        let root = tempfile::tempdir().unwrap();
+        let worktree = root.path().join("chat-only");
+        std::fs::create_dir(&worktree).unwrap();
+        let watched = ChatWorktrees::default();
+        watched.watch_path(worktree.clone());
+        assert!(!watched.rescan());
+        std::fs::remove_dir(worktree).unwrap();
+        assert!(watched.rescan());
+        assert!(!watched.rescan());
+    }
 }

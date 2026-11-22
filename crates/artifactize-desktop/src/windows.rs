@@ -223,6 +223,7 @@ pub async fn main_close(app: tauri::State<'_, App>) -> Result<(), Failure> {
                 "Release the review claims before closing this window.".into(),
             ));
         }
+        app.chat.stop_running().await.map_err(Failure::Action)?;
         app.close().await;
         app.windows.act(&app, Action::CloseMain)
     }

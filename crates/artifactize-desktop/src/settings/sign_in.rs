@@ -30,7 +30,7 @@ pub enum NativeStart<Prompt, Status> {
     Complete(Status),
 }
 
-struct SignIn {
+struct SignIn<P> {
     /// Which sign-in this is: its waiter names it, and a waiter of an older one never takes
     /// or clears a newer one.
     id: SignInId,
@@ -40,19 +40,20 @@ struct SignIn {
     abort: tokio::task::AbortHandle,
     /// The running sign-in, taken by its one waiter.
     task: Option<SignInTask>,
+    prompt: Option<oneshot::Receiver<P>>,
 }
 
 /// The one sign-in of a flow in progress. It stays here, reachable for a paste or a cancel,
 /// until it ends; only its own waiter clears it.
-pub(super) struct SignIns<F> {
-    current: Mutex<Option<SignIn>>,
+pub(super) struct SignIns<F: Flow> {
+    current: Mutex<Option<SignIn<F::Prompt>>>,
     /// Stopped sign-ins nobody waits for, until they have ended: closing joins them.
     stopped: Mutex<Vec<SignInTask>>,
     started: std::sync::atomic::AtomicU32,
     flow: PhantomData<F>,
 }
 
-impl<F> Default for SignIns<F> {
+impl<F: Flow> Default for SignIns<F> {
     fn default() -> Self {
         Self {
             current: Mutex::default(),
@@ -64,12 +65,12 @@ impl<F> Default for SignIns<F> {
 }
 
 impl<F: Flow> SignIns<F> {
-    fn current(&self) -> std::sync::MutexGuard<'_, Option<SignIn>> {
+    fn current(&self) -> std::sync::MutexGuard<'_, Option<SignIn<F::Prompt>>> {
         self.current.lock().expect("sign-in lock")
     }
 
     /// Stop `sign_in`. Its waiter, if it has one, joins it; otherwise closing does.
-    fn halt(&self, sign_in: SignIn) {
+    fn halt(&self, sign_in: SignIn<F::Prompt>) {
         sign_in.abort.abort();
         if let Some(task) = sign_in.task {
             self.stopped.lock().expect("sign-in lock").push(task);
@@ -98,36 +99,49 @@ impl<F: Flow> SignIns<F> {
     }
 
     /// Make `task` the sign-in in progress (stopping any other) and return its id.
-    pub(super) fn register(&self, task: SignInTask, paste: oneshot::Sender<String>) -> SignInId {
-        let id = SignInId::allocate(&self.started);
+    fn register(
+        &self,
+        prompt: Option<oneshot::Receiver<F::Prompt>>,
+        launch: impl FnOnce() -> (SignInTask, oneshot::Sender<String>),
+    ) -> SignInId {
         let mut current = self.current();
+        let id = SignInId::allocate(&self.started);
         if let Some(previous) = current.take() {
             self.halt(previous);
         }
+        let (task, paste) = launch();
         *current = Some(SignIn {
             id,
             paste: Some(paste),
             abort: task.abort_handle(),
             task: Some(task),
+            prompt,
         });
         id
     }
 
-    /// Start a sign-in with `launch` (given where pastes arrive and where it shows its
-    /// prompt) and return its id and prompt. It is the sign-in in progress from the moment it
-    /// is launched, before its prompt: a cancel or a newer start meanwhile stops it, and it
-    /// then reads as cancelled and is never registered afterwards.
-    pub(super) async fn start(
+    /// Return the attempt ID as soon as the task is registered, before its URL is ready.
+    pub(super) fn start(
         &self,
         launch: impl FnOnce(oneshot::Receiver<String>, oneshot::Sender<F::Prompt>) -> SignInTask,
-    ) -> Result<Option<(SignInId, F::Prompt)>, Failure> {
-        // The previous sign-in frees what it holds before this one starts.
-        self.stop();
+    ) -> SignInId {
         let (paste, pasted) = oneshot::channel();
         let (shown, prompt) = oneshot::channel();
-        let id = self.register(launch(pasted, shown), paste);
+        self.register(Some(prompt), || (launch(pasted, shown), paste))
+    }
+
+    /// Wait for this attempt's prompt or its successful exit without one.
+    pub(super) async fn prompt(&self, id: SignInId) -> Result<Option<F::Prompt>, Failure> {
+        let prompt = self
+            .current()
+            .as_mut()
+            .filter(|sign_in| sign_in.id == id)
+            .ok_or_else(|| Failure::Account(F::CANCELLED.into()))?
+            .prompt
+            .take()
+            .ok_or_else(|| Failure::Missing(F::WAITED.into()))?;
         match prompt.await {
-            Ok(prompt) if self.is_current(id) => Ok(Some((id, prompt))),
+            Ok(prompt) if self.is_current(id) => Ok(Some(prompt)),
             // Cancelled or replaced while it started: stopped already.
             Ok(_) => Err(Failure::Account(F::CANCELLED.into())),
             // It ended before showing anything: cancelled, or why it failed.
@@ -271,16 +285,13 @@ mod tests {
     #[tokio::test]
     async fn a_native_sign_in_can_finish_successfully_without_a_prompt() {
         let sign_ins = SignIns::<Test>::default();
-        let started = sign_ins
-            .start(|_, shown| {
-                tokio::spawn(async move {
-                    drop(shown);
-                    Ok(())
-                })
+        let id = sign_ins.start(|_, shown| {
+            tokio::spawn(async move {
+                drop(shown);
+                Ok(())
             })
-            .await
-            .unwrap();
-        assert!(started.is_none());
+        });
+        assert!(sign_ins.prompt(id).await.unwrap().is_none());
         assert!(sign_ins.current().is_none());
     }
 
@@ -288,12 +299,12 @@ mod tests {
     async fn a_cancel_during_a_start_leaves_no_sign_in() {
         let sign_ins = SignIns::<Test>::default();
         let (go, launch) = held();
-        let mut start = Box::pin(sign_ins.start(launch));
+        let id = sign_ins.start(launch);
+        let mut start = Box::pin(sign_ins.prompt(id));
         assert!(
             poll_once(&mut start).await.is_none(),
             "waiting for its prompt"
         );
-        let id = sign_ins.current().as_ref().unwrap().id;
         sign_ins.cancel(id);
         // The prompt would come now; the stopped sign-in never shows it.
         let _ = go.send(());
@@ -315,10 +326,12 @@ mod tests {
     async fn a_newer_start_during_a_start_supersedes_it() {
         let sign_ins = SignIns::<Test>::default();
         let (older_go, older) = held();
-        let mut first = Box::pin(sign_ins.start(older));
+        let older = sign_ins.start(older);
+        let mut first = Box::pin(sign_ins.prompt(older));
         assert!(poll_once(&mut first).await.is_none());
         let (newer_go, newer) = held();
-        let mut second = Box::pin(sign_ins.start(newer));
+        let id = sign_ins.start(newer);
+        let mut second = Box::pin(sign_ins.prompt(id));
         assert!(poll_once(&mut second).await.is_none());
         let _ = older_go.send(());
         assert_eq!(
@@ -326,7 +339,7 @@ mod tests {
             Failure::Account("Sign-in was cancelled.".into())
         );
         let _ = newer_go.send(());
-        let (id, prompt) = second.await.unwrap().expect("the URL is ready");
+        let prompt = second.await.unwrap().expect("the URL is ready");
         assert_eq!(prompt, "http://127.0.0.1:9/oauth/authorize");
         sign_ins
             .paste(
@@ -355,12 +368,12 @@ mod tests {
     async fn an_older_waiter_ending_after_a_newer_start_leaves_it_alone() {
         let sign_ins = SignIns::<Test>::default();
         let (task, paste) = pending();
-        let older = sign_ins.register(task, paste);
+        let older = sign_ins.register(None, || (task, paste));
         let held = sign_ins.take(older).unwrap();
         // A newer start: the older one is stopped, the newer registered, in that order.
         sign_ins.stop();
         let (task, paste) = pending();
-        let newer = sign_ins.register(task, paste);
+        let newer = sign_ins.register(None, || (task, paste));
         // Only now does the older sign-in end, and its waiter finish.
         let ended = held.await;
         assert!(ended.unwrap_err().is_cancelled());

@@ -341,7 +341,10 @@ pub async fn chat_list(
     app.chat
         .list(worktree.as_deref(), query.as_deref())
         .await
-        .map(|sessions| sessions.into_iter().map(Into::into).collect())
+        .map(|sessions| {
+            app.chat_worktrees.watch(&sessions);
+            sessions.into_iter().map(Into::into).collect()
+        })
         .map_err(Failure::Read)
 }
 
@@ -396,18 +399,22 @@ pub async fn chat_open(app: tauri::State<'_, App>, id: SessionKey) -> Result<Cha
     app.chat
         .open(&id.into_inner())
         .await
-        .map(|view| ChatView {
-            session: view.session.into(),
-            running: view.running,
-            turns: view
-                .turns
-                .into_iter()
-                .map(|turn| ChatTurn {
-                    user: turn.user,
-                    blocks: turn.blocks.into_iter().map(Into::into).collect(),
-                    state: turn.state.into(),
-                })
-                .collect(),
+        .map(|view| {
+            app.chat_worktrees
+                .watch(std::slice::from_ref(&view.session));
+            ChatView {
+                session: view.session.into(),
+                running: view.running,
+                turns: view
+                    .turns
+                    .into_iter()
+                    .map(|turn| ChatTurn {
+                        user: turn.user,
+                        blocks: turn.blocks.into_iter().map(Into::into).collect(),
+                        state: turn.state.into(),
+                    })
+                    .collect(),
+            }
         })
         .map_err(Failure::Read)
 }

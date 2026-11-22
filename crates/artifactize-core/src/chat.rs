@@ -293,7 +293,7 @@ impl Chat {
     /// Returns only sessions this observer actually reconciled.
     pub async fn reconcile_interrupted(&self) -> Result<Vec<SessionId>, String> {
         let mut changed = Vec::new();
-        for (session, owner) in store::chat::departed(&self.state).await? {
+        for (session, owner) in store::chat::active_turns(&self.state, false).await? {
             let receipts = Receipts::open(&self.state, &session.worktree).await?;
             let settled = receipts
                 .finish_chat(&session.id, &owner, Some(&session))
@@ -744,8 +744,25 @@ impl Chat {
             return Ok(false);
         };
         let session = store::chat::load(&self.state, id).await?;
+        self.stop_exact(&session, owner).await
+    }
+
+    /// The desktop's quit prompt names every running Chat. Deliver the same Stop to those
+    /// turns even when another process owns them, before the desktop window closes.
+    pub async fn stop_running(&self) -> Result<(), String> {
+        for (session, owner) in store::chat::active_turns(&self.state, true).await? {
+            self.stop_exact(&session, owner).await?;
+        }
+        Ok(())
+    }
+
+    async fn stop_exact(
+        &self,
+        session: &Session,
+        owner: store::chat::Owner,
+    ) -> Result<bool, String> {
         let receipts = Receipts::open(&self.state, &session.worktree).await?;
-        let stopped = receipts.stop_chat(id, owner).await;
+        let stopped = receipts.stop_chat(&session.id, owner).await;
         let closed = receipts.close().await;
         stopped.and_then(|stopped| closed.map(|()| stopped))
     }

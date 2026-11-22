@@ -115,33 +115,42 @@ pub struct CodexPrompt {
     pub sign_in: SignInId,
 }
 
-/// Start `login codex`: the sign-in URL to show (the system browser gets it too when
-/// `browser`), and whether the browser can return here. Finish with [`codex_login_wait`].
+/// Start sign-in and return its ID immediately, so it can be cancelled before any prompt.
 #[tauri::command]
 #[specta::specta]
 pub async fn codex_login_start(
     app: tauri::State<'_, App>,
     browser: bool,
-) -> Result<CodexPrompt, Failure> {
+) -> Result<SignInId, Failure> {
     let state = app.launch.state.clone();
     let repo = app.launch.settings_repo().map(std::path::Path::to_owned);
-    let (sign_in, prompt) = app
+    Ok(app.settings.codex_sign_ins.start(|pasted, shown| {
+        tokio::spawn(async move {
+            codex::login_with(
+                Some(&state),
+                repo.as_deref(),
+                Some(pasted),
+                browser,
+                |prompt| {
+                    let _ = shown.send(prompt.clone());
+                },
+            )
+            .await
+        })
+    }))
+}
+
+/// Read the attempt's prompt or the updated status if it already signed in.
+#[tauri::command]
+#[specta::specta]
+pub async fn codex_login_prompt(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+) -> Result<CodexPrompt, Failure> {
+    let prompt = app
         .settings
         .codex_sign_ins
-        .start(|pasted, shown| {
-            tokio::spawn(async move {
-                codex::login_with(
-                    Some(&state),
-                    repo.as_deref(),
-                    Some(pasted),
-                    browser,
-                    |prompt| {
-                        let _ = shown.send(prompt.clone());
-                    },
-                )
-                .await
-            })
-        })
+        .prompt(sign_in)
         .await?
         .expect("Codex always shows its authorization prompt before success");
     Ok(CodexPrompt {

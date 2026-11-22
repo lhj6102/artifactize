@@ -28,7 +28,7 @@
   <dl class="facts" aria-label="Codex sign-in">
     <dt>Account</dt>
     <dd data-testid="codex-status" class:warn={s.prompt !== null}>
-      {#if s.prompt}
+      {#if s.codexAttempt !== null}
         sign-in in progress
       {:else if !s.codex}
         …
@@ -50,10 +50,12 @@
       <dd class="warn" role="status">{s.codexWarning}</dd>
     {/if}
   </dl>
-  {#if s.prompt}
+  {#if s.codexAttempt !== null}
     <div class="row">
       <button class="button" type="button" onclick={() => s.cancelSignIn()}>Cancel sign-in</button>
     </div>
+  {/if}
+  {#if s.prompt}
     <Section name="Finish by hand" unfolded={s.byHand} ontoggle={() => (s.byHand = !s.byHand)}>
       <pre class="url">{s.prompt.url}</pre>
       {#if !s.prompt.callback}<p class="warn">Port 1455 is in use, so the browser cannot return here.</p>{/if}

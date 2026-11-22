@@ -313,7 +313,11 @@ fn settings_command_probe() {
         call("codex_status", json!({})).unwrap(),
         json!({"state": "absent"})
     );
-    let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
+    let start = |args| {
+        let id = call("codex_login_start", args).unwrap();
+        call("codex_login_prompt", json!({"signIn": id})).unwrap()
+    };
+    let prompt = start(json!({"browser": false}));
     let url = prompt["url"].as_str().unwrap().to_owned();
     assert!(
         url.starts_with(&format!("{provider_url}/oauth/authorize?")),
@@ -353,7 +357,7 @@ fn settings_command_probe() {
 
     // Signing in again while signed in is the CLI's re-login; cancelling it keeps the old one.
     let cancel_while_waiting = |then: &dyn Fn(&str, &Value)| {
-        let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
+        let prompt = start(json!({"browser": false}));
         let url = prompt["url"].as_str().unwrap().to_owned();
         // The cancel reaches the sign-in whether or not its waiter has taken it yet.
         let cancelled = std::thread::scope(|scope| {
@@ -395,8 +399,8 @@ fn settings_command_probe() {
     // Overlapping starts, in order and without waiting on time: B's start stops A and
     // registers B; only then does A's waiter run, so A ends after B is registered. A reads as
     // cancelled, B is untouched, and nothing of A is exchanged or saved.
-    let older = call("codex_login_start", json!({"browser": false})).unwrap();
-    let newer = call("codex_login_start", json!({"browser": false})).unwrap();
+    let older = start(json!({"browser": false}));
+    let newer = start(json!({"browser": false}));
     assert_ne!(older["signIn"], newer["signIn"]);
     assert_eq!(
         call("codex_login_wait", wait(&older)).unwrap_err(),
@@ -568,7 +572,11 @@ fn claude_agent_command_probe() {
     assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_out);
 
     // A cancelled sign-in stops Claude Code before it signs in.
-    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    let start = |args| {
+        let id = call("claude_agent_login_start", args).unwrap();
+        call("claude_agent_login_prompt", json!({"signIn": id})).unwrap()
+    };
+    let prompt = start(json!({}));
     assert_eq!(
         prompt["url"],
         "https://claude.example/oauth/authorize?code=true"
@@ -592,7 +600,7 @@ fn claude_agent_command_probe() {
     );
 
     // The pasted code reaches Claude Code; the status is Claude Code's, without the account.
-    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    let prompt = start(json!({}));
     let status = std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
         call(
@@ -607,7 +615,7 @@ fn claude_agent_command_probe() {
     assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_in);
 
     // A refused code ends the sign-in with Claude Code's own error.
-    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    let prompt = start(json!({}));
     let refused = std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
         call(

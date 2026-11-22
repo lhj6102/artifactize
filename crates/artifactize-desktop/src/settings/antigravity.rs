@@ -78,27 +78,30 @@ pub struct AntigravityPrompt {
     pub sign_in: SignInId,
 }
 
-/// Start `login antigravity`: `agy acp --login` prints a Google sign-in URL. Returns the URL
-/// it printed; finish with [`antigravity_login_wait`].
+/// Start sign-in and return its ID immediately, so it can be cancelled before any prompt.
 #[tauri::command]
 #[specta::specta]
-pub async fn antigravity_login_start(
-    app: tauri::State<'_, App>,
-) -> Result<NativeStart<AntigravityPrompt, AntigravityStatus>, Failure> {
-    let started = app
-        .settings
-        .antigravity_sign_ins
-        .start(|pasted, shown| {
-            tokio::spawn(async move {
-                antigravity::login_with(pasted, |prompt| {
-                    let _ = shown.send(prompt.clone());
-                })
-                .await
+pub async fn antigravity_login_start(app: tauri::State<'_, App>) -> Result<SignInId, Failure> {
+    Ok(app.settings.antigravity_sign_ins.start(|pasted, shown| {
+        tokio::spawn(async move {
+            antigravity::login_with(pasted, |prompt| {
+                let _ = shown.send(prompt.clone());
             })
+            .await
         })
-        .await?;
-    Ok(match started {
-        Some((sign_in, prompt)) => NativeStart::Prompt(AntigravityPrompt {
+    }))
+}
+
+/// Read the attempt's prompt or the updated status if it already signed in.
+#[tauri::command]
+#[specta::specta]
+pub async fn antigravity_login_prompt(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+) -> Result<NativeStart<AntigravityPrompt, AntigravityStatus>, Failure> {
+    let prompt = app.settings.antigravity_sign_ins.prompt(sign_in).await?;
+    Ok(match prompt {
+        Some(prompt) => NativeStart::Prompt(AntigravityPrompt {
             url: prompt.url.to_string(),
             sign_in,
         }),

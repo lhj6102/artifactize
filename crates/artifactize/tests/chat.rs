@@ -912,7 +912,7 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     let mut death_changes = Subscription::new(&state).await;
     assert_eq!(
         chat.reconcile_interrupted().await.unwrap(),
-        [session.id.clone()]
+        std::slice::from_ref(&session.id)
     );
     let notified = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
         loop {
@@ -964,7 +964,7 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     })
     .await;
     assert!(matches!(active.turns[2].state, TurnState::Running));
-    assert!(chat.stop(&session.id).await.unwrap());
+    chat.stop_running().await.unwrap();
     let stopped = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
     hold.open();
     let ended = tokio::time::timeout(

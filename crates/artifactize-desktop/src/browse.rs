@@ -83,6 +83,7 @@ struct Shown {
     /// The Run the Main area shows.
     opened: Opened,
     opened_branch: Option<Place>,
+    reference: bool,
     /// Chips shown of each branch whose row reached further back than [`CHIPS`].
     chips: BTreeMap<Place, usize>,
     /// The starred branches, once read from the state directory.
@@ -151,6 +152,8 @@ pub enum RunStep {
     Keep,
     /// Show this Run.
     Open { id: crate::ids::RunKey },
+    /// Follow a link, showing this Run's branch even outside the saved search.
+    Reference { id: crate::ids::RunKey },
     /// Show no Run: the Main area shows a Current, a review or Settings.
     Close,
 }
@@ -179,6 +182,7 @@ impl Browse {
                 query: Search::new(live::DEFAULT.into()),
                 opened: Opened::None,
                 opened_branch: None,
+                reference: false,
                 chips: BTreeMap::new(),
                 starred: None,
                 unstarred: None,
@@ -233,18 +237,23 @@ impl Browse {
         }
         match &step.run {
             RunStep::Keep => {}
-            RunStep::Open { id } => {
+            RunStep::Open { id } | RunStep::Reference { id } => {
+                shown.reference = matches!(step.run, RunStep::Reference { .. });
                 let id: RunId = id.clone().into_inner();
                 if shown.opened.id() != Some(&id) {
                     shown.opened = Opened::Loading(id);
                 }
             }
-            RunStep::Close => shown.opened = Opened::None,
+            RunStep::Close => {
+                shown.reference = false;
+                shown.opened = Opened::None;
+            }
         }
         if let Some(query) = &step.query
             && *query != shown.query.text
         {
             shown.query = Search::new(query.clone());
+            shown.reference = false;
         }
         if let Some(branch) = &step.older {
             let place = branch.to_place();
@@ -514,7 +523,7 @@ pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<Br
         rescan: navigate.resync,
     };
     let accepted = match navigate.run {
-        RunStep::Open { id } if !read.full && !read.resync => {
+        RunStep::Open { id } | RunStep::Reference { id } if !read.full && !read.resync => {
             let id = id.into_inner();
             let origin = app
                 .browse
