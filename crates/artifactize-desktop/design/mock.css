@@ -342,7 +342,7 @@
   overflow: hidden;
 }
 .m-branch {
-  padding: 0 0 4px;
+  padding: 0;
   border-bottom: 1px solid var(--line-group);
 }
 .m-branch-head {
@@ -400,8 +400,11 @@
   grid-template-columns: 10px auto minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
-  margin: 0 var(--pad) 0 30px;
+  padding: 0 var(--pad) 4px 30px;
   font-size: var(--text-small);
+}
+.m-branch-head.hover + .m-latest {
+  background: var(--surface-group);
 }
 .m-dot {
   width: 8px;
@@ -1616,7 +1619,7 @@
 .m-parts li .m-name {
   flex: none;
 }
-/* The Source: the file's text in a field one step below the panel, its line numbers in faint
+/* The Source: the file's text in a field one step below the panel, its line numbers in secondary
    ink; the line an error names carries the selection background. */
 .m-source {
   margin: 0;
@@ -1639,7 +1642,7 @@
   display: inline-block;
   width: 28px;
   margin-right: 8px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   text-align: right;
 }
 .m-source span.marked {
@@ -2128,9 +2131,22 @@
   flex-direction: column;
   gap: 8px;
   padding: 8px;
-  border: 1px solid var(--line-input);
+  border: 1px solid var(--line-group);
   border-radius: var(--radius-chip);
   background: var(--surface-input);
+}
+/* Holding a draft: the field's own edge brightens; being typed in: the editing mark; keyboard
+   focus: the focus ring outside, apart from both. */
+.m-composer-box.draft {
+  border-color: var(--line-input);
+}
+.m-composer-box.editing {
+  border-color: var(--line-input);
+  outline: 1px solid var(--current-mark);
+  outline-offset: -1px;
+}
+.m-composer-box.kfocus {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 4px var(--focus);
 }
 .m-composer-text {
   min-height: 36px;
@@ -2298,6 +2314,11 @@
 /* Point is a toggle: grey while off, bright while armed, its face and border unchanged. */
 .m-button.toggle {
   color: var(--ink-2);
+}
+.m-button.toggle.disabled {
+  background: transparent;
+  border-color: var(--line-section);
+  color: var(--ink-3);
 }
 .m-button.toggle.pointing {
   color: var(--ink-bright);
