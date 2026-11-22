@@ -5,6 +5,7 @@ import type { Provider } from "../ipc/client";
 export const PROVIDER_NAMES: Record<Provider, string> = {
   codex: "Codex",
   "claude-agent": "Claude Agent",
+  antigravity: "Antigravity",
   openai: "OpenAI",
   anthropic: "Anthropic",
   gemini: "Gemini",
