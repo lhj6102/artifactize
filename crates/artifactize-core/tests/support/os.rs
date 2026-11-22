@@ -475,6 +475,17 @@ pub fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path
     program
 }
 
+/// A native filename component that cannot be sent as Unicode on this OS.
+pub fn non_unicode_component() -> std::ffi::OsString {
+    #[cfg(unix)]
+    let text = "native-path:/unix/wP8";
+    #[cfg(windows)]
+    let text = "native-path:/windows/YQAA2A";
+    artifactize_tools::files::path_from_text(text)
+        .unwrap()
+        .into_os_string()
+}
+
 /// A repository-local program that records its help arguments without a shell.
 pub fn help_stub(directory: &Path) -> String {
     let binary = compiled_program(

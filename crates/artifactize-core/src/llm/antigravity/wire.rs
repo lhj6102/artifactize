@@ -223,8 +223,17 @@ pub(crate) enum StopReason {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct NewSession<'a> {
+    #[serde(serialize_with = "crate::platform::path_serde::native::serialize_path")]
+    pub cwd: &'a std::path::Path,
+    pub mcp_servers: &'a [McpServer<'a>],
+}
+
+#[derive(Serialize)]
 pub(crate) struct McpServer<'a> {
     pub name: &'static str,
+    #[serde(serialize_with = "crate::platform::path_serde::native::serialize_path")]
     pub command: &'a std::path::Path,
     pub args: [&'static str; 1],
     pub env: [McpEnv<'a>; 2],

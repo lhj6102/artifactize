@@ -223,6 +223,18 @@ impl Fixture {
         );
         model.model = "chosen-model".parse().unwrap();
         let session = chat.create(&self.repo, Some(model.clone())).await.unwrap();
+        let bad_cli = self.root.join(os::non_unicode_component());
+        let bad_path_chat = Chat::new(self.state.clone(), bad_cli);
+        let bad_session = bad_path_chat
+            .create(&self.repo, Some(model.clone()))
+            .await
+            .unwrap();
+        owned_run::subscribed(&self.state, async |changes| {
+            bad_path_chat.send(&bad_session.id, "no ACP prompt".into(), None).await.unwrap();
+            let refused = observe(&bad_path_chat, &bad_session.id, changes, |view| !view.running).await;
+            assert!(matches!(&refused.turns[0].state, TurnState::Failed { message } if message.contains("ACP session paths") && message.contains("Unicode")), "{:?}", refused.turns[0]);
+        }).await;
+        bad_path_chat.close().await;
         owned_run::subscribed(&self.state, async |changes| {
             chat.send(&session.id, "first message".into(), None).await.unwrap();
             let streaming = observe(&chat, &session.id, changes, |view| {

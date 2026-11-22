@@ -374,7 +374,15 @@ impl Channel {
         servers: &[McpServer<'_>],
         system: Option<&str>,
     ) -> Result<Session, Problem> {
-        let mut params = json!({"cwd":cwd,"mcpServers":servers});
+        let mut params = serde_json::to_value(wire::NewSession {
+            cwd,
+            mcp_servers: servers,
+        })
+        .map_err(|error| {
+            Problem::Failed(format!(
+                "Cannot send Antigravity its ACP session paths: {error}"
+            ))
+        })?;
         if let Some(system) = system {
             params["_meta"] = json!({"antigravity":{"systemPrompt":{"append":system}}});
         }
