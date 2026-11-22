@@ -724,7 +724,7 @@
 .m-whole.selected {
   box-shadow: 0 0 0 1px var(--current-mark);
 }
-.m-node.hovered {
+.m-node.hovered:not(.selected) {
   border-color: var(--ink-3);
 }
 .m-node.focused {
@@ -1399,9 +1399,14 @@
   padding: 0;
 }
 .m-palette-input {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line-group);
+  margin: 8px 8px 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
   color: var(--ink-2);
+  outline: 1px solid var(--current-mark);
+  outline-offset: -1px;
 }
 .m-palette-group {
   padding: 6px;
@@ -1420,6 +1425,7 @@
   align-items: center;
   padding: 0 8px;
   border-radius: var(--radius-control);
+  color: var(--ink-2);
 }
 .m-palette-item.selected {
   background: var(--selection);
@@ -1683,7 +1689,7 @@
   font-size: var(--text-small);
   line-height: 1.4;
   white-space: pre-wrap;
-  outline: 2px solid var(--focus);
+  outline: 1px solid var(--current-mark);
   outline-offset: -1px;
 }
 
@@ -1984,7 +1990,7 @@
   align-items: stretch;
   height: 22px;
   margin-left: 12px;
-  border: 1px solid var(--line-section);
+  border: 1px solid var(--line-input);
   border-radius: var(--radius-control);
   overflow: hidden;
   font-size: var(--text-small);
@@ -1993,10 +1999,13 @@
   display: grid;
   place-items: center;
   padding: 0 10px;
-  color: var(--ink-2);
+  color: var(--ink-off);
+}
+.m-viewswitch > span + span {
+  border-left: 1px solid var(--line-input);
 }
 .m-viewswitch > span.on {
-  color: var(--ink);
+  color: var(--ink-bright);
 }
 /* Older runs: a row of its own across the Pane, as a text button. */
 .m-older {
@@ -2067,9 +2076,14 @@
 }
 /* A Pane row under the pointer, across the whole row; a row the keyboard is on, its 2px ring
    inside the whole row. */
-.m-session.hover,
+.m-session.hover:not(.selected),
 .m-branch-head.hover,
-.m-entry.hover {
+.m-entry.hover:not(.filled),
+.m-menu-item.hover:not(.chosen),
+.m-choice.hover:not(.current),
+.m-palette-item.hover:not(.selected),
+.m-find .m-found li.hover:not(.active),
+.m-tree li.hover:not(.selected) {
   background: var(--surface-group);
 }
 .m-session.kfocus,
@@ -2202,7 +2216,7 @@
   font-size: var(--text-small);
   font-weight: 400;
 }
-.m-effort.hover {
+.m-effort.hover:not(.on) {
   background: var(--surface-group);
   color: var(--ink);
 }
@@ -2286,7 +2300,7 @@
   color: var(--ink-2);
 }
 .m-button.toggle.pointing {
-  color: var(--handle);
+  color: var(--ink-bright);
 }
 .m-vbody {
   flex: 1;
@@ -2317,6 +2331,7 @@
   min-height: var(--row-dense);
   padding: 0 var(--pad) 0 calc(var(--pad) + var(--depth, 0) * 14px);
   white-space: nowrap;
+  color: var(--ink-2);
 }
 .m-tree li .m-icon {
   color: var(--ink-2);
