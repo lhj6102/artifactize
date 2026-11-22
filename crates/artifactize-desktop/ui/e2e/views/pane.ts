@@ -69,7 +69,7 @@ export class Pane {
   async selectBranch(name: string, gutter = false): Promise<Branch> {
     await this.branch(name);
     const row = this.browser.$(`${await this.row(name)} button.name`);
-    if (gutter) await clickRowGutter(this.browser, await row.getElement());
+    if (gutter) await clickRowGutter(this.browser, await row.getElement(), PANE);
     else await row.click();
     return this.branch(name, (entry) => entry.selected && entry.expanded, `${name} selected and expanded`);
   }
@@ -94,7 +94,7 @@ export class Pane {
     if (!(await this.branch(name)).expanded) await this.toggle(name);
     await this.branch(name, (entry) => entry.entries.some((chip) => chip.id === id), `${name} lists ${id}`);
     const row = this.browser.$(`${await this.row(name)} button[data-chip=${JSON.stringify(id)}]`);
-    if (gutter) await clickRowGutter(this.browser, await row.getElement());
+    if (gutter) await clickRowGutter(this.browser, await row.getElement(), PANE);
     else await row.click();
     await this.branch(name, (entry) => entry.entries.some((chip) => chip.id === id && chip.shown), `${name}'s ${id} shown`);
   }

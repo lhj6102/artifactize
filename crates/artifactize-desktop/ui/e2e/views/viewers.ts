@@ -84,6 +84,11 @@ export class Windows {
     return until(this.browser, read, ok, what);
   }
 
+  async removePoint(text: string): Promise<void> {
+    await this.main();
+    await this.browser.$(`${REVIEW} [aria-label=${JSON.stringify(`Remove point: ${text}`)}]`).click();
+  }
+
   // -------------------------------------------------------------------------------
   // An Artifact Viewer
 
@@ -167,6 +172,13 @@ export class Windows {
     return until(this.browser, () => this.nodes(), ok, what);
   }
 
+  /** A reference drawn in the graph and identified by its accessible edge label. */
+  async edge(source: string, target: string): Promise<void> {
+    const label = JSON.stringify(`Edge from ${source} to ${target}`);
+    await this.browser.$(`[aria-label="Declared graph"] [aria-roledescription="edge"][aria-label=${label}]`)
+      .waitForDisplayed({ timeoutMsg: `the declared graph shows the connection from ${source} to ${target}` });
+  }
+
   /** Click the declared Artifact `name`: its panel opens; its evals, each as its ID, kind,
    * title, criteria and reads in one line. */
   async openNode(name: string): Promise<{ head: string; evals: string[] }> {
@@ -221,10 +233,15 @@ export class Windows {
   /** Whether the pet overlay's window shows. */
   async petShown(): Promise<boolean> {
     if (!(await this.handles()).includes(PET)) return false;
-    await this.browser.switchToWindow(PET);
-    const shown = await this.browser.execute(() => document.visibilityState === "visible");
-    await this.main();
-    return shown;
+    try {
+      await this.browser.switchToWindow(PET);
+      return await this.browser.execute(() => document.visibilityState === "visible");
+    } catch (error) {
+      if ((await this.handles()).includes(PET)) throw error;
+      return false;
+    } finally {
+      await this.main();
+    }
   }
 
   readPet(): Promise<Pet> {
@@ -264,10 +281,9 @@ export class Windows {
     return this.browser.$(".card #field-comment").getValue();
   }
 
-  /** Click Submit in the pet: the review is submitted. */
-  async petSubmit(): Promise<Pet> {
+  /** Click Submit in the pet while it is still showing; it may disappear immediately. */
+  async petSubmit(): Promise<void> {
     await this.browser.$(".card").$("button*=Submit").click();
-    return this.petUntil((pet) => pet.why === "Submitted." || pet.refusal !== "", "the pet's review submitted or refused");
   }
 }
 

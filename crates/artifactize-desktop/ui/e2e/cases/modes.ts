@@ -1,22 +1,26 @@
 // Mode references as a person follows them across Verify, Review and Chat.
 import assert from "node:assert/strict";
-import { CHAT_ANSWER, CHAT_GATE, CHAT_MODEL, NEXT_DELTA, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
-import { artifactize, createRelease, request } from "../fixtures/repo.ts";
+import { CHAT_ANSWER, CHAT_GATE, CHAT_MODEL, DEFAULT_MODEL, NEXT_DELTA, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
+import { addRepository, artifactize, createRelease, request, requests } from "../fixtures/repo.ts";
 import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { windows } from "../views/viewers.ts";
 
 export const scenarios: Scenario[] = [
-  scenario<{ id: string; runId: string }>({
+  scenario<{ id: string; runId: string; otherId: string; otherRun: string }>({
     id: "review-reference",
     title: "Claim from Verify; open the claimed review outside the default filter, keep its draft on release and restart, submit it and go back to its Run and Artifact",
     journeys: ["J-DETAIL-REVIEW", "J-REVIEW-REF", "J-REVIEW-BACK", "J-HUMAN-DRAFT", "J-PANE-ROWS"],
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
       const { id, runId } = request(fixture);
-      return { fixture, args: ["--repo", fixture.repo], data: { id, runId } };
+      await addRepository(fixture, "other");
+      const other = requests(fixture).find((saved) => saved.evalId === "release/signoff" && saved.id !== id)!;
+      assert.notEqual(other.runId, runId);
+      return { fixture, args: ["--repo", fixture.repo], data: { id, runId, otherId: other.id, otherRun: other.runId } };
     },
-    run: async (app, { fixture, data: { id } }) => {
+    run: async (app, { fixture, data: { id, runId, otherId } }) => {
+      await app.graph.titled(runId);
       await app.graph.open("a:release", "Artifact release");
       const stage = (shown: string) => app.detail.until((detail) => detail.evals.find((row) => row.id === "e:release/signoff")?.stage === shown, `the sign-off's row reads ${shown}`);
       await stage("claimable");
@@ -27,21 +31,29 @@ export const scenarios: Scenario[] = [
       await stage("claimable");
       await app.detail.reviewAction("Claim to review");
       await stage("yours");
-      await app.waitingBadge(1);
+      await app.waitingBadge(2);
+      await app.mode("Review");
+      const listed = async () => (await app.review.list()).map((row) => row.id);
+      await app.until(async () => (await listed()).join() === otherId, "the waiting filter lists only the other review");
+      await app.mode("Verify");
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
       await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the direct reference shows the claimed review");
       assert.equal(await app.review.hasOutsideHint(), false);
       assert.equal(await app.review.filter(), "type:human waiting");
+      assert.deepEqual(await listed(), [otherId], "opening the exact review did not pin it into the filtered list");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${id} `));
       await app.review.choose("GREEN");
       await app.review.enter("comment", "Release notes checked");
       await app.review.choose("RED");
       await app.review.enter("reason", "Check the linked notes again");
       await app.review.release();
-      await app.waitingBadge(1);
+      await app.waitingBadge(2);
     },
-    restarted: async (app, { fixture, data: { id, runId } }) => {
+    restarted: async (app, { fixture, data: { id, runId, otherRun } }) => {
+      await app.mode("Verify");
+      await app.pane.selectBranch("other  master");
+      await app.graph.titled(otherRun);
       await app.mode("Review");
       await app.review.openListed(id, true);
       await app.review.claim();
@@ -57,9 +69,9 @@ export const scenarios: Scenario[] = [
       await app.until(async () => (await app.review.value("comment")) === "Release notes checked", "reclaim after restart restored the GREEN draft");
       const completed = await app.review.submit();
       assert.match(completed.completed, /Release notes checked/);
-      const saved = request(fixture);
-      assert.equal(saved.status, "GREEN");
-      await app.waitingBadge(0);
+      const saved = requests(fixture).find((row) => row.id === id);
+      assert.equal(saved?.status, "GREEN");
+      await app.waitingBadge(1);
       await app.review.back();
       await app.graph.titled(runId);
       await app.detail.until((detail) => detail.tabs.some((tab) => tab.name === "signoff" && tab.selected), "the originating Artifact Detail is open on its sign-off");
@@ -68,7 +80,7 @@ export const scenarios: Scenario[] = [
   scenario({
     id: "chat-verify-stop",
     title: "New Chat uses a listed fixture model, reads and verifies, opens the Run and returns by the origin chip, then stops an in-flight turn",
-    journeys: ["J-BAR", "J-MODES", "J-CHAT", "J-CHAT-NEW", "J-CHAT-MODEL", "J-CHAT-SEND", "J-CHAT-RUN", "J-CHAT-STOP", "J-RUN-ORIGIN", "J-CHAT-READ", "J-PANE-ROWS"],
+    journeys: ["J-BAR", "J-MODES", "J-CHAT", "J-CHAT-NEW", "J-CHAT-MODEL", "J-CHAT-SEND", "J-CHAT-RUN", "J-CHAT-STOP", "J-RUN-ORIGIN", "J-CHAT-READ", "J-CHAT-GRAPH", "J-PANE-ROWS"],
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
       await installChatProvider(owned, fixture);
@@ -87,7 +99,7 @@ export const scenarios: Scenario[] = [
       assert.match(starting, /^\S.* · \S+$/, "the dialog names the starting provider and model");
       assert.notEqual(starting, `fixture · ${CHAT_MODEL}`, "the session does not start on the model chosen next");
       // Only the fixture provider answers, and it refuses a turn on any other model than this.
-      await app.chat.model(CHAT_MODEL);
+      await app.chat.model(CHAT_MODEL, DEFAULT_MODEL);
       await app.chat.send(WORK_PROMPT);
       await app.chat.says("release/notes.md");
       const run = await app.chat.runCard();
@@ -100,6 +112,7 @@ export const scenarios: Scenario[] = [
       await app.mode("Chat");
       await app.chat.openRun(run);
       await app.graph.titled(run);
+      await app.pane.branch("repo  master", (branch) => branch.expanded && branch.entries.some((entry) => entry.id === run && entry.shown), "Open in Verify expanded the branch and selected this Run in its timeline");
       await app.mode("Chat");
       // A new session on the branch starts with the model its last session used.
       assert.equal(await app.chat.create(), `fixture · ${CHAT_MODEL}`);
@@ -121,13 +134,19 @@ export const scenarios: Scenario[] = [
       assert.equal(streamed.top, reading.top, "a new streamed line does not move what is being read");
       assert.equal(streamed.atEnd, false);
       await app.chat.scrollToEnd(run);
-      await app.chat.stop();
+      await app.chat.stop(PARTIAL_ANSWER);
       await app.chat.send(CONTINUE_PROMPT);
       await app.chat.says(CONTINUE_ANSWER);
+      await app.chat.show("Graph");
     },
     restarted: async (app) => {
       await app.mode("Chat");
+      await app.chat.sessionsUntil([WORK_PROMPT, "New chat"]);
+      await app.chat.filter(WORK_PROMPT);
+      await app.chat.sessionsUntil([WORK_PROMPT]);
       await app.chat.openSaved(WORK_PROMPT, true);
+      await app.chat.viewShown("Graph");
+      await app.chat.show("Conversation");
       await app.chat.says(CONTINUE_ANSWER);
     },
   }),

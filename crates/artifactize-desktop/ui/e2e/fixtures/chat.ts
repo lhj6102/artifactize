@@ -4,7 +4,7 @@ import type { Owned } from "./owned.ts";
 import { artifactize, type Fixture } from "./repo.ts";
 
 export const CHAT_MODEL = "fixture-chat";
-const DEFAULT_MODEL = "fixture-small";
+export const DEFAULT_MODEL = "fixture-small";
 export const WORK_PROMPT = "Read the release notes and verify the worktree";
 export const PARTIAL_ANSWER = "I am still working on the notes.";
 export const NEXT_DELTA = "The next part of this turn has arrived.";

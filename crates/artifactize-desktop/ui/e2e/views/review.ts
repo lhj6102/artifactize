@@ -107,7 +107,7 @@ export class Review {
   async openListed(id: string, gutter = false): Promise<void> {
     const row = this.browser.$(`[aria-label="Human reviews"] [data-key=${JSON.stringify(id)}]`);
     await row.waitForDisplayed();
-    if (gutter) await clickRowGutter(this.browser, await row.getElement());
+    if (gutter) await clickRowGutter(this.browser, await row.getElement(), 'section[aria-label="Reviews"]');
     else await row.click();
     await holds(this.browser, async () => (await row.getAttribute("aria-selected")) === "true", `${id} selected in Review`);
   }

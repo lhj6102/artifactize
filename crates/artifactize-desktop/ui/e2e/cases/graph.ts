@@ -280,6 +280,12 @@ export const scenarios: Scenario[] = [
       await app.graph.node("a:slow");
       await app.chat.show("Conversation");
       await app.chat.says(GRAPH_ANSWER);
+      await app.chat.show("Graph");
+      await app.chat.create();
+      await app.chat.viewShown("Conversation");
+      await app.chat.openSaved(GRAPH_PROMPT);
+      await app.chat.viewShown("Graph");
+      await app.graph.node("a:slow");
     },
   }),
 

@@ -36,7 +36,13 @@ export const scenarios: Scenario[] = [
       await w.point();
       await w.clickLine(2);
       const points = await w.pointsUntil((rows) => rows.length === 1 && /^release\.md L2:C\d+$/.test(rows[0]), "the line is in Points");
-      // Away from Review the pet shows the same draft's Points.
+      await w.viewer(label);
+      await w.point();
+      await w.clickLine(3);
+      const both = await w.pointsUntil((rows) => rows.length === 2 && /^release\.md L3:C\d+$/.test(rows[1]), "the second point was added to the draft");
+      await w.removePoint(both[1]);
+      await w.pointsUntil((rows) => rows.length === 1 && rows[0] === points[0], "Remove takes only the second point out of the draft");
+      // Away from Review the pet shows the same draft's remaining Point.
       await w.mode("Verify");
       await w.pet();
       assert.equal(await w.title(), "Artifactize review");
@@ -52,13 +58,13 @@ export const scenarios: Scenario[] = [
       assert.deepEqual([chosen.choices, chosen.radios], [["GREEN", "RED"], 2], "one verdict choice, the form's radios");
       await w.petEnter("comment", "Checked the totals: ");
       assert.equal(await w.petInsert(), `Checked the totals: ${points[0]}`);
-      const done = await w.petSubmit();
-      assert.equal(done.refusal, "", "submitted");
-      const saved = request(fixture, "notes/signoff");
-      assert.notEqual(saved.status, "DEFERRED", "the review is settled");
-      assert.equal(saved.result?.comment, `Checked the totals: ${points[0]}`);
+      await w.petSubmit();
+      await app.until(async () => !(await w.petShown()), "submission hid the pet while Verify is still shown");
       await w.mode("Review");
       await app.review.until((shown) => shown.completed.includes(`Checked the totals: ${points[0]}`) && !shown.sections.includes("Points"), "the submitted review shows the form without Points");
+      const saved = request(fixture, "notes/signoff");
+      assert.equal(saved.status, "GREEN", "the review is settled");
+      assert.equal(saved.result?.comment, `Checked the totals: ${points[0]}`);
       // Closing the viewer's window closes it alone.
       await w.closeViewer(label);
       assert.deepEqual(await w.viewers(), []);
@@ -89,6 +95,7 @@ export const scenarios: Scenario[] = [
       await w.viewer(await w.runTool("view"));
       const nodes = await w.nodesUntil((drawn) => drawn.length === 2, "the declared Artifacts drawn");
       assert.deepEqual(nodes.toSorted(), ["back custom", "front custom"], "no verdicts, only names and tags");
+      await w.edge("front", "back");
       const back = await w.openNode("back");
       assert.equal(back.head, "back custom");
       assert.equal(back.evals.length, 1);

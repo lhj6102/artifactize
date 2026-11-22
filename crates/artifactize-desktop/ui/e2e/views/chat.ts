@@ -68,18 +68,35 @@ export class Chat {
     return this.browser.$(`${MAIN} button[aria-haspopup="menu"]`).getText();
   }
 
-  async model(name: string): Promise<void> {
+  async model(name: string, exclude?: string): Promise<void> {
     await this.browser.$(`${MAIN} button[aria-haspopup="menu"]`).click();
+    const menu = '[role="menu"][aria-label="Models"]';
+    if (exclude) {
+      const other = this.browser.$(menu).$(`[role="menuitemradio"]=${exclude}`);
+      await other.waitForDisplayed({ timeoutMsg: `the unfiltered menu shows ${exclude}` });
+      await fill(this.browser, `${menu} input[aria-label="Filter models"]`, name);
+      await holds(this.browser, async () => !(await other.isDisplayed()), `filtering for ${name} excludes ${exclude}`);
+    }
     const option = this.browser.$('[aria-label="Models"]').$(`[role="menuitemradio"]=${name}`);
     await option.waitForDisplayed();
     await option.click();
     await holds(this.browser, async () => (await this.browser.$(`${MAIN} button[aria-haspopup="menu"]`).getText()) === name, `${name} selected`);
   }
 
+  async filter(text: string): Promise<void> {
+    await fill(this.browser, '[aria-label="Chats"] input[aria-label="Search chats"]', text);
+  }
+
+  async sessionsUntil(titles: string[]): Promise<void> {
+    const read = () => this.browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Chats"] button.session .title')]
+      .map((title) => title.innerText.trim()).sort());
+    await until(this.browser, read, (found) => JSON.stringify(found) === JSON.stringify(titles.toSorted()), `Chat lists ${titles.join(", ")}`);
+  }
+
   async openSaved(title: string, gutter = false): Promise<void> {
     const saved = this.browser.$('[aria-label="Chats"]').$(`button.session*=${title}`);
     await saved.waitForDisplayed();
-    if (gutter) await clickRowGutter(this.browser, await saved.getElement());
+    if (gutter) await clickRowGutter(this.browser, await saved.getElement(), 'section[aria-label="Chats"]');
     else await saved.click();
     await holds(this.browser, async () => (await saved.getAttribute("aria-current")) === "true", `the saved session ${title} is selected`);
   }
@@ -141,8 +158,11 @@ export class Chat {
     await this.browser.$(`${MAIN} button[aria-label="Stop (Esc)"]`).waitForDisplayed({ timeoutMsg: "timed out: the turn runs and Send reads Stop" });
   }
 
-  async stop(): Promise<void> {
+  async stop(kept: string): Promise<void> {
     await this.browser.$(`${MAIN} button[aria-label="Stop (Esc)"]`).click();
-    await this.says("Stopped");
+    await holds(this.browser, () => this.browser.execute((selector, partial) =>
+      [...document.querySelectorAll<HTMLElement>(`${selector} .turn`)].some((turn) =>
+        turn.querySelector("p.end")?.textContent?.trim() === "Stopped" && turn.innerText.includes(partial)),
+    `${MAIN} ${LOG}`, kept), "the stopped turn keeps its partial response in the conversation");
   }
 }

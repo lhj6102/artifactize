@@ -217,10 +217,19 @@ export async function scrollViewport(browser: WebdriverIO.Browser, viewport: Web
 }
 
 /** Click an unlabeled part of the row's trailing gutter, not its text or another control. */
-export async function clickRowGutter(browser: WebdriverIO.Browser, row: WebdriverIO.Element): Promise<void> {
+export async function clickRowGutter(browser: WebdriverIO.Browser, row: WebdriverIO.Element, paneSelector: string): Promise<void> {
   await row.waitForDisplayed();
-  const point = await browser.execute((target: HTMLElement) => {
+  const point = await browser.execute((target: HTMLElement, selector) => {
     const box = target.getBoundingClientRect();
+    const pane = target.closest<HTMLElement>(selector);
+    const frame = pane?.getBoundingClientRect();
+    const scroller = [".branches", ".sessions", '[role="listbox"]'].map((part) => target.closest<HTMLElement>(part)).find(Boolean);
+    // Exclude the scroll gutter, not the rest of the Pane's clickable width.
+    const scrollbar = scroller ? scroller.offsetWidth - scroller.clientWidth : 0;
+    if (!frame || box.left > frame.left + 2 || box.right < frame.right - scrollbar - 2) {
+      throw new Error(`the row does not span its Pane: row ${box.left}–${box.right}, pane ${frame?.left}–${frame?.right}, scroll gutter ${scrollbar}`);
+    }
+    const right = frame.right - scrollbar;
     const text = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
     const bounds: DOMRect[] = [];
     for (let node = text.nextNode(); node; node = text.nextNode()) {
@@ -231,7 +240,7 @@ export async function clickRowGutter(browser: WebdriverIO.Browser, row: Webdrive
     }
     for (const offset of [4, 12, 24, 40, 56]) {
       for (const portion of [0.5, 0.75, 0.25]) {
-        const x = Math.floor(box.right - offset), y = Math.floor(box.top + box.height * portion);
+        const x = Math.floor(right - offset), y = Math.floor(box.top + box.height * portion);
         const hit = document.elementFromPoint(x, y);
         const control = hit?.closest("button, a, input");
         if (!hit || !target.contains(hit) || (control && control !== target && target.contains(control))) continue;
@@ -239,7 +248,7 @@ export async function clickRowGutter(browser: WebdriverIO.Browser, row: Webdrive
       }
     }
     return null;
-  }, row as unknown as HTMLElement);
+  }, row as unknown as HTMLElement, paneSelector);
   if (!point) throw new Error("no unlabeled point in the row's trailing gutter is visible");
   await clickAt(browser, point);
 }
