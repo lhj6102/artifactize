@@ -56,7 +56,9 @@ pub enum RemoteStatus {
         share: Share,
         token_source: TokenSource,
         connection: Connection,
-        /// What this machine pushed in the last two days, for what was pushed today.
+        /// Number of records this machine pushed during the local civil day.
+        pushed_today: u32,
+        /// Recent pushes, oldest first.
         pushes: Vec<Push>,
     },
 }
@@ -89,7 +91,7 @@ pub enum Connection {
 
 impl RemoteStatus {
     /// The status `remote status` reports, with the pushes made lately.
-    fn of(status: Option<remote::Status>, pushes: &[artifactize_core::remote::Pushed]) -> Self {
+    fn of(status: Option<remote::Status>, history: artifactize_core::remote::PushHistory) -> Self {
         let Some(status) = status else {
             return Self::Unconfigured;
         };
@@ -110,8 +112,10 @@ impl RemoteStatus {
                 remote::TokenSource::None => TokenSource::None,
             },
             connection,
-            pushes: pushes
-                .iter()
+            pushed_today: u32::try_from(history.pushed_today).unwrap_or(u32::MAX),
+            pushes: history
+                .recent
+                .into_iter()
                 .map(|pushed| Push {
                     #[expect(
                         clippy::cast_precision_loss,
@@ -145,15 +149,12 @@ async fn remote_status_of(app: &App) -> Result<RemoteStatus, Failure> {
         .await
         .map_err(Failure::Account)?;
     #[cfg(feature = "e2e")]
-    if let Some(now) = fixed_time()? {
-        return Ok(RemoteStatus::of(
-            status,
-            &artifactize_core::remote::recent_pushes_at(state, now),
-        ));
-    }
+    let now = fixed_time()?.unwrap_or_else(artifactize_core::types::Timestamp::now);
+    #[cfg(not(feature = "e2e"))]
+    let now = artifactize_core::types::Timestamp::now();
     Ok(RemoteStatus::of(
         status,
-        &artifactize_core::remote::recent_pushes(state),
+        artifactize_core::remote::push_history_at(state, now),
     ))
 }
 

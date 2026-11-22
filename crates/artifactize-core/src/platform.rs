@@ -146,6 +146,16 @@ pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     }
 }
 
+/// The civil day on this machine at `instant`, using its offset at that instant (including
+/// daylight-saving changes). If the system cannot describe it, use the UTC date.
+pub(crate) fn local_day(instant: time::OffsetDateTime) -> time::Date {
+    let offset = chrono::DateTime::from_timestamp(instant.unix_timestamp(), instant.nanosecond())
+        .map(|utc| utc.with_timezone(&chrono::Local).offset().local_minus_utc())
+        .and_then(|seconds| time::UtcOffset::from_whole_seconds(seconds).ok())
+        .unwrap_or(time::UtcOffset::UTC);
+    instant.to_offset(offset).date()
+}
+
 /// A program's textual output, lossy only where its bytes are not UTF-8.
 pub fn output_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)

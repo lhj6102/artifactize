@@ -496,6 +496,7 @@ fn settings_command_probe() {
                 "principal": "alice-laptop",
                 "scopes": ["read", "publish"],
             },
+            "pushedToday": 0,
             "pushes": [],
         })
     );

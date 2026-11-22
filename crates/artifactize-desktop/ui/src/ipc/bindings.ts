@@ -1205,7 +1205,9 @@ export type ReleaseView = {
 export type RemoteStatus = 
 /**  No remote review store is configured. */
 { state: "unconfigured" } | { state: "configured"; url: string; share: Share; tokenSource: TokenSource; connection: Connection; 
-/**  What this machine pushed in the last two days, for what was pushed today. */
+/**  Number of records this machine pushed during the local civil day. */
+pushedToday: number; 
+/**  Recent pushes, oldest first. */
 pushes: Push[] };
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
