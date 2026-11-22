@@ -14,7 +14,7 @@
    own: the handoff's sampled HEX values were a comparison point, not a source. */
 :root {
   /* Surfaces */
-  --surface-bar: #1b1c20;
+  --surface-bar: #16171a;
   --surface-app: #202127;
   --surface-panel: #26272e;
   --surface-group: #2e3038;
@@ -42,6 +42,12 @@
   --outline-selected: #dcdee5;
   --scrim: rgb(0 0 0 / 45%);
 
+  /* The bottom bar, a page bar: its items' muted ink, the shown mode's black cell and the mark
+     along that cell's bottom, which is the bar's alone and no status */
+  --bar-ink: #8d9099;
+  --bar-active: #0b0b0d;
+  --bar-mark: #e0443c;
+
   /* Statuses, one colour each wherever they show (a list, a chip, a graph's node), read with
      their glyph or word; the last two are what verify would do, on a Current */
   --green: #4ac26b;
@@ -62,14 +68,16 @@
   --row: 24px;
   --row-dense: 22px;
   --row-head: 28px;
+  --row-pane: 36px;
   --control: 24px;
-  --bar-height: 36px;
+  --bar-height: 44px;
   --pad: 12px;
   --gap: 8px;
   --measure: 720px;
   --port: 7px;
   --grid: 24px;
   --icon: 12px;
+  --icon-bar: 16px;
   --strip: 2px;
 
   /* Type */

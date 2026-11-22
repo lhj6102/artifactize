@@ -70,7 +70,7 @@
   <li><a href="monitor.html">Verify</a><span>Verify mode with a Run shown: the bottom bar, the Pane, the Main area's header row with the Run's way back to Chat, the graph's tool strip and the Run graph, with its nodes, its Navigator and a large graph zoomed out.</span></li>
   <li><a href="current.html">Current</a><span>The Main area as a branch's Current: the scan's state in the header row, the tool strip and the Current graph, where Artifacts are dragged into place and into or out of a whole and comments are written and moved.</span></li>
   <li><a href="detail.html">Detail</a><span>The inspector, a panel docked at the graph's right edge: an Artifact's tab, an eval's Summary and, on a Current, an Artifact's Definition and Source.</span></li>
-  <li><a href="review.html">Review</a><span>Review mode: the filter and the reviews in the Pane, a review opened from a reference outside the filter with its way back to Verify, and its evaluation space: with room, the review (instruction, Tools, Tool log) at the left and the Evaluation (Notes, the verdict and its form, the actions) at the right; in the Detail, one column.</span></li>
+  <li><a href="review.html">Review</a><span>Review mode: the filter and the reviews in the Pane, a review opened from a reference with its way back to Verify, and its evaluation space: with room, the review (instruction, Tools, Tool log, Points) at the left and the Evaluation (the verdict and its form, the actions) at the right; in the Detail, one column.</span></li>
   <li><a href="viewers.html">Viewers</a><span>The Artifact Viewer windows: a plugin's viewer with Point, the File Explorer, the Markdown viewer and the Artifactize Viewer, and the pet overlay over them.</span></li>
   <li><a href="settings.html">Settings</a><span>The modal over the screen: Providers, Remote and Limits.</span></li>
   <li><a href="overlays.html">Overlays</a><span>The command palette, Help, Open by ID, the Leave and Update dialogs, the graph's find field and the New Artifact, Rename and Delete dialogs.</span></li>
@@ -114,6 +114,9 @@
     <tr><td><span class="swatch" style="--token: var(--focus)"></span><code>--focus</code></td><td>The keyboard focus ring, 2px, on every control</td></tr>
     <tr><td><span class="swatch" style="--token: var(--outline-selected)"></span><code>--outline-selected</code></td><td>The opened node's outline: its own outline turned neutral-bright</td></tr>
     <tr><td><span class="swatch" style="--token: var(--scrim)"></span><code>--scrim</code></td><td>Behind a dialog; the faint shadow under what floats</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--bar-ink)"></span><code>--bar-ink</code></td><td>The bottom bar's items: the brand, a mode not shown, Settings</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--bar-active)"></span><code>--bar-active</code></td><td>The shown mode's cell in the bottom bar, the bar's black</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--bar-mark)"></span><code>--bar-mark</code></td><td>The 2px mark along the shown mode's cell, the bar's alone: never a status, never anywhere else</td></tr>
   </tbody>
 </table>
 <h3>Statuses</h3>
@@ -142,12 +145,14 @@
     <tr><td><code>--row</code></td><td>A list row: palette items, Settings choices; a section's header row</td></tr>
     <tr><td><code>--row-dense</code></td><td>A dense row: eval rows, find results, chips</td></tr>
     <tr><td><code>--row-head</code></td><td>A strip of tools: the graph's tool strip</td></tr>
+    <tr><td><code>--row-pane</code></td><td>A row a Pane chooses by a click: a Chat session, a Verify branch, a review</td></tr>
     <tr><td><code>--control</code></td><td>A button's or field's height</td></tr>
-    <tr><td><code>--bar-height</code></td><td>The bottom bar</td></tr>
+    <tr><td><code>--bar-height</code></td><td>The bottom bar (44): an item's icon over its word</td></tr>
     <tr><td><code>--pad</code></td><td>A panel's side padding (12); spacing follows the 4 / 8 / 12 / 16 scale</td></tr>
     <tr><td><code>--gap</code></td><td>The gap between controls in a row (8)</td></tr>
     <tr><td><code>--measure</code></td><td>The widest a column of reading and form gets: a Human review's column, a Chat's conversation and composer, a rendered document</td></tr>
     <tr><td><code>--icon</code></td><td>An icon's box (12): a status's, an action's</td></tr>
+    <tr><td><code>--icon-bar</code></td><td>A bottom bar item's icon (16), over its word</td></tr>
     <tr><td><code>--strip</code></td><td>The strip in its status's colour along a node's bottom and along the top of a whole's box (2)</td></tr>
     <tr><td><code>--grid</code></td><td>The canvas grid's cell (24)</td></tr>
     <tr><td><code>--port</code></td><td>A graph node's port: the triangle where edges reach it, the square where they leave it</td></tr>
@@ -212,7 +217,8 @@
     <tr><td><span class="m-icon i-folder"></span></td><td><span class="m-icon i-folder big"></span></td><td><code>i-folder</code></td><td>A folder: a listing or a search in Chat, a folder in the File Explorer</td></tr>
     <tr><td><span class="m-icon i-edit"></span></td><td><span class="m-icon i-edit big"></span></td><td><code>i-edit</code></td><td>An edit or a write in Chat</td></tr>
     <tr><td><span class="m-icon i-command"></span></td><td><span class="m-icon i-command big"></span></td><td><code>i-command</code></td><td>A command run in Chat</td></tr>
-    <tr><td><span class="m-icon i-point"></span></td><td><span class="m-icon i-point big"></span></td><td><code>i-point</code></td><td>Point at a place in an Artifact</td></tr>
+    <tr><td><span class="m-icon i-point"></span></td><td><span class="m-icon i-point big"></span></td><td><code>i-point</code></td><td>Point at a place in an Artifact; a review's Points</td></tr>
+    <tr><td><span class="m-icon i-settings"></span></td><td><span class="m-icon i-settings big"></span></td><td><code>i-settings</code></td><td>Settings, in the bottom bar</td></tr>
   </tbody>
 </table>
 
@@ -226,7 +232,7 @@
   <dt id="D-SYS-3">D-SYS-3</dt>
   <dd>Boundaries are 1px lines in the strength of what they separate: <code>--line-panel</code> between panels (the bar's top, the Pane/Main divider, the Detail's and a dialog's edge, a review's view and its column, D-REV-1), <code>--line-group</code> between groups inside a panel (section tops, branch rows, the chip row's bottom), <code>--line-input</code> around a field, <code>--line-node</code> around a graph's node and whole. Large panels meet at a line, not at a gap. <span class="avoid">gaps of 16px or more between panels; boxes drawn around single items.</span></dd>
   <dt id="D-SYS-4">D-SYS-4</dt>
-  <dd>Density: a list row is <code>--row</code> (24px), a dense row <code>--row-dense</code> (22px), a control <code>--control</code> (24px) tall, a graph's tool strip <code>--row-head</code> (28px); a panel pads its sides by <code>--pad</code> (12px); spacing uses the 4 / 8 / 12 / 16 scale and never exceeds 16px between groups of one panel. <span class="avoid">32px controls; 20px panel paddings; empty space doing a line's job.</span></dd>
+  <dd>Density: a list row is <code>--row</code> (24px), a dense row <code>--row-dense</code> (22px), a control <code>--control</code> (24px) tall, a graph's tool strip <code>--row-head</code> (28px), and a row a Pane chooses by a click (a Chat session, a Verify branch, a review) <code>--row-pane</code> (36px), chosen by a click anywhere on it, across the Pane's width (J-PANE-ROWS); a panel pads its sides by <code>--pad</code> (12px); spacing uses the 4 / 8 / 12 / 16 scale and never exceeds 16px between groups of one panel. <span class="avoid">32px controls; 20px panel paddings; empty space doing a line's job.</span></dd>
   <dt id="D-SYS-5">D-SYS-5</dt>
   <dd>Type: body 13px, secondary 12px. A section of the inspector, of a review or of Settings stands under a header row: its name at 12px semibold in <code>--ink</code>, in sentence case (D-INS-9). A group label inside a list (a provider in the model menu, a palette group, a Help group, a table's head) is 11px uppercase and letter-spaced in <code>--ink-2</code>. Neither is ever the accent. Numbers that align or change (ages, times, counts, tokens, IDs) use tabular figures. Names may be semibold; nothing else is bold but a status word, a chosen choice and a title. <span class="avoid">accent-coloured headings; uppercase letter-spaced labels as section headings; proportional figures in an age column.</span></dd>
   <dt id="D-SYS-6">D-SYS-6</dt>

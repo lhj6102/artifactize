@@ -46,6 +46,7 @@
   --i-chat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 2.5h6.5a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5.5L3.25 10.25V8.5h-.5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z'/%3E%3C/svg%3E");
   --i-verify: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 2.25h3.5v2.5h-3.5zM6.75 7.25h3.5v2.5h-3.5zM3.5 4.75V8.5h3.25'/%3E%3C/svg%3E");
   --i-review: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.75h4.25L9.25 3.75v6.5H3zM4.75 6.75 5.9 7.9 7.75 5.5'/%3E%3C/svg%3E");
+  --i-settings: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 3.75h8.5M1.75 8.25h8.5'/%3E%3Ccircle cx='4.25' cy='3.75' r='1.5' fill='currentColor' stroke='none'/%3E%3Ccircle cx='7.75' cy='8.25' r='1.5' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
   --i-point: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='3.25'/%3E%3Cpath d='M6 1v1.5M6 9.5V11M1 6h1.5M9.5 6H11'/%3E%3Ccircle cx='6' cy='6' r='.9' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
   --i-send: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 10V2.5M2.75 5.75 6 2.5l3.25 3.25'/%3E%3C/svg%3E");
   --i-stop: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3h6v6H3z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
@@ -96,6 +97,7 @@
 .i-verify { --icon-src: var(--i-verify); }
 .i-review { --icon-src: var(--i-review); }
 .i-point { --icon-src: var(--i-point); }
+.i-settings { --icon-src: var(--i-settings); }
 .i-send { --icon-src: var(--i-send); }
 .i-stop { --icon-src: var(--i-stop); }
 .i-back { --icon-src: var(--i-back); }
@@ -110,9 +112,10 @@
   mask-image: var(--light-icon);
 }
 
-/* The bottom bar: the window's one bar, along its bottom in every mode. Brand and the Pane
-   switch at its left, the modes in its middle, the window's own controls at its right. It
-   comes first in a figure's markup and is placed in the window's last row. */
+/* The bottom bar: the window's one bar, along its bottom in every mode, as a page bar: the
+   brand at its left, the modes in its middle, Settings at its right, each mode and Settings an
+   icon over its word. It comes first in a figure's markup and is placed in the window's last
+   row. */
 .m-bar {
   grid-row: 2;
   display: grid;
@@ -125,9 +128,12 @@
 }
 .m-bar > .m-bar-side {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: var(--gap);
   min-width: 0;
+}
+.m-bar > .m-bar-side > .m-brand {
+  color: var(--bar-ink);
 }
 .m-bar > .m-bar-side.end {
   justify-content: flex-end;
@@ -135,37 +141,49 @@
 .m-window > .m-screen {
   grid-row: 1;
 }
-/* The modes: borderless, each its icon and word; the shown one on the group surface in ink
-   under a 2px accent line along its top, the others in the quieter ink. */
+/* The modes and Settings: borderless cells as tall as the bar, each its icon over its word in
+   the bar's muted ink; the shown mode's cell is the bar's black, its icon and word in ink,
+   semibold, over the bar's mark along its bottom. */
 .m-modes {
   display: flex;
   align-items: stretch;
-  gap: 2px;
+  gap: 0;
 }
 .m-mode {
+  position: relative;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  color: var(--ink-2);
-  box-shadow: inset 0 2px 0 transparent;
+  justify-content: center;
+  gap: 3px;
+  width: 80px;
+  color: var(--bar-ink);
+  font-size: var(--text-label);
+  box-shadow: inset 0 -2px 0 transparent;
+}
+.m-mode > .m-icon {
+  width: var(--icon-bar);
+  height: var(--icon-bar);
 }
 .m-mode.on {
-  background: var(--surface-group);
+  background: var(--bar-active);
   color: var(--ink);
   font-weight: 600;
-  box-shadow: inset 0 2px 0 var(--accent);
+  box-shadow: inset 0 -2px 0 var(--bar-mark);
 }
-/* The count of Human reviews waiting for a person, after Review's word. */
+/* The count of Human reviews waiting for a person, at the top right of Review's icon. */
 .m-count-pill {
-  min-width: 18px;
-  height: 16px;
-  padding: 0 5px;
-  border: 1px solid var(--line-group);
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 5px);
+  min-width: 16px;
+  height: 14px;
+  padding: 0 4px;
   border-radius: var(--radius-chip);
-  color: var(--human);
+  background: var(--human);
+  color: var(--bar-active);
   font-size: var(--text-label);
-  font-weight: 600;
+  font-weight: 700;
   line-height: 14px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -332,7 +350,7 @@
   grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 4px;
-  min-height: 28px;
+  min-height: var(--row-pane);
 }
 .m-chevron {
   width: 20px;
@@ -1763,17 +1781,6 @@
 .m-term .m-icon {
   color: var(--ink-2);
 }
-/* The line under a review's header that says it is open outside the filter, and why. */
-.m-outside {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--row-dense);
-  padding: 0 var(--pad);
-  border-top: 1px solid var(--line-group);
-  color: var(--ink-2);
-  font-size: var(--text-small);
-}
 
 /* Chat: the conversation in a column of the reading measure, newest at the bottom, and the
    composer under it. */
@@ -1975,7 +1982,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: var(--row);
+  min-height: var(--row-pane);
   padding: 0 var(--pad);
 }
 .m-session .m-item-name {
@@ -2054,7 +2061,8 @@
   color: var(--ink);
   font-size: var(--text-small);
 }
-.m-picker .m-provider {
+.m-picker .m-provider,
+.m-picker-effort {
   color: var(--ink-2);
 }
 .m-icon-button {
@@ -2096,6 +2104,25 @@
 }
 .m-menu-item.chosen {
   background: var(--selection);
+  font-weight: 600;
+}
+/* A model's reasoning efforts on its row in the model menu, the session's one marked. */
+.m-efforts {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.m-effort {
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  font-weight: 400;
+}
+.m-effort.on {
+  border-color: var(--line-input);
+  color: var(--ink);
   font-weight: 600;
 }
 .m-menu-item .m-right {
@@ -2389,11 +2416,32 @@
   gap: var(--gap);
   margin-top: 10px;
 }
-.m-pointed {
-  padding: 0 3px;
-  border-radius: var(--radius-control);
-  background: var(--accent-soft);
+/* A review's Points: what Point added, one row each: the point icon, its text in mono, where it
+   was pointed and when, and Insert at the right. In the pet overlay, compact: text and Insert. */
+.m-point {
+  display: grid;
+  grid-template-columns: var(--icon) minmax(0, 1fr) max-content max-content;
+  column-gap: 8px;
+  align-items: center;
+  min-height: var(--row);
+  font-size: var(--text-small);
+}
+.m-point > .m-icon {
+  color: var(--ink-3);
+}
+.m-point .m-ptext {
   font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-point .m-from {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.m-point.compact {
+  grid-template-columns: var(--icon) minmax(0, 1fr) max-content;
 }
 .m-why {
   color: var(--ink-2);
@@ -2410,8 +2458,7 @@
 
 /* A review's evaluation space with room: the review at the left (instruction, Tools, the Tool
    log taking the rest, Debug), the Evaluation at the right, of the Detail's width: its head row
-   with the stage, Notes growing into the free height, the verdict choice and its form, and the
-   actions along the column's bottom. */
+   with the stage, the verdict choice and its form, and the actions along the column's bottom. */
 .m-review-split > .m-review:first-child {
   border-left: 0;
   background: var(--surface-panel);
@@ -2427,20 +2474,9 @@
   flex-direction: column;
   padding-top: 10px;
 }
-.m-eval .m-notes {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 10px;
-}
-.m-eval .m-notes .m-input {
-  flex: 1;
-}
 .m-review.m-eval .m-actions {
   margin: 0;
   padding: 8px var(--pad);
   border-top: 1px solid var(--line-group);
 }
-.m-eval .m-notes > .m-name {
-  flex: none;
-}
+
