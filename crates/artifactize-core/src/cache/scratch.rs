@@ -39,10 +39,10 @@ impl Scratch {
             .keep()
             .map_err(|error| error.error)?;
         let directory = (|| {
-            held.lock()?;
+            crate::platform::paths::lock(&held)?;
             let name = lock
                 .file_name()
-                .and_then(|name| name.to_str())
+                .and_then(|name| crate::platform::os_text(&name))
                 .and_then(|name| name.strip_suffix(LOCK))
                 .expect("the lock was named with its suffix");
             platform::private_named_dir(root, name)
@@ -127,7 +127,7 @@ fn sweep(
             continue;
         };
         // Held: its process still runs.
-        if file.try_lock().is_err() {
+        if crate::platform::paths::try_lock(&file).is_err() {
             continue;
         }
         let owned = lock.strip_suffix(LOCK).expect("a lock's name");

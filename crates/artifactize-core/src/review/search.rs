@@ -542,7 +542,7 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
                             }
                             entry.repository.file_name().map_or_else(
                                 || crate::platform::path_text(&entry.repository),
-                                |name| name.to_string_lossy().into_owned(),
+                                crate::platform::display_name,
                             )
                         })
                         .collect(),

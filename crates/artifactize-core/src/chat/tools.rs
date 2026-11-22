@@ -235,9 +235,7 @@ impl<'a> Tools<'a> {
                     .output(Vec::new(), cancellation)
                     .await
                     .map_err(|error| error.to_string())?;
-                let text = |bytes: &[u8]| {
-                    String::from_utf8_lossy(&runtime::clean_output(bytes)).into_owned()
-                };
+                let text = crate::platform::clean_program_text;
                 let stdout = text(&output.stdout);
                 let stderr = text(&output.stderr);
                 let Some(exit_code) = output.status.code() else {

@@ -156,6 +156,11 @@ pub(crate) fn local_day(instant: time::OffsetDateTime) -> time::Date {
     instant.to_offset(offset).date()
 }
 
+/// Captured program text with terminal control codes removed.
+pub(crate) fn clean_program_text(bytes: &[u8]) -> String {
+    String::from_utf8(crate::runtime::clean_output(bytes)).expect("clean output is UTF-8")
+}
+
 /// A program's textual output, lossy only where its bytes are not UTF-8.
 pub fn output_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)
@@ -420,4 +425,38 @@ pub(crate) fn marker_metadata(path: &std::path::Path) -> std::io::Result<std::fs
 #[cfg(test)]
 pub(crate) fn successful_outcome() -> ProcessOutcome {
     ProcessOutcome::from_native(std::process::ExitStatus::default())
+}
+
+#[cfg(test)]
+mod stop_tests {
+    use super::*;
+    use std::{path::PathBuf, time::Duration};
+
+    const READY: &str = "ARTIFACTIZE_TEST_STOP_PROBE_READY";
+    const WATCHDOG: Duration = Duration::from_secs(15);
+
+    #[tokio::test]
+    async fn a_terminal_interrupt_completes_stop_requested() {
+        let root = crate::test_os::tempdir();
+        let ready = root.path().join("ready");
+        let mut child = crate::test_os::test_command(
+            "platform::stop_tests::terminal_interrupt_probe",
+            &[(READY, ready.clone().into_os_string())],
+        );
+        crate::test_os::new_group(&mut child);
+        let mut child = crate::test_os::spawn_test(&mut tokio::process::Command::from(child));
+        crate::test_os::wait_until(WATCHDOG, || ready.is_file());
+        crate::test_os::interrupt(child.id());
+        assert!(child.wait().await.success());
+    }
+
+    #[tokio::test]
+    async fn terminal_interrupt_probe() {
+        let Some(ready) = crate::test_os::environment_variable(READY) else {
+            return;
+        };
+        let stop = stop_requested().unwrap();
+        std::fs::write(PathBuf::from(ready), "subscribed").unwrap();
+        stop.await;
+    }
 }

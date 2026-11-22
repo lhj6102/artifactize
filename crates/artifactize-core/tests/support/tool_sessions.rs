@@ -77,7 +77,7 @@ pub fn script() -> String {
 
 pub fn views(log: &Path, start: &str, stop: &str, action: &str) -> Value {
     let command = super::os::python_program();
-    let log = super::os::path_text(log);
+    let log = super::os::native_path_text(log);
     let command = |mode: &str| json!({"command":command, "args":["harness.py", mode, log]});
     let mut tool = command(action);
     tool["description"] = json!("Operate the running app");

@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{HumanTool, HumanToolKind, Profile, RepoConfig},
-    process, runtime,
+    process,
     scope::{self, Scope},
 };
 
@@ -532,8 +532,7 @@ fn output_result(output: &process::Output) -> ToolResult {
 }
 
 fn text(bytes: &[u8], mut prefix: String, truncated: bool) -> String {
-    prefix
-        .push_str(&String::from_utf8(runtime::clean_output(bytes)).expect("clean output is UTF-8"));
+    prefix.push_str(&crate::platform::clean_program_text(bytes));
     if prefix.len() > TEXT_LIMIT || truncated {
         let suffix = "\n[output truncated]";
         let mut end = (TEXT_LIMIT - suffix.len()).min(prefix.len());

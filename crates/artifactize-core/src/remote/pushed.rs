@@ -100,7 +100,7 @@ pub(super) fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(),
         &state.join(LOCK),
     )
     .map_err(|error| error.to_string())?;
-    lock.lock().map_err(|error| error.to_string())?;
+    crate::platform::paths::lock(&lock).map_err(|error| error.to_string())?;
     let mut pushes = kept_at(state, at);
     pushes.push(Pushed { at, count });
     let mut file = tempfile::NamedTempFile::new_in(state).map_err(|error| error.to_string())?;

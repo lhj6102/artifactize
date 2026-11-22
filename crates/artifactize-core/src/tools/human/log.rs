@@ -216,8 +216,7 @@ impl Shared {
         if !self.watched() {
             return;
         }
-        let text =
-            String::from_utf8(crate::runtime::clean_output(bytes)).expect("clean output is UTF-8");
+        let text = crate::platform::clean_program_text(bytes);
         let size = text.len().max(1);
         // A compare-and-swap loop rather than `fetch_update`, which newer toolchains
         // deprecate under another name.

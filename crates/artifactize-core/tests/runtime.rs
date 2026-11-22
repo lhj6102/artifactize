@@ -692,7 +692,10 @@ async fn deadline_is_not_reset_after_registration() {
         }
         // Only 400 ms remains. A reset at registration would leave this process running.
         tokio::time::advance(Duration::from_millis(401)).await;
-        tokio::task::yield_now().await;
+        // Let the fixture exit even if this process cannot interrupt it cooperatively.
+        // If the deadline was reset, it exits normally while virtual time is still 1001 ms;
+        // otherwise the expired deadline wins before the exit and cleanup can finish.
+        std::fs::write(scratch.workspace().join("release"), "").unwrap();
         let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
         while !running.is_finished() {
             assert!(

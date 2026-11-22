@@ -665,7 +665,7 @@ pub async fn lock(state: &Path, id: &crate::types::SessionId) -> Result<File, St
     )
     .map_err(|e| format!("Cannot lock Agent session {id}: {e}"))?;
     loop {
-        match file.try_lock() {
+        match crate::platform::paths::try_lock(&file) {
             Ok(()) => return Ok(file),
             Err(std::fs::TryLockError::WouldBlock) => {
                 tokio::time::sleep(platform::FILE_LOCK_RETRY_INTERVAL).await;

@@ -1867,6 +1867,13 @@ pub fn interrupt(pid: u32) {
     }
 }
 
+/// Exercise the Unix-only terminal hangup event in an isolated signal probe.
+#[cfg(unix)]
+pub fn hangup_self() {
+    // SAFETY: This test probe subscribed to SIGHUP before sending it to itself.
+    assert_eq!(unsafe { libc::raise(libc::SIGHUP) }, 0);
+}
+
 /// Freeze a process: SIGSTOP on Unix, and on Windows every thread suspended.
 pub fn suspend(pid: u32) {
     #[cfg(unix)]

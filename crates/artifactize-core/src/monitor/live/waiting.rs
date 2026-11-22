@@ -50,7 +50,7 @@ pub async fn waiting(
                 .unwrap_or_else(|| Label {
                     project: entry.repository.file_name().map_or_else(
                         || crate::platform::path_text(&entry.repository),
-                        |name| name.to_string_lossy().into_owned(),
+                        crate::platform::display_name,
                     ),
                     branch: String::new(),
                 });

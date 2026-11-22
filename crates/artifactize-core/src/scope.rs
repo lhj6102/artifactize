@@ -347,7 +347,10 @@ impl ResolvedArgument {
         match self {
             Self::Literal(text) => text.clone(),
             Self::Path { prefix, path } => {
-                format!("{prefix}{}", path.to_str().expect("validated UTF-8 path"))
+                format!(
+                    "{prefix}{}",
+                    crate::platform::os_text(path.as_os_str()).expect("validated UTF-8 path")
+                )
             }
         }
     }
@@ -410,7 +413,7 @@ pub(crate) fn argument_value(
         }));
     }
     let resolved = scope.resolve_input(&config.root, id, path)?;
-    if resolved.to_str().is_none() {
+    if crate::platform::os_text(resolved.as_os_str()).is_none() {
         return Err(ScopeError("Artifact paths must be UTF-8.".into()));
     }
     Ok(ResolvedArgument::Path {

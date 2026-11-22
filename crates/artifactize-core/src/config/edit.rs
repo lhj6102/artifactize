@@ -323,7 +323,7 @@ fn apply_bases(
         &lock_path,
     )
     .map_err(io)?;
-    lock.lock().map_err(io)?;
+    crate::platform::paths::lock(&lock).map_err(io)?;
     let sources = discovery::sources(&root)?;
     compare_named_bases(&root, based_on, &operation)?;
     let proposed = proposal::propose(&root, &sources, operation)?;

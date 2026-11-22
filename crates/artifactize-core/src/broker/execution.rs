@@ -236,10 +236,10 @@ fn runtime_result(
                 verdict: result.verdict(),
                 exit_code: crate::store::ResultField::Value(result.exit_code),
                 stdout: crate::store::ResultField::Value(
-                    String::from_utf8_lossy(&result.output.stdout).into_owned(),
+                    crate::platform::output_text(&result.output.stdout).into_owned(),
                 ),
                 stderr: crate::store::ResultField::Value(
-                    String::from_utf8_lossy(&result.output.stderr).into_owned(),
+                    crate::platform::output_text(&result.output.stderr).into_owned(),
                 ),
                 duration: crate::store::ResultField::Value(result.output.duration),
                 truncated: crate::store::ResultField::Value(result.output.truncated),

@@ -209,7 +209,9 @@ impl Session {
         for entry in platform::read_dir(&directory).map_err(|error| error.to_string())? {
             let entry = entry.map_err(|error| error.to_string())?;
             let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
+            let Some(name) = platform::os_text(&name) else {
+                continue;
+            };
             let child = if path.is_empty() {
                 name.to_owned()
             } else {

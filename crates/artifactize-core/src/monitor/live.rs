@@ -313,7 +313,7 @@ fn place_of(identity: &Identity, repo: &Path, keys: &mut DirectoryKeys) -> (Plac
 fn folder_name(path: &Path) -> String {
     path.file_name().map_or_else(
         || crate::platform::path_text(path),
-        |name| name.to_string_lossy().into_owned(),
+        crate::platform::display_name,
     )
 }
 

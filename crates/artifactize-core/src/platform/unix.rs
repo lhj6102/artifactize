@@ -310,8 +310,8 @@ mod tests {
             return;
         }
         let stop = stop_requested().unwrap();
-        // SAFETY: Deliver SIGHUP to this isolated child, after it has registered the handler.
-        assert_eq!(unsafe { libc::raise(libc::SIGHUP) }, 0);
+        // SIGHUP is Unix-specific; the portable interrupt also has a cross-OS seam test.
+        crate::test_os::hangup_self();
         stop.await;
     }
 
