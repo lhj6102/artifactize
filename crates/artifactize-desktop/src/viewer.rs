@@ -119,7 +119,6 @@ impl Sessions {
         &self,
         viewer: viewer::Session,
         worktree: PathBuf,
-        checkout: artifactize_core::repository::Identity,
         pending: PendingLaunch,
     ) -> ViewerLaunch {
         let context = viewer.context(None);
@@ -127,7 +126,7 @@ impl Sessions {
         let place = Place {
             address: Address {
                 worktree,
-                checkout,
+                checkout: viewer.checkout().clone(),
                 artifact: context.artifact.clone(),
                 target: context.target.clone(),
             },
@@ -167,6 +166,15 @@ impl Sessions {
             .get(&session)
             .cloned()
             .ok_or_else(|| Failure::Missing("Artifact Viewer session closed.".into()))
+    }
+
+    pub(crate) fn pending_review(&self, session: u32) -> Option<RequestId> {
+        self.0
+            .lock()
+            .expect("viewer sessions")
+            .launching
+            .get(&session)
+            .and_then(|launch| launch.review.clone())
     }
 
     pub(crate) fn take_launch(&self, session: u32) -> Option<PendingLaunch> {
@@ -321,12 +329,10 @@ pub(crate) async fn launch(
             Source::Workspace(workspace) => workspace,
         };
         let worktree = workspace.clone();
-        let open = tokio::task::spawn_blocking(move || {
-            let checkout = artifactize_core::repository::identify(&workspace);
-            viewer::Session::open(&workspace, &artifact).map(|viewer| (viewer, checkout))
-        });
-        let (viewer, checkout) = crate::failure::joined(open.await)?.map_err(Failure::Read)?;
-        Ok::<_, Failure>((viewer, worktree, checkout))
+        let open =
+            tokio::task::spawn_blocking(move || viewer::Session::open(&workspace, &artifact));
+        let viewer = crate::failure::joined(open.await)?.map_err(Failure::Read)?;
+        Ok::<_, Failure>((viewer, worktree))
     }
     .await;
     if pending.cancelled() {
@@ -334,9 +340,7 @@ pub(crate) async fn launch(
         return Ok(None);
     }
     match opened {
-        Ok((viewer, worktree, checkout)) => {
-            Ok(Some(app.viewers.keep(viewer, worktree, checkout, pending)))
-        }
+        Ok((viewer, worktree)) => Ok(Some(app.viewers.keep(viewer, worktree, pending))),
         Err(error) => finish_launch(pending.log, Err(error)),
     }
 }
@@ -385,7 +389,12 @@ pub async fn viewer_context(
     session: u32,
 ) -> Result<ViewerContext, Failure> {
     let viewer = app.viewers.get(session)?;
-    let active = active(&app).await;
+    let checked = viewer.clone();
+    let checkout = crate::failure::joined(
+        tokio::task::spawn_blocking(move || checked.check_checkout()).await,
+    )?
+    .is_ok();
+    let active = if checkout { active(&app).await } else { None };
     let (review, pet_match) = {
         let sessions = app.viewers.0.lock().expect("viewer sessions");
         let active = active.filter(|review| sessions.active.as_ref() == Some(review));

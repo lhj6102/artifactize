@@ -76,7 +76,7 @@
 
   /** Select a branch: show its newest Run or the empty branch's reference to Chat. */
   function select(item: BranchView) {
-    const first = item.chips[0];
+    const first = item.newest;
     if (first) show(item, first);
     else {
       m.finding = false;
@@ -128,7 +128,7 @@
     if (!item) return;
     const key = keyOf(item.key);
     if (by > 0 && selected.kind === "branch") {
-      const first = item.chips[0];
+      const first = item.newest;
       if (!m.expanded.has(key)) m.expanded.add(key);
       else if (first) choose(item, first);
     } else if (by < 0 && selected.kind === "chip") m.selected = { kind: "branch", branch: item.key };

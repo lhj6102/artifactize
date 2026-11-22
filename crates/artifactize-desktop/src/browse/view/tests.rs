@@ -55,6 +55,10 @@ fn overlapping_runs_show_the_older_active_run_first_with_elapsed_time() {
         .time();
     let limited = super::branch(&branch, 1, false, now);
     assert!(limited.older);
+    assert_eq!(
+        serde_json::to_value(limited).unwrap()["newest"]["id"],
+        "run-ended"
+    );
     let chips = serde_json::to_value(super::branch(&branch, 2, false, now)).unwrap();
     assert_eq!(chips["chips"][0]["id"], "run-active");
     assert_eq!(chips["chips"][0]["running"], true);

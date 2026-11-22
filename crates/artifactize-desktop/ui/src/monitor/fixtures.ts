@@ -27,7 +27,7 @@ export function runChip(id: string, status: "GREEN" | "RED" | "RUNNING" | "YELLO
 
 /** Branch `name` of the project `app` with its timeline `chips`, newest first. */
 export function branch(name: string, chips: Chip[], older = false, starred = false): BranchView {
-  return { key: branchKey(name), project: "app", name, workspace: `/work/${name}`, chips, older, starred };
+  return { key: branchKey(name), project: "app", name, workspace: `/work/${name}`, chips, newest: chips[0] ?? null, older, starred };
 }
 
 /** A waiting Human review `id` of eval `release/signoff` on `name`. */

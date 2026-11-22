@@ -37,44 +37,16 @@ pub struct SessionChanged {
 #[derive(Default, Clone)]
 pub(crate) struct ChatWorktrees(Arc<Mutex<BTreeMap<PathBuf, Checkout>>>);
 
-#[derive(Clone, PartialEq, Eq)]
-enum Checkout {
-    Missing,
-    Folder,
-    Git { branch: Option<String> },
-}
-
-impl Checkout {
-    fn read(path: &std::path::Path, git: bool) -> Self {
-        if !path.is_dir() {
-            Self::Missing
-        } else if git {
-            Self::Git {
-                branch: artifactize_core::repository::checked_out_branch(path),
-            }
-        } else {
-            Self::Folder
-        }
-    }
-}
+type Checkout = Option<artifactize_core::repository::Identity>;
 
 impl ChatWorktrees {
     pub(crate) fn watch(&self, sessions: &[artifactize_core::chat::Session]) {
         let mut known = self.0.lock().expect("Chat worktrees lock");
         for session in sessions {
-            let saved = session
-                .repository
-                .as_ref()
-                .filter(|identity| identity.common_dir.is_some());
-            let checkout = if !session.worktree.is_dir() {
-                Checkout::Missing
-            } else if let Some(saved) = saved {
-                Checkout::Git {
-                    branch: saved.branch.clone(),
-                }
-            } else {
-                Checkout::Folder
-            };
+            let checkout = session
+                .worktree
+                .is_dir()
+                .then(|| session.repository.clone().unwrap_or_default());
             // Once registered, only the rescan consumes filesystem transitions.
             known.entry(session.worktree.clone()).or_insert(checkout);
         }
@@ -85,8 +57,9 @@ impl ChatWorktrees {
         let changed: Vec<_> = snapshot
             .into_iter()
             .filter_map(|(path, before)| {
-                // If a removed checkout comes back, read its Git branch too.
-                let current = Checkout::read(&path, !matches!(before, Checkout::Folder));
+                let current = path
+                    .is_dir()
+                    .then(|| artifactize_core::repository::identify(&path));
                 (before != current).then_some((path, current))
             })
             .collect();
@@ -177,7 +150,7 @@ mod tests {
             .0
             .lock()
             .unwrap()
-            .insert(worktree.clone(), Checkout::Folder);
+            .insert(worktree.clone(), Some(Default::default()));
         assert!(!watched.rescan());
         std::fs::remove_dir(worktree).unwrap();
         assert!(watched.rescan());

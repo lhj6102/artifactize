@@ -168,9 +168,14 @@ async function rendered(browser: WebdriverIO.Browser, screen: Screen) {
       const review = document.querySelector(`[aria-label="Review's main area"]`);
       return !!review?.querySelector('[aria-label="Human review"] .instruction');
     }
-    // The branch's Run graph and its Current both draw the fixture's release.
-    const shown = entry === "repo" ? ".graph" : ".current";
-    return !!main?.querySelector(`${shown} .svelte-flow__node[data-id="a:release"]`);
+    if (entry === "graph") {
+      // A fresh Graph launch has no saved Chat: it offers to create one on the fixture branch.
+      const dialog = document.querySelector('[role="dialog"].new-chat');
+      const branch = dialog?.querySelector<HTMLSelectElement>("select");
+      return dialog?.querySelector("h2")?.textContent?.trim() === "New chat"
+        && branch?.selectedOptions[0]?.textContent?.trim().startsWith("repo");
+    }
+    return !!main?.querySelector('.graph .svelte-flow__node[data-id="a:release"]');
   }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
   // The key helpers read what the page received from the passive recorder, as in the suite;
   // it goes on the page once that page has rendered.

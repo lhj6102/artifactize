@@ -448,6 +448,8 @@ export type BranchView = {
 	workspace: PathKey,
 	/**  Its timeline: its newest Runs, newest first, led by the one in progress. */
 	chips: Chip[],
+	/**  The newest Run by creation time, independently of the timeline page. */
+	newest: Chip | null,
 	/**  Older Runs than the timeline holds exist: **Older runs** at its end shows them. */
 	older: boolean,
 	/**  Starred: listed before the branches that are not. */

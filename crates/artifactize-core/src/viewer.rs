@@ -13,7 +13,7 @@ use crate::{
         self, Artifact, ArtifactKind, ArtifactType, RepoConfig,
         plugins::{BuiltinViewer, ViewerEntry},
     },
-    graph_structure, platform,
+    graph_structure, platform, repository,
     types::{ArtifactName, RequestId, ReviewerId},
 };
 
@@ -22,6 +22,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Session {
     root: PathBuf,
+    checkout: repository::Identity,
     artifact: Artifact,
     entry: ViewerEntry,
 }
@@ -99,6 +100,7 @@ impl Session {
             .map_err(|error| error.to_string())?;
         Ok(Self {
             root: config.root.clone(),
+            checkout: repository::identify(&config.root),
             artifact: artifact.clone(),
             entry,
         })
@@ -111,8 +113,18 @@ impl Session {
         }
     }
 
+    pub fn checkout(&self) -> &repository::Identity {
+        &self.checkout
+    }
+
+    /// The same path may later hold different branch contents and must not be reused.
+    pub fn check_checkout(&self) -> Result<(), String> {
+        check_checkout(&self.root, &self.checkout)
+    }
+
     /// An already-open viewer's scope cannot authorize access after a declaration changes.
     fn check_scope(&self) -> Result<(), String> {
+        self.check_checkout()?;
         let config =
             config::read_workspace_config(&self.root).map_err(|error| error.to_string())?;
         if config
@@ -154,6 +166,9 @@ impl Session {
         review: &Review,
         text: &str,
     ) -> Result<crate::review::Draft, String> {
+        let path = self.root.clone();
+        let checkout = self.checkout.clone();
+        crate::task::blocking(move || check_checkout(&path, &checkout)).await??;
         let context = self.context(None);
         let source = format!("{} · {}", context.artifact, context.title);
         crate::review::append_point(state, &review.id, &review.reviewer, text, &source).await
@@ -236,5 +251,13 @@ impl Session {
         }
         scope::open_input(&self.root, &self.artifact.tool_scope(), path)
             .map_err(|error| error.to_string())
+    }
+}
+
+fn check_checkout(worktree: &Path, checkout: &repository::Identity) -> Result<(), String> {
+    if worktree.is_dir() && repository::identify(worktree) == *checkout {
+        Ok(())
+    } else {
+        Err("This Artifact Viewer's checkout changed. Reopen the viewer.".into())
     }
 }

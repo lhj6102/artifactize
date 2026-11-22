@@ -1150,6 +1150,19 @@ payload.instruction = "Read the page."
     assert_eq!(context(&old)["petMatch"], true);
 
     os::git(&repo, &["switch", "-qc", "alternate"]);
+    assert_eq!(context(&old)["petMatch"], false);
+    let refused = invoke(
+        &window,
+        "viewer_read_text",
+        json!({"session":old,"path":"content.txt"}),
+    )
+    .unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("checkout changed")
+    );
     invoke(&window, "browse", json!({"navigate":STILL()})).unwrap();
     let other = invoke(&window, "browse", json!({"navigate":STILL()})).unwrap()["branches"]
         .as_array()
@@ -1177,7 +1190,8 @@ payload.instruction = "Read the page."
     let new = open_review_viewer(3);
     let old = context(&old);
     let new = context(&new);
-    assert_eq!(old["review"], new["review"]);
+    assert_eq!(old["review"], Value::Null);
+    assert!(new["review"].is_string());
     assert_eq!(old["artifact"], new["artifact"]);
     assert_eq!(old["type"], new["type"]);
     assert_eq!(old["target"], "primary");

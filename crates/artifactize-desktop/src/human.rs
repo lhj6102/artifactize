@@ -559,6 +559,13 @@ fn show(app: &App, read: u32, request: &ReadReview) -> HumanView {
         OffsetDateTime::now_utc(),
     );
     shown.id = request.exact.request.id.clone().into();
+    shown.technical = review::technical(&request.exact, app.launch.reviewer.as_str())
+        .into_iter()
+        .map(|(key, value)| Field {
+            key: key.into(),
+            value,
+        })
+        .collect();
     shown.target = review::Target::from(request.exact.request.as_ref()).into();
     shown.shared = review::shared(&request.exact);
     shown
@@ -909,6 +916,9 @@ pub async fn human_release(
     }
     let owners: Vec<_> = owners.into_iter().collect();
     work.admit(owners.clone())?;
+    for owner in &owners {
+        app.viewers.cancel_review(owner);
+    }
     let outcome = run_job(
         &app,
         Job::Release {

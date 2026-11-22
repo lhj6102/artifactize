@@ -130,6 +130,8 @@ pub struct BranchView {
     pub workspace: PathKey,
     /// Its timeline: its newest Runs, newest first, led by the one in progress.
     pub chips: Vec<Chip>,
+    /// The newest Run by creation time, independently of the timeline page.
+    pub newest: Option<Chip>,
     /// Older Runs than the timeline holds exist: **Older runs** at its end shows them.
     pub older: bool,
     /// Starred: listed before the branches that are not.
@@ -390,24 +392,25 @@ fn status_word(status: RunStatus) -> String {
     }
 }
 
+fn run_chip(chip: &live::Chip, now: OffsetDateTime) -> Chip {
+    let running = chip.status.is_open();
+    let age = monitor::duration(now - chip.created_at.time());
+    Chip::Run {
+        id: chip.id.clone().into(),
+        mark: monitor::Status::from(chip.status).into(),
+        status: status_word(chip.status),
+        age: if running { age } else { format!("{age} ago") },
+        running,
+        comment: chip.comment.as_ref().map(ToString::to_string),
+    }
+}
+
 fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> BranchView {
     let older = branch.runs.len() > limit;
     let chips = branch
         .timeline()
         .take(limit)
-        .map(|chip| {
-            let running = chip.status.is_open();
-            let age = monitor::duration(now - chip.created_at.time());
-            Chip::Run {
-                id: chip.id.clone().into(),
-                mark: monitor::Status::from(chip.status).into(),
-                status: status_word(chip.status),
-                // An ended Run reads as when it was; a running one as its time so far.
-                age: if running { age } else { format!("{age} ago") },
-                running,
-                comment: chip.comment.as_ref().map(ToString::to_string),
-            }
-        })
+        .map(|chip| run_chip(chip, now))
         .collect();
     BranchView {
         key: BranchKey::new(&branch.place),
@@ -415,6 +418,7 @@ fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> 
         name: branch.name.clone(),
         workspace: PathKey::new(&branch.workspace),
         chips,
+        newest: branch.runs.last().map(|chip| run_chip(chip, now)),
         older,
         starred,
     }

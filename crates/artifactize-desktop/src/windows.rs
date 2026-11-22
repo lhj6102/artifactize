@@ -182,6 +182,21 @@ pub async fn viewer_window(
     session: u32,
     title: String,
 ) -> Result<(), Failure> {
+    if let Some(review) = app.viewers.pending_review(session) {
+        let view = artifactize_core::store::read_request_as(
+            &app.launch.state,
+            review.as_str(),
+            artifactize_core::store::Shown::Requests,
+        )
+        .await
+        .map_err(Failure::Read)?;
+        if let Some(reason) =
+            artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer)
+        {
+            app.viewers.drop_session(session);
+            return Err(Failure::Action(reason));
+        }
+    }
     // Take the handoff once; a cancelled or already consumed handoff cannot open again.
     let pending = app
         .viewers
