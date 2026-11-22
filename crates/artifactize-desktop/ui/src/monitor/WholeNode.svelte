@@ -93,7 +93,7 @@
     {#if data.reset && !minimized}
       <button class="toggle nodrag nopan" type="button" aria-label="Reset layout of {data.name}" onclick={reset}><Icon name="reset" /></button>
     {/if}
-    <button class="toggle nodrag nopan" type="button" title="{action} (m)" aria-label="{action} {data.name} (m)" aria-keyshortcuts="m" onclick={toggle}>
+    <button class="toggle nodrag nopan" type="button" title={action} aria-label="{action} {data.name} (m)" aria-keyshortcuts="m" onclick={toggle}>
       <Icon name={minimized ? "add" : "minus"} />
     </button>
   </div>

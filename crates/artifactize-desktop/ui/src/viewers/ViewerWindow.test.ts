@@ -167,16 +167,29 @@ describe("File Explorer", () => {
   });
 });
 
+it("keeps a single file in the File Explorer tree", async () => {
+  backend({ kind: "builtin", viewer: "files" }, { "": "const total = 1;" }, context({ target: "source/total.ts", targetKind: "file" }));
+  render(ViewerWindow, { session: 2 });
+  const tree = await screen.findByRole("list", { name: "Files" });
+  expect(within(tree).getByRole("button", { name: "total.ts" }).getAttribute("aria-current")).toBe("true");
+  expect(await within(screen.getByRole("region", { name: "Document" })).findByText("const total = 1;")).toBeTruthy();
+});
+
 describe("Markdown", () => {
-  it("renders a file Artifact's Markdown and points at a block's line", async () => {
-    const calls = backend({ kind: "builtin", viewer: "markdown" }, { "": "# Install\n\nRun the `installer`." }, context({ targetKind: "file", type: "markdown", title: "Markdown" }));
+  it("opens web links through IPC, but points at the source line when armed", async () => {
+    const text = "# Install\n\nRun the `installer`.\nSee [the docs](https://example.test/docs).\n\n```sh\nfirst command\nsecond command\n```\n\n| Field | Value |\n|---|---|\n| status | ready |";
+    const calls = backend({ kind: "builtin", viewer: "markdown" }, { "": text }, context({ targetKind: "file", type: "markdown", title: "Markdown" }));
     render(ViewerWindow, { session: 2 });
-    const heading = await screen.findByRole("heading", { name: "Install" });
-    expect(heading.tagName).toBe("H1");
-    const paragraph = screen.getByText("installer").parentElement!;
-    await fireEvent.click(screen.getByRole("button", { name: "Point" }));
-    await fireEvent.click(paragraph);
-    await waitFor(() => expect(pointed(calls)).toEqual(["L3:C1"]));
+    expect((await screen.findByRole("heading", { name: "Install" })).tagName).toBe("H1");
+    const docs = screen.getByRole("link", { name: "the docs" });
+    await fireEvent.click(docs);
+    expect(calls.filter((each) => each.cmd === "chat_open_link").map((each) => each.args)).toEqual([{ url: "https://example.test/docs" }]);
+    for (const target of [docs, screen.getByText("second command"), screen.getByRole("cell", { name: "ready" })]) {
+      await fireEvent.click(screen.getByRole("button", { name: "Point" }));
+      await fireEvent.click(target);
+    }
+    expect(pointed(calls)).toEqual(["L4:C1", "L8:C1", "L13:C1"]);
+    expect(calls.filter((each) => each.cmd === "chat_open_link")).toHaveLength(1);
   });
 });
 
@@ -193,6 +206,11 @@ describe("Artifactize Viewer", () => {
     const calls = backend({ kind: "builtin", viewer: "artifactize" }, {}, context({ type: "artifactize", title: "Artifactize Viewer" }), graph);
     const { container } = render(ViewerWindow, { session: 3 });
     await waitFor(() => expect(container.querySelectorAll(".svelte-flow__node")).toHaveLength(2));
+    const strip = screen.getByRole("toolbar", { name: "Graph tools" });
+    expect(within(strip).getByRole("button", { name: "Zoom out" }).hasAttribute("disabled")).toBe(false);
+    expect(within(strip).getByRole("button", { name: "Zoom in" }).hasAttribute("disabled")).toBe(false);
+    expect(within(strip).getByRole("button", { name: "Fit" }).hasAttribute("disabled")).toBe(false);
+    expect(within(strip).queryByRole("button", { name: /^Find/ })).toBeNull();
     const node = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((each) => each.textContent?.includes("front-design"))!;
     expect(node.textContent).toContain("html");
     const other = [...container.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((each) => !each.textContent?.includes("front-design"))!;

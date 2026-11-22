@@ -55,6 +55,12 @@ export class AppState {
   /** Chat's sessions and the one shown. */
   readonly chat: ChatModeState = new ChatModeState(this.ipc, () => this.mode === "chat");
   settingsTab = $state<"providers" | "remote" | "limits">("providers");
+
+  openSettings() {
+    if (!this.monitor.settings) this.settingsTab = "providers";
+    this.monitor.settings = true;
+  }
+
   /** Quitting asks first while claims are held or a Chat turn runs in any session, as the
    * library lists them. */
   readonly leaving = Object.assign(new Leaving(this.ipc), {

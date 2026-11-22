@@ -125,16 +125,18 @@
       <dd class="file">{node.definition}</dd>
       <dt>Path</dt>
       <dd>
-        <input
-          class="field-input"
-          aria-label="Path of {name}"
-          spellcheck="false"
-          autocomplete="off"
-          value={path ?? node.target}
-          oninput={(event) => (defs.form(name).path = event.currentTarget.value)}
-          onkeydown={pathKey}
-        />
-        {#if node.targetMissing}<p class="refusal">{node.target} does not exist.</p>{/if}
+        <div class="path">
+          <input
+            class="field-input"
+            aria-label="Path of {name}"
+            spellcheck="false"
+            autocomplete="off"
+            value={path ?? node.target}
+            oninput={(event) => (defs.form(name).path = event.currentTarget.value)}
+            onkeydown={pathKey}
+          />
+          {#if node.targetMissing}<span class="missing">{node.target} does not exist.</span>{/if}
+        </div>
         {#if refused?.at === "path"}<p class="refusal" role="alert">{refused.text}</p>{/if}
       </dd>
       <dt>Parts</dt>
@@ -177,7 +179,7 @@
       </dd>
     </dl>
     <div class="actions">
-      <button class="button small quiet" data-comment-button onclick={() => defs.openField(name, "button")}>Comment</button>
+      <button class="button small quiet" data-comment-button onclick={(event) => defs.openField(name, "button", event.detail === 0)}>Comment</button>
       <button class="button small quiet" onclick={() => (defs.dialog = { kind: "rename", name })}>Rename</button>
       <button class="button small quiet" onclick={() => (defs.dialog = { kind: "delete", name })}>Delete</button>
     </div>
@@ -294,6 +296,22 @@
     display: flex;
     gap: var(--gap);
     padding: 6px 0 0;
+  }
+  .path {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
+  }
+  .path input {
+    min-width: 0;
+    flex: 1 1 50%;
+  }
+  .missing {
+    min-width: 0;
+    flex: 0 1 50%;
+    overflow-wrap: anywhere;
+    color: var(--red);
+    font-size: var(--text-small);
   }
   .refusal {
     margin: 4px 0 0;

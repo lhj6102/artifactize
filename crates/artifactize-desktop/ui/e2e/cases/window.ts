@@ -97,7 +97,8 @@ export const scenarios: Scenario[] = [
       await app.command("Keyboard shortcuts");
       const help = (await app.help())!;
       assert.ok(help.keys.some((key) => key.action === "Command palette" && key.keys === shortcutLabel("Ctrl+K")), `Help lists the palette's key: ${JSON.stringify(help.keys)}`);
-      assert.deepEqual(help.marks.map((mark) => mark.word), ["GREEN", "in progress", "waiting", "RED", "ERROR", "blocked by upstream"], "a Run's marks, each with its word");
+      assert.deepEqual(help.marks.map((mark) => mark.icon), ["green", "running", "waiting", "red", "error", "blocked", "human"], "a Run's marks, including the Human waiting glyph");
+      assert.equal(help.marks.find((mark) => mark.icon === "running")?.word, "running or waiting for a Human");
       assert.ok(help.marks.every((mark) => mark.icon !== ""), "each mark beside its word");
       await app.closeHelp("Close");
       await app.command("Keyboard shortcuts");

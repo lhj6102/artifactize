@@ -106,7 +106,6 @@
     {:else}
       <div class="pending">
         <GraphTools />
-        {#if !current.error}<p class="note">Scanning the worktree…</p>{/if}
       </div>
     {/if}
   </GraphStage>

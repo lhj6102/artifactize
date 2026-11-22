@@ -220,9 +220,9 @@ it("ignores m typed in a field, during a composition, with a modifier or with fo
   expect(laid.minimized).toEqual([[]]);
 });
 
-it("names m in the button's name and its tooltip, and nowhere else on the graph", async () => {
+it("names the whole action in the tooltip, without a visible shortcut", async () => {
   await drawn();
-  expect(button("Minimize suite")?.title).toBe("Minimize (m)");
+  expect(button("Minimize suite")?.title).toBe("Minimize");
   expect(button("Minimize suite")?.getAttribute("aria-keyshortcuts")).toBe("m");
   expect(document.querySelector(".svelte-flow")?.closest(".graph")?.querySelector("kbd")).toBeNull();
 });

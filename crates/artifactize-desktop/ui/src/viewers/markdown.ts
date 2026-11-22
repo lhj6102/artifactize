@@ -3,10 +3,10 @@
 // click landed. Inline text becomes spans: code, strong, emphasis and links. Nothing is HTML: the
 // viewer draws every span as text, so no Markdown runs as markup.
 
-export type Span = { kind: "text" | "code" | "strong" | "em" | "link"; text: string };
+export type Span = { kind: "text" | "code" | "strong" | "em"; text: string } | { kind: "link"; text: string; url: string };
 export type Block =
   | { kind: "heading"; level: number; spans: Span[]; line: number }
-  | { kind: "paragraph"; spans: Span[]; line: number }
+  | { kind: "paragraph"; lines: Span[][]; line: number }
   | { kind: "list"; ordered: boolean; items: { spans: Span[]; line: number }[]; line: number }
   | { kind: "code"; text: string; line: number }
   | { kind: "table"; head: Span[][]; rows: Span[][][]; line: number }
@@ -24,7 +24,13 @@ export function inline(text: string): Span[] {
     if (code) spans.push({ kind: "code", text: code.slice(1, -1) });
     else if (strong) spans.push({ kind: "strong", text: strong.slice(2, -2) });
     else if (em) spans.push({ kind: "em", text: em.slice(1, -1) });
-    else if (link) spans.push({ kind: "link", text: link.slice(1, link.indexOf("](")) });
+    else if (link) {
+      const split = link.indexOf("](");
+      const url = link.slice(split + 2, -1).trim();
+      const label = link.slice(1, split);
+      // Only external web links can leave this window; other destinations remain text.
+      spans.push(/^https?:\/\//i.test(url) ? { kind: "link", text: label, url } : { kind: "text", text: label });
+    }
     at = match.index + whole.length;
   }
   if (at < text.length) spans.push({ kind: "text", text: text.slice(at) });
@@ -80,7 +86,7 @@ export function blocks(source: string): Block[] {
     } else {
       const body: string[] = [];
       while (at < lines.length && lines[at].trim() !== "" && !/^(#{1,6}\s|```|\s*([-*+]|\d+[.)])\s+)/.test(lines[at])) body.push(lines[at++].trim());
-      out.push({ kind: "paragraph", spans: inline(body.join(" ")), line: start });
+      out.push({ kind: "paragraph", lines: body.map(inline), line: start });
     }
   }
   return out;

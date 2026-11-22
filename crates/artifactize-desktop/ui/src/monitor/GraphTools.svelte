@@ -1,7 +1,7 @@
 <script lang="ts" module>
   /** What the strip's controls do on a graph. */
   export type GraphActions = {
-    find: () => void;
+    find?: () => void;
     zoomBy: (factor: number) => void;
     fit: () => void;
   };
@@ -15,10 +15,11 @@
   import Icon from "../shell/Icon.svelte";
   import { label } from "../shell/keys";
 
-  let { zoom = 1, act = null, children }: {
+  let { zoom = 1, act = null, showFind = true, children }: {
     /** The camera's zoom, 1 for 100%. */
     zoom?: number;
     act?: GraphActions | null;
+    showFind?: boolean;
     /** Further buttons after Fit. */
     children?: Snippet;
   } = $props();
@@ -27,7 +28,7 @@
 </script>
 
 <div class="tools" role="toolbar" aria-label="Graph tools">
-  <button class="button small" aria-label="Find ({label('Ctrl+F')})" aria-keyshortcuts="Control+F" disabled={!act} onclick={() => act?.find()}><Icon name="find" />Find</button>
+  {#if showFind}<button class="button small" aria-label="Find ({label('Ctrl+F')})" aria-keyshortcuts="Control+F" disabled={!act?.find} onclick={() => act?.find?.()}><Icon name="find" />Find</button>{/if}
   <span class="zoom">
     <button aria-label="Zoom out" disabled={!act} onclick={() => act?.zoomBy(1 / ZOOM_STEP)}><Icon name="minus" /></button>
     <span class="percent" aria-label="Zoom">{Math.round(zoom * 100)}%</span>

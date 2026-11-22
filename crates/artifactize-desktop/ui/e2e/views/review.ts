@@ -61,7 +61,7 @@ export class Review {
         completed: review.querySelector<HTMLElement>('section[aria-label="Result"] .completed')?.innerText ?? "",
         readOnly: (review.textContent ?? "").includes("Read-only until released."),
         running: review.querySelector('.busy [role="img"], .busy [aria-label]')?.getAttribute("aria-label") ?? "",
-        notice: review.querySelector('.said [role="status"]:not(.busy)')?.textContent?.trim() ?? "",
+        notice: review.querySelector(':is(.said, .result) > [role="status"]:not(.busy)')?.textContent?.trim() ?? "",
         refusal: review.querySelector('[role="alert"]')?.textContent?.trim() ?? "",
         state: state?.nextElementSibling?.textContent?.trim() ?? "",
         tools: [...review.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Tools"] button')].map((button) => ({

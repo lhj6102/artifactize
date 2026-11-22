@@ -12,6 +12,9 @@ import type { AntigravityPrompt, AntigravityStatus, ClaudeAgentStatus, CodexStat
 const STORE = "http://127.0.0.1:8417/";
 const TOKEN = "azt_secret-store-token";
 const KEY = "sk-secret-provider-key";
+const AGY = { path: "/fixture/bin/agy", version: "1.5.14", requiredVersion: "1.5.1" };
+const AGY_OUT: AntigravityStatus = { ...AGY, state: "signedOut" };
+const AGY_IN: AntigravityStatus = { ...AGY, state: "signedIn", account: null };
 const AGY_URL = "https://accounts.google.com/o/oauth2/v2/auth?state=test";
 
 /** The tests' clock: local noon of a fixed day, so a midnight never falls inside a test. */
@@ -46,7 +49,7 @@ function backend(options: {
   antigravityWait?: () => Promise<AntigravityStatus>;
 }) {
   const calls: Calls = [];
-  let agy: AntigravityStatus = { state: "signedOut" };
+  let agy = AGY_OUT as AntigravityStatus;
   const agyStatus = () => options.antigravity?.() ?? agy;
   let remote = none;
   let grace = 120;
@@ -126,13 +129,13 @@ function backend(options: {
           return started;
         }) ?? { url: AGY_URL, signIn: 11 };
       case "antigravity_login_wait":
-        return options.antigravityWait?.().then((status) => (agy = status)) ?? (agy = { state: "signedIn" });
+        return options.antigravityWait?.().then((status) => (agy = status)) ?? (agy = AGY_IN);
       case "antigravity_login_paste":
       case "antigravity_login_cancel":
       case "chat_open_link":
         return null;
       case "antigravity_logout":
-        return (agy = { state: "signedOut" });
+        return (agy = AGY_OUT);
       case "models_list":
         if (payload.provider === "antigravity") {
           if (agyStatus().state === "signedOut") throw { kind: "account", message: "Antigravity needs your Google sign-in. Run `artifactize login antigravity` or use Settings → Providers." };
@@ -148,6 +151,9 @@ function backend(options: {
         remote = result;
         return result;
       }
+      case "remote_push":
+        if (!payload.dryRun && remote.state === "configured") remote = { ...remote, pushes: [...remote.pushes, { at: NOON, count: 2 }] };
+        return { pushed: 2, existing: 1, skipped: 0 };
       case "remote_logout":
         remote = none;
         return none;
@@ -386,7 +392,7 @@ describe("Settings", () => {
     const calls = backend({ claude: () => state });
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
-    expect(screen.getByTestId("claude-agent-sign-in").textContent).toMatch(/never reads, copies or stores it/);
+    expect(screen.getByText("Login kept by").nextElementSibling?.textContent).toBe("Claude Code");
     expect(screen.queryByLabelText("API key")).toBeNull();
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("claude not found"));
     expect(screen.getByRole("button", { name: "Sign in with Claude Code" }).hasAttribute("disabled")).toBe(true);
@@ -398,7 +404,7 @@ describe("Settings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
     // Signed in, the facts stand alone.
-    expect(screen.queryByTestId("claude-agent-sign-in")).toBeNull();
+    expect(screen.getByText("Login kept by").nextElementSibling?.textContent).toBe("Claude Code");
     expect(calls.filter((call) => call.cmd === "claude_agent_status")).toHaveLength(3);
     await fireEvent.click(screen.getByRole("button", { name: "List models" }));
     await screen.findByText("GPT Fake");
@@ -439,13 +445,16 @@ describe("Settings", () => {
     // Claude Code was signed in elsewhere meanwhile: only a status read after the cancellation shows it.
     state = { state: "signedIn", method: "claude.ai", plan: "max" };
     fail({ kind: "account", message: "Claude Code sign-in was cancelled." });
-    await screen.findByText("Claude Code sign-in was cancelled.");
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Claude Code sign-in was cancelled."));
+    expect(screen.queryByText("Signed in · claude.ai · max")).toBeNull();
+    expect(screen.getByText("Login kept by").nextElementSibling?.textContent).toBe("Claude Code");
+    await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
   });
 
   it("shows each status Antigravity reports and does not offer it as a custom alias", async () => {
-    let state: AntigravityStatus = { state: "missing" };
+    let state: AntigravityStatus = { ...AGY, path: null, version: null, state: "missing" };
     const calls = backend({ antigravity: () => state });
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Antigravity" }));
@@ -459,12 +468,13 @@ describe("Settings", () => {
 
     const oldError = "Antigravity CLI 1.4.0 is too old; update `agy` to 1.5.1 or newer.";
     const transitions: [AntigravityStatus, string][] = [
-      [{ state: "tooOld", version: "1.4.0", error: oldError }, oldError],
-      [{ state: "signedOut" }, "Not signed in"],
-      [{ state: "signedIn" }, "Signed in with Google"],
-      [{ state: "quota", error: "Google account quota exhausted." }, "Google account quota exhausted."],
-      [{ state: "rateLimited", error: "Antigravity rate limited this account." }, "Antigravity rate limited this account."],
-      [{ state: "failed", error: "Antigravity's account probe timed out." }, "Antigravity's account probe timed out."],
+      [{ ...AGY, state: "tooOld", version: "1.4.0", error: oldError }, oldError],
+      [AGY_OUT, "Not signed in"],
+      [AGY_IN, "Signed in with Google"],
+      [{ ...AGY_IN, account: "reviewer@example.test" }, "Signed in with Google · reviewer@example.test"],
+      [{ ...AGY, state: "quota", error: "Google account quota exhausted." }, "Google account quota exhausted."],
+      [{ ...AGY, state: "rateLimited", error: "Antigravity rate limited this account." }, "Antigravity rate limited this account."],
+      [{ ...AGY, state: "failed", error: "Antigravity's account probe timed out." }, "Antigravity's account probe timed out."],
     ];
     for (const [next, text] of transitions) {
       state = next;
@@ -474,8 +484,10 @@ describe("Settings", () => {
       expect(within(account).getByText("Antigravity CLI")).toBeTruthy();
       expect(within(account).getByText("Chat only")).toBeTruthy();
       if (state.state === "tooOld") {
-        expect(within(account).getByText("1.4.0")).toBeTruthy();
+        expect(within(account).getByText("/fixture/bin/agy · 1.4.0 · requires 1.5.1 or newer")).toBeTruthy();
         expect(signIn.hasAttribute("disabled")).toBe(true);
+      } else {
+        expect(within(account).getByText("/fixture/bin/agy · 1.5.14")).toBeTruthy();
       }
     }
     expect(calls.filter(({ cmd }) => cmd === "antigravity_status")).toHaveLength(transitions.length + 1);
@@ -512,7 +524,7 @@ describe("Settings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
     expect(calls.find(({ cmd }) => cmd === "antigravity_login_paste")?.args).toEqual({ signIn: 11, code: "test-code" });
     expect(field.value).toBe("");
-    finish({ state: "signedIn" });
+    finish(AGY_IN);
 
     const signOut = await screen.findByRole("button", { name: "Sign out of Antigravity" });
     expect(fact.textContent?.trim()).toBe("Signed in with Google");
@@ -553,7 +565,7 @@ describe("Settings", () => {
     { name: "Claude Code", provider: "Claude Agent", prefix: "claude_agent", fact: "Signed in · claude.ai · max" },
   ])("shows $name signing in without ever needing a prompt", async ({ name, provider, prefix, fact }) => {
     const calls = backend({
-      antigravityPrompt: async () => ({ state: "signedIn" }),
+      antigravityPrompt: async () => AGY_IN,
       claudeComplete: { state: "signedIn", method: "claude.ai", plan: "max" },
     });
     renderHosted(Settings, { active: true });
@@ -609,6 +621,16 @@ describe("Settings", () => {
     expect(screen.queryByLabelText("Token")).toBeNull();
     expect(calls.filter((call) => call.cmd === "remote_login").at(-1)?.args).toEqual({ url: STORE, share: "full", token: TOKEN });
     expect(document.body.innerHTML).not.toContain(TOKEN);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Push (dry run)" }));
+    await screen.findByText(/Would push 2/);
+    expect(screen.queryByTestId("remote-pushed")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Push results" }));
+    const report = await screen.findByText(/Pushed 2, already in the store 1/);
+    await waitFor(() => expect(within(report).getByTestId("remote-pushed").textContent).toBe("7 pushed today"));
+    await fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+    await screen.findByTestId("remote-principal");
+    expect(screen.getByTestId("remote-pushed").textContent).toBe("7 pushed today");
 
     await fireEvent.click(screen.getByRole("button", { name: "Sign out of the store" }));
     // Signed out: the fields and the button that sign in come back.

@@ -120,3 +120,16 @@ export function markIcon(glyph: string, tone: Tone | null): IconName | null {
   if (glyph === "○" && tone === "running") return "run";
   return GLYPHS[glyph] ?? null;
 }
+
+/** Spoken meanings for status icons used without status words (chips and Find results). */
+export function markLabel(icon: IconName): string {
+  switch (icon) {
+    case "human": return "Waiting Human";
+    case "notrun": return "Not run";
+    case "run": return "Would run";
+    case "green": return "GREEN";
+    case "red": return "RED";
+    case "error": return "ERROR";
+    default: return icon;
+  }
+}

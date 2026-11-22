@@ -15,12 +15,12 @@
   import VerdictForm from "./VerdictForm.svelte";
   import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
-  import Icon from "../shell/Icon.svelte";
+  import ReviewProgress from "./ReviewProgress.svelte";
   import Reference from "../shell/Reference.svelte";
   import Section from "../shell/Section.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { chord, composing, editable, label, plain } from "../shell/keys";
-  import { clampWidth } from "../monitor/detail-width";
+  import { clampWidth, MIN } from "../monitor/detail-width";
 
   let {
     review,
@@ -55,7 +55,7 @@
   const DOCK_MOST = 680;
   /** Two panels: the Main area is at least twice as wide as the Detail would be. */
   const split = $derived.by(() => {
-    if (!wide || h.width === 0) return false;
+    if (!wide || h.width < 2 * MIN) return false;
     const dock = clampWidth(app.detailWidth ?? Math.min(h.width * DOCK_SHARE, DOCK_MOST), h.width);
     return h.width >= 2 * dock;
   });
@@ -69,9 +69,7 @@
 
   onMount(() => {
     void review.load();
-    // Waiting time and the busy seconds redraw without reading the state.
     const clock = setInterval(() => {
-      h.now = Date.now();
       if (!review.busy && active) void review.load(false);
     }, 1000);
     // A settlement or claim elsewhere shows on the next read, one read at a time and only while
@@ -161,7 +159,7 @@
 {#snippet stagePill()}
   {#if stage}<span class="stage" data-stage={view?.stage}>{stage}</span>{/if}
   {#if view?.claim && !view.claim.mine && !review.owned}<span class="claimant">{view.claim.reviewer}</span>{/if}
-  {#if onopenreview && view?.stage !== "completed"}
+  {#if onopenreview}
     <Reference onclick={onopenreview}>Open in Review</Reference>
   {/if}
 {/snippet}
@@ -225,6 +223,7 @@
         <p class="muted">Read-only until released.</p>
       {:else}
         <button class="button primary" aria-label="Claim to review (c)" aria-keyshortcuts="c" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
+        <ReviewProgress {review} />
       {/if}
     </div>
   {/if}
@@ -233,17 +232,13 @@
 <!-- One row of actions: Release claim at the left, Submit at the right, and between them what
      running work or a failure has to say. -->
 {#snippet actions()}
-  {#if view && !review.settled && (review.owned || review.busy || review.notice?.error)}
+  {#if view && !review.settled && review.owned}
     <div class="actions">
       {#if review.owned}
         <button class="button small" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
       {/if}
       <span class="said">
-        {#if review.busy}
-          <span class="busy" role="status"><span class="running"><Icon name="running" label={review.busy.label} /></span><span class="seconds">{Math.floor((h.now - review.busy.since) / 1000)}s</span><button class="button small" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button></span>
-        {:else if review.notice?.error}
-          <span class="error" role="status">{review.notice.text}</span>
-        {/if}
+        <ReviewProgress {review} />
       </span>
       {#if review.form}
         <button class="button small primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
@@ -285,7 +280,7 @@
     <div class="evaluation" aria-label="Evaluation" role="group">
       <div class="head"><span class="name">Evaluation</span>{@render stagePill()}</div>
       <div class="scroll"><Section name="Result" folds={false}>{@render result()}</Section></div>
-      <div class="bottom">{@render actions()}</div>
+      {#if review.owned && !review.settled}<div class="bottom">{@render actions()}</div>{/if}
     </div>
   {:else}
     <div class="one">
@@ -409,12 +404,13 @@
     padding: 6px var(--pad);
   }
   .instruction {
-    padding: 10px var(--pad);
+    padding: 16px var(--pad) 18px;
     outline: none;
   }
   .text {
     margin: 0;
     font-size: var(--text-lead);
+    line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -454,20 +450,6 @@
   }
   .actions > .primary {
     margin-left: auto;
-  }
-  .busy {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .running {
-    display: inline-flex;
-    color: var(--running);
-  }
-  .seconds {
-    color: var(--ink-2);
-    font-variant-numeric: tabular-nums;
   }
   .error {
     color: var(--red);

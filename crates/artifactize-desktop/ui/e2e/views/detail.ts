@@ -50,8 +50,8 @@ export class Detail {
         evals: [...aside.querySelectorAll<HTMLElement>("button[data-eval]")].map((row) => ({
           id: row.dataset.eval ?? "",
           name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
-          status: row.querySelector(".status")?.textContent?.trim() ?? "",
-          stage: row.closest("li")?.querySelector(".review .stage")?.textContent?.trim() ?? "",
+          status: row.querySelector(".verdict-status")?.textContent?.trim() ?? "",
+          stage: row.querySelector(".status .stage")?.textContent?.trim().replace(/^·\s*/, "") ?? "",
         })),
         sections: [...aside.querySelectorAll<HTMLElement>("section.section")].map((section) => ({
           name: section.getAttribute("aria-label") ?? "",
@@ -231,7 +231,7 @@ export class Detail {
       return {
         file: root?.querySelector("section.section[aria-label=\"Definition\"] dd.file")?.textContent?.trim() ?? "",
         path: path?.value ?? "",
-        missing: path?.parentElement?.querySelector(".refusal:not([role])")?.textContent?.trim() ?? "",
+        missing: path?.parentElement?.querySelector(".missing")?.textContent?.trim() ?? "",
         parts: [...(root?.querySelectorAll(`ul[aria-label="Parts of ${artifact}"] .part`) ?? [])].map((part) => part.textContent?.trim() ?? ""),
         refusals: [...(root?.querySelectorAll('[role="alert"]') ?? [])].map((alert) => alert.textContent?.trim() ?? ""),
         source: root?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="Source of ${artifact}"]`)?.value ?? null,

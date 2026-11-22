@@ -13,15 +13,15 @@ describe("blocks", () => {
       ["code", 9],
       ["table", 13],
     ]);
-    expect(read[1]).toMatchObject({ spans: [{ kind: "text", text: "Run the " }, { kind: "code", text: "installer" }, { kind: "text", text: ", then check." }] });
+    expect(read[1]).toMatchObject({ lines: [[{ kind: "text", text: "Run the " }, { kind: "code", text: "installer" }, { kind: "text", text: "," }], [{ kind: "text", text: "then check." }]] });
     expect(read[2]).toMatchObject({ items: [{ line: 6 }, { line: 7, spans: [{ kind: "strong", text: "two" }] }] });
     expect(read[3]).toMatchObject({ text: "artifactize --version" });
   });
 
-  it("keeps markup as text: a link reads as its words", () => {
+  it("keeps web link destinations without turning raw markup into HTML", () => {
     expect(inline("see [the docs](https://example.com) <b>now</b>")).toEqual([
       { kind: "text", text: "see " },
-      { kind: "link", text: "the docs" },
+      { kind: "link", text: "the docs", url: "https://example.com" },
       { kind: "text", text: " <b>now</b>" },
     ]);
   });

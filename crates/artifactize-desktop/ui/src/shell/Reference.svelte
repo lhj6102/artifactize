@@ -9,7 +9,7 @@
   let { chip = false, onclick, children }: { chip?: boolean; onclick: () => void; children: Snippet } = $props();
 </script>
 
-<button class="reference" class:chip {onclick}><Icon name={chip ? "back" : "open"} />{@render children()}</button>
+<button class="reference" class:chip {onclick}><Icon name={chip ? "back" : "open"} /><span>{@render children()}</span></button>
 
 <style>
   .reference {
@@ -28,8 +28,12 @@
     font-size: var(--text-small);
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
     cursor: pointer;
+  }
+  .reference span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .reference:not(.chip):hover {
     background: var(--surface-group);
@@ -37,7 +41,7 @@
   .chip {
     gap: 6px;
     height: 20px;
-    max-width: 320px;
+    max-width: min(320px, 100%);
     padding: 0 8px;
     border: 1px solid var(--line-group);
     border-radius: var(--radius-chip);

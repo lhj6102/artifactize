@@ -1,7 +1,7 @@
 <script lang="ts">
   // The File Explorer (J-VIEWER-FILES, D-VIEW-3): the Artifact's files as a tree at the left,
   // folders folding and unfolding by a click, and the shown file's text at the right with line
-  // numbers, read-only. An Artifact that is one file shows that file alone. While pointing, a
+  // numbers, read-only. A one-file Artifact has one tree row. While pointing, a
   // click on a place in the text appends its line and column.
   import { onMount } from "svelte";
   import Icon from "../shell/Icon.svelte";
@@ -12,6 +12,7 @@
   const v = getViewerState();
   const f = new FilesState(v);
   const single = $derived(v.context?.targetKind === "file");
+  const fileName = $derived(v.context?.target.split(/[\\/]/).pop() ?? "");
   const lines = $derived(f.text === null ? [] : f.text.split("\n"));
 
   /** A click on line `line` while pointing: its line and column, with the file's path when the
@@ -35,22 +36,28 @@
       {#if entry.kind === "directory"}
         {@const open = f.unfolded.has(entry.path)}
         <button style:--depth={depth} aria-expanded={open} onclick={() => void f.toggle(entry.path)}>
-          <span class="quiet"><Icon name={open ? "unfold" : "fold"} /></span><span class="quiet"><Icon name="folder" /></span>{entry.name}
+          <span class="quiet"><Icon name={open ? "unfold" : "fold"} /></span><span class="quiet"><Icon name="folder" /></span><span class="filename">{entry.name}</span>
         </button>
         {#if open}<ul>{@render folder(entry.path, depth + 1)}</ul>{/if}
       {:else}
         <button style:--depth={depth} class:selected={f.shown === entry.path} aria-current={f.shown === entry.path ? "true" : undefined} onclick={() => void f.show(entry.path)}>
-          <span class="quiet"><Icon name="file" /></span>{entry.name}
+          <span class="quiet"><Icon name="file" /></span><span class="filename">{entry.name}</span>
         </button>
       {/if}
     </li>
   {/each}
 {/snippet}
 
-<div class="files" class:single>
-  {#if !single}
-    <ul class="tree" aria-label="Files">{@render folder("", 0)}</ul>
-  {/if}
+<div class="files">
+  <ul class="tree" aria-label="Files">
+    {#if single}
+      <li><button class:selected={f.shown === ""} aria-current={f.shown === "" ? "true" : undefined} onclick={() => void f.show("")}>
+        <span class="quiet"><Icon name="file" /></span><span class="filename">{fileName}</span>
+      </button></li>
+    {:else}
+      {@render folder("", 0)}
+    {/if}
+  </ul>
   <section class="doc" aria-label="Document">
     {#if f.shown !== null}
       <div class="head mono">{single ? (v.context?.target ?? "") : f.shown}</div>
@@ -77,9 +84,6 @@
     height: 100%;
     min-height: 0;
   }
-  .files.single {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .mono {
     font-family: var(--mono);
   }
@@ -87,7 +91,7 @@
   .tree {
     margin: 0;
     padding: 4px 0;
-    overflow: auto;
+    overflow: hidden auto;
     background: var(--surface-panel);
     border-right: 1px solid var(--line-panel);
     font-size: var(--text-small);
@@ -104,7 +108,7 @@
     width: 100%;
     min-height: var(--row-dense);
     margin: 0;
-    padding: 0 var(--pad) 0 calc(var(--pad) + var(--depth, 0) * 14px);
+    padding: 0 var(--pad) 0 min(50%, calc(var(--pad) + var(--depth, 0) * 14px));
     border: 0;
     background: none;
     color: var(--ink-2);
@@ -120,7 +124,13 @@
     background: var(--selection);
     color: var(--ink);
   }
+  .filename {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .quiet {
+    flex: none;
     display: inline-flex;
     color: var(--ink-2);
   }

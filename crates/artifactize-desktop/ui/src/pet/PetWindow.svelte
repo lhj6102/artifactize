@@ -85,19 +85,18 @@
         {/if}
         <!-- The verdict's form carries the GREEN / RED choice once open, as the review's does. -->
         {#if review.form}
-          {#key review.form}<VerdictForm {review} form={review.form} {caret} />{/key}
+          {#key review.form}<VerdictForm {review} form={review.form} {caret} showError={false} />{/key}
         {:else}
           <VerdictChoices {review} />
         {/if}
       </div>
-      {#if review.form?.error}<p class="error" role="status">{review.form.error}</p>{:else if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
+      {#if review.form?.error}<p class="error" role="alert">{review.form.error}</p>{:else if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
       <div class="row">
         <button class="button small point" aria-pressed={pointer?.pointing ?? false} disabled={pointer === null} onclick={() => pointer && void emit(ARM, { session: pointer.session })}><Icon name="point" />Point</button>
         {#if pointer === null}<span class="why">Open {view.artifact} in a viewer to point.</span>{/if}
         <span class="spacer"></span>
         {#if review.form}
           <button class="button small primary" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
-          <VerdictChoices {review} />
         {/if}
       </div>
     {:else if view}

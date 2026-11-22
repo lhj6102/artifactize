@@ -1,0 +1,40 @@
+<script lang="ts">
+  import type { Attachment } from "svelte/attachments";
+  import Icon from "../shell/Icon.svelte";
+  import type { Review } from "./review.svelte";
+
+  let { review }: { review: Review } = $props();
+  let now = $state(Date.now());
+  const clock: Attachment = () => {
+    const update = () => (now = Date.now());
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  };
+</script>
+
+{#if review.busy}
+  <span class="busy" role="status" {@attach clock}>
+    <span class="tone-running"><Icon name="running" label={review.busy.label} /></span>
+    <span class="seconds">{Math.max(0, Math.floor((now - review.busy.since) / 1000))}s</span>
+    <button class="button small" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button>
+  </span>
+{:else if review.notice?.error}
+  <span class="error" role="status">{review.notice.text}</span>
+{/if}
+
+<style>
+  .busy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .tone-running { display: inline-flex; }
+  .seconds { color: var(--ink-2); }
+  .error {
+    min-width: 0;
+    color: var(--red);
+    overflow-wrap: anywhere;
+  }
+</style>

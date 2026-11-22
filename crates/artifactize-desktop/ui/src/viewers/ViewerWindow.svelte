@@ -13,6 +13,7 @@
   import { ARM, ASK, ViewerState, setViewerState } from "./viewer-state.svelte";
   import FilesViewer from "./FilesViewer.svelte";
   import MarkdownViewer from "./MarkdownViewer.svelte";
+  import { SvelteFlowProvider } from "@xyflow/svelte";
   import ArtifactizeViewer from "./ArtifactizeViewer.svelte";
 
   let { session }: { session: number } = $props();
@@ -125,7 +126,7 @@
 
 <div class="window" class:pointing={v.pointing}>
   <header class="strip">
-    <span class="name" title={context?.artifact}>{context?.artifact ?? ""}</span>
+    <span class="name">{context?.artifact ?? ""}</span>
     <span class="kind">{context?.title ?? ""}</span>
     {#if entry?.kind === "web" && v.page !== "connected"}
       <span class="page" class:silent={v.page === "silent"} role="status">
@@ -153,7 +154,7 @@
       {:else if entry.viewer === "markdown"}
         <MarkdownViewer />
       {:else}
-        <ArtifactizeViewer />
+        <SvelteFlowProvider><ArtifactizeViewer /></SvelteFlowProvider>
       {/if}
     {/if}
   </div>

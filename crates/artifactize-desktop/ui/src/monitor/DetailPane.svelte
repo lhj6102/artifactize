@@ -6,9 +6,9 @@
   // / [eval] [eval] …`, and shows its Summary or its log (an Agent's transcript, a runtime's
   // saved output), or in a Run the shared Human Detail. Its width is the Detail's: everything in
   // it wraps or scrolls in its own box.
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { call, useIpc, message, type BranchView, type Source } from "../ipc/client";
+  import { call, useIpc, message, type BranchView, type RunPanel, type Source } from "../ipc/client";
   import type { Review } from "../review/review.svelte";
   import { getAppState } from "../shell/app.svelte";
   import { DetailPaneState, setDetailPaneState } from "./detail-pane-state.svelte";
@@ -16,7 +16,7 @@
   import Panel from "../shell/Panel.svelte";
   import Section from "../shell/Section.svelte";
   import Icon from "../shell/Icon.svelte";
-  import { markIcon } from "../shell/icons";
+  import { markIcon, markLabel } from "../shell/icons";
   import RecordDetail from "./RecordDetail.svelte";
   import { NeighboursState } from "./neighbours-state.svelte";
   import Neighbours from "./Neighbours.svelte";
@@ -33,6 +33,7 @@
     source,
     revision,
     branch,
+    run = null,
     node,
     tab,
     focused,
@@ -53,6 +54,7 @@
     /** The branch shown: an Artifact's tools run in its worktree. */
     branch: Pick<BranchView, "key" | "workspace"> | null;
     /** The Artifact (or the Run) the Detail is of. */
+    run?: RunPanel | null;
     node: string;
     /** The eval whose tab is shown, or `null` for the Artifact's own. */
     tab: string | null;
@@ -198,7 +200,7 @@
         {#each evals as item (item.id)}
           {@const icon = markIcon(item.glyph, item.tone)}
           <button class="chip" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
-            <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} />{:else}{item.glyph}{/if}</span><span class="label">{item.name}</span>
+            <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} label={markLabel(icon)} />{:else}{item.glyph}{/if}</span><span class="label">{item.name}</span>
           </button>
         {/each}
       </div>
@@ -212,15 +214,22 @@
             {#each evals as item (item.id)}
               {@const icon = markIcon(item.glyph, item.tone)}
               <li>
-                <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => void showEval(item.id)}>
-                  <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} />{:else}{item.glyph}{/if}</span>
-                  <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
-                  <span class="status">
-                    {#each item.text as segment, part (part)}<span class={tone(segment.tone)}>{segment.text}</span>{/each}
-                  </span>
-                  <span class="muted right">{item.right}</span>
-                </button>
-                {#if source.kind === "run" && item.tone === "human"}<EvalReview {source} node={item.id} {revision} />{/if}
+                {#snippet evalRow(stage?: Snippet)}
+                  <button class="eval" class:ink-dim={item.weight === "dim"} data-eval={item.id} onclick={() => void showEval(item.id)}>
+                    <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} />{:else}{item.glyph}{/if}</span>
+                    <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
+                    <span class="status">
+                      <span class="verdict-status">{#each item.text as segment, part (part)}<span class={tone(segment.tone)}>{segment.text}</span>{/each}</span>
+                      {#if stage} {@render stage()}{/if}
+                    </span>
+                    <span class="muted right">{item.right}</span>
+                  </button>
+                {/snippet}
+                {#if source.kind === "run" && item.tone === "human"}
+                  <EvalReview {source} node={item.id} {revision} row={evalRow} />
+                {:else}
+                  {@render evalRow()}
+                {/if}
               </li>
             {/each}
           </ul>
@@ -247,7 +256,7 @@
           {#if reviewing}<HumanDetail review={reviewing} {active} {onback} onopenreview={() => app.showReview(request)} />{/if}
         {/key}
       {:else}
-        <RecordDetail {detail} path={source.kind !== "current"} debugFacts={tab === null ? drawnIn : []} bind:log={() => log, (value) => (d.log = value ? target : null)} />
+        <RecordDetail {detail} {run} path={source.kind !== "current"} debugFacts={tab === null ? drawnIn : []} bind:log={() => log, (value) => (d.log = value ? target : null)} />
       {/if}
     </div>
   </div>
@@ -364,11 +373,7 @@
     overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
   }
-  .weight-bold .name,
-  .weight-bold .status {
-    font-weight: 600;
-  }
-  .weight-dim {
+  .eval.ink-dim {
     color: var(--ink-2);
   }
   .muted {

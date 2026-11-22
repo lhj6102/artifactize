@@ -17,8 +17,8 @@
     <summary>
       <span class={busy ? "tone-running" : "icon"}><Icon name={busy ? "running" : item.icon} /></span>
       <span class="verb">{item.verb}</span>
-      {#if item.target}<span class="target" title={item.target}>{item.target}</span>{/if}
-      {#if tool.failed}<span class="failed" title={reason(tool)}>{reason(tool)}</span>{/if}
+      {#if item.target}<span class="target">{item.target}</span>{/if}
+      {#if tool.failed}<span class="failed">{reason(tool)}</span>{/if}
     </summary>
     <div class="details">
       <dl>
@@ -69,5 +69,5 @@
   .details { padding: 2px 0 4px; }
   dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: baseline; margin: 0; }
   dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-  pre { margin: 4px 0 0; padding: 6px 8px; overflow: auto; background: var(--surface-input); border-radius: var(--radius-control); color: var(--ink); }
+  pre { margin: 4px 0 0; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-input); border-radius: var(--radius-control); color: var(--ink); }
 </style>

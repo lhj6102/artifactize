@@ -2,7 +2,6 @@ import { createContext } from "svelte";
 
 export class HumanDetailState {
   logOpen = $state(false);
-  now = $state(Date.now());
   root = $state<HTMLElement>();
   instruction = $state<HTMLElement>();
   /** The review's width in pixels, once measured. */

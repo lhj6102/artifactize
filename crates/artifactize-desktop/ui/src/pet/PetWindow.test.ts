@@ -16,7 +16,7 @@ afterEach(() => {
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
-function backend() {
+function backend(submitError?: string) {
   const calls: Call[] = [];
   const library = draftLibrary();
   mockIPC((cmd, args) => {
@@ -27,6 +27,7 @@ function backend() {
       case "human_open":
         return humanView("review");
       case "human_draft_submit":
+        if (submitError) throw { kind: "validation", message: submitError };
         return { notice: { text: "Submitted.", error: false }, view: humanView("completed"), settled: "published" };
       default:
         return null;
@@ -43,6 +44,8 @@ it("writes the review's form and opens the verdict the draft holds", async () =>
   await screen.findByRole("button", { name: "Show release/signoff in Review" });
   // The draft holds GREEN: its form is open, Submit names it.
   await screen.findByRole("button", { name: "Submit GREEN" });
+  expect(screen.getAllByRole("radio").map((button) => button.textContent?.trim())).toEqual(["GREEN", "RED"]);
+  expect(screen.queryByRole("button", { name: /^(GREEN|RED)$/ })).toBeNull();
   await fireEvent.input(screen.getByLabelText(/comment/i), { target: { value: "Looks right." } });
   await waitFor(() => expect(library.draft.green.draft.fields[1][1]).toEqual({ kind: "text", value: "Looks right." }));
   await fireEvent.click(screen.getByRole("radio", { name: "RED" }));
@@ -50,6 +53,17 @@ it("writes the review's form and opens the verdict the draft holds", async () =>
   expect(library.draft.verdict).toBe("RED");
   await fireEvent.click(screen.getByRole("button", { name: "Submit RED" }));
   await waitFor(() => expect(calls.some((call) => call.cmd === "human_draft_submit")).toBe(true));
+});
+
+it("shows a submission error once and keeps the verdict form open", async () => {
+  const error = "A comment is required.";
+  const { library } = backend(error);
+  library.draft.verdict = "GREEN";
+  render(PetWindow, { request: "run-a-2" });
+  await fireEvent.click(await screen.findByRole("button", { name: "Submit GREEN" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(error);
+  expect(screen.getAllByText(error)).toHaveLength(1);
+  expect(screen.getByLabelText(/comment/i)).toBeTruthy();
 });
 
 it("points only in the open viewer matched to the review's original request, saying why otherwise", async () => {

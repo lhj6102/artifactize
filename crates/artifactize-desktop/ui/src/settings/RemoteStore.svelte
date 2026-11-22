@@ -38,7 +38,7 @@
       {#if s.remoteError}
         <dd class="error" role="alert">{s.remoteError}</dd>
       {:else if s.remoteNotice}
-        <dd class="notice" role="status">{s.remoteNotice}</dd>
+        <dd class="notice" role="status">{s.remoteNotice.text}{#if !s.remoteNotice.dryRun} · <span data-testid="remote-pushed">{pushedToday} pushed today</span>{/if}</dd>
       {:else}
         <dd class="notice">Signed in · <span data-testid="remote-principal">{connection.principal} (scopes: {connection.scopes.join(", ")})</span> · <span data-testid="remote-pushed">{pushedToday} pushed today</span></dd>
       {/if}

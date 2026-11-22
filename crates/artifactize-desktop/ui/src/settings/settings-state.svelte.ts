@@ -110,7 +110,7 @@ export class SettingsState {
   listing = $state(false);
   remote = $state.raw<RemoteStatus | null>(null);
   remoteError = $state<string | null>(null);
-  remoteNotice = $state<string | null>(null);
+  remoteNotice = $state.raw<{ text: string; dryRun: boolean } | null>(null);
   /** When the remote status was last read, in milliseconds since 1970: what was pushed today
    * counts from the local midnight before it. */
   remoteRead = $state(0);
@@ -562,7 +562,7 @@ export class SettingsState {
     this.working = true;
     try {
       const report: Pushed = await call(this.#commands.remotePush(dryRun));
-      this.remoteNotice = `${dryRun ? "Would push" : "Pushed"} ${report.pushed}, already in the store ${report.existing}, skipped ${report.skipped}.`;
+      this.remoteNotice = { dryRun, text: `${dryRun ? "Would push" : "Pushed"} ${report.pushed}, already in the store ${report.existing}, skipped ${report.skipped}.` };
       // What was pushed today counts this push from now on; its result stays the status line.
       if (!dryRun) await this.#remoteCall(() => call(this.#commands.remoteStatus()));
     } catch (failure) {

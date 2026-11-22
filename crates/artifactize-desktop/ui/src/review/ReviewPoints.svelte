@@ -26,10 +26,10 @@
   {#each points as point, at (`${key(point)}:${at}`)}
     <li class:newest={at === points.length - 1 && key(point) === newest}>
       <span class="point"><Icon name="point" /></span>
-      <span class="text" title={point.text}>{point.text}</span>
+      <span class="text">{point.text}</span>
       {#if !compact}
         {@const source = `${point.source} · ${time(point.at)}`}
-        <span class="source" title={source}>{source}</span>
+        <span class="source">{source}</span>
       {/if}
       <button class="button small" disabled={!review.form} onclick={() => insert(point.text)}>Insert</button>
       {#if !compact}

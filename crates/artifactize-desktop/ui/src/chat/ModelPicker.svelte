@@ -100,7 +100,7 @@
         {#if query}<p class="note">No model matches.</p>{/if}
       {/each}
       <hr />
-      <button class="item connect" role="menuitem" onclick={() => { c.picking = false; app.settingsTab = "providers"; app.monitor.settings = true; }}><Icon name="add" />Connect provider</button>
+      <button class="item connect" role="menuitem" onclick={() => { c.picking = false; app.openSettings(); }}><Icon name="add" />Connect provider</button>
       {#if unconfigured.length}<p class="note">Not set up: {unconfigured.join(", ")}</p>{/if}
     </div>
   {/if}

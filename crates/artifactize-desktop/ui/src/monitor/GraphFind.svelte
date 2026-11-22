@@ -12,7 +12,7 @@
   import { composing } from "../shell/keys";
   import { tone } from "../shell/tone";
   import Icon from "../shell/Icon.svelte";
-  import { markIcon } from "../shell/icons";
+  import { markIcon, markLabel } from "../shell/icons";
 
   let {
     source,
@@ -106,6 +106,7 @@
     {#if found.length > 0}
       <ul class="found" id="graph-found" role="listbox" aria-label={favorites ? "Favorites" : "Found"}>
         {#each found as item, at (`${item.node}\n${item.tab}`)}
+          {@const icon = markIcon(item.glyph, item.tone)}
           <!-- The keys belong to the field, which names the chosen entry as its active one. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <li
@@ -117,7 +118,7 @@
             onmousedown={(event) => event.preventDefault()}
             onclick={() => onchoose(item)}
           >
-            <span class="glyph {tone(item.tone)}">{#if markIcon(item.glyph, item.tone)}<Icon name={markIcon(item.glyph, item.tone)!} />{:else}{item.glyph}{/if}</span><span class="name">{named(item)}</span>
+            <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} label={markLabel(icon)} />{:else}{item.glyph}{/if}</span><span class="name">{named(item)}</span>
           </li>
         {/each}
       </ul>

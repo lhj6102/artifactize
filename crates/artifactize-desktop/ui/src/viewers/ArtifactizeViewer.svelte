@@ -4,17 +4,21 @@
   // panned and zoomed as Verify's graph is. A click on an Artifact opens its panel at the right:
   // its evals with their kind, title, criteria and the Artifacts they read. While pointing, a
   // click on an Artifact or an eval appends its ID.
-  import { SvelteFlow, SvelteFlowProvider, type Edge, type Node, type Viewport } from "@xyflow/svelte";
+  import { SvelteFlow, useSvelteFlow, type Edge, type Node, type Viewport } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import "@xyflow/svelte/dist/style.css";
   import { onMount } from "svelte";
   import { call, message } from "../ipc/client";
+  import GraphTools from "../monitor/GraphTools.svelte";
   import { layered } from "../monitor/layout";
   import { criteria, declared, edges as connections, evalsOf, type Declared } from "./declared";
   import DeclaredNode from "./DeclaredNode.svelte";
   import { getViewerState } from "./viewer-state.svelte";
 
   const v = getViewerState();
+  const flow = useSvelteFlow();
+  const MIN_ZOOM = 0.1;
+  const MAX_ZOOM = 2;
   const SIZE = { width: 168, height: 36 };
   const nodeTypes = { declared: DeclaredNode };
   /** The smallest grid cell, in screen pixels, still drawn. */
@@ -74,66 +78,74 @@
 </script>
 
 <div class="declared">
-  <div
-    class="canvas"
-    class:far={cell < GRID_SHOWN}
-    aria-label="Declared graph"
-    style:background-size="{cell}px {cell}px"
-    style:background-position="{camera.x}px {camera.y}px"
-    {@attach gridCell}
-  >
-    {#if error}<p class="error">{error}</p>{/if}
-    {#if graph}
-      <SvelteFlowProvider>
+  <GraphTools zoom={camera.zoom} showFind={false} act={graph ? {
+    zoomBy: (factor) => void flow.setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, flow.getZoom() * factor))),
+    fit: () => void flow.fitView(),
+  } : null} />
+  <div class="surface">
+    <div
+      class="canvas"
+      class:far={cell < GRID_SHOWN}
+      aria-label="Declared graph"
+      style:background-size="{cell}px {cell}px"
+      style:background-position="{camera.x}px {camera.y}px"
+      {@attach gridCell}
+    >
+      {#if error}<p class="error">{error}</p>{/if}
+      {#if graph}
         <SvelteFlow
           bind:nodes
           bind:edges
           bind:viewport={camera}
           {nodeTypes}
           fitView
-          minZoom={0.1}
-          maxZoom={2}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
           proOptions={{ hideAttribution: true }}
           onnodeclick={({ node }) => clicked(node.id)}
         />
-      </SvelteFlowProvider>
+      {/if}
+    </div>
+    {#if shown}
+      <section class="panel" aria-label="Artifact {shown.name}">
+        <header><span class="name">{shown.name}</span><span class="tag">{shown.kind || "custom"}</span></header>
+        <div class="evals">
+          {#each shown.evals as [id, each] (id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+            <section class="eval" class:pointing={v.pointing} aria-label={id} onclick={(event) => pointEval(event, id)}>
+              <p class="id"><span class="mono">{id}</span><span class="tag">{each.criteria.kind}</span></p>
+              <p class="label">Title</p>
+              <p>{each.title}</p>
+              {#if criteria(each)}
+                <p class="label">Criteria</p>
+                <p class="criteria">{criteria(each)}</p>
+              {/if}
+              {#if each.reads?.length}
+                <p class="label">Reads</p>
+                <p class="reads">{#each each.reads as read (read)}<span class="tag">{read}</span>{/each}</p>
+              {/if}
+            </section>
+          {:else}
+            <p class="quiet">No evals.</p>
+          {/each}
+        </div>
+      </section>
     {/if}
   </div>
-  {#if shown}
-    <section class="panel" aria-label="Artifact {shown.name}">
-      <header><span class="name">{shown.name}</span><span class="tag">{shown.kind || "custom"}</span></header>
-      <div class="evals">
-        {#each shown.evals as [id, each] (id)}
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-          <section class="eval" class:pointing={v.pointing} aria-label={id} onclick={(event) => pointEval(event, id)}>
-            <p class="id"><span class="mono">{id}</span><span class="tag">{each.criteria.kind}</span></p>
-            <p class="label">Title</p>
-            <p>{each.title}</p>
-            {#if criteria(each)}
-              <p class="label">Criteria</p>
-              <p class="criteria">{criteria(each)}</p>
-            {/if}
-            {#if each.reads?.length}
-              <p class="label">Reads</p>
-              <p class="reads">{#each each.reads as read (read)}<span class="tag">{read}</span>{/each}</p>
-            {/if}
-          </section>
-        {:else}
-          <p class="quiet">No evals.</p>
-        {/each}
-      </div>
-    </section>
-  {/if}
 </div>
 
 <style>
   .declared {
-    position: relative;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     height: 100%;
     min-height: 0;
+  }
+  .surface {
+    position: relative;
   }
   /* The canvas keeps the whole window; its faint grid moves and scales with the camera, left
      out once its cells are too small to read (D-GRAPH-1, D-GRAPH-6). */

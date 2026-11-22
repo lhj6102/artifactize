@@ -276,6 +276,32 @@ it("expands a clicked branch to its timeline and moves through the timelines wit
   expect(screen.queryByRole("listbox", { name: "Waiting reviews" })).toBeNull();
 });
 
+it("reopens Settings on Providers from the bar and shortcut", async () => {
+  backend(monitor(), () => browseView(1));
+  render(App);
+  const gear = await screen.findByRole("button", { name: "Settings" });
+  await fireEvent.click(gear);
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  await fireEvent.click(within(settings).getByRole("tab", { name: "Remote" }));
+  expect(within(settings).getByRole("tab", { name: "Remote" }).getAttribute("aria-selected")).toBe("true");
+  await fireEvent.click(within(settings).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull());
+  await fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+  const reopened = await screen.findByRole("dialog", { name: "Settings" });
+  expect(within(reopened).getByRole("tab", { name: "Providers" }).getAttribute("aria-selected")).toBe("true");
+});
+
+it("lists the composer's shortcuts in Conversation Help instead of branch navigation", async () => {
+  backend(monitor(), () => browseView(1));
+  render(App);
+  await fireEvent.click(within(await screen.findByRole("navigation", { name: "Modes" })).getByRole("button", { name: "Chat" }));
+  await fireEvent.keyDown(window, { key: "?" });
+  const help = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+  const conversation = within(help).getByRole("heading", { name: "Conversation" }).parentElement!;
+  expect([...conversation.querySelectorAll("dd")].map((action) => action.textContent)).toEqual(["Send", "Break a line", "Stop the running turn"]);
+  expect(within(help).queryByRole("heading", { name: "Pane" })).toBeNull();
+});
+
 it("switches modes from the bottom bar, each kept as it was left, and lists and opens the waiting reviews in Review", async () => {
   const main = branch("main", [runChip("run-0", "RED")]);
   backend(monitor(), () => browseView(1, { branches: [main], waiting: [waitingRow("run-0-1")] }));

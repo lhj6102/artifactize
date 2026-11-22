@@ -60,7 +60,7 @@
     border: 0;
     background: none;
     font: inherit;
-    color: var(--ink-2);
+    color: var(--accent);
     text-align: left;
     text-decoration: underline;
     overflow-wrap: anywhere;

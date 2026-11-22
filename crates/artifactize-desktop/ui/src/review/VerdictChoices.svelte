@@ -31,7 +31,8 @@
   }
   .verdict.green::before { background: var(--green); }
   .verdict.red::before { background: var(--red); }
-  .verdict[aria-checked="true"] {
+  .verdict[aria-checked="true"],
+  .verdict[aria-checked="true"]:hover:not(:disabled) {
     color: var(--ink);
     border-color: var(--outline-selected);
   }

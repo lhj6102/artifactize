@@ -134,7 +134,8 @@
   }
 
   function settings() {
-    m.settings = !m.settings;
+    if (m.settings) m.settings = false;
+    else app.openSettings();
   }
 
   /** A press on the bar's Settings button is its own toggle, not a click outside Settings that
@@ -198,9 +199,10 @@
 
   useCommands(() => [
     { id: "app.help", group: "App", label: "Keyboard shortcuts", keys: "?", run: () => (app.help = true) },
-    { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => (m.settings = true) },
+    { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => app.openSettings() },
     ...MODES.map((item) => ({ id: `app.mode.${item.mode}`, group: "App", label: `Show ${item.label}`, keys: item.keys, run: () => show(item.mode) })),
     { id: "app.pane", group: "App", label: "Show or hide the Pane", keys: "Ctrl+B", run: () => void togglePane() },
+    { id: "chat.new", group: "App", label: "New chat", run: () => { show("chat"); app.newChat(); } },
     { id: "app.search", group: "App", label: "Search the branches", keys: "/", run: () => void search() },
     { id: "app.filter", group: "App", label: "Filter the reviews", run: () => void filter() },
     { id: "app.open-id", group: "App", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
@@ -257,7 +259,7 @@
    * Review, or on the Detail's tab), or a graph with its Detail. */
   const focused = $derived.by((): Focused => {
     if (m.settings) return "settings";
-    if (app.mode === "chat") return app.liveGraph ? "current" : "pane";
+    if (app.mode === "chat") return app.liveGraph ? "current" : "chat";
     if (app.mode === "review") return r.focus === "pane" ? "pane" : "review";
     if (m.focus === "pane") return "pane";
     if (m.focus === "detail" && m.opened?.request !== undefined) return "review";

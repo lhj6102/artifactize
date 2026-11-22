@@ -10,7 +10,7 @@
   import type { BranchKey, BranchView, BrowseView, Chip } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { KEEP, MIN } from "./detail-width";
+  import { mainSplitMinimum, PANE_MIN } from "./detail-width";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
@@ -261,12 +261,11 @@
   ], () => app.mode === "verify" && !app.monitor.settings);
 
   /** The Pane's narrowest share of the window, in percent. */
-  const PANE_MIN = 12;
   /** The window's width, as the Pane and the Main area share it. */
   let windowWidth = $state(window.innerWidth);
   /** The Main area's narrowest share: room for the narrowest Detail beside the graph it keeps
    * visible (D-INS-1), and never less than 30 percent. */
-  const mainMin = $derived(Math.min(100 - PANE_MIN, Math.max(30, ((MIN + KEEP) / windowWidth) * 100)));
+  const mainMin = $derived(mainSplitMinimum(windowWidth));
 </script>
 
 {#snippet detail()}
@@ -275,6 +274,7 @@
       source={m.opened.source}
       {revision}
       {branch}
+      {run}
       node={m.opened.node}
       tab={m.opened.tab}
       focused={m.focus === "detail"}

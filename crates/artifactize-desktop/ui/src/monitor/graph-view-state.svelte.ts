@@ -32,8 +32,6 @@ export class GraphViewState {
   /** Where the pointer last went down on the graph: a dropped node moved as far as the pointer
    * did from there, whatever frames its drawing skipped. */
   pressed = $state.raw<Point | null>(null);
-  /** The copy the pointer is over while something is dragged, which the library is asked about. */
-  aim: string | null = null;
   /** The drawn copy focus is on, by key. */
   focused = $state<string | null>(null);
   /** A whole's face was just dragged to pan: the click that ends it opens nothing. */

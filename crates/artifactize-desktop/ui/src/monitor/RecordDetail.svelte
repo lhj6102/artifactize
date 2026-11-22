@@ -8,7 +8,9 @@
   // Agent's live transcript, or a runtime's saved output. An Artifact's Detail is its Path and
   // Debug; a Run's leads with its Outcome and what it Waits for, then What, Provenance and
   // Technical.
-  import type { DetailView, Field } from "../ipc/client";
+  import type { DetailView, Field, RunPanel } from "../ipc/client";
+  import { getAppState } from "../shell/app.svelte";
+  import Reference from "../shell/Reference.svelte";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
   import { markIcon, statusIcon } from "../shell/icons";
@@ -18,11 +20,13 @@
 
   let {
     detail,
+    run = null,
     path = true,
     debugFacts = [],
     log = $bindable(),
   }: {
     detail: DetailView;
+    run?: RunPanel | null;
     /** Facts the caller knows of this Artifact, shown first under Debug. */
     debugFacts?: [string, string][];
     /** An Artifact's Path is shown: a Current shows its Definition instead. */
@@ -31,6 +35,8 @@
     log: boolean;
   } = $props();
 
+  const app = getAppState();
+  const origin = $derived(run?.origin ?? null);
   const agent = $derived(detail.profile === "agent" && detail.request !== null);
   /** The name of the request's log, if it has one. */
   const logName = $derived(agent ? "Agent log" : detail.evidence ? "Runtime log" : null);
@@ -73,14 +79,33 @@
   const metadata = $derived(pick(METADATA));
   const fingerprint = $derived(pick(["Fingerprint"]));
   /** A Run's sections after its outcome and what it waits for. */
-  const runSections = $derived(detail.sections.filter((section) => section.name !== "outcome" && section.name !== "waits" && section.fields.length > 0));
+  const runSections = $derived.by(() => {
+    const sections = detail.sections.filter((section) => section.name !== "outcome" && section.name !== "waits" && section.fields.length > 0);
+    if (origin && !sections.some((section) => section.name === "provenance")) {
+      const technical = sections.findIndex((section) => section.name === "technical");
+      sections.splice(technical < 0 ? sections.length : technical, 0, { name: "provenance", title: "Provenance", fields: [], waits: [] });
+    }
+    return sections;
+  });
   /** A Run's other outcome facts (its errors, what waits or runs), each said once. */
   const outcomeFields = $derived(detail.sections.find((section) => section.name === "outcome")?.fields ?? []);
   const words = (status: string) => status.replaceAll("_", " ");
 </script>
 
-{#snippet facts(list: Field[] | [string, string][])}
+{#snippet facts(list: Field[] | [string, string][], provenance = false)}
   <dl>
+    {#if provenance && origin}
+      <dt>Started by</dt>
+      <dd>
+        {#if origin.kind === "chat" && run}
+          {@const session = origin}
+          {@const id = run.id}
+          <Reference chip onclick={() => app.showChat(session.sessionId, id)}>Chat · {session.title}</Reference>
+        {:else}
+          {origin.kind === "mcp" ? "MCP client" : "CLI"}
+        {/if}
+      </dd>
+    {/if}
     <!-- A Detail can repeat a key: key by position. -->
     {#each list as fact, at (at)}
       {@const [key, value] = Array.isArray(fact) ? fact : [fact.key, fact.value]}
@@ -183,7 +208,7 @@
       {/if}
       {#each runSections as section (section.name)}
         <Section name={section.title}>
-          {@render facts(section.fields)}
+          {@render facts(section.fields, section.name === "provenance")}
         </Section>
       {/each}
     </div>
@@ -248,7 +273,7 @@
       <div class="sections">
         {#each detail.sections as section (section.name)}
           {#if section.fields.length > 0}
-            <Section name={section.title}>{@render facts(section.fields)}</Section>
+            <Section name={section.title}>{@render facts(section.fields, section.name === "provenance")}</Section>
           {/if}
         {/each}
       </div>

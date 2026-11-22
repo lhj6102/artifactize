@@ -16,6 +16,7 @@
   import Icon from "../shell/Icon.svelte";
   import SearchField from "../shell/SearchField.svelte";
   import Reference from "../shell/Reference.svelte";
+  import { tone } from "../shell/tone";
   import { statusIcon } from "../shell/icons";
   import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
@@ -220,7 +221,7 @@
               <li class="group" role="presentation">{project}</li>
               {#each members as row (row.id)}
                 <li role="option" aria-selected={r.selected === row.id} class:selected={r.selected === row.id} data-key={row.id} onclick={() => open(row)} onkeydown={() => {}}>
-                  <span class="glyph tone-human"><Icon name={statusIcon(row.mark.status)} /></span>
+                  <span class="glyph {tone(row.mark.status)}"><Icon name={statusIcon(row.mark.status)} label={row.mark.status.replaceAll("_", " ")} /></span>
                   <span class="eval">{row.eval}</span>
                   <span class="age">{row.claimant ? `${row.claimant} · ` : ""}{row.age}</span>
                 </li>

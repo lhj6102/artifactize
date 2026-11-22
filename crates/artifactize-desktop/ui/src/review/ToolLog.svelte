@@ -41,7 +41,7 @@
 {/snippet}
 
 {#snippet ended(end: LogText, count: number)}
-  <p class="end">{#if end.error && end.text.startsWith("■ exit ")}<span class="red">■</span>{end.text.slice(1)}{:else if end.error && end.text.startsWith("■ error:")}■ <span class="red">error:</span>{end.text.slice("■ error:".length)}{:else}{end.text}{/if}{folded ? ` · ${lineCount(count)}` : ""}</p>
+  <p class="end" class:failed={end.error && end.text.startsWith("■ error:")}>{#if end.error && end.text.startsWith("■ exit ")}<span class="red">■</span>{end.text.slice(1)}{:else}{end.text}{/if}{folded ? ` · ${lineCount(count)}` : ""}</p>
 {/snippet}
 
 <!-- Focusable so the keys scroll it; its text selects and copies like any other. -->
@@ -84,7 +84,7 @@
   }
   .start, .end, .muted { color: var(--ink-2); }
   .log .end:not(:last-child) { margin-bottom: 6px; }
-  .red { color: var(--red); }
+  .end.failed, .red { color: var(--red); }
   .stderr {
     padding-left: 6px;
     box-shadow: inset 2px 0 0 var(--red);

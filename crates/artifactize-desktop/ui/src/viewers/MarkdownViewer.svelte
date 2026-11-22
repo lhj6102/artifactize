@@ -1,8 +1,9 @@
 <script lang="ts">
   // The Markdown viewer (J-VIEWER-MARKDOWN, D-VIEW-4): the Artifact's Markdown rendered in a
   // column of the reading measure; an Artifact of several Markdown files lists them at the left.
-  // While pointing, a click on a block appends its line and the column the click landed on.
+  // While pointing, a click appends the line and column the pointer landed on.
   import { onMount } from "svelte";
+  import { call, message } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
   import type { Span } from "./markdown";
   import { MarkdownState } from "./markdown-state.svelte";
@@ -13,13 +14,56 @@
   const m = new MarkdownState(v);
   const single = $derived(v.context?.targetKind === "file");
 
-  /** A click on the block starting at `line` while pointing: that line, and where in it. */
-  function pointAt(event: MouseEvent, line: number) {
+  let handle = $state.raw<{ left: number; top: number; width: number; height: number } | null>(null);
+
+  function sourceLine(event: MouseEvent) {
+    return (event.target as HTMLElement).closest<HTMLElement>("[data-line]");
+  }
+
+  function pointAt(event: MouseEvent) {
     if (!v.pointing) return;
     event.preventDefault();
-    event.stopPropagation();
+    const line = sourceLine(event);
+    if (!line) return;
     const caret = caretOffset(event.clientX, event.clientY);
-    void v.point(position(single || m.files.length < 2 ? null : m.shown, line, (caret?.offset ?? 0) + 1));
+    const before = document.createRange();
+    before.selectNodeContents(line);
+    if (caret && line.contains(caret.node)) before.setEnd(caret.node, caret.offset);
+    else before.collapse(true);
+    handle = null;
+    void v.point(position(single || m.files.length < 2 ? null : m.shown, Number(line.dataset.line), before.toString().length + 1));
+  }
+
+  /** Highlight only the visible line, even when a single source line wraps. */
+  function hover(event: MouseEvent) {
+    const line = v.pointing ? sourceLine(event) : null;
+    if (!line) { handle = null; return; }
+    const range = document.createRange();
+    range.selectNodeContents(line);
+    const band = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.top <= event.clientY && rect.bottom >= event.clientY);
+    const rects = band.length ? band : line.matches("tr, .code-line") ? [line.getBoundingClientRect()] : [];
+    if (!rects.length) { handle = null; return; }
+    const page = event.currentTarget as HTMLElement;
+    const bounds = page.getBoundingClientRect();
+    const left = Math.min(...rects.map((rect) => rect.left));
+    const top = Math.min(...rects.map((rect) => rect.top));
+    handle = {
+      left: left - bounds.left + page.scrollLeft,
+      top: top - bounds.top + page.scrollTop,
+      width: Math.max(...rects.map((rect) => rect.right)) - left,
+      height: Math.max(...rects.map((rect) => rect.bottom)) - top,
+    };
+  }
+
+  async function openLink(event: MouseEvent, url: string) {
+    event.preventDefault();
+    if (v.pointing || (event.type === "auxclick" && event.button !== 1)) return;
+    try {
+      await call(v.ipc.chatOpenLink(url));
+      v.error = null;
+    } catch (failure) {
+      v.error = message(failure);
+    }
   }
 
   onMount(() => void m.load(single));
@@ -27,7 +71,7 @@
 
 {#snippet spans(items: Span[])}
   {#each items as span, at (at)}
-    {#if span.kind === "code"}<code>{span.text}</code>{:else if span.kind === "strong"}<strong>{span.text}</strong>{:else if span.kind === "em"}<em>{span.text}</em>{:else if span.kind === "link"}<span class="link">{span.text}</span>{:else}{span.text}{/if}
+    {#if span.kind === "code"}<code>{span.text}</code>{:else if span.kind === "strong"}<strong>{span.text}</strong>{:else if span.kind === "em"}<em>{span.text}</em>{:else if span.kind === "link"}<a href={span.url} draggable="false" onclick={(event) => void openLink(event, span.url)} onauxclick={(event) => void openLink(event, span.url)}>{span.text}</a>{:else}{span.text}{/if}
   {/each}
 {/snippet}
 
@@ -35,28 +79,31 @@
   {#if !single && m.files.length >= 2}
     <ul class="tree" aria-label="Markdown files">
       {#each m.files as path (path)}
-        <li><button class:selected={m.shown === path} aria-current={m.shown === path ? "true" : undefined} onclick={() => void m.show(path)}><span class="quiet"><Icon name="file" /></span>{path}</button></li>
+        <li><button class:selected={m.shown === path} aria-current={m.shown === path ? "true" : undefined} onclick={() => void m.show(path)}><span class="quiet"><Icon name="file" /></span><span class="filename">{path}</span></button></li>
       {/each}
     </ul>
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-  <article class="page" class:pointing={v.pointing} aria-label="Document">
+  <article class="page" class:pointing={v.pointing} aria-label="Document" onclick={pointAt} onmousemove={hover} onmouseleave={() => (handle = null)} onscroll={() => (handle = null)}>
+    {#if v.pointing && handle}
+      <span class="handle" aria-hidden="true" style:left="{handle.left}px" style:top="{handle.top}px" style:width="{handle.width}px" style:height="{handle.height}px"></span>
+    {/if}
     {#if m.error}<p class="error">{m.error}</p>{/if}
     {#each m.read as block, at (at)}
       {#if block.kind === "heading"}
-        <svelte:element this={`h${Math.min(block.level, 3)}`} role="heading" aria-level={block.level} tabindex="-1" onclick={(event: MouseEvent) => pointAt(event, block.line)}>{@render spans(block.spans)}</svelte:element>
+        <svelte:element this={`h${Math.min(block.level, 3)}`} role="heading" aria-level={block.level} tabindex="-1" data-line={block.line}>{@render spans(block.spans)}</svelte:element>
       {:else if block.kind === "paragraph"}
-        <p onclick={(event) => pointAt(event, block.line)}>{@render spans(block.spans)}</p>
+        <p>{#each block.lines as items, n (n)}{n ? " " : ""}<span data-line={block.line + n}>{@render spans(items)}</span>{/each}</p>
       {:else if block.kind === "list"}
         <svelte:element this={block.ordered ? "ol" : "ul"} class="list">
-          {#each block.items as item (item.line)}<li onclick={(event) => pointAt(event, item.line)}>{@render spans(item.spans)}</li>{/each}
+          {#each block.items as item (item.line)}<li data-line={item.line}>{@render spans(item.spans)}</li>{/each}
         </svelte:element>
       {:else if block.kind === "code"}
-        <pre onclick={(event) => pointAt(event, block.line)}>{block.text}</pre>
+        <pre>{#each block.text.split("\n") as text, n (n)}<span class="code-line" data-line={block.line + n + 1}>{text}</span>{/each}</pre>
       {:else if block.kind === "table"}
-        <table onclick={(event) => pointAt(event, block.line)}>
-          <thead><tr>{#each block.head as cell, c (c)}<th>{@render spans(cell)}</th>{/each}</tr></thead>
-          <tbody>{#each block.rows as row, r (r)}<tr>{#each row as cell, c (c)}<td>{@render spans(cell)}</td>{/each}</tr>{/each}</tbody>
+        <table>
+          <thead><tr data-line={block.line}>{#each block.head as cell, c (c)}<th>{@render spans(cell)}</th>{/each}</tr></thead>
+          <tbody>{#each block.rows as row, r (r)}<tr data-line={block.line + r + 2}>{#each row as cell, c (c)}<td>{@render spans(cell)}</td>{/each}</tr>{/each}</tbody>
         </table>
       {:else}
         <hr />
@@ -78,7 +125,7 @@
   .tree {
     margin: 0;
     padding: 4px 0;
-    overflow: auto;
+    overflow: hidden auto;
     list-style: none;
     background: var(--surface-panel);
     border-right: 1px solid var(--line-panel);
@@ -107,12 +154,19 @@
     background: var(--selection);
     color: var(--ink);
   }
+  .filename {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .quiet {
+    flex: none;
     display: inline-flex;
     color: var(--ink-2);
   }
   /* The rendered document on the panel, a column of the reading measure. */
   .page {
+    position: relative;
     min-width: 0;
     overflow: auto;
     padding: 16px 24px;
@@ -154,9 +208,14 @@
     padding: 8px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    line-height: 1.45;
   }
-  .link {
-    color: var(--ink-2);
+  .code-line {
+    display: block;
+    min-height: 1lh;
+  }
+  a {
+    color: var(--accent);
   }
   table {
     margin: 0 0 8px;
@@ -172,12 +231,15 @@
     border: 0;
     border-top: 1px solid var(--line-group);
   }
-  /* While pointing, the block under the pointer is outlined by the viewer's handle edge. */
-  .pointing :global(:is(h1, h2, h3, p, li, pre, table):hover) {
+  .pointing, .pointing a {
+    cursor: crosshair;
+  }
+  .handle {
+    position: absolute;
+    pointer-events: none;
     outline: 2px dashed var(--handle);
     box-shadow: inset 0 0 0 2px var(--handle-edge);
     outline-offset: -2px;
-    cursor: crosshair;
   }
   .error {
     color: var(--red);

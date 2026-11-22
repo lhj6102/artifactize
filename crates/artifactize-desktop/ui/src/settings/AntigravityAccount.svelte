@@ -6,6 +6,9 @@
   const status = $derived(s.antigravity);
   const signingIn = $derived(s.antigravityAttempt !== null);
   const signedIn = $derived(status?.state === "signedIn");
+  const installation = $derived(status && (status.path || status.version)
+    ? [status.path, status.version, status.state === "tooOld" ? `requires ${status.requiredVersion} or newer` : null].filter(Boolean).join(" · ")
+    : null);
   const error = $derived(s.antigravityError ?? (status && "error" in status ? status.error : null));
 
   function paste(event: SubmitEvent) {
@@ -17,20 +20,20 @@
 <section aria-labelledby="antigravity-title">
   <h2 id="antigravity-title">Antigravity</h2>
   <dl class="facts" aria-label="Antigravity sign-in">
-    {#if status?.state === "tooOld"}
+    {#if installation}
       <dt>agy</dt>
-      <dd>{status.version}</dd>
+      <dd>{installation}</dd>
     {/if}
     <dt>Sign-in</dt>
-    <dd data-testid="antigravity-status" class:warn={signingIn} class:error={!signingIn && error !== null}>
-      {#if signingIn}
-        sign-in in progress
-      {:else if error !== null}
+    <dd data-testid="antigravity-status" class:warn={signingIn && error === null} class:error={error !== null} role={error === null ? undefined : "alert"}>
+      {#if error !== null}
         {error}
+      {:else if signingIn}
+        sign-in in progress
       {:else if status?.state === "missing"}
         agy not found
       {:else if status?.state === "signedIn"}
-        Signed in with Google
+        Signed in with Google{status.account ? ` · ${status.account}` : ""}
       {:else if status?.state === "signedOut"}
         Not signed in
       {:else}
@@ -46,7 +49,6 @@
     <div class="row">
       <button class="button" type="button" onclick={() => void s.cancelAntigravitySignIn()}>Cancel sign-in</button>
     </div>
-    {#if s.antigravityError}<p class="error" role="alert">{s.antigravityError}</p>{/if}
     {#if s.antigravityPrompt}
       <Section name="Finish by hand" unfolded={s.antigravityByHand} ontoggle={() => (s.antigravityByHand = !s.antigravityByHand)}>
         <pre class="url">{s.antigravityPrompt.url}</pre>

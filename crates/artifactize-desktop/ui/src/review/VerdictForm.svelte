@@ -10,7 +10,7 @@
   import VerdictChoices from "./VerdictChoices.svelte";
   import Icon from "../shell/Icon.svelte";
 
-  let { review, form, caret }: { review: Review; form: FormDraft; caret: FormCaret } = $props();
+  let { review, form, caret, showError = true }: { review: Review; form: FormDraft; caret: FormCaret; showError?: boolean } = $props();
   /** What a person enters: constants are the form's own. */
   const entered = (fields: FormField[]) => fields.filter((field) => field.input.kind !== "fixed");
   const shown = $derived(entered(form.fields));
@@ -69,7 +69,7 @@
     </div>
   {:else if field.input.kind === "choice"}
     {@const chosen = value?.kind === "choice" ? value.value : null}
-    <select
+    <div class="choice"><select
       {id}
       class:empty={chosen === null}
       value={chosen === null ? "" : String(chosen)}
@@ -82,7 +82,7 @@
       {#each field.input.options as option, at (at)}
         <option value={String(at)}>{option}</option>
       {/each}
-    </select>
+    </select><span><Icon name="unfold" /></span></div>
   {:else if field.input.kind === "text"}
     <textarea
       {id}
@@ -164,7 +164,7 @@
       </div>
   {/each}
 
-  {#if form.error}
+  {#if showError && form.error}
     <div class="error" role="alert">{form.error}</div>
   {/if}
 </div>
@@ -209,7 +209,9 @@
     height: auto;
     min-height: 44px;
     padding: 4px 8px;
-    resize: vertical;
+    field-sizing: content;
+    min-height: calc(2lh + 10px);
+    resize: none;
   }
   /* An empty choice reads as a placeholder does. */
   select.empty {
@@ -296,6 +298,22 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+  }
+  .choice {
+    position: relative;
+  }
+  .choice select {
+    appearance: none;
+    padding-inline-end: 24px;
+  }
+  .choice span {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    color: var(--ink-2);
+    pointer-events: none;
   }
   .error {
     color: var(--red);

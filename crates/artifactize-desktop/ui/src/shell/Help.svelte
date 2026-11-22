@@ -14,7 +14,7 @@
     open = $bindable(false),
     sections,
     marks,
-  }: { open?: boolean; sections: Section[]; marks: Light[] } = $props();
+  }: { open?: boolean; sections: Section[]; marks: (Light | "human")[] } = $props();
 </script>
 
 <Dialog.Root bind:open>
@@ -40,7 +40,11 @@
               <h3>Marks</h3>
               <ul class="marks" aria-label="Marks">
                 {#each marks as light (light)}
-                  <li class="light-{light}"><span class="mark"><Icon name={LIGHTS[light].icon} /></span>{WORDS[light]}</li>
+                  {#if light === "human"}
+                    <li><span class="tone-human"><Icon name="human" /></span>A sign-off waiting, in the headline and on a Human eval’s chip</li>
+                  {:else}
+                    <li class="light-{light}"><span class="mark"><Icon name={LIGHTS[light].icon} /></span>{light === "active" ? "running or waiting for a Human" : WORDS[light]}</li>
+                  {/if}
                 {/each}
               </ul>
             </section>

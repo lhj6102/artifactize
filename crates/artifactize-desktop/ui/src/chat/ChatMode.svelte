@@ -15,6 +15,7 @@
   import Icon from "../shell/Icon.svelte";
   import { statusIcon } from "../shell/icons";
   import { tone } from "../shell/tone";
+  import { mainSplitMinimum, PANE_MIN } from "../monitor/detail-width";
   import Panel from "../shell/Panel.svelte";
   import Reference from "../shell/Reference.svelte";
   import { composing } from "../shell/keys";
@@ -23,7 +24,6 @@
   import ChatActivity from "./ChatActivity.svelte";
   import ChatMarkdown from "./ChatMarkdown.svelte";
   import ModelPicker from "./ModelPicker.svelte";
-  import { useCommands } from "../shell/commands.svelte";
   import CurrentView from "./CurrentView.svelte";
   import ScanState from "./ScanState.svelte";
 
@@ -47,6 +47,8 @@
   const view = $derived(c.view);
   const session = $derived(view?.session ?? null);
   const graph = $derived(session?.view === "graph");
+  let windowWidth = $state(window.innerWidth);
+  const mainMin = $derived(graph ? mainSplitMinimum(windowWidth) : 30);
   const live = $derived(graph && session?.unavailable === null);
   const mainNotice = $derived((live ? definitions.notice ?? c.graph?.graphError : null) ?? c.error);
   const running = $derived(view?.running ?? false);
@@ -114,20 +116,6 @@
       if (!c.picking) void c.stop();
     }
   }
-
-  // New chat from the palette too, whatever mode is shown: it shows Chat first (J-PALETTE).
-  useCommands(() => [
-    {
-      id: "chat.new",
-      group: "Chat",
-      label: "New chat",
-      run: () => {
-        app.monitor.settings = false;
-        app.mode = "chat";
-        app.newChat();
-      },
-    },
-  ]);
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
@@ -227,10 +215,12 @@
   </div>
 {/snippet}
 
+<svelte:window bind:innerWidth={windowWidth} />
+
 <div class="mode" {@attach following}>
   <PaneGroup direction="horizontal" autoSaveId="chat-layout" class="columns">
     {#if app.paneShown}
-      <Split id="chat-pane" order={1} defaultSize={20} minSize={12}>
+      <Split id="chat-pane" order={1} defaultSize={20} minSize={PANE_MIN}>
         <section class="pane" aria-label="Chats" bind:this={c.panes.pane}>
           <div class="head"><button class="button new" onclick={() => app.newChat()}><Icon name="add" />New chat</button></div>
           <div class="search"><input type="search" value={c.query} bind:this={c.panes.search} aria-label="Search chats" placeholder="Search chats" oninput={(event) => c.search(event.currentTarget.value)} onkeydown={(event) => {
@@ -259,7 +249,7 @@
       </Split>
       <PaneResizer class="resizer" />
     {/if}
-    <Split id="chat-main" order={2} defaultSize={app.paneShown ? 80 : 100} minSize={30}>
+    <Split id="chat-main" order={2} defaultSize={app.paneShown ? 80 : 100} minSize={mainMin}>
       <Panel title={session ? session.title || "New chat" : "Chat"} label="Chat's main area" focused={false} notice={mainNotice} bind:noticeOpen={c.noticeOpen} bind:element={c.panes.main}>
         {#snippet headline()}
           {#if session}
@@ -279,7 +269,7 @@
         {#if !session}
           <p class="empty">{c.listed && !c.query.trim() && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane."}</p>
         {:else}
-          <div class="chat">
+          <div class="chat" class:live>
             {#if graph}
               {#if session.unavailable !== null}
                 <p class="empty" role="status">{session.unavailable}</p>
@@ -334,7 +324,7 @@
               {/if}
               {#if rejected}
                 <div class="rejected">
-                  <span class="failed" role="status" title={rejected.reason}>{rejected.reason}</span>
+                  <span class="failed" role="status">{rejected.reason}</span>
                   <button class="button small" onclick={() => void c.copy(rejected.text)}>Copy</button>
                   <button class="button small" disabled={typed !== ""} onclick={() => { c.restore(session.id); c.panes.composer?.focus({ preventScroll: true }); }}>Restore</button>
                 </div>
@@ -559,12 +549,14 @@
     border-top: 1px solid var(--line-panel);
     background: var(--surface-app);
   }
+  .chat.live { row-gap: 8px; }
   .reading { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
   .convo { min-height: 0; overflow: auto; overflow-anchor: none; }
   .scroll-end {
     position: absolute;
     justify-self: center;
     bottom: 8px;
+    font-size: var(--text-small);
     gap: 4px;
     background: var(--surface-raised);
     border-color: var(--line-panel);

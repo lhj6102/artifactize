@@ -219,7 +219,7 @@ kbd {
   flex: none;
   margin: 8px 8px 2px;
   width: calc(100% - 16px);
-  height: 32px;
+  height: var(--control);
   padding: 0 10px;
   font: inherit;
 }
@@ -406,6 +406,10 @@ input[type="search"]::-webkit-search-decoration {
 ::placeholder {
   color: var(--ink-3);
   opacity: 1;
+}
+
+.open-id input::placeholder {
+  color: var(--ink-2);
 }
 
 /* Shared by both node shapes and the viewer's declared graph. The gap keeps the current ring

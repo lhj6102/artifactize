@@ -7,7 +7,7 @@ import { CURRENT_LEGEND, LEGEND } from "../monitor/graph";
 export type Section = { title: string; keys: [string, string][] };
 
 /** What has focus, as Help lists its keys. */
-export type Focused = "pane" | "graph" | "current" | "review" | "settings";
+export type Focused = "pane" | "chat" | "graph" | "current" | "review" | "settings";
 
 const WINDOW: Section = {
   title: "Window",
@@ -22,6 +22,16 @@ const WINDOW: Section = {
     ["?", "These shortcuts"],
     ["q", "Quit"],
   ],
+};
+
+const COMPOSER: Section = {
+  title: "Conversation",
+  keys: [["Enter", "Send"], ["Shift+Enter", "Break a line"], ["Esc", "Stop the running turn"]],
+};
+
+const CHAT_WINDOW: Section = {
+  ...WINDOW,
+  keys: WINDOW.keys.map(([key, action]) => [key, key === "/" ? "Search chats" : action]),
 };
 
 const GRAPH: Section = {
@@ -80,8 +90,9 @@ const KEYS: Record<Focused, Section[]> = {
     },
     WINDOW,
   ],
+  chat: [COMPOSER, CHAT_WINDOW],
   graph: [GRAPH, WINDOW],
-  current: [GRAPH, EDITING, WINDOW],
+  current: [GRAPH, EDITING, COMPOSER, CHAT_WINDOW],
   review: [REVIEW, WINDOW],
   settings: [
     {
@@ -96,6 +107,6 @@ const KEYS: Record<Focused, Section[]> = {
 };
 
 /** The keys Help lists for what has focus, and on a graph the marks it explains. */
-export function help(focused: Focused): { sections: Section[]; marks: Light[] } {
-  return { sections: KEYS[focused], marks: focused === "graph" ? LEGEND : focused === "current" ? CURRENT_LEGEND : [] };
+export function help(focused: Focused): { sections: Section[]; marks: (Light | "human")[] } {
+  return { sections: KEYS[focused], marks: focused === "graph" ? [...LEGEND, "human"] : focused === "current" ? CURRENT_LEGEND : [] };
 }

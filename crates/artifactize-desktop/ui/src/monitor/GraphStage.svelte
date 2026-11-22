@@ -2,7 +2,7 @@
   import type { Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { getAppState } from "../shell/app.svelte";
-  import { clampWidth, saveWidth } from "./detail-width";
+  import { clampWidth, KEEP, MIN, saveWidth } from "./detail-width";
 
   let { children, detail }: { children: Snippet; detail?: Snippet } = $props();
   const app = getAppState();
@@ -64,6 +64,8 @@
 
 <div
   class="stage"
+  style:--detail-min="{MIN}px"
+  style:--graph-keep="{KEEP}px"
   style:--detail-width={app.detailWidth === null ? null : `${app.detailWidth}px`}
   style:--detail-cover={detail ? "var(--dock-width)" : null}
   {@attach graphTop}
@@ -83,7 +85,7 @@
    * divider's grab zone on the graph's side, and the Detail never sits beside the Pane. */
   /* The Detail's width, as the dock takes it: a drag's, or its default, within its bounds. */
   .stage {
-    --dock-width: clamp(min(320px, 100%), var(--detail-width, min(46%, 680px)), calc(100% - 240px));
+    --dock-width: min(clamp(var(--detail-min), var(--detail-width, min(46%, 680px)), 100%), max(0px, calc(100% - var(--graph-keep))));
     position: relative;
     isolation: isolate;
     height: 100%;
@@ -107,6 +109,15 @@
     overflow: hidden;
     border-top: 1px solid var(--line-group);
     border-left: 1px solid var(--line-panel);
+  }
+  .dock:focus-within::after {
+    content: "";
+    position: absolute;
+    z-index: 2;
+    inset: 0 0 auto;
+    height: 2px;
+    background: var(--accent);
+    pointer-events: none;
   }
   .edge {
     position: absolute;

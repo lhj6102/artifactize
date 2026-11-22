@@ -241,7 +241,8 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, width * ratio, height * ratio);
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
-  context.lineWidth = Math.max(1 / ratio, EDGE_WIDTH * zoom);
+  const readable = legible(Number.parseFloat(token("--text-body")), zoom);
+  context.lineWidth = readable ? Math.max(1 / ratio, EDGE_WIDTH * zoom) : 1 / ratio;
 
   const { sources, targets, lights } = ends(at, what.graph);
   // Edges are neutral; those that leave a RED, ERROR or blocked Artifact take its colour.
@@ -286,7 +287,6 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   // and a square on the right, in the edges' neutral colour.
   const pixels = (name: string) => Number.parseFloat(token(name)) || 0;
   const [corner, font, label, icon, strip, port] = [pixels("--radius-control"), pixels("--text-body"), pixels("--text-label"), pixels("--icon"), pixels("--strip"), pixels("--port") * zoom];
-  const readable = legible(font, zoom);
   const named = new Map(what.graph.nodes.map((node) => [node.id, node]));
   const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
   const radius = Math.min(corner * zoom, corner);

@@ -502,24 +502,8 @@
     const [from, now] = [v.pressed, pointOf(event)];
     if (canvased && from && now) v.moved = { key, x: now.x - from.x, y: now.y - from.y };
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
-    if (!copy || drop?.kind !== "join") {
-      // No destination here: a check still pending for the last one lights nothing.
-      [v.aim, v.target] = [null, null];
-      return;
-    }
-    const whole = copy.parent === null ? null : byKey.get(copy.parent)!.node.name;
-    light(drop.key, { kind: "movePart", part: copy.node.name, from: whole, to: drop.to, at: null });
-  }
-
-  /** Highlight `key` as the drop target once the library says it would accept `operation`, while
-   * the pointer is still over it. */
-  function light(key: string, operation: EditOperation) {
-    v.aim = key;
-    if (v.target !== key) v.target = null;
-    if (!branch) return;
-    void defs.accepts(branch, operation).then((accepted) => {
-      if (v.aim === key && (v.dragging !== null || v.comment !== null)) v.target = accepted ? key : null;
-    });
+    const fromWhole = copy?.parent ? byKey.get(copy.parent)?.node.name ?? null : null;
+    v.target = copy && drop?.kind === "join" && defs.outlinesPart(copy.node.name, fromWhole, drop.to) ? drop.key : null;
   }
 
   /** A released node: placed, made a part of the Artifact under it, or out of its whole. It is
@@ -611,9 +595,9 @@
       if (box) v.comment = { key, x: next.clientX - box.left, y: next.clientY - box.top, shape };
       const at = pointOf(next);
       const target = at ? under(drawn, rects, at) : null;
-      // The library says which Artifacts take the comment.
-      if (target && target.node.name !== copy.node.name) light(target.key, { kind: "moveComment", from: copy.node.name, to: target.node.name });
-      else [v.aim, v.target] = [null, null];
+      // Only a different Artifact without a comment gets the visual drop target.
+      const definition = target && defs.node(target.node.name);
+      v.target = target && target.node.name !== copy.node.name && definition?.comment === null && definition.commentError === null ? target.key : null;
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -784,6 +768,7 @@
   <div
     class="canvas"
     class:far={gridSize < GRID_SHOWN}
+    class:empty-run={graph.nodes.length === 0 && !editable}
     data-graph-area
     style:background-size="{gridSize}px {gridSize}px"
     style:background-position="{camera.current.x}px {camera.current.y}px"
@@ -879,6 +864,9 @@
   .canvas.far {
     background-image: none;
   }
+  .canvas.empty-run {
+    background: var(--surface-panel);
+  }
   /* Under the graph's elements, filling the same box. */
   .paint {
     position: absolute;
@@ -934,11 +922,8 @@
   }
   .canvas :global(.svelte-flow__node:focus-visible) {
     outline: 2px solid var(--focus);
-    outline-offset: 2px;
-    border-radius: var(--radius-control);
-  }
-  .canvas :global(.svelte-flow__node:focus-visible:has(.graph-face:is(.selected, .open))) {
     outline-offset: 5px;
+    border-radius: var(--radius-control);
   }
   .canvas :global(.svelte-flow__node:focus-visible:has(.minimized)) {
     outline-offset: 9px;
