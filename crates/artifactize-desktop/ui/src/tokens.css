@@ -24,22 +24,27 @@
   /* Lines, strongest first */
   --line-panel: #101114;
   --line-node: #101114;
-  --line-group: #363840;
+  --line-group: #4c4d52;
+  --line-section: #1c1d21;
   --line-input: #757985;
   --edge: #7f8490;
 
   /* Ink */
   --ink: #e8e9ec;
   --ink-2: #a4a8b2;
+  --label: #c3c3c5;
   --ink-3: #6f7480;
   --ink-on-accent: #16171a;
 
   /* Interaction */
   --accent: #d4d6dc;
   --accent-soft: #3b3d45;
-  --selection: #3a3c44;
+  --selection: #1c1d21;
   --focus: #e6e7eb;
-  --point: #f4a868;
+  --current-mark: #ee4e3f;
+  --line-primary: #ac312c;
+  --handle: #ffffff;
+  --handle-edge: #1a1f22;
   --outline-selected: #dcdee5;
   --scrim: rgb(0 0 0 / 45%);
 
@@ -53,7 +58,7 @@
   /* Statuses, one colour each wherever they show (a list, a chip, a graph's node), read with
      their glyph or word; the last two are what verify would do, on a Current */
   --green: #4ac26b;
-  --red: #ff7b72;
+  --red: #ff887f;
   --error: #f0883e;
   --running: #6cb6ff;
   --human: #4c8ff0;

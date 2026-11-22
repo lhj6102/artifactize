@@ -144,8 +144,8 @@
   grid-row: 1;
 }
 /* The modes and Settings: borderless cells as tall as the bar, each its icon over its word in
-   the bar's muted ink; the shown mode's cell is the bar's black, its icon and word in ink,
-   semibold, over the bar's mark along its bottom. */
+   the bar's grey; the shown mode's cell is the bar's black, its icon and word white at the same
+   weight, over the bar's mark along its bottom; Settings is its icon alone. */
 .m-modes {
   display: flex;
   align-items: stretch;
@@ -243,9 +243,7 @@
   white-space: nowrap;
 }
 .m-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--ink-on-accent);
+  border-color: var(--line-primary);
 }
 .m-button.small {
   height: 22px;
@@ -264,11 +262,7 @@
   background: var(--surface-group);
   padding: 0 4px;
 }
-.m-button.primary .m-kbd {
-  color: var(--ink-on-accent);
-  background: transparent;
-  border-color: color-mix(in srgb, var(--ink-on-accent) 40%, transparent);
-}
+
 .m-link {
   color: var(--accent);
   text-decoration: underline;
@@ -308,8 +302,9 @@
 .m-input .m-placeholder {
   color: var(--ink-2);
 }
+/* The field being typed in: a thin current mark, apart from the keyboard focus ring. */
 .m-input.focused {
-  outline: 2px solid var(--focus);
+  outline: 1px solid var(--current-mark);
   outline-offset: -1px;
 }
 
@@ -452,7 +447,9 @@
 }
 .m-entry.filled {
   background: var(--selection);
-  box-shadow: inset 2px 0 0 var(--ink-2);
+}
+.m-entry.filled .m-sub {
+  color: var(--ink);
 }
 .m-entry .m-sub {
   grid-column: 2 / 4;
@@ -514,11 +511,9 @@
   margin: 0;
   font-size: var(--text-small);
   font-weight: 600;
-  color: var(--ink-2);
-}
-.m-main.focused .m-main-head h2 {
   color: var(--ink);
 }
+
 .m-headline {
   display: flex;
   gap: 8px;
@@ -723,11 +718,11 @@
    the keyboard moves focus. */
 .m-node.selected,
 .m-whole.selected {
-  border-color: var(--outline-selected);
-  box-shadow: 0 0 0 1px var(--outline-selected), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  border-color: var(--current-mark);
+  box-shadow: 0 0 0 1px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
 }
 .m-whole.selected {
-  box-shadow: 0 0 0 1px var(--outline-selected);
+  box-shadow: 0 0 0 1px var(--current-mark);
 }
 .m-node.hovered {
   border-color: var(--ink-3);
@@ -826,7 +821,7 @@
   background: var(--light);
 }
 .m-block.selected {
-  outline: 2px solid var(--outline-selected);
+  outline: 2px solid var(--current-mark);
   outline-offset: 1px;
 }
 .m-far-whole {
@@ -914,9 +909,8 @@
   white-space: nowrap;
 }
 .m-chip.chosen {
-  background: var(--surface-group);
   color: var(--ink);
-  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--current-mark);
 }
 .m-chip .m-mark {
   width: 11px;
@@ -1070,7 +1064,7 @@
 }
 .m-views .chosen {
   color: var(--ink);
-  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--current-mark);
 }
 .m-views .other {
   color: var(--ink-2);
@@ -1197,22 +1191,32 @@
   color: var(--ink-2);
   line-height: 22px;
 }
-.m-verdict.green.chosen {
-  color: var(--green);
-  border-color: var(--green);
-  font-weight: 600;
+.m-verdict::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
 }
-.m-verdict.red.chosen {
-  color: var(--red);
-  border-color: var(--red);
-  font-weight: 600;
+.m-verdict.green::before {
+  background: var(--green);
 }
+.m-verdict.red::before {
+  background: var(--red);
+}
+.m-verdict.chosen {
+  color: var(--ink);
+  border-color: var(--outline-selected);
+}
+
 .m-field {
   display: grid;
   gap: 4px;
 }
 .m-field .m-name {
-  font-weight: 600;
+  color: var(--label);
 }
 .m-required {
   color: var(--red);
@@ -1254,9 +1258,7 @@
   background: var(--surface-input);
 }
 .m-radio.on::before {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 3px var(--surface-input);
-  background: var(--accent);
+  background: radial-gradient(circle, var(--current-mark) 0 2.5px, var(--surface-input) 3px);
 }
 /* A list of text: numbered items, each a field with the remove icon at its right. */
 .m-items {
@@ -1421,6 +1423,7 @@
 }
 .m-palette-item.selected {
   background: var(--selection);
+  color: var(--ink);
 }
 .m-find {
   position: absolute;
@@ -1447,8 +1450,12 @@
   font: var(--text-small) var(--mono);
   border-radius: var(--radius-control);
 }
+.m-find .m-found li {
+  color: var(--ink-2);
+}
 .m-find .m-found li.active {
   background: var(--selection);
+  color: var(--ink);
 }
 /* What the find field says when it has no rows, or more than it lists: one line in secondary
    ink under the input or the rows. */
@@ -1485,8 +1492,7 @@
 }
 .m-tab.active {
   color: var(--ink);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--current-mark);
 }
 .m-providers {
   display: grid;
@@ -1500,9 +1506,12 @@
   line-height: var(--row);
   border-radius: var(--radius-control);
 }
+.m-choice {
+  color: var(--ink-2);
+}
 .m-choice.current {
   background: var(--selection);
-  font-weight: 600;
+  color: var(--ink);
 }
 .m-setup section {
   padding: 0 0 10px;
@@ -1690,7 +1699,7 @@
   padding: 0 8px;
   border: 1px solid var(--line-group);
   border-radius: var(--radius-chip);
-  color: var(--accent);
+  color: var(--ink-2);
   font-size: var(--text-small);
   white-space: nowrap;
   overflow: hidden;
@@ -1913,7 +1922,7 @@
 }
 .m-codeblock {
   position: relative;
-  border: 1px solid var(--line-group);
+  border: 1px solid var(--line-section);
   border-radius: var(--radius-control);
   background: var(--surface-panel);
 }
@@ -1975,7 +1984,7 @@
   align-items: stretch;
   height: 22px;
   margin-left: 12px;
-  border: 1px solid var(--line-group);
+  border: 1px solid var(--line-section);
   border-radius: var(--radius-control);
   overflow: hidden;
   font-size: var(--text-small);
@@ -1987,6 +1996,18 @@
   color: var(--ink-2);
 }
 .m-viewswitch > span.on {
+  color: var(--ink);
+}
+/* Older runs: a row of its own across the Pane, as a text button. */
+.m-older {
+  display: flex;
+  align-items: center;
+  min-height: var(--row);
+  padding: 0 var(--pad) 0 56px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-older.hover {
   background: var(--surface-group);
   color: var(--ink);
 }
@@ -2027,6 +2048,7 @@
   padding: 0 var(--pad);
 }
 .m-session .m-item-name {
+  color: var(--ink-2);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -2039,7 +2061,9 @@
 }
 .m-session.selected {
   background: var(--selection);
-  box-shadow: inset 2px 0 0 var(--ink-2);
+}
+.m-session.selected .m-item-name {
+  color: var(--ink);
 }
 /* A Pane row under the pointer, across the whole row; a row the keyboard is on, its 2px ring
    inside the whole row. */
@@ -2062,7 +2086,7 @@
   align-items: center;
   min-height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--line-group);
+  border: 1px solid var(--line-section);
   border-radius: var(--radius-control);
   background: var(--surface-panel);
   font-size: var(--text-small);
@@ -2076,7 +2100,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--accent);
+  color: var(--ink-2);
 }
 .m-composer {
   width: 100%;
@@ -2130,9 +2154,7 @@
   color: var(--ink);
 }
 .m-icon-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--ink-on-accent);
+  border-color: var(--line-primary);
 }
 /* The model menu: raised, opening upward from the selector; a group label per provider, a row
    per model, the session's on the selection; Connect provider after a group line. */
@@ -2156,9 +2178,12 @@
   padding: 0 8px;
   border-radius: var(--radius-control);
 }
+.m-menu-item {
+  color: var(--ink-2);
+}
 .m-menu-item.chosen {
   background: var(--selection);
-  font-weight: 600;
+  color: var(--ink);
 }
 /* A model's reasoning efforts on its row in the model menu, the session's one marked. */
 .m-efforts {
@@ -2183,8 +2208,7 @@
 }
 .m-effort.on {
   color: var(--ink);
-  font-weight: 600;
-  box-shadow: inset 0 -2px 0 var(--ink);
+  box-shadow: inset 0 -2px 0 var(--current-mark);
 }
 .m-menu-item .m-right {
   margin-left: auto;
@@ -2257,13 +2281,12 @@
   color: var(--ink-2);
   font-family: var(--mono);
 }
-.m-button.pointing {
-  background: var(--accent-soft);
-  border-color: var(--line-input);
-  color: var(--ink);
+/* Point is a toggle: grey while off, bright while armed, its face and border unchanged. */
+.m-button.toggle {
+  color: var(--ink-2);
 }
-.m-button.pointing .m-icon {
-  color: var(--point);
+.m-button.toggle.pointing {
+  color: var(--handle);
 }
 .m-vbody {
   flex: 1;
@@ -2300,6 +2323,7 @@
 }
 .m-tree li.selected {
   background: var(--selection);
+  color: var(--ink);
 }
 /* The document view: a head row with the file's path, then its text with line numbers. */
 .m-doc {
@@ -2355,7 +2379,8 @@
   font: var(--text-small) var(--mono);
 }
 .m-md .pointed {
-  outline: 2px dashed var(--point);
+  outline: 2px dashed var(--handle);
+  box-shadow: 0 0 0 3px var(--handle-edge);
   outline-offset: 1px;
 }
 /* The Artifactize Viewer: Artifacts as nodes without a verdict, their type at the right;
@@ -2374,10 +2399,12 @@
   background: var(--surface-panel);
 }
 .m-dnode.selected {
-  border: 2px solid var(--outline-selected);
+  border: 1px solid var(--current-mark);
+  box-shadow: 0 0 0 1px var(--current-mark);
 }
 .m-dnode.pointed {
-  outline: 2px dashed var(--point);
+  outline: 2px dashed var(--handle);
+  box-shadow: 0 0 0 3px var(--handle-edge);
   outline-offset: 2px;
 }
 .m-dnode .m-name {
@@ -2412,7 +2439,8 @@
   font-size: var(--text-small);
 }
 .m-deval-head.pointed {
-  outline: 2px dashed var(--point);
+  outline: 2px dashed var(--handle);
+  box-shadow: 0 0 0 3px var(--handle-edge);
   outline-offset: 1px;
   border-radius: var(--radius-control);
 }
