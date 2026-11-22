@@ -62,6 +62,8 @@ branch: string } |
 } | null, Failure>(__TAURI_INVOKE("chat_default_model", { worktree, branch })),
 	/**  List saved sessions newest first. `null` applies no worktree or query filter. */
 	chatList: (worktree: string | null, query: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree, query })),
+	/**  Live branches known through Runs, launch, or saved Chat sessions; ignores Verify search. */
+	chatBranches: () => typedError<ChatBranch[], Failure>(__TAURI_INVOKE("chat_branches")),
 	/**  Acknowledge the latest settled outcome for this machine user. */
 	chatMarkSeen: (id: string) => typedError<null, Failure>(__TAURI_INVOKE("chat_mark_seen", { id })),
 	/**
@@ -389,6 +391,7 @@ export const events = {
 	currentChanged: makeEvent<CurrentChanged>("current-changed"),
 	humanDraftChanged: makeEvent<HumanDraftChanged>("human-draft-changed"),
 	humanToolLog: makeEvent<HumanToolLog>("human-tool-log"),
+	runFinished: makeEvent<RunFinished>("run-finished"),
 	sessionChanged: makeEvent<SessionChanged>("session-changed"),
 	stateChanged: makeEvent<StateChanged>("state-changed"),
 };
@@ -514,6 +517,14 @@ export type CardView = {
 };
 
 export type ChatBlock = { kind: "text"; text: string } | { kind: "tool"; name: string; arguments: string; output: string | null; failed: boolean | null; toolKind: ChatToolKind; summary: string; exitCode: number | null; omittedLines: number; outputTruncated: boolean } | { kind: "run"; card: ChatRun };
+
+/**  A live branch and the checkout a new Chat on it can use. */
+export type ChatBranch = {
+	key: BranchKey,
+	project: string,
+	name: string,
+	workspace: PathKey,
+};
 
 export type ChatModel = {
 	backend: string,
@@ -1017,7 +1028,7 @@ export type LogEntry = {
 };
 
 /**  Whose Tool log it is: a review's, or an Artifact's in a worktree. */
-export type LogKey = { kind: "review"; request: string } | { kind: "artifact"; workspace: PathKey; artifact: string };
+export type LogKey = { kind: "review"; request: string } | { kind: "artifact"; workspace: PathKey; branch: BranchKey; artifact: string };
 
 /**  One line of a run: what it printed, red when it went to stderr or the run failed. */
 export type LogText = {
@@ -1248,6 +1259,12 @@ export type Row = {
 	group: boolean,
 	/**  Under the subdued Thinking label. */
 	thinking: boolean,
+};
+
+/**  A saved Run finished, even if Verify is not showing its branch. */
+export type RunFinished = {
+	run: string,
+	branch: BranchKey,
 };
 
 export type RunOrigin = { kind: "cli" } | { kind: "mcp" } | { kind: "chat"; sessionId: string; title: string };

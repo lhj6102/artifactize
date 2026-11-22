@@ -281,6 +281,42 @@ pub struct ChatView {
     pub turns: Vec<ChatTurn>,
 }
 
+/// A live branch and the checkout a new Chat on it can use.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatBranch {
+    pub key: BranchKey,
+    pub project: String,
+    pub name: String,
+    pub workspace: PathKey,
+}
+
+/// Live branches known through Runs, launch, or saved Chat sessions; ignores Verify search.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_branches(app: tauri::State<'_, App>) -> Result<Vec<ChatBranch>, Failure> {
+    crate::browse::rescan(&app).await?;
+    let mut branches = app.browse.live_branches();
+    let sessions = app.chat.list(None, None).await.map_err(Failure::Read)?;
+    app.chat_worktrees.watch(&sessions);
+    for session in sessions
+        .into_iter()
+        .filter(|session| session.unavailable.is_none())
+    {
+        let key = BranchKey::new(&session.branch());
+        if !branches.iter().any(|branch| branch.key == key) {
+            let label = session.label();
+            branches.push(ChatBranch {
+                key,
+                project: label.project,
+                name: label.branch,
+                workspace: PathKey::new(&session.worktree),
+            });
+        }
+    }
+    Ok(branches)
+}
+
 /// Read the starting model for a new session. The pending call is the loading state;
 /// `null` means no provider lists a model and the worktree has no previous session.
 #[tauri::command]

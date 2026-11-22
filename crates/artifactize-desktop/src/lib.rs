@@ -52,6 +52,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             chat::chat_latest_for_branch,
             chat::chat_default_model,
             chat::chat_list,
+            chat::chat_branches,
             chat::chat_mark_seen,
             chat::chat_open,
             chat::chat_send,
@@ -149,6 +150,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
         ])
         .events(collect_events![
             watch::StateChanged,
+            watch::RunFinished,
             viewer::ActiveReviewChanged,
             watch::SessionChanged,
             human::log::HumanToolLog,

@@ -164,6 +164,7 @@ pub async fn artifact_tool_run(
     let run = app.human.log().start(
         Key::Artifact {
             repo: workspace.clone(),
+            branch: branch.to_place(),
             artifact: artifact.clone(),
         },
         &operation,

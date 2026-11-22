@@ -32,6 +32,7 @@ struct SessionsInner {
     launching: BTreeMap<u32, PendingLaunch>,
     /// What each live session shows: an Artifact of a worktree in one viewer.
     places: BTreeMap<u32, Place>,
+    selected: Option<RequestId>,
     active: Option<ActiveReview>,
     activation: u64,
 }
@@ -232,6 +233,7 @@ impl Sessions {
         let activation = {
             let mut sessions = self.0.lock().expect("viewer sessions");
             let activation = sessions.advance_activation();
+            sessions.selected = shown.cloned();
             if sessions
                 .active
                 .as_ref()
@@ -265,6 +267,7 @@ impl Sessions {
     pub(crate) fn reset(&self) {
         let mut sessions = self.0.lock().expect("viewer sessions");
         sessions.advance_activation();
+        sessions.selected = None;
         sessions.active = None;
         sessions.launching.clear();
         sessions.live.clear();
@@ -523,6 +526,9 @@ pub struct ActiveReviewChanged {
 }
 
 async fn active(app: &App) -> Option<ActiveReview> {
+    if app.viewers.active().is_none() {
+        refresh_active(app).await;
+    }
     let review = app.viewers.active()?;
     review.claimed(app).await.ok()?.then_some(review)
 }
@@ -534,6 +540,7 @@ pub(crate) fn settled(app: &App, id: &RequestId) {
         .as_ref()
         .is_some_and(|review| &review.shown == id || &review.owner == id)
     {
+        sessions.advance_activation();
         sessions.active = None;
         app.viewers.notify(None);
     }
@@ -547,62 +554,67 @@ pub async fn active_review_set(
 ) -> Result<(), Failure> {
     let shown = request.map(RequestKey::into_inner);
     app.viewers
-        .activate(&app.generation, shown.as_ref(), async {
-            let Some(shown) = shown.clone() else {
-                return Ok(None);
-            };
-            let state = &app.launch.state;
-            let exact = store::read_request_as(state, shown.as_str(), store::Shown::Requests)
-                .await
-                .map_err(Failure::Read)?;
-            let owner = store::read_review_owner(state, &exact)
-                .await
-                .map_err(Failure::Read)?;
-            if let Some(error) =
-                artifactize_core::review::review_refusal(Some(&owner), &app.launch.reviewer)
-            {
-                return Err(Failure::Action(error));
-            }
-            let artifact = &owner.request.target;
-            let target = owner
-                .request
-                .human_definition
-                .as_ref()
-                .and_then(|definition| definition.artifacts.value())
-                .and_then(|artifacts| artifacts.get(artifact))
-                .and_then(|saved| saved.path.value());
-            let address = if let Some(target) = target {
-                let (worktree, checkout) = store::run_checkout(state, &owner.request.run_id)
-                    .await
-                    .map_err(Failure::Read)?;
-                Some(Address {
-                    worktree,
-                    checkout,
-                    artifact: artifact.clone(),
-                    target: target.clone(),
-                })
-            } else {
-                None
-            };
-            Ok(Some(ActiveReview {
-                shown,
-                owner: owner.request.id.clone(),
-                address,
-            }))
-        })
+        .activate(
+            &app.generation,
+            shown.as_ref(),
+            read_active(&app, shown.clone()),
+        )
         .await
 }
 
-/// A submission or release from another surface must also hide pointing. Watch hints never
-/// decide the state; only a successfully read, no-longer-active review does.
+async fn read_active(app: &App, shown: Option<RequestId>) -> Result<Option<ActiveReview>, Failure> {
+    let Some(shown) = shown else { return Ok(None) };
+    let state = &app.launch.state;
+    let exact = store::read_request_as(state, shown.as_str(), store::Shown::Requests)
+        .await
+        .map_err(Failure::Read)?;
+    let owner = store::read_review_owner(state, &exact)
+        .await
+        .map_err(Failure::Read)?;
+    if artifactize_core::review::review_refusal(Some(&owner), &app.launch.reviewer).is_some() {
+        return Ok(None);
+    }
+    let artifact = &owner.request.target;
+    let target = owner
+        .request
+        .human_definition
+        .as_ref()
+        .and_then(|definition| definition.artifacts.value())
+        .and_then(|artifacts| artifacts.get(artifact))
+        .and_then(|saved| saved.path.value());
+    let address = if let Some(target) = target {
+        let (worktree, checkout) = store::run_checkout(state, &owner.request.run_id)
+            .await
+            .map_err(Failure::Read)?;
+        Some(Address {
+            worktree,
+            checkout,
+            artifact: artifact.clone(),
+            target: target.clone(),
+        })
+    } else {
+        None
+    };
+    Ok(Some(ActiveReview {
+        shown,
+        owner: owner.request.id.clone(),
+        address,
+    }))
+}
+
+/// Claims from any surface can activate or deactivate the most recently shown Review.
 pub(crate) async fn refresh_active(app: &App) {
-    if let Some(review) = app.viewers.active()
-        && let Ok(false) = review.claimed(app).await
-    {
+    let (shown, revision) = {
+        let sessions = app.viewers.0.lock().expect("viewer sessions");
+        (sessions.selected.clone(), sessions.activation)
+    };
+    let Some(shown) = shown else { return };
+    if let Ok(active) = read_active(app, Some(shown)).await {
         let mut sessions = app.viewers.0.lock().expect("viewer sessions");
-        if sessions.active.as_ref() == Some(&review) {
-            sessions.active = None;
-            app.viewers.notify(None);
+        if sessions.activation == revision && sessions.active != active {
+            app.viewers
+                .notify(active.as_ref().map(|review| review.shown.clone().into()));
+            sessions.active = active;
         }
     }
 }

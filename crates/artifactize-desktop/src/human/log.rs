@@ -31,6 +31,7 @@ pub enum LogKey {
     },
     Artifact {
         workspace: PathKey,
+        branch: crate::browse::BranchKey,
         artifact: String,
     },
 }
@@ -41,8 +42,13 @@ impl From<&Key> for LogKey {
             Key::Review(request) => Self::Review {
                 request: request.clone().into(),
             },
-            Key::Artifact { repo, artifact } => Self::Artifact {
+            Key::Artifact {
+                repo,
+                branch,
+                artifact,
+            } => Self::Artifact {
                 workspace: PathKey::new(repo),
+                branch: crate::browse::BranchKey::new(branch),
                 artifact: artifact.to_string(),
             },
         }
@@ -161,6 +167,38 @@ mod tests {
     use super::*;
     use artifactize_core::review::log::{End, Kind, channel};
     use serde_json::json;
+
+    #[test]
+    fn artifact_logs_do_not_share_entries_when_only_the_branch_differs() {
+        use artifactize_core::monitor::live::{Head, Place};
+        let reviews = crate::human::Reviews::default();
+        let mut events = reviews.take_events().unwrap();
+        for name in ["main", "other"] {
+            let branch = Place::Git {
+                common: "repository".into(),
+                head: Head::Branch(name.to_owned().try_into().unwrap()),
+            };
+            let run = reviews.log().start(
+                Key::Artifact {
+                    repo: "same-worktree".into(),
+                    branch,
+                    artifact: "notes".parse().unwrap(),
+                },
+                "read",
+                "notes",
+            );
+            run.text(Stream::Stdout, name);
+            run.end(End::Done);
+        }
+        let updates = reviews.logged(std::iter::from_fn(|| events.try_recv().ok()).collect());
+        assert_eq!(updates.len(), 2);
+        for (shown, name) in updates.into_iter().zip(["main", "other"]) {
+            let shown = serde_json::to_value(shown).unwrap();
+            assert_eq!(shown["key"]["branch"]["branch"], name);
+            assert_eq!(shown["entries"].as_array().unwrap().len(), 1);
+            assert_eq!(shown["entries"][0]["lines"][0]["text"], name);
+        }
+    }
 
     #[test]
     fn a_submission_clears_the_review_log_and_drops_delayed_tool_output() {

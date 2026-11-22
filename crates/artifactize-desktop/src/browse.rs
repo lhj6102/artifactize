@@ -484,6 +484,19 @@ impl Browse {
         }
     }
 
+    pub(crate) fn live_branches(&self) -> Vec<super::chat::ChatBranch> {
+        self.shown()
+            .branches
+            .iter()
+            .map(|branch| super::chat::ChatBranch {
+                key: BranchKey::new(&branch.place),
+                project: branch.project.clone(),
+                name: branch.name.clone(),
+                workspace: PathKey::new(&branch.workspace),
+            })
+            .collect()
+    }
+
     /// The listed branch at `place`: where its Current is scanned and its tools run.
     pub fn branch(&self, place: &Place) -> Result<Branch, Failure> {
         self.shown()

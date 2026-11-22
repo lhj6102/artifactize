@@ -1050,8 +1050,7 @@ payload.instruction = "Read the page separately."
     .unwrap();
     assert!(result.is_null());
     let other = saved(&fixture, "page/another").request.id.to_string();
-    let refused = invoke(&window, "active_review_set", json!({"request": other})).unwrap_err();
-    assert_eq!(refused["kind"], "action");
+    invoke(&window, "active_review_set", json!({"request": other})).unwrap();
     assert!(context(session)["review"].is_null());
     let refused = invoke(
         &window,
@@ -1060,8 +1059,10 @@ payload.instruction = "Read the page separately."
     )
     .unwrap_err();
     assert_eq!(refused["kind"], "action");
-    invoke(&window, "human_claim", json!({"id": other, "job": 4})).unwrap();
-    invoke(&window, "active_review_set", json!({"request": other})).unwrap();
+    // Another app writes a claim; the first window still knows which Review was shown.
+    let external = launched_window(&fixture, Mode::Review, None);
+    invoke(&external, "human_claim", json!({"id": other, "job": 4})).unwrap();
+    assert_eq!(context(session)["review"], other);
     let refused = invoke(
         &window,
         "viewer_point",
@@ -1982,6 +1983,13 @@ fn a_direct_run_reference_reveals_its_branch_without_resetting_verify_search() {
     for query in ["repo:other-project", "repo:"] {
         let filtered = invoke(&window, "browse", json!({"navigate": search(query)})).unwrap();
         assert_eq!(filtered["branches"], json!([]));
+        let choices = invoke(&window, "chat_branches", json!({})).unwrap();
+        assert_eq!(choices[0]["project"], "repo");
+        assert_eq!(
+            invoke(&window, "redraw", json!({})).unwrap()["query"]["text"],
+            query
+        );
+
         let shown = invoke(
             &window,
             "browse",

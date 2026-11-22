@@ -33,6 +33,13 @@ pub struct CatalogRun {
     pub waiting: Vec<Signoff>,
 }
 
+impl CatalogRun {
+    /// The Run's recorded branch, independent of the current checkout or any search filter.
+    pub fn branch(&self) -> crate::monitor::live::Place {
+        crate::monitor::live::Place::for_checkout(&self.repo_path, &self.repository)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Metadata {
@@ -109,6 +116,18 @@ pub(crate) async fn places(
 
 /// Global attention facts; unreadable Runs are skipped individually with their reason.
 pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
+    catalog(state, None).await
+}
+
+/// The small timeline record for a Run named by a state change hint.
+pub async fn read_catalog_run(
+    state: &Path,
+    id: &crate::types::RunId,
+) -> Result<Option<CatalogRun>, String> {
+    Ok(catalog(state, Some(id.clone())).await?.into_iter().next())
+}
+
+async fn catalog(state: &Path, id: Option<crate::types::RunId>) -> Result<Vec<CatalogRun>, String> {
     let state = canonical_target(state).map_err(|error| error.to_string())?;
     check_files(&state)?;
     if !state
@@ -131,7 +150,7 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
             if !schema_initialized(&transaction)? {
                 return Ok(Vec::new());
             }
-            let catalog = in_snapshot(&transaction, &state, None)?;
+            let catalog = in_snapshot(&transaction, &state, id.as_ref().map(std::slice::from_ref))?;
             transaction.commit()?;
             Ok(catalog.runs)
         })

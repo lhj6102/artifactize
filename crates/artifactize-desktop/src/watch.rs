@@ -7,7 +7,7 @@ use artifactize_core::changes::{Change, Subscription};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
@@ -24,6 +24,35 @@ const RESCAN: Duration = Duration::from_secs(2);
 #[serde(rename_all = "camelCase")]
 pub struct StateChanged {
     pub resync: bool,
+}
+
+/// A saved Run finished, even if Verify is not showing its branch.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[serde(rename_all = "camelCase")]
+pub struct RunFinished {
+    pub run: crate::ids::RunKey,
+    pub branch: crate::browse::BranchKey,
+}
+
+#[derive(Default)]
+struct Finished(BTreeSet<artifactize_core::types::RunId>);
+
+impl Finished {
+    fn seed(runs: Vec<artifactize_core::store::CatalogRun>) -> Self {
+        Self(
+            runs.into_iter()
+                .filter(|run| run.completed_at.is_some())
+                .map(|run| run.id)
+                .collect(),
+        )
+    }
+
+    fn observed(&mut self, run: artifactize_core::store::CatalogRun) -> Option<RunFinished> {
+        (run.completed_at.is_some() && self.0.insert(run.id.clone())).then(|| RunFinished {
+            branch: crate::browse::BranchKey::new(&run.branch()),
+            run: run.id.into(),
+        })
+    }
 }
 
 /// An Agent session file grew; only its open transcript reads again.
@@ -77,9 +106,30 @@ impl ChatWorktrees {
 pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
     let hub = app.clone();
     tauri::async_runtime::spawn(async move {
+        let initial = artifactize_core::store::read_catalog(&state).await;
         let mut changes = Subscription::new(&state).await;
+        let mut finished = Finished::seed(initial.unwrap_or_default());
         loop {
             let change = changes.next().await;
+            let runs = match &change {
+                Change::RunInvalidated(id) => artifactize_core::store::read_catalog_run(&state, id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .into_iter()
+                    .collect(),
+                Change::StateInvalidated | Change::Resync => {
+                    artifactize_core::store::read_catalog(&state)
+                        .await
+                        .unwrap_or_default()
+                }
+                _ => Vec::new(),
+            };
+            for event in runs.into_iter().filter_map(|run| finished.observed(run)) {
+                if event.emit(&hub).is_err() {
+                    return;
+                }
+            }
             let state = hub.state::<App>();
             state.browse.invalidate(&change);
             if !matches!(change, Change::SessionInvalidated(_)) {
@@ -148,6 +198,38 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_run_completion_names_its_recorded_branch_once_without_browse() {
+        use artifactize_core::{store::CatalogRun, types::RunStatus};
+        let mut run = CatalogRun {
+            id: "run-finished".parse().unwrap(),
+            created_at: "2026-11-21T00:00:00Z".parse().unwrap(),
+            completed_at: None,
+            repo_path: PathBuf::from("worktree"),
+            repository: artifactize_core::repository::Identity {
+                common_dir: Some(PathBuf::from("repository")),
+                worktree_path: Some(PathBuf::from("worktree")),
+                branch: Some("filtered-out".into()),
+            },
+            status: RunStatus::Running,
+            comment: None,
+            red: 0,
+            error: 0,
+            waiting: vec![],
+        };
+        let mut finished = Finished::seed(vec![run.clone()]);
+        assert!(finished.observed(run.clone()).is_none());
+        run.status = RunStatus::Green;
+        run.completed_at = Some("2026-11-21T00:01:00Z".parse().unwrap());
+        let event = serde_json::to_value(finished.observed(run.clone()).unwrap()).unwrap();
+        assert_eq!(event["run"], "run-finished");
+        assert_eq!(
+            event["branch"],
+            serde_json::json!({"kind":"branch","common":"repository","branch":"filtered-out"})
+        );
+        assert!(finished.observed(run).is_none());
+    }
 
     #[test]
     fn a_chat_only_worktree_disappearing_invalidates_once() {

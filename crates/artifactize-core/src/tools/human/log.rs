@@ -29,6 +29,7 @@ pub enum Key {
     /// review.
     Artifact {
         repo: PathBuf,
+        branch: crate::monitor::live::Place,
         artifact: ArtifactName,
     },
 }
