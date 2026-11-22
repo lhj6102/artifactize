@@ -2,6 +2,7 @@
   import type { Attachment } from "svelte/attachments";
   import { getAppState } from "../shell/app.svelte";
   import { composing } from "../shell/keys";
+  import { raisedRoom } from "../shell/raised-room";
   import Icon from "../shell/Icon.svelte";
   import { providerName } from "../settings/provider-names";
   import type { ChatSession } from "../ipc/client";
@@ -28,6 +29,7 @@
   const unconfigured = $derived(c.providers.filter(({ listing }) => listing.kind === "notSetUp").map(({ provider }) => providerName(provider)));
   let trigger: HTMLButtonElement;
 
+  const room = raisedRoom("above");
   const focus: Attachment<HTMLInputElement> = (input) => input.focus({ preventScroll: true });
   const dismiss: Attachment<HTMLElement> = (picker) => {
     if (!c.picking || app.mode !== "chat") return;
@@ -41,17 +43,9 @@
       c.picking = false;
       trigger.focus({ preventScroll: true });
     };
-    const available = () => {
-      const { top, left } = picker.getBoundingClientRect();
-      picker.style.setProperty("--picker-room", `${Math.max(0, top - 8)}px`);
-      picker.style.setProperty("--picker-width", `${Math.max(0, window.innerWidth - left - 8)}px`);
-    };
-    available();
-    window.addEventListener("resize", available);
     window.addEventListener("pointerdown", outside, true);
     window.addEventListener("keydown", escape, true);
     return () => {
-      window.removeEventListener("resize", available);
       window.removeEventListener("pointerdown", outside, true);
       window.removeEventListener("keydown", escape, true);
     };
@@ -68,7 +62,7 @@
     <span class="model-name">{modelName}</span>{#if model.effort}<span class="effort-label"> · {model.effort}</span>{/if}<Icon name="unfold" />
   </button>
   {#if c.picking && session.unavailable === null}
-    <div class="menu" role="menu" aria-label="Models" style:--effort-width={`${efforts.length * 52}px`}>
+    <div class="menu" {@attach room} role="menu" aria-label="Models" style:--effort-width={`${efforts.length * 52}px`}>
       <input class="filter" type="search" aria-label="Filter models" placeholder="Filter models" value={c.modelQuery} oninput={(event) => c.modelQuery = event.currentTarget.value} {@attach focus} />
       {#if c.providerError}<p class="note failed">{c.providerError}</p>{/if}
       {#each groups as { provider, name, listing } (provider)}
@@ -79,7 +73,7 @@
           {:else if listing.kind === "cliMissing"}
             <p class="note">{listing.reason}</p>
           {:else if listing.kind === "cliTooOld"}
-            <p class="note">{listing.error}</p>
+            <p class="note failed">{listing.error}</p>
           {:else if listing.kind === "loading"}
             <p class="note">Reading models…</p>
           {:else if listing.kind === "models"}
@@ -105,7 +99,7 @@
       {/each}
       <hr />
       <button class="item connect" role="menuitem" onclick={() => { c.picking = false; app.openSettings(); }}><Icon name="add" />Connect provider</button>
-      {#if unconfigured.length}<p class="note">Not set up: {unconfigured.join(", ")}</p>{/if}
+      {#if unconfigured.length}<p class="note setup">Not set up: {unconfigured.join(", ")}</p>{/if}
     </div>
   {/if}
 </div>
@@ -136,9 +130,10 @@
     inset: auto auto 100% 0;
     z-index: 30;
     box-sizing: border-box;
-    width: min(max(264px, calc(170px + var(--effort-width))), var(--picker-width, calc(100vw - 32px)));
-    max-height: var(--picker-room, 65vh);
+    width: min(max(264px, calc(170px + var(--effort-width))), var(--raised-width, calc(100vw - 32px)));
+    max-height: var(--raised-height, 65vh);
     overflow: auto;
+    overscroll-behavior: contain;
     padding: 4px;
     background: var(--surface-raised);
     border: 1px solid var(--line-panel);
@@ -146,6 +141,9 @@
     box-shadow: 0 2px 8px var(--scrim);
   }
   .filter {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     box-sizing: border-box;
     width: 100%;
     height: var(--control);
@@ -160,6 +158,7 @@
   .label, .note { margin: 0; padding: 4px 8px; color: var(--ink-2); }
   .label { padding-top: 8px; font-size: var(--text-label); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
   .note { font-size: var(--text-small); overflow-wrap: anywhere; }
+  .setup { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .failed { color: var(--red); }
   .item-row { display: flex; border-radius: var(--radius-control); }
   .item-row.selected { background: var(--selection); }
@@ -176,7 +175,7 @@
   .item:focus-visible { outline-offset: -2px; }
   .name { flex: 1; min-width: 0; padding: 0 8px; }
   .selected .name { color: var(--ink); }
-  .effort { flex: 0 0 52px; padding: 0; text-align: center; font-size: var(--text-small); }
+  .effort { flex: 0 1 52px; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 0; text-align: center; font-size: var(--text-small); }
   .effort[aria-checked="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--current-mark); }
   .item:hover:not(.selected .name) { background: var(--surface-group); }
   .connect { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0 8px; }

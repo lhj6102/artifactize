@@ -30,6 +30,7 @@ class Composer {
 }
 
 export class ChatModeState {
+  composerPointer = $state(false);
   /** The library's sessions, newest activity first. */
   sessions = $state.raw<ChatSession[]>([]);
   query = $state("");

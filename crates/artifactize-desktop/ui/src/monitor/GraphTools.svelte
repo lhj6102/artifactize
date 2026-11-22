@@ -12,6 +12,7 @@
   // the caller adds. Without `act` there is nothing to act on yet (a Run loading or unreadable):
   // the controls stay in their place, unavailable, not hidden (D-MAIN-3).
   import type { Snippet } from "svelte";
+  import { ZOOM_STEP } from "./graph";
   import Icon from "../shell/Icon.svelte";
   import { label } from "../shell/keys";
 
@@ -23,8 +24,6 @@
     /** Further buttons after Fit. */
     children?: Snippet;
   } = $props();
-  /** One step of Zoom in or out. */
-  const ZOOM_STEP = 1.2;
 </script>
 
 <div class="tools" role="toolbar" aria-label="Graph tools">

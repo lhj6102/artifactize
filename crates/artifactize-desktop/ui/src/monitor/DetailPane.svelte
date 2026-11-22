@@ -28,7 +28,6 @@
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
-  import brandMark from "@brand/artifactize-icon-mark.svg";
 
   let {
     source,
@@ -202,7 +201,7 @@
         <!-- The `/` stays with the Artifact's chip: only eval chips flow onto further lines. -->
         <span class="head">
           <button class="chip" role="tab" aria-selected={false} aria-label="Artifact {row.name}" onclick={() => void showArtifact()}>
-            <img class="mark" src={brandMark} alt="" /><span class="label">{row.name}</span>
+            <span class="mark"><Icon name="artifact" /></span><span class="label">{row.name}</span>
           </button>
           <span class="slash" aria-hidden="true">/</span>
         </span>
@@ -306,6 +305,7 @@
     align-items: center;
   }
   .mark {
+    display: inline-flex;
     flex: none;
     width: var(--icon);
     height: var(--icon);

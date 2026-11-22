@@ -139,7 +139,8 @@
     top: 8px;
     display: flex;
     flex-direction: column;
-    width: min(380px, calc(100% - 16px - var(--detail-cover, 0px)));
+    box-sizing: border-box;
+    width: max(0px, min(380px, calc(100% - 16px - var(--detail-cover, 0px))));
     max-height: calc(100% - 16px);
     padding: 6px;
     background: var(--surface-raised);
@@ -180,6 +181,8 @@
     background: var(--surface-group);
   }
   .found .active {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
     background: var(--selection);
     color: var(--ink);
   }

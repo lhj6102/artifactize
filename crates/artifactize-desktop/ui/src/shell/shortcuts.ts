@@ -39,6 +39,7 @@ const GRAPH: Section = {
     ["m", "Minimize or expand a whole"],
     ["t", "Show or hide Debug"],
     ["Home / End", "Top or bottom of an Agent log"],
+    ["j / k", "Scroll the Agent log down or up"],
     ["Esc", "Close the Detail, then back to the Pane"],
   ],
 };
@@ -61,6 +62,7 @@ const REVIEW: Section = {
     ["u", "Release the claim"],
     ["g / r", "Open the GREEN or the RED form"],
     ["Ctrl+S", "Submit"],
+    ["Ctrl+Page Up / Ctrl+Page Down", "Scroll the review instruction"],
     ["t", "Show or hide Debug"],
     ["Esc", "Cancel running work, then leave the form, then the review"],
   ],

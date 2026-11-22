@@ -177,7 +177,7 @@
         </div>
         {#if s.models?.kind === "failed"}<p class="error" role="alert">{s.models.error}</p>
         {:else if s.models?.kind === "notSetUp" || s.models?.kind === "cliMissing"}<p class="muted">{s.models.reason}</p>
-        {:else if s.models?.kind === "cliTooOld"}<p class="muted">{s.models.error}</p>
+        {:else if s.models?.kind === "cliTooOld"}<p class="error">{s.models.error}</p>
         {:else if s.models?.kind === "models"}
           {#if s.models.models.length === 0}
             <p class="muted">No models listed.</p>

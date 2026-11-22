@@ -22,11 +22,13 @@
   .busy {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 3px;
+    min-width: 0;
     white-space: nowrap;
   }
   .tone-running { display: inline-flex; }
-  .seconds { color: var(--ink-2); }
+  .seconds { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+  .busy .button { flex: none; padding-inline: 5px; }
   .error {
     min-width: 0;
     color: var(--red);

@@ -87,10 +87,11 @@
     font-size: var(--text-small);
   }
   .review > :global(.button) { flex: none; }
-  .review > :global(.reference) { min-width: 0; }
-  .review > :global(.busy) { flex: none; }
+  .review > :global(.reference) { min-width: 0; flex: 0 1 auto; }
+  .review > :global(.busy) { flex: 0 1 auto; }
   .review > :global(.error) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .stage {
+    font-size: var(--text-small);
     color: var(--ink-2);
   }
   .stage.yours {

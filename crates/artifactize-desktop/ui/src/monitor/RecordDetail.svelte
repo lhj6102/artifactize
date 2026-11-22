@@ -8,7 +8,8 @@
   // Agent's live transcript, or a runtime's saved output. An Artifact's Detail is its Path and
   // Debug; a Run's leads with its Outcome and what it Waits for, then What, Provenance and
   // Technical.
-  import type { DetailView, Field, RunPanel } from "../ipc/client";
+  import type { Attachment } from "svelte/attachments";
+  import { call, useIpc, type DetailView, type Field, type RunPanel } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
   import { markIcon, statusIcon } from "../shell/icons";
@@ -36,7 +37,23 @@
   const origin = $derived(run?.origin ?? null);
   const agent = $derived(detail.profile === "agent" && detail.request !== null);
   /** The name of the request's log, if it has one. */
-  const logName = $derived(agent ? "Agent log" : detail.evidence ? "Runtime log" : null);
+  class LogAvailability { request = $state<string | null>(null); }
+  const logs = new LogAvailability();
+  const ipc = useIpc();
+  const probe: Attachment = () => {
+    const id = agent ? detail.request : null;
+    if (!id) return;
+    // The resolver also handles reused transcripts and shares the same answer as the log.
+    let alive = true;
+    void call(ipc.transcriptOpen(id, null)).then((opened) => {
+      if (opened.kind === "local") {
+        void ipc.transcriptClose(opened.handle);
+        if (alive) logs.request = id;
+      } else if (alive) logs.request = null;
+    }, () => { if (alive) logs.request = null; });
+    return () => { alive = false; };
+  };
+  const logName = $derived(agent && logs.request === detail.request ? "Agent log" : detail.evidence ? "Runtime log" : null);
   const showLog = $derived(log && logName !== null);
   const card = $derived(detail.card);
 
@@ -136,7 +153,7 @@
 
 <!-- Focusable so the arrows and PgUp/PgDn scroll the Summary. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div class="full" tabindex="0" role="document">
+<div class="full" {@attach probe} tabindex="0" role="document">
   {#if logName}
     <div class="views" role="tablist" aria-label="Views">
       <button class="view" role="tab" aria-selected={!showLog} onclick={() => (log = false)}>Summary</button>

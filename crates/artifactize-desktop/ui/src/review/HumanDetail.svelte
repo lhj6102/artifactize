@@ -396,6 +396,7 @@
     background: var(--surface-group);
     color: var(--ink-2);
   }
+  .claimant { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .claimant,
   .muted,
   .loading {
@@ -435,12 +436,13 @@
   .actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 3px;
   }
   .one .actions {
     margin-top: 12px;
   }
   .actions > :global(.button) {
+    padding-inline: 5px;
     flex: none;
   }
   .said {

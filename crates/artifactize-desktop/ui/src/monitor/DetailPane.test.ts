@@ -131,7 +131,7 @@ it("shows the Artifact tab first, without chips, with its evals' verdicts, and s
   expect(screen.getByRole("tablist").textContent?.replace(/\s+/g, " ").trim()).toBe("app / linttest");
   // The Artifact's chip shows the Artifact icon before its name and is read as "Artifact app".
   expect(tabs[0].getAttribute("aria-label")).toBe("Artifact app");
-  expect(tabs[0].querySelector("img")?.getAttribute("src")).toMatch(/artifactize-icon-mark/);
+  expect(tabs[0].querySelector('svg[data-icon="artifact"]')).not.toBeNull();
   // Each eval's chip carries its verdict's icon in its verdict's colour.
   expect(tabs[2].querySelector(".tone-red svg")).not.toBeNull();
   expect(tabs[1].querySelector(".tone-green svg")).not.toBeNull();
@@ -210,7 +210,7 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
     }
     if (command === "transcript_open") {
       opened.push((args as { id: string }).id);
-      return { kind: "unavailable", text: "No conversation was saved." };
+      return { kind: "local", handle: 1, session: "session-test" };
     }
     return null;
   }, { shouldMockEvents: true });
@@ -229,7 +229,7 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
   await fireEvent.click(views[1]);
   await screen.findByRole("log", { name: "Agent transcript" });
   expect(screen.queryByRole("button", { name: "Outcome" })).toBeNull();
-  await waitFor(() => expect(opened).toEqual(["run-a-7"]));
+  await waitFor(() => expect(opened).toEqual(["run-a-7", "run-a-7"]));
 });
 
 it("names the originating Chat in Provenance without another link", async () => {

@@ -305,7 +305,7 @@
                           {#if turn.state.kind === "stopped"}
                             <p class="end">Stopped</p>
                           {:else if turn.state.kind === "interrupted"}
-                            <p class="end">Interrupted · Turn ended before the agent finished.</p>
+                            <p class="end">Interrupted · The app or agent process exited before the turn finished.</p>
                           {:else if turn.state.kind === "failed"}
                             <p class="end failed">{turn.state.message}</p>
                           {/if}
@@ -334,7 +334,7 @@
                   <button class="button small" disabled={typed !== ""} onclick={() => { c.restore(session.id); c.panes.composer?.focus({ preventScroll: true }); }}>Restore</button>
                 </div>
               {/if}
-              <div class="box" class:off={session.unavailable !== null}>
+              <div class="box" class:off={session.unavailable !== null} class:pointer-edit={c.composerPointer}>
                 <textarea
                   class="bare-field"
                   rows="2"
@@ -343,6 +343,8 @@
                   placeholder="Ask the agent to work on this branch…"
                   bind:this={c.panes.composer}
                   value={typed}
+                  onpointerdown={() => (c.composerPointer = true)}
+                  onblur={() => (c.composerPointer = false)}
                   oninput={(event) => write(event.currentTarget.value)}
                   onkeydown={composerKey}
                 ></textarea>
@@ -566,7 +568,7 @@
     border-top: 1px solid var(--line-panel);
     background: var(--surface-app);
   }
-  .chat.live { row-gap: 8px; }
+  .chat.live { row-gap: 8px; border-top: 0; }
   .reading { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
   .convo { min-height: 0; overflow: auto; overflow-anchor: none; }
   .scroll-end {
@@ -671,7 +673,7 @@
     outline: 1px solid var(--current-mark);
     outline-offset: -2px;
   }
-  .box:has(textarea:focus-visible) {
+  .box:not(.pointer-edit):has(textarea:focus-visible) {
     box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 4px var(--focus);
   }
   textarea {

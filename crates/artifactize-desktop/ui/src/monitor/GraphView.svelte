@@ -44,7 +44,7 @@
   import Navigator from "./Navigator.svelte";
   import WholeNode from "./WholeNode.svelte";
   import { boxes, copies, copyEdges, drawings, partsCount, type Copy } from "./parts";
-  import { BLOCKING, NODE, WORDS, currentWords, tallyWords, type Point } from "./graph";
+  import { BLOCKING, NODE, WORDS, ZOOM_STEP, currentWords, tallyWords, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, legible, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
@@ -747,6 +747,8 @@
 
   useCommands(() => [
     { id: "graph.find", group: "Graph", label: "Find", keys: "Ctrl+F", run: () => (m.finding = true) },
+    { id: "graph.zoom-out", group: "Graph", label: "Zoom out", run: () => zoomBy(1 / ZOOM_STEP) },
+    { id: "graph.zoom-in", group: "Graph", label: "Zoom in", run: () => zoomBy(ZOOM_STEP) },
     { id: "graph.fit", group: "Graph", label: "Fit", run: fitAll },
     { id: "graph.new", group: "Graph", label: "New Artifact", enabled: () => editable, run: newArtifact },
     { id: "graph.reset-layout", group: "Graph", label: "Reset layout", enabled: () => canResetTop, run: resetTop },

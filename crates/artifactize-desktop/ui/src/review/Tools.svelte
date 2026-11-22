@@ -8,7 +8,6 @@
   import type { ToolView } from "../ipc/client";
   import type { Review } from "./review.svelte";
   import Icon from "../shell/Icon.svelte";
-  import brandMark from "@brand/artifactize-icon-mark.svg";
 
   let { review }: { review: Review } = $props();
 
@@ -45,12 +44,11 @@
     {#if !review.owned && !review.settled}<p class="muted">Claim the review to use its tools.</p>{/if}
     {#each groups as group (group.artifact)}
       <div class="group" role="group" aria-label="Tools of {group.artifact}">
-        {#if groups.length > 1}<p class="artifact"><img class="mark" src={brandMark} alt="" />{group.artifact}</p>{/if}
+        {#if groups.length > 1}<p class="artifact"><span class="mark"><Icon name="artifact" /></span>{group.artifact}</p>{/if}
         {#each group.tools as tool (tool.name)}
           <div class="tool" class:nested={groups.length > 1}>
             <button class="button small" disabled={!usable} onclick={() => run(tool)}><Icon name="play" />{tool.operation}</button>
             <span class="description">{tool.description}</span>
-            {#if tool.error}<span class="reason">{tool.error}</span>{/if}
           </div>
         {/each}
       </div>
@@ -75,6 +73,7 @@
     overflow-wrap: anywhere;
   }
   .mark {
+    display: inline-flex;
     flex: none;
     width: var(--icon);
     height: var(--icon);
@@ -99,16 +98,8 @@
     overflow-wrap: anywhere;
   }
   .description,
-  .reason {
-    font-size: var(--text-small);
-    overflow-wrap: anywhere;
-  }
   .description {
     color: var(--ink-2);
-  }
-  .reason {
-    grid-column: 2;
-    color: var(--red);
   }
   .muted {
     color: var(--ink-2);

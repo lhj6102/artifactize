@@ -236,6 +236,13 @@
   a {
     color: var(--accent);
   }
+  th {
+    color: var(--ink-2);
+    font-size: var(--text-label);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
   table {
     margin: 0 0 8px;
     border-collapse: collapse;

@@ -12,6 +12,7 @@ const circle = (cx: number, cy: number, r: number) => `M${cx - r} ${cy}a${r} ${r
 const STAR = "M6 1.5l1.35 2.9 3.15.4-2.3 2.2.6 3.2L6 8.65 3.2 10.2l.6-3.2-2.3-2.2 3.15-.4z";
 
 const DRAWN = {
+  artifact: [{ d: "M5.2 1.8a1.1 1.1 0 0 1 1.6 0l3.4 3.4a1.1 1.1 0 0 1 0 1.6l-3.4 3.4a1.1 1.1 0 0 1-1.6 0L1.8 6.8a1.1 1.1 0 0 1 0-1.6z" }],
   green: [{ d: "M2.5 6.5 5 9l4.5-6" }],
   red: [{ d: "M3 3l6 6M9 3l-6 6" }],
   error: [{ d: "M6 2v5M6 9.75v.01" }],

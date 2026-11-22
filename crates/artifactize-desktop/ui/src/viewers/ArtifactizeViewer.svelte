@@ -70,7 +70,7 @@
 <div class="declared">
   <GraphTools zoom={camera.zoom} showFind={false} act={graph ? {
     zoomBy: (factor) => void flow.setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, flow.getZoom() * factor))),
-    fit: () => void flow.fitView(),
+    fit: () => void flow.fitView({ maxZoom: 1 }),
   } : null} />
   <div class="surface">
     <div
@@ -89,6 +89,7 @@
           bind:viewport={state.camera}
           {nodeTypes}
           fitView
+          fitViewOptions={{ maxZoom: 1 }}
           minZoom={MIN_ZOOM}
           maxZoom={MAX_ZOOM}
           nodesDraggable={false}

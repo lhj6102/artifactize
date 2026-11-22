@@ -53,6 +53,18 @@
         noticeOpen: boolean;
       }
   ) = $props();
+  /** Give the reason first; preserve the original text for the expanded notice. */
+  function shortNotice(text: string): string {
+    if (text.length <= 58) return text;
+    const problem = /changed on disk|has unsaved text|cannot be read/i.exec(text);
+    if (problem) {
+      const file = text.slice(0, problem.index).trim().split(/[\\/]/).at(-1);
+      return `${problem[0][0].toUpperCase()}${problem[0].slice(1)}${file && file.length <= 24 ? ` · ${file}` : ""}`;
+    }
+    const path = /^(?:[A-Za-z]:)?(?:[/\\]|[^ :]+[/\\])[^:]+:\s*(.+)/.exec(text);
+    const reason = path?.[1] || text;
+    return reason.length <= 58 ? reason : `${reason.slice(0, 57).replace(/\s+\S*$/, "")}…`;
+  }
 </script>
 
 <!-- Keys from the pane's focusable rows and controls bubble up to its handler. -->
@@ -75,7 +87,7 @@
     {#if afterHeadline}<div class="after-headline">{@render afterHeadline()}</div>{/if}
     {#if notice}
       <div class="notice" class:open={noticeOpen} role="status">
-        <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{notice}</button>
+        <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{noticeOpen ? notice : shortNotice(notice)}</button>
       </div>
     {/if}
     {#if actions}<div class="actions">{@render actions()}</div>{/if}
@@ -105,6 +117,7 @@
     min-height: 32px;
     padding: 0 var(--pad);
   }
+  header > :global(.reference.chip) { flex: 0 1 auto; }
   h2 {
     margin: 0;
     font-size: var(--text-small);

@@ -3,6 +3,9 @@
 // states as the Run's tree of Artifacts and evals, or from what verify would do on a Current.
 import type { Light, Shape, Tally, Update } from "../ipc/client";
 
+/** One user-requested camera zoom step, on the strip and in the palette. */
+export const ZOOM_STEP = 1.2;
+
 /** Words for each light, for labels and Help; colours are `light-<name>` classes and icons
  * are icons.ts's. */
 export const WORDS: Record<Light, string> = {
