@@ -20,6 +20,7 @@
   import RecordDetail from "./RecordDetail.svelte";
   import { NeighboursState } from "./neighbours-state.svelte";
   import Neighbours from "./Neighbours.svelte";
+  import { toolsKey } from "./artifact-tools.svelte";
   import ArtifactTools from "./ArtifactTools.svelte";
   import EvalReview from "./EvalReview.svelte";
   import ArtifactStar from "./ArtifactStar.svelte";
@@ -237,7 +238,7 @@
         {/if}
         <Neighbours {source} {revision} {node} {onopen} state={neighbours} />
         {#if branch}
-          {#key `${branch.workspace}\n${row.name}`}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
+          {#key toolsKey(branch.workspace, branch.key, row.name)}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
         {/if}
         <!-- On a Current the Artifact's definition, which its graph and its Detail edit, stands
              where a Run's Path does. -->

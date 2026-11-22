@@ -58,6 +58,7 @@
     cursor: pointer;
   }
   summary::-webkit-details-marker { display: none; }
+  summary:hover { background: var(--surface-group); }
   summary:focus-visible { outline-offset: -2px; }
   .icon, .tone-running { display: inline-flex; flex: none; }
   .icon { color: var(--ink-3); }

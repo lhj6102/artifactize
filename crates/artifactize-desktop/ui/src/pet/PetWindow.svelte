@@ -50,7 +50,7 @@
   onMount(() => {
     void show(request);
     const undrafted = onHumanDraftChanged((id) => {
-      if (id === review.id) void review.readDraft();
+      if (id === review.view?.owner) void review.readDraft();
     });
     const unstate = onStateChanged((resync) => {
       if (resync && review.owned) void review.readDraft();
@@ -72,10 +72,10 @@
   });
 </script>
 
-<div class="overlay">
-  <img class="pet" src={petImage} alt="" width="40" height="40" />
+<div class="pet-window">
   <div class="card">
     <button class="head" onclick={open} aria-label="Show {evalId} in Review">
+      <img class="pet" src={petImage} alt="" width="40" height="40" />
       <span class="tone-human"><Icon name="human" /></span><span class="eval">{evalId}</span><span class="run">· {run}</span>
     </button>
     {#if view && review.owned}
@@ -110,7 +110,7 @@
   :global(body) {
     background: transparent;
   }
-  .overlay {
+  .pet-window {
     position: relative;
     height: 100%;
     padding-top: 20px;
@@ -122,7 +122,6 @@
     left: 12px;
     z-index: 1;
     filter: saturate(60%);
-    pointer-events: none;
   }
   .card {
     display: flex;
@@ -151,8 +150,8 @@
     text-align: left;
     cursor: pointer;
   }
-  .head:hover .eval {
-    text-decoration: underline;
+  .head:hover {
+    background: var(--surface-group);
   }
   .tone-human {
     display: inline-flex;

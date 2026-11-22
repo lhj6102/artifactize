@@ -8,7 +8,7 @@
   import { Coalesced } from "./ipc/coalesced";
   import { listen } from "@tauri-apps/api/event";
   import type { Attachment } from "svelte/attachments";
-  import { call, message, subscribe, onActiveReviewChanged, onCurrentChanged, onHumanDraftChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
+  import { call, message, subscribe, onActiveReviewChanged, onCurrentChanged, onHumanDraftChanged, onHumanToolLog, onRunFinished, onStateChanged } from "./ipc/client";
   import { PET_OPEN } from "./pet/pet";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewMode from "./review/ReviewMode.svelte";
@@ -60,8 +60,9 @@
     const unlogged = onHumanToolLog((logs) => app.logged(logs));
     // Each step of the shown Current's scan.
     const unscanned = onCurrentChanged((branch) => void current.changed(branch));
+    const unfinished = onRunFinished((branch) => app.runFinished(branch));
     // A review's draft written elsewhere (another window, the pet overlay, a viewer's Point).
-    const undrafted = onHumanDraftChanged((id) => void app.reviews[id]?.readDraft());
+    const undrafted = onHumanDraftChanged((owner) => app.draftChanged(owner));
     // The active review settled, was released or was replaced.
     const unactive = onActiveReviewChanged((request) => (app.active = request));
     // The pet overlay leads back to its review here.
@@ -83,6 +84,7 @@
       unchanged();
       unlogged();
       unscanned();
+      unfinished();
       undrafted();
       unactive();
       unpet();
@@ -111,10 +113,9 @@
   };
 
   const following: Attachment = () => {
-    const shown = r.shown.kind === "review" ? app.reviews[r.shown.id] : undefined;
-    const owned = shown?.owned ? shown.id : null;
-    if (owned) void app.activate(owned);
-    const inFront = app.focused && app.mode === "review" && owned !== null && owned === app.active;
+    const opened = r.shown.kind === "review" ? r.shown.id : null;
+    if (opened !== null) void app.registerReview(opened);
+    const inFront = app.focused && app.mode === "review" && opened !== null && opened === app.active;
     void app.pet(app.active && !inFront ? app.active : null);
   };
 
@@ -203,10 +204,10 @@
     ...MODES.map((item) => ({ id: `app.mode.${item.mode}`, group: "App", label: `Show ${item.label}`, keys: item.keys, run: () => show(item.mode) })),
     { id: "app.pane", group: "App", label: "Show or hide the Pane", keys: "Ctrl+B", run: () => void togglePane() },
     { id: "chat.new", group: "App", label: "New chat", run: () => { show("chat"); app.newChat(); } },
-    { id: "app.search", group: "App", label: "Search the branches", keys: "/", run: () => void search() },
+    { id: "app.search", group: "App", label: "Search the branches", keys: "/ · Ctrl+F", run: () => void search() },
     { id: "app.filter", group: "App", label: "Filter the reviews", run: () => void filter() },
     { id: "app.open-id", group: "App", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
-    { id: "app.refresh", group: "App", label: "Refresh", keys: "Ctrl+R", run: () => void refresh() },
+    { id: "app.refresh", group: "App", label: "Refresh", keys: "Ctrl+R / F5", run: () => void refresh() },
     { id: "app.quit", group: "App", label: "Quit", keys: "q", run: () => void quit() },
   ]);
 

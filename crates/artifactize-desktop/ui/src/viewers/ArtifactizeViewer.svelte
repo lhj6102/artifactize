@@ -186,6 +186,10 @@
     border-bottom: 1px solid var(--line-group);
   }
   .name {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-weight: 600;
   }
   .evals {

@@ -509,7 +509,8 @@ export class Picture {
 
   /** A 1px current ring outside each open copy, clear of its face and any minimized stack. */
   #ring(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
-    if (what.opened.size === 0) return;
+    // Legible nodes are DOM elements; those elements own their own selection ring.
+    if (!what.boxes || what.opened.size === 0) return;
     const { viewport, ratio } = what;
     const style = getComputedStyle(document.documentElement);
     const corner = Number.parseFloat(style.getPropertyValue("--radius-control")) || 0;

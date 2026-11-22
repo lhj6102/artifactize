@@ -1,6 +1,7 @@
 // The Markdown viewer's facts: the Artifact's Markdown files, the one shown and its blocks. The
 // files are the library's, read through the viewer session.
-import { call, message } from "../ipc/client";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import { call, message, type ViewerFile } from "../ipc/client";
 import { blocks, type Block } from "./markdown";
 import type { ViewerState } from "./viewer-state.svelte";
 
@@ -9,6 +10,12 @@ const DEPTH = 4;
 
 export class MarkdownState {
   files = $state.raw<string[]>([]);
+  tree = $state.raw(new SvelteMap<string, ViewerFile[]>());
+  readonly unfolded = new SvelteSet<string>();
+
+  toggle(path: string): void {
+    if (!this.unfolded.delete(path)) this.unfolded.add(path);
+  }
   shown = $state<string | null>(null);
   read = $state.raw<Block[]>([]);
   error = $state<string | null>(null);
@@ -19,16 +26,29 @@ export class MarkdownState {
   async load(single: boolean): Promise<void> {
     if (single) return this.show("");
     const found: string[] = [];
-    const walk = async (path: string, depth: number) => {
+    const tree = new SvelteMap<string, ViewerFile[]>();
+    const walk = async (path: string, depth: number): Promise<boolean> => {
       const entries = await call(this.viewer.ipc.viewerFiles(this.viewer.session, path));
+      const visible: ViewerFile[] = [];
       for (const entry of entries.toSorted((a, b) => a.path.localeCompare(b.path))) {
-        if (entry.kind === "file" && /\.(md|markdown)$/i.test(entry.name)) found.push(entry.path);
-        else if (entry.kind === "directory" && depth < DEPTH) await walk(entry.path, depth + 1);
+        if (entry.kind === "file" && /\.(md|markdown)$/i.test(entry.name)) {
+          found.push(entry.path);
+          visible.push(entry);
+        } else if (entry.kind === "directory" && depth < DEPTH) {
+          const first = found.length === 0;
+          if (await walk(entry.path, depth + 1)) {
+            visible.push(entry);
+            if (first) this.unfolded.add(entry.path);
+          }
+        }
       }
+      tree.set(path, visible);
+      return visible.length > 0;
     };
     try {
       await walk("", 0);
       this.files = found;
+      this.tree = tree;
       if (found.length > 0) await this.show(found[0]);
     } catch (failure) {
       this.error = message(failure);

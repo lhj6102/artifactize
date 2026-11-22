@@ -181,14 +181,16 @@
       <p class="text">{view.instruction}</p>
       {#if view.shared}<p class="shared">{view.shared}</p>{/if}
     </div>
-    <Section name="Tools" folds={false}>
-      <Tools {review} />
-    </Section>
+    {#if view.tools.length > 0}
+      <Section name="Tools" folds={false}>
+        <Tools {review} />
+      </Section>
+    {/if}
   {/if}
 {/snippet}
 
 {#snippet evidence()}
-  {#if split || !review.settled || review.log.length > 0}
+  {#if split || review.busy?.tool || review.log.length > 0}
     <div class="tool-log">
       <Section name="Tool log" preview unfolded={h.logOpen} ontoggle={() => (h.logOpen = !h.logOpen)}>
         <ToolLog entries={review.log} folded={!h.logOpen} empty={review.settled ? null : "What the tools print shows here."} />

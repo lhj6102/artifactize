@@ -92,7 +92,7 @@
   /* A long operation name wraps inside its button rather than widening the Detail. */
   .tool .button {
     height: auto;
-    min-height: 22px;
+    min-height: var(--row-dense);
     max-width: 100%;
     white-space: normal;
     text-align: left;

@@ -309,8 +309,9 @@ export class SettingsState {
       this.prompt = await call(this.#commands.codexLoginPrompt(this.codexAttempt));
       this.codex = await call(this.#commands.codexLoginWait(this.prompt.signIn));
     } catch (failure) {
-      this.codexError = message(failure);
       await this.loadCodex();
+      const error = message(failure);
+      if (error !== "Codex sign-in was cancelled." || this.codex?.state === "absent") this.codexError = error;
     } finally {
       this.prompt = null;
       this.codexAttempt = null;

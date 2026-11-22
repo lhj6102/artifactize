@@ -43,7 +43,7 @@
   import Navigator from "./Navigator.svelte";
   import WholeNode from "./WholeNode.svelte";
   import { boxes, copies, copyEdges, drawings, partsCount, type Copy } from "./parts";
-  import { BLOCKING, NODE, WORDS, tallyWords, type Point } from "./graph";
+  import { BLOCKING, NODE, WORDS, currentWords, tallyWords, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, legible, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
@@ -223,7 +223,7 @@
           },
           draggable: editable && !painted,
           connectable: false,
-          ariaLabel: `${node.name}: ${node.note ?? `${WORDS[node.light]}${tallyWords(node.tally)}`}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
+          ariaLabel: `${node.name}: ${node.note ?? (current ? currentWords(node.light, node.tally) : `${WORDS[node.light]}${tallyWords(node.tally)}`)}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
           domAttributes: { "data-light": node.light, "data-artifact": node.id },
         };
       });
@@ -328,7 +328,7 @@
   function navigate(point: Point) {
     if (!v.area) return;
     const zoom = flow.getViewport().zoom;
-    void flow.setViewport({ x: v.area.width / 2 - point.x * zoom, y: v.area.height / 2 - point.y * zoom, zoom }, { duration: 0 });
+    void flow.setViewport({ x: visible / 2 - point.x * zoom, y: v.area.height / 2 - point.y * zoom, zoom }, { duration: 0 });
   }
 
   /** The minimized wholes by key, with how many parts each holds. */

@@ -60,7 +60,7 @@
     flex: none;
     display: inline-flex;
     align-items: center;
-    height: 22px;
+    height: var(--row-dense);
     border: 1px solid var(--line-group);
     border-radius: var(--radius-control);
     background: var(--surface-group);

@@ -100,7 +100,7 @@
         {@const open = m.expanded.has(key)}
         {@const newest = latest(branch)}
         <li role="treeitem" aria-expanded={open} aria-selected={isSelected(key)} class="branch" class:open data-key={key}>
-          <div class="head" class:selected={isSelected(key)}>
+          <div class="head" class:selected={isSelected(key)} class:has-latest={!open && newest?.kind === "run"}>
             <button class="chevron" tabindex="-1" aria-label="{open ? 'Fold' : 'Expand'} {name(branch)}" onclick={() => ontoggle(branch)}
               ><Icon name={open ? "unfold" : "fold"} /></button
             >
@@ -216,7 +216,7 @@
     height: 100%;
     min-width: 0;
     margin: 0;
-    padding: 0 calc(var(--pad) + 24px) 0 30px;
+    padding: 0 calc(var(--pad) + var(--control)) 0 30px;
     border: 0;
     background: none;
     color: var(--ink-2);
@@ -251,6 +251,7 @@
     align-items: center;
     column-gap: 8px;
     font-size: var(--text-small);
+    line-height: 12px;
   }
   .latest .dot {
     width: 8px;
@@ -268,8 +269,8 @@
   .star {
     display: grid;
     place-items: center;
-    width: 24px;
-    height: 24px;
+    width: var(--control);
+    height: var(--control);
     position: absolute;
     top: 50%;
     right: calc(var(--pad) - 4px);
@@ -279,6 +280,9 @@
     background: none;
     color: var(--ink-2);
     cursor: pointer;
+  }
+  .has-latest :is(.chevron, .star) {
+    top: calc(50% - 6px);
   }
   .star.on {
     color: var(--ink);

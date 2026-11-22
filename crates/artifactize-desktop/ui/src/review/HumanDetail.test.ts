@@ -343,7 +343,7 @@ describe("HumanDetail", () => {
         lines: [{ text: "clicked (412, 1)", error: false }, { text: "clicked (412, 2)", error: true }] },
       { run: "2", at: 0, operation: "notes", artifact: "release", lines: [], end: { text: "■ exit 0", error: false } },
     ]);
-    const log = screen.getByRole("log", { name: "Tool log" });
+    const log = await screen.findByRole("log", { name: "Tool log" });
     const fold = screen.getByRole("button", { name: "Tool log" });
     await waitFor(() => expect(log.textContent).toContain("■ exit 0 · 0 lines"));
     expect(log.textContent).not.toContain("clicked");
@@ -361,13 +361,15 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     const review = new Review("run-a-2", new Jobs());
     renderHosted(HumanDetail, { review, onback: () => {} });
-    const header = await screen.findByRole("button", { name: "Tool log" });
-    const log = screen.getByRole("log", { name: "Tool log" });
-    const rows = () => [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
+    await screen.findByText("REVIEW (yours)");
+    expect(screen.queryByRole("log", { name: "Tool log" })).toBeNull();
     const run = { run: "1", at: 0, operation: "scan", artifact: "release", lines: [
       { text: "early", error: false }, { text: "warning: missing title", error: true }, { text: "still checking", error: false },
     ] };
     review.logged([{ ...run, end: null }]);
+    const header = await screen.findByRole("button", { name: "Tool log" });
+    const log = screen.getByRole("log", { name: "Tool log" });
+    const rows = () => [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
     await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "still checking"]));
     review.logged([{ ...run, end: { text: "■ exit 1", error: true } }]);
     await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "warning: missing title", "■ exit 1 · 3 lines"]));
@@ -399,6 +401,7 @@ describe("HumanDetail", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
     kept.draft.points = [old, fresh];
     await review.readDraft();
+    review.logged([{ run: "1", at: 0, operation: "scan", artifact: "release", lines: [], end: { text: "■ exit 0", error: false } }]);
     const points = await screen.findByRole("region", { name: "Points" });
     const [first, second] = within(points).getAllByRole("listitem");
     expect(first.textContent).toContain(old.text);

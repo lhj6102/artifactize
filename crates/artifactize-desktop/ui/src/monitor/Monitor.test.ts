@@ -99,6 +99,8 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
           return chat;
         case "chat_open":
           return { session: chat, running: false, turns: [] };
+        case "chat_branches":
+          return [branch("other", []), branch("main", [])];
         case "chat_default_model":
           return saved.selection;
         case "human_waiting_count":
@@ -397,21 +399,26 @@ it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest e
 });
 
 it("opens the latest session in Graph from a Run header, and rescans when that branch's Run ends", async () => {
-  let ended = false;
+  let listed = true;
   let revision = 0;
-  const main = () => branch("main", [ended ? runChip("run-1", "GREEN") : runChip("run-1", "RUNNING", true)]);
-  const { calls, scanned } = backend(monitor(), () => browseView(++revision, { branches: [main()] }));
+  const main = branch("main", [runChip("run-1", "RUNNING", true)]);
+  const { calls, scanned, navigations } = backend(monitor(), () => browseView(++revision, { branches: listed ? [main] : [] }));
   render(App);
   await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
   const header = screen.getByLabelText("Main area").querySelector("header")!;
   await fireEvent.click(within(header).getByRole("button", { name: "Open in Chat" }));
   await waitFor(() => expect(scanned()).toBe(1));
   expect(calls.filter(({ command }) => command === "chat_latest_for_branch" || command === "chat_set_view"))
-    .toEqual([{ command: "chat_latest_for_branch", args: { branch: main().key } }, { command: "chat_set_view", args: { id: saved.id, view: "graph" } }]);
+    .toEqual([{ command: "chat_latest_for_branch", args: { branch: main.key } }, { command: "chat_set_view", args: { id: saved.id, view: "graph" } }]);
   expect(workspace("Chat").hidden).toBe(false);
   expect(screen.getByRole("button", { name: "Graph" }).getAttribute("aria-pressed")).toBe("true");
-  ended = true;
+  listed = false;
+  const reads = navigations().length;
   await emit("state-changed", { resync: false });
+  await waitFor(() => expect(navigations().length).toBeGreaterThan(reads));
+  await emit("run-finished", { run: "run-other", branch: branch("other", []).key });
+  expect(scanned()).toBe(1);
+  await emit("run-finished", { run: "run-1", branch: main.key });
   await waitFor(() => expect(scanned()).toBe(2));
 });
 
@@ -419,7 +426,7 @@ it.each(["reference", "graph launch"])("opens New chat on the target branch when
   const other = branch("other", [runChip("run-other", "GREEN")]);
   const main = branch("main", []);
   const launched = entry === "graph launch";
-  const { calls } = backend({ ...monitor(), mode: launched ? "graph" : "monitor" }, () => browseView(1, { branches: [other, main], launch: launched ? main.key : null }), { view: current }, null, null);
+  const { calls } = backend({ ...monitor(), mode: launched ? "graph" : "monitor" }, () => browseView(1, { branches: launched ? [other] : [main], launch: launched ? main.key : null }), { view: current }, null, null);
   render(App);
   if (!launched) {
     await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
@@ -428,7 +435,9 @@ it.each(["reference", "graph launch"])("opens New chat on the target branch when
   }
   const dialog = await screen.findByRole("dialog", { name: "New chat" });
   expect(workspace("Chat").hidden).toBe(false);
-  expect(within(dialog).getByRole<HTMLSelectElement>("combobox", { name: "Branch" }).value).toBe(main.workspace);
+  const choices = within(dialog).getByRole<HTMLSelectElement>("combobox", { name: "Branch" });
+  await waitFor(() => expect(choices.value).toBe(main.workspace));
+  expect([...choices.options].map((option) => option.value)).toEqual([other.workspace, main.workspace]);
   expect(calls.find(({ command }) => command === "chat_latest_for_branch")?.args).toEqual({ branch: main.key });
   expect(calls.find(({ command }) => command === "chat_default_model")?.args).toEqual({ worktree: main.workspace, branch: main.key });
   expect(calls.some(({ command }) => command === "chat_set_view" || command === "current_scan")).toBe(false);
@@ -508,12 +517,14 @@ it("makes the claimed review shown in Review the active one, and shows the pet o
   const region = await within(main).findByLabelText("Human review");
   await within(main).findByRole("button", { name: "Claim to review (c)" });
   const asked = (command: string) => calls.filter((call) => call.command === command).map((call) => (call.args as { request: string | null }).request);
-  expect(asked("active_review_set")).toEqual([]);
-  await fireEvent.keyDown(region, { key: "c" });
   await waitFor(() => expect(asked("active_review_set")).toEqual(["run-a-2"]));
-  // In front, the review needs no overlay.
-  expect(asked("pet_show")).toEqual([]);
+  await fireEvent.keyDown(region, { key: "c" });
+  await within(main).findByText("REVIEW (yours)");
+  expect(asked("active_review_set")).toEqual(["run-a-2"]);
   await fireEvent.keyDown(window, { key: "2", code: "Digit2", ctrlKey: true });
+  // Neither opening nor taking the claim arms the pet: the backend event does.
+  expect(asked("pet_show")).toEqual([]);
+  await emit("active-review-changed", { request: "run-a-2" });
   await waitFor(() => expect(asked("pet_show")).toEqual(["run-a-2"]));
   await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
   await waitFor(() => expect(asked("pet_show")).toEqual(["run-a-2", null]));

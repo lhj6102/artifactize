@@ -17,9 +17,9 @@
 </script>
 
 <span class="scan" role="status">
-  {#if current.scanning}
-    <span class="checking" aria-label="Checking, {left ?? 'all'} Artifacts left"><Icon name="checking" /><span aria-hidden="true">{left ?? "…"} left</span></span>
-  {:else if scanned}
+  {#if left !== null}
+    <span class="checking" aria-label="Checking, {left} Artifacts left"><Icon name="checking" /><span aria-hidden="true">{left} left</span></span>
+  {:else if !current.scanning && scanned}
     <time datetime={scanned.at} aria-label="Scanned at {scanned.local}">{scanned.local}</time>
   {/if}
   {#if current.error}<span class="failure">{current.error}</span>{/if}

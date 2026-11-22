@@ -87,7 +87,7 @@
     void app.showReview(row.id).then(() => focus("main"));
   }
 
-  /** Move the list's selection by `by` rows. */
+  /** Move the keyboard cursor without changing which review is open. */
   function move(by: number) {
     if (rows.length === 0) return;
     const at = rows.findIndex((row) => row.id === r.selected);
@@ -220,10 +220,11 @@
             {#each groups as [project, members] (project)}
               <li class="group" role="presentation">{project}</li>
               {#each members as row (row.id)}
-                <li role="option" aria-selected={r.selected === row.id} class:selected={r.selected === row.id} data-key={row.id} onclick={() => open(row)} onkeydown={() => {}}>
+                {@const opened = r.shown.kind === "review" && r.shown.id === (app.reviews[row.id]?.id ?? row.id)}
+                <li role="option" aria-selected={opened} class:selected={opened} class:cursor={r.selected === row.id} data-key={row.id} onclick={() => open(row)} onkeydown={() => {}}>
                   <span class="glyph {tone(row.mark.status)}"><Icon name={statusIcon(row.mark.status)} label={row.mark.status.replaceAll("_", " ")} /></span>
                   <span class="eval">{row.eval}</span>
-                  <span class="age">{row.claimant ? `${row.claimant} · ` : ""}{row.age}</span>
+                  <span class="age" title={row.claimant ?? undefined}>{#if row.claimant}<span class="claimant">{row.claimant}</span> · {/if}{row.age}</span>
                 </li>
               {/each}
             {:else}
@@ -309,8 +310,8 @@
     list-style: none;
     outline: none;
   }
-  .list:focus-visible:not(:has(li.selected)),
-  .list:focus-visible li.selected {
+  .list:focus-visible:not(:has(li.cursor)),
+  .list:focus-visible li.cursor {
     outline: 2px solid var(--focus);
     outline-offset: -2px;
   }
@@ -327,7 +328,7 @@
    * (D-REV-7). */
   .list li[role="option"] {
     display: grid;
-    grid-template-columns: var(--icon) minmax(0, 1fr) auto;
+    grid-template-columns: var(--icon) minmax(0, 1fr) fit-content(45%);
     align-items: center;
     gap: 8px;
     height: var(--row-pane);
@@ -353,10 +354,18 @@
     white-space: nowrap;
   }
   .age {
+    display: flex;
+    gap: 3px;
+    min-width: 0;
     color: var(--ink-2);
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+  .claimant {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .list li.empty {
     padding: 6px var(--pad);

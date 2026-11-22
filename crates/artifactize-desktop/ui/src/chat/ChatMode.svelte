@@ -28,9 +28,9 @@
   import ScanState from "./ScanState.svelte";
 
   const app = getAppState();
-  const { browse, current, definitions, chat: c } = app;
+  const { current, definitions, chat: c } = app;
 
-  const branches = $derived(browse.view?.branches ?? []);
+  const branches = $derived(c.branches ?? []);
   /** Where a session works, as the library names it: its project and branch. */
   const placeOf = (session: ChatSession) => (session.branch ? `${session.project} / ${session.branch}` : session.project);
   /** The sessions grouped by project and branch, the groups and their sessions newest first. */
@@ -77,7 +77,7 @@
   }
 
   /** A Run card's status word and its icon's status. */
-  function runStatus(card: ChatRun): { word: string; status: "RUNNING" | "GREEN" | "RED" | "ERROR" | "YELLOW" | "WAITING_HUMAN" | "QUEUED" } {
+  function runStatus(card: ChatRun): { word: string; status: "RUNNING" | "GREEN" | "RED" | "ERROR" | "YELLOW" | "WAITING_HUMAN" | "QUEUED" | "INCOMPLETE" } {
     switch (card.state) {
       case "green":
         return { word: "GREEN", status: "GREEN" };
@@ -85,8 +85,9 @@
         return { word: "RED", status: "RED" };
       case "error":
       case "cancelled":
-      case "incomplete":
         return { word: (card.state ?? "").toUpperCase(), status: "ERROR" };
+      case "incomplete":
+        return { word: "INCOMPLETE", status: "INCOMPLETE" };
       case "yellow":
         return { word: "YELLOW", status: "YELLOW" };
       case "waiting_human":
@@ -192,11 +193,7 @@
       rereading.request();
       listing.request();
     });
-    const unbrowse = browse.onShown((snapshot) => {
-      if (app.liveGraph) current.runsChanged(snapshot, app.liveGraph.branchKey);
-    });
     return () => {
-      unbrowse();
       unsession();
       unstate();
     };
@@ -205,7 +202,7 @@
 
 {#snippet runCard(card: ChatRun)}
   {@const status = runStatus(card)}
-  {@const attention = [...card.failed, ...card.waiting.map((name) => `${name} waits for a person`)].join(", ")}
+  {@const attention = [...card.failed, ...card.waiting].join(", ")}
   <div class="run" data-run={card.id}>
     <span class={tone(status.status)}><Icon name={statusIcon(status.status)} /></span>
     <span class="mono">{card.id}</span>
@@ -252,8 +249,10 @@
     <Split id="chat-main" order={2} defaultSize={app.paneShown ? 80 : 100} minSize={mainMin}>
       <Panel title={session ? session.title || "New chat" : "Chat"} label="Chat's main area" focused={false} notice={mainNotice} bind:noticeOpen={c.noticeOpen} bind:element={c.panes.main}>
         {#snippet headline()}
+          {#if session}<span class="branch mono">{session.branch || session.project}</span>{/if}
+        {/snippet}
+        {#snippet afterHeadline()}
           {#if session}
-            <span class="branch mono">{session.branch || session.project}</span>
             <div class="views" role="group" aria-label="Session view">
               <button type="button" aria-pressed={!graph} onclick={() => void c.setView("conversation")}>Conversation</button>
               <button type="button" aria-pressed={graph} onclick={() => void c.setView("graph")}>Graph</button>
@@ -371,7 +370,8 @@
         <div class="dialog-body">
           <label class="field">
             <span class="field-name">Branch</span>
-            <select bind:value={c.worktree} onchange={() => c.worktree && void c.readStarting(c.worktree, branches.find((branch) => branch.workspace === c.worktree)?.key ?? null)}>
+            <select bind:value={c.worktree} disabled={!branches.length} onchange={() => c.worktree && void c.readStarting(c.worktree, branches.find((branch) => branch.workspace === c.worktree)?.key ?? null)}>
+              {#if c.worktree === null}<option value={null} disabled>Choose a branch</option>{/if}
               {#each branches as branch (branch.workspace)}
                 <option value={branch.workspace}>{branch.name ? `${branch.project} / ${branch.name}` : branch.project}</option>
               {/each}
@@ -380,7 +380,15 @@
           <div class="field">
             <span class="field-name" id="new-chat-model">Model</span>
             <p class="starting" class:quiet={!starting} role="status" aria-labelledby="new-chat-model">
-              {#if starting}
+              {#if c.branchError}
+                {c.branchError}
+              {:else if c.branches === null}
+                Reading branches…
+              {:else if branches.length === 0}
+                No checked-out branch.
+              {:else if c.worktree === null}
+                Choose a branch.
+              {:else if starting}
                 {providerName(starting.backend)} · {starting.model}{starting.effort ? ` · ${starting.effort}` : ""}
               {:else if reading}
                 Reading the providers' models…
@@ -504,9 +512,9 @@
   .views {
     display: inline-flex;
     flex: none;
-    height: 22px;
+    height: var(--row-dense);
     box-sizing: border-box;
-    margin-left: 12px;
+    margin-left: 4px;
     border: 1px solid var(--line-input);
     border-radius: var(--radius-control);
   }
@@ -529,6 +537,7 @@
     color: var(--ink-bright);
     box-shadow: inset 0 -2px 0 var(--current-mark);
   }
+  .views button:hover { background: var(--surface-group); }
   .views button:focus-visible {
     outline-offset: -2px;
   }
@@ -567,6 +576,9 @@
     flex-direction: column;
     gap: 10px;
     max-width: var(--measure);
+    min-height: 100%;
+    box-sizing: border-box;
+    justify-content: end;
     margin: 0 auto;
     padding: 16px var(--pad) 12px;
   }

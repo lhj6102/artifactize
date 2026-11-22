@@ -257,6 +257,8 @@ function unlisted(models: { slug: string; displayName: string }[]) {
     switch (cmd) {
       case "chat_list":
         return [];
+      case "chat_branches":
+        return [{ key: session.branchKey, project: session.project, name: session.branch, workspace: session.worktree }];
       case "chat_default_model":
         await answered;
         return starting;
@@ -278,7 +280,7 @@ it("offers Create in New chat only once the model the session starts with is kno
   const dialog = await screen.findByRole("dialog", { name: "New chat" });
   const create = within(dialog).getByRole("button", { name: "Create" });
   // The providers are still being read: the dialog says so, and Create waits.
-  expect(within(dialog).getByRole("status").textContent?.trim()).toBe("Reading the providers' models…");
+  await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("Reading the providers' models…"));
   expect(create.hasAttribute("disabled")).toBe(true);
   answer();
   await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("lab · lab-large · medium"));

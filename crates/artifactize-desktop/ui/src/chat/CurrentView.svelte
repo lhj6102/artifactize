@@ -30,10 +30,7 @@
   const scanning: Attachment = () => {
     void key;
     if (app.mode !== "chat") return;
-    untrack(() => {
-      if (app.browse.view) current.runsChanged(app.browse.view, branch, false);
-      void current.scan(branch);
-    });
+    untrack(() => void current.scan(branch));
   };
 
   function open(node: string, tab: string | null = null) {

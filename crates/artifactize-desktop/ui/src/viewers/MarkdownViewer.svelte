@@ -75,12 +75,28 @@
   {/each}
 {/snippet}
 
+{#snippet folder(path: string, depth: number)}
+  {#each m.tree.get(path) ?? [] as entry (entry.path)}
+    <li>
+      {#if entry.kind === "directory"}
+        {@const open = m.unfolded.has(entry.path)}
+        <button style:--depth={depth} aria-expanded={open} onclick={() => m.toggle(entry.path)}>
+          <span class="quiet"><Icon name={open ? "unfold" : "fold"} /></span><span class="quiet"><Icon name="folder" /></span><span class="filename">{entry.name}</span>
+        </button>
+        {#if open}<ul>{@render folder(entry.path, depth + 1)}</ul>{/if}
+      {:else}
+        <button style:--depth={depth} class:selected={m.shown === entry.path} aria-current={m.shown === entry.path ? "true" : undefined} onclick={() => void m.show(entry.path)}>
+          <span class="quiet"><Icon name="file" /></span><span class="filename">{entry.name}</span>
+        </button>
+      {/if}
+    </li>
+  {/each}
+{/snippet}
+
 <div class="markdown" class:single={single || m.files.length < 2}>
   {#if !single && m.files.length >= 2}
     <ul class="tree" aria-label="Markdown files">
-      {#each m.files as path (path)}
-        <li><button class:selected={m.shown === path} aria-current={m.shown === path ? "true" : undefined} onclick={() => void m.show(path)}><span class="quiet"><Icon name="file" /></span><span class="filename">{path}</span></button></li>
-      {/each}
+      {@render folder("", 0)}
     </ul>
   {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
@@ -115,7 +131,7 @@
 <style>
   .markdown {
     display: grid;
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: min(240px, 40%) minmax(0, 1fr);
     height: 100%;
     min-height: 0;
   }
@@ -131,6 +147,7 @@
     border-right: 1px solid var(--line-panel);
     font-size: var(--text-small);
   }
+  .tree ul { margin: 0; padding: 0; list-style: none; }
   .tree button {
     display: flex;
     align-items: center;
@@ -138,7 +155,7 @@
     width: 100%;
     min-height: var(--row-dense);
     margin: 0;
-    padding: 0 var(--pad);
+    padding: 0 var(--pad) 0 min(50%, calc(var(--pad) + var(--depth, 0) * 14px));
     border: 0;
     background: none;
     color: var(--ink-2);
@@ -181,6 +198,8 @@
     border-bottom: 1px solid var(--line-group);
     font-size: var(--text-heading);
   }
+  h2,
+  h3 { font-weight: 600; }
   h2 {
     margin: 14px 0 6px;
     font-size: var(--text-title);
@@ -226,6 +245,7 @@
     padding: 2px 8px;
     border: 1px solid var(--line-group);
     text-align: left;
+    overflow-wrap: anywhere;
   }
   hr {
     border: 0;

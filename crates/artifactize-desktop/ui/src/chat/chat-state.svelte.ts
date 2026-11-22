@@ -4,7 +4,8 @@
 // Run cards, providers and models are the library's, read and changed through the IPC.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { GraphWorkspace } from "../monitor/graph-workspace.svelte";
-import { call, message, type BranchKey, type ChatModel, type ChatSession, type ChatSessionView, type ChatView, type Commands } from "../ipc/client";
+import { call, message, type BranchKey, type ChatBranch, type ChatModel, type ChatSession, type ChatSessionView, type ChatView, type Commands } from "../ipc/client";
+import { keyOf } from "../monitor/monitor-state.svelte";
 import { providerEntries, readProvider, type MenuProvider } from "./model-providers";
 
 export class ChatModeState {
@@ -42,6 +43,8 @@ export class ChatModeState {
   noticeOpen = $state(false);
   /** The New chat dialog is open, and the worktree it would start the session in. */
   creating = $state(false);
+  branches = $state.raw<ChatBranch[] | null>(null);
+  branchError = $state<string | null>(null);
   worktree = $state<string | null>(null);
   /** The model menu is open. */
   picking = $state(false);
@@ -133,12 +136,26 @@ export class ChatModeState {
     }
   }
 
-  /** Open the new session dialog on `worktree` and read its library default. */
-  newChat(worktree: string | null, branch: BranchKey | null = null): void {
-    ++this.#opening;
-    this.worktree = worktree;
+  /** Open New chat on a branch from the library's full list, not Verify's search result. */
+  async newChat(branch: BranchKey | null, exact: boolean): Promise<void> {
+    const opening = ++this.#opening;
+    this.branches = null;
+    this.branchError = null;
+    this.worktree = null;
+    this.starting = null;
     this.creating = true;
-    if (worktree) void this.readStarting(worktree, branch);
+    try {
+      const branches = await call(this.ipc.chatBranches());
+      if (!this.creating || opening !== this.#opening) return;
+      this.branches = branches;
+      const selected = (branch ? branches.find((item) => keyOf(item.key) === keyOf(branch)) : undefined) ?? (exact ? undefined : branches[0]);
+      if (selected) {
+        this.worktree = selected.workspace;
+        void this.readStarting(selected.workspace, selected.key);
+      }
+    } catch (error) {
+      if (this.creating && opening === this.#opening) this.branchError = message(error);
+    }
   }
 
   /** Read the shown session again: its turns stream and its Run cards change. */

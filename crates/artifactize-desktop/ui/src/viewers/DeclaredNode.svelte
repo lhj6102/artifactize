@@ -32,7 +32,7 @@
   }
   .node.pointing:hover {
     outline: 2px dashed var(--handle);
-    box-shadow: inset 0 0 0 2px var(--handle-edge);
+    --node-decoration: inset 0 0 0 2px var(--handle-edge);
     outline-offset: -2px;
     cursor: crosshair;
   }

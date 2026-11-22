@@ -1,12 +1,11 @@
 // One Artifact's own Human tools in its branch's worktree as it is now, and the Tool log of
 // their runs while the app runs. A run needs no review and no claim; the backend runs it and
-// sends what it prints keyed by the worktree and the Artifact. The worktree, not the branch, owns
-// them: each call names the branch checked out in it now.
+// sends what it prints keyed by the worktree, its checked-out branch and the Artifact.
 import type { Jobs } from "../ipc/jobs.svelte";
 import { call, commands, message, type BranchKey, type Commands, type LogEntry, type Notice, type ToolView } from "../ipc/client";
 
-/** The key of an Artifact's tools and log: its worktree as the backend names it, and its name. */
-export const toolsKey = (workspace: string, artifact: string): string => `${workspace}\n${artifact}`;
+/** The key of an Artifact's tools and log: worktree, branch and name, as the backend names them. */
+export const toolsKey = (workspace: string, branch: BranchKey, artifact: string): string => JSON.stringify([workspace, branch, artifact]);
 
 type Busy = { label: string; job: number };
 

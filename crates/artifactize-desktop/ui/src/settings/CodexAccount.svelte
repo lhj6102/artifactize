@@ -27,8 +27,10 @@
   <h2 id="codex-title">Codex</h2>
   <dl class="facts" aria-label="Codex sign-in">
     <dt>Account</dt>
-    <dd data-testid="codex-status" class:warn={s.prompt !== null}>
-      {#if s.codexAttempt !== null}
+    <dd data-testid="codex-status" class:warn={s.codexAttempt !== null && s.codexError === null} class:error={s.codexError !== null} role={s.codexError === null ? undefined : "alert"}>
+      {#if s.codexError !== null}
+        {s.codexError}
+      {:else if s.codexAttempt !== null}
         sign-in in progress
       {:else if !s.codex}
         …
@@ -42,10 +44,7 @@
         Cannot store tokens here: {s.codex.reason}
       {/if}
     </dd>
-    {#if s.codexError}
-      <dt>Sign-in</dt>
-      <dd class="error" role="alert">{s.codexError}</dd>
-    {:else if s.codexWarning}
+    {#if s.codexWarning}
       <dt>Sign-out</dt>
       <dd class="warn" role="status">{s.codexWarning}</dd>
     {/if}
@@ -64,7 +63,7 @@
         <button class="button" type="submit" disabled={!s.redirect.trim()}>Finish sign-in</button>
       </form>
     </Section>
-  {:else}
+  {:else if s.codexAttempt === null}
     <div class="row">
       {#if signedIn}
         <button class="button" disabled={s.busy} onclick={() => void s.signOut()}>Sign out of Codex</button>

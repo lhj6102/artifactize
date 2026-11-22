@@ -2,6 +2,7 @@
 // start, the mode shown above the bottom bar, each mode's state, the Panes and the dialogs.
 // Shared with createContext.
 import { createContext } from "svelte";
+import { SvelteSet } from "svelte/reactivity";
 import { call, commands as bindings, message, type BranchKey, type KeyedLog, type LaunchView } from "../ipc/client";
 import { Activity, observeCommands } from "../ipc/activity.svelte";
 import { Browse } from "../monitor/browse.svelte";
@@ -100,22 +101,17 @@ export class AppState {
   /** The review the pet overlay was last asked to show, or `null` when it was hidden. */
   #pet: string | null = null;
 
-  /** Make the claimed review `id` the active one. */
-  async activate(id: string): Promise<void> {
-    if (this.active === id || this.#activating === id) return;
-    this.#activating = id;
+  /** Register the last opened review, even unclaimed. Only the backend event arms Point. */
+  async registerReview(id: string): Promise<void> {
+    if (this.#registered === id) return;
+    this.#registered = id;
     try {
       await call(this.ipc.activeReviewSet(id));
-      // The library took it: it is the active review from now on.
-      this.active = id;
     } catch {
-      // Not this reviewer's claim (any more): the library keeps the active review it had.
-    } finally {
-      if (this.#activating === id) this.#activating = null;
+      if (this.#registered === id) this.#registered = null;
     }
   }
-  /** The review asked to become the active one, until the library answers. */
-  #activating: string | null = null;
+  #registered: string | null = null;
 
   /** Show the pet overlay for review `id`, or hide it for `null`. */
   async pet(id: string | null): Promise<void> {
@@ -142,26 +138,37 @@ export class AppState {
   /** The tools of Artifact `artifact` in the worktree `workspace` of `branch`. */
   /** The tools of the Artifact `artifact` in `workspace` if a Detail asked for them; a lookup
    * that registers nothing. */
-  knownTools(workspace: string, artifact: string): ArtifactTools | undefined {
-    return this.tools[toolsKey(workspace, artifact)];
+  knownTools(workspace: string, branch: BranchKey, artifact: string): ArtifactTools | undefined {
+    return this.tools[toolsKey(workspace, branch, artifact)];
   }
 
-  artifactTools(workspace: string, artifact: string): ArtifactTools {
-    const key = toolsKey(workspace, artifact);
+  artifactTools(workspace: string, branch: BranchKey, artifact: string): ArtifactTools {
+    const key = toolsKey(workspace, branch, artifact);
     return this.tools[key] ?? (this.tools[key] = new ArtifactTools(artifact, this.jobs, this.ipc));
   }
 
   /** Each Tool log goes to its review or Artifact; one nobody opened drops it. */
   logged(logs: KeyedLog[]): void {
     for (const { key, entries } of logs) {
-      if (key.kind === "review") this.reviews[key.request]?.logged(entries);
-      else this.tools[toolsKey(key.workspace, key.artifact)]?.logged(entries);
+      if (key.kind === "review") {
+        for (const review of this.#reviewsOwnedBy(key.request)) review.logged(entries);
+      } else this.knownTools(key.workspace, key.branch, key.artifact)?.logged(entries);
     }
+  }
+
+  /** Draft and Tool log events address the original request, including for shared followers. */
+  #reviewsOwnedBy(owner: string): Review[] {
+    return [...new SvelteSet(Object.values(this.reviews))].filter((review) => review.view?.owner === owner);
+  }
+
+  draftChanged(owner: string): void {
+    for (const review of this.#reviewsOwnedBy(owner)) void review.readDraft();
   }
 
   /** A replaced state: the reviews and drafts of the old one no longer apply. */
   forgetReviews(): void {
     for (const id of Object.keys(this.reviews)) delete this.reviews[id];
+    this.#registered = null;
   }
 
   /** Read the count of Human reviews waiting for a person again. */
@@ -180,7 +187,7 @@ export class AppState {
     this.mode = "review";
     try {
       const opened = await call(this.ipc.humanOpenReference(id, r.query));
-      const review = this.review(opened.view.id);
+      const review = this.review(id);
       review.adopt(opened.view);
       r.shown = { kind: "review", id: opened.view.id };
       r.selected = id;
@@ -190,20 +197,14 @@ export class AppState {
     }
   }
 
-  /** Open the saved request `id` in Review, as a reference opens it: a Human review still
-   * waiting, claimable or this reviewer's, as its review; any other request read-only, a
-   * submitted review or one another reviewer holds included (J-OPEN-ID). */
+  /** Open the saved request `id` in Review: Human reviews open as references do, including
+   * taken and submitted ones; other profiles open in the read-only Request view (J-OPEN-ID). */
   async openRequest(id: string): Promise<void> {
     const r = this.reviewMode;
     this.mode = "review";
     try {
       const detail = await call(this.ipc.requestDetail(id));
-      if (detail.profile === "human") {
-        const opened = await call(this.ipc.humanOpenReference(id, r.query));
-        const view = opened.view;
-        const actionable = view.stage !== "completed" && (view.claim === null || view.claim.mine);
-        if (actionable) return await this.showReview(id);
-      }
+      if (detail.profile === "human") return await this.showReview(id);
       r.folds = { log: false };
       r.shown = { kind: "request", detail };
       r.selected = null;
@@ -216,13 +217,16 @@ export class AppState {
   /** The persisted Graph view of the shown, usable session, while Chat is in front. */
   readonly liveGraph = $derived(this.mode === "chat" && this.chat.view?.session.view === "graph" && this.chat.view.session.unavailable === null ? this.chat.view.session : null);
 
+  /** A Run finished on the branch of the shown Chat session, independent of Verify's filter. */
+  runFinished(branch: BranchKey): void {
+    const session = this.mode === "chat" ? this.chat.view?.session : null;
+    if (session && session.unavailable === null && keyOf(session.branchKey) === keyOf(branch)) void this.current.scan(session.branchKey);
+  }
+
   /** New chat on the indicated branch or, without one, where Verify is left. */
   newChat(branch?: BranchKey): void {
-    this.browse.refresh();
     const shown = this.monitor.shown;
-    const target = branch ?? (shown.kind === "none" ? null : shown.branch);
-    const selected = (target ? this.browse.branch(target) : undefined) ?? (branch ? undefined : this.browse.view?.branches[0]);
-    this.chat.newChat(selected?.workspace ?? null, selected?.key ?? null);
+    void this.chat.newChat(branch ?? (shown.kind === "none" ? null : shown.branch), branch !== undefined);
   }
 
   /** Show a branch's Current in its most recent Chat session, or start New chat there. */

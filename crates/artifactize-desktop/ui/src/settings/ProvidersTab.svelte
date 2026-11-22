@@ -133,11 +133,14 @@
             </select>
           {:else}
             <label for="custom-api">API</label>
-            <select id="custom-api" class="input" bind:value={s.draft.api}>
-              {#each Object.entries(APIS) as [value, name] (value)}
-                <option {value}>{name}</option>
-              {/each}
-            </select>
+            <div class="api-choice">
+              <select id="custom-api" class="input" bind:value={s.draft.api}>
+                {#each Object.entries(APIS) as [value, name] (value)}
+                  <option {value}>{name}</option>
+                {/each}
+              </select>
+              <span aria-hidden="true"><Icon name="unfold" /></span>
+            </div>
             <label for="custom-url">Base URL</label>
             <input id="custom-url" class="input" bind:value={s.draft.url} placeholder={ROOTS[s.draft.api]} autocomplete="off" spellcheck="false" />
             <label for="custom-key">Key</label>
@@ -190,6 +193,21 @@
 </div>
 
 <style>
+  .api-choice { position: relative; min-width: 0; }
+  .api-choice select {
+    appearance: none;
+    width: 100%;
+    padding-inline-end: calc(var(--control) + 4px);
+    text-overflow: ellipsis;
+  }
+  .api-choice span {
+    position: absolute;
+    inset: 0 6px 0 auto;
+    display: flex;
+    align-items: center;
+    color: var(--ink-2);
+    pointer-events: none;
+  }
   .providers {
     display: grid;
     grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);

@@ -27,9 +27,16 @@ export const CURRENT_LEGEND: Light[] = ["reused", "run", "waiting", "blocked", "
  * edge is neutral. */
 export const BLOCKING: ReadonlySet<Light> = new Set<Light>(["red", "error", "blocked"]);
 
-/** A node's tally read aloud: `, 2 of 3 evals GREEN`; nothing without one. */
+/** A Run's passing evals; a Current uses the library's own plan note, not this tally. */
 export function tallyWords(tally: Tally | null): string {
   return tally === null ? "" : `, ${tally.passed} of ${tally.of} evals GREEN`;
+}
+
+/** Fallback for a Current without a library note. Non-reused evals might wait or be blocked,
+ * so the reuse tally alone cannot provide a positive count of evals that would run. */
+export function currentWords(light: Light, tally: Tally | null): string {
+  const zero = light !== "checking" && (light !== "run" || tally === null);
+  return `${WORDS[light]}${zero ? ", 0 evals would run" : ""}`;
 }
 
 export type Point = { x: number; y: number };

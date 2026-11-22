@@ -128,7 +128,9 @@
   <header class="strip">
     <span class="name">{context?.artifact ?? ""}</span>
     <span class="kind">{context?.title ?? ""}</span>
-    {#if entry?.kind === "web" && v.page !== "connected"}
+    {#if v.error}
+      <span class="page silent" role="status" title={v.error}>{v.error}</span>
+    {:else if entry?.kind === "web" && v.page !== "connected"}
       <span class="page" class:silent={v.page === "silent"} role="status">
         {v.page === "loading" ? `Loading ${context?.title ?? "the viewer"}…` : `${context?.title ?? "The viewer"} did not connect: its page never asked the viewer for its context.`}
       </span>
@@ -144,7 +146,6 @@
       <button class="button small point" class:on={v.pointing} aria-pressed={v.pointing} onclick={() => point(!v.pointing)}><Icon name="point" />Point</button>
     {/if}
   </header>
-  {#if v.error}<p class="error" role="status">{v.error}</p>{/if}
   <div class="body">
     {#if entry?.kind === "web"}
       <iframe title="{context?.artifact ?? 'Artifact'} — {context?.title ?? 'viewer'}" sandbox="allow-scripts" onload={loaded} {@attach page}></iframe>
@@ -163,7 +164,7 @@
 <style>
   .window {
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: var(--row-head) minmax(0, 1fr);
     height: 100%;
     background: var(--surface-app);
   }
@@ -236,14 +237,8 @@
   .point.on {
     color: var(--ink-bright);
   }
-  .error {
-    margin: 0;
-    padding: 4px var(--pad);
-    color: var(--red);
-    font-size: var(--text-small);
-  }
   .body {
-    grid-row: 3;
+    grid-row: 2;
     min-height: 0;
     min-width: 0;
   }

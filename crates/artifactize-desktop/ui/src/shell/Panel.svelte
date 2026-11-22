@@ -18,6 +18,7 @@
     beside,
     lead,
     headline,
+    afterHeadline,
     children,
     label,
     attach,
@@ -35,6 +36,8 @@
     lead?: Snippet;
     /** What the view shows, in the same row after the title, cut at the row's end. */
     headline?: Snippet;
+    /** Fixed controls after the headline, before the notice and trailing actions. */
+    afterHeadline?: Snippet;
     children: Snippet;
     label?: string;
     /** Follows the pane's element for as long as it exists (an `{@attach}`). */
@@ -69,6 +72,7 @@
     <h2 class:whole={wholeTitle}>{title}</h2>
     {#if beside}{@render beside()}{/if}
     {#if headline}<div class="headline">{@render headline()}</div>{/if}
+    {#if afterHeadline}<div class="after-headline">{@render afterHeadline()}</div>{/if}
     {#if notice}
       <div class="notice" class:open={noticeOpen} role="status">
         <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{notice}</button>
@@ -127,6 +131,13 @@
     font-size: var(--text-small);
     white-space: nowrap;
   }
+  .after-headline {
+    display: flex;
+    align-items: center;
+    min-width: min-content;
+    font-size: var(--text-small);
+    white-space: nowrap;
+  }
   /* A few words that say what went wrong, taking the remaining room. */
   .notice {
     position: relative;
@@ -160,7 +171,7 @@
    * height, so the header keeps its height and nothing below it moves or is covered. */
   .notice.open {
     box-sizing: border-box;
-    height: 28px;
+    height: var(--row-head);
     overflow-x: hidden;
     overflow-y: auto;
     border: 1px solid var(--line-panel);

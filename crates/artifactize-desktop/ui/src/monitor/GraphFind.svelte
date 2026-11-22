@@ -202,4 +202,5 @@
   .note.error {
     color: var(--red);
   }
+  input::placeholder { color: var(--ink-2); }
 </style>

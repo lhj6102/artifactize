@@ -5,7 +5,7 @@
   // shared input's thousands of users are cut to the backend's first few, failing ones first,
   // and the rest counted below. The section is its own, read whether folded or not, into the
   // Detail's state (whose Debug also says which wholes a shared part is drawn in): an Artifact
-  // with no neighbour has nothing to show here, so it has no Neighbours section.
+  // with no neighbour and only one drawing has no Neighbours section.
   import { SvelteFlow, SvelteFlowProvider, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, type Neighbours, type Source } from "../ipc/client";
@@ -51,13 +51,13 @@
 
   const shown = $derived.by(() => {
     if (!n.graph) return null;
-    const { shape: graph, moreUses, moreUsedBy } = n.graph;
+    const { shape: graph, moreUses, moreUsedBy, copies } = n.graph;
     const uses = graph.edges.filter((edge) => edge.target === node);
     const usedBy = graph.edges.filter((edge) => edge.source === node);
     const byId = new Map(graph.nodes.map((item) => [item.id, item]));
     // Another Artifact's neighbours, still held while this one's are read, are not shown.
     if (!byId.has(node)) return null;
-    if (uses.length + usedBy.length + moreUses + moreUsedBy === 0) return null;
+    if (uses.length + usedBy.length + moreUses + moreUsedBy === 0 && copies <= 1) return null;
     const column = (ids: string[], x: number) => {
       const top = -((ids.length - 1) * (NODE.height + GAP.y)) / 2;
       return ids.flatMap((id, at) => {

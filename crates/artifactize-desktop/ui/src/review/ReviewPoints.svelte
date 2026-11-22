@@ -70,8 +70,8 @@
   .remove {
     display: inline-grid;
     place-items: center;
-    width: 22px;
-    height: 22px;
+    width: var(--row-dense);
+    height: var(--row-dense);
     padding: 0;
     border: 0;
     border-radius: var(--radius-control);

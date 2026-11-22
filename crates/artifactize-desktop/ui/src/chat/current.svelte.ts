@@ -1,8 +1,7 @@
 // The shown branch's Current: the backend scans its worktree as `artifactize status` does,
 // publishing the graph first and each Artifact's plan as it is known, and keeps the newest
 // step for its graph and Details; this holds the newest step for one branch.
-import { SvelteMap } from "svelte/reactivity";
-import { call, commands, message, type BranchKey, type Commands, type BrowseView, type CurrentView } from "../ipc/client";
+import { call, commands, message, type BranchKey, type Commands, type CurrentView } from "../ipc/client";
 import { keyOf } from "../monitor/monitor-state.svelte";
 
 export class Current {
@@ -75,16 +74,4 @@ export class Current {
     this.view = view;
   }
 
-  /** A Run of the drawn branch ended: read what the worktree would do now. */
-  runsChanged(snapshot: BrowseView, branch: BranchKey, rescan = true): void {
-    const key = keyOf(branch);
-    const listed = snapshot.branches.find((item) => keyOf(item.key) === key);
-    if (!listed) return;
-    const now = listed.chips.filter((chip) => chip.running).map((chip) => chip.id);
-    const before = this.#running.get(key);
-    this.#running.set(key, now);
-    if (rescan && before?.some((id) => !now.includes(id))) void this.scan(branch);
-  }
-
-  #running = new SvelteMap<string, string[]>();
 }

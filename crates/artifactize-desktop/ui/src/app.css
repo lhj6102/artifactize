@@ -112,7 +112,7 @@ kbd {
   cursor: default;
 }
 .button.small {
-  height: 22px;
+  height: var(--row-dense);
   padding: 0 8px;
   font-size: var(--text-small);
 }

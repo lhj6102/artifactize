@@ -254,8 +254,8 @@
   .remove {
     display: inline-grid;
     place-items: center;
-    width: 22px;
-    height: 22px;
+    width: var(--row-dense);
+    height: var(--row-dense);
     border: 0;
     background: none;
     color: var(--ink-2);

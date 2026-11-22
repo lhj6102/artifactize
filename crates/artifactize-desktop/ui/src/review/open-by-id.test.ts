@@ -1,7 +1,6 @@
-// Open a request by ID (J-OPEN-ID): a Human review still waiting for this reviewer opens as its
-// review; a submitted one, one another reviewer holds, or any other request opens read-only.
+// Open by ID uses the Human review layout in every Human stage, as a reference does.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HumanView } from "../ipc/client";
 import { AppState } from "../shell/app.svelte";
 import { humanView } from "./fixtures";
@@ -38,8 +37,27 @@ describe("openRequest", () => {
       backend(view);
       const app = new AppState();
       await app.openRequest("run-a-2");
-      expect(app.reviewMode.shown.kind).toBe("request");
+      expect(app.reviewMode.shown).toEqual({ kind: "review", id: view.id });
+      expect(app.review(view.id).view).toEqual(view);
       clearMocks();
     }
   });
+});
+
+it("routes a shared review's draft and Tool log notifications by their original request", async () => {
+  const view = humanView("claim", { id: "follower", owner: "owner" });
+  backend(view);
+  const app = new AppState();
+  await app.openRequest("follower");
+  const review = app.review("follower");
+  const drafts = vi.spyOn(review, "readDraft");
+  const entry = { run: "tool-1", at: 0, operation: "show", artifact: "release", lines: [], end: null };
+  app.draftChanged("follower");
+  app.logged([{ key: { kind: "review", request: "follower" }, entries: [entry] }]);
+  expect(drafts).not.toHaveBeenCalled();
+  expect(review.log).toEqual([]);
+  app.draftChanged("owner");
+  app.logged([{ key: { kind: "review", request: "owner" }, entries: [entry] }]);
+  expect(drafts).toHaveBeenCalledOnce();
+  expect(review.log).toEqual([entry]);
 });

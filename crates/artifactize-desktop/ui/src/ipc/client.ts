@@ -81,6 +81,10 @@ export const onHumanDraftChanged = (callback: (id: string) => void) =>
 export const onActiveReviewChanged = (callback: (request: string | null) => void) =>
   subscribe(events.activeReviewChanged.listen, (payload) => callback(payload.request));
 
+/** A Run ended even if Verify's search never showed its branch. */
+export const onRunFinished = (callback: (branch: BranchKey) => void) =>
+  subscribe(events.runFinished.listen, (payload) => callback(payload.branch));
+
 /** A branch's Current changed: its scan published a step, or ended. */
 export const onCurrentChanged = (callback: (branch: BranchKey) => void) =>
   subscribe(events.currentChanged.listen, (payload) => callback(payload.branch));

@@ -18,7 +18,7 @@
     if (listing.kind === "unconfigured") return [];
     const name = providerName(provider);
     const matchesProvider = name.toLowerCase().includes(query) || provider.toLowerCase().includes(query);
-    if (listing.kind !== "models") return matchesProvider ? [{ provider, name, listing }] : [];
+    if (listing.kind !== "models") return query ? [] : [{ provider, name, listing }];
     const models = matchesProvider ? listing.models : listing.models.filter(({ slug, displayName }) =>
       [slug, displayName].some((value) => value.toLowerCase().includes(query)));
     return models.length || (!query && matchesProvider) ? [{ provider, name, listing: { kind: "models" as const, models } }] : [];

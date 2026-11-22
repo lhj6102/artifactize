@@ -12,12 +12,13 @@ export type Focused = "pane" | "chat" | "graph" | "current" | "review" | "settin
 const WINDOW: Section = {
   title: "Window",
   keys: [
-    ["Ctrl+K", "Command palette"],
+    ["Ctrl+K / F1", "Command palette"],
     ["Ctrl+1 / 2 / 3", "Show Chat, Verify or Review"],
     ["Ctrl+B", "Show or hide the Pane"],
     ["Ctrl+,", "Settings, and back"],
     ["Ctrl+O", "Open a request by ID"],
     ["/", "Search the branches"],
+    ["Ctrl+F", "Search the branches outside a graph"],
     ["Ctrl+R / F5", "Refresh"],
     ["?", "These shortcuts"],
     ["q", "Quit"],
@@ -27,11 +28,6 @@ const WINDOW: Section = {
 const COMPOSER: Section = {
   title: "Conversation",
   keys: [["Enter", "Send"], ["Shift+Enter", "Break a line"], ["Esc", "Stop the running turn"]],
-};
-
-const CHAT_WINDOW: Section = {
-  ...WINDOW,
-  keys: WINDOW.keys.map(([key, action]) => [key, key === "/" ? "Search chats" : action]),
 };
 
 const GRAPH: Section = {
@@ -90,9 +86,9 @@ const KEYS: Record<Focused, Section[]> = {
     },
     WINDOW,
   ],
-  chat: [COMPOSER, CHAT_WINDOW],
+  chat: [COMPOSER, WINDOW],
   graph: [GRAPH, WINDOW],
-  current: [GRAPH, EDITING, COMPOSER, CHAT_WINDOW],
+  current: [GRAPH, EDITING, COMPOSER, WINDOW],
   review: [REVIEW, WINDOW],
   settings: [
     {
