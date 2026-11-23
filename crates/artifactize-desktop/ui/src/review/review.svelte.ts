@@ -151,7 +151,7 @@ class ReviewState {
   /** The newest point seen; removing it does not make another point look newly added. */
   latestPoint = $state.raw<ReviewPoint | null>(null);
   draftRead = 0;
-  draftReading = false;
+  draftReadJob: Promise<void> | null = null;
   draftRevision = 0;
   choice = 0;
   /** The saved draft's verdict was brought back as its open form: once per review shown, so
@@ -237,17 +237,24 @@ export class Review {
 
   /** Read the library's draft again: after a change made elsewhere (the pet overlay, a Point,
    * another window). */
-  async readDraft(): Promise<void> {
+  readDraft(): Promise<void> {
     const state = this.#state;
     const read = ++state.draftRead;
-    state.draftReading = true;
+    const job = this.#readDraft(state, read);
+    state.draftReadJob = job;
+    return job;
+  }
+
+  async #readDraft(state: ReviewState, read: number): Promise<void> {
     try {
       const draft = await call(this.ipc.humanDraft(this.id));
       if (state === this.#state && read === state.draftRead && this.owned) this.#take(draft);
     } catch (error) {
       if (state === this.#state && read === state.draftRead && this.owned) this.notice = { text: message(error), error: true };
     } finally {
-      if (read === state.draftRead) state.draftReading = false;
+      if (read === state.draftRead) state.draftReadJob = null;
+      // A write waiting for this refresh must keep its typed override until the newer read answers.
+      else if (state === this.#state) await state.draftReadJob;
     }
   }
 
@@ -298,7 +305,7 @@ export class Review {
     const revision = state.draftRevision;
     return async (draft) => {
       if (state !== this.#state || !this.owned) return;
-      if (revision !== state.draftRevision || state.draftReading) await this.readDraft();
+      if (revision !== state.draftRevision || state.draftReadJob !== null) await this.readDraft();
       else this.#take(draft);
     };
   }

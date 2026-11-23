@@ -479,6 +479,42 @@ describe("HumanDetail", () => {
     expect(comment.value).toBe("Still typing");
   });
 
+  it("keeps typed text while the refresh after its save is superseded", async () => {
+    const kept = draftLibrary();
+    kept.draft.verdict = "GREEN";
+    let save: (() => void) | undefined;
+    let deferReads = false;
+    const reads: (() => void)[] = [];
+    mockIPC(async (cmd, args) => {
+      if (cmd === "human_open") return humanView("review");
+      if (cmd === "human_draft_edit") await new Promise<void>((resolve) => (save = resolve));
+      const snapshot = kept.answer(cmd, args) ?? null;
+      if (cmd === "human_draft" && deferReads) await new Promise<void>((resolve) => reads.push(resolve));
+      return snapshot;
+    }, { shouldMockEvents: true });
+    const review = new Review("run-a-2", new Jobs());
+    renderHosted(HumanDetail, { review, onback: () => {} });
+    const comment = await screen.findByLabelText<HTMLTextAreaElement>(/^comment/);
+    await fireEvent.input(comment, { target: { value: "Checking g" } });
+    await waitFor(() => expect(save).toBeDefined());
+    await review.readDraft(); // While the write is in flight, the saved snapshot is still old.
+    deferReads = true;
+    save?.();
+    await waitFor(() => expect(reads).toHaveLength(1));
+    const newest = review.readDraft(); // Another invalidation supersedes the write's refresh.
+    await waitFor(() => expect(reads).toHaveLength(2));
+    const ready = review.form!.ready;
+    try {
+      reads[0]();
+      const settled = await Promise.race([ready.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), 0))]);
+      expect(settled).toBe(false);
+      expect(comment.value).toBe("Checking g");
+    } finally { reads[1](); }
+    await newest;
+    await ready;
+    expect(comment.value).toBe("Checking g");
+  });
+
   it("enters a list of flat objects as groups of fields, added and removed", async () => {
     const findings: FormView = {
       verdict: "RED",
