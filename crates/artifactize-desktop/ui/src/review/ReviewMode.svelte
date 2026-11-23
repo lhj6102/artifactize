@@ -333,7 +333,11 @@
             {:else if shown.kind === "request"}
               {#key shown.detail.request}
                 <!-- A read-only request reads as a review does: one column at the left, no wider than the measure. -->
-                <div class="record"><RecordDetail detail={shown.detail} bind:log={r.folds.log} /></div>
+                <div class="record">
+                  <!-- Not in the Pane's list: the column's head names it, read-only (D-REV-6). -->
+                  <p class="record-title">{title}</p>
+                  <RecordDetail detail={shown.detail} bind:log={r.folds.log} />
+                </div>
               {/key}
             {:else}
               <p class="empty">{app.paneShown ? "Choose a review in the Pane." : "Show the Pane from the command palette to choose a review."}</p>
@@ -463,9 +467,22 @@
     min-height: 0;
   }
   .record {
+    display: flex;
+    flex-direction: column;
     height: 100%;
     min-height: 0;
     max-width: var(--measure);
+    margin: 0 auto;
+  }
+  .record-title {
+    flex: none;
+    margin: 0;
+    padding: 12px var(--pad) 6px;
+    color: var(--ink-bright);
+    font-size: var(--text-lead);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .mono {
     font-family: var(--mono);
