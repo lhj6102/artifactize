@@ -1,5 +1,6 @@
-// A Human review, in a graph's Detail and in the main area: its claim, its layout, its tools and
-// their Tool log, its GREEN and RED forms, text in any language, and stepping back out of it.
+// A Human review as a conversation, in a graph's Detail and in the main area: its claim, its layout,
+// its tools and their run lines, its reasons, GREEN and RED with their own fields, text in any
+// language, and stepping back out of it.
 import assert from "node:assert/strict";
 import { artifactize, createRelease, request } from "../fixtures/repo.ts";
 import { processRunning } from "../platform.ts";
@@ -21,8 +22,8 @@ async function slowProcess(app: App, pids: NativePath, run: number): Promise<num
 export const scenarios: Scenario[] = [
   scenario({
     id: "human-claim",
-    title: "a waiting review opened from its Artifact's Detail reads instruction, Tools, Result and Debug without an empty Tool log; another reviewer's claim shows as taken, and Claim to review and Release claim claim and release it, the draft kept",
-    journeys: ["J-HUMAN-CLAIM", "J-HUMAN-LAYOUT"],
+    title: "a waiting review opened from its Artifact's Detail reads as a conversation, its instruction, tools and Debug, one quiet line in the reasons box's place and Claim to review in the decision bar; another reviewer's claim leaves only who holds it; Claim to review and Release claim claim and release it, the reasons kept",
+    journeys: ["J-HUMAN-CLAIM", "J-HUMAN-LAYOUT", "J-HUMAN-REASONS"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], data: { id: request(fixture).id } };
@@ -32,32 +33,32 @@ export const scenarios: Scenario[] = [
       await app.graph.open("a:release", "Artifact release");
       await app.detail.openEval("release/signoff");
       const shown = await review.until((each) => each.stage === "Waiting", "the review opens waiting for a claim");
-      assert.deepEqual(shown.sections, ["Instruction", "Evidence", "Verdict", "Debug"], "one column, nothing of the Tool log or Points before there is something in them");
-      assert.equal(await review.logLine(), "", "no Tool log before a tool has run");
+      assert.deepEqual(shown.sections, ["Instruction", "Tools", "Debug", "Claim line", "Decision"], "one conversation, no runs, points or reasons before there are some");
+      assert.equal(await review.logLine(), "", "no run line before a tool has run");
       assert.equal(await review.instruction(), "Read the release notes and approve them.");
       assert.match(await review.debugState(), new RegExp(`^Request ${id} · DEFERRED · unclaimed`), "its facts under Debug");
-      // Another reviewer's claim shows as taken, the review read-only.
+      // Another reviewer's claim shows as taken: the bar says only who holds it.
       assert.equal(artifactize(fixture, ["request", "claim", id, "--reviewer", "bob"]).status, 0);
-      await review.until((each) => each.stage === "Taken" && each.claimant === "bob" && each.readOnly, "bob's claim shows as taken, read-only");
+      const taken = await review.until((each) => each.stage === "Taken" && each.claimant === "bob" && each.readOnly, "bob's claim shows as taken, read-only");
+      assert.ok(!taken.sections.includes("Reasons box") && !taken.sections.includes("Claim line"), "no reasons box and no line in its place");
       assert.equal(artifactize(fixture, ["request", "unclaim", id, "--reviewer", "bob"]).status, 0);
       await review.until((each) => each.stage === "Waiting" && each.claimant === "", "released by bob, it waits for a claim again");
       await review.claim();
       assert.equal(request(fixture).claim?.reviewer, "alice");
-      // Released while its form is being edited, the draft stays for the next claim.
-      await review.choose("GREEN");
-      await review.enter("comment", "half-checked");
+      assert.ok((await review.read())!.sections.includes("Reasons box"), "claimed, the reasons box stands in the line's place");
+      // Released while reasons are written, the draft stays for the next claim.
+      await review.addReason("half-checked");
       await review.release();
       assert.equal(request(fixture).claim, null);
       await review.claim();
-      await review.choose("GREEN");
-      assert.equal(await review.value("comment"), "half-checked", "the draft kept");
+      await review.until((each) => each.reasons.join() === "half-checked", "the reasons kept");
       assert.equal(request(fixture).status, "DEFERRED", "nothing submitted");
     },
   }),
 
   scenario({
     id: "human-tools",
-    title: "the review's tools run once it is claimed, each run logged as it happens: its start, its lines with stderr marked with a red rule, and its end, with a mark for failures; a launched application's lines keep arriving under its run",
+    title: "the review's tools run once it is claimed, each run its own line in the conversation as it happens: unfolded, its start, its lines with stderr marked with a red rule, and its end; folded, its end and count, a failure in red on its line and nowhere else; a launched application's lines keep arriving under its run",
     journeys: ["J-HUMAN-TOOL", "J-HUMAN-LOG"],
     prepare: async (own) => {
       const fixture = await createRelease(own, { missing: true });
@@ -69,15 +70,16 @@ export const scenarios: Scenario[] = [
       assert.ok(before.tools.every((tool) => !tool.enabled), "no tool runs before the claim");
       await review.claim();
       await review.runTool("notes");
-      // Folded, the Tool log is one line: the last run's start and its end with its count.
-      await app.until(async () => /^▶ \d\d:\d\d:\d\d · notes · release ■ exit 0 · 2 lines$/.test(await review.logLine()), "the folded last run shows its count");
-      await review.showFullLog();
       assert.deepEqual(await review.runUntil("notes", (rows) => rows.at(-1)?.startsWith("■") === true, "notes ended"),
         ["▶ HH:MM:SS · notes · release", "# Release notes", "- Ready to ship.", "■ exit 0"]);
+      await app.until(async () => (await review.logLine()) === "Ran notes · release exit 0 · 2 lines", "the run's line shows its end and count");
       await review.runTool("fail");
       assert.deepEqual(await review.runUntil("fail", (rows) => rows.at(-1)?.startsWith("■") === true, "fail ended"),
         ["▶ HH:MM:SS · fail · release", "■ exit 1 [red]"]);
-      await review.until((shown) => shown.notice === "fail_release failed; a tool error is not a verdict.", "the failed tool notice arrived without a verdict");
+      await app.until(async () => (await review.logLine()) === "Ran fail · release exit 1 · 0 lines", "the failed run's line says its end");
+      const failed = await review.until((shown) => !shown.running, "the failed run ended");
+      assert.equal(failed.notice, "", "a tool's failure is said on its line alone");
+      assert.equal((await review.runLines()).length, 2, "each run its own line, the earlier one kept");
       await review.runTool("gone");
       const gone = await review.runUntil("gone", (rows) => rows.at(-1)?.startsWith("■") === true, "the missing tool ended");
       assert.match(gone.at(-1)!, /^■ error: \S.* \[red\]$/, "a tool that could not run ends with its error, the prefix marked");
@@ -94,8 +96,8 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "human-green",
-    title: "after a claim GREEN opens the pass form, its required fields marked and its optional ones saying Optional, takes Korean composed by an input method and typed letters as text, and Submit saves it while a tool of the review runs, the tool stopped first and the completed result staying open",
-    journeys: ["J-HUMAN-GREEN", "J-HUMAN-FORM", "J-HUMAN-TEXT"],
+    title: "after a claim GREEN asks its own fields besides the reasons, its required ones marked and optional ones saying Optional; the reasons field takes Korean composed by an input method and typed letters as text; Submit waits for the typed reason to be added, then saves GREEN with the reasons as its comment while a tool runs, the tool stopped first and the result standing as the last bubble",
+    journeys: ["J-HUMAN-GREEN", "J-HUMAN-FORM", "J-HUMAN-TEXT", "J-HUMAN-REASONS"],
     prepare: async (own) => {
       const fixture = await createRelease(own, { scalars: true });
       return { fixture, args: ["review"], data: { pids: nativePath(fixture.root, "slow.gate.pids") } };
@@ -103,16 +105,19 @@ export const scenarios: Scenario[] = [
     run: async (app, { fixture, data: { pids } }) => {
       const review = app.review;
       await review.claim();
+      assert.equal((await review.read())!.why, "Choose GREEN or RED");
       await review.choose("GREEN");
       const fields = await review.fields();
-      assert.deepEqual(fields.map((field) => field.label), ["channel", "comment*", "confirmed", "note", "score"], "the pass schema's fields, its constant left out");
+      assert.deepEqual(fields.map((field) => field.label), ["channel", "confirmed", "note", "score"], "GREEN's own fields, its constant and the comment the reasons fill left out");
       assert.ok(fields.filter((field) => ["score", "note", "channel"].includes(field.label)).every((field) => field.hint.includes("Optional")),
         `an empty optional field says Optional: ${JSON.stringify(fields)}`);
       // Korean composed by an input method, then letters that are shortcuts outside a field.
-      await review.compose("comment", "확이", "확인");
-      await review.typeInto("comment", " gu");
-      assert.equal(await review.value("comment"), "확인 gu", "typed letters are text, not shortcuts");
+      await review.compose("reason", "확이", "확인");
+      await review.typeInto("reason", " gu");
+      assert.equal(await review.value("reason"), "확인 gu", "typed letters are text, not shortcuts");
       assert.equal(request(fixture).claim?.reviewer, "alice", "u in a field released nothing");
+      await review.until((shown) => shown.why === "Add the typed reason first" && !shown.submittable, "Submit waits for the typed reason");
+      await review.addTyped();
       await review.enter("score", "4.5");
       await review.check("confirmed", "true");
       await review.select("channel", "\"preview\"");
@@ -122,10 +127,10 @@ export const scenarios: Scenario[] = [
       const tool = await slowProcess(app, pids, 1);
       const done = await review.submit();
       assert.equal(processRunning(tool), false, "the tool has already exited when the completed result first appears");
-      assert.match(done.completed, /확인 gu/, "the completed result stays open");
-      assert.match(done.completed, /comment\s*확인 gu/, "its fields by name");
+      assert.match(done.completed, /comment\s*확인 gu/, "the result as the last bubble, its fields by name");
       assert.doesNotMatch(done.completed, /approved/, "the form's constant not shown");
-      assert.equal(done.stage, "", "a submitted review shows no stage pill");
+      assert.equal(done.stage, "", "submitted, the decision bar is gone");
+      assert.ok(!done.sections.includes("Reasons box") && !done.sections.includes("Runs"), "the reasons box and the runs go");
       const saved = request(fixture);
       assert.equal(saved.status, "GREEN");
       assert.deepEqual(saved.result, { verdict: "GREEN", approved: true, comment: "확인 gu", score: 4.5, confirmed: true, channel: "preview" });
@@ -134,8 +139,8 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "human-red",
-    title: "RED opens the fail form; a result failing its schema is not submitted and names the failing field, GREEN and RED switch keeping each draft, and lists and groups of fields are added and removed before Submit",
-    journeys: ["J-HUMAN-RED", "J-HUMAN-FORM"],
+    title: "RED asks a reason before it submits, Submit saying why; its own fields stand in the request while it is chosen; GREEN and RED switch keeping the reasons and each verdict's fields; groups of fields are added and removed; RED submits the reasons as its list",
+    journeys: ["J-HUMAN-RED", "J-HUMAN-FORM", "J-HUMAN-REASONS"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], data: null };
@@ -146,18 +151,18 @@ export const scenarios: Scenario[] = [
       await app.detail.openEval("release/signoff");
       await review.claim();
       await review.choose("RED");
+      const needs = await review.until((shown) => shown.why !== "" && !shown.submittable, "Submit says why RED waits");
+      assert.match(needs.why, /reason/i, "RED needs a reason");
+      await review.addReason("open the notes");
       await review.enter("reason", "no");
-      const refused = await review.submit();
-      assert.match(refused.refusal, /reason/, "the failing field is named");
+      await review.until((shown) => /reason/.test(shown.why) && !shown.submittable, "the library names the field that fails");
       assert.equal(request(fixture).status, "DEFERRED", "nothing submitted");
       await review.choose("GREEN");
-      await review.enter("comment", "checked");
+      assert.deepEqual(await review.fields(), [], "GREEN asks nothing but the reasons: RED's fields go with RED");
       await review.choose("RED");
-      assert.equal(await review.value("reason"), "no", "the RED draft kept");
+      assert.equal(await review.value("reason"), "no", "the RED fields kept");
+      assert.deepEqual((await review.read())!.reasons, ["open the notes"], "the reasons kept");
       await review.enter("reason", "the notes are wrong");
-      // A list of steps, one text each, and repeated groups of findings.
-      await review.add("steps");
-      await review.enterItem("steps", 0, "open the notes");
       // One group of findings is always left to type in; another is added and removed.
       await review.add("findings");
       await review.enter("findings-0-problem", "a typo");
@@ -172,7 +177,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "human-esc",
-    title: "Cancel beside running work cancels it; in the Detail, Close first cancels the review's running work, then leaves its form with the draft kept, and only then closes the Detail",
+    title: "Cancel beside running work cancels it; in the Detail, Close first cancels the review's running work, then closes the Detail with the reasons kept",
     journeys: ["J-HUMAN-ESC"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -183,8 +188,7 @@ export const scenarios: Scenario[] = [
       await app.graph.open("a:release", "Artifact release");
       await app.detail.openEval("release/signoff");
       await review.claim();
-      await review.choose("GREEN");
-      await review.enter("comment", "kept while stepping back");
+      await review.addReason("kept while stepping back");
       await review.runTool("slow");
       await review.until((each) => each.running !== "", "the tool runs");
       const first = await slowProcess(app, pids, 1);
@@ -198,16 +202,12 @@ export const scenarios: Scenario[] = [
       await app.detail.close();
       await review.runUntil("slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Close first cancelled the running tool");
       await app.until(async () => !processRunning(second), "Close stopped the tool's process");
-      assert.equal(await review.value("comment"), "kept while stepping back", "the form still open");
-      await app.detail.close();
-      await review.until((each) => each.verdict === "", "Close then left the form");
       assert.ok(await app.detail.read(), "the Detail still open");
       await app.detail.close();
       await app.detail.closed();
       await app.graph.open("a:release", "Artifact release");
       await app.detail.openEval("release/signoff");
-      await review.choose("GREEN");
-      assert.equal(await review.value("comment"), "kept while stepping back", "the draft kept");
+      await review.until((each) => each.reasons.join() === "kept while stepping back", "the reasons kept");
     },
   }),
 ];

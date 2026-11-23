@@ -1,26 +1,35 @@
-// A Human review as its reviewer reads it, in the main area or in a Detail: its stage, its
-// instruction, its tools and their Tool log, its result form and its Debug facts; each action
-// waits for what it shows.
+// A Human review as its reviewer reads it, in the main area or in a Detail: a conversation of its
+// instruction, its tools, each tool run's line, its Points, its reasons as bubbles, the reasons
+// box and the decision bar (where the claim stands, GREEN / RED, why Submit waits, Submit), the
+// chosen verdict's own fields and its Debug facts; each action waits for what it shows.
 import { clickRowGutter } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { nativeInput } from "../input.ts";
 import { chooseOption, holds, until } from "./wait.ts";
 
-/** The review as read: where its claim stands (`Waiting`, `Yours`, `Taken`), who else claimed it, what its
- * sections are in order, what its Result says (a form's verdict, or the completed result),
- * the request's state under Debug once unfolded, and whether work of it runs. */
+/** The review as read: where its claim stands (`Waiting`, `Yours`, `Taken`, "" once submitted),
+ * who else claimed it, what its conversation holds in order, the chosen verdict, the completed
+ * result, why Submit waits, the request's state under Debug once unfolded, and whether work of
+ * it runs. */
 export type Shown = {
   stage: string;
   claimant: string;
+  /** The conversation's parts in order: `Instruction`, `Tools`, `Debug`, `Runs`, `Points`,
+   * `Reasons`, `Result`, then `Claim line` or `Reasons box`, then `Decision`. */
   sections: string[];
   verdict: string;
   completed: string;
   readOnly: boolean;
   running: string;
+  /** What went wrong with a claim, a release or another action, in the decision bar. */
   notice: string;
-  /** What the form says is wrong with its result. (A page script's answer may not carry a
-   * field named `error`: WebdriverIO reads that as a failed command.) */
+  /** What the library refused of a submission or a field. (A page script's answer may not
+   * carry a field named `error`: WebdriverIO reads that as a failed command.) */
   refusal: string;
+  /** Why Submit cannot submit yet, as the decision bar says it. */
+  why: string;
+  submittable: boolean;
+  reasons: string[];
   state: string;
   tools: { name: string; enabled: boolean; group: string }[];
 };
@@ -36,16 +45,15 @@ export class Review {
     this.root = `${scope === "main" ? `section.stage-area[aria-label="Review's main area"]` : 'aside[aria-label="Detail"]'} section[aria-label="Human review"]`;
   }
 
-  /** The boxes of the Tool log and of the column holding the instruction, Tools and Result. */
-  panels(): Promise<{ log: { left: number; right: number; top: number; bottom: number }; column: { left: number; right: number; top: number; bottom: number } } | null> {
+  /** The boxes of the conversation's column and of its reasons box and decision bar. */
+  panels(): Promise<{ column: { left: number; right: number; top: number; bottom: number }; bar: { left: number; right: number; top: number; bottom: number } } | null> {
     return this.browser.execute((root) => {
       const review = document.querySelector(root);
-      const log = review?.querySelector('[role="log"][aria-label="Tool log"]')?.getBoundingClientRect();
-      const instruction = review?.querySelector(".instruction");
-      const column = (instruction?.closest(".column") ?? null)?.getBoundingClientRect();
-      if (!log || !column) return null;
+      const column = review?.querySelector(".column")?.getBoundingClientRect();
+      const bar = review?.querySelector('[role="group"][aria-label="Decision"]')?.getBoundingClientRect();
+      if (!bar || !column) return null;
       const box = (rect: DOMRect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
-      return { log: box(log), column: box(column) };
+      return { column: box(column), bar: box(bar) };
     }, this.root);
   }
 
@@ -54,16 +62,29 @@ export class Review {
       const review = document.querySelector<HTMLElement>(root);
       if (!review) return null;
       const state = [...review.querySelectorAll("dt")].find((term) => term.textContent?.trim() === "State");
+      const bar = review.querySelector<HTMLElement>('[role="group"][aria-label="Decision"]');
+      const taken = /^Taken by (.+)$/.exec(bar?.querySelector(".said")?.textContent?.trim() ?? "");
+      const parts: [string, string][] = [
+        ["Instruction", '[aria-label="Instruction"] .text'], ["Tools", '[role="group"][aria-label="Tools"]'], ["Debug", ".debug"],
+        ["Runs", ".run"], ["Points", '[aria-label="Points"]'], ["Reasons", '[aria-label="Reasons"]'], ["Result", '[aria-label="Result"]'],
+        ["Claim line", ".bottom > .quiet"], ["Reasons box", "[data-reasons]"], ["Decision", '[aria-label="Decision"]'],
+      ];
+      const submit = bar?.querySelector<HTMLButtonElement>("button.submit");
+      const failed = bar?.querySelector(".why.failed")?.textContent?.trim() ?? "";
       return {
-        stage: (review.querySelector(".rstate")?.textContent?.trim() ?? "").split(" · ")[0],
-        claimant: (review.querySelector(".rstate")?.textContent?.trim() ?? "").split(" · ")[1] ?? "",
-        sections: [...review.querySelectorAll(".instruction, section.section")].map((part) => part.getAttribute("aria-label") ?? ""),
+        stage: taken ? "Taken" : bar?.querySelector(".stage")?.textContent?.trim() ?? "",
+        claimant: taken?.[1] ?? "",
+        sections: parts.filter(([, selector]) => review.querySelector(selector)).map(([name]) => name),
         verdict: review.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
-        completed: review.querySelector<HTMLElement>('section[aria-label="Verdict"] .completed')?.innerText ?? "",
-        readOnly: (review.textContent ?? "").includes("Taken by "),
-        running: review.querySelector('.busy [role="img"], .busy [aria-label]')?.getAttribute("aria-label") ?? "",
-        notice: review.querySelector(':is(.said, .result) > [role="status"]:not(.busy)')?.textContent?.trim() ?? "",
-        refusal: review.querySelector('[role="alert"]')?.textContent?.trim() ?? "",
+        completed: review.querySelector<HTMLElement>('[role="group"][aria-label="Result"]')?.innerText ?? "",
+        readOnly: taken !== null,
+        running: bar?.querySelector('.busy [aria-label]')?.getAttribute("aria-label")
+          ?? review.querySelector('.run button.fold:is([aria-label^="Running "], [aria-label^="Opening "])')?.getAttribute("aria-label") ?? "",
+        notice: bar?.querySelector(".claim > .failed")?.textContent?.trim() ?? "",
+        refusal: failed || (review.querySelector('[role="alert"]')?.textContent?.trim() ?? ""),
+        why: failed ? "" : bar?.querySelector(".why")?.textContent?.trim() ?? "",
+        submittable: !!submit && !submit.disabled,
+        reasons: [...review.querySelectorAll('[aria-label="Reasons"] .message')].map((reason) => reason.textContent ?? ""),
         state: state?.nextElementSibling?.textContent?.trim() ?? "",
         tools: [...review.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Tools"] button')].map((button) => ({
           name: button.textContent?.trim() ?? "", enabled: !button.disabled,
@@ -119,7 +140,16 @@ export class Review {
     return this.browser.execute((root) => /outside the filter/i.test(document.querySelector(root)?.textContent ?? ""), this.root);
   }
 
-  back(): Promise<void> { return this.browser.$(`section.stage-area[aria-label="Review's main area"] > header`).$("button*=Verify").click(); }
+  /** The way back, shown for a review followed from Verify: `Verify · {Run} › {Artifact}`. */
+  back(): Promise<void> { return this.browser.$(`section.stage-area[aria-label="Review's main area"] > header`).$("button*=Verify · ").click(); }
+
+  /** Whether the stage header leads back to Verify. */
+  hasBack(): Promise<boolean> {
+    return this.browser.execute(() => [...document.querySelectorAll(`section.stage-area[aria-label="Review's main area"] > header button`)].some((button) => button.textContent?.trim().startsWith("Verify · ")));
+  }
+
+  /** Open in Verify, always among the stage header's tools. */
+  openInVerify(): Promise<void> { return this.browser.$(`section.stage-area[aria-label="Review's main area"] > header`).$("button=Open in Verify").click(); }
 
   /** The review's instruction. */
   instruction(): Promise<string> {
@@ -128,7 +158,7 @@ export class Review {
 
   /** Unfold Debug: the request's state, `Request {id} · {status} · …`. */
   async debugState(): Promise<string> {
-    const head = this.browser.$(this.root).$("button.head=Debug");
+    const head = this.browser.$(this.root).$('button[aria-label="Debug (t)"]');
     if ((await head.getAttribute("aria-expanded")) === "false") await head.click();
     return (await this.until((shown) => shown.state !== "", "Debug unfolded")).state;
   }
@@ -151,29 +181,38 @@ export class Review {
     await press(this.browser, keys, done, what);
   }
 
-  /** Unfold the Tool log from its folded line, once a tool has run. */
-  async showFullLog(): Promise<void> {
-    const line = this.browser.$(this.root).$('button[aria-label="Tool log"]');
-    await line.waitForDisplayed({ timeout: 15000, timeoutMsg: "the Tool log's line shows once a tool ran" });
-    if (await line.getAttribute("aria-expanded") === "false") await line.click();
-    await holds(this.browser, async () => await line.getAttribute("aria-expanded") === "true", "the Tool log unfolded");
+  /** The lines of the conversation's tool runs, oldest first, as they read folded:
+   * `Ran notes · release exit 0 · 2 lines`. */
+  runLines(): Promise<string[]> {
+    return this.browser.execute((root) => [...document.querySelectorAll<HTMLElement>(`${root} .run button.fold`)]
+      .map((line) => (line.innerText ?? "").replace(/\s+/g, " ").trim()), this.root);
   }
 
-  /** The Tool log's folded line as it reads, or "" before any run. */
-  logLine(): Promise<string> {
-    return this.browser.execute((root) => (document.querySelector<HTMLElement>(`${root} button[aria-label="Tool log"]`)?.innerText ?? "").replace(/\s+/g, " ").trim(), this.root);
+  /** The newest run's line as it reads folded, or "" before any run. */
+  async logLine(): Promise<string> {
+    return (await this.runLines()).at(-1) ?? "";
   }
 
-  /** Click the tool `name`: its run starts in the Tool log. */
+  /** Unfold the newest run of the tool `name` into its lines. */
+  async unfold(name: string): Promise<void> {
+    await this.browser.execute((root, operation) => {
+      const lines = [...document.querySelectorAll<HTMLButtonElement>(`${root} .run button.fold`)]
+        .filter((line) => line.querySelector(".target")?.textContent === operation);
+      const line = lines.at(-1);
+      if (line?.getAttribute("aria-expanded") === "false") line.click();
+    }, this.root, name);
+  }
+
+  /** Click the tool `name`: its run's line joins the conversation, unfolded into its lines. */
   async runTool(name: string): Promise<void> {
     const button = this.browser.$(this.root).$('[role="group"][aria-label="Tools"]').$(`button=${name}`);
     await button.waitForEnabled({ timeout: 15000, timeoutMsg: `the tool ${name} is usable` });
-    const prior = await this.log();
-    const head = `▶ HH:MM:SS · ${name} ·`;
-    const before = prior.filter((row) => row.startsWith(head)).length;
+    const count = async () => (await this.browser.execute((root, operation) => [...document.querySelectorAll(`${root} .run .target`)]
+      .filter((target) => target.textContent === operation).length, this.root, name));
+    const before = await count();
     await button.click();
-    await this.showFullLog();
-    await until(this.browser, () => this.log(), (rows) => rows.filter((row) => row.startsWith(head)).length > before || (rows.some((row) => row.startsWith(head)) && JSON.stringify(rows) !== JSON.stringify(prior)), `${name}'s run started in the Tool log`);
+    await until(this.browser, count, (now) => now > before, `${name}'s run joined the conversation`);
+    await this.unfold(name);
   }
 
   /** Click Cancel beside the running work: it stops. */
@@ -182,14 +221,14 @@ export class Review {
     await this.until((shown) => !shown.running, "the running work cancelled");
   }
 
-  /** The Tool log's rows as they read, a run's time as HH:MM:SS, each with whether it is an
-   * error line (stderr, a failed end) as the log marks it. */
+  /** The unfolded runs' lines as they read, a run's time as HH:MM:SS, each with whether it is
+   * an error line (stderr, a failed end) as the log marks it. */
   log(): Promise<string[]> {
     return this.browser.execute((root) => [...document.querySelectorAll(`${root} [role="log"][aria-label="Tool log"] p:not(.muted)`)]
       .map((row) => `${(row.textContent ?? "").replace(/^▶ \d\d:\d\d:\d\d /, "▶ HH:MM:SS ")}${row.querySelector(".red") || row.matches(".stderr, .end.failed") ? " [red]" : ""}`), this.root);
   }
 
-  /** The rows of the last run of the tool `name`, from its start line on. */
+  /** The lines of the newest run of the tool `name`, from its start line on. */
   async run(name: string): Promise<string[]> {
     const rows = await this.log();
     const at = rows.findLastIndex((row) => row.startsWith(`▶ HH:MM:SS · ${name} ·`));
@@ -198,35 +237,73 @@ export class Review {
     return rows.slice(at, next < 0 ? rows.length : next);
   }
 
-  /** Wait until the last run of `name` satisfies `ok`. */
+  /** Wait until the newest run of `name`, unfolded, satisfies `ok`. */
   async runUntil(name: string, ok: (rows: string[]) => boolean, what: string): Promise<string[]> {
+    await this.unfold(name);
     return until(this.browser, () => this.run(name), ok, what);
   }
 
   // -------------------------------------------------------------------------------
-  // The result form
+  // The reasons
 
-  /** Click GREEN or RED: that verdict's form shows. */
+  /** Type `text` into the reasons field and add it with Enter: it stands as the newest reason. */
+  async addReason(text: string): Promise<void> {
+    const before = (await this.read())?.reasons.length ?? 0;
+    await fill(this.browser, `${this.root} [data-reasons]`, text);
+    await this.browser.$(`${this.root} [data-reasons]`).click();
+    await press(this.browser, ["Enter"], async () => ((await this.read())?.reasons.length ?? 0) > before, `${text} added as a reason`);
+  }
+
+  /** Press Enter in the reasons field: what it holds is added as the newest reason. */
+  async addTyped(): Promise<void> {
+    const before = (await this.read())?.reasons.length ?? 0;
+    await this.browser.$(`${this.root} [data-reasons]`).click();
+    await press(this.browser, ["Enter"], async () => ((await this.read())?.reasons.length ?? 0) > before, "the typed reason added");
+  }
+
+  /** Click Edit of reason `at` and replace its text with `text`, Enter keeping it. */
+  async editReason(at: number, text: string): Promise<void> {
+    await this.browser.$(this.root).$(`button[aria-label="Edit reason ${at + 1}"]`).click();
+    await fill(this.browser, `${this.root} textarea[aria-label="Edit reason ${at + 1}"]`, text);
+    await press(this.browser, ["Enter"], async () => (await this.read())?.reasons[at] === text, `reason ${at + 1} reads ${text}`);
+  }
+
+  /** Click Remove of reason `at`. */
+  async removeReason(at: number): Promise<void> {
+    const before = (await this.read())?.reasons.length ?? 0;
+    await this.browser.$(this.root).$(`button[aria-label="Remove reason ${at + 1}"]`).click();
+    await this.until((shown) => shown.reasons.length === before - 1, `reason ${at + 1} removed`);
+  }
+
+  // -------------------------------------------------------------------------------
+  // The decision and the verdict's own fields
+
+  /** Click GREEN or RED in the decision bar: it is the chosen verdict. */
   async choose(verdict: "GREEN" | "RED"): Promise<void> {
-    // The verdict's button before a form is open, its radio in the open form.
-    await this.browser.$(this.root).$(`button=${verdict}`).click();
-    await this.until((shown) => shown.verdict === verdict, `the ${verdict} form shown`);
+    await this.browser.$(this.root).$('[role="radiogroup"][aria-label="Verdict"]').$(`button*=${verdict}`).click();
+    await this.until((shown) => shown.verdict === verdict, `${verdict} chosen`);
   }
 
-  /** The value of the form's field `id` (`comment`, `findings-0-problem`). */
+  /** A field by `id`: `reason` is the reasons field, any other a verdict's own field
+   * (`score`, `findings-0-problem`). */
+  private field(id: string): string {
+    return id === "reason" ? `${this.root} [data-reasons]` : `${this.root} #field-${id}`;
+  }
+
+  /** The value of the field `id`. */
   value(id: string): Promise<string> {
-    return this.browser.$(`${this.root} #field-${id}`).getValue();
+    return this.browser.$(this.field(id)).getValue();
   }
 
-  /** Type `text` into the form's field `id`: it shows it. */
+  /** Type `text` into the field `id`: it shows it. */
   async enter(id: string, text: string): Promise<void> {
-    await fill(this.browser, `${this.root} #field-${id}`, text);
+    await fill(this.browser, this.field(id), text);
   }
 
-  /** Click into the form's field `id` and type `text` at its end, a key at a time. */
+  /** Click into the field `id` and type `text` at its end, a key at a time. */
   async typeInto(id: string, text: string): Promise<void> {
     const before = await this.value(id);
-    await this.browser.$(`${this.root} #field-${id}`).click();
+    await this.browser.$(this.field(id)).click();
     await typeText(this.browser, text);
     await until(this.browser, () => this.value(id), (value) => value === before + text, `${text} typed into ${id}`);
   }
@@ -279,18 +356,18 @@ export class Review {
     })), this.root);
   }
 
-  /** Click Submit: the review completes, or shows why the result fails its schema. */
+  /** Click Submit once it can submit: the review completes, or says what the library refused. */
   async submit(): Promise<Shown> {
-    await this.browser.$(this.root).$("button*=Submit").click();
+    await this.until((shown) => shown.submittable, "Submit can submit");
+    await this.browser.$(this.root).$('[role="group"][aria-label="Decision"]').$("button*=Submit").click();
     return this.until((shown) => !shown.running && (shown.completed !== "" || shown.refusal !== ""), "the submission completed or refused");
   }
 
-  /** Compose `text` into the form's field `id` through the engine's own input method (the
-   * test-only input device), as a person's does: the field first shows `composing`, the text
-   * still being composed, which differs from `text`, and then `text` in its place once it is
-   * committed. */
+  /** Compose `text` into the field `id` through the engine's own input method (the test-only
+   * input device), as a person's does: the field first shows `composing`, the text still being
+   * composed, which differs from `text`, and then `text` in its place once it is committed. */
   async compose(id: string, composing: string, text: string): Promise<void> {
-    await this.browser.$(`${this.root} #field-${id}`).click();
+    await this.browser.$(this.field(id)).click();
     const before = await this.value(id);
     await nativeInput(this.browser, { type: "set", text: composing });
     await holds(this.browser, async () => (await this.value(id)) === before + composing, `${composing} being composed in ${id}`);

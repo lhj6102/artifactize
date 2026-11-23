@@ -20,9 +20,10 @@ blocked and waiting for a person), and the Review button's waiting count in the 
 B. An Artifact's Detail (J-DETAIL, J-DETAIL-NEIGHBOURS) docked over the Run's graph on its \
 Artifact tab: the Artifact between its neighbours, and its evals with their verdicts.
 C. Switch to Review from the bottom bar, select the waiting sign-off in Review's Pane and \
-claim it (J-BAR, J-REVIEW-LIST, J-HUMAN-CLAIM). Show its one column: the instruction, then \
-Evidence with its Tools and the finished notes tool run in the Tool log, unfolded, then the \
-Verdict with the GREEN form (J-HUMAN-LAYOUT, J-HUMAN-LOG, J-HUMAN-GREEN). Do not submit the review.
+claim it (J-BAR, J-REVIEW-LIST, J-HUMAN-CLAIM). Show its conversation: the instruction and its \
+tools, the finished notes tool's run line unfolded into its lines, a reason added from the \
+reasons box standing as a bubble, and the decision bar with GREEN chosen (J-HUMAN-LAYOUT, \
+J-HUMAN-LOG, J-HUMAN-REASONS, J-HUMAN-GREEN). Do not submit the review.
 
 Check that each scene's selectors and actions reach the state the journey describes, that the \
 script waits for that state rather than a fixed delay alone before capturing, and that it \

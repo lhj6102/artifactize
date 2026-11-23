@@ -13,9 +13,9 @@
 //   B. detail.png  — an Artifact's Detail docked over the graph on its Artifact tab: its evals
 //      with their verdicts, and the Artifact between its neighbours, unfolded.
 //   C. review.png  — switch to Review in the bottom bar, open the waiting sign-off and claim it,
-//      the filter widened to type:human so the Pane keeps it listed:
-//      one column with its instruction, Evidence (the tools and a Tool log run, unfolded) and
-//      the Verdict with the GREEN form.
+//      the filter widened to type:human so the Pane keeps it listed: its conversation with the
+//      instruction and tools, the notes tool's run line unfolded into its lines, a reason as a
+//      bubble, the reasons box, and the decision bar with GREEN chosen.
 //
 // Modes:
 //   (none)    capture into assets/screenshots/.
@@ -259,7 +259,7 @@ async function capture(output: string, work: string): Promise<void> {
       await shot("detail.png");
 
       // C. Review's own Pane lists the sign-off Verify left. Claim it, run its notes tool,
-      // and display its GREEN form without submitting a result.
+      // add a reason and choose GREEN without submitting a result.
       await app.$(waitingReview).click();
       const REVIEW = 'main[aria-label="Review"]:not([hidden])';
       const options = `${REVIEW} [role="listbox"][aria-label="Human reviews"] [role="option"]`;
@@ -285,9 +285,10 @@ async function capture(output: string, work: string): Promise<void> {
       const notes = app.$(review).$("button=notes");
       await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the sign-off is claimed and its notes tool is usable" });
       await notes.click();
-      const logHeader = app.$(`${review} button[aria-label="Tool log"]`);
-      await logHeader.waitForDisplayed({ timeout: WAIT });
-      if ((await logHeader.getAttribute("aria-expanded")) !== "true") await logHeader.click();
+      // The run's own line in the conversation, unfolded into its lines.
+      const runLine = app.$(`${review} .run button.fold`);
+      await runLine.waitForDisplayed({ timeout: WAIT });
+      if ((await runLine.getAttribute("aria-expanded")) !== "true") await runLine.click();
       // The built-in read prints the notes and ends its run with `■ done`.
       await app.waitUntil(() => app.execute((review) => {
         const lines = [...document.querySelectorAll(`${review} [role="log"][aria-label="Tool log"] p:not(.muted)`)]
@@ -297,9 +298,15 @@ async function capture(output: string, work: string): Promise<void> {
       // The log may arrive before the tool command returns. GREEN ignores clicks while that
       // job is still busy, so wait for the tool button to become usable again.
       await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the finished notes tool is usable again" });
-      await app.$(review).$("button=GREEN").click();
-      await app.$(`${review} section[aria-label="Verdict"] #field-summary`).waitForDisplayed({ timeout: WAIT });
+      // A reason, added from the reasons box, stands as the reviewer's bubble.
+      await fill(app, `${review} [data-reasons]`, "The notes name every change since 0.4.");
+      await app.$(review).$("button=Add reason").click();
+      await app.$(`${review} [aria-label="Reasons"] .message`).waitForDisplayed({ timeout: WAIT, timeoutMsg: "the reason stands as a bubble" });
+      await app.$(`${review} [role="radiogroup"][aria-label="Verdict"]`).$("button*=GREEN").click();
       await app.$(`${review} [role="radio"][aria-checked="true"].green`).waitForDisplayed({ timeout: WAIT });
+      await app.$(`${review} [aria-label="Decision"] button.submit:not([disabled])`).waitForDisplayed({ timeout: WAIT, timeoutMsg: "Submit GREEN can submit" });
+      // The shot shows the review as read, not the keyboard's place on the last button.
+      await app.execute(() => (document.activeElement as HTMLElement | null)?.blur());
       await shot("review.png");
     } finally { if (existsSync(scope.root)) await stop(); }
   } finally {

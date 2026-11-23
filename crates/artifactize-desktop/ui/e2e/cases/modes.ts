@@ -46,7 +46,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(await listed(), [otherId], "opening the exact review did not pin it into the filtered list");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${id} `));
       await app.review.choose("GREEN");
-      await app.review.enter("comment", "Release notes checked");
+      await app.review.addReason("Release notes checked");
       await app.review.choose("RED");
       await app.review.enter("reason", "Check the linked notes again");
       await app.review.release();
@@ -68,13 +68,13 @@ export const scenarios: Scenario[] = [
       await w.petUntil((shown) => shown.verdict === "RED", "the pet opens the persisted RED verdict after restart");
       await w.mode("Review");
       await app.review.choose("GREEN");
-      await app.until(async () => (await app.review.value("comment")) === "Release notes checked", "reclaim after restart restored the GREEN draft");
+      await app.review.until((shown) => shown.reasons.join() === "Release notes checked", "reclaim after restart restored the reasons");
       const completed = await app.review.submit();
       assert.match(completed.completed, /Release notes checked/);
       const saved = requests(fixture).find((row) => row.id === id);
       assert.equal(saved?.status, "GREEN");
       await app.waitingBadge(1);
-      await app.review.back();
+      await app.review.openInVerify();
       await app.graph.titled(runId);
       await app.detail.until((detail) => detail.tabs.some((tab) => tab.name === "signoff" && tab.selected), "the originating Artifact Detail is open on its sign-off");
     },

@@ -11,10 +11,10 @@ const PET = "pet";
 const VIEWER = "viewer-";
 const REVIEW = `[aria-label="Review's main area"] section[aria-label="Human review"]`;
 
-/** The pet overlay as read: its head row, its Points, its GREEN and RED buttons as they read in
- * order, how many of them are the open form's Verdict radios, the verdict whose form is open,
- * Point and why it is off, and what it says went wrong. */
-export type Pet = { head: string; points: string[]; choices: string[]; radios: number; verdict: string; point: boolean; why: string; refusal: string };
+/** The pet overlay as read: its head row, its Points, its reasons, its GREEN and RED tabs as they
+ * read in order and how many are Verdict radios, the chosen verdict, Point and why it is off,
+ * why Submit waits, and what it says went wrong. */
+export type Pet = { head: string; points: string[]; reasons: string[]; choices: string[]; radios: number; verdict: string; point: boolean; why: string; waits: string; refusal: string };
 
 export class Windows {
   private readonly browser: WebdriverIO.Browser;
@@ -252,12 +252,14 @@ export class Windows {
       return {
         head: [...(card?.querySelector(".head")?.children ?? [])].map((part) => part.textContent?.trim() ?? "").filter(Boolean).join(" "),
         points: [...(card?.querySelectorAll('[aria-label="Points"] li .text') ?? [])].map((point) => point.textContent ?? ""),
+        reasons: [...(card?.querySelectorAll('[aria-label="Reasons"] .message') ?? [])].map((reason) => reason.textContent ?? ""),
         choices: [...(card?.querySelectorAll("button") ?? [])].map((button) => button.textContent?.trim() ?? "").filter((text) => text === "GREEN" || text === "RED"),
         radios: card?.querySelectorAll('[role="radiogroup"][aria-label="Verdict"] [role="radio"]').length ?? 0,
         verdict: card?.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
         point: !!point && !point.hasAttribute("disabled"),
-        why: card?.querySelector(".why")?.textContent?.trim() ?? "",
-        refusal: card?.querySelector(".error")?.textContent?.trim() ?? "",
+        why: card?.querySelector(":scope > .why")?.textContent?.trim() ?? "",
+        waits: card?.querySelector(".decision .why:not(.failed)")?.textContent?.trim() ?? "",
+        refusal: card?.querySelector(":scope > .error, .decision .why.failed")?.textContent?.trim() ?? "",
       };
     });
   }
@@ -266,20 +268,34 @@ export class Windows {
     return until(this.browser, () => this.readPet(), ok, what);
   }
 
-  /** Click GREEN or RED in the pet: that verdict's form opens. */
+  /** Click GREEN or RED in the pet: it is the chosen verdict. */
   async petChoose(verdict: "GREEN" | "RED"): Promise<void> {
-    await this.browser.$(".card .verdicts").$(`button=${verdict}`).click();
-    await this.petUntil((pet) => pet.verdict === verdict, `the pet's ${verdict} form`);
+    await this.browser.$('.card [role="radiogroup"][aria-label="Verdict"]').$(`button*=${verdict}`).click();
+    await this.petUntil((pet) => pet.verdict === verdict, `the pet's ${verdict} chosen`);
   }
 
-  /** Type `text` into the pet's form field `id`. */
-  async petEnter(id: string, text: string): Promise<void> {
-    await fill(this.browser, `.card #field-${id}`, text);
+  /** Type `text` into the pet's reasons field, not added yet. */
+  async petType(text: string): Promise<void> {
+    await fill(this.browser, ".card [data-reasons]", text);
   }
 
+  /** Click the pet's Add: what its reasons field holds is the newest reason. */
+  async petAdd(): Promise<void> {
+    const before = (await this.readPet()).reasons.length;
+    await this.browser.$(".card").$('button[aria-label="Add reason (Enter)"]').click();
+    await this.petUntil((pet) => pet.reasons.length > before, "the pet's reason added");
+  }
+
+  /** Type `text` into the pet's reasons field and add it. */
+  async petAddReason(text: string): Promise<void> {
+    await this.petType(text);
+    await this.petAdd();
+  }
+
+  /** Click Insert of the pet's first Point: the reasons field's text after it. */
   async petInsert(): Promise<string> {
     await this.browser.$('.card [aria-label="Points"]').$('button=Insert').click();
-    return this.browser.$(".card #field-comment").getValue();
+    return this.browser.$(".card [data-reasons]").getValue();
   }
 
   /** The pet card's horizontal bounds, and whether its Submit can be clicked at the right. */
@@ -293,7 +309,7 @@ export class Windows {
         return box.width > 0 && (box.left < frame.left - 1 || box.right > frame.right + 1)
           ? [child.tagName] : [];
       });
-      const why = card.querySelector<HTMLElement>(".row .why");
+      const why = card.querySelector<HTMLElement>(":scope > .why");
       if (why && why.scrollWidth > why.clientWidth + 1) overflow.push("Point explanation");
       const submit = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Submit GREEN");
       const box = submit?.getBoundingClientRect();

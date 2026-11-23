@@ -26,14 +26,14 @@ export const scenarios: Scenario[] = [
       await w.pet();
       const unopened = await w.petUntil((shown) => shown.choices.length > 0 && !shown.point && shown.why === `Open ${NOTES} in a viewer to point.`,
         "the pet shows the full reason Point is unavailable");
-      assert.deepEqual([unopened.choices, unopened.radios, unopened.verdict], [["GREEN", "RED"], 0, ""]);
+      assert.deepEqual([unopened.choices, unopened.radios, unopened.verdict, unopened.waits], [["GREEN", "RED"], 2, "", "Choose GREEN or RED"]);
       await w.petChoose("GREEN");
-      await w.petEnter("comment", "Checking the notes.");
+      await w.petAddReason("Checking the notes.");
       assert.deepEqual(await w.petLayout(), { overflow: [], submitAtRight: true });
       await w.mode("Review");
-      await app.review.choose("GREEN");
+      await app.review.until((shown) => shown.verdict === "GREEN" && shown.reasons.join() === "Checking the notes.", "Review shows the pet's verdict and reason, one draft");
       const beforePoint = "Checking the notes before pointing.";
-      await app.review.enter("comment", beforePoint);
+      await app.review.enter("reason", beforePoint);
       const label = await w.runTool("view");
       assert.equal(await w.viewer(label), `${NOTES} — File Explorer`, "titled {Artifact} — {viewer}");
       const strip = await w.stripUntil((shown) => shown.point, "Point offered for the claimed review");
@@ -49,7 +49,8 @@ export const scenarios: Scenario[] = [
       await w.point();
       await w.clickLine(2);
       const points = await w.pointsUntil((rows) => rows.length === 1 && /^release\.md L2:C\d+$/.test(rows[0]), "the line is in Points");
-      assert.equal(await app.review.value("comment"), beforePoint, "Point adds to Points without writing into the existing comment");
+      assert.equal(await app.review.value("reason"), beforePoint, "Point adds to Points without writing into the reasons field");
+      assert.deepEqual((await app.review.read())!.reasons, ["Checking the notes."], "Point writes no reason");
       await w.viewer(label);
       await w.point();
       await w.clickLine(3);
@@ -64,22 +65,24 @@ export const scenarios: Scenario[] = [
       assert.ok(pet.head.startsWith(`${NOTES}/signoff · run-`));
       assert.deepEqual(pet.points, points);
       assert.equal(pet.point, true, "Point while the notes' viewer is open");
-      // The form chosen before opening the viewer stays in the same review draft.
-      assert.deepEqual([pet.choices, pet.radios, pet.verdict], [["GREEN", "RED"], 2, "GREEN"]);
+      // The verdict and reason chosen before opening the viewer stay in the same review draft.
+      assert.deepEqual([pet.choices, pet.radios, pet.verdict, pet.reasons], [["GREEN", "RED"], 2, "GREEN", ["Checking the notes."]]);
       await w.petChoose("RED");
       await w.petChoose("GREEN");
       const chosen = await w.readPet();
-      assert.deepEqual([chosen.choices, chosen.radios], [["GREEN", "RED"], 2], "one verdict choice, the form's radios");
-      await w.petEnter("comment", "Checked the totals: ");
+      assert.deepEqual([chosen.choices, chosen.radios], [["GREEN", "RED"], 2], "one verdict choice, as tabs");
+      await w.petType("Checked the totals: ");
       assert.equal(await w.petInsert(), `Checked the totals: ${points[0]}`);
+      await w.petUntil((shown) => shown.waits === "Add the typed reason first", "the pet's Submit waits for the typed reason");
+      await w.petAdd();
       assert.deepEqual(await w.petLayout(), { overflow: [], submitAtRight: true });
       await w.petSubmit();
       await app.until(async () => !(await w.petShown()), "submission hid the pet while Verify is still shown");
       await w.mode("Review");
-      await app.review.until((shown) => shown.completed.includes(`Checked the totals: ${points[0]}`) && !shown.sections.includes("Points"), "the submitted review shows the form without Points");
+      await app.review.until((shown) => shown.completed.includes(`Checked the totals: ${points[0]}`) && !shown.sections.includes("Points"), "the submitted review shows its result without Points");
       const saved = request(fixture, `${NOTES}/signoff`);
       assert.equal(saved.status, "GREEN", "the review is settled");
-      assert.equal(saved.result?.comment, `Checked the totals: ${points[0]}`);
+      assert.equal(saved.result?.comment, `Checking the notes.\n\nChecked the totals: ${points[0]}`, "the reasons as its comment, one paragraph each");
       // Closing the viewer's window closes it alone.
       await w.closeViewer(label);
       assert.deepEqual(await w.viewers(), []);

@@ -124,7 +124,7 @@ export const scenarios: Scenario[] = [
       await app.review.titleContains("release/signoff");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${first} · DEFERRED · unclaimed`), "the named review, not the newest one");
       await app.review.until((shown) => shown.stage === "Waiting" && shown.tools.length > 0, "the review is actionable: it can be claimed");
-      await app.review.until((shown) => ["Instruction", "Evidence", "Verdict"].every((section) => shown.sections.includes(section)), "the review shows the instruction, Tools and Result");
+      await app.review.until((shown) => ["Instruction", "Tools", "Claim line", "Decision"].every((section) => shown.sections.includes(section)), "the review shows the instruction, its tools, the claim line and the decision bar");
       // Another request by its ID opens read-only.
       await app.openPalette();
       await app.runCommand("Open a request by ID");
