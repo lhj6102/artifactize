@@ -34,6 +34,7 @@ async fn moving_a_branch_prefers_a_usable_session_but_keeps_stranded_history_rea
         created_at: stamp.parse().unwrap(),
         updated_at: stamp.parse().unwrap(),
         activity: None,
+        moved_from: None,
         running: false,
         unavailable: None,
     };
@@ -176,6 +177,7 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
             created_at: time,
             updated_at: time,
             activity: None,
+            moved_from: None,
             running: false,
             unavailable: None,
         };
@@ -201,6 +203,7 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
         created_at: "2026-10-25T12:00:00Z".parse().unwrap(),
         updated_at: "2026-10-25T12:00:00Z".parse().unwrap(),
         activity: None,
+        moved_from: None,
         running: false,
         unavailable: None,
     };

@@ -24,7 +24,7 @@ use crate::{
     auth::providers,
     config::{Backend, ModelId, Provider},
     llm,
-    monitor::live::Place,
+    monitor::live::{self, Branch, Place},
     repository, runs,
     store::{self, Receipts},
     types::{SessionId, Timestamp},
@@ -40,6 +40,12 @@ pub(crate) fn recorded_outcome(state: &Path, id: &SessionId) -> Option<Outcome> 
 }
 
 pub use transcript::{Block, RunCard, ToolResult, Turn, TurnState};
+
+/// The Chat branch choices and the sessions observed while discovering them.
+pub struct BranchListing {
+    pub branches: Vec<Branch>,
+    pub sessions: Vec<Session>,
+}
 
 /// A description comes from the first nonempty prompt line, not another provider call.
 const TITLE_CHARS: usize = 72;
@@ -69,6 +75,16 @@ impl From<String> for SendError {
     fn from(message: String) -> Self {
         Self::Failed(message)
     }
+}
+
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum MoveError {
+    #[error("Not an available Chat worktree: {0}")]
+    Invalid(String),
+    #[error("Stop the running turn first")]
+    Busy,
+    #[error("{0}")]
+    Failed(String),
 }
 
 /// Whether an accepted quit could read active ownership and deliver Stop to those turns.
@@ -121,6 +137,12 @@ pub struct Session {
     pub updated_at: Timestamp,
     #[serde(default)]
     activity: Option<Activity>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::platform::path_serde::option"
+    )]
+    pub(crate) moved_from: Option<PathBuf>,
     /// Live ownership of a turn, read separately from the saved session.
     #[serde(skip)]
     pub running: bool,
@@ -180,6 +202,11 @@ impl Session {
                 unseen: false,
             })
         };
+    }
+
+    pub(crate) fn settle_from(&mut self, turn: &Self) {
+        self.activity = turn.activity;
+        self.updated_at = self.updated_at.max(turn.updated_at);
     }
 
     pub(crate) fn mark_seen(&mut self) -> bool {
@@ -457,6 +484,7 @@ impl Chat {
             created_at: now,
             updated_at: now,
             activity: None,
+            moved_from: None,
             running: false,
             unavailable: None,
         };
@@ -469,6 +497,75 @@ impl Chat {
         let closed = receipts.close().await;
         result.and(closed)?;
         Ok(session)
+    }
+
+    /// Discover the live choices used by the Chat branch picker, independently of Verify search.
+    pub async fn branches(&self, launch: Option<&Path>) -> Result<BranchListing, String> {
+        let runs = store::read_catalog(&self.state).await?;
+        let sessions = self.list(None, None).await?;
+        let launch = launch.map(Path::to_owned);
+        crate::task::blocking(move || {
+            let mut branches =
+                live::branches(&runs, launch.as_deref(), &mut live::Discovery::default()).branches;
+            for session in sessions
+                .iter()
+                .filter(|session| session.unavailable.is_none())
+            {
+                let place = session.branch();
+                if !branches.iter().any(|branch| branch.place == place) {
+                    let label = session.label();
+                    branches.push(Branch {
+                        place,
+                        project: label.project,
+                        name: label.branch,
+                        workspace: session.worktree.clone(),
+                        runs: Vec::new(),
+                    });
+                }
+            }
+            BranchListing { branches, sessions }
+        })
+        .await
+    }
+
+    /// Rebind the saved conversation to a live choice, excluding active turns in any process.
+    pub async fn set_worktree(
+        &self,
+        id: &SessionId,
+        worktree: &Path,
+        launch: Option<&Path>,
+    ) -> Result<Session, MoveError> {
+        let path = crate::platform::path_text(worktree);
+        let invalid = || MoveError::Invalid(path.clone());
+        let branch = self
+            .branches(launch)
+            .await
+            .map_err(MoveError::Failed)?
+            .branches
+            .into_iter()
+            .find(|branch| crate::platform::path_text(&branch.workspace) == path)
+            .ok_or_else(invalid)?;
+        let (workspace, repository) = checkout_for(&branch.workspace, Some(&branch.place))
+            .await
+            .map_err(|_| invalid())?;
+        let receipts = Receipts::open(&self.state, &workspace)
+            .await
+            .map_err(MoveError::Failed)?;
+        let result = receipts
+            .set_chat_worktree(&self.state, id, workspace, repository)
+            .await;
+        let closed = receipts.close().await;
+        let (saved, changed) = result
+            .and_then(|saved| closed.map(|()| saved))
+            .map_err(MoveError::Failed)?
+            .ok_or(MoveError::Busy)?;
+        if changed {
+            crate::changes::Publisher::new(&self.state)
+                .notify(crate::changes::Change::SessionInvalidated(id.clone()));
+        }
+        crate::task::blocking(move || saved.with_checkout())
+            .await
+            .map_err(MoveError::Failed)
     }
 
     /// Keep the catalog's activity order while matching every word across its displayed labels.
@@ -652,7 +749,7 @@ impl Chat {
         let running = session.running;
         let conversation = Conversation::load(&path(&self.state, id))?;
         let mut turns = transcript::turns(conversation.as_ref(), running);
-        transcript::update_runs(&self.state, &session.worktree, &mut turns).await;
+        transcript::update_runs(&self.state, id, &mut turns).await;
         Ok(View {
             session,
             running,
@@ -727,23 +824,29 @@ impl Chat {
         selection: Option<Model>,
         cancel: &CancellationToken,
     ) -> Result<Prepared, SendError> {
-        let mut session = self.available(id).await?;
-        let current = session.model.as_ref().ok_or(SendError::NoModel)?;
-        let context = self.context(&session.worktree)?;
-        let selection = if let Some(selection) = selection {
-            Some(tokio::select! {
-                _ = cancel.cancelled() => return Err(SendError::Failed("Chat stopped before accepting the turn.".into())),
-                resolved = self.resolve_model(context.repo(), selection, Some(current)) => resolved?,
-            })
-        } else {
-            None
-        };
+        let saved = store::chat::load(&self.state, id).await?;
         let file = path(&self.state, id);
         let owner = store::chat::Owner::current()?;
-        let receipts = Receipts::open(&self.state, context.repo()).await?;
+        let receipts = Receipts::open(&self.state, &saved.worktree).await?;
         let prepared = async {
-            receipts.claim_chat(id, &owner).await?;
+            // Claim and read the checkout in one transaction. If a move won the race, this
+            // turn starts on the newly saved workspace, never the stale path read above.
+            let session = receipts.claim_chat(&self.state, id, &owner).await?;
             let prepared = async {
+                let mut session = crate::task::blocking(move || session.with_checkout()).await?;
+                if let Some(reason) = session.unavailable.take() {
+                    return Err(SendError::Failed(reason));
+                }
+                let current = session.model.as_ref().ok_or(SendError::NoModel)?;
+                let context = self.context(&session.worktree)?;
+                let selection = if let Some(selection) = selection {
+                    Some(tokio::select! {
+                        _ = cancel.cancelled() => return Err(SendError::Failed("Chat stopped before accepting the turn.".into())),
+                        resolved = self.resolve_model(context.repo(), selection, Some(current)) => resolved?,
+                    })
+                } else {
+                    None
+                };
                 let conversation = Conversation::load(&file)?;
                 let send = conversation.as_ref().map(Conversation::sends).unwrap_or(0) + 1;
                 let history = conversation
@@ -776,7 +879,7 @@ impl Chat {
                     unseen: false,
                 });
                 let model = receipts.accept_chat(&session, selection).await?;
-                Ok::<_, String>((recorder, history, model))
+                Ok::<_, SendError>((session, recorder, history, model, context))
             }
             .await;
             if prepared.is_err() {
@@ -785,11 +888,11 @@ impl Chat {
             prepared
         }
         .await;
-        let (recorder, history, model) = match prepared {
+        let (session, recorder, history, model, context) = match prepared {
             Ok(prepared) => prepared,
             Err(error) => {
                 let _ = receipts.close().await;
-                return Err(error.into());
+                return Err(error);
             }
         };
         Ok(Prepared {
@@ -832,8 +935,12 @@ impl Chat {
                     &model,
                     &context,
                     &tools,
-                    history,
-                    text,
+                    agent::ChatPrompt::new(
+                        history,
+                        text,
+                        session.moved_from.as_deref(),
+                        &session.worktree,
+                    ),
                     &mut recorder,
                     &active.cancel,
                 );

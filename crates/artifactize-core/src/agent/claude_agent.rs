@@ -328,8 +328,7 @@ pub(super) async fn follow_up(
 pub(super) async fn chat(
     selection: &crate::chat::Model,
     tools: &crate::chat::tools::Tools<'_>,
-    history: Vec<Message>,
-    text: &str,
+    prompt: &super::chat::Prompt,
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
 ) -> Result<String, Failure> {
@@ -338,7 +337,7 @@ pub(super) async fn chat(
     let launch = Launch {
         model: Some(model.as_str()),
         effort: selection.effort.as_deref(),
-        system: Some(super::chat::SYSTEM),
+        system: Some(&prompt.system),
         tools: offered.iter().map(|tool| tool.name.as_str()).collect(),
         schema: None,
     };
@@ -358,9 +357,9 @@ pub(super) async fn chat(
         recorder,
         attempts: &mut attempts,
     };
-    let prompt = super::chat::replay(&history, text);
+    let input = prompt.replay();
     let (mut conversation, running) = session.open(&launch).await?;
-    let answer = conversation.ask(&prompt).await;
+    let answer = conversation.ask(&input).await;
     close(conversation, running, answer).await
 }
 

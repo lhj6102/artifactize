@@ -1,5 +1,5 @@
 //! The Chat catalog and one running writer per session.
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,7 @@ use crate::{
     chat::{Model, Session, SessionView},
     monitor::live::Place,
     process::{self, ChildIdentity},
+    repository,
     types::SessionId,
 };
 
@@ -225,6 +226,7 @@ impl Receipts {
                 })?;
                 session.model = Some(model.clone());
                 session.view = current.view;
+                session.moved_from = None;
                 save(&transaction, &session)?;
                 transaction.commit()?;
                 Ok::<_, Error>(model)
@@ -281,6 +283,37 @@ impl Receipts {
             .map_err(|error| error.to_string())
     }
 
+    /// Share the same writer reservation as turn admission. A dead owner does not bar a move.
+    pub(crate) async fn set_chat_worktree(
+        &self,
+        state: &Path,
+        id: &SessionId,
+        worktree: PathBuf,
+        repository: repository::Identity,
+    ) -> Result<Option<(Session, bool)>, String> {
+        let state = state.to_owned();
+        let id = id.clone();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut session = load_session(&transaction, &state, &id)?;
+                if session.running {
+                    return Ok::<_, Error>(None);
+                }
+                let changed = session.worktree != worktree;
+                if changed {
+                    session.moved_from = Some(std::mem::replace(&mut session.worktree, worktree));
+                    session.repository = Some(repository);
+                    session.updated_at = crate::broker::now().max(session.updated_at);
+                    save(&transaction, &session)?;
+                }
+                transaction.commit()?;
+                Ok(Some((session, changed)))
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) async fn mark_chat_seen(
         &self,
         state: &Path,
@@ -303,7 +336,13 @@ impl Receipts {
             .map_err(|error| error.to_string())
     }
 
-    pub(crate) async fn claim_chat(&self, id: &SessionId, claimant: &Owner) -> Result<(), String> {
+    pub(crate) async fn claim_chat(
+        &self,
+        state: &Path,
+        id: &SessionId,
+        claimant: &Owner,
+    ) -> Result<Session, String> {
+        let state = state.to_owned();
         let id = id.clone();
         let claimant = claimant.clone();
         self.connection.call(move |db| {
@@ -313,6 +352,7 @@ impl Receipts {
             {
                 return Err(Error::Invalid("This Chat session already has an active turn.".into()));
             }
+            let session = load_session(&transaction, &state, &id)?;
             let pid = claimant.birth.pid.get();
             let start = i64::try_from(claimant.birth.start_time).map_err(|error| Error::Invalid(error.to_string()))?;
             transaction.execute(
@@ -320,7 +360,7 @@ impl Receipts {
                 params![id, pid, start, serde_json::to_string(&claimant)?],
             )?;
             transaction.commit()?;
-            Ok(())
+            Ok(session)
         }).await.map_err(|error| error.to_string())
     }
 
@@ -373,13 +413,11 @@ impl Receipts {
         self.connection.call(move |db| {
             let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let released = transaction.execute("DELETE FROM chat_active_turns WHERE session_id=? AND json_extract(data,'$.token')=?", params![id, token])?;
-            if released != 0 && let Some(mut session) = settled {
-                // A selector change accepted during the turn is for the next message.
-                let current = saved_chat(&transaction, &id)?;
-                session.model = current.model;
-                session.view = current.view;
-                session.updated_at = session.updated_at.max(current.updated_at);
-                save(&transaction, &session)?;
+            if released != 0 && let Some(session) = settled {
+                // Keep selector and checkout changes; recovery of a dead owner may race a move.
+                let mut current = saved_chat(&transaction, &id)?;
+                current.settle_from(&session);
+                save(&transaction, &current)?;
             }
             transaction.commit()?;
             Ok::<_, Error>(released != 0)
@@ -396,8 +434,9 @@ fn saved_chat(db: &Connection, id: &SessionId) -> Result<Session, Error> {
 
 fn save(db: &Connection, session: &Session) -> Result<(), Error> {
     db.execute(
-        "UPDATE chat_sessions SET updated_at=?, data=? WHERE id=?",
+        "UPDATE chat_sessions SET worktree=?, updated_at=?, data=? WHERE id=?",
         params![
+            crate::platform::path_text(&session.worktree),
             session.updated_at,
             serde_json::to_string(session)?,
             session.id

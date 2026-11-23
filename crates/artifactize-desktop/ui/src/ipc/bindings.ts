@@ -26,6 +26,8 @@ branch: string } |
 	chatSetModel: (id: string, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_model", { id, selection })),
 	/**  Keep the chosen view for this session without sending a message or reordering Chat. */
 	chatSetView: (id: string, view: ChatSessionView) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_view", { id, view })),
+	/**  Move a saved Chat to one of the live choices without adding a message. */
+	chatSetWorktree: (id: string, worktree: string) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_worktree", { id, worktree })),
 	/**  Navigate to the newest usable Chat of a branch, or its newest saved Chat if none can work. */
 	chatLatestForBranch: (branch: BranchKey) => typedError<{
 	id: string,
@@ -809,7 +811,9 @@ export type Failure =
 /**  A sign-in, sign-out, listing or store call failed, with the CLI's own message. */
 { kind: "account"; message: string } | 
 /**  Reading or saving a machine-wide setting failed, with the CLI's own message. */
-{ kind: "setting"; message: string } | { kind: "noModel"; message: string };
+{ kind: "setting"; message: string } | { kind: "noModel"; message: string } | 
+/**  An active Chat turn must settle before the session can move. */
+{ kind: "busy"; message: string };
 
 export type Field = {
 	key: string,

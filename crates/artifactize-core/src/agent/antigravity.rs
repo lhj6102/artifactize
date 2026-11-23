@@ -28,8 +28,7 @@ pub(super) async fn turn(
     selection: &Model,
     context: &runs::Context,
     tools: &Tools<'_>,
-    history: Vec<Message>,
-    text: &str,
+    prompt: &super::chat::Prompt,
     recorder: &mut Recorder,
     cancel: &CancellationToken,
 ) -> Result<String, Failure> {
@@ -49,14 +48,14 @@ pub(super) async fn turn(
                     biased;
                     () = cancel.cancelled() => return Err(Failure::cancelled()),
                     () = tokio::time::sleep_until(deadline) => return Err(Failure::timeout()),
-                    result = acp.open(&selection.model, selection.effort.as_deref(), &server, super::chat::SYSTEM) => result?,
+                    result = acp.open(&selection.model, selection.effort.as_deref(), &server, &prompt.system) => result?,
                 };
                 let id = session.insert(id);
-                let prompt = super::chat::replay(&history, text);
-                let prompt = if system_appended {
-                    prompt
+                let input = prompt.replay();
+                let input = if system_appended {
+                    input
                 } else {
-                    format!("{}\n\n{prompt}", super::chat::SYSTEM)
+                    format!("{}\n\n{input}", prompt.system)
                 };
                 let mut conversation = Conversation {
                     tools,
@@ -65,7 +64,7 @@ pub(super) async fn turn(
                     deadline,
                     stream: Text::default(),
                 };
-                let result = conversation.ask(&mut acp, &mut bridge, id, &prompt).await;
+                let result = conversation.ask(&mut acp, &mut bridge, id, &input).await;
                 conversation.stream.flush(conversation.recorder);
                 result
             }

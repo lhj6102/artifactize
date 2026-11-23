@@ -6,7 +6,7 @@ use std::{collections::HashSet, path::Path, time::Duration};
 mod antigravity;
 mod chat;
 mod claude_agent;
-pub(crate) use chat::turn as chat_turn;
+pub(crate) use chat::{Prompt as ChatPrompt, turn as chat_turn};
 pub mod error;
 pub mod session;
 pub mod verdict;

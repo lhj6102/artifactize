@@ -268,7 +268,7 @@ pub(super) fn turns(conversation: Option<&Conversation>, running: bool) -> Vec<T
 
 pub(super) async fn update_runs(
     state: &std::path::Path,
-    repo: &std::path::Path,
+    session: &crate::types::SessionId,
     turns: &mut [Turn],
 ) {
     let mut cards: BTreeMap<RunId, RunCard> = BTreeMap::new();
@@ -284,17 +284,11 @@ pub(super) async fn update_runs(
         match cards.entry(card.id.clone()) {
             Entry::Occupied(current) => *card = current.get().clone(),
             Entry::Vacant(slot) => {
-                if let Ok(view) = store::read_run_snapshot(state, card.id.as_str()).await {
-                    let workspace = view.run.repo_path.clone();
-                    let repo = repo.to_owned();
-                    if crate::task::blocking(move || {
-                        crate::platform::paths_equal(&workspace, &repo)
-                    })
-                    .await
-                    .unwrap_or(false)
-                    {
-                        *card = run_card(view);
-                    }
+                if let Ok(view) = store::read_run_snapshot(state, card.id.as_str()).await
+                    && matches!(&view.run.origin,
+                        Some(runs::Origin::Chat { session_id, .. }) if session_id == session)
+                {
+                    *card = run_card(view);
                 }
                 slot.insert(card.clone());
             }

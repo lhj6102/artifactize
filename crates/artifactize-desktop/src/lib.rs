@@ -49,6 +49,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             chat::chat_create,
             chat::chat_set_model,
             chat::chat_set_view,
+            chat::chat_set_worktree,
             chat::chat_latest_for_branch,
             chat::chat_default_model,
             chat::chat_list,

@@ -304,44 +304,22 @@ pub struct ChatBranch {
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_branches(app: tauri::State<'_, App>) -> Result<Vec<ChatBranch>, Failure> {
-    let runs = artifactize_core::store::read_catalog(&app.launch.state)
+    let listing = app
+        .chat
+        .branches(app.launch.repo.as_deref())
         .await
         .map_err(Failure::Read)?;
-    let launch = app.launch.repo.clone();
-    let mut branches = crate::failure::joined(
-        tokio::task::spawn_blocking(move || {
-            use artifactize_core::monitor::live;
-            live::branches(&runs, launch.as_deref(), &mut live::Discovery::default())
-                .branches
-                .into_iter()
-                .map(|branch| ChatBranch {
-                    key: BranchKey::new(&branch.place),
-                    project: branch.project,
-                    name: branch.name,
-                    workspace: PathKey::new(&branch.workspace),
-                })
-                .collect::<Vec<_>>()
-        })
-        .await,
-    )?;
-    let sessions = app.chat.list(None, None).await.map_err(Failure::Read)?;
-    app.chat_worktrees.watch(&sessions);
-    for session in sessions
+    app.chat_worktrees.watch(&listing.sessions);
+    Ok(listing
+        .branches
         .into_iter()
-        .filter(|session| session.unavailable.is_none())
-    {
-        let key = BranchKey::new(&session.branch());
-        if !branches.iter().any(|branch| branch.key == key) {
-            let label = session.label();
-            branches.push(ChatBranch {
-                key,
-                project: label.project,
-                name: label.branch,
-                workspace: PathKey::new(&session.worktree),
-            });
-        }
-    }
-    Ok(branches)
+        .map(|branch| ChatBranch {
+            key: BranchKey::new(&branch.place),
+            project: branch.project,
+            name: branch.name,
+            workspace: PathKey::new(&branch.workspace),
+        })
+        .collect())
 }
 
 /// Read the starting model for a new session. The pending call is the loading state;
@@ -381,6 +359,29 @@ pub async fn chat_create(
         .await
         .map(Into::into)
         .map_err(Failure::Action)
+}
+
+/// Move a saved Chat to one of the live choices without adding a message.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_set_worktree(
+    app: tauri::State<'_, App>,
+    id: SessionKey,
+    worktree: String,
+) -> Result<ChatSession, Failure> {
+    let path = artifactize_tools::files::path_from_text(&worktree)
+        .map_err(|_| Failure::Invalid(chat::MoveError::Invalid(worktree).to_string()))?;
+    let session = app
+        .chat
+        .set_worktree(&id.into_inner(), &path, app.launch.repo.as_deref())
+        .await
+        .map_err(|error| match error {
+            chat::MoveError::Invalid(_) => Failure::Invalid(error.to_string()),
+            chat::MoveError::Busy => Failure::Busy(error.to_string()),
+            chat::MoveError::Failed(message) => Failure::Action(message),
+        })?;
+    app.chat_worktrees.watch(std::slice::from_ref(&session));
+    Ok(session.into())
 }
 
 /// Save the selected model and effort for the next turn without sending a message.

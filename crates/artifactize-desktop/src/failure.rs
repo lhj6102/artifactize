@@ -32,4 +32,7 @@ pub enum Failure {
     Setting(String),
     #[error("{0}")]
     NoModel(String),
+    /// An active Chat turn must settle before the session can move.
+    #[error("{0}")]
+    Busy(String),
 }
