@@ -63,9 +63,11 @@ impl Windows {
         let _ = self.act(app, Action::CloseViewers);
     }
 
-    pub(crate) fn hide_pet(&self, app: &App) {
+    pub(crate) fn hide_pet_if_inactive(&self, app: &App) {
         let _visibility = self.pet_visibility.lock().expect("pet visibility lock");
-        let _ = self.act(app, Action::Pet(None));
+        if !crate::viewer::has_active_review(app) {
+            let _ = self.act(app, Action::Pet(None));
+        }
     }
 
     fn act(&self, app: &App, action: Action) -> Result<(), Failure> {

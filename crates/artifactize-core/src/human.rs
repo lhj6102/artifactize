@@ -55,12 +55,12 @@ pub async fn claim_acquisition(
     receipts.claim_human(request, reviewer).await
 }
 
-/// Release this particular claim, leaving any later claim on the same request untouched.
-pub async fn release_exact_claim(state: &Path, claim: HumanClaim) -> Result<(), String> {
+/// Release this particular claim, returning false if it is gone or has been replaced.
+pub async fn release_exact_claim(state: &Path, claim: &HumanClaim) -> Result<bool, String> {
     let (receipts, _) = open(state, &claim.request_id).await?;
-    let result = receipts.release_exact_claim(claim).await;
+    let result = receipts.release_exact_claim(claim.clone()).await;
     let closed = receipts.close().await;
-    result.and(closed)
+    result.and_then(|released| closed.map(|()| released))
 }
 
 /// Release the reviewer lock without a verdict, so another reviewer can claim the request.

@@ -589,6 +589,10 @@ pub(crate) async fn pet_is_claimed(app: &App, id: &RequestId) -> bool {
     active(app).await.is_some_and(|review| &review.shown == id)
 }
 
+pub(crate) fn has_active_review(app: &App) -> bool {
+    app.viewers.active().is_some()
+}
+
 pub(crate) fn pet_is_current(app: &App, id: &RequestId) -> bool {
     app.viewers
         .active()
@@ -606,7 +610,7 @@ pub(crate) fn settled(app: &App, id: &RequestId) {
         sessions.active = None;
         app.viewers.notify(None);
         drop(sessions);
-        app.windows.hide_pet(app);
+        app.windows.hide_pet_if_inactive(app);
     }
 }
 
@@ -705,7 +709,7 @@ pub(crate) async fn refresh_active(app: &App) {
             sessions.active = active;
             drop(sessions);
             if hidden {
-                app.windows.hide_pet(app);
+                app.windows.hide_pet_if_inactive(app);
             }
         }
     }

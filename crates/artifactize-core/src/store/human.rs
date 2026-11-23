@@ -251,11 +251,11 @@ impl Receipts {
     }
 
     /// Release only the exact claim this caller took; a replacement is left alone.
-    pub(crate) async fn release_exact_claim(&self, expected: HumanClaim) -> Result<(), String> {
+    pub(crate) async fn release_exact_claim(&self, expected: HumanClaim) -> Result<bool, String> {
         self.connection.call(move |db| {
-            db.execute("UPDATE requests SET claimed_by=NULL,claimed_at=NULL WHERE id=?1 AND claimed_by=?2 AND claimed_at=?3 AND status IN ('WAITING_HUMAN','DEFERRED')",
+            let changed = db.execute("UPDATE requests SET claimed_by=NULL,claimed_at=NULL WHERE id=?1 AND claimed_by=?2 AND claimed_at=?3 AND status IN ('WAITING_HUMAN','DEFERRED')",
                 params![expected.request_id, expected.reviewer, expected.claimed_at])?;
-            Ok::<_, Error>(())
+            Ok::<_, Error>(changed != 0)
         }).await.map_err(|error| error.to_string())
     }
 

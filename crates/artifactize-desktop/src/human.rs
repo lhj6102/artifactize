@@ -1082,10 +1082,17 @@ pub async fn human_release_taken(
     let mut failed = Vec::new();
     for claim in claims {
         let id = claim.request_id.clone();
-        match artifactize_core::human::release_exact_claim(&app.launch.state, claim).await {
-            Ok(()) => {
-                app.human.forget_claim(&id);
-                crate::viewer::settled(&app, &id);
+        match artifactize_core::human::release_exact_claim(&app.launch.state, &claim).await {
+            Ok(released) => {
+                {
+                    let mut taken = app.human.taken.lock().expect("taken lock");
+                    if taken.get(&id) == Some(&claim) {
+                        taken.remove(&id);
+                    }
+                }
+                if released {
+                    crate::viewer::settled(&app, &id);
+                }
             }
             Err(error) => failed.push((id, error)),
         }

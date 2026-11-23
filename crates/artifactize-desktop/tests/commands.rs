@@ -1069,7 +1069,7 @@ payload.instruction = "Read the page separately."
     support::declaration::write(
         &follower_repo,
         follower_repo.join("page/index.artf"),
-        &PAGE.replace(
+        PAGE.replace(
             "title = \"Review the page\"",
             "title = \"Review the follower page\"",
         ),
@@ -1386,9 +1386,9 @@ payload.instruction = "Read the page."
         "the name and path did not change, only the branch"
     );
     declare("alternate");
-    let new = open_review_viewer(3);
+    let new_session = open_review_viewer(3);
     let old = context(&old);
-    let new = context(&new);
+    let new = context(&new_session);
     assert_eq!(old["review"], Value::Null);
     assert!(new["review"].is_string());
     assert_eq!(old["artifact"], new["artifact"]);
@@ -1397,6 +1397,16 @@ payload.instruction = "Read the page."
     assert_eq!(new["target"], "alternate");
     assert_eq!(old["petMatch"], false);
     assert_eq!(new["petMatch"], true);
+    // This Viewer was opened from Current, not through the review whose pending tool launch
+    // Release will cancel. Its bridge can still be queried after the claim is gone.
+    let current = invoke(
+        &window,
+        "artifact_tool_run",
+        json!({"branch":other,"artifact":"page","tool":"view_page","job":9}),
+    )
+    .unwrap()["viewer"]["session"]
+        .clone();
+    assert_eq!(context(&current)["review"], new["review"]);
     let release = invoke(
         &window,
         "human_release_taken",
@@ -1404,6 +1414,11 @@ payload.instruction = "Read the page."
     )
     .unwrap();
     assert_eq!(release["notice"]["error"], false);
+    assert_eq!(
+        context(&current)["review"],
+        Value::Null,
+        "releasing the taken claim immediately takes Point away"
+    );
 }
 
 #[test]
@@ -2204,6 +2219,18 @@ fn a_run_reference_keeps_its_chat_branch_and_discovers_a_new_checkout() {
     let first = invoke(&original, "browse", json!({"navigate":STILL()})).unwrap();
     let branch = first["branches"][0]["key"].clone();
     let name = branch["branch"].as_str().unwrap();
+    let provider = FakeProvider::start(|_| support::openai::models(&["fixture-chat"]));
+    invoke(&original, "provider_custom_save", json!({
+        "name": "scripted", "target": {"kind": "endpoint", "api": "openaiResponses", "url": provider.openai_base()},
+        "key": {"kind": "none"},
+    })).unwrap();
+    let chat = invoke(
+        &original,
+        "chat_create",
+        json!({"worktree":os::path_text(&fixture.repo), "branch":branch,
+            "selection":{"backend":"scripted","model":"fixture-chat","effort":null}}),
+    )
+    .unwrap();
     let run = saved(&fixture, "release/signoff")
         .request
         .run_id
@@ -2239,6 +2266,14 @@ fn a_run_reference_keeps_its_chat_branch_and_discovers_a_new_checkout() {
     assert_eq!(retired["run"]["id"], run);
     assert_eq!(retired["run"]["branch"], branch);
     assert_eq!(retired["run"]["chatBranch"], branch);
+    let archived_chat = invoke(
+        &restarted,
+        "chat_latest_for_branch",
+        json!({"branch":retired["run"]["chatBranch"]}),
+    )
+    .unwrap();
+    assert_eq!(archived_chat["id"], chat["id"]);
+    assert!(archived_chat["unavailable"].is_string());
     let historical = retired["branches"]
         .as_array()
         .unwrap()
@@ -2246,6 +2281,7 @@ fn a_run_reference_keeps_its_chat_branch_and_discovers_a_new_checkout() {
         .find(|row| row["key"] == branch)
         .unwrap();
     assert_eq!(historical["chips"][0]["id"], run);
+    assert_eq!(historical["historical"], true);
     let moved = fixture.repo.with_file_name("new-worktree");
     os::git(
         &fixture.repo,
@@ -2268,6 +2304,11 @@ fn a_run_reference_keeps_its_chat_branch_and_discovers_a_new_checkout() {
         .find(|row| row["key"] == branch)
         .unwrap();
     assert_eq!(live["chips"][0]["id"], run);
+    assert_eq!(live["historical"], false);
+    assert_eq!(
+        Path::new(live["workspace"].as_str().unwrap()),
+        Path::new(&os::path_text(&os::canonical(&moved)))
+    );
 }
 
 #[test]
