@@ -1,8 +1,8 @@
 // Mode references as a person follows them across Verify, Review and Chat.
 import assert from "node:assert/strict";
-import { CHAT_ANSWER, CHAT_GATE, CHAT_MODEL, DEFAULT_MODEL, NEXT_DELTA, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, WORK_PROMPT } from "../fixtures/chat.ts";
+import { CHAT_ANSWER, CHAT_GATE, CHAT_MODEL, DEFAULT_MODEL, NEXT_DELTA, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, STOP_STREAM_CLOSED, WORK_PROMPT } from "../fixtures/chat.ts";
 import { addRepository, artifactize, createRelease, request, requests } from "../fixtures/repo.ts";
-import { nativePath, writeText } from "../portable.ts";
+import { exists, nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { windows } from "../views/viewers.ts";
 
@@ -134,7 +134,10 @@ export const scenarios: Scenario[] = [
       assert.equal(streamed.top, reading.top, "a new streamed line does not move what is being read");
       assert.equal(streamed.atEnd, false);
       await app.chat.scrollToEnd(run);
+      const closed = nativePath(fixture.root, STOP_STREAM_CLOSED);
+      assert.equal(exists(closed), false, "the provider is still streaming before Stop");
       await app.chat.stop(PARTIAL_ANSWER);
+      await app.eventually(() => exists(closed), "Stop closed the provider's unfinished response stream");
       await app.chat.send(CONTINUE_PROMPT);
       await app.chat.says(CONTINUE_ANSWER);
       await app.chat.show("Graph");

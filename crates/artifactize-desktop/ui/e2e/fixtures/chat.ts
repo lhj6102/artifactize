@@ -1,5 +1,5 @@
 // A provider speaking the real Responses API, owned by the scenario until the app exits.
-import { exists, nativePath, serveLoopbackHttp } from "../portable.ts";
+import { exists, nativePath, serveLoopbackHttp, writeText } from "../portable.ts";
 import type { Owned } from "./owned.ts";
 import { artifactize, type Fixture } from "./repo.ts";
 
@@ -9,6 +9,7 @@ export const WORK_PROMPT = "Read the release notes and verify the worktree";
 export const PARTIAL_ANSWER = "I am still working on the notes.";
 export const NEXT_DELTA = "The next part of this turn has arrived.";
 export const CHAT_GATE = "next-delta";
+export const STOP_STREAM_CLOSED = "stop-stream-closed";
 export const STOP_PROMPT = "Wait for my next instruction";
 export const QUIT_PROMPT = "Keep working until I quit";
 export const CONTINUE_PROMPT = "Continue after the stopped turn";
@@ -74,7 +75,10 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
             delta: `\n\n${NEXT_DELTA}\n\n${"Streaming work.\n\n".repeat(60)}`, sequence_number: early.length };
           response.write(`event: ${delta.type}\ndata: ${JSON.stringify(delta)}\n\n`);
         }, 25);
-        response.once("close", () => clearInterval(release));
+        response.once("close", () => {
+          clearInterval(release);
+          writeText(nativePath(fixture.root, STOP_STREAM_CLOSED), "closed\n");
+        });
         return; // Only Stop or fixture teardown ends this stream; no completion is sent.
       }
       let number = 1;
