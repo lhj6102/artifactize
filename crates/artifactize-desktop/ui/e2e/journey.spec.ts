@@ -36,6 +36,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 describe(item.title, () => {
   it(restarted ? `${item.id} (started again)` : item.id, async () => {
     const app = new App(browser);
+    app.lastWindow = nativePath(input.root, LAST_WINDOW);
     running = true;
     noteWaits(browser);
     try {
@@ -43,7 +44,7 @@ describe(item.title, () => {
       await takeSystemFocus(browser);
       await recordKeys(browser);
       // The window as a passed flow leaves it, kept for a failure that comes once the app has
-      // stopped; a flow that ended its app leaves none.
+      // stopped; a flow that ended its app leaves the window as it was just before (exitsBy).
       const leave = () => browser.saveScreenshot(nativePath(input.root, LAST_WINDOW)).then(() => undefined, () => undefined);
       if (restarted) {
         const first = nativePath(input.root, FIRST);

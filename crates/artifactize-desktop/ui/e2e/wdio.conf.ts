@@ -236,12 +236,15 @@ export const config = {
     setVariable("DESKTOP_TEST_CONTEXT", capability["artifactize:context"]);
   },
   /** A failed test's evidence (E2E-FAILURE-EVIDENCE), a timeout's too, taken while its app
-   * still runs. */
+   * still runs; once its flow ended the app, the window as it was just before (LAST_WINDOW). */
   async afterTest(_test: unknown, _context: unknown, result: { passed: boolean; error?: Error }) {
     if (result.passed) return;
     const context = readJson(asNativePath(variable("DESKTOP_TEST_CONTEXT") ?? "")) as Context;
     const failure = result.error ? result.error.stack ?? result.error.message : "the test failed without an error";
-    await keepEvidence(variable("DESKTOP_TEST_SCENARIO") ?? "", context.evidence, failure, (globalThis as { browser?: WebdriverIO.Browser }).browser);
+    const shown = (globalThis as { browser?: WebdriverIO.Browser }).browser;
+    const last = nativePath(context.root, LAST_WINDOW);
+    const ended = shown?.sessionId === undefined && exists(last);
+    await keepEvidence(variable("DESKTOP_TEST_SCENARIO") ?? "", context.evidence, failure, ended ? readBytes(last) : shown);
   },
   mochaOpts: { timeout: Math.max(...selected.map((item) => item.timeout ?? 180000)) },
 };

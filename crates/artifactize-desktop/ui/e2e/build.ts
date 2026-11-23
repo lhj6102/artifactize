@@ -87,6 +87,9 @@ function save(root: NativePath, cli: NativePath, app: NativePath): Candidate {
 export function prepare(parent?: NativePath): Promise<Candidate> {
   return building(parent, async (root, base) => {
     const env = await frontend(root, base, "e2e");
+    // `json-render-diagnostics` keeps only Cargo's own reports on the captured standard output:
+    // Cargo renders every compiler diagnostic as text on standard error, which runStep leaves
+    // on this process's standard error, so a failed build prints why it failed before it throws.
     const output = await runStep("cargo", ["build", "--locked", "-p", "artifactize", "-p", "artifactize-desktop",
       "--features", "artifactize-desktop/e2e", "--bins", "--message-format=json-render-diagnostics"], { env, cwd: workspace, capture: true });
     // Cargo's own report names the executables it built.

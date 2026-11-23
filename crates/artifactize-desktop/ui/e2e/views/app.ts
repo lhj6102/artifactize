@@ -1,7 +1,7 @@
 // The app's window as a person sees it: its header, the command palette, Help, the dialogs it
 // opens over the screen, and its parts (the pane, the main area's graph, the Detail, a Human
 // review, Settings). Cases reach the window only through these views (E2E-REAL-APP).
-import { callWindow } from "../portable.ts";
+import { callWindow, type NativePath } from "../portable.ts";
 import { isPid, waitForProcessExit } from "../platform.ts";
 import { pointerGapClick } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
@@ -27,6 +27,9 @@ export class App {
   /** A Human review in the Detail of a graph. */
   readonly detailReview: Review;
   readonly settings: Settings;
+  /** Where the window is kept as an image just before an action ends the app (exitsBy), so a
+   * failure found once the window is gone still shows what it showed last. */
+  lastWindow: NativePath | null = null;
 
   private readonly browser: WebdriverIO.Browser;
 
@@ -282,6 +285,7 @@ export class App {
     const pid = await this.browser.execute(() =>
       (window as Window & { __ARTIFACTIZE_E2E_PROCESS__?: { pid: number } }).__ARTIFACTIZE_E2E_PROCESS__?.pid);
     if (!isPid(pid)) throw new Error("the app did not provide its native process ID before the close action");
+    if (this.lastWindow) await this.browser.saveScreenshot(this.lastWindow).catch(() => undefined);
     const failures: unknown[] = [];
     try { await action(); } catch (error) { failures.push(error); }
     try { await waitForProcessExit(pid); }
