@@ -893,24 +893,29 @@
     color: var(--ink-2);
     pointer-events: none;
   }
+  /* The canvas takes the graph's whole height: its tools stand in the stage header (D-MAIN-1);
+     only outside a stage do they keep a strip over it. */
   .graph {
     position: relative;
     height: 100%;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     min-height: 0;
+    min-width: 0;
   }
-  /* The working surface, opened by a group line under the strip, with a faint grid that moves
-     and scales with the camera, left out where its cells grow too small. */
+  /* The working surface, with a faint grid that moves and scales with the camera, left out
+     where its cells grow too small; under a standalone strip, opened by a group line. */
   .canvas {
     position: relative;
+    flex: 1 1 0;
     min-height: 0;
-    border-top: 1px solid var(--line-group);
     background-color: var(--surface-app);
     background-image:
       linear-gradient(to right, color-mix(in srgb, var(--line-group) 40%, transparent) 1px, transparent 1px),
       linear-gradient(to bottom, color-mix(in srgb, var(--line-group) 40%, transparent) 1px, transparent 1px);
+  }
+  :global(.graph-tools.standalone) + .canvas {
+    border-top: 1px solid var(--line-group);
   }
   .canvas.far {
     background-image: none;
