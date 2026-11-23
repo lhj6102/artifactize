@@ -281,6 +281,31 @@ export class Windows {
     return this.browser.$(".card #field-comment").getValue();
   }
 
+  /** The pet card's horizontal bounds, and whether its Submit can be clicked at the right. */
+  petLayout(): Promise<{ overflow: string[]; submitAtRight: boolean }> {
+    return this.browser.execute(() => {
+      const card = document.querySelector<HTMLElement>(".pet-window .card");
+      if (!card) throw new Error("the pet card is not displayed");
+      const frame = card.getBoundingClientRect();
+      const overflow = [...card.querySelectorAll<HTMLElement>("*:not(.pet)")].flatMap((child) => {
+        const box = child.getBoundingClientRect();
+        return box.width > 0 && (box.left < frame.left - 1 || box.right > frame.right + 1)
+          ? [child.tagName] : [];
+      });
+      const why = card.querySelector<HTMLElement>(".row .why");
+      if (why && why.scrollWidth > why.clientWidth + 1) overflow.push("Point explanation");
+      const submit = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Submit GREEN");
+      const box = submit?.getBoundingClientRect();
+      const inset = Number.parseFloat(getComputedStyle(card).paddingRight) + card.clientLeft;
+      return {
+        overflow,
+        submitAtRight: !!submit && !!box && !submit.disabled && Math.abs(frame.right - inset - box.right) < 2
+          && box.top >= frame.top && box.bottom <= frame.bottom && box.bottom <= innerHeight
+          && submit.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)),
+      };
+    });
+  }
+
   /** Click Submit in the pet while it is still showing; it may disappear immediately. */
   async petSubmit(): Promise<void> {
     await this.browser.$(".card").$("button*=Submit").click();

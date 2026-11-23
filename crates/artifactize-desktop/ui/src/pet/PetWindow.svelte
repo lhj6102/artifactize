@@ -100,9 +100,8 @@
       <div class="row">
         <button class="button small point" aria-pressed={pointer?.pointing ?? false} disabled={pointer === null} onclick={() => pointer && void emit(ARM, { session: pointer.session })}><Icon name="point" />Point</button>
         {#if pointer === null}<span class="why">Open {view.artifact} in a viewer to point.</span>{/if}
-        <span class="spacer"></span>
         {#if review.form}
-          <button class="button primary" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+          <button class="button primary submit" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
         {/if}
       </div>
     {:else if view}
@@ -169,6 +168,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .eval { min-width: 0; }
+  .tone-human, .run { flex: none; }
   .run {
     color: var(--ink-2);
   }
@@ -176,6 +177,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-width: 0;
     max-height: 280px;
     overflow: auto;
   }
@@ -183,7 +185,10 @@
     display: flex;
     align-items: center;
     gap: var(--gap);
+    min-width: 0;
   }
+  .row > button { flex: none; }
+  .submit { margin-inline-start: auto; }
   .point { color: var(--ink-2); }
   .point[aria-pressed="true"] { color: var(--ink-bright); }
   .point:disabled {
@@ -191,8 +196,14 @@
     border-color: var(--line-section);
     color: var(--ink-3);
   }
-  .spacer {
-    flex: 1;
+  .why, .error {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .row .why {
+    /* Even a long name leaves enough vertical room for the scrollable form. */
+    max-height: 6lh;
+    overflow: auto;
   }
   .why {
     margin: 0;

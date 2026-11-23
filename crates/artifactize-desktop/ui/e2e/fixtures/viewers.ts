@@ -26,10 +26,12 @@ required = ["reason"]
 additionalProperties = false
 `;
 
+export const NOTES = "notes-" + "W".repeat(58);
+
 /** The notes Artifact, of type `files`: a file and a folder holding another. */
 export async function createNotes(own: Owned): Promise<Fixture> {
   const fixture = newFixture(own);
-  declareArtifact(fixture.repo, ["notes"], "notes", `type = "files"\n${signoff("the notes")}`);
+  declareArtifact(fixture.repo, ["notes"], NOTES, `type = "files"\n${signoff("the notes")}`);
   writeText(nativePath(fixture.repo, "notes", "release.md"), "# Release\nTotals are rounded.\nShip it.\n");
   writeText(nativePath(makeDirectory(nativePath(fixture.repo, "notes", "drafts")), "old.txt"), "An old draft.\n");
   initRepo(fixture);

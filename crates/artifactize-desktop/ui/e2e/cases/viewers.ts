@@ -3,7 +3,7 @@
 // the review at hand while its evaluation space is not in front, and submits it.
 import assert from "node:assert/strict";
 import { request } from "../fixtures/repo.ts";
-import { createNotes, createViewed } from "../fixtures/viewers.ts";
+import { createNotes, createViewed, NOTES } from "../fixtures/viewers.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { windows } from "../views/viewers.ts";
 
@@ -20,11 +20,21 @@ export const scenarios: Scenario[] = [
     },
     run: async (app, { fixture }) => {
       const w = windows();
-      await w.claimReview("notes/signoff");
+      await w.claimReview(`${NOTES}/signoff`);
+      // Away from Review, before opening a viewer, the Pet explains why Point is unavailable.
+      await w.mode("Verify");
+      await w.pet();
+      const unopened = await w.petUntil((shown) => shown.choices.length > 0 && !shown.point && shown.why === `Open ${NOTES} in a viewer to point.`,
+        "the pet shows the full reason Point is unavailable");
+      assert.deepEqual([unopened.choices, unopened.radios, unopened.verdict], [["GREEN", "RED"], 0, ""]);
+      await w.petChoose("GREEN");
+      await w.petEnter("comment", "Checking the notes.");
+      assert.deepEqual(await w.petLayout(), { overflow: [], submitAtRight: true });
+      await w.mode("Review");
       const label = await w.runTool("view");
-      assert.equal(await w.viewer(label), "notes — File Explorer", "titled {Artifact} — {viewer}");
+      assert.equal(await w.viewer(label), `${NOTES} — File Explorer`, "titled {Artifact} — {viewer}");
       const strip = await w.stripUntil((shown) => shown.point, "Point offered for the claimed review");
-      assert.deepEqual(strip.items.slice(0, 2), ["notes", "File Explorer"]);
+      assert.deepEqual(strip.items.slice(0, 2), [NOTES, "File Explorer"]);
       // Folders first; a folder unfolds by a click; a file shows with its lines.
       const files = await w.entriesUntil("Files", (entries) => entries.includes("release.md"), "the notes' files listed");
       assert.equal(files[0], "drafts", "folders first");
@@ -47,22 +57,23 @@ export const scenarios: Scenario[] = [
       await w.pet();
       assert.equal(await w.title(), "Artifactize review");
       const pet = await w.petUntil((shown) => shown.choices.length > 0, "the pet offers the verdicts of the claimed review");
-      assert.match(pet.head, /^notes\/signoff · run-/);
+      assert.ok(pet.head.startsWith(`${NOTES}/signoff · run-`));
       assert.deepEqual(pet.points, points);
       assert.equal(pet.point, true, "Point while the notes' viewer is open");
-      // No verdict has been chosen: the pet offers the buttons but no verdict form.
-      assert.deepEqual([pet.choices, pet.radios, pet.verdict], [["GREEN", "RED"], 0, ""]);
+      // The form chosen before opening the viewer stays in the same review draft.
+      assert.deepEqual([pet.choices, pet.radios, pet.verdict], [["GREEN", "RED"], 2, "GREEN"]);
       await w.petChoose("RED");
       await w.petChoose("GREEN");
       const chosen = await w.readPet();
       assert.deepEqual([chosen.choices, chosen.radios], [["GREEN", "RED"], 2], "one verdict choice, the form's radios");
       await w.petEnter("comment", "Checked the totals: ");
       assert.equal(await w.petInsert(), `Checked the totals: ${points[0]}`);
+      assert.deepEqual(await w.petLayout(), { overflow: [], submitAtRight: true });
       await w.petSubmit();
       await app.until(async () => !(await w.petShown()), "submission hid the pet while Verify is still shown");
       await w.mode("Review");
       await app.review.until((shown) => shown.completed.includes(`Checked the totals: ${points[0]}`) && !shown.sections.includes("Points"), "the submitted review shows the form without Points");
-      const saved = request(fixture, "notes/signoff");
+      const saved = request(fixture, `${NOTES}/signoff`);
       assert.equal(saved.status, "GREEN", "the review is settled");
       assert.equal(saved.result?.comment, `Checked the totals: ${points[0]}`);
       // Closing the viewer's window closes it alone.
