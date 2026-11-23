@@ -37,7 +37,7 @@ Artifactize는 Run을 시작한 터미널이나 MCP 세션과 독립적으로 �
 - 실행 조건을 충족한 일반 작업부터 처리합니다. `--jobs`나 백엔드별 동시 실행 한도에 걸려 일반 작업을 시작할 수 없으면, 미리 시작한 리뷰를 중단하고 대기열에 다시 넣습니다(시작할 때마다 `--max-executions` 횟수 차감).
 - 선행 eval이 나중에 `GREEN`으로 끝나면 미리 실행한 결과를 그대로 써서 전체 검증 시간을 줄입니다.
 - 하위 eval의 대상 Artifact나 순환 참조 밖의 선행 항목에서 `RED`나 `ERROR`가 나올 수 있습니다. 이때 그 입력에 의존하는 하위 eval 가운데 미리 실행 중인 작업은 즉시 취소하고, 이미 완료된 결과는 무효화해 재사용 기록에서 뺍니다. 이어서 영향받는 하위 요청(Human 승인 포함)을 `BLOCKED`로 표시합니다.
-- 반복 수정([Focus then sweep](../agent-plugin/plugin.md#focus-then-sweep-iterate-on-red-evals)) 중에는 `verify --eval ID --speculate --wait`를 쓸 수 있습니다. 입력 Artifact를 아직 다시 검증하지 않았어도 수정 중인 eval만 바로 실행해 볼 수 있습니다.
+- 반복 수정([Focus then sweep](../agent-plugin/plugin.md#focus-then-sweep-iterate-on-red-evals)) 중에는 `verify --eval ID --speculate`를 쓸 수 있습니다. 입력 Artifact를 아직 다시 검증하지 않았어도 수정 중인 eval만 바로 실행해 볼 수 있습니다.
 
 ## 승인과 Run의 종료 {#sign-offs-and-the-end-of-a-run}
 
