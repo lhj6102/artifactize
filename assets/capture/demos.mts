@@ -694,6 +694,8 @@ async function graphGrowth(candidate: Candidate, work: string): Promise<Recordin
       }, CHAT_MAIN), { timeout: WAIT, timeoutMsg: `${step.caption}'s Current graph is drawn` });
       await fit.waitForEnabled({ timeout: WAIT });
       await fit.click();
+      // The keyboard leaves Fit again, so no step shows its focus ring.
+      await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
       // Once fitted, the Navigator is gone: it shows whenever any part is outside the canvas.
       // At a readable zoom, check the Artifact copies and visible SVG connections too. At lower
       // zoom, or when a large graph paints edges, verify the actual canvas has painted pixels.

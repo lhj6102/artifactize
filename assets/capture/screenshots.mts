@@ -220,9 +220,10 @@ async function capture(output: string, work: string): Promise<void> {
             graph.querySelector(`.svelte-flow__node[data-id="a:${name}"][data-light="${light}"]`));
       }, MAIN), { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges and mixed verdicts" });
       // The first fit can happen while the graph area is still taking its size, and the Run view
-      // keeps its camera after that; the tool strip's Fit frames the drawn graph the same way on
-      // every capture.
+      // keeps its camera after that; the stage header's Fit frames the drawn graph the same way
+      // on every capture. The keyboard then leaves Fit, so the scene shows no focus ring.
       await app.$('[aria-label="Graph tools"]').$("button=Fit").click();
+      await app.execute(() => (document.activeElement as HTMLElement | null)?.blur());
       let viewport = "";
       await app.waitUntil(async () => {
         const now = await app.execute(() => document.querySelector<HTMLElement>(".svelte-flow__viewport")?.style.transform ?? "");
