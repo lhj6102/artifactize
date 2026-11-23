@@ -69,6 +69,9 @@ export class ChatModeState {
   branches = $state.raw<ChatBranch[] | null>(null);
   branchError = $state<string | null>(null);
   worktree = $state<string | null>(null);
+  /** Move chat: the session it moves, the checkout chosen, the live checkouts once read, what
+   * the library refused, and whether the move is under way; null while closed. */
+  moving = $state.raw<{ id: string; worktree: string; branches: ChatBranch[] | null; error: string | null; busy: boolean } | null>(null);
   /** The model menu is open. */
   picking = $state(false);
   /** The Pane's top row is the search field (J-CHAT). */
@@ -179,7 +182,7 @@ export class ChatModeState {
   }
 
   /** Open New chat on a branch from the library's full list, not Verify's search result. */
-  async newChat(branch: BranchKey | null, exact: boolean): Promise<void> {
+  async newChat(branch: BranchKey | null, exact: boolean, project: string | null = null): Promise<void> {
     const opening = ++this.#opening;
     this.branches = null;
     this.branchError = null;
@@ -190,13 +193,51 @@ export class ChatModeState {
       const branches = await call(this.ipc.chatBranches());
       if (!this.creating || opening !== this.#opening) return;
       this.branches = branches;
-      const selected = (branch ? branches.find((item) => keyOf(item.key) === keyOf(branch)) : undefined) ?? (exact ? undefined : branches[0]);
+      // From a project's row: its newest session's branch, else that project's first checkout.
+      const selected = (branch ? branches.find((item) => keyOf(item.key) === keyOf(branch)) : undefined)
+        ?? (project !== null ? branches.find((item) => item.project === project) : undefined)
+        ?? (exact ? undefined : branches[0]);
       if (selected) {
         this.worktree = selected.workspace;
         void this.readStarting(selected.workspace, selected.key);
       }
     } catch (error) {
       if (this.creating && opening === this.#opening) this.branchError = message(error);
+    }
+  }
+
+  /** Open Move chat for the shown session: the live checkouts, its own first (J-CHAT-MOVE). */
+  async openMove(): Promise<void> {
+    const view = this.view;
+    if (!view || view.running) return;
+    const id = view.session.id;
+    this.moving = { id, worktree: view.session.worktree, branches: null, error: null, busy: false };
+    try {
+      const branches = await call(this.ipc.chatBranches());
+      if (this.moving?.id !== id) return;
+      const own = branches.filter((item) => item.workspace === view.session.worktree);
+      this.moving = { ...this.moving, branches: [...own, ...branches.filter((item) => item.workspace !== view.session.worktree)] };
+    } catch (failure) {
+      if (this.moving?.id === id) this.moving = { ...this.moving, branches: [], error: message(failure) };
+    }
+  }
+
+  /** Move the session to the checkout chosen in Move chat; a refusal stays in the dialog. */
+  async move(): Promise<boolean> {
+    const moving = this.moving;
+    if (!moving || moving.busy) return false;
+    this.moving = { ...moving, busy: true, error: null };
+    try {
+      const session = await call(this.ipc.chatSetWorktree(moving.id, moving.worktree));
+      if (this.moving?.id !== moving.id) return false;
+      this.moving = null;
+      if (this.view?.session.id === session.id) this.view = { ...this.view, session };
+      void this.read();
+      void this.list();
+      return true;
+    } catch (failure) {
+      if (this.moving?.id === moving.id) this.moving = { ...this.moving, busy: false, error: message(failure) };
+      return false;
     }
   }
 

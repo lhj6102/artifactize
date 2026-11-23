@@ -30,6 +30,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  extraAnswers = null;
   cleanup();
   clearMocks();
   vi.restoreAllMocks();
@@ -53,6 +54,14 @@ const session: ChatSession = {
 };
 
 /** The library of one session: `turns` is what it holds, `running` whether a turn runs. */
+/** Answers a test adds before the backend's own; undefined falls through to them. */
+let extraAnswers: ((cmd: string, args: Record<string, unknown>) => unknown) | null = null;
+
+function backendWith(answer: (cmd: string, args: Record<string, unknown>) => unknown) {
+  extraAnswers = answer;
+  return backend();
+}
+
 function backend() {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   const state = {
@@ -64,6 +73,8 @@ function backend() {
   };
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
+    const extra = extraAnswers?.(cmd, args as Record<string, unknown>);
+    if (extra !== undefined) return extra;
     switch (cmd) {
       case "chat_list":
         return (args as { query: string | null }).query === "no such chat" ? [] : [state.session, ...(state.other ? [state.other] : [])];
@@ -734,8 +745,8 @@ it("finds text in the conversation from the stage header, steps through its plac
   const main = screen.getByLabelText("Chat's main area");
   await within(main).findByRole("log", { name: "Conversation" });
   const tools = within(main).getByRole("toolbar", { name: "Tools" });
-  // Find is the Conversation's one tool, the find icon alone; Ctrl+F outside the Pane opens it.
-  expect(within(tools).getAllByRole("button").map((tool) => tool.getAttribute("aria-label"))).toEqual(["Find (Ctrl+F)"]);
+  // Find is the Conversation's own tool, the find icon alone, then the session's Move.
+  expect(within(tools).getAllByRole("button").map((tool) => tool.getAttribute("aria-label"))).toEqual(["Find (Ctrl+F)", "Move to another checkout"]);
   await fireEvent.click(within(tools).getByRole("button", { name: "Find (Ctrl+F)" }));
   const field = within(tools).getByRole<HTMLInputElement>("textbox", { name: "Find in the conversation" });
   expect(document.activeElement).toBe(field);
@@ -753,4 +764,60 @@ it("finds text in the conversation from the stage header, steps through its plac
   await fireEvent.keyDown(field, { key: "Escape" });
   expect(within(tools).queryByRole("textbox")).toBeNull();
   expect(within(tools).getByRole("button", { name: "Find (Ctrl+F)" })).toBeTruthy();
+});
+
+it("moves a session to another checkout from its Move tool, refusing while a turn runs and saying why the library refused", async () => {
+  const { calls, state } = backendWith((cmd, args) => extra(cmd, args));
+  const other = { key: branchKey("fix/after-discount"), project: "app", name: "fix/after-discount", workspace: "/work/app-after" };
+  const own = { key: session.branchKey, project: "app", name: "fix/rounding", workspace: session.worktree };
+  let refuse = true;
+  function extra(cmd: string, _args: Record<string, unknown>): unknown {
+    if (cmd === "chat_branches") return [other, own];
+    if (cmd === "chat_set_worktree") {
+      if (refuse) throw { kind: "busy", message: "Stop the running turn first" };
+      state.session = { ...state.session, worktree: other.workspace, branch: other.name, branchKey: other.key };
+      return state.session;
+    }
+    return undefined;
+  }
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  const main = screen.getByLabelText("Chat's main area");
+  const move = await within(main).findByRole("button", { name: "Move to another checkout" });
+  await fireEvent.click(move);
+  const dialog = await screen.findByRole("dialog", { name: "Move chat" });
+  // The session's own checkout first, and Move waits for another one.
+  const choice = within(dialog).getByRole<HTMLSelectElement>("combobox", { name: "Checkout" });
+  await waitFor(() => expect([...choice.options].map((option) => option.value)).toEqual([own.workspace, other.workspace]));
+  const submit = within(dialog).getByRole<HTMLButtonElement>("button", { name: "Move" });
+  expect(submit.disabled).toBe(true);
+  await fireEvent.change(choice, { target: { value: other.workspace } });
+  expect(submit.disabled).toBe(false);
+  // Refused: why, in the dialog, which stays open.
+  await fireEvent.click(submit);
+  expect((await within(dialog).findByRole("alert")).textContent).toBe("Stop the running turn first");
+  refuse = false;
+  await fireEvent.click(submit);
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Move chat" })).toBeNull());
+  expect(calls.filter(({ cmd }) => cmd === "chat_set_worktree").at(-1)?.args).toEqual({ id: session.id, worktree: other.workspace });
+  await waitFor(() => expect(within(screen.getByRole("button", { name: /Fix checkout rounding/ })).getByText("fix/after-discount")).toBeTruthy());
+  // While a turn runs, Move is unavailable and says why.
+  state.running = true;
+  await emit("session-changed", { session: session.id });
+  await waitFor(() => expect((within(main).getByRole("button", { name: "Move to another checkout" }) as HTMLButtonElement).disabled).toBe(true));
+  expect(within(main).getByRole("button", { name: "Move to another checkout" }).getAttribute("title")).toBe("Stop the running turn to move the chat");
+});
+
+it("starts New chat from a project's row on that project's branch", async () => {
+  const { calls } = backendWith((cmd) => (cmd === "chat_branches" ? [
+    { key: branchKey("main"), project: "site", name: "main", workspace: "/work/site" },
+    { key: session.branchKey, project: "app", name: "fix/rounding", workspace: session.worktree },
+  ] : undefined));
+  show();
+  const projects = await screen.findByText("Projects");
+  expect(projects).toBeTruthy();
+  await fireEvent.click(await screen.findByRole("button", { name: "New chat in app" }));
+  const dialog = await screen.findByRole("dialog", { name: "New chat" });
+  await waitFor(() => expect(within(dialog).getByRole<HTMLSelectElement>("combobox", { name: "Branch" }).value).toBe(session.worktree));
+  expect(calls.some(({ cmd }) => cmd === "chat_branches")).toBe(true);
 });

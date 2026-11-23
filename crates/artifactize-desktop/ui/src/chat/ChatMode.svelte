@@ -13,6 +13,7 @@
   import type { Attachment } from "svelte/attachments";
   import { onSessionChanged, onStateChanged, type ChatRun, type ChatSession } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
+  import { keyOf } from "../monitor/monitor-state.svelte";
   import Icon from "../shell/Icon.svelte";
   import { statusIcon } from "../shell/icons";
   import { tone } from "../shell/tone";
@@ -445,11 +446,15 @@
           </div>
           <div class="sessions">
             {#if c.listed && c.query.trim() && projects.length === 0}<p class="empty">No chat matches.</p>{/if}
+            {#if projects.length > 0}<p class="group">Projects</p>{/if}
             {#each projects as [project, members] (project)}
               {@const open = c.query.trim() !== "" || !c.folded.has(project)}
-              <button class="row-button project" aria-expanded={open} onclick={() => (c.folded.has(project) ? c.folded.delete(project) : c.folded.add(project))}>
-                <span class="lead"><Icon name={open ? "folder-open" : "folder-closed"} /></span><span class="name">{project}</span>
-              </button>
+              <div class="project-row">
+                <button class="row-button project" aria-expanded={open} onclick={() => (c.folded.has(project) ? c.folded.delete(project) : c.folded.add(project))}>
+                  <span class="lead"><Icon name={open ? "folder-open" : "folder-closed"} /></span><span class="name">{project}</span>
+                </button>
+                <button class="row-button new-here" aria-label="New chat in {project}" title="New chat in {project}" onclick={() => void c.newChat(members[0].branchKey, true, project)}><Icon name="new-chat" /></button>
+              </div>
               {#if open}
                 <ul aria-label="Sessions of {project}">
                   {#each members as item (item.id)}
@@ -505,6 +510,11 @@
           {#if session && live}
             <button class="tool" aria-label="Refresh (Ctrl+R)" title="Refresh" aria-keyshortcuts="Control+R F5" onclick={() => void current.scan(session.branchKey, true)}>Refresh</button>
           {/if}
+          {#if session}
+            {@const label = running ? "Stop the running turn to move the chat" : "Move to another checkout"}
+            <span class="tool-sep"></span>
+            <button class="tool" aria-label="Move to another checkout" title={label} aria-expanded={c.moving !== null} disabled={running} onclick={() => void c.openMove()}><Icon name="move" /></button>
+          {/if}
         {/snippet}
         {#if !session}
           <p class="empty">{c.listed && !c.query.trim() && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane, or start one with New chat."}</p>
@@ -516,7 +526,8 @@
             </div>
           {:else if c.graph}
             {@const shownSession = session}
-            {#key session.id}
+            <!-- A moved session shows its new branch's Current. -->
+            {#key `${session.id} ${keyOf(session.branchKey)}`}
               <CurrentView branch={session.branchKey} worktree={session.worktree} workspace={c.graph} bottom={c.band}>
                 {#snippet floating()}{@render floatingChat(shownSession)}{/snippet}
               </CurrentView>
@@ -549,6 +560,38 @@
     </Split>
   </PaneGroup>
 </div>
+
+<!-- Move chat: another checkout for the shown session (J-CHAT-MOVE). -->
+<Dialog.Root open={c.moving !== null} onOpenChange={(open) => { if (!open) c.moving = null; }}>
+  <Dialog.Portal>
+    <Dialog.Overlay class="overlay" />
+    <Dialog.Content class="dialog new-chat">
+      <Dialog.Title class="dialog-title">Move chat</Dialog.Title>
+      {#if c.moving}
+        {@const moving = c.moving}
+        {@const own = session?.worktree ?? null}
+        <form class="dialog-layout" onsubmit={(event) => { event.preventDefault(); void c.move(); }}>
+          <div class="dialog-body">
+            <label class="field">
+              <span class="field-name">Checkout</span>
+              <select value={moving.worktree} disabled={!moving.branches?.length} onchange={(event) => (c.moving = { ...moving, worktree: event.currentTarget.value, error: null })}>
+                {#each moving.branches ?? [] as branch (branch.workspace)}
+                  <option value={branch.workspace}>{branch.name ? `${branch.project} / ${branch.name}` : branch.project}</option>
+                {/each}
+              </select>
+            </label>
+            {#if moving.error}<p class="refused" role="alert">{moving.error}</p>{/if}
+            <p class="starting quiet">The conversation stays; from its next turn the agent works in the chosen checkout, and Graph shows its Current.</p>
+          </div>
+          <div class="dialog-actions">
+            <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
+            <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={moving.busy || moving.worktree === own || moving.branches === null}>Move</button>
+          </div>
+        </form>
+      {/if}
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
 
 <!-- New chat: the branch the session works on. -->
 <Dialog.Root bind:open={c.creating}>
@@ -622,7 +665,45 @@
     align-items: center;
     height: var(--row-pane);
     box-sizing: border-box;
-    border-bottom: 1px solid var(--line-group);
+  }
+  /* The projects' quiet group label, straight under the top row (D-SYS-5). */
+  .group {
+    margin: 0;
+    padding: 6px var(--pad) 4px;
+    font-size: var(--text-label);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  /* A project's row: the folder row, and New chat in its last 36px cell while the pointer or
+   * the keyboard is on the row. */
+  .project-row {
+    position: relative;
+  }
+  .new-here {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: var(--row-pane);
+    padding: 0;
+    justify-content: center;
+    opacity: 0;
+  }
+  .project-row:hover .new-here,
+  .project-row:focus-within .new-here {
+    opacity: 1;
+  }
+  .new-here:hover {
+    color: var(--ink);
+  }
+  .project-row:hover .project {
+    background: var(--surface-group);
+  }
+  .refused {
+    margin: 0;
+    color: var(--red);
+    font-size: var(--text-small);
   }
   /* A row of the Pane: chosen by a click anywhere on it, lit whole by the pointer, the
    * keyboard's ring inside it. */
