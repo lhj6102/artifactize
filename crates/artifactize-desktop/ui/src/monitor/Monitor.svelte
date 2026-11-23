@@ -333,7 +333,7 @@
             {#if shown.kind === "run" && run?.origin?.kind === "chat"}
               {@const origin = run.origin}
               <!-- The way back: the Chat session that started the Run (J-RUN-ORIGIN). -->
-              <Reference chip onclick={() => app.showChat(origin.sessionId, run.id)}>Chat · {origin.title}</Reference>
+              <Reference back onclick={() => app.showChat(origin.sessionId, run.id)}>Chat · {origin.title}</Reference>
             {/if}
           {/snippet}
           {#snippet tools()}

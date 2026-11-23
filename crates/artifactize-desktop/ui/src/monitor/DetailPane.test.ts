@@ -294,7 +294,7 @@ it("keeps Close alone in the header on a Human review's tab, the review showing 
     source: RUN, revision: 1, branch: null, node: "a:app", tab: "e:app/test", focused: false, active: true,
     review: () => reviewing, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback, ongone: vi.fn(),
   });
-  await screen.findByText("REVIEW (yours)");
+  await screen.findByText("Yours");
   const header = screen.getByRole("heading", { name: "app/test · Sign-off" }).parentElement!;
   expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close"]);
   expect(screen.getAllByRole("button", { name: /Close/ })).toHaveLength(1);
@@ -314,7 +314,7 @@ it("keeps the Open in Review reference on a submitted Human eval's tab", async (
     review: () => reviewing, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
   expect(await screen.findByRole("button", { name: "Open in Review" })).toBeTruthy();
-  const result = await screen.findByRole("region", { name: "Result" });
+  const result = await screen.findByRole("region", { name: "Verdict" });
   await waitFor(() => expect(result.querySelector(".completed")).not.toBeNull());
   expect(screen.getByRole("button", { name: "Open in Review" })).toBeTruthy();
 });

@@ -1,15 +1,15 @@
 <script lang="ts">
-  // A reference to another mode's exact target (D-REF-1): in a header row a chip, its icon and
-  // words in the accent inside a group line (a way back, led by the back icon); in a list or a
-  // card a text button in the accent led by the open icon (Open in Verify, Open in Review).
-  // Hovering only steps its edge or face up.
+  // A reference to another mode's exact target (D-REF-1), by its words alone: no border and no
+  // face, its icon and words in --ink-2, --ink under the pointer. A way back stands first in its
+  // header row as a tool of that row, led by the back icon, cut at 320px; elsewhere a text
+  // button led by the open icon (Open in Verify, Open in Review, Open in Chat).
   import type { Snippet } from "svelte";
   import Icon from "./Icon.svelte";
 
-  let { chip = false, onclick, children }: { chip?: boolean; onclick: () => void; children: Snippet } = $props();
+  let { back = false, onclick, children }: { back?: boolean; onclick: () => void; children: Snippet } = $props();
 </script>
 
-<button class="reference" class:chip {onclick}><Icon name={chip ? "back" : "open"} /><span>{@render children()}</span></button>
+<button class="reference" class:back {onclick}><Icon name={back ? "back" : "open"} /><span>{@render children()}</span></button>
 
 <style>
   .reference {
@@ -35,18 +35,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .reference:not(.chip):hover {
-    background: var(--surface-group);
+  .reference:hover {
+    color: var(--ink);
   }
-  .chip {
-    gap: 6px;
-    height: 20px;
+  .reference:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--focus);
+  }
+  /* A way back: a tool of its header row, as tall as the other tools. */
+  .back {
+    flex: 0 1 auto;
+    height: var(--control);
     max-width: min(320px, 100%);
-    padding: 0 8px;
-    border: 1px solid var(--line-group);
-    border-radius: var(--radius-chip);
-  }
-  .chip:hover {
-    border-color: var(--line-input);
+    padding: 0 6px;
   }
 </style>

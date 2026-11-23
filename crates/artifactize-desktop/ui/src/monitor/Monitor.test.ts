@@ -180,6 +180,11 @@ function shownRun(): string | null {
   return entry?.getAttribute("data-chip") ?? null;
 }
 
+/** The review the Review Pane's selected row names. */
+function shownReview(): string | null {
+  return workspace("Review").querySelector('[role="listbox"][aria-label="Human reviews"] [aria-selected="true"]')?.textContent ?? null;
+}
+
 function workspace(mode: string): HTMLElement {
   const found = document.querySelector<HTMLElement>(`main[aria-label="${mode}"]`);
   if (!found) throw new Error(`no ${mode} workspace`);
@@ -524,8 +529,9 @@ it("opens the newest waiting review when started with review alone", async () =>
   backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1"), waitingRow("run-8-1")] }));
   render(App);
   const main = await screen.findByLabelText("Review's main area");
-  // The review's eval names the main area, its title beside it.
-  await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("release/signoff"));
+  // The Pane's selected row names the review's eval; the column's head says its title.
+  await waitFor(() => expect(shownReview()).toMatch(/release\/signoff/));
+  expect(main.querySelector("header")?.textContent).not.toMatch(/release\/signoff/);
   expect(workspace("Review").hidden).toBe(false);
   const rows = within(screen.getByRole("listbox", { name: "Human reviews" })).getAllByRole("option");
   expect(rows[0].getAttribute("aria-selected")).toBe("true");
@@ -550,23 +556,23 @@ it("closes a review in Review with the one Close in its header, after leaving th
   backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1")] }));
   render(App);
   const main = await screen.findByLabelText("Review's main area");
-  await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("release/signoff"));
+  await waitFor(() => expect(shownReview()).toMatch(/release\/signoff/));
   const region = await within(main).findByLabelText("Human review");
   await within(main).findByRole("button", { name: "Claim to review (c)" });
   // The way back to its Run leads the header; Close is its one control, and the review keeps
   // none of its own.
-  const header = main.querySelector("h2")!.parentElement!;
+  const header = main.querySelector("header")!;
   expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Verify · run-a › release", "Close"]);
   expect(within(main).getAllByRole("button", { name: /Close/ })).toHaveLength(1);
 
   await fireEvent.keyDown(region, { key: "c" });
-  await within(main).findByText("REVIEW (yours)");
+  await within(main).findByText("Yours");
   await fireEvent.keyDown(region, { key: "g" });
   await within(main).findByLabelText(/comment/);
   // The first Close leaves the form with the review still open; the next returns to the Pane.
   await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
   await waitFor(() => expect(within(main).queryByLabelText(/comment/)).toBeNull());
-  expect(main.querySelector("h2")?.textContent).toBe("release/signoff");
+  expect(shownReview()).toMatch(/release\/signoff/);
   await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Human reviews" })));
 });
@@ -580,7 +586,7 @@ it("makes the claimed review shown in Review the active one, and shows the pet o
   const asked = (command: string) => calls.filter((call) => call.command === command).map((call) => (call.args as { request: string | null }).request);
   await waitFor(() => expect(asked("active_review_set")).toEqual(["run-a-2"]));
   await fireEvent.keyDown(region, { key: "c" });
-  await within(main).findByText("REVIEW (yours)");
+  await within(main).findByText("Yours");
   expect(asked("active_review_set")).toEqual(["run-a-2"]);
   await fireEvent.keyDown(window, { key: "2", code: "Digit2", ctrlKey: true });
   // Neither opening nor taking the claim arms the pet: the backend event does.

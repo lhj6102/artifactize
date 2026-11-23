@@ -123,10 +123,6 @@
     align-items: center;
     min-width: 0;
   }
-  .back > :global(.reference.chip) {
-    flex: 0 1 auto;
-    max-width: 320px;
-  }
   .tabs {
     display: flex;
     align-self: stretch;

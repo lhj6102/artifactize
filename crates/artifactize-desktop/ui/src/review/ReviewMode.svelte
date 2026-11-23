@@ -13,7 +13,7 @@
   import { Coalesced } from "../ipc/coalesced";
   import { REVIEW_DEFAULT_QUERY, call, CommandError, message, onStateChanged, type BrowseView, type ReviewMatch } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
-  import Panel from "../shell/Panel.svelte";
+  import Stage from "../shell/Stage.svelte";
   import Icon from "../shell/Icon.svelte";
   import SearchField from "../shell/SearchField.svelte";
   import Reference from "../shell/Reference.svelte";
@@ -184,7 +184,7 @@
   }
 
   /** The way back: the review's Run in Verify, its Artifact's Detail open on the review's eval. */
-  function back() {
+  function goBack() {
     const target = review?.view?.target;
     if (!target) return;
     const eval_ = target.node;
@@ -302,35 +302,32 @@
     {/if}
     <Split id="review-main" order={2} defaultSize={app.paneShown ? 76 : 100} minSize={30}>
       <div class="main" style:--detail-width={app.detailWidth === null ? null : `${app.detailWidth}px`}>
-        <Panel
-          {title}
+        <!-- The header row holds controls only (D-REV-8): the way back, and Close; the Pane's
+             selected row names the review's eval, the column's head its title. -->
+        <Stage
           label="Review's main area"
-          focused={r.focus === "main"}
           notice={r.error}
           bind:noticeOpen={r.noticeOpen}
           bind:element={r.panes.main}
           onfocus={() => (r.focus = "main")}
           onkeydown={mainKey}
         >
-          {#snippet lead()}
+          {#snippet back()}
             {#if shown.kind === "review" && review?.view}
-              <!-- The way back, first: the Run that asked for the review, and its Artifact. -->
-              <Reference chip onclick={back}>Verify · <span class="mono">{review.view.target.run}</span> › {review.view.artifact}</Reference>
+              <!-- The way back: the Run that asked for the review, and its Artifact. -->
+              <Reference back onclick={goBack}>Verify · <span class="mono">{review.view.target.run}</span> › {review.view.artifact}</Reference>
             {/if}
           {/snippet}
-          {#snippet headline()}
-            {#if subtitle}<span class="title">{subtitle}</span>{/if}
-          {/snippet}
-          {#snippet actions()}
+          {#snippet tools()}
             {#if shown.kind !== "none" && !app.monitor.settings}
-              <button class="button small" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={close}>Close</button>
+              <button class="tool" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={close}>Close</button>
             {/if}
           {/snippet}
           <div class="body">
             {#if shown.kind === "review"}
               {#if review}
                 {#key review}
-                  <HumanDetail {review} {active} wide onback={() => void focus("pane")} />
+                  <HumanDetail {review} {active} wide title={subtitle || title} onback={() => void focus("pane")} />
                 {/key}
               {/if}
             {:else if shown.kind === "request"}
@@ -342,7 +339,7 @@
               <p class="empty">{app.paneShown ? "Choose a review in the Pane." : "Show the Pane from the command palette to choose a review."}</p>
             {/if}
           </div>
-        </Panel>
+        </Stage>
       </div>
     </Split>
   </PaneGroup>

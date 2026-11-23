@@ -70,7 +70,7 @@ describe("HumanDetail", () => {
 
     await fireEvent.keyDown(region, { key: "c" });
     await waitFor(() => expect(calls.some((call) => call.cmd === "human_claim")).toBe(true));
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
   });
 
   it("says why a submission settled here was not published, under its completed result", async () => {
@@ -82,12 +82,12 @@ describe("HumanDetail", () => {
     }));
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await fireEvent.keyDown(region, { key: "g" });
     const comment = await screen.findByLabelText(/comment/);
     await userEvent.setup().type(comment, "checked");
     await fireEvent.keyDown(comment, { key: "s", ctrlKey: true });
-    const result = await screen.findByRole("region", { name: "Result" });
+    const result = await screen.findByRole("region", { name: "Verdict" });
     await waitFor(() => expect(within(result).getByRole("status").textContent).toBe(failure));
   });
 
@@ -98,7 +98,7 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
 
     await fireEvent.keyDown(region, { key: "r" });
     const reason = await screen.findByLabelText(/reason/);
@@ -126,7 +126,7 @@ describe("HumanDetail", () => {
     let left = 0;
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await fireEvent.keyDown(region, { key: "g" });
     const comment = await screen.findByLabelText(/comment/);
     await fireEvent.keyDown(comment, { key: "Escape", isComposing: true });
@@ -144,7 +144,7 @@ describe("HumanDetail", () => {
     }));
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await fireEvent.keyDown(region, { key: "g" });
     const comment = await screen.findByLabelText(/comment/);
     const writes = new Set(["human_draft_edit", "human_claim", "human_release", "human_run", "human_draft_submit", "human_cancel"]);
@@ -177,7 +177,7 @@ describe("HumanDetail", () => {
     let left = 0;
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await user.keyboard("g");
     const comment = await screen.findByLabelText(/comment/);
     await waitFor(() => expect(document.activeElement).toBe(comment));
@@ -219,7 +219,7 @@ describe("HumanDetail", () => {
     }, { shouldMockEvents: true });
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
     await screen.findByLabelText(/comment/);
     await user.click(screen.getByRole("button", { name: "notes" }));
@@ -242,7 +242,7 @@ describe("HumanDetail", () => {
     let submitted!: () => void;
     const settled = new Promise<void>((resolve) => (submitted = resolve));
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {}, onsubmitted: () => submitted() });
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await user.keyboard("g");
     await screen.findByLabelText(/comment/);
     await user.keyboard("{Control>}s{/Control}");
@@ -268,7 +268,7 @@ describe("HumanDetail", () => {
     let left = 0;
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await fireEvent.keyDown(region, { key: "g" });
     const comment = await screen.findByLabelText(/comment/);
     await fireEvent.keyDown(comment, { key: "Escape" });
@@ -292,7 +292,7 @@ describe("HumanDetail", () => {
     const calls = backend("review", undefined, draftLibrary(greenForm, list, { change: "" }));
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await user.click(screen.getByRole("button", { name: "RED (r)" }));
     const first = await screen.findByLabelText("change 1");
     // The constant is the form's own: nothing to enter, so nothing shown.
@@ -332,7 +332,7 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     const review = new Review("run-a-2", new Jobs());
     renderHosted(HumanDetail, { review, onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     const groups = screen.getAllByRole("group", { name: /^Tools of / });
     expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Tools of release", "Tools of brand"]);
     await user.click(screen.getByRole("button", { name: "preview" }));
@@ -343,13 +343,15 @@ describe("HumanDetail", () => {
         lines: [{ text: "clicked (412, 1)", error: false }, { text: "clicked (412, 2)", error: true }] },
       { run: "2", at: 0, operation: "notes", artifact: "release", lines: [], end: { text: "■ exit 0", error: false } },
     ]);
-    const log = await screen.findByRole("log", { name: "Tool log" });
-    const fold = screen.getByRole("button", { name: "Tool log" });
-    await waitFor(() => expect(log.textContent).toContain("■ exit 0 · 0 lines"));
-    expect(log.textContent).not.toContain("clicked");
+    // Folded, the Tool log is one line: the last run's start and end.
+    const fold = await screen.findByRole("button", { name: "Tool log" });
+    await waitFor(() => expect(fold.textContent).toContain("■ exit 0 · 0 lines"));
+    expect(fold.textContent).toMatch(/▶ \d\d:\d\d:\d\d · notes/);
+    expect(screen.queryByRole("log", { name: "Tool log" })).toBeNull();
     fold.focus();
     await user.keyboard("{Enter}");
     expect(fold.getAttribute("aria-expanded")).toBe("true");
+    const log = screen.getByRole("log", { name: "Tool log" });
     await waitFor(() => expect(log.textContent).toContain("clicked (412, 2)"));
     const rows = [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
     expect(rows).toEqual(["▶ HH:MM:SS · preview · brand", "clicked (412, 1)", "clicked (412, 2)", "▶ HH:MM:SS · notes · release", "■ exit 0"]);
@@ -361,24 +363,27 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     const review = new Review("run-a-2", new Jobs());
     renderHosted(HumanDetail, { review, onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     expect(screen.queryByRole("log", { name: "Tool log" })).toBeNull();
     const run = { run: "1", at: 0, operation: "scan", artifact: "release", lines: [
       { text: "early", error: false }, { text: "warning: missing title", error: true }, { text: "still checking", error: false },
     ] };
     review.logged([{ ...run, end: null }]);
+    // Folded to one line: its start, its last stderr line, its newest line while it runs.
     const header = await screen.findByRole("button", { name: "Tool log" });
-    const log = screen.getByRole("log", { name: "Tool log" });
-    const rows = () => [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
-    await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "warning: missing title", "still checking"]));
+    const parts = () => [...header.querySelectorAll("span")].map((part) => part.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS")).filter((text) => text);
+    await waitFor(() => expect(parts()).toEqual(["▶ HH:MM:SS · scan", "warning: missing title", "still checking"]));
     review.logged([{ ...run, end: { text: "■ exit 1", error: true } }]);
-    await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "warning: missing title", "■ exit 1 · 3 lines"]));
+    await waitFor(() => expect(parts()).toEqual(["▶ HH:MM:SS · scan", "warning: missing title", "■ exit 1 · 3 lines"]));
+    expect(header.querySelector(".end")?.classList.contains("failed")).toBe(true);
     expect(header.getAttribute("aria-expanded")).toBe("false");
-    expect([...log.querySelectorAll(".red")].map((mark) => mark.textContent)).toEqual(["warning:", "■"]);
+    // A click unfolds every line in the log box, another folds it to its line again.
     await user.click(header);
-    expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "early", "warning: missing title", "still checking", "■ exit 1"]);
+    const log = screen.getByRole("log", { name: "Tool log" });
+    const rows = [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
+    expect(rows).toEqual(["▶ HH:MM:SS · scan · release", "early", "warning: missing title", "still checking", "■ exit 1"]);
     await user.click(header);
-    expect(rows()).toHaveLength(3);
+    expect(screen.queryByRole("log", { name: "Tool log" })).toBeNull();
   });
 
   it("shows Points below the log, inserts at the text caret and removes by point identity", async () => {
@@ -396,20 +401,20 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     const review = new Review("run-a-2", new Jobs());
     renderHosted(HumanDetail, { review, onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
-    expect(screen.queryByRole("region", { name: "Points" })).toBeNull();
+    await screen.findByText("Yours");
+    expect(screen.queryByRole("list", { name: "Points" })).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
     kept.draft.points = [old, fresh];
     await review.readDraft();
     review.logged([{ run: "1", at: 0, operation: "scan", artifact: "release", lines: [], end: { text: "■ exit 0", error: false } }]);
-    const points = await screen.findByRole("region", { name: "Points" });
+    const points = await screen.findByRole("list", { name: "Points" });
     const [first, second] = within(points).getAllByRole("listitem");
     expect(first.textContent).toContain(old.text);
     expect(second.textContent).toContain(fresh.text);
     expect(second.textContent).toContain(`${fresh.source} · ${new Date(fresh.at).toTimeString().slice(0, 5)}`);
     expect(second.classList.contains("newest")).toBe(true);
     const regions = [...screen.getByLabelText("Human review").querySelectorAll("section[aria-label]")];
-    expect(regions.map((region) => region.getAttribute("aria-label"))).toEqual(["Tools", "Tool log", "Points", "Result", "Debug"]);
+    expect(regions.map((region) => region.getAttribute("aria-label"))).toEqual(["Evidence", "Verdict", "Debug"]);
     const insert = within(second).getByRole<HTMLButtonElement>("button", { name: "Insert" });
     expect(insert.disabled).toBe(true);
     await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
@@ -434,7 +439,7 @@ describe("HumanDetail", () => {
       { cmd: "human_draft_remove_point", args: { id: "run-a-2", point: fresh } },
     ]);
     await user.click(within(first).getByRole("button", { name: `Remove point: ${old.text}` }));
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Points" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("list", { name: "Points" })).toBeNull());
   });
 
   it("follows the saved verdict when another window changes it while the form is open", async () => {
@@ -546,7 +551,7 @@ describe("HumanDetail", () => {
     }, draftLibrary(greenForm, findings, { findings: empty }));
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await user.click(screen.getByRole("button", { name: "RED (r)" }));
     const first = await screen.findByRole("group", { name: "findings 1" });
     // The group's constant is filled in, not shown.
@@ -574,7 +579,7 @@ describe("HumanDetail", () => {
     backend("review", undefined, draftLibrary(optional));
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
+    await screen.findByText("Yours");
     await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
     const comment = await screen.findByLabelText(/comment/);
     expect(comment.getAttribute("placeholder")).toBe("Optional");
@@ -594,5 +599,5 @@ describe("Tools focused", () => {
 
 /** Wait for the submitted review's completed result in place of its form. */
 async function completedResult(): Promise<void> {
-  await waitFor(() => expect(screen.getByRole("region", { name: "Result" }).querySelector(".completed")).not.toBeNull());
+  await waitFor(() => expect(screen.getByRole("region", { name: "Verdict" }).querySelector(".completed")).not.toBeNull());
 }
