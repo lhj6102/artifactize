@@ -45,7 +45,7 @@
   import WholeNode from "./WholeNode.svelte";
   import { boxes, copies, copyEdges, drawings, partsCount, type Copy } from "./parts";
   import { BLOCKING, NODE, WORDS, ZOOM_STEP, currentWords, tallyWords, type Point } from "./graph";
-  import { area, centred, whole, type Area, type Fit } from "./camera";
+  import { area, centred, revealed, whole, zoomedAround, type Area, type Fit, type Insets } from "./camera";
   import { Picture, commentRect, hit, legible, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
@@ -68,6 +68,7 @@
     onopen,
     onclose,
     onminimize,
+    bottom = 0,
   }: {
     /** The Run or Current the graph is of: its find field searches it. */
     source: Source;
@@ -94,6 +95,8 @@
     onclose: () => void;
     /** Minimize the whole `id`, or expand it; done once the graph is laid out again for it. */
     onminimize: (id: string, minimized: boolean) => Promise<void>;
+    /** The band a floating chat covers at the canvas's bottom, in pixels (D-CUR-10). */
+    bottom?: number;
   } = $props();
   const v = new GraphViewState();
   setGraphViewState(v);
@@ -121,6 +124,10 @@
   const GRID_SHOWN = 8;
   /** Fit View, the first fit included, fits the whole canvas. */
   const fitViewOptions = { minZoom: FIT.minZoom, maxZoom: FIT.maxZoom, padding: FIT.padding };
+  /** The status line's room at the canvas's top, kept free of the graph (D-MAIN-2). */
+  const STATUS_ROOM = 32;
+  /** The protected view: the canvas less the status line's room and the floating chat's band. */
+  const insets: Insets = $derived({ top: STATUS_ROOM, bottom });
 
   /** Every drawing of an Artifact, each whole before its parts. */
   const drawn = $derived(copies(graph, minimized));
@@ -293,7 +300,7 @@
   function fitAll() {
     const now = v.canvas ? area(v.canvas.clientWidth, v.canvas.clientHeight) : null;
     if (now) v.area = now;
-    if (v.area) void flow.setViewport(whole(bounds, v.area, FIT), { duration: 0 });
+    if (v.area) void flow.setViewport(whole(bounds, v.area, FIT, insets), { duration: 0 });
   }
 
   /** Each Artifact's light by its tree id, for the Navigator. */
@@ -319,9 +326,12 @@
   };
   const gridSize = $derived(v.cell * camera.current.zoom);
 
-  /** Zoom in or out by one step, as the tool strip's buttons do. */
+  /** Zoom in or out by one step around the protected view's centre, as the zoom tools do. */
   function zoomBy(factor: number) {
-    void flow.setZoom(Math.min(Math.max(flow.getZoom() * factor, MIN_ZOOM), MAX_ZOOM));
+    const now = flow.getViewport();
+    const zoom = Math.min(Math.max(now.zoom * factor, MIN_ZOOM), MAX_ZOOM);
+    if (!v.area || zoom === now.zoom) return;
+    void flow.setViewport(zoomedAround(now, zoom, v.area, insets), { duration: 0 });
   }
 
   /** The Navigator asked for `point` in the middle of the view, the zoom kept. */
@@ -404,7 +414,7 @@
     if (at && canvas) {
       const point = { x: at.x + at.width / 2, y: at.y + at.height / 2 };
       const cover = m.panes.detail?.getBoundingClientRect() ?? null;
-      void flow.setViewport(centred(point, canvas.getBoundingClientRect(), cover, flow.getViewport().zoom, READABLE, MAX_ZOOM), { duration: 0 });
+      void flow.setViewport(centred(point, canvas.getBoundingClientRect(), cover, flow.getViewport().zoom, READABLE, MAX_ZOOM, insets), { duration: 0 });
     }
     m.panes.detail?.focus();
   }
@@ -464,6 +474,26 @@
   function focusIn(event: FocusEvent) {
     const held = event.target instanceof Element ? event.target.closest<HTMLElement>(".svelte-flow__node") : null;
     v.focused = held?.dataset.id ?? null;
+    if (held && event.target === held && keyboard(held)) reveal(held.dataset.id);
+  }
+
+  /** Focus came by the keyboard, not by a press of the pointer. */
+  function keyboard(element: HTMLElement): boolean {
+    try {
+      return element.matches(":focus-visible");
+    } catch {
+      return false;
+    }
+  }
+
+  /** Bring the copy `key`, reached by the keyboard, into the protected view left of the Detail,
+   * moving the camera as little as needed (D-CUR-10). */
+  function reveal(key: string | undefined) {
+    const [at, canvas] = [key === undefined ? undefined : rects.get(key), v.canvas];
+    if (!at || !canvas) return;
+    const now = flow.getViewport();
+    const next = revealed(at, now, canvas.getBoundingClientRect(), m.panes.detail?.getBoundingClientRect() ?? null, insets);
+    if (next !== now) void flow.setViewport(next, { duration: 0 });
   }
 
 
@@ -786,6 +816,7 @@
     class:far={gridSize < GRID_SHOWN}
     class:empty-run={graph.nodes.length === 0 && !editable}
     data-graph-area
+    style:--float-inset={bottom > 0 ? `${bottom}px` : null}
     style:background-size="{gridSize}px {gridSize}px"
     style:background-position="{camera.current.x}px {camera.current.y}px"
     {@attach measure}

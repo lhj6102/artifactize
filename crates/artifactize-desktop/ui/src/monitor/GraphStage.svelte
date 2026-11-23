@@ -27,8 +27,8 @@
     window.addEventListener("mouseup", drop);
   }
 
-  /** Dock at the canvas's top, under its tool strip. The stage's bottom is the canvas's bottom,
-   * including in Chat, whose composer is outside the stage. */
+  /** Dock at the canvas's top: the stage header's bottom, the graph's tools being in that header
+   * (J-DETAIL). The stage's bottom is the canvas's bottom; Chat's composer floats over it. */
   const graphTop: Attachment<HTMLElement> = (stage) => {
     let watched: Element | null = null;
     const read = () => {
@@ -96,8 +96,8 @@
    * with the graph visible on its left. It sets its own width, by default or by a drag, within
    * the graph's area (as detail-width.ts fits a drag); its content never sizes it, and wraps or
    * scrolls in its own boxes. */
-  /* From the graph's top (--graph-top, below the Main area's header and the view's own header
-   * above its graph) to the area's bottom; under the header row alone until a graph is drawn. */
+  /* From the graph's top (--graph-top, the stage header's bottom) to the area's bottom; under
+   * the header row alone until a graph is drawn. No accent line marks focus in it (D-MAIN-1). */
   .dock {
     position: absolute;
     z-index: 20;
@@ -109,15 +109,6 @@
     overflow: hidden;
     border-top: 1px solid var(--line-group);
     border-left: 1px solid var(--line-panel);
-  }
-  .dock:focus-within::after {
-    content: "";
-    position: absolute;
-    z-index: 2;
-    inset: 0 0 auto;
-    height: 2px;
-    background: var(--accent);
-    pointer-events: none;
   }
   .edge {
     position: absolute;

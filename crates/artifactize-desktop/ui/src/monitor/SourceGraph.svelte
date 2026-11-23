@@ -29,6 +29,7 @@
     active,
     onopen,
     onclose,
+    bottom = 0,
   }: {
     source: Source;
     workspace?: GraphWorkspace;
@@ -43,6 +44,8 @@
     onopen: (id: string, tab?: string | null) => void;
     /** Close the open Detail. */
     onclose: () => void;
+    /** The band a floating chat covers at the canvas's bottom, kept free by the camera. */
+    bottom?: number;
   } = $props();
   const commands = useIpc();
   const app = getAppState();
@@ -155,6 +158,7 @@
         {onopen}
         {onclose}
         onminimize={minimize}
+        {bottom}
       />
     </SvelteFlowProvider>
   {/key}
