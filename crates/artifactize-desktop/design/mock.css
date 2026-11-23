@@ -2602,8 +2602,12 @@
 .m-pet > .m-why {
   margin: 6px 0 0;
 }
-.m-pet .m-composer-row {
+.m-pet .m-decision {
+  min-height: 36px;
   margin-top: 6px;
+}
+.m-pet .m-decide {
+  flex: 1;
 }
 /* A review's Points: what Point added, one row each: the point icon, its text in mono, where it
    was pointed and when, and Insert at the right. In the pet overlay, compact: text and Insert. */
@@ -3186,6 +3190,63 @@
   white-space: nowrap;
   color: var(--red);
   font-size: var(--text-small);
+}
+/* The reasons box: Chat's composer field holding only the reasons field and Add reason at its
+   right. Under it, apart, the decision bar: the claim at the left, the verdict and Submit at
+   the right, on its own surface. */
+.m-composer-box.m-reasonbox {
+  flex-direction: row;
+  align-items: flex-end;
+}
+.m-reasonbox > .m-composer-text {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+}
+.m-reasonbox > .m-button {
+  flex: none;
+}
+/* Too narrow for both groups, the decide group drops under the claim, still at the right. */
+.m-decision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--gap);
+  min-height: 40px;
+  margin-top: 8px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  background: var(--surface-panel);
+}
+.m-claim,
+.m-decide {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  min-width: 0;
+}
+.m-decide {
+  margin-left: auto;
+}
+.m-claim > .m-rstate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-decide > .m-why {
+  white-space: nowrap;
+}
+.m-decide > .m-busy {
+  flex: none;
+}
+.m-vtabs.disabled > span {
+  color: var(--ink-3);
+}
+.m-vtabs.disabled > span::before {
+  opacity: 0.5;
 }
 /* In the composer's place, a review that cannot be written here says why in one quiet line. */
 .m-composer-note {
