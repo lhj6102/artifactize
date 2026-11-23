@@ -33,7 +33,7 @@ export const scenarios: Scenario[] = [
       await w.mode("Review");
       await app.review.until((shown) => shown.verdict === "GREEN" && shown.reasons.join() === "Checking the notes.", "Review shows the pet's verdict and reason, one draft");
       const beforePoint = "Checking the notes before pointing.";
-      await app.review.enter("reason", beforePoint);
+      await app.review.enter("reasons", beforePoint);
       const label = await w.runTool("view");
       assert.equal(await w.viewer(label), `${NOTES} — File Explorer`, "titled {Artifact} — {viewer}");
       const strip = await w.stripUntil((shown) => shown.point, "Point offered for the claimed review");
@@ -49,7 +49,7 @@ export const scenarios: Scenario[] = [
       await w.point();
       await w.clickLine(2);
       const points = await w.pointsUntil((rows) => rows.length === 1 && /^release\.md L2:C\d+$/.test(rows[0]), "the line is in Points");
-      assert.equal(await app.review.value("reason"), beforePoint, "Point adds to Points without writing into the reasons field");
+      assert.equal(await app.review.value("reasons"), beforePoint, "Point adds to Points without writing into the reasons field");
       assert.deepEqual((await app.review.read())!.reasons, ["Checking the notes."], "Point writes no reason");
       await w.viewer(label);
       await w.point();

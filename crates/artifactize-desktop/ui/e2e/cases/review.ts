@@ -112,9 +112,9 @@ export const scenarios: Scenario[] = [
       assert.ok(fields.filter((field) => ["score", "note", "channel"].includes(field.label)).every((field) => field.hint.includes("Optional")),
         `an empty optional field says Optional: ${JSON.stringify(fields)}`);
       // Korean composed by an input method, then letters that are shortcuts outside a field.
-      await review.compose("reason", "확이", "확인");
-      await review.typeInto("reason", " gu");
-      assert.equal(await review.value("reason"), "확인 gu", "typed letters are text, not shortcuts");
+      await review.compose("reasons", "확이", "확인");
+      await review.typeInto("reasons", " gu");
+      assert.equal(await review.value("reasons"), "확인 gu", "typed letters are text, not shortcuts");
       assert.equal(request(fixture).claim?.reviewer, "alice", "u in a field released nothing");
       await review.until((shown) => shown.why === "Add the typed reason first" && !shown.submittable, "Submit waits for the typed reason");
       await review.addTyped();

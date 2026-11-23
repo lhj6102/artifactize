@@ -63,9 +63,9 @@ export class Windows {
     await option.waitForExist({ timeout: 15000, timeoutMsg: `timed out: Review lists ${evalId}` });
     await option.click();
     await holds(this.browser, () => this.browser.execute((expected) => document.querySelector('[aria-label="Human reviews"] [role="option"][aria-selected="true"]')?.textContent?.includes(expected) === true
-      && !!document.querySelector(`[aria-label="Review's main area"] [aria-label="Human review"] .instruction`), evalId), `the review of ${evalId} opened`);
+      && !!document.querySelector(`[aria-label="Review's main area"] [aria-label="Human review"] [aria-label="Instruction"]`), evalId), `the review of ${evalId} opened`);
     await this.browser.$(REVIEW).$("button=Claim to review").click();
-    await holds(this.browser, async () => (await this.browser.$(`${REVIEW} .rstate`).getText()) === "Yours", `the review of ${evalId} claimed`);
+    await holds(this.browser, async () => (await this.browser.$(`${REVIEW} [aria-label="Decision"] .stage`).getText()) === "Yours", `the review of ${evalId} claimed`);
   }
 
   /** Click the shown review's tool `name`: a viewer tool's window opens; its label. */

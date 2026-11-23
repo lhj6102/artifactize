@@ -284,10 +284,10 @@ export class Review {
     await this.until((shown) => shown.verdict === verdict, `${verdict} chosen`);
   }
 
-  /** A field by `id`: `reason` is the reasons field, any other a verdict's own field
+  /** A field by `id`: `reasons` is the reasons field, any other a verdict's own field
    * (`score`, `findings-0-problem`). */
   private field(id: string): string {
-    return id === "reason" ? `${this.root} [data-reasons]` : `${this.root} #field-${id}`;
+    return id === "reasons" ? `${this.root} [data-reasons]` : `${this.root} #field-${id}`;
   }
 
   /** The value of the field `id`. */
