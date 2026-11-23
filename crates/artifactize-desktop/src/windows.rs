@@ -3,7 +3,7 @@
 //! sandboxed frame with a policy of its own. Closing the main window closes the others.
 use std::sync::{
     Mutex, OnceLock,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use tauri::{
@@ -50,6 +50,7 @@ pub(crate) struct Windows {
     closing: AtomicBool,
     viewing: Mutex<()>,
     pet_visibility: Mutex<()>,
+    pet_revision: AtomicU64,
 }
 
 impl Windows {
@@ -304,6 +305,9 @@ pub async fn pet_show(
     app: tauri::State<'_, App>,
     request: Option<RequestKey>,
 ) -> Result<(), Failure> {
+    // Reserve order before the owner lookup: returning to the review space hides the pet
+    // even if an earlier request to show it is still checking the same claim.
+    let revision = app.windows.pet_revision.fetch_add(1, Ordering::AcqRel) + 1;
     let request = request.map(RequestKey::into_inner);
     if let Some(id) = &request
         && !crate::viewer::pet_is_claimed(&app, id).await
@@ -315,6 +319,9 @@ pub async fn pet_show(
         .pet_visibility
         .lock()
         .expect("pet visibility lock");
+    if app.windows.pet_revision.load(Ordering::Acquire) != revision {
+        return Ok(());
+    }
     if let Some(id) = &request
         && !crate::viewer::pet_is_current(&app, id)
     {

@@ -104,9 +104,10 @@ fn companion_port() -> Result<Option<u16>, String> {
     let Some(executable) = var("ARTIFACTIZE_E2E_COMPANION_EXE") else {
         return Ok(None);
     };
-    let actual = std::env::current_exe().and_then(std::fs::canonicalize);
-    let expected = std::fs::canonicalize(executable);
-    if actual.map_err(|error| error.to_string())? != expected.map_err(|error| error.to_string())? {
+    let actual =
+        artifactize_core::platform::current_executable().map_err(|error| error.to_string())?;
+    let expected = std::path::PathBuf::from(executable);
+    if !artifactize_core::platform::paths_equal(&actual, &expected) {
         return Ok(None);
     }
     let port = var("ARTIFACTIZE_E2E_COMPANION_PORT")

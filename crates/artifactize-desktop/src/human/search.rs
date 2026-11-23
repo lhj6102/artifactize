@@ -75,6 +75,15 @@ pub async fn human_search(
 }
 
 async fn search_page(app: &App, parsed: &search::Query, start: u32) -> Result<ReviewPage, Failure> {
+    // Observe saved workspaces even if the current filter or a missing directory
+    // hides every review from them. Restoring a directory need not update SQLite.
+    if start == 0
+        && let Ok(catalog) = artifactize_core::store::read_catalog(&app.launch.state).await
+    {
+        app.human
+            .searches
+            .watch_workspaces(catalog.into_iter().map(|run| run.repo_path));
+    }
     let found = search::search(
         &app.launch.state,
         parsed,

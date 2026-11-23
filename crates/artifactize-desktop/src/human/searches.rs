@@ -29,6 +29,15 @@ impl Searches {
         }
     }
 
+    pub(super) fn watch_workspaces(&self, workspaces: impl IntoIterator<Item = PathBuf>) {
+        let mut listed = self.listed.lock().expect("Review repository list lock");
+        for workspace in workspaces {
+            listed
+                .entry(workspace)
+                .or_insert_with_key(|path| artifactize_core::platform::is_directory(path));
+        }
+    }
+
     /// A directory can be removed without any matching Verify or SQLite change.
     pub(crate) fn rescan(&self) -> bool {
         let mut listed = self.listed.lock().expect("Review repository list lock");
