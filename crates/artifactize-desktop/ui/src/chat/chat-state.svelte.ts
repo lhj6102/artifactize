@@ -81,8 +81,12 @@ export class ChatModeState {
   /** Find in the conversation (J-CHAT-FIND): what is typed and which place is shown; null while
    * the field is closed. */
   find = $state<{ text: string; at: number } | null>(null);
+  /** How many places in the shown conversation hold the find field's text, as drawn. */
+  found = $state(0);
+  /** How far the floating chat reaches over the graph, its 12px gap included (D-CUR-10). */
+  band = $state(0);
   /** The parts focus moves into. */
-  readonly panes: { pane?: HTMLElement; search?: HTMLInputElement; main?: HTMLElement; composer?: HTMLTextAreaElement } = $state({});
+  readonly panes: { pane?: HTMLElement; search?: HTMLInputElement; searchTool?: HTMLButtonElement; main?: HTMLElement; composer?: HTMLTextAreaElement } = $state({});
 
   /** Counts reads of the shown session: only the newest answer is shown. */
   #reads = 0;

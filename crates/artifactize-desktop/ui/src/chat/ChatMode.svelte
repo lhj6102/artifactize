@@ -69,14 +69,8 @@
     const turn = card ? turns[card.at] : undefined;
     return card && turn ? { at: card.at, folded: card.folded, turn } : null;
   });
-  /** How far the floating chat reaches over the graph, its 12px gap included (D-CUR-10). */
-  let band = $state(0);
-  /** How many places in the conversation hold the find field's text. */
-  let found = $state(0);
-  /** Which of them is shown. */
-  const shownPlace = $derived(found === 0 || !c.find ? 0 : ((c.find.at % found) + found) % found);
-  /** The Pane's Search tool, focused again when its field closes. */
-  let searchTool = $state<HTMLButtonElement>();
+  /** Which place of the conversation's matches the find field shows. */
+  const shownPlace = $derived(c.found === 0 || !c.find ? 0 : ((c.find.at % c.found) + c.found) % c.found);
 
   /** How long ago `at` (an RFC 3339 time) was, as the Pane says it. */
   function age(at: string, now: number): string {
@@ -169,13 +163,13 @@
   /** The floating chat's height, followed as the card folds, unfolds or grows and the composer
    * grows: the graph's camera keeps its Artifacts out of that band. */
   const banding: Attachment<HTMLElement> = (float) => {
-    const measure = () => (band = Math.ceil(float.getBoundingClientRect().height) + FLOAT_GAP);
+    const measure = () => (c.band = Math.ceil(float.getBoundingClientRect().height) + FLOAT_GAP);
     const sized = new ResizeObserver(measure);
     sized.observe(float);
     measure();
     return () => {
       sized.disconnect();
-      band = 0;
+      c.band = 0;
     };
   };
 
@@ -212,12 +206,12 @@
     const highlights = typeof CSS !== "undefined" && "highlights" in CSS ? CSS.highlights : null;
     const text = find && find.text.trim() !== "" ? find.text.toLowerCase() : "";
     if (!find || text === "") {
-      found = 0;
+      c.found = 0;
       lastShown = "";
       return;
     }
     const ranges = places(log, text);
-    found = ranges.length;
+    c.found = ranges.length;
     if (ranges.length === 0) return;
     const at = ((find.at % ranges.length) + ranges.length) % ranges.length;
     if (highlights) {
@@ -255,7 +249,7 @@
     c.search("");
     c.searching = false;
     await tick();
-    searchTool?.focus();
+    c.panes.searchTool?.focus();
   }
 
   const follow: Attachment<HTMLElement> = (log) => {
@@ -446,7 +440,7 @@
               </label>
             {:else}
               <button class="row-button new" onclick={() => app.newChat()}><span class="lead"><Icon name="new-chat" /></span>New chat</button>
-              <button class="row-button tool" aria-label="Search chats" title="Search chats" bind:this={searchTool} onclick={() => (c.searching = true)}><Icon name="find" /></button>
+              <button class="row-button tool" aria-label="Search chats" title="Search chats" bind:this={c.panes.searchTool} onclick={() => (c.searching = true)}><Icon name="find" /></button>
             {/if}
           </div>
           <div class="sessions">
@@ -502,7 +496,7 @@
                   onblur={(event) => { if (event.currentTarget.value === "") c.find = null; }}
                   onkeydown={findKey}
                 />
-                {#if find.text.trim() !== ""}<span class="count" role="status">{found === 0 ? "No match" : `${shownPlace + 1} of ${found}`}</span>{/if}
+                {#if find.text.trim() !== ""}<span class="count" role="status">{c.found === 0 ? "No match" : `${shownPlace + 1} of ${c.found}`}</span>{/if}
               </label>
             {:else}
               <button class="tool" aria-label="Find (Ctrl+F)" title="Find" aria-keyshortcuts="Control+F" onclick={() => (c.find = { text: "", at: 0 })}><Icon name="find" /></button>
@@ -523,7 +517,7 @@
           {:else if c.graph}
             {@const shownSession = session}
             {#key session.id}
-              <CurrentView branch={session.branchKey} worktree={session.worktree} workspace={c.graph} bottom={band}>
+              <CurrentView branch={session.branchKey} worktree={session.worktree} workspace={c.graph} bottom={c.band}>
                 {#snippet floating()}{@render floatingChat(shownSession)}{/snippet}
               </CurrentView>
             {/key}
