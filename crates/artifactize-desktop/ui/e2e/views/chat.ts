@@ -229,7 +229,9 @@ export class Chat {
 
   async send(text: string, conversation = true): Promise<void> {
     await fill(this.browser, `${MAIN} textarea[aria-label="Message"]`, text);
-    await this.browser.$(`${MAIN} button[aria-label="Send (Enter)"]`).click();
+    const send = this.browser.$(`${MAIN} button[aria-label="Send (Enter)"]`);
+    await send.waitForEnabled({ timeoutMsg: "Send is enabled for the typed message" });
+    await send.click();
     if (conversation) await this.says(text);
   }
 

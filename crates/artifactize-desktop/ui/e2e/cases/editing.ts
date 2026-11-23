@@ -188,6 +188,7 @@ export const scenarios: Scenario[] = [
       await app.chat.createFromDialog("repo / master");
       await app.chat.show("Graph");
       await app.graph.node("a:core");
+      await app.graph.camera();
       assert.equal(await app.graph.hasTool("Reset layout"), false, "laid out automatically");
       // Where core is beside docs, at the zoom shown: whatever the camera does.
       const offset = async () => {
@@ -203,6 +204,7 @@ export const scenarios: Scenario[] = [
         const after = await app.graph.box("a:core");
         return !!after && Math.abs(after.y - before.y - 60) <= 12 && Math.abs(after.x - before.x) <= 12;
       }, "core drawn where it was released");
+      await app.graph.camera();
       // For the app started again: where core was laid out automatically, and where it is now.
       const placedAt = await offset();
       // The next graph launch must switch this saved session back from Conversation.
@@ -215,12 +217,15 @@ export const scenarios: Scenario[] = [
       const { automatic, placed: placedAt } = carried as Record<"automatic" | "placed", { x: number; y: number }>;
       await app.chat.viewShown("Graph");
       await app.graph.node("a:core");
+      await app.graph.camera();
       const offset = async () => {
         const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
         return { x: (core.x - docs.x) / (zoom / 100), y: (core.y - docs.y) / (zoom / 100) };
       };
-      const restarted = await offset();
-      assert.ok(Math.abs(restarted.x - placedAt.x) <= 8 && Math.abs(restarted.y - placedAt.y) <= 8, `core placed as it was dropped: ${JSON.stringify({ placedAt, restarted })}`);
+      await app.graph.until(async () => {
+        const restarted = await offset();
+        return Math.abs(restarted.x - placedAt.x) <= 8 && Math.abs(restarted.y - placedAt.y) <= 8;
+      }, `core placed as it was dropped (${JSON.stringify(placedAt)})`);
       await app.graph.until(() => app.graph.hasTool("Reset layout"), "Reset layout offered for the top level");
       await app.graph.tool("Reset layout");
       await app.eventually(() => ["app", "bundle", "core", "docs"].every((name) => !placed(definitionText(fixture, name))), "every place left the files");

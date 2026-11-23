@@ -13,7 +13,7 @@ import { Review } from "./review.ts";
 import { Settings } from "./settings.ts";
 import { holds, until } from "./wait.ts";
 
-const PALETTE = '[aria-label="Command palette"][data-state="open"]';
+const PALETTE = '[aria-label="Command palette"]';
 const HELP = '[role="dialog"].help';
 const DIALOG = '[role="dialog"], [role="alertdialog"]';
 
@@ -137,14 +137,16 @@ export class App {
   // -------------------------------------------------------------------------------
   // The command palette
 
-  /** The open palette: its commands in order, each with its key, which is chosen, and whether
-   * its search has the keyboard; null while it is closed. */
-  palette(): Promise<{ focused: boolean; query: string; commands: { label: string; keys: string; chosen: boolean }[] } | null> {
+  /** The open palette: whether it is open (vs still unmounting), its commands in order, each
+   * with its key, which is chosen, and whether its search has the keyboard; null once it has
+   * left the page. */
+  palette(): Promise<{ open: boolean; focused: boolean; query: string; commands: { label: string; keys: string; chosen: boolean }[] } | null> {
     return this.browser.execute((selector) => {
       const dialog = document.querySelector(selector);
       const input = dialog?.querySelector("input");
       if (!dialog || !input) return null;
       return {
+        open: dialog.getAttribute("data-state") === "open",
         focused: document.activeElement === input,
         query: input.value,
         commands: [...dialog.querySelectorAll('[role="option"]')].map((option) => ({
@@ -159,14 +161,14 @@ export class App {
   /** Click Commands: the palette opens with its search holding the keyboard. */
   async openPalette(): Promise<NonNullable<Awaited<ReturnType<App["palette"]>>>> {
     await this.browser.$('footer[aria-label="Bottom bar"] button.brand').click();
-    return (await until(this.browser, () => this.palette(), (shown) => !!shown?.focused && shown.commands.length > 0, "the palette opened"))!;
+    return (await until(this.browser, () => this.palette(), (shown) => !!shown?.open && shown.focused && shown.commands.length > 0, "the palette opened"))!;
   }
 
   /** In the open palette, type `query` and click the command `label`; the palette closes. */
   async runCommand(query: string, label = query): Promise<void> {
     const unfiltered = (await this.palette())?.commands.length ?? 0;
     await typeText(this.browser, query);
-    await until(this.browser, () => this.palette(), (shown) => shown?.query === query && shown.commands.length < unfiltered && shown.commands.some((command) => command.label === label),
+    await until(this.browser, () => this.palette(), (shown) => !!shown?.open && shown.query === query && shown.commands.length < unfiltered && shown.commands.some((command) => command.label === label),
       `the palette narrowed to ${query} and lists ${label}`);
     for (const option of await this.browser.$$(`${PALETTE} [role="option"]`).getElements()) {
       if ((await option.$("span").getText()).trim() !== label) continue;

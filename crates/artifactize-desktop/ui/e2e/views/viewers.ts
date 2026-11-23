@@ -236,7 +236,7 @@ export class Windows {
     if (!(await this.handles()).includes(PET)) return false;
     try {
       await this.browser.switchToWindow(PET);
-      return await this.browser.execute(() => document.visibilityState === "visible");
+      return Boolean(await callWindow(this.browser, "isVisible"));
     } catch (error) {
       if ((await this.handles()).includes(PET)) throw error;
       return false;

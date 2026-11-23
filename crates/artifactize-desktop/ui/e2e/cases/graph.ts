@@ -161,6 +161,9 @@ export const scenarios: Scenario[] = [
     },
     run: async (app) => {
       // suite holds app and site, app holds kit; site is a part of docs too.
+      // Fit may land below the legible zoom on a narrower window; zoom in until nodes draw.
+      await app.graph.until(async () => (await app.graph.nodes()).length > 0 || await app.graph.paints(), "the graph drew");
+      for (let step = 0; step < 6 && (await app.graph.nodes()).length === 0; step += 1) await app.graph.cameraTool("Zoom in");
       await app.graph.node("a:suite");
       const ids = (await app.graph.nodes()).map((node) => node.id).sort();
       for (const id of ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs/a:site", "a:lib", "a:guide"]) assert.ok(ids.includes(id), `${id} drawn: ${ids.join(" ")}`);

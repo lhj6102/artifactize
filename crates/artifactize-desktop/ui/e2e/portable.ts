@@ -300,9 +300,9 @@ export function updateDatabase(path: NativePath, change: (database: DatabaseSync
   } finally { database.close(); }
 }
 
-/** Call the app window's own Tauri API (the frame's close, focus or title), which the page cannot
- * reach; what it answers. */
-export async function callWindow(browser: WebdriverIO.Browser, method: "setFocus" | "close" | "title"): Promise<unknown> {
+/** Call the app window's own Tauri API (the frame's close, focus, title or visibility), which the
+ * page cannot reach; what it answers. */
+export async function callWindow(browser: WebdriverIO.Browser, method: "setFocus" | "close" | "title" | "isVisible"): Promise<unknown> {
   const answer = await browser.executeAsync((name: string, done: (answer: { value?: unknown; error?: string }) => void) => {
     type Api = { __TAURI__: { window: { getCurrentWindow: () => Record<string, () => Promise<unknown>> } } };
     (window as unknown as Api).__TAURI__.window.getCurrentWindow()[name]().then((value) => done({ value }), (error: unknown) => done({ error: String(error) }));
