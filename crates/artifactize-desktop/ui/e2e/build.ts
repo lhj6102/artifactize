@@ -155,8 +155,9 @@ export function snapshotCandidate(parent: NativePath): Promise<Candidate> {
 /** Remove a candidate's folder once nothing runs from it any more. */
 export function cleanup(root: NativePath): void {
   const fixtures = nativePath(root, "fixtures");
-  if (exists(fixtures) && readdirSync(fixtures).length) {
-    throw new Error(`fixtures not released; kept the candidate and its inputs at ${root}`);
+  const remaining = exists(fixtures) ? readdirSync(fixtures) : [];
+  if (remaining.length) {
+    throw new Error(`fixtures not released (${remaining.join(", ")}); kept the candidate and its inputs at ${root}`);
   }
   removeTree(root);
 }

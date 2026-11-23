@@ -1,5 +1,6 @@
 // What one scenario owns: its folder, under which every fixture of it lives, and what closes
 // what it started. Teardown runs once the app has ended (E2E-ISOLATED).
+import { waitForFixtureProcesses } from "../platform.ts";
 import { makeDirectory, nativePath, newDirectory, removeTree, writeText, type NativePath } from "../portable.ts";
 
 export class Owned {
@@ -27,6 +28,9 @@ export class Owned {
         failures.push(error);
         this.cleanups.unshift(cleanup);
       }
+    }
+    if (!failures.length) {
+      try { await waitForFixtureProcesses(this.root); } catch (error) { failures.push(error); }
     }
     if (failures.length) throw new AggregateError(failures, `teardown of ${this.root} failed; inputs kept`);
     removeTree(this.root);

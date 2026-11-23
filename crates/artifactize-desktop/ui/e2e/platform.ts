@@ -321,6 +321,37 @@ export async function waitForProcessExit(pid: number, options: { timeout?: numbe
   }
 }
 
+/** Wait until any Linux child process that inherited this fixture's isolated HOME (such as
+ * WebKitGTK's WebKitNetworkProcess or WebKitWebProcess flushing storage after the app stops)
+ * has exited, so it cannot recreate directories inside `root` after teardown deletes them. */
+export async function waitForFixtureProcesses(root: NativePath, timeout = 10000): Promise<void> {
+  if (!LINUX) return;
+  const marker = Buffer.from(`HOME=${nativePath(root, "home")}\0`);
+  const alive = (): string[] => {
+    const found: string[] = [];
+    for (const entry of readdirSync("/proc")) {
+      if (!/^\d+$/.test(entry)) continue;
+      const pid = Number(entry);
+      if (pid === process.pid || processState(pid) === "exited") continue;
+      try {
+        if (!readFileSync(`/proc/${pid}/environ`).includes(marker)) continue;
+      } catch { continue; }
+      let name = "";
+      try { name = readFileSync(`/proc/${pid}/comm`, "utf8").trim(); } catch { /* exited while reading */ }
+      found.push(name ? `${pid} (${name})` : String(pid));
+    }
+    return found;
+  };
+  const deadline = performance.now() + timeout;
+  for (;;) {
+    const remaining = alive();
+    if (!remaining.length) return;
+    const left = deadline - performance.now();
+    if (left <= 0) throw new Error(`fixture processes still running for ${root}: ${remaining.join(", ")}`);
+    await delay(Math.min(50, left));
+  }
+}
+
 /** The variables that send a build's temporary files into `folder`, as this OS's tools read
  * them. */
 export function tempEnvironment(folder: NativePath): Environment {
