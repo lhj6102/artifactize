@@ -769,15 +769,17 @@
 <svelte:window onkeydown={(event) => void minimizeKey(event)} />
 
 <div class="graph">
-  <!-- What acts on the graph, in one row above the canvas, and nothing else. -->
-  <GraphTools zoom={camera.current.zoom} act={{ find: () => (m.finding = true), zoomBy, fit: fitAll }}>
-    {#if editable}
-      <button class="button small" onclick={newArtifact}><Icon name="add" />New Artifact</button>
-      {#if canResetTop}
-        <button class="button small" onclick={resetTop}><Icon name="reset" />Reset layout</button>
-      {/if}
+  <!-- What acts on the graph: its tools, among the stage header's (D-GRAPH-4). -->
+  {#snippet finder()}
+    <GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />
+  {/snippet}
+  {#snippet edits()}
+    <button class="tool" onclick={newArtifact}><Icon name="add" />New Artifact</button>
+    {#if canResetTop}
+      <button class="tool" onclick={resetTop}><Icon name="reset" />Reset layout</button>
     {/if}
-  </GraphTools>
+  {/snippet}
+  <GraphTools zoom={camera.current.zoom} act={{ find: () => (m.finding = true), zoomBy, fit: fitAll }} finder={m.finding ? finder : undefined} children={editable ? edits : undefined} />
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="canvas"
@@ -841,7 +843,6 @@
       {@const text = annotations.comments.get(byKey.get(v.comment.key)?.node.name ?? "")}
       <p class="lifted" aria-hidden="true" style:left="{v.comment.x}px" style:top="{v.comment.y}px" style:width="{v.comment.shape.width}px" style:padding={v.comment.shape.padding} style:transform="scale({v.comment.shape.zoom})">{text}</p>
     {/if}
-    {#if m.finding}<GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
     {#if !allInView && v.area}
       <Navigator {laid} {lights} viewport={camera.current} width={visible} height={v.area.height} onmove={navigate} />
     {/if}

@@ -172,6 +172,12 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
 }
 
 /** A mode's workspace, shown or hidden. */
+/** The Run the Pane's shown entry names, filled in its timeline: the stage header names nothing (J-STAGE, J-MAIN-RUN). */
+function shownRun(): string | null {
+  const entry = workspace("Verify").querySelector('[aria-label="Pane entries"] button[data-chip][aria-pressed="true"]');
+  return entry?.getAttribute("data-chip") ?? null;
+}
+
 function workspace(mode: string): HTMLElement {
   const found = document.querySelector<HTMLElement>(`main[aria-label="${mode}"]`);
   if (!found) throw new Error(`no ${mode} workspace`);
@@ -242,12 +248,13 @@ it("expands a clicked branch to its timeline and moves through the timelines wit
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   const name = (text: RegExp) => within(entries).getByRole("button", { name: text });
-  const header = () => screen.getByLabelText("Main area").querySelector("h2")?.textContent;
+  const header = shownRun;
   // Collapsed, a branch shows its newest Run's status under its name.
   await waitFor(() => expect(name(/^app \/ feat\/x/).textContent).toMatch(/Running\s*5m/));
   expect(name(/^app \/ main/).textContent).toMatch(/RED\s*5m ago/);
   expect(screen.queryByRole("group", { name: /^Runs of/ })).toBeNull();
-  expect(header()).toBe("Nothing chosen");
+  expect(header()).toBeNull();
+  expect(within(screen.getByLabelText("Main area")).getByText("Choose a branch in the Pane.")).toBeTruthy();
   // A click on a branch expands it and shows its newest entry: the Run in progress.
   await fireEvent.click(name(/^app \/ feat\/x/));
   await waitFor(() => expect(header()).toBe("run-2"));
@@ -268,10 +275,10 @@ it("expands a clicked branch to its timeline and moves through the timelines wit
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await waitFor(() => expect(screen.queryByRole("group", { name: "Runs of app feat/x" })).toBeNull());
-  expect(header()).toBe("run-1");
+  expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-1" } });
   // ↓ to the next branch shows its newest Run; → expands it and → enters the timeline.
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  await waitFor(() => expect(header()).toBe("run-0"));
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-0" } }));
   expect(scanned()).toBe(0);
   await fireEvent.keyDown(entries, { key: "ArrowRight" });
   expect(screen.getByRole("group", { name: "Runs of app main" })).toBeTruthy();
@@ -324,7 +331,7 @@ it("switches modes from the bottom bar, each kept as it was left, and lists and 
   expect(mode(/^Verify/).getAttribute("aria-current")).toBe("page");
   await waitFor(() => expect(mode(/^Review/).getAttribute("aria-label")).toBe("Review, 1 waiting"));
   await fireEvent.click(await within(screen.getByRole("group", { name: "Pane entries" })).findByRole("button", { name: /^app \/ main/ }));
-  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0"));
+  await waitFor(() => expect(shownRun()).toBe("run-0"));
   // Review lists the waiting review; a click opens it in Review's main area.
   await fireEvent.click(mode(/^Review/));
   expect(mode(/^Review/).getAttribute("aria-current")).toBe("page");
@@ -336,7 +343,7 @@ it("switches modes from the bottom bar, each kept as it was left, and lists and 
   // Verify again: its Run is shown as it was left; Ctrl+3 shows the review again.
   await fireEvent.keyDown(window, { key: "2", code: "Digit2", ctrlKey: true });
   expect(workspace("Verify").hidden).toBe(false);
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0");
+  expect(shownRun()).toBe("run-0");
   await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
   expect(workspace("Review").hidden).toBe(false);
   expect(within(review).getByLabelText("Human review")).toBeTruthy();
@@ -363,16 +370,16 @@ it.each(["missing", "rejected"] as const)("shows the chosen Run loading before i
     await screen.findByLabelText("app: reused");
     await fireEvent.click(screen.getByRole("button", { name: /^app \/ feature/ }));
     const main = within(screen.getByLabelText("Main area"));
-    expect(main.getByRole("heading", { name: "run-new" })).toBeTruthy();
+    expect(shownRun()).toBe("run-new");
     expect(main.getByText("Loading the Run…")).toBeTruthy();
     expect((main.getByRole("button", { name: /^Zoom in/ }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByLabelText("app: reused")).toBeNull();
     settle();
     await main.findByText("This Run cannot be read; choose another.");
-    expect(main.getByRole("heading", { name: "run-new" })).toBeTruthy();
+    expect(shownRun()).toBe("run-new");
 });
 
-it("says a Run's verdict and what needs attention in the header row, which opens the Run's Detail", async () => {
+it("names the Run by its Pane entry only, with the graph's tools, Run details and Open in Chat in the stage header", async () => {
   const feature = branch("feat/x", [runChip("run-2", "YELLOW", false, "Fixing the login form")]);
   const run: RunPanel = {
     id: "run-2",
@@ -391,15 +398,26 @@ it("says a Run's verdict and what needs attention in the header row, which opens
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   await fireEvent.click(await within(entries).findByRole("button", { name: /^app \/ feat\/x/ }));
+  await waitFor(() => expect(shownRun()).toBe("run-2"));
   const main = screen.getByLabelText("Main area");
-  const header = main.querySelector("header")!;
-  const headline = await within(header).findByRole("button", { name: /open the Run's Detail/ });
-  // One row: the Run's ID, then its verdict's icon and word, then each eval that needs attention.
-  expect(within(header).getByRole("heading").textContent).toBe("run-2");
-  expect([...headline.children].map((part) => part.textContent?.trim())).toEqual(["YELLOW", "cli/tests", "release/signoff"]);
-  expect([...headline.querySelectorAll("svg")].map((icon) => icon.getAttribute("data-icon"))).toEqual(["yellow", "red", "human"]);
-  // Its comment is the Run's Detail's and the timeline's, not the Main area's.
-  expect(within(main).queryByText("Fixing the login form")).toBeNull();
+  const tools = within(main).getByRole("toolbar", { name: "Tools" });
+  // Controls only: the header names nothing and rates nothing (J-STAGE).
+  expect(main.querySelector("header h2, header [role=heading]")).toBeNull();
+  expect(main.querySelector("header")?.textContent).not.toMatch(/run-2|YELLOW|cli\/tests/);
+  // The graph's tools, then the Run's own: Run details, and Open in Chat last.
+  const names = within(tools).getAllByRole("button").map((tool) => tool.getAttribute("aria-label") ?? tool.textContent?.trim());
+  expect(names.slice(-2)).toEqual(["Run details", "Open in Chat"]);
+  expect(names).toEqual(expect.arrayContaining(["Zoom out", "Zoom in"]));
+  // Run details opens the Run's Detail, shows it on while open, and closes it again.
+  const details = within(tools).getByRole("button", { name: "Run details" }) as HTMLButtonElement;
+  await waitFor(() => expect(details.disabled).toBe(false));
+  expect(details.getAttribute("aria-pressed")).toBe("false");
+  await fireEvent.click(details);
+  await waitFor(() => expect(details.getAttribute("aria-pressed")).toBe("true"));
+  expect(screen.getByRole("complementary", { name: "Detail" })).toBeTruthy();
+  await fireEvent.click(details);
+  await waitFor(() => expect(details.getAttribute("aria-pressed")).toBe("false"));
+  expect(screen.queryByRole("complementary", { name: "Detail" })).toBeNull();
 });
 
 it("stars a branch from its entry, and takes a star away", async () => {
@@ -424,7 +442,7 @@ it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest e
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   await fireEvent.click(await screen.findByRole("button", { name: /^app \/ main/ }));
-  await within(screen.getByLabelText("Main area")).findByRole("heading", { name: "run-1" });
+  await waitFor(() => expect(shownRun()).toBe("run-1"));
   await fireEvent.click(screen.getByRole("button", { name: "Older runs" }));
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ older: main.key }));
   // At the oldest entry, ↓ asks again instead of leaving for the next branch.
@@ -434,7 +452,7 @@ it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest e
   await waitFor(() => expect(screen.getByRole("group", { name: "Runs of app main" }).querySelector(':scope > [role="treeitem"][aria-selected="true"] button[data-chip="run-1"]')).not.toBeNull());
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(navigations().filter((step) => step.older)).toHaveLength(asked + 1));
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-1");
+  expect(shownRun()).toBe("run-1");
 });
 
 it("opens the latest session in Graph from a Run header, and rescans when that branch's Run ends", async () => {
@@ -521,7 +539,7 @@ it("opens a review by reference without changing the filter or adding a banner, 
   expect((screen.getByLabelText("Filter the reviews") as HTMLInputElement).value).toBe("type:human waiting");
   await fireEvent.click(within(area).getByRole("button", { name: "Verify · run-a › release" }));
   expect(workspace("Verify").hidden).toBe(false);
-  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-a"));
+  await waitFor(() => expect(shownRun()).toBe("run-a"));
 });
 
 it("closes a review in Review with the one Close in its header, after leaving the review's form", async () => {
@@ -579,7 +597,7 @@ it("offers the graph's commands in the palette only while Verify is on screen", 
   backend(monitor(), () => browseView(1, { branches: [main] }));
   render(App);
   await fireEvent.click(await within(await screen.findByRole("group", { name: "Pane entries" })).findByRole("button", { name: /^app \/ main/ }));
-  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0"));
+  await waitFor(() => expect(shownRun()).toBe("run-0"));
   const offered = async () => {
     await fireEvent.keyDown(window, { key: "k", code: "KeyK", ctrlKey: true });
     const palette = await screen.findByRole("dialog", { name: "Command palette" });
@@ -603,7 +621,7 @@ it("paints nothing of a mode that is not shown, its graph included, and keeps it
   backend(monitor(), () => browseView(1, { branches: [main] }));
   render(App);
   await fireEvent.click(await within(await screen.findByRole("group", { name: "Pane entries" })).findByRole("button", { name: /^app \/ main/ }));
-  await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0"));
+  await waitFor(() => expect(shownRun()).toBe("run-0"));
   await waitFor(() => expect(document.querySelector('main[aria-label="Verify"] .svelte-flow__node')).not.toBeNull());
   await fireEvent.keyDown(window, { key: "3", code: "Digit3", ctrlKey: true });
   const verify = workspace("Verify");
@@ -614,7 +632,7 @@ it("paints nothing of a mode that is not shown, its graph included, and keeps it
   expect(verify.querySelector(".svelte-flow__node")).not.toBeNull();
   // Its place is kept: the Run is still shown when Verify comes back.
   await fireEvent.keyDown(window, { key: "2", code: "Digit2", ctrlKey: true });
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-0");
+  expect(shownRun()).toBe("run-0");
 });
 
 it("coalesces changes and reads Review again only when shown", async () => {

@@ -12,16 +12,16 @@
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
   import { mainSplitMinimum, PANE_MIN } from "./detail-width";
   import Pane from "./Pane.svelte";
-  import Panel from "../shell/Panel.svelte";
+  import Stage from "../shell/Stage.svelte";
   import RunView from "./RunView.svelte";
   import GraphTools from "./GraphTools.svelte";
-  import RunHeadline from "./RunHeadline.svelte";
   import GraphStage from "./GraphStage.svelte";
   import DetailPane from "./DetailPane.svelte";
   import type { Review } from "../review/review.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
   import Reference from "../shell/Reference.svelte";
+  import Icon from "../shell/Icon.svelte";
 
   const app = getAppState();
   const { browse, monitor: m } = app;
@@ -218,6 +218,15 @@
     if (source && run) m.opened = { source, node: run.node, tab: null };
   }
 
+  /** The Run's Detail is the one open: Run details shows it on. */
+  const runOpen = $derived(run !== null && m.opened !== null && m.opened.node === run.node);
+
+  /** Run details opens the Run's Detail, and closes it again. */
+  function toggleRun() {
+    if (runOpen) closeDetail();
+    else openRun();
+  }
+
   /** Another tab of the open Detail; a Human review's tab notes its request when it arrives. */
   function showTab(tab: string | null) {
     if (m.opened && m.opened.tab !== tab) m.opened = { source: m.opened.source, node: m.opened.node, tab };
@@ -248,7 +257,6 @@
     event.preventDefault();
   }
 
-  const title = $derived(shown.kind === "run" ? shown.run : shown.kind === "branch" ? (branch?.name || branch?.project || "Branch") : "Nothing chosen");
   const notice = $derived((run ? m.graph.error : null) ?? browse.error ?? view?.notice ?? null);
 
   useCommands(() => [
@@ -313,31 +321,26 @@
     {/if}
     <Split id="main" order={2} defaultSize={app.paneShown ? 76 : 100} minSize={mainMin}>
       <GraphStage detail={m.opened && source && keyOf(m.opened.source) === keyOf(source) ? detail : undefined}>
-        <Panel
-          {title}
+        <Stage
           label="Main area"
-          focused={m.focus === "main"}
           {notice}
           bind:noticeOpen={m.noticeOpen}
           bind:element={panes.main}
           onfocus={() => (m.focus = "main")}
           onkeydown={mainKey}
         >
-          {#snippet lead()}
+          {#snippet back()}
             {#if shown.kind === "run" && run?.origin?.kind === "chat"}
               {@const origin = run.origin}
-              <!-- The way back, first: the Chat session that started the Run (J-RUN-ORIGIN). -->
+              <!-- The way back: the Chat session that started the Run (J-RUN-ORIGIN). -->
               <Reference chip onclick={() => app.showChat(origin.sessionId, run.id)}>Chat · {origin.title}</Reference>
             {/if}
           {/snippet}
-          {#snippet headline()}
-            {#if shown.kind === "run" && run}
-              <RunHeadline {run} onrun={openRun} />
-            {/if}
-          {/snippet}
-          {#snippet actions()}
+          {#snippet tools()}
             {#if shown.kind === "run"}
-              <Reference onclick={() => void app.showBranchGraph(run?.chatBranch ?? shown.branch)}>Open in Chat</Reference>
+              <span class="tool-sep"></span>
+              <button class="tool" aria-pressed={runOpen} disabled={!run} onclick={toggleRun}>Run details</button>
+              <button class="tool" onclick={() => void app.showBranchGraph(run?.chatBranch ?? shown.branch)}><Icon name="open" />Open in Chat</button>
             {/if}
           {/snippet}
           {#if shown.kind === "run"}
@@ -356,7 +359,7 @@
           {:else}
             <p class="empty">{app.paneShown ? "Choose a branch in the Pane." : "Show the Pane from the command palette to choose a branch."}</p>
           {/if}
-        </Panel>
+        </Stage>
       </GraphStage>
     </Split>
   </PaneGroup>
