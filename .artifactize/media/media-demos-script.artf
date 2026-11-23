@@ -20,7 +20,8 @@ and show that Run's header and graph (J-BAR, J-BRANCH-RUNS, J-MAIN-RUN, J-GRAPH-
 Between Runs the script changes the files that just failed, standing in for an AI fixing the \
 code; unchanged work is reused; the last Run is SATISFIED. An overlay names the try (try n/4) \
 and the speed (×8).
-B. The graph's growth: open Verify's Current with `graph --repo` (J-LAUNCH, J-BAR, J-MAIN-CURRENT). \
+B. The graph's growth: open the branch's Current in Chat's Graph view with `graph --repo`, creating \
+the session first on a fresh checkout (J-LAUNCH, J-BAR, J-CHAT-NEW, J-CHAT-GRAPH, J-MAIN-CURRENT). \
 For each release on main from 0.7.0 to the current main, show its finished scan and fitted \
 graph with the release in the graph's top-left corner. One step says 0.1.0–0.6.0 had no \
 Artifacts. Leave out examples/, convert 0.7–0.8 declarations to the current format, and use \
