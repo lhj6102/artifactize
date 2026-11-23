@@ -4,7 +4,7 @@ parts = ["release-observer"]
 
 [evals.coherent]
 title = "The release packaging, its smoke checks and its notes agree"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.coherent.payload]

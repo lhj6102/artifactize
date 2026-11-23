@@ -6,7 +6,7 @@ select = ["platform.ts", "portable.ts", "build.ts", "run.ts", "batch-lifecycle.t
 
 [evals.follows-rules]
 title = "The suite's infrastructure runs every scenario isolated and portably and fails explicitly"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-rules.payload]

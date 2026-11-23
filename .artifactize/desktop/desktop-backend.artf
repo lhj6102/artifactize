@@ -3,12 +3,12 @@ type = "files"
 
 [evals.follows-style]
 title = "The desktop backend follows the code checklist"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-style.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.follows-style.payload]
@@ -20,12 +20,12 @@ already does (read it). Tool paths are relative to the Artifact, for example src
 
 [evals.follows-platform]
 title = "The desktop backend follows the platform checklist"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-platform.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.follows-platform.payload]
@@ -35,7 +35,7 @@ Read the checklist {rules-platform}. Then review the Rust code of {desktop-backe
 
 [evals.implements-journeys]
 title = "The desktop backend supports the app's declared journeys"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.implements-journeys.payload]

@@ -6,7 +6,7 @@ select = ["views", "cases"]
 
 [evals.follows-rules]
 title = "The views and cases drive the real app and wait for what the window shows"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-rules.payload]

@@ -78,14 +78,14 @@ payload.instruction = "Run eslint over the TypeScript automation harness directl
 
 [evals.follows-test-rules]
 title = "The desktop automation harness and integration tests follow the test rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read the TEST- rules and M-TAUTOLOGICAL-TESTS of {rules-code-style}. Review the automation harness owned by {desktop} (harness/) and its Rust integration tests (tests/). The tests of {desktop-ui} and {desktop-e2e} have their own reviews: do not duplicate them. Check M-TAUTOLOGICAL-TESTS and every TEST- rule as {rules-code-style} states them. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
 
 [evals.release-excludes-test-build]
 title = "The release app compiles in none of the E2E test build's WebdriverIO plugins"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read E2E-TEST-BUILD-ONLY of the end-to-end rules {desktop-e2e-rules}, which names the WebdriverIO plugins (their Rust \

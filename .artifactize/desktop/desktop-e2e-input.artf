@@ -7,7 +7,7 @@ select = ["e2e_input.rs", "e2e_input"]
 
 [evals.engine-apis]
 title = "The text-input device follows E2E-INPUT"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read E2E-INPUT of the end-to-end rules {desktop-e2e-rules} and the engine contract in the module comment of \

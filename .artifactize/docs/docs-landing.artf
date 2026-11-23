@@ -7,12 +7,12 @@ preview = { description = "Open this tree's landing page in your browser with sh
 
 [evals.follows-rules]
 title = "The landing page follows the introduction rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-rules.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.follows-rules.payload]
@@ -25,7 +25,7 @@ installer implementation scripts are not page content."""
 
 [evals.translates-ko]
 title = "The Korean landing page conveys the same content and links as the English one"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.translates-ko.payload]
@@ -57,7 +57,7 @@ Use the list, glob, grep and read tools of {docs-landing}. Tool paths are Artifa
 
 [evals.follows-write-in-korean]
 title = "The Korean landing page follows the Korean writing rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-write-in-korean.payload]

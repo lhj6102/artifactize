@@ -7,7 +7,7 @@ open = { description = "Open SKILL.md of {artifactName} in the desktop's default
 
 [evals.correct]
 title = "What the skill recommends exists in today's artifactize"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read the skill {agent-hey-arti} using read_agent__hey-arti. Check that every declaration form,
@@ -17,7 +17,7 @@ an omission is not a finding. Each statement that is wrong or outdated is a find
 
 [evals.waiter]
 title = "The skill helps the user like a restaurant's waiter"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read the skill {agent-hey-arti} using read_agent__hey-arti. Judge whether it helps a developer
