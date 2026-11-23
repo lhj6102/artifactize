@@ -10,7 +10,7 @@ import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { it, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { commandStream, forwardReadiness, releaseFixture, superviseSession } from "./harness.mts";
+import { commandStream, forwardReadiness, releaseFixture, releaseOwnedSession, superviseSession } from "./harness.mts";
 import { own } from "../ui/e2e/fixtures/owned.ts";
 import { embeddedPorts, nativePath, newDirectory, removeTree, scratchDirectory } from "../ui/e2e/portable.ts";
 
@@ -292,15 +292,27 @@ it("keeps real fixture and candidate inputs when Run settlement fails", async (t
   scope.defer(() => {
     if (!runEnded) throw unfinished;
   });
-  const commands = commandStream(() => {}, () => releaseFixture(owner, scope, candidate));
+  const directory = newDirectory(scratchDirectory(), "artifactize-harness-control-");
+  test.after(() => removeTree(directory));
+  const control = join(directory, "control.json");
+  const receipt = join(directory, "cleanup-pending.json");
+  writeFileSync(control, "{}");
+  let retries = 0;
+  const commands = commandStream(() => {}, () => releaseOwnedSession(directory, owner, scope, candidate, async () => {
+    retries++;
+    assert.equal(existsSync(control), true);
+  }));
   const ending = commands.end();
-  await assert.rejects(ending, (error: unknown) => error instanceof AggregateError && error.errors.includes(unfinished));
+  await assert.rejects(ending, (error: Error) => error.message.includes(candidate) && error.message.includes(scope.root));
   assert.equal(commands.end(), ending);
   assert.equal(owner.stopped, true);
+  assert.equal(retries, 2);
+  assert.equal(existsSync(control), true);
+  assert.deepEqual(JSON.parse(readFileSync(receipt, "utf8")), { paths: [scope.root, candidate] });
   assert.equal(readFileSync(input, "utf8"), "a Run still reads this");
   runEnded = true;
-  await scope.close();
-  assert.equal(existsSync(scope.root), false);
+  await releaseOwnedSession(directory, owner, scope, candidate);
+  for (const file of [candidate, control, receipt]) assert.equal(existsSync(file), false);
 });
 
 it("keeps ownership through two native stop failures and settles before removing the fixture", async (test) => {

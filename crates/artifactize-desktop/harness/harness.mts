@@ -73,14 +73,47 @@ export async function releaseFixture(
     if (!owner.stopped) await retry();
   }
   // Confirm app exit before ending its Runs, and settle those Runs before deleting inputs.
-  try {
-    await scope?.close();
-    if (candidateRoot) cleanup(candidateRoot);
-  } catch (error) {
-    if (stopFailure) throw new AggregateError([stopFailure.cause, error], "app and fixture cleanup failed");
-    throw error;
+  const failures: unknown[] = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (scope && existsSync(scope.root)) await scope.close();
+      if (candidateRoot && existsSync(candidateRoot)) cleanup(candidateRoot);
+      break;
+    } catch (error) {
+      failures.push(error);
+      if (attempt < 2) await retry();
+      else {
+        const left = [scope?.root, candidateRoot].filter((path) => path !== undefined && existsSync(path));
+        throw new AggregateError(stopFailure ? [stopFailure.cause, ...failures] : failures, `desktop cleanup failed after 3 attempts; inputs kept: ${left.join(", ")}`);
+      }
+    }
   }
   if (stopFailure) throw stopFailure.cause;
+}
+
+/** Retire the control endpoint only when nothing remains to be torn down. */
+export async function releaseOwnedSession(
+  directory: string, owner: AppOwner | undefined, scope: Owned | undefined, candidate: NativePath | undefined,
+  retry?: () => Promise<unknown>,
+): Promise<void> {
+  const control = join(directory, ENDPOINT);
+  const receipt = join(directory, "cleanup-pending.json");
+  const paths = () => [scope?.root, candidate].filter((path) => path !== undefined && existsSync(path));
+  try { await releaseFixture(owner, scope, candidate, retry); }
+  catch (failure) {
+    // Startup can fail before the endpoint exists. Record only the inputs that remain.
+    const left = paths();
+    if (left.length) {
+      try { writeFileSync(receipt, JSON.stringify({ paths: left }), { mode: 0o600 }); }
+      catch (error) { throw new AggregateError([failure, error], `could not record remaining cleanup: ${left.join(", ")}`); }
+    }
+    throw failure;
+  } finally {
+    if ((!owner || owner.stopped) && paths().length === 0) {
+      rmSync(control, { force: true });
+      rmSync(receipt, { force: true });
+    }
+  }
 }
 
 /** The app's launch modes: none, `--repo`, `review` and `graph --repo`. */
@@ -410,11 +443,7 @@ async function serve(): Promise<void> {
   // Startup is an active command too, so an in-flight acquisition is joined first.
   const release = async () => {
     if (server.listening) server.close();
-    try {
-      await releaseFixture(owner, scope, candidate?.root);
-    } finally {
-      rmSync(join(sessionDir, ENDPOINT), { force: true });
-    }
+    await releaseOwnedSession(sessionDir, owner, scope, candidate?.root);
   };
   let edits = 0;
   let graphLaunches = 0;
