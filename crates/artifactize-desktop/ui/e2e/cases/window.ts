@@ -2,7 +2,7 @@
 // ID, a newer release, refreshing and quitting.
 import assert from "node:assert/strict";
 import { standInBrowser, browserHandoffs } from "../fixtures/browser.ts";
-import { addRepository, addWorktree, addWorktrees, createEmpty, createRelease, declareRelease, environment, newFixture, orderRuns, removeWorktree, request, requests, verifyWorktree } from "../fixtures/repo.ts";
+import { REVIEW_FINDING, addRepository, addWorktree, addWorktrees, createEmpty, createRelease, createReviewed, declareRelease, environment, newFixture, orderRuns, removeWorktree, request, verifyWorktree } from "../fixtures/repo.ts";
 import { shortcutLabel } from "../platform.ts";
 import { nativePath, readText, writeText, serveLoopbackHttp } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -112,10 +112,11 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       const first = request(fixture).id;
       await addRepository(fixture, "other");
-      const docs = requests(fixture).find((saved) => saved.evalId === "docs/lint")!.id;
-      return { fixture, args: ["review", first], data: { first, docs } };
+      await createReviewed(own, { ...fixture, repo: nativePath(fixture.root, "completed-record") });
+      const completed = request(fixture, "report/agent").id;
+      return { fixture, args: ["review", first], data: { first, completed } };
     },
-    run: async (app, { data: { first, docs } }) => {
+    run: async (app, { data: { first, completed } }) => {
       await app.review.titleContains("release/signoff");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${first} · DEFERRED · unclaimed`), "the named review, not the newest one");
       await app.review.until((shown) => shown.stage === "CLAIM" && shown.tools.length > 0, "the review is actionable: it can be claimed");
@@ -123,12 +124,14 @@ export const scenarios: Scenario[] = [
       // Another request by its ID opens read-only.
       await app.openPalette();
       await app.runCommand("Open a request by ID");
-      await app.openById(docs);
-      await app.review.titleContains("docs/lint");
-      assert.equal((await app.graph.recordDebug()).Request, docs, "the request of the ID entered, not the other repository's");
+      await app.openById(completed);
+      await app.review.titleContains("report/agent");
+      assert.equal((await app.graph.recordDebug()).Request, completed, "the request of the ID entered, not the other repository's");
       const record = await app.graph.record();
-      assert.match(record.status, /^GREEN/, "its saved result");
-      assert.equal(record.instruction, "Check docs.", "for its instruction");
+      assert.match(record.status, /^GREEN/, "its saved verdict");
+      assert.ok(record.result.includes(REVIEW_FINDING), `the read-only record displays its saved finding: ${record.result}`);
+      assert.equal(record.editable, false, "a completed request does not show an editable review form");
+      assert.equal(record.instruction, "Review the receipt.", "for its instruction");
       // Choosing a branch leaves what the main area showed.
       await app.mode("Verify");
       const branch = await app.pane.selectBranch("repo  master");

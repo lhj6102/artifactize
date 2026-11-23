@@ -398,7 +398,7 @@ export const REVIEW_FINDING = "The receipt reads right; its date could be cleare
 
 /** A repository whose Artifact report has an Agent eval, verified GREEN once through a loopback
  * stand-in of the provider that answers with one P2 finding, below the eval's P1 bar. */
-export async function createReviewed(own: Owned): Promise<Fixture> {
+export async function createReviewed(own: Owned, fixture = newFixture(own)): Promise<Fixture> {
   const answer = JSON.stringify({ findings: [{ priority: "P2", reason: REVIEW_FINDING }] });
   const provider = await serveLoopbackHttp((request, response) => {
     request.resume();
@@ -415,7 +415,6 @@ export async function createReviewed(own: Owned): Promise<Fixture> {
     response.end(`event: ${completed.type}\ndata: ${JSON.stringify(completed)}\n\n`);
   });
   try {
-    const fixture = newFixture(own);
     declareArtifact(fixture.repo, ["report"], "report", `type = "files"
 [evals.agent]
 title = "Review the receipt"

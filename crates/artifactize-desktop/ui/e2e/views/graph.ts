@@ -111,11 +111,15 @@ export class Graph {
   }
 
   /** A request the main area shows read-only: its status line and instruction. */
-  record(): Promise<{ status: string; instruction: string }> {
+  record(): Promise<{ status: string; instruction: string; result: string; editable: boolean }> {
     return this.browser.execute((main) => {
       const root = document.querySelector(`${main} [role="document"]`);
       const words = (selector: string) => (root?.querySelector<HTMLElement>(selector)?.innerText ?? "").replace(/\s+/g, " ").trim();
-      return { status: words(".summary .status"), instruction: words(".instruction") };
+      const region = document.querySelector(main);
+      return {
+        status: words(".summary .status"), instruction: words(".instruction"), result: words('section[aria-label="Result"] .result'),
+        editable: !!region?.querySelector('input:not([readonly]), textarea:not([readonly]), select, [contenteditable="true"], [aria-label="Human review"]'),
+      };
     }, REVIEW_MAIN);
   }
 

@@ -2,12 +2,12 @@
 // models, the Codex and Claude Code sign-ins), the shared review store and the sign-off grace.
 import assert from "node:assert/strict";
 import { renameSync } from "node:fs";
-import { antigravity, AGY_MODELS, SIGN_IN_CODE, SIGN_IN_URL } from "../fixtures/antigravity.ts";
+import { antigravity, AGY_ANSWER, AGY_MODELS, AGY_PARTIAL, AGY_PROMPT, SIGN_IN_CODE, SIGN_IN_URL } from "../fixtures/antigravity.ts";
 import { browserHandoffs, standInBrowser } from "../fixtures/browser.ts";
 import { claudeCode } from "../fixtures/claude.ts";
 import { check } from "../fixtures/declarations.ts";
 import { artifactizeAsync, createEmpty, createProject, createRelease, declareRelease, environment, newFixture, signoffGrace, type Fixture } from "../fixtures/repo.ts";
-import { appendText, nativePath, readText, serveLoopbackHttp, writeText } from "../portable.ts";
+import { appendText, exists, nativePath, readText, readTextIfExists, serveLoopbackHttp, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 const KEY = "sk-environment-0123456789";
@@ -24,6 +24,18 @@ async function providers(fixture: Fixture): Promise<{ keys: { provider: string; 
 /** The app's environment for a Settings scenario: an OpenAI key from the environment only. */
 function settingsEnvironment(fixture: Fixture): NodeJS.ProcessEnv {
   return { ...environment(fixture), OPENAI_API_KEY: KEY, ANTHROPIC_API_KEY: undefined, GEMINI_API_KEY: undefined };
+}
+
+/** The fixture only returns to the test app's loopback callback; never to Codex's fixed port. */
+function fixtureCodexCallback(authorization: URL): URL {
+  const raw = authorization.searchParams.get("redirect_uri");
+  if (raw === null) throw new Error("Codex sign-in did not supply a fixture callback");
+  const url = new URL(raw);
+  if (url.protocol !== "http:" || !(["localhost", "127.0.0.1"].includes(url.hostname)) || !url.port || url.port === "1455"
+    || url.pathname !== "/auth/callback" || url.username || url.password) {
+    throw new Error(`Refusing to visit a Codex callback outside the fixture's ephemeral listener: ${raw}`);
+  }
+  return url;
 }
 
 export const scenarios: Scenario[] = [
@@ -108,11 +120,11 @@ export const scenarios: Scenario[] = [
     id: "settings-codex",
     title: "Codex signs in through the browser, a sign-in in progress can be cancelled, and Finish by hand takes the redirect URL when the browser cannot return; it signs out again",
     journeys: ["J-SET-CODEX"],
-    // The product's sign-in callback is a fixed port: one app at a time.
-    alone: true,
     prepare: async (own) => {
       const fixture = createEmpty(own);
       const returns = nativePath(own.root, "browser-returns");
+      const redirected = nativePath(own.root, "callback-redirected");
+      const refused = nativePath(own.root, "callback-refused");
       writeText(returns, "no");
       const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
       const token = `${part({ alg: "RS256" })}.${part({ exp: 4102444800, "https://api.openai.com/auth": { chatgpt_account_id: "acct-e2e" } })}.signature`;
@@ -123,31 +135,41 @@ export const scenarios: Scenario[] = [
           response.writeHead(200, { "content-type": "application/json" });
           response.end(JSON.stringify({ access_token: token, refresh_token: "refresh-e2e", expires_in: 3600 }));
         } else if (url.pathname === "/oauth/authorize" && readText(returns) === "yes") {
-          // The browser comes back to the app's own callback.
-          const callback = new URL(url.searchParams.get("redirect_uri") ?? "");
-          callback.searchParams.set("code", "e2e-return");
-          callback.searchParams.set("state", url.searchParams.get("state") ?? "");
-          response.writeHead(302, { location: callback.href }).end();
+          try {
+            const callback = fixtureCodexCallback(url);
+            callback.searchParams.set("code", "e2e-return");
+            callback.searchParams.set("state", url.searchParams.get("state") ?? "");
+            writeText(redirected, "redirecting to the fixture listener");
+            response.writeHead(302, { location: callback.href }).end();
+          } catch (error) {
+            writeText(refused, String(error));
+            response.writeHead(400).end("No isolated callback listener; no redirect sent.");
+          }
         } else response.writeHead(200).end("sign in");
       });
       own.defer(() => auth.close());
       const env = standInBrowser(fixture, { ...environment(fixture), ARTIFACTIZE_CODEX_AUTH_URL: auth.url, ARTIFACTIZE_CODEX_AUTH_FILE: undefined });
-      return { fixture, env, data: { returns } };
+      return { fixture, env, data: { returns, redirected, refused } };
     },
-    run: async (app, { data: { returns } }) => {
+    run: async (app, { fixture, data: { returns, redirected, refused } }) => {
       await app.settings.open();
       await app.settings.provider("Codex");
       await app.settings.factUntil("codex-status", (text) => /Not signed in/.test(text), "Codex signed out");
       // A sign-in in progress can be cancelled.
       await app.settings.button("Sign in with Codex");
       await app.settings.factUntil("codex-status", (text) => text === "sign-in in progress", "the sign-in in progress");
+      await app.eventually(() => browserHandoffs(fixture).length === 1, "the cancelled attempt sent its browser request before the next attempt");
       await app.settings.button("Cancel sign-in");
       await app.settings.factUntil("codex-status", (text) => /Codex sign-in was cancelled/.test(text), "the sign-in cancelled");
       // The browser cannot return: Finish by hand takes the redirect URL.
       await app.settings.button("Sign in with Codex");
       await app.settings.button("Finish by hand");
       const address = new URL(await app.settings.shownAddress());
-      await app.settings.enter("codex-redirect", `http://localhost:1455/auth/callback?code=e2e-code&state=${address.searchParams.get("state")}`);
+      const callback = fixtureCodexCallback(address);
+      await app.eventually(() => browserHandoffs(fixture).includes(address.href), "the manual attempt finished its browser request before the automatic attempt");
+      callback.searchParams.set("code", "e2e-code");
+      callback.searchParams.set("state", address.searchParams.get("state") ?? "");
+      await app.settings.enter("codex-redirect", callback.href);
       await app.settings.button("Finish sign-in");
       await app.settings.factUntil("codex-status", (text) => text.startsWith("Signed in"), "signed in by hand");
       await app.settings.button("Sign out of Codex");
@@ -155,6 +177,10 @@ export const scenarios: Scenario[] = [
       // The browser returns to the app: signed in.
       writeText(returns, "yes");
       await app.settings.button("Sign in with Codex");
+      await app.eventually(() => {
+        assert.equal(readTextIfExists(refused), null, "the browser must not reach a foreign callback");
+        return exists(redirected);
+      }, "the fixture OAuth server redirected to the isolated callback");
       await app.settings.factUntil("codex-status", (text) => text.startsWith("Signed in"), "signed in through the browser");
     },
   }),
@@ -191,7 +217,7 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], ...antigravity(fixture, standInBrowser(fixture, environment(fixture))) };
     },
-    run: async (app, { fixture, data: { staged, installed, version } }) => {
+    run: async (app, { fixture, data: { staged, installed, version, answer } }) => {
       const status = (ok: (text: string) => boolean, what: string) => app.settings.factUntil("antigravity-status", ok, what);
       await app.settings.open();
       const shown = await app.settings.provider("Antigravity");
@@ -228,6 +254,12 @@ export const scenarios: Scenario[] = [
       await app.mode("Chat");
       await app.chat.create();
       await app.chat.model(AGY_MODELS[1].name);
+      await app.chat.send(AGY_PROMPT);
+      await app.chat.says(AGY_PARTIAL);
+      await app.chat.working();
+      writeText(answer, "finish the ACP turn");
+      await app.chat.says(AGY_ANSWER);
+      await app.chat.finished();
       await app.settings.open();
       await app.settings.provider("Antigravity");
       await app.settings.button("Sign out of Antigravity");

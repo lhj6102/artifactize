@@ -135,11 +135,12 @@ export class Pane {
   }
 
   /** Whether the pane shows, and how wide it is. */
-  shown(): Promise<{ visible: boolean; width: number }> {
+  shown(mode: "Verify" | "Chat" | "Review" = "Verify"): Promise<{ visible: boolean; width: number }> {
+    const pane = { Verify: PANE, Chat: '[aria-label="Chats"]', Review: '[aria-label="Reviews"]' }[mode];
     return this.browser.execute((pane) => {
       const box = document.querySelector(pane)?.getBoundingClientRect();
       return { visible: !!box && box.width > 0, width: Math.round(box?.width ?? 0) };
-    }, PANE);
+    }, `main[aria-label="${mode}"]:not([hidden]) ${pane}`);
   }
 
   /** Drag the divider between the pane and the main area by `dx` pixels: the pane's new width. */

@@ -1,8 +1,10 @@
 // Mode references as a person follows them across Verify, Review and Chat.
 import assert from "node:assert/strict";
 import { CHAT_ANSWER, CHAT_GATE, CHAT_MODEL, DEFAULT_MODEL, NEXT_DELTA, CONTINUE_ANSWER, CONTINUE_PROMPT, installChatProvider, PARTIAL_ANSWER, QUIT_PROMPT, STOP_PROMPT, STOP_STREAM_CLOSED, WORK_PROMPT } from "../fixtures/chat.ts";
+import { runtimeProfile } from "../fixtures/declarations.ts";
 import { addRepository, artifactize, createRelease, request, requests } from "../fixtures/repo.ts";
-import { exists, nativePath, writeText } from "../portable.ts";
+import { exists, nativePath, readText, writeText } from "../portable.ts";
+import { portablePath } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { windows } from "../views/viewers.ts";
 
@@ -84,9 +86,13 @@ export const scenarios: Scenario[] = [
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
       await installChatProvider(owned, fixture);
-      return { fixture, args: ["--repo", fixture.repo], data: { firstRun: request(fixture).runId } };
+      const gate = nativePath(fixture.root, "chat-run-gate");
+      const definition = nativePath(fixture.repo, ".artifactize", "docs.artf");
+      writeText(definition, readText(definition).replace(/^profile = .*$/m,
+        `profile = ${runtimeProfile("slow", 120000, portablePath(gate))}`));
+      return { fixture, args: ["--repo", fixture.repo], data: { firstRun: request(fixture).runId, gate } };
     },
-    run: async (app, { fixture, data: { firstRun } }) => {
+    run: async (app, { fixture, data: { firstRun, gate } }) => {
       await app.graph.titled(firstRun);
       const bar = await app.bottomBar();
       await app.mode("Review");
@@ -104,6 +110,8 @@ export const scenarios: Scenario[] = [
       await app.chat.says("release/notes.md");
       const run = await app.chat.runCard();
       assert.notEqual(run, firstRun);
+      await app.chat.runStatus(run, "Running");
+      writeText(gate, "finish the live eval");
       await app.chat.says(CHAT_ANSWER);
       await app.chat.runStatus(run, "GREEN");
       await app.until(async () => { const where = await app.chat.reading(run); return where.atEnd && !where.reference; }, "the completed turn follows its long answer beyond the Run reference");

@@ -3,8 +3,9 @@
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
 import { CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, GRAPH_ANSWER, GRAPH_GATE, GRAPH_PROMPT, installChatProvider } from "../fixtures/chat.ts";
+import { declareArtifact } from "../fixtures/declarations.ts";
 import { REVIEW_FINDING, REVIEW_MODEL, addWorktree, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, git, request, savedRuns } from "../fixtures/repo.ts";
-import { nativePath, writeText } from "../portable.ts";
+import { nativePath, removeTree, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
@@ -72,7 +73,9 @@ export const scenarios: Scenario[] = [
     },
     run: async (app) => {
       await app.graph.node("a:ship");
-      const camera = await app.graph.camera();
+      const fitted = await app.graph.camera();
+      const camera = await app.graph.cameraTool("Zoom out");
+      assert.notEqual(camera, fitted, "Detail is opened from a non-fit camera");
       await app.graph.open("a:ship", "Artifact ship");
       let detail = await app.detail.until((shown) => shown.docked, "the Detail docked at the graph's right edge");
       assert.deepEqual(detail.evals.map((row) => row.name), ["check"]);
@@ -302,6 +305,9 @@ export const scenarios: Scenario[] = [
       git(fixture, fixture.repo, "add", "--all");
       git(fixture, fixture.repo, "commit", "-qm", "Fixture inputs");
       addWorktree(fixture, "elsewhere");
+      const other = nativePath(fixture.root, "elsewhere");
+      removeTree(nativePath(other, ".artifactize"));
+      declareArtifact(other, ["elsewhere-only"], "elsewhere-only", "basis = true\n");
       // quick changes after the Run: its saved result is stale.
       writeText(nativePath(fixture.repo, "quick", "changed.md"), "quick changed after the Run\n");
       await installChatProvider(own, fixture);
@@ -325,6 +331,10 @@ export const scenarios: Scenario[] = [
       await app.chat.create();
       await app.graph.titled("New chat");
       assert.match(await app.graph.header(), /\belsewhere\b/, "the newer session is on the other branch");
+      await app.chat.show("Graph");
+      await app.graph.node("a:elsewhere-only");
+      await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "elsewhere's Current finished scanning");
+      assert.deepEqual((await app.graph.nodes()).map(({ id }) => id), ["a:elsewhere-only"], "no master declarations in elsewhere's Current");
 
       await app.mode("Verify");
       await app.pane.selectBranch("repo  master");

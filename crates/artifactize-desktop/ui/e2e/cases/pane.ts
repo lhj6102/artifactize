@@ -33,7 +33,15 @@ export const scenarios: Scenario[] = [
       assert.equal((await app.pane.shown()).visible, false);
       assert.ok(Math.abs(await app.graph.width() - await app.windowWidth()) <= 1, "the main area takes the window's width");
       assert.equal(await app.graph.title(), run, "with its view as it was");
+      await app.mode("Chat");
+      assert.equal((await app.pane.shown("Chat")).visible, false, "Chat keeps the shared Pane hidden");
+      await app.mode("Review");
+      assert.equal((await app.pane.shown("Review")).visible, false, "Review keeps the shared Pane hidden");
       await app.command("Show or hide the Pane");
+      await app.until(async () => (await app.pane.shown("Review")).visible, "Review restored its Pane");
+      await app.mode("Chat");
+      assert.equal((await app.pane.shown("Chat")).visible, true, "Chat shares Review's restored Pane");
+      await app.mode("Verify");
       await app.until(async () => (await app.pane.shown()).visible, "the switch showed the pane again");
       assert.ok(Math.abs((await app.pane.shown()).width - width) <= 2, "at the width it had");
       assert.equal((await app.pane.search()).query, "sort:name", "its search as it was");

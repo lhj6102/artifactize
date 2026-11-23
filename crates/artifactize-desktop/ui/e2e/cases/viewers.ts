@@ -31,6 +31,9 @@ export const scenarios: Scenario[] = [
       await w.petEnter("comment", "Checking the notes.");
       assert.deepEqual(await w.petLayout(), { overflow: [], submitAtRight: true });
       await w.mode("Review");
+      await app.review.choose("GREEN");
+      const beforePoint = "Checking the notes before pointing.";
+      await app.review.enter("comment", beforePoint);
       const label = await w.runTool("view");
       assert.equal(await w.viewer(label), `${NOTES} — File Explorer`, "titled {Artifact} — {viewer}");
       const strip = await w.stripUntil((shown) => shown.point, "Point offered for the claimed review");
@@ -46,6 +49,7 @@ export const scenarios: Scenario[] = [
       await w.point();
       await w.clickLine(2);
       const points = await w.pointsUntil((rows) => rows.length === 1 && /^release\.md L2:C\d+$/.test(rows[0]), "the line is in Points");
+      assert.equal(await app.review.value("comment"), beforePoint, "Point adds to Points without writing into the existing comment");
       await w.viewer(label);
       await w.point();
       await w.clickLine(3);
