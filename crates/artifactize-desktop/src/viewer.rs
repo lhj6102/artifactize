@@ -326,11 +326,14 @@ pub(crate) fn launch(
 }
 
 impl PendingLaunch {
-    pub(crate) fn open(self, open: impl FnOnce() -> Result<(), Failure>) -> Result<(), Failure> {
+    pub(crate) fn open(
+        self,
+        open: impl FnOnce(tokio_util::sync::CancellationToken) -> Result<(), Failure>,
+    ) -> Result<(), Failure> {
         if self.job.cancel.is_cancelled() {
             return Err(Failure::Action("Viewer launch cancelled.".into()));
         }
-        finish_launch(Some(self.log), open())
+        finish_launch(Some(self.log), open(self.job.cancel.clone()))
     }
 }
 
@@ -386,16 +389,39 @@ pub async fn viewer_context(
         crate::failure::joined(tokio::task::spawn_blocking(move || checked.check_scope()).await)?
             .is_ok();
     let active = if checkout { active(&app).await } else { None };
-    let (review, pet_match) = {
-        let sessions = app.viewers.0.lock().expect("viewer sessions");
-        let active = active.filter(|review| sessions.active.as_ref() == Some(review));
-        active.map_or((None, false), |review| {
-            let matches = sessions
-                .places
-                .get(&session)
-                .is_some_and(|place| review.addresses.contains(&place.address));
+    let address = app
+        .viewers
+        .0
+        .lock()
+        .expect("viewer sessions")
+        .places
+        .get(&session)
+        .map(|place| place.address.clone());
+    let (review, pet_match) = if let Some(review) = active {
+        let saved = review.addresses.clone();
+        let matches = crate::failure::joined(
+            tokio::task::spawn_blocking(move || {
+                address.is_some_and(|address| {
+                    saved.iter().any(|saved| {
+                        address.checkout == saved.checkout
+                            && address.artifact == saved.artifact
+                            && address.target == saved.target
+                            && artifactize_core::platform::paths_equal(
+                                &address.worktree,
+                                &saved.worktree,
+                            )
+                    })
+                })
+            })
+            .await,
+        )?;
+        if app.viewers.active().as_ref() == Some(&review) {
             (Some(review.shown.into()), matches)
-        })
+        } else {
+            (None, false)
+        }
+    } else {
+        (None, false)
     };
     let context = viewer.context(None);
     Ok(ViewerContext {
@@ -821,7 +847,14 @@ mod tests {
             .viewers
             .remember(place("/work/one", "alternate", "files"));
         for session in [first, same, new] {
-            crate::windows::viewer(mock.handle(), &app, session, "Checkout".into()).unwrap();
+            crate::windows::viewer(
+                mock.handle(),
+                &app,
+                session,
+                "Checkout".into(),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .unwrap();
         }
         assert!(
             mock.get_webview_window(&format!("viewer-{first}"))
@@ -857,7 +890,11 @@ mod launch_tests {
             review: Some(review),
             job,
         };
-        assert!(pending.open(|| panic!("cancelled before opening")).is_err());
+        assert!(
+            pending
+                .open(|_| panic!("cancelled before opening"))
+                .is_err()
+        );
         let start = events.try_recv().unwrap();
         let end = events.try_recv().unwrap();
         assert_eq!(end.run, start.run);

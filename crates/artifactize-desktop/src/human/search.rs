@@ -36,6 +36,7 @@ pub struct ReviewMatch {
     pub eval: String,
     pub worktree: PathKey,
     pub project: String,
+    pub project_key: PathKey,
     pub branch: String,
     pub age: String,
     pub mark: Mark,
@@ -96,6 +97,12 @@ async fn search_page(app: &App, parsed: &search::Query, start: u32) -> Result<Re
                 eval: entry.eval,
                 worktree: PathKey::new(&entry.repository),
                 project: label.project,
+                project_key: PathKey::new(
+                    label
+                        .project_key
+                        .as_ref()
+                        .map_or(entry.repository.as_path(), |project| project.path()),
+                ),
                 branch: label.branch,
                 age: monitor::duration(
                     now - request.started_at.unwrap_or(request.created_at).time(),

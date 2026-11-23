@@ -229,7 +229,8 @@ impl BuiltinTarget {
         builtin.then(|| {
             let text = |field| call.function.arguments.get(field).and_then(Value::as_str);
             Self {
-                path: text("path").map(PathBuf::from),
+                path: text("path")
+                    .and_then(|path| artifactize_tools::files::path_from_text(path).ok()),
                 pattern: text("pattern").map(str::to_owned),
             }
         })

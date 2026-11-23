@@ -94,12 +94,19 @@ mod tests {
         })
         .await;
         searches.invalidate();
-        let fresh = searches.read("waiting".into(), 0, async {
+        let mut fresh = std::pin::pin!(searches.read("waiting".into(), 0, async {
             Ok(ReviewPage {
                 reviews: vec![],
                 next: None,
             })
-        });
+        }));
+        // The reader serializes database reads, so the fresh read must queue while the
+        // stale one is held. Admitting it here makes an incorrect shared result observable.
+        poll_fn(|cx| {
+            assert!(fresh.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
         finish.notify_one();
         let (stale, fresh) = tokio::join!(stale, fresh);
         assert_eq!(stale.unwrap().next, Some(1));

@@ -401,7 +401,7 @@ fn declare(
 /// discovery, such as test fixtures or example projects with their own `index.artf`.
 pub(super) fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
     let legacy = root.join(".artifactizeignore");
-    if crate::platform::marker_metadata(&legacy).is_ok() {
+    if crate::platform::paths::has_exact_entry(root, ".artifactizeignore").unwrap_or(false) {
         return Err(ConfigError::new(
             legacy,
             ".artifactizeignore was renamed to .artfignore.",

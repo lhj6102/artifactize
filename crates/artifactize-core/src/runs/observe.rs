@@ -125,6 +125,11 @@ pub(super) fn state(run: &Run, requests: &[std::sync::Arc<Request>]) -> State {
     )
 }
 
+/// Project the current verdict from a saved snapshot without reconciling or loading a CLI.
+pub(crate) fn saved_state(view: &RunView) -> State {
+    state(&view.run, &view.requests)
+}
+
 pub async fn view(context: &Context, id: &RunId) -> Result<RunView, String> {
     let view = store::read_run(&context.state, id).await?;
     if !crate::platform::paths_equal(&view.run.repo_path, &context.repo) {

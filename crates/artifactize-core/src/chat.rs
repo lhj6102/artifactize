@@ -618,7 +618,8 @@ impl Chat {
     /// Chat records are append-only. Readers can detect a missed hint without parsing a
     /// transcript, with `None` covering a session that has not yet accepted a turn.
     pub fn transcript_size(&self, id: &SessionId) -> Option<u64> {
-        std::fs::metadata(path(&self.state, id))
+        crate::platform::open_regular(&path(&self.state, id))
+            .and_then(|file| file.metadata())
             .ok()
             .map(|file| file.len())
     }
@@ -630,9 +631,7 @@ impl Chat {
         let running = session.running;
         let conversation = Conversation::load(&path(&self.state, id))?;
         let mut turns = transcript::turns(conversation.as_ref(), running);
-        if let Ok(context) = self.context(&session.worktree) {
-            transcript::update_runs(&context, &mut turns).await;
-        }
+        transcript::update_runs(&self.state, &session.worktree, &mut turns).await;
         Ok(View {
             session,
             running,

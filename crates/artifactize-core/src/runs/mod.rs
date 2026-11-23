@@ -11,6 +11,7 @@ use crate::{
     store::{self, Receipts},
     types::{FailureCode, RequestKey, RunId},
 };
+pub(crate) use observe::saved_state;
 pub use observe::{
     Counts, RunObservation, State, reconcile_interrupted, status, view, wait, wait_observing,
 };

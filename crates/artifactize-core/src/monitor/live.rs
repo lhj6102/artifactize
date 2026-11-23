@@ -153,6 +153,14 @@ pub enum Project {
     Folder(#[serde(with = "crate::platform::path_serde")] PathBuf),
 }
 
+impl Project {
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Git(path) | Self::Folder(path) => path,
+        }
+    }
+}
+
 /// One Run of a branch as its chip shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chip {
@@ -186,6 +194,7 @@ impl Branch {
         let Label {
             project,
             branch: name,
+            ..
         } = label(&place);
         Self {
             place,
@@ -227,6 +236,7 @@ impl Branch {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Label {
     pub project: String,
+    pub project_key: Option<Project>,
     pub branch: String,
 }
 
@@ -372,6 +382,7 @@ fn branch_name(place: &Place) -> String {
 fn label(place: &Place) -> Label {
     Label {
         project: project_name(place),
+        project_key: Some(place.project()),
         branch: branch_name(place),
     }
 }
@@ -517,7 +528,9 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
                     .filter(|path| present.contains(path))
                     .unwrap_or(tree),
             };
-            let Label { project, branch } = label(&place);
+            let Label {
+                project, branch, ..
+            } = label(&place);
             Branch {
                 place,
                 project,

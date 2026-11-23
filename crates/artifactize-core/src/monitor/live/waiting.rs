@@ -52,7 +52,7 @@ pub async fn waiting(
                         || crate::platform::path_text(&entry.repository),
                         crate::platform::display_name,
                     ),
-                    branch: String::new(),
+                    ..Label::default()
                 });
             Waiting { view, entry, label }
         })

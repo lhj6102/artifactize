@@ -266,7 +266,11 @@ pub(super) fn turns(conversation: Option<&Conversation>, running: bool) -> Vec<T
     turns.into_values().map(|fold| fold.turn).collect()
 }
 
-pub(super) async fn update_runs(context: &runs::Context, turns: &mut [Turn]) {
+pub(super) async fn update_runs(
+    state: &std::path::Path,
+    repo: &std::path::Path,
+    turns: &mut [Turn],
+) {
     let mut cards: BTreeMap<RunId, RunCard> = BTreeMap::new();
     for card in turns
         .iter_mut()
@@ -280,33 +284,39 @@ pub(super) async fn update_runs(context: &runs::Context, turns: &mut [Turn]) {
         match cards.entry(card.id.clone()) {
             Entry::Occupied(current) => *card = current.get().clone(),
             Entry::Vacant(slot) => {
-                let (status, requests) = tokio::join!(
-                    runs::status(context, &card.id),
-                    store::read_requests_for_run(
-                        context.state(),
-                        Some(card.id.clone()),
-                        Some(context.repo())
-                    ),
-                );
-                card.state = status.ok().map(|observation| observation.state);
-                if let Ok(requests) = requests {
-                    for view in requests {
-                        let request = &view.request;
-                        match request.status() {
-                            RequestStatus::Red | RequestStatus::Error => {
-                                card.failed.push(request.eval_id.clone())
-                            }
-                            status if status.is_human_wait() => {
-                                card.waiting.push(request.eval_id.clone())
-                            }
-                            _ => {}
-                        }
+                if let Ok(view) = store::read_run_snapshot(state, card.id.as_str()).await {
+                    let workspace = view.run.repo_path.clone();
+                    let repo = repo.to_owned();
+                    if crate::task::blocking(move || {
+                        crate::platform::paths_equal(&workspace, &repo)
+                    })
+                    .await
+                    .unwrap_or(false)
+                    {
+                        *card = run_card(view);
                     }
                 }
                 slot.insert(card.clone());
             }
         }
     }
+}
+
+fn run_card(view: store::RunView) -> RunCard {
+    let mut card = RunCard {
+        id: view.run.id.clone(),
+        state: Some(runs::saved_state(&view)),
+        failed: Vec::new(),
+        waiting: Vec::new(),
+    };
+    for request in view.requests {
+        match request.status() {
+            RequestStatus::Red | RequestStatus::Error => card.failed.push(request.eval_id.clone()),
+            status if status.is_human_wait() => card.waiting.push(request.eval_id.clone()),
+            _ => {}
+        }
+    }
+    card
 }
 
 pub(super) fn outcome(answer: &Answer) -> Outcome {

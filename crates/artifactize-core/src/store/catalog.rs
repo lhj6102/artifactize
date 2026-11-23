@@ -148,14 +148,23 @@ pub async fn read_open_run_ids(state: &Path) -> Result<Vec<crate::types::RunId>,
     let Some(connection) = super::requests::open_read(state).await? else {
         return Ok(Vec::new());
     };
-    let result = connection.call(move |db| {
-        super::wait_when_busy(db)?;
-        let transaction = db.transaction()?;
-        if !schema_initialized(&transaction)? { return Ok(Vec::new()); }
-        let mut query = transaction.prepare("SELECT id FROM runs WHERE CASE WHEN json_valid(data) THEN json_extract(data,'$.status') IN (?1,?2) ELSE 0 END")?;
-        let ids = query.query_map([RunStatus::Running, RunStatus::WaitingHuman], |row| row.get(0))?.collect::<Result<Vec<_>, _>>()?;
-        Ok::<_, Error>(ids)
-    }).await.map_err(|error| error.to_string());
+    let result = connection
+        .call(move |db| {
+            super::wait_when_busy(db)?;
+            let transaction = db.transaction()?;
+            if !schema_initialized(&transaction)? {
+                return Ok(Vec::new());
+            }
+            let mut query = transaction.prepare(
+                "SELECT id FROM runs WHERE CASE WHEN json_valid(data) THEN json_extract(data,'$.status') IN (?1,?2) ELSE 0 END",
+            )?;
+            let ids = query
+                .query_map([RunStatus::Running, RunStatus::WaitingHuman], |row| row.get(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok::<_, Error>(ids)
+        })
+        .await
+        .map_err(|error| error.to_string());
     super::connection::finish(connection, result).await
 }
 

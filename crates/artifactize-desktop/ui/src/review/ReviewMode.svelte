@@ -32,9 +32,9 @@
   const groups = $derived.by(() => {
     const byProject: [string, ReviewMatch[]][] = [];
     for (const row of rows) {
-      const group = byProject.find(([project]) => project === row.project);
+      const group = byProject.find(([project]) => project === row.projectKey);
       if (group) group[1].push(row);
-      else byProject.push([row.project, [row]]);
+      else byProject.push([row.projectKey, [row]]);
     }
     return byProject;
   });
@@ -221,8 +221,8 @@
             onkeydown={paneKey}
             {@attach scrollTo(() => (r.selected === null ? ":not(*)" : `[data-key="${CSS.escape(r.selected)}"]`))}
           >
-            {#each groups as [project, members] (project)}
-              <li class="group" role="presentation">{project}</li>
+            {#each groups as [projectKey, members] (projectKey)}
+              <li class="group" role="presentation">{members[0]?.project}</li>
               {#each members as row (row.id)}
                 {@const opened = r.shown.kind === "review" && r.shown.id === (app.reviews[row.id]?.id ?? row.id)}
                 <li role="option" aria-selected={opened} class:selected={opened} class:cursor={r.selected === row.id} data-key={row.id} onclick={() => open(row)} onkeydown={() => {}}>

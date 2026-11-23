@@ -131,8 +131,9 @@ pub fn arm_companion_close<R: tauri::Runtime>(
             tokio::time::sleep(ABANDONED_AFTER).await;
             abandoned.store(true, std::sync::atomic::Ordering::Release);
             eprintln!("E2E graph companion reached its shutdown watchdog without closing");
-            if let Err(error) = window.close() {
-                eprintln!("E2E graph companion could not close: {error}");
+            if let Err(error) = window.destroy() {
+                eprintln!("E2E graph companion could not destroy its window: {error}");
+                std::process::exit(1);
             }
         });
     }
@@ -190,44 +191,5 @@ pub fn init<R: tauri::Runtime>()
     Ok((metadata, exit, companion))
 }
 
-/// Keep a recent image of the fixture's own main window, even before WebDriver can connect.
-#[cfg(target_os = "macos")]
-pub fn arm_window_image<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt, sync::Arc, time::Duration};
-    use tauri::Manager;
-
-    unsafe extern "C" {
-        fn arti_e2e_window_image(webview: *mut std::ffi::c_void, path: *const std::ffi::c_char);
-    }
-
-    let Some(path) = std::env::var_os("ARTIFACTIZE_E2E_WINDOW_IMAGE") else {
-        return;
-    };
-    let Ok(path) = CString::new(path.as_bytes()) else {
-        return;
-    };
-    let Some(main) = app.get_webview_window("main") else {
-        return;
-    };
-    let path = Arc::new(path);
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            interval.tick().await;
-            let path = path.clone();
-            if main
-                .with_webview(move |webview| {
-                    // SAFETY: Tauri invokes this closure on the WebKit main thread with its live
-                    // WKWebView pointer. The adapter copies the path before returning.
-                    unsafe {
-                        arti_e2e_window_image(webview.inner(), path.as_ptr());
-                    }
-                })
-                .is_err()
-            {
-                break;
-            }
-        }
-    });
-}
+mod platform;
+pub use platform::arm_window_image;

@@ -1240,6 +1240,7 @@ export type ReviewMatch = {
 	eval: string,
 	worktree: PathKey,
 	project: string,
+	projectKey: PathKey,
 	branch: string,
 	age: string,
 	mark: Mark,

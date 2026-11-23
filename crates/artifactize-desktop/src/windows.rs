@@ -30,7 +30,11 @@ const PET_MARGIN: f64 = 16.0;
 
 /// What the commands ask of the windows.
 enum Action {
-    Viewer { session: u32, title: String },
+    Viewer {
+        session: u32,
+        title: String,
+        cancel: tokio_util::sync::CancellationToken,
+    },
     Pet(Option<String>),
     FocusMain,
     CloseMain,
@@ -81,7 +85,11 @@ impl Windows {
 
 fn act<R: Runtime>(handle: &tauri::AppHandle<R>, app: &App, action: Action) -> tauri::Result<()> {
     match action {
-        Action::Viewer { session, title } => viewer(handle, app, session, title),
+        Action::Viewer {
+            session,
+            title,
+            cancel,
+        } => viewer(handle, app, session, title, &cancel),
         Action::Pet(request) => pet(handle, request),
         Action::CloseViewers => {
             for (label, window) in handle.webview_windows() {
@@ -111,12 +119,19 @@ pub(super) fn viewer<R: Runtime>(
     app: &App,
     session: u32,
     title: String,
+    cancel: &tokio_util::sync::CancellationToken,
 ) -> tauri::Result<()> {
     let _viewing = app
         .windows
         .viewing
         .lock()
         .expect("native viewer windows lock");
+    if cancel.is_cancelled() {
+        return Err(tauri::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "Viewer launch cancelled.",
+        )));
+    }
     for (label, window) in handle.webview_windows() {
         let Some(shown) = label
             .strip_prefix(VIEWER)
@@ -264,8 +279,18 @@ pub async fn viewer_window(
         .viewers
         .take_launch(session)
         .ok_or_else(|| Failure::Missing("Viewer launch is no longer available.".into()))?;
-    let result = pending
-        .open(|| ready.and_then(|()| app.windows.act(&app, Action::Viewer { session, title })));
+    let result = pending.open(|cancel| {
+        ready.and_then(|()| {
+            app.windows.act(
+                &app,
+                Action::Viewer {
+                    session,
+                    title,
+                    cancel,
+                },
+            )
+        })
+    });
     if result.is_err() {
         app.viewers.drop_session(session);
     }
