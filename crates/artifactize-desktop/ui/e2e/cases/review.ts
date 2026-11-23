@@ -70,7 +70,7 @@ export const scenarios: Scenario[] = [
       await review.claim();
       await review.runTool("notes");
       // Folded, the Tool log is one line: the last run's start and its end with its count.
-      await app.until(async () => /^▶ \d\d:\d\d:\d\d · notes ■ exit 0 · 2 lines$/.test(await review.logLine()), "the folded last run shows its count");
+      await app.until(async () => /^▶ \d\d:\d\d:\d\d · notes · release ■ exit 0 · 2 lines$/.test(await review.logLine()), "the folded last run shows its count");
       await review.showFullLog();
       assert.deepEqual(await review.runUntil("notes", (rows) => rows.at(-1)?.startsWith("■") === true, "notes ended"),
         ["▶ HH:MM:SS · notes · release", "# Release notes", "- Ready to ship.", "■ exit 0"]);

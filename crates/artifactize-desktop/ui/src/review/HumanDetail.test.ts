@@ -372,9 +372,9 @@ describe("HumanDetail", () => {
     // Folded to one line: its start, its last stderr line, its newest line while it runs.
     const header = await screen.findByRole("button", { name: "Tool log" });
     const parts = () => [...header.querySelectorAll("span")].map((part) => part.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS")).filter((text) => text);
-    await waitFor(() => expect(parts()).toEqual(["▶ HH:MM:SS · scan", "warning: missing title", "still checking"]));
+    await waitFor(() => expect(parts()).toEqual(["▶ HH:MM:SS · scan · release", "warning: missing title", "still checking"]));
     review.logged([{ ...run, end: { text: "■ exit 1", error: true } }]);
-    await waitFor(() => expect(parts()).toEqual(["▶ HH:MM:SS · scan", "warning: missing title", "■ exit 1 · 3 lines"]));
+    await waitFor(() => expect(parts()).toEqual(["▶ HH:MM:SS · scan · release", "warning: missing title", "■ exit 1 · 3 lines"]));
     expect(header.querySelector(".end")?.classList.contains("failed")).toBe(true);
     expect(header.getAttribute("aria-expanded")).toBe("false");
     // A click unfolds every line in the log box, another folds it to its line again.

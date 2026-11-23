@@ -198,7 +198,7 @@
         <button class="logline" aria-expanded={h.logOpen} aria-label="Tool log" onclick={() => (h.logOpen = !h.logOpen)}>
           <Icon name={h.logOpen ? "unfold" : "fold"} />
           {#if last}
-            <span class="start">▶ {clock(last.at)} · {last.operation}</span>
+            <span class="start">▶ {clock(last.at)} · {last.operation} · {last.artifact}</span>
             {#if lastError}<span class="stderr">{lastError}</span>{/if}
             <span class="spacer"></span>
             <span class="end" class:failed={last.end?.error}>{lastEnd}</span>
