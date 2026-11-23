@@ -29,9 +29,9 @@ it("requires pending commands to finish even when the query already matches", ()
 
 it("a completed failed query cannot reuse rows left by a successful query", () => {
   const before = searched("reviewer:alice", 1);
-  const failed = { ...searched("is:mine", 2), queryFailure: "Search read failed" };
-  assert.equal(completed(failed, before), false);
-  assert.equal(completed({ ...failed, queryFailure: null }, before), true);
+  const failed = { ...searched("sort:size", 2), queryFailure: "Unknown sort `size`" };
+  assert.equal(completed(failed, before), true, "an invalid Verify query was rendered by its matching reply");
+  assert.equal(completed({ ...failed, query: "sort:another" }, before), false, "an old error cannot settle a different query");
 });
 
 it("does not take old Review rows for the new filter when a background search finishes first", () => {
@@ -46,7 +46,8 @@ it("does not take old Review rows for the new filter when a background search fi
   assert.equal(completed(review("is:mine", "is:mine", 3, false), before), false, "new dispatch without completion");
   const matching = review("is:mine", "is:mine", 3);
   const failed = { ...matching, activity: { ...matching.activity, reviewSearch: { ...matching.activity.reviewSearch!, failed: true as const } } };
-  assert.equal(completed(failed, before), false, "a failed search is not its result rows");
+  assert.equal(completed(failed, before), false, "a failed reply alone is not a render");
+  assert.equal(completed({ ...failed, reviewFailure: "Invalid Review filter" }, before), true, "a rendered failure settles the matching query");
   assert.equal(completed(matching, before), true);
   assert.equal(completed(before, matching), false, "an old completion cannot satisfy a return to the same filter");
   assert.equal(completed(review("waiting", "waiting", 4), matching), true);

@@ -246,8 +246,8 @@ function windowsArg(arg: string): string {
 }
 
 /** Start a program with an owned process group, or a Windows Job Object. */
-export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean; completesWithRoot?: boolean }): ChildProcess {
-  const stdio = ["ignore", options.capture ? "pipe" : "inherit", "inherit"] as const;
+export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean; captureDiagnostics?: boolean; completesWithRoot?: boolean }): ChildProcess {
+  const stdio = ["ignore", options.capture ? "pipe" : "inherit", options.captureDiagnostics ? "pipe" : "inherit"] as const;
   if (WINDOWS) {
     const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
     const script = Buffer.from(WINDOWS_JOB, "utf16le").toString("base64");

@@ -7,7 +7,7 @@
 import { createConnection, createServer, type Socket } from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -15,7 +15,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { installChatProvider } from "../ui/e2e/fixtures/chat.ts";
 import { own, type Owned } from "../ui/e2e/fixtures/owned.ts";
-import { cancelRuns, createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
+import { cancelRuns, createRelease, environment, savedRuns, type Fixture } from "../ui/e2e/fixtures/repo.ts";
 import { assertHeadless, displayEnvironment, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
 import { asNativePath, embeddedPorts, nativePath, newDirectory, runProgramOk, type NativePath } from "../ui/e2e/portable.ts";
 import { page, press, recordKeys, typeText } from "../ui/e2e/keys.ts";
@@ -469,7 +469,18 @@ async function serve(): Promise<void> {
               // A graph launch's own state holds the Runs started in it: they end with the fixture's.
               if (target !== fixture) {
                 if (!scope) throw new Error("the app session has no fixture owner");
-                scope.defer(() => cancelRuns(target));
+                scope.defer(() => {
+                  cancelRuns(target);
+                  // The signal integration fixture asks for durable observation before this
+                  // owner removes the files. No observation changes the Run.
+                  const observed = join(sessionDir, "observe-run");
+                  if (process.env.DESKTOP_TEST_SIGNAL_OUTPUT && existsSync(observed)) {
+                    const id = readFileSync(observed, "utf8").trim();
+                    const run = savedRuns(target).find((saved) => saved.id === id);
+                    if (!run || ["RUNNING", "WAITING_HUMAN"].includes(run.status)) throw new Error(`Run ${id} was not settled before fixture teardown`);
+                    writeFileSync(join(sessionDir, "run-settled.json"), JSON.stringify(run));
+                  }
+                });
                 await installChatProvider(scope, target);
               }
               const args = { monitor: [], repo: ["--repo", target.repo], review: ["review"], graph: ["graph", "--repo", target.repo] }[request.screen];
