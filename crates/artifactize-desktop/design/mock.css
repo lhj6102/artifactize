@@ -57,6 +57,9 @@
   --i-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75z'/%3E%3C/svg%3E");
   --i-edit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.25 9.75l.5-2.25 5.5-5.5 1.75 1.75-5.5 5.5zM7 3.25 8.75 5'/%3E%3C/svg%3E");
   --i-command: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 3.25 5 5.75 2.5 8.25M6.5 8.75h3'/%3E%3C/svg%3E");
+  --i-new-chat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2.25H3a.75.75 0 0 0-.75.75v6a.75.75 0 0 0 .75.75h6a.75.75 0 0 0 .75-.75V6'/%3E%3Cpath d='M8.5 1.75l1.75 1.75L6.5 7.25H4.75V5.5z'/%3E%3C/svg%3E");
+  --i-folder-closed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75z'/%3E%3Cpath d='M1.75 5.25h8.5'/%3E%3C/svg%3E");
+  --i-folder-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 9.25V3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.25a.75.75 0 0 1 .75.75v1.25'/%3E%3Cpath d='M1.75 9.5l1.6-3.75h7.4l-1.6 3.75z'/%3E%3C/svg%3E");
   --i-reset: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 4.25A3.75 3.75 0 1 1 2.25 6.5'/%3E%3Cpath d='M2.5 1.75v2.5H5'/%3E%3C/svg%3E");
 }
 .m-icon,
@@ -109,6 +112,9 @@
 .i-folder { --icon-src: var(--i-folder); }
 .i-edit { --icon-src: var(--i-edit); }
 .i-command { --icon-src: var(--i-command); }
+.i-new-chat { --icon-src: var(--i-new-chat); }
+.i-folder-closed { --icon-src: var(--i-folder-closed); }
+.i-folder-open { --icon-src: var(--i-folder-open); }
 .m-light {
   background: var(--light);
   -webkit-mask-image: var(--light-icon);
@@ -525,7 +531,7 @@
   color: var(--ink-2);
 }
 
-/* The Main area: one header row (the view's name, its headline, a notice, its actions), then
+/* A panel header row (the Detail's, Review's): its title, its headline, its actions; then
    the view. */
 .m-main-head {
   display: flex;
@@ -590,21 +596,6 @@
   overflow-wrap: anywhere;
   overflow: auto;
 }
-/* What needs attention, in a Run's headline: each eval's status icon and its name, cut at the
-   row's end. */
-.m-attention {
-  display: flex;
-  gap: 12px;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-}
-.m-attention > span {
-  flex: none;
-}
-.m-attention .m-icon {
-  margin-right: 4px;
-}
 
 /* The graph's tool strip: what acts on the graph, in one row between the header and the
    canvas, and nothing else. */
@@ -619,30 +610,7 @@
   border-top: 1px solid var(--line-group);
   font-size: var(--text-small);
 }
-.m-zoomer {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  border: 1px solid var(--line-group);
-  border-radius: var(--radius-control);
-  background: var(--surface-group);
-}
-.m-zoomer > span {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 20px;
-  color: var(--ink-2);
-}
-.m-zoomer > .m-zoom {
-  width: 44px;
-  border-left: 1px solid var(--line-group);
-  border-right: 1px solid var(--line-group);
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.m-strip > .m-button,
-.m-strip > .m-zoomer {
+.m-strip > .m-button {
   flex: none;
 }
 /* The marks of a graph, in Help: each status's icon in its colour beside its word. */
@@ -2069,26 +2037,25 @@
 }
 /* Chat's Pane: New chat across its top, the search field, then the sessions under their
    project's label, one line each: the title, and at the right its state or its age. */
-/* A Chat session's view switch, Conversation or Graph: two quiet text segments in one bordered
-   group, the shown one lifted by its grey level alone. */
+/* The stage's view tabs, Chat's Conversation and Graph, in the middle of the stage header: the
+   tab grammar, the shown view's word --ink-bright over a 2px --current-mark underline at the
+   row's bottom, the other --ink-off, the same weight, no edge or face. */
 .m-viewswitch {
   display: inline-flex;
   align-items: stretch;
-  height: 22px;
-  margin-left: 12px;
-  border: 1px solid var(--line-input);
-  border-radius: var(--radius-control);
-  overflow: hidden;
+  align-self: stretch;
+  gap: 16px;
   font-size: var(--text-small);
 }
 .m-viewswitch > span {
   display: grid;
   place-items: center;
-  padding: 0 10px;
+  padding: 0 4px;
   color: var(--ink-off);
+  font-weight: 400;
 }
-.m-viewswitch > span + span {
-  border-left: 1px solid var(--line-input);
+.m-viewswitch > span.hover:not(.on) {
+  color: var(--ink);
 }
 .m-viewswitch > span.on {
   color: var(--ink-bright);
@@ -2106,9 +2073,6 @@
 .m-older.hover {
   background: var(--surface-group);
   color: var(--ink);
-}
-.m-chat-search {
-  padding: 8px var(--pad) 0;
 }
 .m-session .m-state {
   font-size: var(--text-small);
@@ -2704,3 +2668,315 @@
   border-top: 1px solid var(--line-group);
 }
 
+
+/* The stage header: one 32px row over Chat's and Verify's main area, the same in both and
+   controls only: the way back at its left, the view tabs in its middle, the shown view's
+   tools at its right. Nothing in it says what is shown or how it stands; the Pane's selected
+   row does. */
+.m-stage-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  flex: none;
+  padding: 0 var(--pad);
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--line-panel);
+  background: var(--surface-panel);
+  font-size: var(--text-small);
+}
+.m-stage-head + .m-chat,
+.m-stage-head + .m-canvas,
+.m-stage-head + .m-stage-body > .m-canvas {
+  border-top: 0;
+}
+.m-stage-left {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.m-stage-mid {
+  display: flex;
+  align-self: stretch;
+}
+.m-stage-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
+}
+/* A tool of the stage header: borderless, its icon and word in --ink-2, a step brighter under
+   the pointer, --ink-bright while what it opens is open, --ink-3 while it has nothing to act
+   on; the keyboard's ring inside it. */
+.m-tool {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: var(--control);
+  height: var(--control);
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.m-tool.hover {
+  color: var(--ink);
+}
+.m-tool.on {
+  color: var(--ink-bright);
+}
+.m-tool.disabled {
+  color: var(--ink-3);
+}
+.m-tool.kfocus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.m-tool.m-zoom {
+  min-width: 44px;
+  padding: 0 2px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.m-tool-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--line-group);
+}
+/* Find, opened: the icon has become a field in its own place, being typed in. */
+.m-tool-field {
+  flex: 0 1 240px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  height: var(--control);
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  outline: 1px solid var(--current-mark);
+  outline-offset: -1px;
+  color: var(--ink);
+  overflow: hidden;
+}
+.m-tool-field .m-icon {
+  color: var(--ink-2);
+}
+.m-tool-field .m-placeholder,
+.m-tool-field .m-count-of {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.m-tool-field .m-count-of {
+  margin-left: auto;
+}
+/* Find's list, dropped from the field in the stage header over the canvas's top right. */
+.m-find.drop {
+  left: auto;
+  right: var(--pad);
+  top: 4px;
+}
+.m-find.drop .m-found {
+  margin-top: 0;
+}
+/* A place in the conversation that Find matched; the current one with the edit mark under it. */
+.m-hit {
+  background: var(--accent-soft);
+  color: var(--ink-bright);
+  border-radius: 2px;
+}
+.m-hit.now {
+  box-shadow: inset 0 -2px 0 var(--current-mark);
+}
+/* The stage's status line: what the shown graph's state says (a Current's scan, what went
+   wrong) as one quiet line on the canvas at its top left, no face behind it. */
+.m-stage-status {
+  position: absolute;
+  left: var(--pad);
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 2 * var(--pad));
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.m-stage-status > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.m-stage-status .m-notice {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: start;
+}
+.m-stage-status .m-notice.open {
+  display: block;
+  width: 460px;
+  height: auto;
+  max-height: 96px;
+  padding: 6px 8px;
+  line-height: 16px;
+}
+/* Chat over the graph: the composer and the reply card float at the canvas's bottom, centred
+   in the canvas left of the Detail, the conversation column's width; a dark face inside a
+   thin edge, no shadow. */
+.m-float {
+  position: absolute;
+  left: 0;
+  right: var(--float-right, 0px);
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 var(--pad);
+  box-sizing: border-box;
+}
+.m-float .m-composer {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.m-reply {
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  background: var(--surface-input);
+}
+.m-reply-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row-head);
+  padding: 0 8px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-reply-head .m-said {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-reply-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 120px;
+  overflow: hidden;
+  padding: 0 12px 8px 28px;
+  color: var(--ink);
+}
+.m-reply-body p {
+  margin: 0;
+}
+/* The band Fit and the zoom keep free of nodes, under the floating chat (drawn only to point
+   at it in the design). */
+.m-inset {
+  position: absolute;
+  left: 0;
+  right: var(--float-right, 0px);
+  bottom: 0;
+  border-top: 1px dashed var(--line-group);
+  pointer-events: none;
+}
+.m-navigator.over-float {
+  bottom: var(--float-inset);
+}
+/* Chat's Pane: a top row (New chat and Search), then each project a row with its folder, its
+   sessions under it on one indent, every row --row-pane high and chosen across the Pane. The
+   new-chat icon and the folders stand on one x; the titles on the next. */
+.m-pane-top {
+  display: flex;
+  align-items: center;
+  height: var(--row-pane);
+  flex: none;
+  border-bottom: 1px solid var(--line-group);
+}
+.m-pane-top .m-new {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  height: auto;
+  gap: 8px;
+  padding: 0 0 0 var(--pad);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+}
+.m-pane-top .m-tool {
+  width: var(--row-pane);
+  height: var(--row-pane);
+  border-radius: 0;
+}
+.m-pane-top .m-tool-field {
+  flex: 1;
+  margin: 0 8px 0 4px;
+  padding-left: 7px;
+}
+.m-pane-top.hover-new .m-new,
+.m-project.hover {
+  background: var(--surface-group);
+}
+.m-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row-pane);
+  padding: 0 var(--pad);
+  color: var(--label);
+}
+.m-project .m-icon {
+  color: var(--ink-2);
+}
+.m-project .m-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-project.kfocus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.m-chatlist .m-session {
+  padding-left: calc(var(--pad) + var(--icon) + 8px);
+}
+.m-chatlist .m-session .m-item-name {
+  flex: 0 1 auto;
+}
+.m-chatlist .m-session .m-sbranch {
+  flex: 0 1000 auto;
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+  font: var(--text-label) var(--mono);
+}
+.m-chatlist .m-session.selected .m-sbranch {
+  color: var(--ink-2);
+}
+.m-chatlist .m-session .m-spacer {
+  flex: 1;
+  min-width: 0;
+}

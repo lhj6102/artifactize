@@ -27,10 +27,12 @@
 <main data-screen="chat">
 <h1>Chat: a session with Artifactize's own agent</h1>
 <p class="lead">
-  Chat mode, laid out as agent chat applications are: its Pane holds New chat, the search and the
-  sessions, grouped by project, one line each, a session's state where its age is; its Main area
-  holds the chosen session's conversation in a column of the reading measure, kept where it is
-  read, and the composer under it. The agent's text reads as Markdown, what it did as quiet
+  Chat mode, laid out as agent chat applications are: its Pane holds New chat with the search
+  behind its magnifier, then each project as a folder row with its sessions under it, one line
+  each, a session's branch dimmed after its title and its state where its age is; its Main area
+  starts with the stage header, controls only and the same row as Verify's, and holds the chosen
+  session's conversation in a column of the reading measure, kept where it is read, and the
+  composer under it. The agent's text reads as Markdown, what it did as quiet
   one-line rows, routine ones folded into a summary, each with its details a click away, and each
   verify it starts as a Run reference that opens the Run in Verify. The model selector sits at the composer's bottom left, its menu opening upward;
   Send, or Stop while a turn runs, at its bottom right.
@@ -47,20 +49,22 @@
   </header>
   <div class="m-screen">
     <section class="m-pane">
-      <div class="m-pane-head"><span class="m-new"><span class="m-icon i-add"></span>New chat</span></div>
-      <div class="m-chat-search"><div class="m-input text"><span class="m-placeholder">Search chats</span></div></div>
-      <p class="m-group-label">shop / fix/checkout-rounding</p>
-      <div class="m-session selected"><span class="m-item-name">Fix checkout rounding</span><span class="m-age">now</span></div>
-      <div class="m-session"><span class="m-item-name">Gift card balance</span><span class="m-state tone-red">failed</span></div>
-      <p class="m-group-label">artifactize / dev</p>
-      <div class="m-session"><span class="m-item-name">Release notes wording</span><span class="m-state tone-running">running</span></div>
-      <div class="m-session hover"><span class="m-item-name">Changelog for 0.25</span><span class="m-state">finished</span></div>
-      <p class="m-group-label">웹툰-플랫폼 / main</p>
-      <div class="m-session"><span class="m-item-name">결제 흐름 문서 정리와 검증 범위 확인</span><span class="m-age">3d</span></div>
+      <div class="m-pane-top"><span class="m-new"><span class="m-icon i-new-chat"></span>New chat</span><span class="m-tool" aria-label="Search chats" title="Search chats"><span class="m-icon i-find"></span></span></div>
+      <div class="m-chatlist">
+        <div class="m-project"><span class="m-icon i-folder-open"></span><span class="m-item-name">shop</span></div>
+        <div class="m-session selected"><span class="m-item-name">Fix checkout rounding</span><span class="m-sbranch">fix/checkout-rounding</span><span class="m-spacer"></span><span class="m-age">now</span></div>
+        <div class="m-session"><span class="m-item-name">Gift card balance</span><span class="m-sbranch">fix/gift-cards</span><span class="m-spacer"></span><span class="m-state tone-red">failed</span></div>
+        <div class="m-project"><span class="m-icon i-folder-open"></span><span class="m-item-name">artifactize</span></div>
+        <div class="m-session"><span class="m-item-name">Release notes wording</span><span class="m-sbranch">dev</span><span class="m-spacer"></span><span class="m-state tone-running">running</span></div>
+        <div class="m-session hover"><span class="m-item-name">Changelog for 0.25</span><span class="m-sbranch">release/0.25</span><span class="m-spacer"></span><span class="m-state">finished</span></div>
+        <div class="m-project"><span class="m-icon i-folder-open"></span><span class="m-item-name">웹툰-플랫폼</span></div>
+        <div class="m-session"><span class="m-item-name">결제 흐름 문서 정리와 검증 범위 확인</span><span class="m-sbranch">feature/결제-흐름-정리</span><span class="m-spacer"></span><span class="m-age">3d</span></div>
+        <div class="m-project"><span class="m-icon i-folder-closed"></span><span class="m-item-name">billing-service</span></div>
+      </div>
     </section>
     <div class="m-divider"></div>
     <section class="m-main">
-      <div class="m-main-head"><h2>Fix checkout rounding</h2><span class="m-headline"><span class="m-text m-mono">fix/checkout-rounding</span></span><span class="m-viewswitch"><span class="on">Conversation</span><span>Graph</span></span></div>
+      <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span class="on">Conversation</span><span>Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find in the conversation" title="Find in the conversation"><span class="m-icon i-find"></span></span></span></div>
       <div class="m-chat">
         <div class="m-convo">
           <div class="m-msg">Checkout total shows too many decimals. Fix it and verify.</div>
@@ -86,14 +90,16 @@
     </section>
   </div>
 </div>
-<span class="callout" style="left: 250px; top: 8px">1</span>
-<span class="callout" style="left: 250px; top: 70px">16</span>
-<span class="callout" style="left: 250px; top: 98px">2</span>
-<span class="callout" style="left: 284px; top: 146px">17</span>
+<span class="callout" style="left: 100px; top: 9px">1</span>
+<span class="callout" style="left: 226px; top: 9px">16</span>
+<span class="callout" style="left: 70px; top: 45px">2</span>
+<span class="callout" style="left: 236px; top: 63px">28</span>
+<span class="callout" style="left: 258px; top: 99px">17</span>
+<span class="callout" style="left: 300px; top: 7px">3</span>
+<span class="callout" style="left: 860px; top: 7px">27</span>
+<span class="callout" style="left: 1222px; top: 7px">29</span>
 <span class="callout" style="left: 740px; top: 382px">18</span>
 <span class="callout" style="left: 1140px; top: 620px">19</span>
-<span class="callout" style="left: 560px; top: 4px">3</span>
-<span class="callout" style="left: 820px; top: 4px">27</span>
 <span class="callout" style="left: 1140px; top: 320px">4</span>
 <span class="callout" style="left: 700px; top: 493px">5</span>
 <span class="callout" style="left: 1140px; top: 414px">6</span>
@@ -101,16 +107,18 @@
 <span class="callout" style="left: 540px; top: 692px">8</span>
 <span class="callout" style="left: 1060px; top: 712px">9</span>
 </div>
-<figcaption>Stage 1280 × 800. A session whose turn has ended: what the agent did between its words, the first tools folded into a summary line, two verifies, each a Run reference, one command that failed, and an answer in Markdown. In the Pane, other sessions' states: one failed and one finished while not shown, one running. The composer is empty, Send at its right.</figcaption>
+<figcaption>Stage 1280 × 800. A session whose turn has ended: what the agent did between its words, the first tools folded into a summary line, two verifies, each a Run reference, one command that failed, and an answer in Markdown. Over it the stage header, controls only: the view tabs in its middle and Find at its right. In the Pane, the sessions under their projects, one project folded; other sessions' states: one failed and one finished while not shown, one running. The composer is empty, Send at its right.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>New chat</b><span>One button across the Pane's top; it asks for the branch the session works on.</span></div></li>
-  <li><span class="n">16</span><div><b>Search</b><span>Lists only the sessions whose title, project or branch matches, as the library finds them.</span></div></li>
-  <li><span class="n">2</span><div><b>Sessions</b><span>Grouped under their project, newest first; one line each, the title and its age. The shown one on the selection.</span></div></li>
-  <li><span class="n">17</span><div><b>State</b><span>In the age's place: <i>running</i> while a turn runs, then how a turn ended while the session was not shown (<i>finished</i>, <i>failed</i>, <i>stopped</i>) until it is shown.</span></div></li>
-  <li><span class="n">3</span><div><b>Header row</b><span>The session's title and, quieter, the branch it works on.</span></div></li>
-  <li><span class="n">27</span><div><b>View switch</b><span>Conversation or Graph, two quiet segments: Graph shows the branch's Current with the composer under it (the Current page).</span></div></li>
+  <li><span class="n">1</span><div><b>New chat</b><span>The Pane's top row, the new-chat icon and its name; it asks for the branch the session works on.</span></div></li>
+  <li><span class="n">16</span><div><b>Search</b><span>The magnifier at the top row's right turns the row into the search field in place; Esc gives the row back.</span></div></li>
+  <li><span class="n">2</span><div><b>Project</b><span>A row with its folder, open while its sessions show under it, closed while folded; a click folds or unfolds it. No chevron.</span></div></li>
+  <li><span class="n">28</span><div><b>Session</b><span>Its title on the sessions' one indent, its branch dimmed after it; the shown one on the selection.</span></div></li>
+  <li><span class="n">17</span><div><b>State</b><span>The row's right: its age, or <i>running</i> while a turn runs, then how a turn ended while the session was not shown (<i>finished</i>, <i>failed</i>, <i>stopped</i>) until it is shown.</span></div></li>
+  <li><span class="n">3</span><div><b>Stage header</b><span>Controls only, the same row as Verify's: the way back at its left when there is one, the view tabs in its middle, the shown view's tools at its right. The Pane's selected row names the session.</span></div></li>
+  <li><span class="n">27</span><div><b>View tabs</b><span>Conversation or Graph: the shown view's word brighter over the thin edit-mark underline. Graph puts the branch's Current here with the chat floating over it (the Current page).</span></div></li>
+  <li><span class="n">29</span><div><b>Find</b><span>Find in the conversation: the magnifier turns into its field in its place.</span></div></li>
   <li><span class="n">4</span><div><b>Message</b><span>What the person sent, exactly as typed, a block at the column's right; the agent answers at the left, unboxed.</span></div></li>
   <li><span class="n">18</span><div><b>Summary</b><span>Tools in a row that went well, folded into one line of what they did; a click unfolds them.</span></div></li>
   <li><span class="n">5</span><div><b>What the agent did</b><span>One quiet line per tool, no box: an icon, a verb and what it acted on.</span></div></li>
@@ -119,6 +127,48 @@
   <li><span class="n">19</span><div><b>Markdown</b><span>The agent's text read as Markdown: lists, links, inline code and code blocks.</span></div></li>
   <li><span class="n">8</span><div><b>Composer</b><span>One field; under the text, the model at the left and Send at the right.</span></div></li>
   <li><span class="n">9</span><div><b>Send</b><span>The one primary control; while a turn runs it is Stop.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 300">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
+  <div class="m-screen">
+    <section class="m-pane">
+      <div class="m-pane-top"><span class="m-tool-field"><span class="m-icon i-find"></span>round<span class="m-caret"></span></span></div>
+      <div class="m-chatlist">
+        <div class="m-project"><span class="m-icon i-folder-open"></span><span class="m-item-name">shop</span></div>
+        <div class="m-session selected"><span class="m-item-name">Fix checkout rounding</span><span class="m-sbranch">fix/checkout-rounding</span><span class="m-spacer"></span><span class="m-age">now</span></div>
+        <div class="m-project"><span class="m-icon i-folder-open"></span><span class="m-item-name">artifactize</span></div>
+        <div class="m-session"><span class="m-item-name">Rounding in the tally</span><span class="m-sbranch">dev</span><span class="m-spacer"></span><span class="m-age">2d</span></div>
+      </div>
+    </section>
+    <div class="m-divider"></div>
+    <section class="m-main">
+      <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span class="on">Conversation</span><span>Graph</span></span></span><span class="m-stage-tools"><span class="m-tool-field"><span class="m-icon i-find"></span>discount<span class="m-caret"></span><span class="m-count-of">2 of 3</span></span></span></div>
+      <div class="m-chat">
+        <div class="m-convo">
+          <div class="m-msg">Checkout total shows too many decimals. Fix it and verify.</div>
+          <div class="m-turn">
+            <p><code>checkout/unit</code> fails: the total is rounded before the <span class="m-hit">discount</span> is applied. Moving the rounding to the end.</p>
+            <ul><li><code>checkout/unit</code> passes: the total is rounded after the <span class="m-hit now">discount</span>.</li><li>The <span class="m-hit">discount</span> line keeps two decimals.</li></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<span class="callout" style="left: 250px; top: 9px">30</span>
+<span class="callout" style="left: 1010px; top: 7px">31</span>
+<span class="callout" style="left: 700px; top: 222px">32</span>
+</div>
+<figcaption>Stage 1280 × 300. The Pane's search open in its top row with <i>round</i> typed, the sessions that match under their projects; Find in the conversation open in the stage header with <i>discount</i> typed, on its second place of three.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">30</span><div><b>Search, open</b><span>The top row is the search field, focused, until it is emptied and Esc gives New chat back; the list keeps the projects with a matching session, each open.</span></div></li>
+  <li><span class="n">31</span><div><b>Find, open</b><span>The magnifier's place holds the field, where it stood; at its end which place is shown of how many.</span></div></li>
+  <li><span class="n">32</span><div><b>Places found</b><span>Each place the text appears on a quiet mark; the shown one adds the edit-mark underline, scrolled into view.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -252,9 +302,9 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-pane-head"><span class="m-new"><span class="m-icon i-add"></span>New chat</span></div><div class="m-chat-search"><div class="m-input text"><span class="m-placeholder">Search chats</span></div></div></section>
+    <section class="m-pane"><div class="m-pane-top"><span class="m-new"><span class="m-icon i-new-chat"></span>New chat</span><span class="m-tool" aria-label="Search chats" title="Search chats"><span class="m-icon i-find"></span></span></div></section>
     <div class="m-divider"></div>
-    <section class="m-main"><div class="m-main-head"><h2>Chat</h2></div><p class="m-empty">Start a session with New chat.</p></section>
+    <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"></span></div><p class="m-empty">Start a session with New chat.</p></section>
     <div class="m-scrim"></div>
     <div class="m-dialog" style="top: 24px; left: 62%; width: 420px">
       <h2>New chat</h2>
@@ -278,9 +328,9 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-CHAT-1">D-CHAT-1</dt>
-  <dd>Chat's Pane is one <code>--surface-panel</code> column, as an agent chat application's sidebar: its head, a row closed below by <code>--line-group</code>, holds <b>New chat</b>, a button across the Pane's width with the add icon; under it the search field, a <code>--control</code> field on <code>--surface-input</code> across the Pane's width, its placeholder <i>Search chats</i> in <code>--ink-2</code>; under it the sessions, grouped by project and branch, the groups and their sessions newest first, each group under <i>{project} / {branch}</i> as a group label (D-SYS-5), each session one <code>--row-pane</code> row, chosen by a click anywhere on it (J-PANE-ROWS): its title in <code>--ink</code>, cut with an ellipsis, and at the right its age in <code>--ink-2</code> with tabular figures, or in the age's place its state as one word at <code>--text-small</code>, at the row's weight (J-CHAT): <i>running</i> in <code>--running</code>, then until the session is shown how a turn ended while it was not, <i>finished</i> in <code>--ink</code>, <i>failed</i> in <code>--red</code>, <i>stopped</i> in <code>--ink-2</code> or <i>interrupted</i> in <code>--ink-2</code>. The pointer over a session gives its whole row <code>--surface-group</code>, and the keyboard on it a 2px <code>--focus</code> ring inside the whole row. While the search matches nothing, one <code>--ink-2</code> line, <i>No chat matches.</i>, takes the list's place. A session's title is <code>--ink-2</code>; the shown session is the darker <code>--selection</code> row with its title in <code>--ink</code> (D-SYS-13), and hover never lights it. <span class="avoid">a second line under each session; the branch on a session's line or the model in the list; a heading over the Pane; a card per session; a preview on hover; a dot, badge or count beside a session; a Human review's waiting shown in the Pane (the bar's Review count says it).</span></dd>
+  <dd>Chat's Pane is one <code>--surface-panel</code> column, as an agent chat application's sidebar, every row <code>--row-pane</code> (36px) high and chosen by a click anywhere on it across the Pane's width (J-PANE-ROWS). Its top row, closed below by <code>--line-group</code>, is <b>New chat</b>: the new-chat icon in <code>--ink-2</code> and its name in <code>--ink</code>, the row's whole width its button but for the 36px cell at its right, the find icon alone, <i>Search chats</i> its accessible name and tooltip (a stage tool, D-MAIN-1). A click on it turns the top row into the search field in place, focused: a <code>--control</code> field on <code>--surface-input</code> with the find icon and the editing outline (D-SYS-13); typing lists only the sessions whose title, project or branch matches, as the library finds them, every project with a match unfolded; while it matches nothing, one <code>--ink-2</code> line, <i>No chat matches.</i>, takes the list's place; emptied, Esc gives the top row back. Under the top row the projects, newest activity first: each a row with its folder in <code>--ink-2</code>, open while its sessions show under it, closed while folded, and its name in <code>--label</code> at the row's weight, cut with an ellipsis; a click anywhere on it folds or unfolds it. Under a project its sessions, newest first, each a row: its title, then its branch in <code>--mono</code> at <code>--text-label</code> in <code>--ink-3</code> right after it, the branch cut first, down to nothing, before the title is cut with an ellipsis; at the right its age in <code>--ink-2</code> with tabular figures, or in the age's place its state as one word at <code>--text-small</code>, at the row's weight (J-CHAT): <i>running</i> in <code>--running</code>, then until the session is shown how a turn ended while it was not, <i>finished</i> in <code>--ink</code>, <i>failed</i> in <code>--red</code>, <i>stopped</i> in <code>--ink-2</code> or <i>interrupted</i> in <code>--ink-2</code>. Two x lines hold the column: the new-chat icon and every folder at the Pane's <code>--pad</code>; every session's title at one indent, the icon's width and 8px further. A session's title is <code>--ink-2</code>; the shown session is the darker <code>--selection</code> row with its title in <code>--ink</code> and its branch in <code>--ink-2</code> (D-SYS-13), and hover never lights it; the pointer over any other row gives its whole row <code>--surface-group</code>, and the keyboard on it a 2px <code>--focus</code> ring inside the whole row. <span class="avoid">a chevron before a project; a search field standing under New chat while unused; New chat as a bordered button; a second line under a session; the model in the list; a heading over the Pane; a card per session; a preview on hover; a dot, badge or count beside a session or a project; a Human review's waiting shown in the Pane (the bar's Review count says it); icons or titles off their two x lines.</span></dd>
   <dt id="D-CHAT-2">D-CHAT-2</dt>
-  <dd>The Main area's header row (D-MAIN-1) names the session: its title as the view's name, then its branch in <code>--mono</code> <code>--ink-2</code> as its headline, then the view switch (D-CHAT-10) and, in Graph view, the Current's scan state and Refresh (D-CUR-1). Under it, closed above by <code>--line-panel</code>, the conversation stands on <code>--surface-app</code> in a column of <code>--measure</code> centred in the area, newest at the bottom, scrolling on its own and following its newest line only while it is read at its end (J-CHAT-READ): scrolled up, what is read stays put as the turn streams and Run references change in place. Away from the end, <b>Scroll to end</b> stands centred at the conversation's bottom, 8px above the composer, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow, <code>--control</code> high, the unfold icon and its name at <code>--text-small</code>; at the end it is not drawn. With no session shown, one <code>--ink-2</code> line says how to start one (D-MAIN-3). <span class="avoid">the conversation stretched to the window's width; avatars; a time on every message; the model or the provider in the header; a jump to the end while scrolled up; a count of new lines on Scroll to end.</span></dd>
+  <dd>The Main area starts with the stage header (D-MAIN-1), the same row as Verify's: in its middle the view tabs (D-CHAT-10), at its right the tools of the view shown, in Conversation Find (D-CHAT-11), in Graph the graph's (D-CUR-10); nothing in it names the session, which the Pane's selected row does, and with the Pane hidden the window's title (J-PANE-TOGGLE). Under it the conversation stands on <code>--surface-app</code> in a column of <code>--measure</code> centred in the area, newest at the bottom, scrolling on its own and following its newest line only while it is read at its end (J-CHAT-READ): scrolled up, what is read stays put as the turn streams and Run references change in place. Away from the end, <b>Scroll to end</b> stands centred at the conversation's bottom, 8px above the composer, raised (D-SYS-2): <code>--surface-raised</code>, a <code>--line-panel</code> border, <code>--radius-control</code>, the faint shadow, <code>--control</code> high, the unfold icon and its name at <code>--text-small</code>; at the end it is not drawn. With no session shown, the stage header stands empty and one <code>--ink-2</code> line says how to start one (D-MAIN-3). <span class="avoid">the session's title or branch in the stage header; the conversation stretched to the window's width; avatars; a time on every message; the model or the provider in the header; a jump to the end while scrolled up; a count of new lines on Scroll to end.</span></dd>
   <dt id="D-CHAT-3">D-CHAT-3</dt>
   <dd>A person's message is a block at the column's right, at most 80% of its width, on <code>--surface-group</code> with <code>--radius-chip</code> and no border, its text exactly as typed, never read as Markdown. The agent's turn runs at the column's left at <code>--text-body</code> in <code>--ink</code>, without a box, a name or an icon before it, its text read as Markdown (J-CHAT-SEND): paragraphs; lists with their markers, indented 20px; links as the app's links (<code>--accent</code>, underlined), opening in the browser; inline code in <code>--mono</code> at <code>--text-small</code> on <code>--surface-group</code> with <code>--radius-control</code>; a code block on <code>--surface-panel</code> inside a <code>--line-group</code> border of <code>--radius-control</code>, its lines in <code>--mono</code> at <code>--text-small</code>, kept as written and scrolling sideways on their own, <b>Copy</b> a small quiet button at its top right; anything else, headings and HTML included, as its text. A stopped turn ends with <i>Stopped</i> in <code>--ink-2</code>, an interrupted one with <i>Interrupted</i> and why in <code>--ink-2</code>, a failed one with why in <code>--red</code>; a turn that ended well ends with its last words. <span class="avoid">a bubble around the agent's text; the model, the time or a token count under every turn; a sentence saying the turn went well; HTML from the answer rendered; images or embedded pages from the answer; colour themes for code.</span></dd>
   <dt id="D-CHAT-4">D-CHAT-4</dt>
@@ -294,7 +344,9 @@
   <dt id="D-CHAT-8">D-CHAT-8</dt>
   <dd>The New chat dialog is a dialog as the overlays draw one (D-OVL-1): its title, the <b>Branch</b> field, a choice on <code>--surface-input</code> inside <code>--line-input</code>, then <b>Model</b>, labelled as a form's field is, its value plain text, not a field: the provider's name, the model and, for a model with reasoning efforts, its effort, in <code>--mono</code> at <code>--text-small</code>; while the providers' models are being read it says <i>Reading the providers' models…</i> in <code>--ink-2</code>, and once they are read with none listed, <i>No provider lists a model. The session starts without one; connect a provider in Settings to send.</i> in <code>--ink-2</code>. Cancel and the primary Create end its last row, Create disabled only while the models are being read, and enabled with a model or, with none listed, without one (J-CHAT-NEW). Create closes the dialog and shows the new session: selected in the session list, its conversation empty, the composer focused (J-CHAT-NEW). <span class="avoid">Create offered while the models are still being read; Create withheld because no provider is set up; the no-model sentence while the models are still being read; a model choice in the dialog (the composer's selector changes it).</span></dd>
   <dt id="D-CHAT-10">D-CHAT-10</dt>
-  <dd>The view switch stands in the session's header row after its branch, 12px from it: <b>Conversation</b> and <b>Graph</b> as two text segments at <code>--text-small</code> in one group 22px high, of <code>--radius-control</code>, as a video editor's viewer-mode toggles are; inside a 1px <code>--line-input</code> edge with a divider between the two; since it swaps what the area shows, it is drawn as tabs are: the shown view's word <code>--ink-bright</code> over a 2px <code>--current-mark</code> underline, the other's <code>--ink-off</code>, on the same surface and at the same weight. A click shows that view; each session keeps its own (J-CHAT-GRAPH). Graph is the Current page's (D-CUR-10). <span class="avoid">the switch as tabs under the header or as icons alone; a coloured or bold shown segment; a third view.</span></dd>
+  <dd>The view tabs stand in the middle of the stage header (D-MAIN-1), centred on the Main area: <b>Conversation</b> and <b>Graph</b> as two words at <code>--text-small</code>, 16px apart, as tall as the row, drawn as tabs are (D-SYS-13): the shown view's word <code>--ink-bright</code> over a 2px <code>--current-mark</code> underline along the row's bottom, the other's <code>--ink-off</code>, stepping to <code>--ink</code> under the pointer, both at weight 400, with no edge, face or divider. A click shows that view; each session keeps its own (J-CHAT-GRAPH). Graph is the Current page's (D-CUR-10). <span class="avoid">the tabs in a bordered group or as a segmented control; a filled or bold shown tab; tabs under the header or as icons alone; a third view.</span></dd>
+  <dt id="D-CHAT-11">D-CHAT-11</dt>
+  <dd>Find in the conversation is the Conversation view's one tool, the find icon alone at the stage header's right (D-MAIN-1). A click on it (also Ctrl+F outside the Pane, J-CHAT-FIND) turns it into its field in the same place, focused, up to 240px wide: a <code>--control</code> field on <code>--surface-input</code> inside <code>--line-input</code> with the find icon and the editing outline (D-SYS-13); typed in, each place the text appears in the conversation, ignoring case, is marked by a quiet <code>--accent-soft</code> face under <code>--ink-bright</code> text, the shown place adding a 2px <code>--current-mark</code> underline and scrolled into view, and the field's end says which place of how many in <code>--ink-2</code> with tabular figures (<i>2 of 3</i>), or <i>No match</i>; Enter shows the next place, Shift+Enter the one before. Esc, or a click outside it with nothing typed, gives the icon back and takes the marks away, the conversation where it was read. <span class="avoid">a find bar under the header; a list of results over the conversation; marks in a status colour; the conversation filtered to its matches.</span></dd>
   <dt id="D-CHAT-9">D-CHAT-9</dt>
   <dd>A session whose branch cannot be worked on now keeps its place in the Pane and its conversation; above its composer, one line in <code>--ink-2</code> at <code>--text-small</code> says why, as the library says it, and the composer reads as off: its field and Send disabled, the whole box at reduced opacity. <span class="avoid">the session hidden or removed from the Pane; a red banner; a composer that takes text it cannot send.</span></dd>
 </dl>
