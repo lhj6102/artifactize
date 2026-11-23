@@ -90,9 +90,15 @@ function whole(dir) {
   for (const screen of screens.keys()) if (!SCREENS.includes(screen) && screen !== "index") report(`whole: unknown screen ${screen}`);
   for (const name of sheet.root.keys()) if (!index.includes(`--${name}</code>`)) report(`index.html: does not name the token --${name}`);
   // The icon set lives in mock.css as --i-NAME drawings; index.html's sheet names every one.
-  const icons = [...read(join(dir, "mock.css")).matchAll(/^\s*--i-([a-z-]+)\s*:/gm)].map((match) => match[1]);
+  // SVG images cannot inherit the document's token, so each mask encodes the same width.
+  const icons = [...read(join(dir, "mock.css")).matchAll(/^\s*--i-([a-z-]+)\s*:\s*([^;]+);/gm)];
+  const stroke = sheet.root.get("icon-stroke");
   if (icons.length === 0) report("mock.css: declares no icon (--i-NAME)");
-  for (const icon of icons) if (!index.includes(`<code>i-${icon}</code>`)) report(`index.html: does not name the icon i-${icon}`);
+  for (const [, icon, image] of icons) {
+    if (!index.includes(`<code>i-${icon}</code>`)) report(`index.html: does not name the icon i-${icon}`);
+    const widths = [...image.matchAll(/\bstroke-width=['"]([^'"]+)['"]/g)];
+    if (widths.length !== 1 || widths[0][1] !== stroke) report(`mock.css: --i-${icon} must use --icon-stroke (${stroke}) with no overrides`);
+  }
 }
 
 function report(text) {

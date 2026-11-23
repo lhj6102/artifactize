@@ -8,7 +8,13 @@
    its panel, a node from the canvas. A graph is drawn in neutral lines (a node's outline, an
    edge); a status shows on it as an icon and a strip, not as the colour of its lines. Colour carries meaning only on the element that has the meaning (a status dot or
    word, a node's light, a verdict button), and a meaning has one colour wherever the app shows
-   it, in a list, a chip or a graph; the accent is for what is interactive.
+   it, in a list, a chip or a graph; the accent is for what is interactive, a light neutral as a
+   video editor's controls are, the focus ring a light neutral too. States follow a video
+   editor's emphasis grammar: a chosen item is brighter text, never bolder; a selected row is a
+   darker row with white text; a primary action differs by its outline alone; and the one warm
+   colour, --current-mark, marks the single current or edited item as a thin line or a small
+   mark (a chosen tab's underline, a selected node's outline, the field being edited, a radio's
+   dot), never a fill or text.
 
    The app is dark only, whatever the system's appearance. The values are our
    own: the handoff's sampled HEX values were a comparison point, not a source. */
@@ -86,6 +92,7 @@
   --port: 7px;
   --grid: 24px;
   --icon: 12px;
+  --icon-stroke: 1.2; /* In the 12 × 12 drawing box, before scaling. */
   --icon-bar: 16px;
   --strip: 2px;
 

@@ -393,6 +393,7 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   // Each status's icon, drawn from the icon set's own shapes at the icon's box, and each
   // whole's control in secondary ink.
   const scale = (icon * zoom) / ICON_BOX;
+  context.lineWidth = pixels("--icon-stroke");
   context.lineCap = "round";
   context.lineJoin = "round";
   const drawIcon = (name: keyof typeof ICONS, shade: string, x: number, y: number) => {
@@ -405,9 +406,7 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
       if (shape.fill) {
         context.fillStyle = shade;
         context.fill(path);
-      }
-      if (!shape.fill || shape.width !== undefined) {
-        context.lineWidth = shape.width ?? 1.5;
+      } else {
         context.strokeStyle = shade;
         context.stroke(path);
       }

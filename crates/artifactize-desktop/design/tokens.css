@@ -92,6 +92,7 @@
   --port: 7px;
   --grid: 24px;
   --icon: 12px;
+  --icon-stroke: 1.2; /* In the 12 × 12 drawing box, before scaling. */
   --icon-bar: 16px;
   --strip: 2px;
 
