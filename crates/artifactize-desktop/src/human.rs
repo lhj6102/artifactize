@@ -885,7 +885,7 @@ pub async fn human_submit(
         work,
         id,
         request.request.id.clone(),
-        review::Answer::Explicit(result),
+        review::Answer::ExplicitWithoutDraft(result),
         turn,
     )
     .await
@@ -909,6 +909,20 @@ async fn submit(
                 .map_err(Failure::Read)?
                 .unwrap_or_default();
             review::Answer::PreparedDraft(draft)
+        }
+        review::Answer::ExplicitWithoutDraft(answer) => {
+            if review::read_draft(&app.launch.state, &owner, &app.launch.reviewer)
+                .await
+                .map_err(Failure::Read)?
+                .is_some_and(|draft| {
+                    draft.verdict.is_some() || !draft.green.is_empty() || !draft.red.is_empty()
+                })
+            {
+                return Err(Failure::Invalid(
+                    "A saved draft exists; submit the saved draft instead.".into(),
+                ));
+            }
+            review::Answer::ExplicitWithoutDraft(answer)
         }
         answer => answer,
     };

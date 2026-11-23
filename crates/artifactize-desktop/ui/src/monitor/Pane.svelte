@@ -69,7 +69,8 @@
   }
 
   function name(branch: BranchView): string {
-    return branch.name ? `${branch.project} / ${branch.name}` : branch.project;
+    const name = branch.name ? `${branch.project} / ${branch.name}` : branch.project;
+    return branch.historical ? `${name} (saved Run, no checkout)` : name;
   }
 </script>
 
@@ -107,7 +108,7 @@
             <button class="name" tabindex="-1" onclick={() => onselect(branch)}>
               <span class="label"
                 >{#if branch.name}<span class="project">{branch.project} /</span> <span class="branch-name">{branch.name}</span
-                  >{:else}<span class="branch-name">{branch.project}</span>{/if}</span
+                  >{:else}<span class="branch-name">{branch.project}</span>{/if}{#if branch.historical} <span class="project">(saved)</span>{/if}</span
               >
               <!-- Folded, the newest Run's status under the name; a branch without Runs says
                    nothing (D-SYS-11). -->

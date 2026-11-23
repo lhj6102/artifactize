@@ -473,6 +473,8 @@ export type BranchView = {
 	older: boolean,
 	/**  Starred: listed before the branches that are not. */
 	starred: boolean,
+	/**  A saved timeline entry pinned by a reference, not a live checkout. */
+	historical: boolean,
 };
 
 export type BrowseView = {

@@ -409,22 +409,19 @@ impl Browse {
         };
         // The waiting reviews' requests are read in turn with the reviews' own reads, so the
         // views they freshen are ordered with them.
-        let waiting = if read.full || !self.shown().initialized {
+        let (waiting, waiting_error) = if read.full || !self.shown().initialized {
             let (number, waiting) = reads
                 .numbered(live::waiting(state, reviewer, &snapshot.labels))
                 .await;
             match waiting {
-                Ok(waiting) => Some((number, waiting)),
-                Err(error) => {
-                    // The loader advanced but this snapshot was never published. Force the
-                    // next read rather than accepting "unchanged" against the loader's cache.
-                    self.restore_changed(changed);
-                    self.shown().error = Some(format!("read failed: {error}"));
-                    return Err(Failure::Read(error));
-                }
+                Ok(waiting) => (Some((number, waiting)), None),
+                Err(error) => (
+                    None,
+                    Some(format!("Waiting reviews could not be read: {error}")),
+                ),
             }
         } else {
-            None
+            (None, None)
         };
         let mut shown = self.shown();
         if shown.opened.id() != open.as_ref() {
@@ -489,7 +486,7 @@ impl Browse {
             live::OpenRun::Unchanged => {}
         }
         shown.initialized = true;
-        shown.error = None;
+        shown.error = waiting_error;
         shown.refreshed = true;
         if changed {
             shown.revision += 1;

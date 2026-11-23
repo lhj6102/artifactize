@@ -222,6 +222,7 @@ pub async fn submit(
 
 enum SubmittedAnswer<'a> {
     Explicit(&'a Submission),
+    PreparedExplicit(&'a Submission),
     SavedDraft,
     PreparedDraft(crate::review::Draft),
 }
@@ -242,6 +243,10 @@ async fn submit_answer(
         .expect("reconnected eval");
     let (answer, expected) = match answer {
         SubmittedAnswer::Explicit(submission) => (submission.validate(&eval.declaration)?, None),
+        SubmittedAnswer::PreparedExplicit(submission) => (
+            submission.validate(&eval.declaration)?,
+            Some(crate::review::Draft::default()),
+        ),
         other => {
             let draft = match other {
                 SubmittedAnswer::SavedDraft => receipts
@@ -249,7 +254,9 @@ async fn submit_answer(
                     .await?
                     .unwrap_or_default(),
                 SubmittedAnswer::PreparedDraft(draft) => draft,
-                SubmittedAnswer::Explicit(_) => unreachable!(),
+                SubmittedAnswer::Explicit(_) | SubmittedAnswer::PreparedExplicit(_) => {
+                    unreachable!()
+                }
             };
             (
                 draft.submission(&request)?.validate(&eval.declaration)?,
@@ -277,6 +284,23 @@ pub async fn submit_and_publish(
         request,
         reviewer,
         SubmittedAnswer::Explicit(submission),
+        cancellation,
+    )
+    .await
+}
+
+pub(crate) async fn publish_explicit_without_draft(
+    state: &Path,
+    request: &crate::types::RequestId,
+    reviewer: &crate::types::ReviewerId,
+    submission: &Submission,
+    cancellation: CancellationToken,
+) -> Result<Request, String> {
+    publish_answer(
+        state,
+        request,
+        reviewer,
+        SubmittedAnswer::PreparedExplicit(submission),
         cancellation,
     )
     .await

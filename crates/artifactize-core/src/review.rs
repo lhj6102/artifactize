@@ -98,6 +98,8 @@ pub fn release_refusal(
 #[derive(Debug, Clone, PartialEq)]
 pub enum Answer {
     Explicit(Submission),
+    /// Legacy input may settle only when no saved form would be discarded.
+    ExplicitWithoutDraft(Submission),
     SavedDraft,
     /// Captured after earlier edits reached storage; checked again atomically at settlement.
     PreparedDraft(Draft),
@@ -338,6 +340,12 @@ impl Job {
                     match answer {
                         Answer::Explicit(result) => {
                             human::submit_and_publish(&state, &id, &reviewer, &result, cancel).await
+                        }
+                        Answer::ExplicitWithoutDraft(result) => {
+                            human::publish_explicit_without_draft(
+                                &state, &id, &reviewer, &result, cancel,
+                            )
+                            .await
                         }
                         Answer::SavedDraft => {
                             human::publish_saved_draft(&state, &id, &reviewer, None, cancel).await

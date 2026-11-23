@@ -926,6 +926,22 @@ additionalProperties = false
     .unwrap();
     let edit = |comment: &str| json!({"id": id, "change": {"kind": "field", "verdict": "GREEN", "name": "comment", "value": {"kind": "text", "value": comment}}});
     invoke(&window, "human_draft_edit", edit("Before Submit")).unwrap();
+    let stale = invoke(
+        &other,
+        "human_submit",
+        json!({
+            "id": id, "job": 5,
+            "draft": { "verdict":"GREEN", "fields":[], "json":"{\"comment\":\"Stale copy\"}" },
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        stale["message"]
+            .as_str()
+            .unwrap()
+            .contains("saved draft exists")
+    );
+
     fs::write(
         &steps,
         format!(

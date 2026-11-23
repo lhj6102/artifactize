@@ -136,6 +136,8 @@ pub struct BranchView {
     pub older: bool,
     /// Starred: listed before the branches that are not.
     pub starred: bool,
+    /// A saved timeline entry pinned by a reference, not a live checkout.
+    pub historical: bool,
 }
 
 /// One Human review waiting for a person.
@@ -423,6 +425,7 @@ fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> 
         newest: branch.runs.last().map(|chip| run_chip(chip, now)),
         older,
         starred,
+        historical: false,
     }
 }
 
@@ -506,12 +509,16 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         .into_iter()
         .map(|shown_branch| {
             let limit = shown.chip_limit(shown_branch);
-            branch(
+            let mut row = branch(
                 shown_branch,
                 limit,
                 starred.contains(&shown_branch.place),
                 now,
-            )
+            );
+            row.historical = historical
+                .as_ref()
+                .is_some_and(|archived| archived.place == shown_branch.place);
+            row
         })
         .collect();
     let waiting_rows = shown.waiting.iter().map(|row| waiting(row, now)).collect();

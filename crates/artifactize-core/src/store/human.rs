@@ -368,7 +368,7 @@ impl Receipts {
                     super::RequestState::Completed { result, .. } => {
                         let latest = draft::read(&transaction, &current.id, &reviewer)?;
                         if let Some(expected) = &expected
-                            && !latest.as_ref().is_some_and(|draft| draft.same_answer(expected))
+                            && !latest.as_ref().unwrap_or(&crate::review::Draft::default()).same_answer(expected)
                         {
                             return Err(Error::Invalid("The review's verdict or fields changed while submitting. Review the saved draft and submit again.".into()));
                         }

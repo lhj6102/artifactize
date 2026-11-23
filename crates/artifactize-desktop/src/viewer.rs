@@ -381,12 +381,10 @@ pub async fn viewer_context(
         let sessions = app.viewers.0.lock().expect("viewer sessions");
         let active = active.filter(|review| sessions.active.as_ref() == Some(review));
         active.map_or((None, false), |review| {
-            let matches = sessions.places.get(&session).is_some_and(|place| {
-                review
-                    .addresses
-                    .iter()
-                    .any(|recorded| recorded.same_artifact(&place.address))
-            });
+            let matches = sessions
+                .places
+                .get(&session)
+                .is_some_and(|place| review.addresses.contains(&place.address));
             (Some(review.shown.into()), matches)
         })
     };
