@@ -117,7 +117,7 @@ pub(crate) async fn active_turns(
             if owner.live().map_err(Error::Invalid)? == live {
                 let mut session: Session = serde_json::from_str(&data)?;
                 if !live {
-                    session.refresh_activity(&state_path);
+                    refresh_activity(&mut session, &state_path);
                 }
                 active.push((session, owner));
             }
@@ -165,8 +165,14 @@ fn with_activity(
             .live()
             .map_err(Error::Invalid)?;
     }
-    session.refresh_activity(state);
+    refresh_activity(&mut session, state);
     Ok(session)
+}
+
+fn refresh_activity(session: &mut Session, state: &Path) {
+    if session.needs_activity() {
+        session.refresh_activity(crate::chat::recorded_outcome(state, &session.id));
+    }
 }
 
 fn owner(db: &Connection, id: &SessionId) -> Result<Option<Owner>, Error> {
@@ -322,10 +328,10 @@ impl Receipts {
                     return Ok(false);
                 }
                 let updated = db.execute(
-                "UPDATE chat_active_turns SET data=json_set(data,'$.stop_requested',json('true')) \
-                 WHERE session_id=? AND json_extract(data,'$.token')=?",
-                params![id, expected.token],
-            )?;
+                    "UPDATE chat_active_turns SET data=json_set(data,'$.stop_requested',json('true')) \
+                     WHERE session_id=? AND json_extract(data,'$.token')=?",
+                    params![id, expected.token],
+                )?;
                 Ok::<_, Error>(updated != 0)
             })
             .await

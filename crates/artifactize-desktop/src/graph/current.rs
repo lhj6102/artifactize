@@ -373,16 +373,27 @@ fn view(currents: &Currents, branch: BranchKey) -> Result<CurrentView, Failure> 
     let shown = currents.shown(&place)?;
     let current = &shown.current;
     let count = |artifacts: usize| u32::try_from(artifacts).unwrap_or(u32::MAX);
+    let (scanning, failure) = {
+        let running = currents.running.lock().expect("scans lock");
+        let scanning = running.contains_key(&place);
+        let failure = if scanning {
+            None
+        } else {
+            currents
+                .failed
+                .lock()
+                .expect("failures lock")
+                .get(&place)
+                .cloned()
+        };
+        (scanning, failure)
+    };
     Ok(CurrentView {
         branch,
         scanned_at: (current.scanned_at.unix_timestamp_nanos() / 1_000_000) as f64,
         fingerprint: current.fingerprint.clone().into(),
         revision: shown.revision,
-        scanning: currents
-            .running
-            .lock()
-            .expect("scans lock")
-            .contains_key(&place),
+        scanning,
         checking: count(
             current
                 .artifacts
@@ -391,12 +402,7 @@ fn view(currents: &Currents, branch: BranchKey) -> Result<CurrentView, Failure> 
                 .count(),
         ),
         artifacts: count(current.artifacts.len()),
-        failure: currents
-            .failed
-            .lock()
-            .expect("failures lock")
-            .get(&place)
-            .cloned(),
+        failure,
     })
 }
 

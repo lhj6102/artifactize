@@ -213,24 +213,33 @@ impl From<chat::Block> for ChatBlock {
             chat::Block::Tool {
                 name,
                 arguments,
-                output,
-                failed,
+                result,
                 tool_kind,
                 summary,
-                exit_code,
-                omitted_lines,
-                output_truncated,
-            } => Self::Tool {
-                name,
-                arguments,
-                output,
-                failed,
-                tool_kind: tool_kind.into(),
-                summary,
-                exit_code,
-                omitted_lines: u32::try_from(omitted_lines).unwrap_or(u32::MAX),
-                output_truncated,
-            },
+            } => {
+                let (output, failed, exit_code, omitted_lines, output_truncated) = result
+                    .map(|result| {
+                        (
+                            Some(result.output),
+                            result.failed,
+                            result.exit_code,
+                            u32::try_from(result.omitted_lines).unwrap_or(u32::MAX),
+                            result.output_truncated,
+                        )
+                    })
+                    .unwrap_or_default();
+                Self::Tool {
+                    name,
+                    arguments,
+                    output,
+                    failed,
+                    tool_kind: tool_kind.into(),
+                    summary,
+                    exit_code,
+                    omitted_lines,
+                    output_truncated,
+                }
+            }
             chat::Block::Run { card } => Self::Run {
                 card: ChatRun {
                     id: card.id.into(),

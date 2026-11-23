@@ -39,6 +39,8 @@ pub struct Node {
     pub path: PathBuf,
     pub kind: ArtifactKind,
     pub target_missing: bool,
+    #[serde(skip)]
+    pub parts: Vec<ArtifactName>,
     pub annotations: Annotations,
 }
 #[derive(Debug, Serialize)]
@@ -125,6 +127,7 @@ pub fn read_project(project: &Path) -> Result<Project, Refusal> {
                     path: artifact.path.local().unwrap_or(Path::new("")).to_owned(),
                     kind: artifact.kind(),
                     target_missing: artifact.target_error.is_some(),
+                    parts: artifact.parts.iter().cloned().collect(),
                     annotations: annotations::read(source, &config, name),
                 },
             )

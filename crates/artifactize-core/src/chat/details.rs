@@ -47,6 +47,20 @@ struct Arguments<'a> {
     args: Vec<&'a str>,
 }
 
+pub(super) fn read_summary(
+    name: &str,
+    path: Option<&std::path::Path>,
+    pattern: Option<&str>,
+) -> String {
+    let path = path.map(crate::platform::path_text);
+    let argument = match name {
+        "list" => path.as_deref().unwrap_or("."),
+        "glob" | "grep" => pattern.unwrap_or(""),
+        _ => path.as_deref().unwrap_or(""),
+    };
+    short([name, argument].into_iter().flat_map(str::split_whitespace))
+}
+
 pub(super) fn summary(name: &str, arguments: &Value) -> String {
     let args = Arguments::deserialize(arguments).unwrap_or_default();
     let words = match name {

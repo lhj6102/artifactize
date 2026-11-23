@@ -228,12 +228,12 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             .iter()
             .any(|block| matches!(block, Block::Text { text } if text == "Reading the notes."))
     );
-    assert!(mid.turns[0].blocks.iter().any(|block| matches!(block, Block::Tool { tool_kind: ToolKind::Read, summary, output: Some(output), failed: Some(false), .. } if summary == "read notes.txt" && output.contains("before"))));
+    assert!(mid.turns[0].blocks.iter().any(|block| matches!(block, Block::Tool { tool_kind: ToolKind::Read, summary, result: Some(artifactize_core::chat::ToolResult { output, failed: Some(false), .. }), .. } if summary == "read notes.txt" && output.contains("before"))));
     assert_eq!(
         fs::read_to_string(worktree.join("notes.txt")).unwrap(),
         "after"
     );
-    assert!(mid.turns[0].blocks.iter().any(|block| matches!(block, Block::Tool { name, output: Some(output), failed: Some(false), .. } if name == "run_command" && output.contains("after"))));
+    assert!(mid.turns[0].blocks.iter().any(|block| matches!(block, Block::Tool { name, result: Some(artifactize_core::chat::ToolResult { output, failed: Some(false), .. }), .. } if name == "run_command" && output.contains("after"))));
     let lines = mid.turns[0]
         .blocks
         .iter()
@@ -241,10 +241,14 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             Block::Tool {
                 tool_kind: ToolKind::Command,
                 summary,
-                exit_code: Some(0),
-                output: Some(output),
-                omitted_lines,
-                output_truncated: true,
+                result:
+                    Some(artifactize_core::chat::ToolResult {
+                        exit_code: Some(0),
+                        output,
+                        omitted_lines,
+                        output_truncated: true,
+                        ..
+                    }),
                 ..
             } if summary.ends_with("lines.txt (exit 0)") => Some((output, *omitted_lines)),
             _ => None,
@@ -269,11 +273,14 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             Block::Tool {
                 tool_kind: ToolKind::Command,
                 summary,
-                exit_code: Some(7),
-                output: Some(output),
-                omitted_lines: 0,
-                output_truncated: true,
-                failed: Some(true),
+                result:
+                    Some(artifactize_core::chat::ToolResult {
+                        exit_code: Some(7),
+                        output,
+                        omitted_lines: 0,
+                        output_truncated: true,
+                        failed: Some(true),
+                    }),
                 ..
             } if summary.ends_with(" (exit 7)") => Some(output),
             _ => None,
@@ -289,7 +296,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             .any(|block| matches!(block, Block::Tool {
         tool_kind: ToolKind::Edit,
         summary,
-        failed: Some(true),
+        result: Some(artifactize_core::chat::ToolResult { failed: Some(true), .. }),
         ..
     } if summary == "write case.txt"))
     );

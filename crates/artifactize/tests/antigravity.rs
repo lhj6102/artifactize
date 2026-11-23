@@ -267,7 +267,7 @@ impl Fixture {
             let texts = turn.blocks.iter().filter_map(|block| match block { Block::Text { text } => Some(text.as_str()), _ => None }).collect::<Vec<_>>();
             assert_eq!(texts, ["Reading notes.", "Waiting for Stop."]);
             let reads = turn.blocks.iter().filter(|block| matches!(block, Block::Tool { name, .. } if name == "read")).collect::<Vec<_>>();
-            assert!(matches!(reads.as_slice(), [Block::Tool { output: Some(output), failed: Some(false), .. }] if output.contains("fixture notes")));
+            assert!(matches!(reads.as_slice(), [Block::Tool { result: Some(artifactize_core::chat::ToolResult { output, failed: Some(false), .. }), .. }] if output.contains("fixture notes")));
             let run = turn.blocks.iter().find_map(|block| match block { Block::Run { card } => Some(card.id.clone()), _ => None }).expect("Verify Run reference");
             let pids = peer_pids(&self.root);
             assert!(pids.iter().all(|&pid| os::running(pid)));

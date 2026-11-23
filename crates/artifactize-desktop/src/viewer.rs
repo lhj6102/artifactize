@@ -54,12 +54,9 @@ struct ActiveReview {
 
 impl ActiveReview {
     async fn claimed(&self, app: &App) -> Result<bool, String> {
-        let view = store::read_request_as(
-            &app.launch.state,
-            self.owner.as_str(),
-            store::Shown::Requests,
-        )
-        .await?;
+        let view =
+            store::read_request_by_id(&app.launch.state, &self.owner, store::Shown::Requests)
+                .await?;
         Ok(artifactize_core::review::review_refusal(Some(&view), &app.launch.reviewer).is_none())
     }
 }
@@ -633,7 +630,7 @@ pub async fn active_review_set(
 async fn read_active(app: &App, shown: Option<RequestId>) -> Result<Option<ActiveReview>, Failure> {
     let Some(shown) = shown else { return Ok(None) };
     let state = &app.launch.state;
-    let exact = store::read_request_as(state, shown.as_str(), store::Shown::Requests)
+    let exact = store::read_request_by_id(state, &shown, store::Shown::Requests)
         .await
         .map_err(Failure::Read)?;
     let owner = store::read_review_owner(state, &exact)
@@ -647,14 +644,13 @@ async fn read_active(app: &App, shown: Option<RequestId>) -> Result<Option<Activ
         addresses.push(address);
     }
     if exact.request.id != owner.request.id {
-        let target =
-            store::read_request_as(state, exact.request.id.as_str(), store::Shown::Definitions)
-                .await
-                .ok()
-                .and_then(|view| {
-                    view.definition
-                        .and_then(|definition| definition.artifact().path.value().cloned())
-                });
+        let target = store::read_request_by_id(state, &exact.request.id, store::Shown::Definitions)
+            .await
+            .ok()
+            .and_then(|view| {
+                view.definition
+                    .and_then(|definition| definition.artifact().path.value().cloned())
+            });
         if let Some(address) = review_address(state, &exact, target).await {
             addresses.push(address);
         }

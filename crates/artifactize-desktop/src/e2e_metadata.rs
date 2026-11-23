@@ -167,7 +167,11 @@ pub fn init<R: tauri::Runtime>()
         file: owner.map(|path| path.with_extension("exit.json")),
         identity: identity.clone(),
     };
-    let receipt = serde_json::json!(exit.file);
+    let receipt = serde_json::json!(
+        exit.file
+            .as_deref()
+            .map(artifactize_core::platform::path_text)
+    );
     let fixed_date = artifactize_core::platform::environment::var("ARTIFACTIZE_E2E_DATE")
         .map(|value| {
             value

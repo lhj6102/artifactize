@@ -172,7 +172,7 @@ impl<'a> Tools<'a> {
                 let target = self.file(&path)?;
                 write_file(&target, &text)?;
                 Ok(ToolResult::success(Content::Text {
-                    text: format!("Wrote {path}."),
+                    text: format!("Wrote {}.", path.as_str()),
                 })
                 .into())
             }
@@ -182,7 +182,8 @@ impl<'a> Tools<'a> {
                     old_text,
                     new_text,
                 } = decode(arguments)?;
-                let file = scope::open_scoped(root, &path).map_err(|error| error.to_string())?;
+                let file =
+                    scope::open_scoped(root, path.as_str()).map_err(|error| error.to_string())?;
                 if !file
                     .metadata()
                     .map_err(|error| error.to_string())?
@@ -210,16 +211,15 @@ impl<'a> Tools<'a> {
                 text.replace_range(start..start + old_text.len(), &new_text);
                 write_file(&self.file(&path)?, &text)?;
                 Ok(ToolResult::success(Content::Text {
-                    text: format!("Edited {path}."),
+                    text: format!("Edited {}.", path.as_str()),
                 })
                 .into())
             }
             "run_command" => {
                 let Command { program, args, cwd } = decode(arguments)?;
-                let cwd = if cwd == "." { "" } else { &cwd };
                 let folder = self
                     .scope
-                    .resolve_input(root, &self.owner, cwd)
+                    .resolve_input(root, &self.owner, cwd.as_str())
                     .map_err(|error| error.to_string())?;
                 let program =
                     crate::platform::program_path(&program).map_err(|error| error.to_string())?;
@@ -294,8 +294,8 @@ impl<'a> Tools<'a> {
     }
 
     /// Resolve the existing parent without following links; creation is limited to one entry.
-    fn file(&self, path: &str) -> Result<PathBuf, String> {
-        scope::logical_path(path).map_err(|error| error.to_string())?;
+    fn file(&self, path: &ToolPath) -> Result<PathBuf, String> {
+        let path = path.as_str();
         let (parent, name) = path.rsplit_once('/').unwrap_or(("", path));
         if name.is_empty() {
             return Err("A file path is required.".into());
@@ -323,17 +323,46 @@ fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
+/// A tool path after validation at the JSON argument boundary.
+#[derive(Default)]
+struct ToolPath(String);
+
+impl ToolPath {
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn parse<E: serde::de::Error>(text: String) -> Result<Self, E> {
+        scope::logical_path(&text).map_err(E::custom)?;
+        Ok(Self(text))
+    }
+}
+
+impl<'de> Deserialize<'de> for ToolPath {
+    fn deserialize<D: serde::Deserializer<'de>>(input: D) -> Result<Self, D::Error> {
+        Self::parse(String::deserialize(input)?)
+    }
+}
+
+fn command_directory<'de, D: serde::Deserializer<'de>>(input: D) -> Result<ToolPath, D::Error> {
+    let text = String::deserialize(input)?;
+    if text == "." {
+        return Ok(ToolPath::default());
+    }
+    ToolPath::parse(text)
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WriteFile {
-    path: String,
+    path: ToolPath,
     text: String,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EditFile {
-    path: String,
+    path: ToolPath,
     old_text: String,
     new_text: String,
 }
@@ -344,6 +373,6 @@ struct Command {
     program: String,
     #[serde(default)]
     args: Vec<String>,
-    #[serde(default)]
-    cwd: String,
+    #[serde(default, deserialize_with = "command_directory")]
+    cwd: ToolPath,
 }

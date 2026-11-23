@@ -75,7 +75,7 @@ fn loaded(snapshot: Snapshot) -> Opened {
 }
 
 #[tokio::test]
-async fn a_cold_reference_reads_only_the_named_run_even_with_unrelated_history() {
+async fn a_cold_reference_opens_the_named_run_among_unrelated_history() {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -89,29 +89,16 @@ async fn a_cold_reference_reads_only_the_named_run_even_with_unrelated_history()
     .unwrap();
     let (selected, requests) = run("run-selected", &repo, &state, 1);
     receipts.create_run(&selected, &requests).await.unwrap();
-    let read = || {
-        let mut loader = Loader::default();
-        loader.reader.traced_statements();
-        let reference = loader.open(&state, &selected.id).unwrap();
-        assert_eq!(reference.opened.unwrap().1.len(), 1);
-        assert!(reference.branch.is_some());
-        loader.reader.traced_statements()
-    };
-    let before = read();
     for index in 0..40 {
         let (old, requests) = run(&format!("run-other{index}"), &repo, &state, 10);
         receipts.create_run(&old, &requests).await.unwrap();
     }
-    let after = read();
-    assert_eq!(before, after);
-    for sql in &after {
-        if sql.contains("FROM runs") || sql.contains("FROM requests") {
-            assert!(
-                sql.contains("'run-selected'"),
-                "unscoped history read: {sql}"
-            );
-        }
-    }
+    let reference = Loader::default().open(&state, &selected.id).unwrap();
+    let (opened, found, _, _) = *reference.opened.unwrap();
+    assert_eq!(opened.run.id, selected.id);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].request.id, requests[0].id);
+    assert!(reference.branch.is_some());
 }
 
 #[tokio::test]

@@ -195,6 +195,15 @@ impl MessageEvent {
         &self.message
     }
 
+    pub(crate) fn builtin_target_parts(
+        &self,
+        index: usize,
+    ) -> (Option<&std::path::Path>, Option<&str>) {
+        self.builtin_target(index).map_or((None, None), |target| {
+            (target.path.as_deref(), target.pattern.as_deref())
+        })
+    }
+
     pub(super) fn builtin_target(&self, index: usize) -> Option<&BuiltinTarget> {
         self.targets.get(&index)
     }

@@ -141,7 +141,7 @@ pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String>
     read_request_id(state, &id.parse()?).await
 }
 
-pub(crate) async fn read_request_id(
+pub async fn read_request_id(
     state: &Path,
     id: &crate::types::RequestId,
 ) -> Result<RequestView, String> {
@@ -153,7 +153,8 @@ pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<Req
     read_request_by_id(state, &id.parse()?, shown).await
 }
 
-pub(crate) async fn read_request_by_id(
+/// Read an already validated request ID, with what `shown` names besides it.
+pub async fn read_request_by_id(
     state: &Path,
     id: &crate::types::RequestId,
     shown: Shown,
@@ -763,8 +764,16 @@ pub async fn read_run_requests(
     state: &Path,
     id: &str,
 ) -> Result<(super::RunView, Vec<RequestView>), String> {
+    read_run_requests_by_id(state, &id.parse()?).await
+}
+
+/// Both selected-Run view shapes for an already validated Run ID.
+pub async fn read_run_requests_by_id(
+    state: &Path,
+    id: &crate::types::RunId,
+) -> Result<(super::RunView, Vec<RequestView>), String> {
     let state = state.to_path_buf();
-    let id: crate::types::RunId = id.parse()?;
+    let id = id.clone();
     crate::task::joined(
         tokio::task::spawn_blocking(move || {
             let mut reader = super::reader::Reader::default();

@@ -135,6 +135,7 @@ pub struct Browse {
     launch: Option<PathBuf>,
     loader: tokio::sync::Mutex<Loader>,
     shown: Mutex<Shown>,
+    navigation: Mutex<()>,
     /// What the change hints since the last load named; the next load reads it again.
     changed: Mutex<Changed>,
 }
@@ -185,6 +186,7 @@ impl Browse {
         Self {
             launch,
             loader: tokio::sync::Mutex::new(Loader::default()),
+            navigation: Mutex::new(()),
             shown: Mutex::new(Shown {
                 initialized: false,
                 origin: Origin::default(),
@@ -234,14 +236,20 @@ impl Browse {
 
     /// Apply `step` to the shown selection; a star is kept in `state` at once.
     fn navigate(&self, state: &Path, step: &Navigate) {
+        let _navigation = self.navigation.lock().expect("navigation lock");
+        let reload = step.resync || self.shown().starred.is_none();
+        let loaded = reload.then(|| live::starred(Some(state)));
+        let starred = step
+            .star
+            .as_ref()
+            .map(|star| live::star(Some(state), &star.branch.to_place(), star.on));
         let mut shown = self.shown();
-        if shown.starred.is_none() || step.resync {
-            let read = live::starred(Some(state));
+        if let Some(read) = loaded {
             shown.unstarred = read.as_ref().err().cloned();
             shown.starred = Some(read.unwrap_or_default());
         }
-        if let Some(star) = &step.star {
-            match live::star(Some(state), &star.branch.to_place(), star.on) {
+        if let Some(starred) = starred {
+            match starred {
                 Ok(kept) => {
                     shown.starred = Some(kept);
                     shown.unstarred = None;

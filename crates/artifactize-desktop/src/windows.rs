@@ -218,11 +218,11 @@ pub async fn viewer_window(
 ) -> Result<(), Failure> {
     let ready = async {
         let prepared = app.viewers.get(session)?;
-        if let Some(review) = app.viewers.pending_review(session) {
+        let checkout = if let Some(review) = app.viewers.pending_review(session) {
             let state = &app.launch.state;
-            let view = artifactize_core::store::read_request_as(
+            let view = artifactize_core::store::read_request_by_id(
                 state,
-                review.as_str(),
+                &review,
                 artifactize_core::store::Shown::Requests,
             )
             .await
@@ -232,18 +232,31 @@ pub async fn viewer_window(
             {
                 return Err(Failure::Action(reason));
             }
-            let (worktree, saved) =
+            Some(
                 artifactize_core::store::viewer_checkout(state, &view.request.run_id)
                     .await
-                    .map_err(Failure::Read)?;
-            if prepared.workspace() != worktree || prepared.checkout() != &saved {
-                return Err(Failure::Action(
-                    "Check out the review's branch to open its Artifact Viewer.".into(),
-                ));
-            }
-        }
-        crate::failure::joined(tokio::task::spawn_blocking(move || prepared.check_scope()).await)?
-            .map_err(Failure::Read)
+                    .map_err(Failure::Read)?,
+            )
+        } else {
+            None
+        };
+        crate::failure::joined(
+            tokio::task::spawn_blocking(move || {
+                if let Some((worktree, saved)) = checkout
+                    && (prepared.checkout() != &saved
+                        || !artifactize_core::platform::paths_equal(
+                            prepared.workspace(),
+                            &worktree,
+                        ))
+                {
+                    return Err(Failure::Action(
+                        "Check out the review's branch to open its Artifact Viewer.".into(),
+                    ));
+                }
+                prepared.check_scope().map_err(Failure::Read)
+            })
+            .await,
+        )?
     }
     .await;
     // Take the handoff once, including on a failed read, to end its log and release the job.

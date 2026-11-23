@@ -14,10 +14,10 @@ pub async fn request_detail(
     app: tauri::State<'_, App>,
     id: crate::ids::RequestKey,
 ) -> Result<DetailView, Failure> {
-    let view = store::read_request(&app.launch.state, &id.into_inner())
+    let view = store::read_request_id(&app.launch.state, &id.into_inner())
         .await
         .map_err(Failure::Read)?;
-    let (run, requests) = store::read_run_requests(&app.launch.state, &view.request.run_id)
+    let (run, requests) = store::read_run_requests_by_id(&app.launch.state, &view.request.run_id)
         .await
         .map_err(Failure::Read)?;
     let node = NodeId::eval(view.request.eval_id.clone());

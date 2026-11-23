@@ -119,6 +119,16 @@ pub fn absolute_folder(text: &str) -> Option<std::path::PathBuf> {
         .filter(|path| path.is_absolute())
 }
 
+/// Whether lookup resolves to a directory, following native links and aliases.
+pub fn is_directory(path: &std::path::Path) -> bool {
+    path.is_dir()
+}
+
+/// Whether lookup resolves to an existing target. Other I/O errors leave it unknown.
+pub fn target_exists(path: &std::path::Path) -> std::io::Result<bool> {
+    paths::target_exists(path)
+}
+
 /// Whether native lookup reaches a regular file, following links and honoring the volume's
 /// name matching. Missing or inaccessible entries do not count.
 pub fn is_regular_file(path: &std::path::Path) -> bool {

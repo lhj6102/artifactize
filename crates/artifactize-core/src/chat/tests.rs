@@ -89,7 +89,7 @@ async fn moving_a_branch_prefers_a_usable_session_but_keeps_stranded_history_rea
     crate::test_os::git(&worktree, &["symbolic-ref", "HEAD", "refs/heads/other"]);
     let old_nested = stranded.worktree.join("former-subdirectory");
     assert_eq!(
-        chat.latest_for_removed_checkout(&old_nested)
+        chat.latest_for_unavailable_checkout(&old_nested)
             .await
             .unwrap()
             .unwrap()
@@ -251,8 +251,8 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
     );
 }
 
-#[tokio::test]
-async fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
+#[test]
+fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
     use rig_core::message::{
         AssistantContent, ToolCall, ToolFunction, ToolName, ToolResultContent,
     };
@@ -298,6 +298,6 @@ async fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
     let saved = Conversation::load(&file).unwrap();
     let turns = transcript::turns(saved.as_ref(), false);
     assert!(matches!(&turns[0].blocks[0], Block::Tool {
-        exit_code: Some(0), omitted_lines: 0, output_truncated: false, summary, output: Some(output), ..
+        result: Some(transcript::ToolResult { exit_code: Some(0), omitted_lines: 0, output_truncated: false, output, .. }), summary, ..
     } if summary == "ran fixture (exit 0)" && output == "one\ntwo\n"));
 }

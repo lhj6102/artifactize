@@ -946,7 +946,7 @@ additionalProperties = false
         "human_submit",
         json!({
             "id": id, "job": 5,
-            "draft": { "verdict":"GREEN", "fields":[], "json":"{\"comment\":\"Stale copy\"}" },
+            "draft": { "verdict":"GREEN", "fields":[["comment", {"kind":"text", "value":"Stale copy"}]] },
         }),
     )
     .unwrap_err();
@@ -954,7 +954,7 @@ additionalProperties = false
         stale["message"]
             .as_str()
             .unwrap()
-            .contains("saved draft exists")
+            .contains("verdict or fields changed")
     );
 
     fs::write(
@@ -2410,6 +2410,22 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
     );
     drop(old_launch);
     fs::rename(away, &fixture.repo).unwrap();
+    let metadata = fixture.repo.join(".git");
+    let parked_metadata = fixture.repo.with_file_name("parked-metadata");
+    fs::rename(&metadata, &parked_metadata).unwrap();
+    let unregistered = window(&fixture, Mode::Graph);
+    let launch = invoke(&unregistered, "launch", json!({})).unwrap();
+    assert_eq!(launch["graphBranch"], branch);
+    let history = invoke(
+        &unregistered,
+        "chat_latest_for_branch",
+        json!({"branch":launch["graphBranch"]}),
+    )
+    .unwrap();
+    assert_eq!(history["id"], id);
+    assert!(history["unavailable"].is_string());
+    drop(unregistered);
+    fs::rename(parked_metadata, metadata).unwrap();
 
     os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
     let refused = invoke(

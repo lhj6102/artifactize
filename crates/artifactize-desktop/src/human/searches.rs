@@ -34,7 +34,7 @@ impl Searches {
         let mut listed = self.listed.lock().expect("Review repository list lock");
         let mut changed = false;
         for (path, exists) in &mut *listed {
-            let present = path.is_dir();
+            let present = artifactize_core::platform::is_directory(path);
             changed |= present != *exists;
             *exists = present;
         }

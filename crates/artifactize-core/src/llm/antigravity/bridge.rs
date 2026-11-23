@@ -2,7 +2,7 @@
 //! the Chat recorder's checked dispatch, not the general Artifactize MCP server.
 use std::{
     io::{self, BufRead, Read, Write},
-    net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream},
+    net::{Ipv4Addr, Shutdown, SocketAddr},
     path::Path,
     time::Duration,
 };
@@ -187,9 +187,7 @@ pub fn stdio() -> Result<(), String> {
         .filter(|port| *port != 0)
         .ok_or_else(unavailable)?;
     let capability = platform::environment::var_text(CAPABILITY).ok_or_else(unavailable)?;
-    let mut stream =
-        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), CONNECT)
-            .map_err(|_| unavailable())?;
+    let mut stream = platform::net::connect_loopback(port, CONNECT).map_err(|_| unavailable())?;
     stream
         .write_all(capability.as_bytes())
         .map_err(|_| unavailable())?;

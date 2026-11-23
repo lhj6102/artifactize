@@ -106,9 +106,7 @@ impl ChatWorktrees {
     pub(crate) fn watch(&self, sessions: &[artifactize_core::chat::Session]) {
         let mut known = self.0.lock().expect("Chat worktrees lock");
         for session in sessions {
-            let checkout = session
-                .worktree
-                .is_dir()
+            let checkout = artifactize_core::platform::is_directory(&session.worktree)
                 .then(|| session.repository.clone().unwrap_or_default());
             // Once registered, only the rescan consumes filesystem transitions.
             known.entry(session.worktree.clone()).or_insert(checkout);
@@ -120,8 +118,7 @@ impl ChatWorktrees {
         let changed: Vec<_> = snapshot
             .into_iter()
             .filter_map(|(path, before)| {
-                let current = path
-                    .is_dir()
+                let current = artifactize_core::platform::is_directory(&path)
                     .then(|| artifactize_core::repository::identify(&path));
                 (before != current).then_some((path, current))
             })

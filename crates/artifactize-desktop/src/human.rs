@@ -186,7 +186,7 @@ impl Reviews {
             .collect();
         let mut cleared = Vec::new();
         for id in ids {
-            if store::read_request_as(state, id.as_str(), store::Shown::Requests)
+            if store::read_request_by_id(state, &id, store::Shown::Requests)
                 .await
                 .is_ok_and(|view| {
                     matches!(
@@ -490,7 +490,7 @@ pub(crate) async fn draft_turns(
             let state = &app.launch.state;
             let mut owners = Vec::with_capacity(ids.len());
             for id in ids {
-                let exact = store::read_request_as(state, id.as_str(), store::Shown::Requests)
+                let exact = store::read_request_by_id(state, id, store::Shown::Requests)
                     .await
                     .map_err(Failure::Read)?;
                 let owner = store::read_review_owner(state, &exact)
@@ -519,7 +519,7 @@ async fn read_review(
         .human
         .reads
         .numbered(async {
-            let exact = store::read_request_as(state, id, store::Shown::Requests).await?;
+            let exact = store::read_request_by_id(state, id, store::Shown::Requests).await?;
             resolve(app, generation, exact).await
         })
         .await;
@@ -877,9 +877,7 @@ pub async fn human_submit(
         .await?;
     let owner = &turn.owners[0];
     let request = guard(&app, owner, review::review_refusal).await?;
-    let result = form::result(&request.request, draft)?
-        .try_into()
-        .map_err(Failure::Invalid)?;
+    let result = form::submission(&request.request, draft)?;
     submit(
         &app,
         work,
@@ -909,20 +907,6 @@ async fn submit(
                 .map_err(Failure::Read)?
                 .unwrap_or_default();
             review::Answer::PreparedDraft(draft)
-        }
-        review::Answer::ExplicitWithoutDraft(answer) => {
-            if review::read_draft(&app.launch.state, &owner, &app.launch.reviewer)
-                .await
-                .map_err(Failure::Read)?
-                .is_some_and(|draft| {
-                    draft.verdict.is_some() || !draft.green.is_empty() || !draft.red.is_empty()
-                })
-            {
-                return Err(Failure::Invalid(
-                    "A saved draft exists; submit the saved draft instead.".into(),
-                ));
-            }
-            review::Answer::ExplicitWithoutDraft(answer)
         }
         answer => answer,
     };

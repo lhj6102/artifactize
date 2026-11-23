@@ -172,7 +172,7 @@ pub async fn human_open_reference(
         .reads
         .numbered(async {
             let exact = || {
-                artifactize_core::store::read_request_as(
+                artifactize_core::store::read_request_by_id(
                     &app.launch.state,
                     &id,
                     artifactize_core::store::Shown::Requests,

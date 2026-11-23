@@ -255,7 +255,7 @@ impl Discovery {
 
     /// Whether `path` is a folder now.
     fn is_folder(&self, path: &Path) -> bool {
-        path.is_dir()
+        crate::platform::is_directory(path)
     }
 
     /// Whether the folder `path` holds declarations.

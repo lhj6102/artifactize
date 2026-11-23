@@ -69,7 +69,7 @@ impl Launch {
     pub(crate) fn settings_repo(&self) -> Option<&std::path::Path> {
         self.repo
             .as_deref()
-            .filter(|path| !matches!(path.try_exists(), Ok(false)))
+            .filter(|path| !matches!(artifactize_core::platform::target_exists(path), Ok(false)))
     }
 
     /// Parse `args` (with the program name first).
@@ -120,9 +120,9 @@ pub struct LaunchView {
 pub async fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
     let launch = &app.launch;
     let graph_branch = match (launch.mode, launch.repo.as_deref()) {
-        (Mode::Graph, Some(path)) if !path.is_dir() => app
+        (Mode::Graph, Some(path)) => app
             .chat
-            .latest_for_removed_checkout(path)
+            .latest_for_unavailable_checkout(path)
             .await
             .map_err(Failure::Read)?
             .map(|session| crate::browse::BranchKey::new(&session.branch())),

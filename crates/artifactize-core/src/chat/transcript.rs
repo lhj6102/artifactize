@@ -31,17 +31,24 @@ pub enum Block {
     Tool {
         name: String,
         arguments: String,
-        output: Option<String>,
-        failed: Option<bool>,
+        result: Option<ToolResult>,
         tool_kind: ToolKind,
         summary: String,
-        exit_code: Option<i32>,
-        omitted_lines: usize,
-        output_truncated: bool,
     },
     Run {
         card: RunCard,
     },
+}
+
+/// A completed tool result; a pending call has no result at all.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolResult {
+    pub output: String,
+    pub failed: Option<bool>,
+    pub exit_code: Option<i32>,
+    pub omitted_lines: usize,
+    pub output_truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -120,7 +127,7 @@ impl Fold {
             }
             Kind::Message(message) | Kind::ToolOutcome(message) => match message.message() {
                 Message::Assistant { content, .. } => {
-                    for part in content {
+                    for (part_index, part) in content.iter().enumerate() {
                         match part {
                             AssistantContent::Text(text)
                                 if !self.delivered.contains(&message.turn) =>
@@ -133,16 +140,19 @@ impl Fold {
                                 let index = blocks.len();
                                 self.calls.insert(call.id.wire().into_owned(), index);
                                 let name = call.function.name.as_str();
+                                let tool_kind = ToolKind::for_name(name);
+                                let summary = if tool_kind == ToolKind::Read {
+                                    let (path, pattern) = message.builtin_target_parts(part_index);
+                                    details::read_summary(name, path, pattern)
+                                } else {
+                                    details::summary(name, &call.function.arguments)
+                                };
                                 blocks.push(Block::Tool {
                                     name: name.to_owned(),
                                     arguments: call.function.arguments.to_string(),
-                                    output: None,
-                                    failed: None,
-                                    tool_kind: ToolKind::for_name(name),
-                                    summary: details::summary(name, &call.function.arguments),
-                                    exit_code: None,
-                                    omitted_lines: 0,
-                                    output_truncated: false,
+                                    result: None,
+                                    tool_kind,
+                                    summary,
                                 });
                             }
                             _ => {}
@@ -159,13 +169,9 @@ impl Fold {
                         .enumerate()
                     {
                         let Some(Block::Tool {
-                            output,
-                            failed,
+                            result: saved,
                             tool_kind,
                             summary,
-                            exit_code,
-                            omitted_lines,
-                            output_truncated,
                             ..
                         }) = self
                             .calls
@@ -174,19 +180,23 @@ impl Fold {
                         else {
                             continue;
                         };
-                        *failed = message.is_error.get(index).copied();
+                        let failed = message.is_error.get(index).copied();
                         // The final replay message can repeat an already streamed outcome.
-                        if output.is_some() {
+                        if let Some(saved) = saved {
+                            saved.failed = failed;
                             continue;
                         }
                         let view = ResultView::new(*tool_kind, result.content.iter());
                         if let Some(code) = view.exit_code {
                             summary.push_str(&format!(" (exit {code})"));
                         }
-                        *exit_code = view.exit_code;
-                        *output = Some(view.output);
-                        *omitted_lines = view.omitted_lines;
-                        *output_truncated = view.truncated;
+                        *saved = Some(ToolResult {
+                            output: view.output,
+                            failed,
+                            exit_code: view.exit_code,
+                            omitted_lines: view.omitted_lines,
+                            output_truncated: view.truncated,
+                        });
                     }
                 }
                 Message::System { .. } => {}

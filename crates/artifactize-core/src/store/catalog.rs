@@ -116,23 +116,30 @@ pub(crate) async fn places(
     let Some(connection) = super::requests::open_read(state).await? else {
         return Ok(Vec::new());
     };
-    let result = connection.call(move |db| {
-        super::wait_when_busy(db)?;
-        let transaction = db.transaction()?;
-        if !schema_initialized(&transaction)? { return Ok(Vec::new()); }
-        let mut statement = transaction.prepare("SELECT id,CASE WHEN json_valid(data) THEN json_object(
-            'repoPath',repo,'commonDir',json_extract(data,'$.commonDir'),
-            'worktreePath',json_extract(data,'$.worktreePath'),'branch',json_extract(data,'$.branch')) END
-            FROM runs WHERE id IN (SELECT value FROM json_each(?1))")?;
-        let mut rows = statement.query([serde_json::to_string(&ids)?])?;
-        let mut places = Vec::new();
-        while let Some(row) = rows.next()? {
-            let id: crate::types::RunId = row.get(0)?;
-            let data = row.get_ref(1)?.as_str().unwrap_or("null");
-            if let Ok(place) = decode("run", &id, data) { places.push((id, place)); }
-        }
-        Ok::<_, Error>(places)
-    }).await.map_err(|error| error.to_string());
+    let result = connection
+        .call(move |db| {
+            super::wait_when_busy(db)?;
+            let transaction = db.transaction()?;
+            if !schema_initialized(&transaction)? {
+                return Ok(Vec::new());
+            }
+            let mut statement = transaction.prepare("SELECT id,CASE WHEN json_valid(data) THEN json_object(
+                'repoPath',repo,'commonDir',json_extract(data,'$.commonDir'),
+                'worktreePath',json_extract(data,'$.worktreePath'),'branch',json_extract(data,'$.branch')) END
+                FROM runs WHERE id IN (SELECT value FROM json_each(?1))")?;
+            let mut rows = statement.query([serde_json::to_string(&ids)?])?;
+            let mut places = Vec::new();
+            while let Some(row) = rows.next()? {
+                let id: crate::types::RunId = row.get(0)?;
+                let data = row.get_ref(1)?.as_str().unwrap_or("null");
+                if let Ok(place) = decode("run", &id, data) {
+                    places.push((id, place));
+                }
+            }
+            Ok::<_, Error>(places)
+        })
+        .await
+        .map_err(|error| error.to_string());
     super::connection::finish(connection, result).await
 }
 

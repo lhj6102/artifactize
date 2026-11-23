@@ -253,23 +253,12 @@ impl From<edit::Refusal> for EditRefusal {
     }
 }
 
-/// The project as the library reads it for verify, for what it says of parts.
-type Config = Option<artifactize_core::config::RepoConfig>;
-
-fn view(project: edit::Project, config: &Config) -> DefinitionsView {
+fn view(project: edit::Project) -> DefinitionsView {
     let files = project
         .files
         .iter()
         .filter_map(|(file, source)| Some((text(file), source.clone()?)))
         .collect();
-    // Its parts as the library reads the project, by name.
-    let parts = |name: &ArtifactName| -> Vec<String> {
-        config
-            .as_ref()
-            .and_then(|config| config.artifacts.get(name))
-            .map(|artifact| artifact.parts.iter().map(ToString::to_string).collect())
-            .unwrap_or_default()
-    };
     let nodes = project
         .nodes
         .iter()
@@ -279,7 +268,7 @@ fn view(project: edit::Project, config: &Config) -> DefinitionsView {
             target: node.target.clone(),
             kind: node.kind.into(),
             target_missing: node.target_missing,
-            parts: parts(name),
+            parts: node.parts.iter().map(ToString::to_string).collect(),
             at: node.annotations.at,
             places: node
                 .annotations
@@ -304,12 +293,7 @@ pub async fn definitions(
 ) -> Result<DefinitionsView, Failure> {
     let workspace = app.current_workspace(&branch).await?;
     crate::failure::joined(
-        tokio::task::spawn_blocking(move || {
-            let project = edit::read_project(&workspace)?;
-            let config = artifactize_core::config::read_workspace_config(&workspace).ok();
-            Ok(view(project, &config))
-        })
-        .await,
+        tokio::task::spawn_blocking(move || edit::read_project(&workspace).map(view)).await,
     )?
     .map_err(|refusal: edit::Refusal| Failure::Read(refusal.to_string()))
 }

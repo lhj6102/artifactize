@@ -31,7 +31,15 @@ use crate::{
 };
 
 pub use details::ToolKind;
-pub use transcript::{Block, RunCard, Turn, TurnState};
+pub(crate) fn recorded_outcome(state: &Path, id: &SessionId) -> Option<Outcome> {
+    Conversation::load(&path(state, id))
+        .ok()
+        .flatten()
+        .as_ref()
+        .and_then(transcript::last_outcome)
+}
+
+pub use transcript::{Block, RunCard, ToolResult, Turn, TurnState};
 
 /// A description comes from the first nonempty prompt line, not another provider call.
 const TITLE_CHARS: usize = 72;
@@ -131,18 +139,17 @@ impl Session {
         self.activity.is_some_and(|activity| activity.unseen)
     }
 
-    pub(crate) fn refresh_activity(&mut self, state: &Path) {
+    pub(crate) fn needs_activity(&self) -> bool {
+        self.activity.is_none() || (self.outcome() == Some(Outcome::Running) && !self.running)
+    }
+
+    pub(crate) fn refresh_activity(&mut self, outcome: Option<Outcome>) {
         let owner_gone = self.outcome() == Some(Outcome::Running) && !self.running;
-        if !owner_gone && self.activity.is_some() {
+        if !self.needs_activity() {
             return;
         }
         // Do not present legacy history as new. If an owner died after flushing its
         // answer and before updating the catalog, prefer that answer over Interrupted.
-        let outcome = Conversation::load(&path(state, &self.id))
-            .ok()
-            .flatten()
-            .as_ref()
-            .and_then(transcript::last_outcome);
         self.activity = if owner_gone {
             Some(Activity {
                 outcome: outcome.unwrap_or(Outcome::Interrupted),
@@ -482,17 +489,30 @@ impl Chat {
     }
 
     /// Find a conversation by its former checkout, including a workspace within the worktree.
-    pub async fn latest_for_removed_checkout(
+    pub async fn latest_for_unavailable_checkout(
         &self,
         workspace: &Path,
     ) -> Result<Option<Session>, String> {
-        let workspace =
-            crate::workspace::canonical_target(workspace).map_err(|error| error.to_string())?;
+        let workspace = workspace.to_path_buf();
+        let workspace = crate::task::blocking(move || {
+            let workspace = crate::workspace::canonical_target(&workspace)
+                .map_err(|error| error.to_string())?;
+            Ok::<_, String>(
+                crate::repository::identify(&workspace)
+                    .worktree_path
+                    .is_none()
+                    .then_some(workspace),
+            )
+        })
+        .await??;
+        let Some(workspace) = workspace else {
+            return Ok(None);
+        };
         let sessions = store::chat::list(&self.state, None).await?;
         crate::task::blocking(move || {
             sessions
                 .into_iter()
-                .find(|session| {
+                .filter(|session| {
                     let recorded = session
                         .repository
                         .as_ref()
@@ -502,6 +522,7 @@ impl Chat {
                         || crate::platform::paths_equal(&workspace, recorded)
                 })
                 .map(Session::with_checkout)
+                .find(|session| session.unavailable.is_some())
         })
         .await
     }

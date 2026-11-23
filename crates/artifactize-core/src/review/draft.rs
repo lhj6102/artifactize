@@ -119,7 +119,8 @@ impl Draft {
         }
     }
 
-    pub(crate) fn edit(&mut self, request: &Request, edit: DraftEdit) -> Result<(), String> {
+    /// Apply a typed edit against the recorded review schema.
+    pub fn edit(&mut self, request: &Request, edit: DraftEdit) -> Result<(), String> {
         match edit {
             DraftEdit::Verdict { verdict } => self.verdict = Some(verdict),
             DraftEdit::Field {

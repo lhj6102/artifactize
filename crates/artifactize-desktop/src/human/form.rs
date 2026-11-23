@@ -208,7 +208,7 @@ pub(super) fn project(verdict: Verdict, form: &Form) -> FormView {
 }
 
 /// The review's form for `draft`: the recorded schema's fields with the draft's values.
-fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
+fn library_draft(draft: Draft) -> review::Draft {
     let verdict = draft.verdict.into();
     let fields = draft
         .fields
@@ -220,7 +220,14 @@ fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
         runtime::Verdict::Green => draft.green = fields,
         runtime::Verdict::Red => draft.red = fields,
     }
-    draft.form(request, verdict).map_err(Failure::Action)
+    draft
+}
+
+fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
+    let verdict = draft.verdict.into();
+    library_draft(draft)
+        .form(request, verdict)
+        .map_err(Failure::Action)
 }
 
 fn draft_of(verdict: Verdict, form: &Form) -> Draft {
@@ -233,60 +240,73 @@ fn draft_of(verdict: Verdict, form: &Form) -> Draft {
     }
 }
 
+fn edited(request: &Request, draft: Draft, edit: review::DraftEdit) -> Result<Draft, Failure> {
+    let verdict = draft.verdict;
+    let mut draft = library_draft(draft);
+    draft.edit(request, edit).map_err(Failure::Action)?;
+    let form = draft
+        .form(request, verdict.into())
+        .map_err(Failure::Action)?;
+    Ok(draft_of(verdict, &form))
+}
+
 /// `draft` with field `name` set to `value`, as the library's form takes it.
 pub fn edit_field(
     request: &Request,
-    mut draft: Draft,
+    draft: Draft,
     name: &str,
     value: FieldValue,
 ) -> Result<Draft, Failure> {
-    match draft.fields.iter_mut().find(|(field, _)| field == name) {
-        Some((_, current)) => *current = value,
-        None => draft.fields.push((name.to_owned(), value)),
-    }
-    let verdict = draft.verdict;
-    Ok(draft_of(verdict, &filled(request, draft)?))
+    let verdict = draft.verdict.into();
+    edited(
+        request,
+        draft,
+        review::DraftEdit::Field {
+            verdict,
+            name: name.to_owned(),
+            value: value.into(),
+        },
+    )
 }
 
-/// `draft` with an empty item added to the list field `name`: an empty text, or a group of
-/// the list's fields as the library's form builds it.
+/// `draft` with an empty item added to the list field `name`.
 pub fn add_item(request: &Request, draft: Draft, name: &str) -> Result<Draft, Failure> {
-    edit_list(request, draft, name, |form, index| form.add(index))
+    let verdict = draft.verdict.into();
+    edited(
+        request,
+        draft,
+        review::DraftEdit::AddItem {
+            verdict,
+            name: name.to_owned(),
+        },
+    )
 }
 
-/// `draft` with item `item` removed from the list field `name`; the library's form keeps one
-/// empty item to type in.
+/// `draft` with item `item` removed from the list field `name`.
 pub fn remove_item(
     request: &Request,
     draft: Draft,
     name: &str,
     item: u32,
 ) -> Result<Draft, Failure> {
-    edit_list(request, draft, name, |form, index| {
-        form.remove(index, item as usize)
-    })
-}
-
-fn edit_list(
-    request: &Request,
-    draft: Draft,
-    name: &str,
-    edit: impl FnOnce(&mut Form, usize),
-) -> Result<Draft, Failure> {
-    let verdict = draft.verdict;
-    let mut form = filled(request, draft)?;
-    let index = form
-        .fields
-        .iter()
-        .position(|field| {
-            field.name == name && matches!(field.input, Input::List(_) | Input::Groups { .. })
-        })
-        .ok_or_else(|| Failure::Missing(format!("{name} is not a list of this form.")))?;
-    edit(&mut form, index);
-    Ok(draft_of(verdict, &form))
+    let verdict = draft.verdict.into();
+    edited(
+        request,
+        draft,
+        review::DraftEdit::RemoveItem {
+            verdict,
+            name: name.to_owned(),
+            item,
+        },
+    )
 }
 
 /// The complete result of `draft`, or the form's own error for it.
-pub fn result(request: &Request, draft: Draft) -> Result<serde_json::Value, Failure> {
-    filled(request, draft)?.result().map_err(Failure::Invalid)
+pub fn submission(
+    request: &Request,
+    draft: Draft,
+) -> Result<artifactize_core::review::Submission, Failure> {
+    filled(request, draft)?
+        .submission()
+        .map_err(Failure::Invalid)
 }
