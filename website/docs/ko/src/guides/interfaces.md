@@ -8,12 +8,14 @@
 artifactize-desktop                                       # Verify에서 전체 프로젝트 목록 열기
 artifactize-desktop monitor --repo PATH                   # Verify에서 PATH의 브랜치 열기
 artifactize-desktop review [REQUEST_ID] [--reviewer NAME] # Review에서 가장 최근 대기 요청 또는 지정한 요청 열기
-artifactize-desktop graph --repo PATH                     # Verify에서 PATH의 Current 열기
+artifactize-desktop graph --repo PATH                     # Chat의 Graph 보기에서 PATH의 Current 열기
 artifactize monitor [PATH | --repo PATH | --all]          # Verify를 여는 CLI 단축 명령
 artifactize review [REQUEST_ID] [--repo PATH | --all] [--reviewer NAME]  # Review를 여는 CLI 단축 명령
 ```
 
 `artifactize-desktop`은 `--state-dir PATH`, `--all`, `--repo PATH`(`--all`과 함께 쓸 수 없음), `--reviewer NAME` 옵션도 받습니다.
+
+`graph --repo PATH`는 PATH 브랜치에서 아직 작업할 수 있는 가장 최근 세션을 Chat의 **Graph** 보기로 엽니다. 작업할 수 있는 세션이 없으면 가장 최근에 저장된 세션을 열고 그 이유를 보여 줍니다. 브랜치에 세션이 아직 없으면 그 브랜치로 **New chat**을 엽니다.
 
 로고를 클릭하거나 `Ctrl+K`를 눌러 명령 팔레트를 엽니다. **Show or hide the Pane**(`Ctrl+B`)으로 Pane을 숨기거나 표시합니다. **Open a request by ID**로 요청을 바로 열 수 있습니다. **Keyboard shortcuts**에서는 단축키를 확인합니다. Verify 명령은 Verify 화면을 열었을 때만 팔레트에 표시됩니다. Pane 옆 구분선을 드래그해 Pane 너비를, **Detail** 왼쪽 가장자리를 드래그해 Detail 너비를 조절합니다. 이 앱에서 맡은 리뷰가 남아 있는 상태로 종료하면 **Stay** 또는 **Release and quit**을 선택할 수 있습니다. 앱은 자신이 맡은 리뷰만 해제합니다. 담당을 해제했다가 CLI에서 다시 맡은 리뷰는 앱을 종료해도 담당이 유지됩니다. 담당을 해제해도 초안은 남습니다. 종료할 때 진행 중인 Chat 응답도 중단합니다.
 
@@ -24,25 +26,25 @@ Chat 세션, 도구, 대화 기록은 Artifactize에서 관리합니다. Chat에
 1. **New chat**을 클릭하고 활성 브랜치를 고릅니다. **Model**에는 해당 브랜치에서 마지막으로 쓴 모델을 아직 사용할 수 있으면 그 모델을, 그렇지 않으면 연결된 프로바이더가 제공하는 첫 모델을 기본으로 표시합니다. 모델 없이도 **Create**를 눌러 세션을 만들고 **Graph**에서 Current를 열 수 있습니다. 메시지를 보내려면 먼저 입력란에서 모델을 고르세요. Pane 맨 위에 **New chat**이 있고, 아래에는 프로젝트와 브랜치별로 세션을 묶어 최신순으로 표시합니다. 첫 메시지를 보내면 세션 제목이 생깁니다. 앱을 다시 열어도 세션과 대화 내용은 남아 있습니다.
 2. 입력란 왼쪽 아래의 선택 메뉴에는 현재 모델이 표시됩니다. 메뉴를 열면 프로바이더별로 모델을 고를 수 있습니다. 프로바이더 연결이 필요하면 **Connect provider**를 눌러 **Settings → Providers**를 엽니다. 이후 답변에 쓸 모델을 바꿔도 Chat의 작업 방식은 그대로입니다.
 3. 모델을 고른 뒤 메시지를 입력하고 **Send**를 클릭하거나 Enter를 누릅니다. Shift+Enter는 줄을 바꿉니다. 에이전트의 답변이 진행되는 대로 표시됩니다. 도구는 호출마다 한 줄씩 어떤 작업을 어디에 했는지 보여 줍니다. 실패하면 이유가 나옵니다. **Stop**을 클릭하거나 입력란에서 Esc를 누르면 응답과 실행 중인 도구를 중단합니다. 대화 기록은 그대로 남고 Verify가 이미 접수한 Run은 계속 진행합니다. 응답을 받는 동안 쓴 글은 입력란에 남습니다. 응답이 끝난 뒤 **Send**를 눌러 보내세요. 응답이 중단되거나 실패해도 입력란을 계속 쓸 수 있습니다.
-4. 에이전트에게 작업을 검증해 달라고 요청하세요. 접수한 Run마다 대화에 Run ID, 현재 상태, 실패 항목이나 사람이 확인할 항목이 표시됩니다. 원하는 Run의 **Open in Verify**를 클릭하세요. Verify에서는 Run 헤더 맨 앞에 **Chat · {session title}**이 나옵니다. 이 링크를 누르면 세션이 열리고 해당 Run 카드로 바로 이동합니다.
+4. 세션을 **Graph**로 바꾸면 그 브랜치의 Current가 보입니다. 현재 워크트리의 선언과 다음 verify에서 예상되는 결과를 보여 주며 `artifactize status`와 비슷합니다. **Refresh**를 클릭하면 다시 확인하고, [선언을 편집](#edit-definitions-in-current)할 때도 Current를 사용합니다. 입력란이 그래프 위에 떠 있어서 그래프를 보면서 에이전트에게 메시지를 쓸 수 있습니다.
+5. 에이전트에게 작업을 검증해 달라고 요청하세요. 접수한 Run마다 대화에 Run ID, 현재 상태, 실패 항목이나 사람이 확인할 항목이 표시됩니다. 원하는 Run의 **Open in Verify**를 클릭하세요. Verify에서는 Run 헤더 맨 앞에 **Chat · {session title}**이 나옵니다. 이 링크를 누르면 세션이 열리고 해당 Run 카드로 바로 이동합니다.
+
+### Current에서 선언 편집하기 {#edit-definitions-in-current}
+
+Chat 세션의 **Graph** 보기에서 **New Artifact**를 클릭하고 **Name**과 **Path**를 입력한 뒤 **Create**를 누릅니다. Artifact Detail의 **Definition**에서 **Path**와 **Parts**를 바꾸고, 메모를 추가하거나 Artifact의 이름을 바꾸거나 삭제할 수 있습니다. `.artf` 파일을 직접 편집하려면 **Source**를 열고 **Save** 또는 **Revert**를 사용하세요. 창을 연 뒤 다른 곳에서 파일을 바꿨다면 Artifactize는 덮어쓰지 않고 Current를 갱신합니다.
+
+노드나 상위 Artifact의 제목 줄을 드래그해 위치를 정합니다. 노드를 다른 상위 Artifact에 놓으면 그 Artifact의 `parts`에 추가합니다. 어느 상위 Artifact에도 속하지 않는 빈 공간에 놓으면 기존 구성이 해제됩니다. `parts`의 의미는 [구성](../concepts/artifacts.md#composition)을 참고하세요. **Reset layout**을 누르면 자동 배치로 돌아갑니다. 노드의 메모를 클릭해 편집하거나, 메모가 없는 다른 Artifact로 드래그해 옮길 수 있습니다.
 
 ## Verify: 브랜치와 타임라인 {#pane}
 
 - **검색**: 일반 검색어는 프로젝트와 브랜치 이름에서 찾습니다. `repo:`나 `branch:`를 쓰면 해당 항목에서만 찾습니다. `sort:recent`(기본값) 또는 `sort:name`으로 목록을 정렬합니다. 입력하는 동안 조건에 쓸 키와 값이 제안됩니다.
-- **브랜치**: Run 기록이 있는 프로젝트의 활성 브랜치와 Git을 쓰지 않는 프로젝트 폴더를 표시합니다. `--repo`로 연 프로젝트도 목록에 나옵니다. 브랜치를 클릭하면 타임라인을 펼치고 가장 최근 항목을 엽니다. 왼쪽 화살표를 누르면 항목을 열지 않고 타임라인만 접거나 펼칩니다. 맨 위에는 **Current** 또는 실행 중인 Run이 표시되고, 그 아래에는 저장된 Run이 최신순으로 나옵니다. **Older runs**로 이전 Run을 더 불러옵니다. 별표를 누른 브랜치는 목록에서 별표 없는 브랜치보다 위에 표시됩니다.
+- **브랜치**: Run 기록이 있는 프로젝트의 활성 브랜치와 Git을 쓰지 않는 프로젝트 폴더를 표시합니다. `--repo`로 연 프로젝트도 목록에 나옵니다. 브랜치를 클릭하면 타임라인을 펼치고 가장 최근 Run을 엽니다. 왼쪽 화살표를 누르면 Run을 열지 않고 타임라인만 접거나 펼칩니다. 타임라인에는 Run만 나옵니다. 맨 위에는 실행 중인 Run이 표시되고, 그 아래에는 저장된 Run이 최신순으로 나옵니다. **Older runs**로 이전 Run을 더 불러옵니다. Run이 없는 브랜치는 그렇다고 알려 주고 **Open in Chat**을 보여 줍니다. 이 버튼은 Chat에서 그 브랜치의 Current를 엽니다. 별표를 누른 브랜치는 목록에서 별표 없는 브랜치보다 위에 표시됩니다.
 
-## Verify: Run, Current, Detail {#current}
+## Verify: Run, Detail {#current}
 
-- **Run**: 선택한 Run의 상태, 실패하거나 대기 중인 eval, Artifact Graph를 확인합니다. Run의 상태 요약을 클릭하면 자세한 정보가 열립니다. Run을 시작한 곳이 CLI, MCP 클라이언트, Chat 세션 중 어디인지도 확인할 수 있습니다.
-- **Current**: 현재 워크트리의 선언과 다음 verify에서 예상되는 결과를 보여 줍니다. `artifactize status`와 비슷합니다. **Refresh**를 클릭하면 다시 확인합니다. 선언을 편집할 때도 Current를 사용합니다.
+- **Run**: 선택한 Run의 Artifact Graph와 판정을 확인합니다. **Run details**에서는 결과, 실패하거나 대기 중인 eval, Run을 시작한 곳(CLI, MCP 클라이언트, Chat 세션)을 확인할 수 있습니다. **Open in Chat**을 누르면 Chat에서 그 브랜치의 Current를 엽니다.
 - **Artifact Graph와 Detail**: **Find**로 Artifact, eval, 즐겨찾기로 이동합니다. 배경을 드래그해 화면을 옮기고, 스크롤로 확대·축소합니다. **Fit View**로 그래프 전체를 화면에 맞춥니다. 일부가 화면 밖에 있으면 **Navigator**가 나타납니다. 노드를 클릭하면 오른쪽에 **Detail**이 열립니다. eval을 클릭하면 요약과 Agent 대화 기록 또는 Runtime 로그를 확인할 수 있습니다. Artifact 탭에는 eval, 인접 Artifact, Human 도구가 나옵니다. 리뷰를 맡지 않고도 현재 워크트리에서 그 도구를 실행할 수 있습니다.
 - **Human 리뷰 링크**: Run의 Artifact Detail에서 대기 중인 Human eval을 **Claim to review**로 맡거나 **Release claim**으로 담당을 해제합니다. **Open in Review**를 누르면 Review에서 해당 요청을 엽니다. 두 화면에서 같은 담당 상태와 초안을 사용합니다.
-
-### Current에서 선언 편집하기 {#edit-definitions-in-current}
-
-**New Artifact**를 클릭하고 **Name**과 **Path**를 입력한 뒤 **Create**를 누릅니다. Artifact Detail의 **Definition**에서 **Path**와 **Parts**를 바꾸고, 메모를 추가하거나 Artifact의 이름을 바꾸거나 삭제할 수 있습니다. `.artf` 파일을 직접 편집하려면 **Source**를 열고 **Save** 또는 **Revert**를 사용하세요. 창을 연 뒤 다른 곳에서 파일을 바꿨다면 Artifactize는 덮어쓰지 않고 Current를 갱신합니다.
-
-노드나 상위 Artifact의 제목 줄을 드래그해 위치를 정합니다. 노드를 다른 상위 Artifact에 놓으면 그 Artifact의 `parts`에 추가합니다. 어느 상위 Artifact에도 속하지 않는 빈 공간에 놓으면 기존 구성이 해제됩니다. `parts`의 의미는 [구성](../concepts/artifacts.md#composition)을 참고하세요. **Reset layout**을 누르면 자동 배치로 돌아갑니다. 노드의 메모를 클릭해 편집하거나, 메모가 없는 다른 Artifact로 드래그해 옮길 수 있습니다.
 
 ## Review: Human 리뷰 찾기와 완료하기 {#review}
 
@@ -50,16 +52,16 @@ Chat 세션, 도구, 대화 기록은 Artifactize에서 관리합니다. Chat에
 
 참조 링크로 열면 필터에 걸리지 않는 요청도 볼 수 있습니다. 예를 들어 이미 맡은 리뷰를 **Open in Review**로 열어도 필터는 바뀌지 않습니다. 열린 요청이 현재 필터에 해당하지 않으면 Review에서 그 사실을 알려 줍니다. 리뷰 헤더 맨 앞의 **Verify · {Run} › {Artifact}**를 누르면 해당 Run과 eval로 돌아갑니다. 다른 요청과 승인 결과를 공유하는 리뷰도 담당을 맡거나 다시 불러온 뒤에 처음 연 요청의 ID와 Verify 링크를 유지합니다.
 
-1. **Claim to review**를 클릭해 요청을 맡습니다. 지시를 읽고 **Tools**로 Artifact를 살펴봅니다. 출력과 오류는 **Tool log**에서 확인하세요. 뷰어 도구는 [Artifact Viewer](viewer-plugins.md) 창을 엽니다.
-2. **Notes**를 적고 **GREEN** 또는 **RED**를 선택합니다. eval이 요구하는 항목을 채우고 **Submit**을 클릭하세요. 입력이 잘못됐다면 초안은 그대로 열려 있습니다. 내용을 고친 뒤 다시 제출하세요. 제출하지 않고 담당을 해제하려면 **Release claim**을 누릅니다.
+1. **Claim to review**를 클릭해 요청을 맡습니다. 지시를 읽고 **Evidence**의 **Tools**로 Artifact를 살펴봅니다. 도구를 실행하면 **Tool log**에 마지막 실행이 한 줄로 나옵니다. 그 줄을 클릭하면 모든 실행의 출력을 볼 수 있습니다. 뷰어 도구는 [Artifact Viewer](viewer-plugins.md) 창을 엽니다. 뷰어에서 **Point**를 쓰면 리뷰의 **Points**에 위치가 추가됩니다.
+2. **Verdict**에서 **GREEN** 또는 **RED**를 선택합니다. eval이 요구하는 항목을 채우세요. 포인트의 **Insert**를 누르면 마지막으로 입력한 칸에 그 텍스트가 들어갑니다. **Submit**을 클릭하세요. 입력이 잘못됐다면 초안은 그대로 열려 있습니다. 내용을 고친 뒤 다시 제출하세요. 제출하지 않고 담당을 해제하려면 **Release claim**을 누릅니다.
 
-창이 넓으면 Review는 왼쪽에 지시, 도구, 도구 로그를 놓고 오른쪽에 **Evaluation**을 표시합니다. 초안은 리뷰와 리뷰어별로 저장합니다. Notes와 두 판정 양식에 입력한 값이 남습니다. 직접 고르기 전에는 판정이 선택되지 않습니다. 맡은 리뷰를 다시 열면 선택한 판정의 양식과 입력값이 표시됩니다. 앱을 다시 시작해도 같습니다. 담당을 해제해도 초안은 남습니다. 제출하면 초안은 지우고 Notes는 결과와 함께 저장합니다.
+리뷰는 한 열로 지시, **Evidence**, **Verdict**, 접힌 **Debug** 순서로 표시합니다. 초안은 리뷰와 리뷰어별로 저장합니다. 포인트와 두 판정 양식에 입력한 값이 남습니다. 직접 고르기 전에는 판정이 선택되지 않습니다. 맡은 리뷰를 다시 열면 선택한 판정의 양식과 입력값이 표시됩니다. 앱을 다시 시작해도 같습니다. 담당을 해제해도 초안은 남습니다. 제출하면 양식의 값만 결과로 저장하고 포인트를 포함한 초안을 지웁니다.
 
 ### 뷰어를 사용하면서 리뷰하기 {#review-while-using-a-viewer}
 
-맡은 리뷰가 활성 상태에서 다른 모드로 바꾸거나 메인 창에서 포커스가 벗어나면 화면 오른쪽 아래에 작은 펫 오버레이가 나타납니다. 오버레이에서 같은 초안의 판정, **Notes**, 판정 양식을 사용할 수 있고 **Submit**으로 제출할 수 있습니다. 오버레이 헤더의 링크를 누르면 메인 창에서 해당 리뷰를 다시 엽니다. 평가 화면으로 돌아오거나 담당을 해제하거나 제출하면 오버레이가 사라집니다.
+맡은 리뷰가 활성 상태에서 다른 모드로 바꾸거나 메인 창에서 포커스가 벗어나면 화면 오른쪽 아래에 작은 펫 오버레이가 나타납니다. 오버레이에서 같은 초안의 포인트, 판정, 판정 양식, **Point**를 사용할 수 있고 **Submit**으로 제출할 수 있습니다. 오버레이 헤더의 링크를 누르면 메인 창에서 해당 리뷰를 다시 엽니다. 평가 화면으로 돌아오거나 담당을 해제하거나 제출하면 오버레이가 사라집니다.
 
-지원하는 뷰어에서 [**Point**](viewer-plugins.md#point-into-the-active-review)를 눌러 활성 리뷰의 **Notes**에 위치를 추가하세요. **Notes**를 다시 편집하기 전까지 Review와 펫 오버레이에서 추가한 텍스트를 강조해 보여 줍니다. 리뷰 대상 Artifact를 **Point**를 지원하는 뷰어에서 열어 둔 경우 오버레이의 **Point**를 쓸 수 있습니다. Point는 리뷰를 제출하지 않습니다.
+지원하는 뷰어에서 [**Point**](viewer-plugins.md#point-into-the-active-review)를 눌러 활성 리뷰의 **Points**에 위치를 추가하세요. 어디서 언제 가리켰는지도 함께 남습니다. Review와 펫 오버레이에 같은 포인트가 보이고, 필요 없는 포인트는 지울 수 있습니다. 리뷰 대상 Artifact를 **Point**를 지원하는 뷰어에서 열어 둔 경우 오버레이의 **Point**를 쓸 수 있습니다. Point는 리뷰를 제출하지 않습니다.
 
 ## Settings {#settings}
 

@@ -80,7 +80,7 @@ Use a distinct `id` for each outstanding call. The reply from `parent` contains 
 | `files` | `{path}` | Entries directly under that directory, each `{name, path, kind}` (`file` or `directory`). |
 | `readText` | `{path}` | UTF-8 text of a file. For a single-file Artifact, pass `''` to read the target itself. |
 | `status` | `{text}` | `null`. Shows one plain-text line in the viewer's strip, replacing the previous line. Closing the window clears it. |
-| `pointing` | `{text}` | The review's updated Notes. Refused if there is no active review claimed by this reviewer. |
+| `pointing` | `{text}` | `null`. Adds `text` to the active review's Points and ends Point. Refused if there is no active review claimed by this reviewer. |
 
 In bridge calls, `path` is relative to the Artifact, with `/` as the separator and `''` for its root. The bridge can't read siblings of a file Artifact, paths outside an aspect, or files belonging to a separate folder part. It doesn't follow symlinks. Use `status` to say what the page is showing or why it couldn't load. The HTML example waits for the Artifact page to load, then reports its path and document title, for example `checkout/index.html · Checkout`.
 
@@ -91,4 +91,4 @@ The host also sends events:
 
 ## Point into the active review {#point-into-the-active-review}
 
-With an active Human review you have claimed, click **Point** and choose a place in the Artifact. The viewer's tool strip names the active review's eval and shows **Point** for viewers that support it. The location becomes text: `notes.md L42:C9` in File Explorer, `L42:C9` in Markdown, an Artifact name or eval ID such as `front-design/matches-layout` in the Artifactize Viewer, or a CSS selector such as `#checkout .total` in the HTML example. Click **Point** again or press Esc to cancel without adding anything. Artifactize appends it on a new line in the same **Notes** draft; it doesn't replace existing notes, choose a verdict, or submit the review. The viewer uses the active review, not a review ID picked by the plugin.
+With an active Human review you have claimed, click **Point** and choose a place in the Artifact. The viewer's tool strip names the active review's eval and shows **Point** for viewers that support it. The location becomes text: `notes.md L42:C9` in File Explorer, `L42:C9` in Markdown, an Artifact name or eval ID such as `front-design/matches-layout` in the Artifactize Viewer, or a CSS selector such as `#checkout .total` in the HTML example. Click **Point** again or press Esc to cancel without adding anything. Artifactize adds it to the same draft's **Points**, with the Artifact, the viewer, and the time; it doesn't change what you typed, choose a verdict, or submit the review. **Insert** on a point puts its text into the form. The viewer uses the active review, not a review ID picked by the plugin.

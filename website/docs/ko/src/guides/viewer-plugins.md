@@ -80,7 +80,7 @@ parent.postMessage({
 | `files` | `{path}` | 해당 폴더 바로 아래의 항목을 `{name, path, kind}` 형식으로 반환합니다. `kind`는 `file`이나 `directory`입니다. |
 | `readText` | `{path}` | 파일의 UTF-8 텍스트를 반환합니다. 파일 하나를 대상으로 하는 Artifact에서는 `''`를 넘겨 대상 파일을 읽습니다. |
 | `status` | `{text}` | `null`을 반환합니다. 뷰어의 도구 막대에 일반 텍스트 한 줄을 표시합니다. 새 메시지가 앞선 메시지를 대신하며, 창을 닫으면 사라집니다. |
-| `pointing` | `{text}` | 텍스트를 추가한 **Notes**를 반환합니다. 이 리뷰어가 담당 중인 활성 리뷰가 없으면 호출을 거부합니다. |
+| `pointing` | `{text}` | `null`. `text`를 활성 리뷰의 Points에 추가하고 Point를 끝냅니다. 이 리뷰어가 담당 중인 활성 리뷰가 없으면 호출을 거부합니다. |
 
 브리지 호출의 `path`는 Artifact 기준 상대 경로입니다. 구분자는 `/`이며, 루트는 `''`로 지정합니다. 파일 Artifact와 같은 폴더에 있는 다른 파일, Aspect 범위 밖의 경로, 별도 폴더 `part`에 속한 파일은 읽을 수 없습니다. 심볼릭 링크도 따라가지 않습니다. `status`로 페이지에 표시하는 내용이나 불러오지 못한 이유를 알리세요. HTML 예제는 Artifact 페이지를 다 불러온 뒤 `checkout/index.html · Checkout`처럼 파일 경로와 문서 제목을 알립니다.
 
@@ -91,4 +91,4 @@ parent.postMessage({
 
 ## Point로 활성 리뷰에 위치 남기기 {#point-into-the-active-review}
 
-맡은 Human 리뷰가 활성 상태라면 **Point**를 클릭하고 Artifact에서 위치를 고르세요. 뷰어는 도구 막대에 활성 리뷰의 eval을 표시합니다. 위치 선택을 지원하는 뷰어는 같은 막대에 **Point**도 표시합니다. 위치는 File Explorer에서 `notes.md L42:C9`, Markdown에서 `L42:C9`가 됩니다. Artifactize Viewer에서는 Artifact 이름이나 `front-design/matches-layout` 같은 eval ID, HTML 예제에서는 `#checkout .total` 같은 CSS 선택자를 사용합니다. **Point**를 다시 클릭하거나 Esc를 누르면 아무 내용도 추가하지 않고 취소합니다. Artifactize는 기존 **Notes**를 그대로 두고 새 줄에 위치를 추가합니다. 판정을 선택하거나 리뷰를 제출하지는 않습니다. 리뷰 ID는 플러그인이 고르지 않고, 앱의 활성 리뷰를 사용합니다.
+맡은 Human 리뷰가 활성 상태라면 **Point**를 클릭하고 Artifact에서 위치를 고르세요. 뷰어는 도구 막대에 활성 리뷰의 eval을 표시합니다. 위치 선택을 지원하는 뷰어는 같은 막대에 **Point**도 표시합니다. 위치는 File Explorer에서 `notes.md L42:C9`, Markdown에서 `L42:C9`가 됩니다. Artifactize Viewer에서는 Artifact 이름이나 `front-design/matches-layout` 같은 eval ID, HTML 예제에서는 `#checkout .total` 같은 CSS 선택자를 사용합니다. **Point**를 다시 클릭하거나 Esc를 누르면 아무 내용도 추가하지 않고 취소합니다. Artifactize는 같은 초안의 **Points**에 Artifact, 뷰어, 시각과 함께 위치를 추가합니다. 입력한 내용을 바꾸거나 판정을 선택하거나 리뷰를 제출하지는 않습니다. 포인트의 **Insert**를 누르면 그 텍스트가 양식에 들어갑니다. 리뷰 ID는 플러그인이 고르지 않고, 앱의 활성 리뷰를 사용합니다.
