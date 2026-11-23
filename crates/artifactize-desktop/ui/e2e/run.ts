@@ -187,7 +187,7 @@ async function holding(body: () => Promise<void>): Promise<void> {
 }
 
 async function batch(): Promise<void> {
-  assertHeadless();
+  assertHeadless(asNativePath(variable("DESKTOP_TEST_BATCH_OUTPUT") ?? ""));
   await holding(() => launch(new BatchLifecycle(foregroundQuarantine(),
     `Batch ${variable("DESKTOP_TEST_BATCH") ?? ""} owns the foreground; its output is at ${variable("DESKTOP_TEST_BATCH_OUTPUT")}.`)));
 }

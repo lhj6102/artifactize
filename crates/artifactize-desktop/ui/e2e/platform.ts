@@ -505,10 +505,13 @@ export function xwdPng(frame: Buffer): Uint8Array {
 
 /** Fail unless this process runs where `runnerCommand` puts it: on Linux, a display and a
  * session bus of its own, never the ones it was started from nor a Wayland desktop. */
-export function assertHeadless(): void {
+export function assertHeadless(batchOutput?: NativePath): void {
   const { DISPLAY: display, DBUS_SESSION_BUS_ADDRESS: bus, DESKTOP_TEST_OUTER_DISPLAY: outerDisplay, DESKTOP_TEST_OUTER_BUS: outerBus } = process.env;
   if (LINUX && (!display || !bus || outerDisplay === undefined || outerBus === undefined || display === outerDisplay || bus === outerBus || process.env.WAYLAND_DISPLAY)) {
-    throw new Error("Linux desktop E2E runs inside dbus-run-session -- xvfb-run -a: start it with `pnpm e2e`");
+    throw new Error("Linux desktop E2E needs its own D-Bus session and Xvfb display: start it with `pnpm e2e`");
+  }
+  if (LINUX && batchOutput !== undefined && !existsSync(nativePath(batchOutput, "Xvfb_screen0"))) {
+    throw new Error(`Linux desktop E2E batch needs a private framebuffer at ${nativePath(batchOutput, "Xvfb_screen0")}. Run pnpm e2e, or give the batch's Xvfb -screen 0 1280x1024x24 -fbdir with its output directory.`);
   }
 }
 
