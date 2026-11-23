@@ -45,10 +45,10 @@ requests of the Run and their request IDs, `request_show` returns the reviewer's
 result and `request_logs` a runtime eval's output (CLI: `artifactize run show RUN_ID --json`
 for the request ID, `artifactize request show REQUEST_ID --json` for the saved result,
 and `artifactize request logs REQUEST_ID` for runtime `stdout`/`stderr`). If an unselected
-obligation has a cached RED but no request, find the reuse key in the Run's `evidence`
-(not `status`, which does not use speculative gating). Pass it to `cache_show` as `key`
-(CLI: `artifactize cache show KEY`), or select that eval without `--force` to attach the
-cached result to an inspectable request.
+obligation has a cached RED but no request, find its eval ID in the settled Run's
+`evidence` (not `status`, which does not use speculative gating). Select that eval without
+`--force` to attach the cached result to an inspectable request. If you already know the
+64-hex reuse key, pass it to `cache_show` as `key` (CLI: `artifactize cache show KEY`).
 Fix the Artifact the eval evaluates, then rerun only that eval:
 
 - MCP: `verify_start` with `scope` `{"kind": "eval", "evalId": "app/review"}` and
