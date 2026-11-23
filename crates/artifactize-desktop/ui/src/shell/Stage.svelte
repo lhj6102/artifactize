@@ -5,7 +5,7 @@
   // names or rates what is shown: the Pane's selected row does. Keys reach `onkeydown` while
   // focus is anywhere inside it.
   import type { Snippet } from "svelte";
-  import { StageSlot, setStageSlot } from "./stage.svelte";
+  import { StageSlot, setStageSlot } from "./stage-state.svelte";
 
   let {
     label,

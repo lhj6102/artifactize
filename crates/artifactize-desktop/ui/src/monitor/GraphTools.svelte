@@ -17,7 +17,7 @@
   import { ZOOM_STEP } from "./graph";
   import Icon from "../shell/Icon.svelte";
   import { label } from "../shell/keys";
-  import { stageSlot, stageTools } from "../shell/stage.svelte";
+  import { stageSlot, stageTools } from "../shell/stage-state.svelte";
 
   let { zoom = 1, act = null, showFind = true, finder, children }: {
     /** The camera's zoom, 1 for 100%. */
