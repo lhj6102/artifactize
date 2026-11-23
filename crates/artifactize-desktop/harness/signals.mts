@@ -145,9 +145,12 @@ export async function verifySignals(manifest: string, output: string): Promise<v
       } finally {
         // Do not ask the signal path under test to clean up a second time. Stop its private
         // tree, then use the app birth receipts and public CLI to recover any retained inputs.
-        stopTree(registered);
-        await bounded(closed, "forced process-tree recovery", RECOVERY_TIMEOUT);
-        recoverInputs(prepared, directory);
+        try {
+          stopTree(registered);
+          await bounded(closed, "forced process-tree recovery", RECOVERY_TIMEOUT);
+        } finally {
+          recoverInputs(prepared, directory);
+        }
       }
     }
   }
