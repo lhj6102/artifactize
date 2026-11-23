@@ -261,6 +261,7 @@
 
 {#snippet debug()}
   {#if view}
+    <div class="debug">
     <Section name="Debug">
       <dl>
         <dt>State</dt>
@@ -271,6 +272,7 @@
         {/each}
       </dl>
     </Section>
+    </div>
   {/if}
 {/snippet}
 
@@ -343,6 +345,11 @@
     flex: none;
     color: var(--ink-2);
     font-size: var(--text-small);
+  }
+  /* Debug, folded last, is quiet: its row in --ink-2 at the text's weight (D-REV-1). */
+  .debug :global(.section > .head) {
+    color: var(--ink-2);
+    font-weight: 400;
   }
   .muted,
   .loading {

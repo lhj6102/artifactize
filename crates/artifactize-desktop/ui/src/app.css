@@ -111,6 +111,11 @@ kbd {
   color: var(--ink-3);
   cursor: default;
 }
+/* A quiet button: no face and no edge until the pointer is on it. */
+.button.quiet {
+  background: transparent;
+  border-color: transparent;
+}
 .button.small {
   height: var(--row-dense);
   padding: 0 8px;
