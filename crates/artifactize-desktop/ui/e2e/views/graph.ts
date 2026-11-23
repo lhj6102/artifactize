@@ -6,7 +6,7 @@ import { clickAt, dispatchInput, visibleCenter } from "../input.ts";
 import { afterRender, press, typeText } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
-const REVIEW_MAIN = `section.panel[aria-label="Review's main area"]`;
+const REVIEW_MAIN = `section.stage-area[aria-label="Review's main area"]`;
 const VERIFY_MAIN = 'main[aria-label="Verify"]:not([hidden]) section.stage-area[aria-label="Main area"]';
 const CHAT_MAIN = `main[aria-label="Chat"]:not([hidden]) section.stage-area[aria-label="Chat's main area"]`;
 const MAIN = `:is(${VERIFY_MAIN}, ${CHAT_MAIN})`;

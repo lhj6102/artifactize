@@ -6,7 +6,7 @@ import { fill, press, typeText } from "../keys.ts";
 import { nativeInput } from "../input.ts";
 import { chooseOption, holds, until } from "./wait.ts";
 
-/** The review as read: its stage (`CLAIM`, `REVIEW (yours)`, `TAKEN`), who else claimed it, what its
+/** The review as read: where its claim stands (`Waiting`, `Yours`, `Taken`), who else claimed it, what its
  * sections are in order, what its Result says (a form's verdict, or the completed result),
  * the request's state under Debug once unfolded, and whether work of it runs. */
 export type Shown = {
@@ -33,7 +33,7 @@ export class Review {
 
   constructor(browser: WebdriverIO.Browser, scope: "main" | "detail" = "main") {
     this.browser = browser;
-    this.root = `${scope === "main" ? `section.panel[aria-label="Review's main area"]` : 'aside[aria-label="Detail"]'} section[aria-label="Human review"]`;
+    this.root = `${scope === "main" ? `section.stage-area[aria-label="Review's main area"]` : 'aside[aria-label="Detail"]'} section[aria-label="Human review"]`;
   }
 
   /** The boxes of the Tool log and of the column holding the instruction, Tools and Result. */
@@ -42,7 +42,7 @@ export class Review {
       const review = document.querySelector(root);
       const log = review?.querySelector('[role="log"][aria-label="Tool log"]')?.getBoundingClientRect();
       const instruction = review?.querySelector(".instruction");
-      const column = (instruction?.closest(".side, .one") ?? null)?.getBoundingClientRect();
+      const column = (instruction?.closest(".column") ?? null)?.getBoundingClientRect();
       if (!log || !column) return null;
       const box = (rect: DOMRect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
       return { log: box(log), column: box(column) };
@@ -55,12 +55,12 @@ export class Review {
       if (!review) return null;
       const state = [...review.querySelectorAll("dt")].find((term) => term.textContent?.trim() === "State");
       return {
-        stage: review.querySelector(".stage")?.textContent?.trim() ?? "",
-        claimant: review.querySelector(".claimant")?.textContent?.trim() ?? "",
+        stage: (review.querySelector(".rstate")?.textContent?.trim() ?? "").split(" · ")[0],
+        claimant: (review.querySelector(".rstate")?.textContent?.trim() ?? "").split(" · ")[1] ?? "",
         sections: [...review.querySelectorAll(".instruction, section.section")].map((part) => part.getAttribute("aria-label") ?? ""),
         verdict: review.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
-        completed: review.querySelector<HTMLElement>('section[aria-label="Result"] .completed')?.innerText ?? "",
-        readOnly: (review.textContent ?? "").includes("Read-only until released."),
+        completed: review.querySelector<HTMLElement>('section[aria-label="Verdict"] .completed')?.innerText ?? "",
+        readOnly: (review.textContent ?? "").includes("Taken by "),
         running: review.querySelector('.busy [role="img"], .busy [aria-label]')?.getAttribute("aria-label") ?? "",
         notice: review.querySelector(':is(.said, .result) > [role="status"]:not(.busy)')?.textContent?.trim() ?? "",
         refusal: review.querySelector('[role="alert"]')?.textContent?.trim() ?? "",
@@ -78,9 +78,10 @@ export class Review {
     return (await until(this.browser, () => this.read(), (shown) => !!shown && ok(shown), what, timeout))!;
   }
 
+  /** Wait until Review's Pane names the open review `text` in its selected row. */
   async titleContains(text: string): Promise<void> {
-    const header = this.browser.$(`section.panel[aria-label="Review's main area"] > header`);
-    await holds(this.browser, async () => (await header.getText()).includes(text), `the review header names ${text}`);
+    const named = () => this.browser.execute(() => document.querySelector('[aria-label="Human reviews"] [role="option"][aria-selected="true"]')?.textContent ?? "");
+    await holds(this.browser, async () => (await named()).includes(text), `Review's selected row names ${text}`);
   }
 
   async list(): Promise<{ id: string; name: string }[]> {
@@ -95,7 +96,7 @@ export class Review {
 
   /** The notice in the header row of Review's main area, or "". */
   notice(): Promise<string> {
-    return this.browser.execute(() => document.querySelector(`section.panel[aria-label="Review's main area"] .notice[role="status"]`)?.textContent?.trim() ?? "");
+    return this.browser.execute(() => document.querySelector(`section.stage-area[aria-label="Review's main area"] .notice[role="status"]`)?.textContent?.trim() ?? "");
   }
 
   filter(): Promise<string> { return this.browser.$('input[aria-label="Filter the reviews"]').getValue(); }
@@ -116,7 +117,7 @@ export class Review {
     return this.browser.execute((root) => /outside the filter/i.test(document.querySelector(root)?.textContent ?? ""), this.root);
   }
 
-  back(): Promise<void> { return this.browser.$(`section.panel[aria-label="Review's main area"] > header`).$("button*=Verify").click(); }
+  back(): Promise<void> { return this.browser.$(`section.stage-area[aria-label="Review's main area"] > header`).$("button*=Verify").click(); }
 
   /** The review's instruction. */
   instruction(): Promise<string> {
@@ -133,13 +134,13 @@ export class Review {
   /** Click Claim to review: the review is this reviewer's. */
   async claim(): Promise<void> {
     await this.browser.$(this.root).$("button=Claim to review").click();
-    await this.until((shown) => shown.stage === "REVIEW (yours)" && !shown.running, "the review claimed");
+    await this.until((shown) => shown.stage === "Yours" && !shown.running, "the review claimed");
   }
 
   /** Click Release claim: the review waits for a claim again. */
   async release(): Promise<void> {
     await this.browser.$(this.root).$("button=Release claim").click();
-    await this.until((shown) => shown.stage === "CLAIM" && !shown.running, "the claim released");
+    await this.until((shown) => shown.stage === "Waiting" && !shown.running, "the claim released");
   }
 
   /** Press `keys` with the review's instruction holding the keyboard. */
@@ -148,10 +149,17 @@ export class Review {
     await press(this.browser, keys, done, what);
   }
 
+  /** Unfold the Tool log from its folded line, once a tool has run. */
   async showFullLog(): Promise<void> {
-    const header = this.browser.$(this.root).$("button.head=Tool log");
-    if (await header.getAttribute("aria-expanded") === "false") await header.click();
-    await holds(this.browser, async () => await header.getAttribute("aria-expanded") === "true", "the Tool log unfolded");
+    const line = this.browser.$(this.root).$('button[aria-label="Tool log"]');
+    await line.waitForDisplayed({ timeout: 15000, timeoutMsg: "the Tool log's line shows once a tool ran" });
+    if (await line.getAttribute("aria-expanded") === "false") await line.click();
+    await holds(this.browser, async () => await line.getAttribute("aria-expanded") === "true", "the Tool log unfolded");
+  }
+
+  /** The Tool log's folded line as it reads, or "" before any run. */
+  logLine(): Promise<string> {
+    return this.browser.execute((root) => (document.querySelector<HTMLElement>(`${root} button[aria-label="Tool log"]`)?.innerText ?? "").replace(/\s+/g, " ").trim(), this.root);
   }
 
   /** Click the tool `name`: its run starts in the Tool log. */
@@ -162,6 +170,7 @@ export class Review {
     const head = `▶ HH:MM:SS · ${name} ·`;
     const before = prior.filter((row) => row.startsWith(head)).length;
     await button.click();
+    await this.showFullLog();
     await until(this.browser, () => this.log(), (rows) => rows.filter((row) => row.startsWith(head)).length > before || (rows.some((row) => row.startsWith(head)) && JSON.stringify(rows) !== JSON.stringify(prior)), `${name}'s run started in the Tool log`);
   }
 

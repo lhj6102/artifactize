@@ -13,7 +13,8 @@
 //   B. detail.png  — an Artifact's Detail docked over the graph on its Artifact tab: its evals
 //      with their verdicts, and the Artifact between its neighbours, unfolded.
 //   C. review.png  — switch to Review in the bottom bar, open the waiting sign-off and claim it:
-//      its instruction, Tools and a Tool log run on the left, and the GREEN form on the right.
+//      one column with its instruction, Evidence (the tools and a Tool log run, unfolded) and
+//      the Verdict with the GREEN form.
 //
 // Modes:
 //   (none)    capture into assets/screenshots/.
@@ -277,7 +278,7 @@ async function capture(output: string, work: string): Promise<void> {
       const notes = app.$(review).$("button=notes");
       await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the sign-off is claimed and its notes tool is usable" });
       await notes.click();
-      const logHeader = app.$(review).$("button=Tool log");
+      const logHeader = app.$(`${review} button[aria-label="Tool log"]`);
       await logHeader.waitForDisplayed({ timeout: WAIT });
       if ((await logHeader.getAttribute("aria-expanded")) !== "true") await logHeader.click();
       // The built-in read prints the notes and ends its run with `■ done`.
@@ -290,7 +291,7 @@ async function capture(output: string, work: string): Promise<void> {
       // job is still busy, so wait for the tool button to become usable again.
       await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the finished notes tool is usable again" });
       await app.$(review).$("button=GREEN").click();
-      await app.$(`${review} [aria-label="Evaluation"] #field-summary`).waitForDisplayed({ timeout: WAIT });
+      await app.$(`${review} section[aria-label="Verdict"] #field-summary`).waitForDisplayed({ timeout: WAIT });
       await app.$(`${review} [role="radio"][aria-checked="true"].green`).waitForDisplayed({ timeout: WAIT });
       await shot("review.png");
     } finally { if (existsSync(scope.root)) await stop(); }

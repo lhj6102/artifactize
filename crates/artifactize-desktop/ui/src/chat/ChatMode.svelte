@@ -565,7 +565,7 @@
 <Dialog.Root open={c.moving !== null} onOpenChange={(open) => { if (!open) c.moving = null; }}>
   <Dialog.Portal>
     <Dialog.Overlay class="overlay" />
-    <Dialog.Content class="dialog new-chat">
+    <Dialog.Content class="dialog move-chat">
       <Dialog.Title class="dialog-title">Move chat</Dialog.Title>
       {#if c.moving}
         {@const moving = c.moving}
@@ -1140,7 +1140,8 @@
   .graph-off .empty {
     padding-top: 8px;
   }
-  :global(.dialog.new-chat) {
+  :global(.dialog.new-chat),
+  :global(.dialog.move-chat) {
     width: min(420px, 92vw);
   }
   .field {

@@ -31,6 +31,9 @@ export function batches(scenarios: readonly Pick<Scenario, "id" | "alone" | "res
 }
 
 let interrupted = false;
+/** A termination signal reached this batch at any point: the batch has failed, whatever its
+ * normal path finished meanwhile (E2E-EXPLICIT-FAILURE). */
+let batchSignalled = false;
 
 /** Run `program` with this terminal's output until it exits; its exit code. */
 function exitCode(started: ReturnType<typeof spawn>): Promise<number> {
@@ -213,6 +216,7 @@ async function launch(owner: BatchLifecycle): Promise<void> {
   const exitHook = createRequire(import.meta.resolve("@wdio/cli"))("async-exit-hook") as (hook: (done: () => void) => void) => void;
   exitHook((done) => {
     exiting = true;
+    batchSignalled = true;
     const internals = launcher as unknown as { runner?: { shutdown(): Promise<unknown> } };
     void (async () => {
       try { await internals.runner?.shutdown(); }
@@ -240,6 +244,8 @@ async function launch(owner: BatchLifecycle): Promise<void> {
   } finally {
     try { await teardown(); } catch (error) { failures.push(error); }
   }
+  // A signal that arrived while the normal path finished is a cancelled batch, not a pass.
+  if (exiting) failures.push(new Error("the batch was interrupted by a termination signal"));
   if (failures.length) {
     for (const log of logs()) console.error(log);
     throw new AggregateError(failures, "desktop WDIO batch failed");
@@ -289,6 +295,6 @@ if (import.meta.main) {
   // output is written out.
   if (mode === "batch") {
     await printed();
-    process.exit(process.exitCode ?? 0);
+    process.exit(batchSignalled ? 1 : process.exitCode ?? 0);
   }
 }

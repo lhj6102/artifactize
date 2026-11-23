@@ -123,8 +123,8 @@ export const scenarios: Scenario[] = [
     run: async (app, { data: { first, completed } }) => {
       await app.review.titleContains("release/signoff");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${first} · DEFERRED · unclaimed`), "the named review, not the newest one");
-      await app.review.until((shown) => shown.stage === "CLAIM" && shown.tools.length > 0, "the review is actionable: it can be claimed");
-      await app.review.until((shown) => ["Instruction", "Tools", "Result"].every((section) => shown.sections.includes(section)), "the review shows the instruction, Tools and Result");
+      await app.review.until((shown) => shown.stage === "Waiting" && shown.tools.length > 0, "the review is actionable: it can be claimed");
+      await app.review.until((shown) => ["Instruction", "Evidence", "Verdict"].every((section) => shown.sections.includes(section)), "the review shows the instruction, Tools and Result");
       // Another request by its ID opens read-only.
       await app.openPalette();
       await app.runCommand("Open a request by ID");
@@ -160,7 +160,7 @@ export const scenarios: Scenario[] = [
       await app.dialogButton("Stay");
       await app.dialogClosed();
       assert.equal(request(fixture).claim?.reviewer, "alice", "Stay keeps the claim");
-      await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the window and its review stay");
+      await app.review.until((shown) => shown.stage === "Yours", "the window and its review stay");
       await app.closeWindow();
       await app.dialogTitled("Leave the review?");
       await app.exitsBy(() => app.dialogButton("Release and quit"));

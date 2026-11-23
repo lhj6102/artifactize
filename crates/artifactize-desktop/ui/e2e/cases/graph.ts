@@ -327,6 +327,38 @@ export const scenarios: Scenario[] = [
   }),
 
   scenario({
+    id: "chat-move",
+    title: "Move takes a Chat session to another checkout: its conversation kept, its row naming the new branch and its Graph that branch's Current; a project's row starts New chat on that project",
+    journeys: ["J-CHAT-MOVE", "J-CHAT-NEW", "J-CHAT"],
+    prepare: async (own) => {
+      const fixture = await createCheckedOnce(own);
+      git(fixture, fixture.repo, "add", "--all");
+      git(fixture, fixture.repo, "commit", "-qm", "Fixture inputs");
+      addWorktree(fixture, "elsewhere");
+      const other = nativePath(fixture.root, "elsewhere");
+      removeTree(nativePath(other, ".artifactize"));
+      declareArtifact(other, ["elsewhere-only"], "elsewhere-only", "basis = true\n");
+      return { fixture, data: null };
+    },
+    run: async (app) => {
+      await app.pane.selectBranch("repo  master");
+      await app.mode("Chat");
+      await app.chat.create();
+      assert.equal(await app.chat.shownBranch(), "master");
+      await app.chat.show("Graph");
+      await app.graph.node("a:slow");
+      await app.chat.move("repo / elsewhere", "elsewhere");
+      // The Graph view follows the session to the new branch's Current.
+      await app.chat.viewShown("Graph");
+      await app.graph.node("a:elsewhere-only");
+      await app.graph.until(async () => (await app.graph.nodes()).every(({ id }) => id === "a:elsewhere-only"), "only elsewhere's declarations in the moved session's Current");
+      // From the project's row, New chat starts on that project's newest session's branch.
+      await app.chat.newChatIn("repo");
+      await app.until(async () => await app.chat.newChatBranch() === "repo / elsewhere", "New chat starts on the project's newest session's branch");
+    },
+  }),
+
+  scenario({
     id: "current-chosen",
     title: "Open in Chat from a Run shows its branch's latest session in Graph, which scans the worktree as it is now: its Artifacts checked, then coloured in place by what verify would do, a result whose input changed since the Run to run again",
     journeys: ["J-MAIN-CURRENT", "J-OPEN-CHAT"],

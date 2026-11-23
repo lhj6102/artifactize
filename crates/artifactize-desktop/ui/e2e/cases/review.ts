@@ -31,15 +31,16 @@ export const scenarios: Scenario[] = [
       const review = app.detailReview;
       await app.graph.open("a:release", "Artifact release");
       await app.detail.openEval("release/signoff");
-      const shown = await review.until((each) => each.stage === "CLAIM", "the review opens at its claim stage");
-      assert.deepEqual(shown.sections, ["Instruction", "Tools", "Result", "Debug"], "one order, without an empty Tool log");
+      const shown = await review.until((each) => each.stage === "Waiting", "the review opens waiting for a claim");
+      assert.deepEqual(shown.sections, ["Instruction", "Evidence", "Verdict", "Debug"], "one column, nothing of the Tool log or Points before there is something in them");
+      assert.equal(await review.logLine(), "", "no Tool log before a tool has run");
       assert.equal(await review.instruction(), "Read the release notes and approve them.");
       assert.match(await review.debugState(), new RegExp(`^Request ${id} · DEFERRED · unclaimed`), "its facts under Debug");
       // Another reviewer's claim shows as taken, the review read-only.
       assert.equal(artifactize(fixture, ["request", "claim", id, "--reviewer", "bob"]).status, 0);
-      await review.until((each) => each.stage === "TAKEN" && each.claimant === "bob" && each.readOnly, "bob's claim shows as TAKEN, read-only");
+      await review.until((each) => each.stage === "Taken" && each.claimant === "bob" && each.readOnly, "bob's claim shows as taken, read-only");
       assert.equal(artifactize(fixture, ["request", "unclaim", id, "--reviewer", "bob"]).status, 0);
-      await review.until((each) => each.stage === "CLAIM" && each.claimant === "", "released by bob, it waits for a claim again");
+      await review.until((each) => each.stage === "Waiting" && each.claimant === "", "released by bob, it waits for a claim again");
       await review.claim();
       assert.equal(request(fixture).claim?.reviewer, "alice");
       // Released while its form is being edited, the draft stays for the next claim.

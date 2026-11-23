@@ -40,7 +40,7 @@ export const scenarios: Scenario[] = [
       await app.mode("Verify");
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
-      await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the direct reference shows the claimed review");
+      await app.review.until((shown) => shown.stage === "Yours", "the direct reference shows the claimed review");
       assert.equal(await app.review.hasOutsideHint(), false);
       assert.equal(await app.review.filter(), "type:human waiting");
       assert.deepEqual(await listed(), [otherId], "opening the exact review did not pin it into the filtered list");

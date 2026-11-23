@@ -1,7 +1,7 @@
 // Chat through the same visible controls a person uses.
 import { clickRowGutter, scrollViewport } from "../input.ts";
 import { fill, press } from "../keys.ts";
-import { holds, until } from "./wait.ts";
+import { chooseOption, holds, until } from "./wait.ts";
 
 const MAIN = `main[aria-label="Chat"]:not([hidden]) section[aria-label="Chat's main area"]`;
 const DIALOG = '[role="dialog"].new-chat';
@@ -67,6 +67,34 @@ export class Chat {
 
   private viewTab(view: "Conversation" | "Graph") {
     return this.browser.$(`${MAIN} > header [role="tablist"][aria-label="Session view"]`).$(`[role="tab"]=${view}`);
+  }
+
+  /** Move the shown session through its Move tool to the checkout `checkout` (as the dialog
+   * lists it, `project / branch`), and wait until its row names the new branch. */
+  async move(checkout: string, branch: string): Promise<void> {
+    const tool = this.browser.$(`${MAIN} > header button[aria-label="Move to another checkout"]`);
+    await tool.waitForEnabled({ timeoutMsg: "timed out: Move is usable" });
+    await tool.click();
+    const dialog = '[role="dialog"].move-chat';
+    await holds(this.browser, () => this.browser.execute((query) => !!document.querySelector(query)
+      && (document.querySelector<HTMLSelectElement>(`${query} select`)?.options.length ?? 0) > 1, dialog), "Move chat lists the live checkouts");
+    await chooseOption(this.browser, `${dialog} select`, checkout);
+    await this.browser.$(dialog).$("button=Move").click();
+    await this.browser.$(dialog).waitForDisplayed({ reverse: true, timeoutMsg: "Move chat closed once the session moved" });
+    await holds(this.browser, async () => await this.shownBranch() === branch, `the session's row names ${branch}`);
+  }
+
+  /** New chat from a project's row: its New chat cell, shown under the pointer or the keyboard. */
+  async newChatIn(project: string): Promise<void> {
+    const cell = this.browser.$(`[aria-label="Chats"] button[aria-label="New chat in ${project}"]`);
+    await cell.waitForExist({ timeoutMsg: `the ${project} row offers New chat` });
+    await cell.click();
+    await this.browser.$('[role="dialog"].new-chat').waitForDisplayed({ timeoutMsg: "New chat opened" });
+  }
+
+  /** The branch New chat's dialog shows chosen, if it is open. */
+  newChatBranch(): Promise<string | null> {
+    return this.browser.execute(newChatBranch);
   }
 
   /** The branch the Pane's selected session row names after its title. */
