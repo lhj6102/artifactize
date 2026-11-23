@@ -938,6 +938,10 @@
   min-height: 0;
   overflow: hidden;
 }
+/* The Detail's body scrolls inside itself when what it holds is longer than the dock. */
+.m-dock > .m-body {
+  overflow-y: auto;
+}
 /* A section of the inspector: a header row (the fold icon and its name, nothing else), opened
    above by a group line, then its body; folded, the row alone. In a review and in Settings the
    same row stands without the fold icon. */
@@ -2675,7 +2679,7 @@
    row does. */
 .m-stage-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  grid-template-columns: auto auto minmax(max-content, 1fr);
   align-items: center;
   gap: 12px;
   height: 32px;
@@ -2781,9 +2785,13 @@
 }
 /* Find's list, dropped from the field in the stage header over the canvas's top right. */
 .m-find.drop {
-  left: auto;
-  right: var(--pad);
+  left: var(--field-left, auto);
+  right: auto;
   top: 4px;
+  width: auto;
+  min-width: 240px;
+  max-width: min(380px, calc(100% - var(--field-left, 0px) - var(--pad)));
+  box-sizing: border-box;
 }
 .m-find.drop .m-found {
   margin-top: 0;
@@ -2907,6 +2915,7 @@
   display: flex;
   align-items: center;
   height: var(--row-pane);
+  box-sizing: border-box;
   flex: none;
   border-bottom: 1px solid var(--line-group);
 }
@@ -2965,16 +2974,13 @@
 }
 .m-chatlist .m-session .m-sbranch {
   flex: 0 1000 auto;
-  min-width: 0;
+  min-width: 10ch;
   max-width: 50%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ink-3);
-  font: var(--text-label) var(--mono);
-}
-.m-chatlist .m-session.selected .m-sbranch {
   color: var(--ink-2);
+  font: var(--text-label) var(--mono);
 }
 .m-chatlist .m-session .m-spacer {
   flex: 1;
