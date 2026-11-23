@@ -482,9 +482,11 @@ impl ArtifactDeclarations {
     }
 
     /// Run tool `tool` of the Artifact at once. Its output reaches `run`'s Tool log; a
-    /// launched program's keeps arriving until it exits. A refusal ends the run with it.
+    /// launched program's keeps arriving until it exits. Check the requested checkout after
+    /// resolving the tool. A refusal ends the run with it.
     pub async fn run_tool(
         &self,
+        checkout: &crate::monitor::live::Place,
         tool: &ToolName,
         cancel: CancellationToken,
         run: log::Run,
@@ -503,6 +505,10 @@ impl ArtifactDeclarations {
             .any(|entry| &entry.name == tool && &entry.artifact_id == artifact)
         {
             let error = format!("{artifact} declares no Human tool {tool}.");
+            run.end(log::End::Failed(error.clone()));
+            return Err(error);
+        }
+        if let Err(error) = checkout.checked_workspace(self.config.root.clone()).await {
             run.end(log::End::Failed(error.clone()));
             return Err(error);
         }
@@ -593,5 +599,48 @@ mod submission_tests {
         }
         assert!(Submission::try_from(json!({"approved":true})).is_err());
         assert!(Submission::try_from(json!({"verdict":"ERROR"})).is_err());
+    }
+}
+
+#[cfg(test)]
+mod artifact_tool_tests {
+    use super::*;
+    use crate::monitor::live::Place;
+
+    #[tokio::test]
+    async fn a_detail_tool_refuses_to_run_after_the_worktree_switches_branches() {
+        let workspace = crate::test_os::tempdir();
+        let root = crate::test_os::canonical(workspace.path());
+        std::fs::create_dir(root.join(".artifactize")).unwrap();
+        std::fs::write(
+            root.join(".artifactize/app.artf"),
+            r#"
+path = "notes.md"
+[views.human_tools]
+notes = { builtin = "read", args = ["{artifactPath}"] }
+"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("notes.md"), "# Notes").unwrap();
+        crate::test_os::git(&root, &["init", "--quiet", "--initial-branch=expected"]);
+        let checkout = Place::for_checkout(&root, &crate::repository::identify(&root));
+        let artifact = "app".parse().unwrap();
+        let sites = crate::config::read_sites(&root).unwrap();
+        let app = ArtifactDeclarations::read(&root, &artifact, &sites[&artifact]).unwrap();
+        let tool = "notes_app".parse().unwrap();
+        let run = || {
+            app.run_tool(
+                &checkout,
+                &tool,
+                CancellationToken::new(),
+                log::Run::unwatched(),
+            )
+        };
+        assert!(!run().await.unwrap().is_error());
+        crate::test_os::git(&root, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+        assert_eq!(
+            run().await.unwrap_err(),
+            "This branch is no longer checked out in the worktree."
+        );
     }
 }

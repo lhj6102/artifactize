@@ -172,7 +172,11 @@ pub async fn artifact_tool_run(
         artifact.as_str(),
     );
     let result = match app.sites.declarations(&workspace, &artifact).await {
-        Ok(declarations) => declarations.run_tool(&tool, work.cancel.clone(), run).await,
+        Ok(declarations) => {
+            declarations
+                .run_tool(&place, &tool, work.cancel.clone(), run)
+                .await
+        }
         Err(error) => {
             run.end(review::log::End::Failed(error.to_string()));
             Err(error.to_string())
