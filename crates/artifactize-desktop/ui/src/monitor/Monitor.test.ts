@@ -342,6 +342,13 @@ it("switches modes from the bottom bar, each kept as it was left, and lists and 
   expect(within(review).getByLabelText("Human review")).toBeTruthy();
 });
 
+it.each([[1, "1"], [99, "99"], [100, "99+"]] as const)("shows %i waiting reviews as %s without shortening the accessible name", async (count, badge) => {
+  backend(monitor(), () => browseView(1, { waiting: Array.from({ length: count }, (_, i) => waitingRow(`run-0-${i}`)) }));
+  render(App);
+  const review = await screen.findByRole("button", { name: `Review, ${count} waiting` });
+  expect(within(review).getByText(badge).getAttribute("aria-hidden")).toBe("true");
+});
+
 it.each(["missing", "rejected"] as const)("shows the chosen Run loading before its %s read, not the previous graph", async (result) => {
   const first = branch("main", [runChip("run-old", "GREEN")]);
   const next = branch("feature", [runChip("run-new", "RED")]);

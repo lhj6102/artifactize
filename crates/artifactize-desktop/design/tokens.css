@@ -62,6 +62,8 @@
   --bar-ink-on: #ffffff;
   --bar-active: #0b0b0d;
   --bar-mark: #e0443c;
+  --bar-count-fill: #26384f;
+  --bar-count-ink: #a8b9d1;
 
   /* Statuses, one colour each wherever they show (a list, a chip, a graph's node), read with
      their glyph or word; the last two are what verify would do, on a Current */
@@ -92,8 +94,9 @@
   --port: 7px;
   --grid: 24px;
   --icon: 12px;
-  --icon-stroke: 1.2; /* In the 12 × 12 drawing box, before scaling. */
+  --icon-stroke: 1.0; /* In the 12 × 12 drawing box, before scaling. */
   --icon-bar: 16px;
+  --bar-count-size: 18px;
   --strip: 2px;
 
   /* Type */

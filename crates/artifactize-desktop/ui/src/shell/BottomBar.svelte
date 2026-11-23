@@ -24,6 +24,7 @@
     {#each MODES as item (item.mode)}
       {@const on = app.mode === item.mode}
       {@const count = item.mode === "review" ? app.waiting : 0}
+      {@const overflow = count > 99}
       <button
         class="mode"
         class:on
@@ -34,7 +35,7 @@
       >
         <span class="mode-mark">
           <Icon name={ICON[item.mode]} />
-          {#if count > 0}<span class="count" aria-hidden="true">{count}</span>{/if}
+          {#if count > 0}<span class="count" class:overflow aria-hidden="true">{overflow ? "99+" : count}</span>{/if}
         </span>
         {item.label}
       </button>
@@ -143,16 +144,19 @@
     position: absolute;
     top: 0;
     left: calc(100% + 3px);
-    min-width: 16px;
-    height: 14px;
-    padding: 0 4px;
-    border: 1px solid var(--line-input);
-    border-radius: var(--radius-chip);
-    background: var(--bar-active);
-    color: var(--human);
+    display: grid;
+    place-items: center;
+    width: var(--bar-count-size);
+    height: var(--bar-count-size);
+    border-radius: calc(var(--bar-count-size) / 2);
+    background: var(--bar-count-fill);
+    color: var(--bar-count-ink);
     font-size: var(--text-label);
-    font-weight: 600;
-    line-height: 12px;
-    text-align: center;
+    font-weight: 400;
+    line-height: 1;
+  }
+  .count.overflow {
+    width: max-content;
+    padding-inline: 2px;
   }
 </style>
