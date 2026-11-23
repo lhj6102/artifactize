@@ -13,8 +13,8 @@ red_at = "P1"
 instruction = """
 Read E2E-REAL-APP of the end-to-end rules {desktop-e2e-rules} and the TEST- rules and M-TAUTOLOGICAL-TESTS of \
 {rules-code-style}. Review the views and cases of {desktop-e2e-cases} against them: each case drives the app through \
-its UI, each action waits for what the window shows as its result, and each check can fail. Take the helpers outside \
-this Artifact at what their names and comments say; coverage of the journeys is reviewed by desktop-e2e. Report only \
+its UI, each action waits for what the window shows as its result, and each check can fail. Follow imports into \
+{desktop-e2e-infra} as needed without reviewing that Artifact; coverage of the journeys is reviewed by desktop-e2e. Report only \
 a defect you can show: name the OS, the order or the timing under which it happens and the concrete failure or false \
 pass it causes, such as a wait that passes before the action's result shows, a check that cannot fail, or a scenario \
 that breaks on one OS. Hardening, theoretical edge cases, further assertions and style are not findings."""

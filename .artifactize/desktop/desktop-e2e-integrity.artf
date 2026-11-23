@@ -8,4 +8,4 @@ select = ["e2e-integrity.ts", "e2e-integrity.test.js"]
 [evals.tests]
 title = "The integrity checker's tests pass"
 profile = { kind = "runtime", command = "node", args = ["--test", "e2e-integrity.test.js"], timeout_ms = 60000 }
-payload.instruction = "Run the tests of the integrity checker {desktop-e2e-integrity}, which pin each mechanical part of E2E-INPUT of {desktop-e2e-rules} that it checks: no injection API and an unmodified provider."
+payload.instruction = "Run the tests of the integrity checker {desktop-e2e-integrity}, which pin each mechanical part of E2E-INPUT of {desktop-e2e-rules} that it checks: no injection API and an unmodified provider. The checker uses filesystem helpers from {desktop-e2e-infra}."
