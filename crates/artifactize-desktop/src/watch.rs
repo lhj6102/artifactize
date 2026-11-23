@@ -106,7 +106,11 @@ impl ChatWorktrees {
     pub(crate) fn watch(&self, sessions: &[artifactize_core::chat::Session]) {
         let mut known = self.0.lock().expect("Chat worktrees lock");
         for session in sessions {
-            let checkout = artifactize_core::platform::is_directory(&session.worktree)
+            // Use the observation sent to the frontend, not a second filesystem read.
+            // A change since the library's read must be visible to the next rescan.
+            let checkout = session
+                .unavailable
+                .is_none()
                 .then(|| session.repository.clone().unwrap_or_default());
             // Once registered, only the rescan consumes filesystem transitions.
             known.entry(session.worktree.clone()).or_insert(checkout);
