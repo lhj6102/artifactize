@@ -12,10 +12,11 @@
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
+  import { useCommands } from "../shell/commands.svelte";
   import { composing } from "../shell/keys";
   import type { Place } from "./definitions.svelte";
 
-  let { branch, name }: { branch: BranchKey; name: string } = $props();
+  let { branch, name, active = true }: { branch: BranchKey; name: string; active?: boolean } = $props();
   const app = getAppState();
   const defs = $derived(app.definitionsFor(branch));
 
@@ -120,6 +121,9 @@
     defs.drafts.delete(name);
     if (refused?.at === "source") defs.form(name).refused = null;
   }
+
+  useCommands(() => [{ id: "graph.save-source", group: "Graph", label: "Save Source", keys: "Ctrl+S", run: () => void save(), enabled: () => !!draft && !defs.busy }],
+    () => active && node !== undefined);
 
   function sourceKey(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {

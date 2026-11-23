@@ -290,7 +290,7 @@
   }
   .chevron:hover,
   .star:hover {
-    color: var(--ink-bright);
+    background: var(--surface-group);
   }
   .empty {
     color: var(--ink-2);

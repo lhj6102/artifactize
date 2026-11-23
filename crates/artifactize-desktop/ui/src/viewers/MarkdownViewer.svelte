@@ -141,7 +141,7 @@
   .tree {
     margin: 0;
     padding: 4px 0;
-    overflow: hidden auto;
+    overflow: auto;
     list-style: none;
     background: var(--surface-panel);
     border-right: 1px solid var(--line-panel);
@@ -153,9 +153,10 @@
     align-items: center;
     gap: 6px;
     width: 100%;
+    min-width: calc(2 * var(--pad) + var(--depth, 0) * 14px + 7rem);
     min-height: var(--row-dense);
     margin: 0;
-    padding: 0 var(--pad) 0 min(50%, calc(var(--pad) + var(--depth, 0) * 14px));
+    padding: 0 var(--pad) 0 calc(var(--pad) + var(--depth, 0) * 14px);
     border: 0;
     background: none;
     color: var(--ink-2);

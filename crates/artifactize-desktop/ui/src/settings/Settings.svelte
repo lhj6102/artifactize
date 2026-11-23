@@ -145,7 +145,8 @@
     border: 0;
     border-bottom: 2px solid transparent;
     border-radius: 0;
-    padding: 4px 10px;
+    height: var(--control);
+    padding: 0 10px;
     background: none;
     color: var(--ink-2);
     cursor: pointer;

@@ -12,6 +12,23 @@ import { BOX, header, type Copy, type Rect } from "./parts";
  * whole to the top level (`leave`). */
 export type Drop = { kind: "place" } | { kind: "join"; to: string; key: string } | { kind: "leave" };
 
+/** Preview only from the loaded definitions. Release still asks the engine to validate the edit. */
+export function canJoin(parts: (name: string) => readonly string[] | undefined, part: string, to: string): boolean {
+  const destination = parts(to);
+  const children = parts(part);
+  if (!destination || !children || destination.includes(part)) return false;
+  const seen = new Set<string>();
+  const pending = [part];
+  while (pending.length) {
+    const name = pending.pop()!;
+    if (name === to) return false;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    for (const child of parts(name) ?? []) pending.push(child);
+  }
+  return true;
+}
+
 const contains = (rect: Rect, point: Point) => point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
 
 /** The copy drawn under `point`, the innermost, leaving out `skip` and the copies inside it. */

@@ -272,7 +272,7 @@
           {/if}
         {/snippet}
         {#if !session}
-          <p class="empty">{c.listed && !c.query.trim() && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane."}</p>
+          <p class="empty">{c.listed && !c.query.trim() && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane, or start one with New chat."}</p>
         {:else}
           <div class="chat" class:live>
             {#if graph}
@@ -397,8 +397,6 @@
                 No checked-out branch.
               {:else if c.worktree === null}
                 Choose a branch.
-              {:else if answer?.error}
-                {answer.error}
               {:else if starting}
                 {providerName(starting.backend)} · {starting.model}{starting.effort ? ` · ${starting.effort}` : ""}
               {:else if reading}
@@ -411,7 +409,7 @@
         </div>
         <div class="dialog-actions">
           <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
-          <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={!c.worktree || reading || answer?.error !== undefined}>Create</button>
+          <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={!c.worktree || reading}>Create</button>
         </div>
       </form>
     </Dialog.Content>
@@ -469,6 +467,9 @@
     list-style: none;
   }
   .group {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     margin: 0;
     padding: 10px var(--pad) 4px;
     font-size: var(--text-label);

@@ -13,11 +13,11 @@
 </script>
 
 <button class="headline" aria-label="{run.mark.status}{needs ? `: ${needs}` : ""}, open the Run's Detail" onclick={onrun}>
-  {#if run.headline}<span class="need">{run.headline}</span>{/if}
   <span class="status {tone(run.mark.status)}"><Icon name={statusIcon(run.mark.status)} /> {run.mark.status}</span>
   {#each run.needs as need, at (at)}
     <span class="need"><span class={tone(need.mark.status)}><Icon name={statusIcon(need.mark.status)} /></span>{need.text}</span>
   {/each}
+  {#if run.headline}<span class="note">{run.headline}</span>{/if}
 </button>
 
 <style>
@@ -54,6 +54,7 @@
     align-items: center;
     gap: 4px;
   }
+  .note { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .need > span {
     display: inline-flex;
   }

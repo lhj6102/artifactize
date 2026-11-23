@@ -46,11 +46,11 @@
   import { boxes, copies, copyEdges, drawings, partsCount, type Copy } from "./parts";
   import { BLOCKING, NODE, WORDS, ZOOM_STEP, currentWords, tallyWords, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
-  import { Picture, hit, legible, scene, view, within } from "./scene";
+  import { Picture, commentRect, hit, legible, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
   import { NO_ANNOTATIONS, roomOf, type Annotations } from "./annotations";
-  import { anchor, boxPlaces, dropAt, inside, placesOf, topLevel, under, type Drop } from "./placing";
+  import { anchor, boxPlaces, canJoin, dropAt, inside, placesOf, topLevel, under, type Drop } from "./placing";
   import type { BranchKey, EditOperation } from "../ipc/client";
 
   let {
@@ -302,7 +302,7 @@
   const visible = $derived(v.area ? Math.max(0, v.area.width - v.covered) : 0);
   /** The whole graph is in view, left of a docked Detail: no Navigator. */
   const allInView = $derived.by(() => {
-    if (!v.area) return true;
+    if (!v.area || graph.nodes.length === 0) return true;
     const { x, y, zoom } = camera.current;
     const [left, top] = [-x / zoom, -y / zoom];
     const [right, bottom] = [left + visible / zoom, top + v.area.height / zoom];
@@ -490,11 +490,7 @@
     return copy && at ? dropAt(drawn, rects, copy, at) : null;
   }
 
-  let preview = 0;
-  let requestedTarget: string | null = null;
   function dragStart(key: string) {
-    ++preview;
-    requestedTarget = null;
     v.dragging = { key, cancelled: false };
     v.target = null;
   }
@@ -506,17 +502,8 @@
     const [from, now] = [v.pressed, pointOf(event)];
     if (canvased && from && now) paintedAt = dragScene({ key, x: now.x - from.x, y: now.y - from.y });
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
-    const fromWhole = copy?.parent ? byKey.get(copy.parent)?.node.name ?? null : null;
-    const next = copy && drop?.kind === "join" ? drop.key : null;
-    if (requestedTarget === next) return;
-    requestedTarget = next;
-    const asked = ++preview;
-    v.target = null;
-    const owner = branch;
-    if (!owner || !copy || drop?.kind !== "join") return;
-    void defs.check(owner, { kind: "movePart", part: copy.node.name, from: fromWhole, to: drop.to, at: [0, 0] }).then((result) => {
-      if (asked === preview && v.dragging?.key === key && !v.dragging.cancelled && result.kind === "checked") v.target = drop.key;
-    }, () => {});
+    v.target = branch && defs.of(branch) && copy && drop?.kind === "join"
+      && canJoin((name) => defs.node(name)?.parts, copy.node.name, drop.to) ? drop.key : null;
   }
 
   /** A released node: placed, made a part of the Artifact under it, or out of its whole. It is
@@ -532,8 +519,6 @@
 
   async function release(node: Node, event: MouseEvent | TouchEvent) {
     const held = v.dragging;
-    ++preview;
-    requestedTarget = null;
     v.dragging = null;
     v.target = null;
     const copy = byKey.get(node.id);
@@ -725,9 +710,12 @@
     if (!field) return null;
     const key = keys.get(idOf(field.name) ?? "")?.[0];
     const place = key === undefined ? undefined : rects.get(key);
-    if (!place) return null;
+    const copy = key === undefined ? undefined : byKey.get(key);
+    if (!place || !copy) return null;
     const { x, y, zoom } = camera.current;
-    return { name: field.name, x: x + place.x * zoom, y: y + (place.y + place.height) * zoom + 4 };
+    return { name: field.name, ...commentRect({
+      x: x + place.x * zoom, y: y + place.y * zoom, width: place.width * zoom, height: place.height * zoom,
+    }, copy.parts.length > 0, zoom) };
   });
 
   /** An Artifact just created or renamed: once the scan draws it, its Detail opens; a created
@@ -812,7 +800,7 @@
   >
     {#if graph.nodes.length === 0}<p class="empty">{empty}</p>{/if}
     {#if blockField}
-      <div class="block-field" style:left="{blockField.x}px" style:top="{blockField.y}px">
+      <div class="block-field" style:left="{blockField.x}px" style:top="{blockField.y}px" style:width="{blockField.width}px">
         <CommentField name={blockField.name} onclose={(written) => void closeField(written)} />
       </div>
     {/if}
@@ -861,7 +849,7 @@
 </div>
 
 <style>
-  .block-field { position: absolute; z-index: 2; width: 168px; }
+  .block-field { position: absolute; z-index: 2; }
   /* No Artifacts: the sentence stands at the top of the canvas, under the tool strip, which
      acts on the empty canvas as on any. */
   .empty {

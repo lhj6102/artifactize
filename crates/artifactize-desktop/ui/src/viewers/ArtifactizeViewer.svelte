@@ -162,7 +162,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(420px, 45%);
+    width: min(clamp(320px, 45%, 420px), max(320px, calc(100% - 240px)), 100%);
     display: flex;
     flex-direction: column;
     min-height: 0;

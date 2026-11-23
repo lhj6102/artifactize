@@ -50,8 +50,10 @@
   {#each visible as entry (entry.run)}
     <p class="start">▶ {clock(entry.at)} · {entry.operation} · {entry.artifact}</p>
     {#if folded}
-      {@const line = entry.end ? entry.lines.findLast((each) => each.error) : entry.lines.at(-1)}
-      {#if line}{@render printed(line)}{/if}
+      {@const error = entry.lines.findLast((each) => each.error)}
+      {@const newest = entry.end ? undefined : entry.lines.at(-1)}
+      {#if error}{@render printed(error)}{/if}
+      {#if newest && newest !== error}{@render printed(newest)}{/if}
     {:else}
       {#each entry.lines as line, at (at)}{@render printed(line)}{/each}
     {/if}

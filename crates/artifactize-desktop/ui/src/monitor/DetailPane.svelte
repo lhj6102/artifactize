@@ -26,6 +26,7 @@
   import ArtifactStar from "./ArtifactStar.svelte";
   import Definition from "./Definition.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
+  import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
@@ -172,13 +173,17 @@
     element?.focus();
   }
 
+  const toggleLast = () => sections.toggle(last);
+  useCommands(() => [{ id: "graph.detail-debug", group: "Graph", label: `Toggle ${last}`, keys: "t", run: toggleLast }],
+    () => active && detail !== null && !human && !log);
+
   function keydown(event: KeyboardEvent) {
     // A Human review takes its own keys; from the tabs only Esc and ← close.
     if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
     if (plain(event, "ArrowLeft") && holding) return;
     if (plain(event, "Escape") || plain(event, "ArrowLeft")) onback();
     else if (human || log) return;
-    else if (plain(event, "t")) sections.toggle(last);
+    else if (plain(event, "t")) toggleLast();
     else return;
     event.preventDefault();
   }
@@ -250,7 +255,7 @@
         <!-- On a Current the Artifact's definition, which its graph and its Detail edit, stands
              where a Run's Path does. -->
         {#if branch && source.kind === "current"}
-          {#key row.name}<Definition branch={branch.key} name={row.name} />{/key}
+          {#key row.name}<Definition branch={branch.key} name={row.name} {active} />{/key}
         {/if}
       {/if}
       {#if d.error}
@@ -349,7 +354,7 @@
      while there is room; what the right column says wraps in what is left. */
   .eval {
     display: grid;
-    grid-template-columns: var(--icon) minmax(0, max-content) minmax(0, max-content) minmax(0, 1fr);
+    grid-template-columns: var(--icon) minmax(0, 1fr) fit-content(30%) fit-content(32%);
     align-items: center;
     gap: 8px;
     width: 100%;
@@ -375,6 +380,7 @@
     overflow-wrap: anywhere;
   }
   .eval .right {
+    color: var(--ink-2);
     font-size: var(--text-small);
     justify-self: end;
     min-width: 0;

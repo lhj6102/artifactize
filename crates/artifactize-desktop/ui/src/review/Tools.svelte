@@ -97,9 +97,9 @@
     text-align: left;
     overflow-wrap: anywhere;
   }
-  .description,
   .description {
     color: var(--ink-2);
+    font-size: var(--text-small);
   }
   .muted {
     color: var(--ink-2);

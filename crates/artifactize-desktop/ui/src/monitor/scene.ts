@@ -14,6 +14,14 @@ import { BOX, partsCount } from "./parts";
  * its element draws it. */
 const [COMMENT_GAP, COMMENT_INSET, COMMENT_LEADING, COMMENT_LINES] = [4, 10, 1.4, 3];
 
+/** The comment's place in the drawn view, whether painted or opened for editing. */
+export function commentRect(rect: Rect, whole: boolean, zoom: number): Rect {
+  const inset = whole ? COMMENT_INSET * zoom : 0;
+  const below = whole ? Math.min(BOX.header * zoom, rect.height) : rect.height;
+  return { x: rect.x + inset, y: rect.y + below + COMMENT_GAP * zoom, width: rect.width - 2 * inset, height: rect.height };
+}
+
+
 /** The side of one cell of the index, in graph coordinates: a few Artifacts across. */
 const CELL = 1024;
 /** Cells per row of the index's keys: more than any layout's columns of cells. */
@@ -346,9 +354,7 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     if (node) names.push({ x: x + start, y: y + row / 2, width: w - start - end, text: node.name, count, tally, whole });
     const comment = node ? what.comments?.get(node.name) : undefined;
     if (comment) {
-      notes.push(whole
-        ? { x: x + COMMENT_INSET * zoom, y: y + row + COMMENT_GAP * zoom, width: w - 2 * COMMENT_INSET * zoom, text: comment }
-        : { x, y: y + h + COMMENT_GAP * zoom, width: w, text: comment });
+      notes.push({ ...commentRect({ x, y, width: w, height: h }, whole, zoom), text: comment });
     }
     // Wherever names are painted, so are the ports, however small.
     if (inward[number] || outward[number]) {

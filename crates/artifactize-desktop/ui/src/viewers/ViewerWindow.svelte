@@ -169,7 +169,8 @@
     height: 100%;
     background: var(--surface-app);
   }
-  .pointing .body {
+  .pointing .body,
+  .pointing .body :global(.tree button) {
     cursor: crosshair;
   }
   /* The app's strip: the same for every viewer (D-VIEW-1). */

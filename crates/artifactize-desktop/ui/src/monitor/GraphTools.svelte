@@ -62,7 +62,7 @@
     height: var(--row-dense);
     border: 1px solid var(--line-group);
     border-radius: var(--radius-control);
-    background: var(--surface-group);
+    background: var(--surface-panel);
     overflow: hidden;
   }
   .zoom button {
@@ -77,8 +77,8 @@
     color: var(--ink-2);
     cursor: pointer;
   }
-  /* The pointer steps the icon's ink up; the face stays the group's. */
   .zoom button:hover:not(:disabled) {
+    background: var(--surface-group);
     color: var(--ink);
   }
   .zoom button:disabled {

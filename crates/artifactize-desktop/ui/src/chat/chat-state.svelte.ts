@@ -60,7 +60,7 @@ export class ChatModeState {
   modelQuery = $state("");
   /** The model a new session on a worktree starts with, as the library says: `known` once it
    * answered, `model` null when no provider lists one. */
-  starting = $state.raw<{ worktree: string; branch: BranchKey | null; known: boolean; model: ChatModel | null; error?: string } | null>(null);
+  starting = $state.raw<{ worktree: string; branch: BranchKey | null; known: boolean; model: ChatModel | null } | null>(null);
   /** What went wrong, for the main area's notice. */
   error = $state<string | null>(null);
   noticeOpen = $state(false);
@@ -339,7 +339,7 @@ export class ChatModeState {
       if (mine === this.#defaults) this.starting = { worktree, branch, known: true, model };
     } catch (failure) {
       if (mine !== this.#defaults) return;
-      this.starting = { worktree, branch, known: true, model: null, error: message(failure) };
+      this.starting = { worktree, branch, known: true, model: null };
       this.error = message(failure);
     }
   }
@@ -347,7 +347,7 @@ export class ChatModeState {
   /** Start a session with the displayed default, or without a model when none was listed. */
   async create(worktree: string): Promise<boolean> {
     const starting = this.starting;
-    if (starting?.worktree !== worktree || !starting.known || starting.error !== undefined) return false;
+    if (starting?.worktree !== worktree || !starting.known) return false;
     try {
       const session = await call(this.ipc.chatCreate(worktree, starting.branch, starting.model));
       await this.list();

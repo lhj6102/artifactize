@@ -370,7 +370,7 @@ describe("HumanDetail", () => {
     const header = await screen.findByRole("button", { name: "Tool log" });
     const log = screen.getByRole("log", { name: "Tool log" });
     const rows = () => [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
-    await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "still checking"]));
+    await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "warning: missing title", "still checking"]));
     review.logged([{ ...run, end: { text: "■ exit 1", error: true } }]);
     await waitFor(() => expect(rows()).toEqual(["▶ HH:MM:SS · scan · release", "warning: missing title", "■ exit 1 · 3 lines"]));
     expect(header.getAttribute("aria-expanded")).toBe("false");
