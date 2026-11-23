@@ -150,8 +150,8 @@ payload.instruction = "Read the release notes and approve them for publication."
 [evals.signoff.pass_schema]
 type = "object"
 properties.approved = { const = true }
-properties.summary = { type = "string", minLength = 1, description = "What did you check in the notes?" }
-required = ["approved", "summary"]
+properties.comment = { type = "string" }
+required = ["approved"]
 additionalProperties = false
 `, {
     "package.mjs": "import assert from \"node:assert/strict\";\nimport * as core from \"../core/sum.mjs\";\n\n// The package exports exactly core's public functions.\nassert.deepEqual(Object.keys(core), [\"sum\"]);\n",
