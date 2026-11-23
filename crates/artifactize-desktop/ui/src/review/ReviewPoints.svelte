@@ -32,7 +32,7 @@
       {#if !compact}
         <span class="source"><span class="source-name">{point.source}</span><span>{` · ${time(point.at)}`}</span></span>
       {/if}
-      <button class="button small" disabled={!ready} onclick={() => insert(point.text)}>Insert</button>
+      <button class="button small quiet" disabled={!ready} onclick={() => insert(point.text)}>Insert</button>
       {#if !compact}
         <button class="remove" aria-label="Remove point: {point.text}" onclick={() => void review.removePoint(point)}><Icon name="remove" /></button>
       {/if}

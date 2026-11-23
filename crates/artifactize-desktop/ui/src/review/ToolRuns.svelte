@@ -151,7 +151,7 @@
   .lines {
     margin: 2px 0 4px 22px;
   }
-  .lines :global(.log) {
+  .run .lines :global(.log) {
     max-height: 50cqh;
   }
 </style>
