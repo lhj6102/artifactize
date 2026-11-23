@@ -104,7 +104,7 @@ pub enum Place {
 
 impl Place {
     /// A saved or live checkout's branch. Both the workspace and Git identity are canonical.
-    pub(crate) fn for_checkout(workspace: &Path, identity: &Identity) -> Self {
+    pub fn for_checkout(workspace: &Path, identity: &Identity) -> Self {
         match (&identity.common_dir, &identity.worktree_path) {
             (Some(common), Some(tree)) => Self::Git {
                 common: common.clone(),

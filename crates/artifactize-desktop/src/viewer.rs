@@ -9,6 +9,7 @@ use std::{
 
 use artifactize_core::{
     config::{Target, plugins},
+    monitor::live,
     review::{Outcome, log},
     store,
     types::{ArtifactName, RequestId},
@@ -306,23 +307,56 @@ impl SessionsInner {
     }
 }
 
+/// Where the Viewer was requested, independently of the checkout found during preparation.
+pub(crate) enum Source {
+    Artifact(live::Place),
+    Review(RequestId),
+}
+
+impl Source {
+    fn check(
+        &self,
+        workspace: &std::path::Path,
+        checkout: &artifactize_core::repository::Identity,
+    ) -> Result<(), Failure> {
+        if let Self::Artifact(expected) = self
+            && live::Place::for_checkout(workspace, checkout) != *expected
+        {
+            return Err(Failure::Action(
+                "This branch is no longer checked out in the worktree.".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Transfer the admitted library viewer and retain the job until the native window responds.
 pub(crate) fn launch(
     app: &App,
     outcome: &mut Outcome,
-    review: Option<RequestId>,
+    source: Source,
     job: crate::human::Lease,
-) -> Option<ViewerLaunch> {
+) -> Result<Option<ViewerLaunch>, Failure> {
     let Outcome::Ran {
         result: Ok(result), ..
     } = outcome
     else {
-        return None;
+        return Ok(None);
     };
-    let (viewer, log) = result.take_viewer_launch()?;
+    let Some((viewer, log)) = result.take_viewer_launch() else {
+        return Ok(None);
+    };
+    if let Err(error) = source.check(viewer.workspace(), viewer.checkout()) {
+        return finish_launch(Some(log), Err(error));
+    }
+    let review = match source {
+        Source::Artifact(_) => None,
+        Source::Review(id) => Some(id),
+    };
     let worktree = viewer.workspace().to_owned();
-    app.viewers
-        .keep(*viewer, worktree, PendingLaunch { job, review, log })
+    Ok(app
+        .viewers
+        .keep(*viewer, worktree, PendingLaunch { job, review, log }))
 }
 
 impl PendingLaunch {
@@ -871,6 +905,28 @@ mod tests {
 #[cfg(test)]
 mod launch_tests {
     use super::*;
+
+    #[test]
+    fn a_detail_viewer_prepared_on_another_branch_is_refused() {
+        let worktree = PathBuf::from("checkout");
+        let common = PathBuf::from("git-common");
+        let requested = live::Place::Git {
+            common: common.clone(),
+            head: live::Head::Branch("requested".to_owned().try_into().unwrap()),
+        };
+        let detail = Source::Artifact(requested);
+        let mut checkout = artifactize_core::repository::Identity {
+            common_dir: Some(common),
+            worktree_path: Some(worktree.clone()),
+            branch: Some("other".into()),
+        };
+        assert!(matches!(
+            detail.check(&worktree, &checkout),
+            Err(Failure::Action(_))
+        ));
+        checkout.branch = Some("requested".into());
+        assert_eq!(detail.check(&worktree, &checkout), Ok(()));
+    }
 
     #[test]
     fn a_cancelled_viewer_handoff_never_opens_a_native_window() {

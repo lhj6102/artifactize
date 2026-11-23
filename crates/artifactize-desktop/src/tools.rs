@@ -160,11 +160,12 @@ pub async fn artifact_tool_run(
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
     let work = app.human.start_artifact(caller, job)?;
     let workspace = work.prepare(app.current_workspace(&branch)).await?;
+    let place = branch.to_place();
     let operation = review::Tool::operation_of(&tool, &artifact).to_owned();
     let run = app.human.log().start(
         Key::Artifact {
             repo: workspace.clone(),
-            branch: branch.to_place(),
+            branch: place.clone(),
             artifact: artifact.clone(),
         },
         &operation,
@@ -183,6 +184,11 @@ pub async fn artifact_tool_run(
         result,
     };
     let mut notice: Notice = outcome.notice().into();
-    notice.viewer = crate::viewer::launch(&app, &mut outcome, None, work);
+    notice.viewer = crate::viewer::launch(
+        &app,
+        &mut outcome,
+        crate::viewer::Source::Artifact(place),
+        work,
+    )?;
     Ok(notice)
 }

@@ -758,7 +758,12 @@ pub async fn human_run(
         .expect("commands lock")
         .remove(&owner);
     let mut notice: Notice = outcome.notice().into();
-    notice.viewer = crate::viewer::launch(&app, &mut outcome, Some(owner), work);
+    notice.viewer = crate::viewer::launch(
+        &app,
+        &mut outcome,
+        crate::viewer::Source::Review(owner),
+        work,
+    )?;
     Ok(notice)
 }
 
