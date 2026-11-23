@@ -12,7 +12,8 @@
 //      review count on the bottom bar.
 //   B. detail.png  — an Artifact's Detail docked over the graph on its Artifact tab: its evals
 //      with their verdicts, and the Artifact between its neighbours, unfolded.
-//   C. review.png  — switch to Review in the bottom bar, open the waiting sign-off and claim it:
+//   C. review.png  — switch to Review in the bottom bar, open the waiting sign-off and claim it,
+//      the filter widened to type:human so the Pane keeps it listed:
 //      one column with its instruction, Evidence (the tools and a Tool log run, unfolded) and
 //      the Verdict with the GREEN form.
 //
@@ -33,7 +34,7 @@ import { adopt, cleanup, prepare} from "../../crates/artifactize-desktop/ui/e2e/
 import { own } from "../../crates/artifactize-desktop/ui/e2e/fixtures/owned.ts";
 import { nativePath, asNativePath } from "../../crates/artifactize-desktop/ui/e2e/portable.ts";
 import { environment, git, newFixture } from "../../crates/artifactize-desktop/ui/e2e/fixtures/repo.ts";
-import { afterRender } from "../../crates/artifactize-desktop/ui/e2e/keys.ts";
+import { afterRender, fill } from "../../crates/artifactize-desktop/ui/e2e/keys.ts";
 import { Graph } from "../../crates/artifactize-desktop/ui/e2e/views/graph.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -275,6 +276,12 @@ async function capture(output: string, work: string): Promise<void> {
       const claim = app.$(review).$("button=Claim to review");
       await claim.waitForEnabled({ timeout: WAIT });
       await claim.click();
+      // `waiting` lists unclaimed reviews only: widen the filter to `type:human`, so the Pane
+      // keeps the claimed sign-off listed and selected (J-REVIEW-FILTER).
+      await fill(app, `${REVIEW} input[aria-label="Filter the reviews"]`, "type:human");
+      await app.waitUntil(() => app.execute((options) => [...document.querySelectorAll(options)]
+        .some((row) => row.getAttribute("aria-selected") === "true" && row.textContent?.includes("release/signoff")), options),
+      { timeout: WAIT, timeoutMsg: "the widened filter lists the claimed sign-off, selected" });
       const notes = app.$(review).$("button=notes");
       await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the sign-off is claimed and its notes tool is usable" });
       await notes.click();
