@@ -8,7 +8,7 @@ import { BatchLifecycle } from "./batch-lifecycle.ts";
 import { checkE2eApp, cleanup, runStep } from "./build.ts";
 import { own } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { checkForeground, nodeProgram, processRunning, quarantineForeground, releaseForeground, xwdPng } from "./platform.ts";
+import { checkForeground, nodeProgram, processRunning, processState, quarantineForeground, releaseForeground, waitForProcessExit, xwdPng } from "./platform.ts";
 import { exists, nativePath, newDirectory, readTextIfExists, removeTree, scratchDirectory, suitePath, withMachineLock } from "./portable.ts";
 import { batches } from "./run.ts";
 
@@ -115,6 +115,38 @@ it("does not admit another foreground owner after the batch process's lock unwin
   await assert.rejects(withMachineLock(lock, async () => checkForeground(marker)), /foreground is quarantined/);
   releaseForeground(marker);
   await withMachineLock(lock, async () => checkForeground(marker));
+});
+
+it("only confirms native exit after its owned child actually exits", async (test) => {
+  const child = spawn(nodeProgram, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+  const closed = new Promise<void>((done, fail) => {
+    child.once("close", () => done());
+    child.once("error", fail);
+  });
+  test.after(async () => { if (child.exitCode === null && child.signalCode === null) child.kill(); await closed; });
+  assert.ok(child.pid);
+  const pid = child.pid;
+  assert.equal(processState(pid), "running");
+  await assert.rejects(waitForProcessExit(pid, { timeout: 0 }), /not confirmed.*running/);
+  await assert.rejects(waitForProcessExit(pid, { timeout: 0, observe: () => "unknown" }), /not confirmed.*unknown/);
+  child.kill();
+  await closed;
+  await waitForProcessExit(pid, { timeout: 1000 });
+});
+
+it("reclaims a Windows job's marker only after every recorded PID is confirmed gone", async (test) => {
+  const root = newDirectory(scratchDirectory(), "desktop-stale-foreground-");
+  test.after(() => removeTree(root));
+  const marker = nativePath(root, "foreground-unreleased");
+  quarantineForeground(marker, "interrupted Windows batch", [100, 101, 102], true);
+  for (const state of ["running", "unknown"] as const) {
+    assert.throws(() => checkForeground(marker, (pid) => pid === 102 ? state : "exited"), /Owned PIDs: 100, 101, 102/);
+    assert.equal(exists(marker), true);
+  }
+  checkForeground(marker, () => "exited");
+  assert.equal(exists(marker), false);
+  quarantineForeground(marker, "no native job owner found", [102]);
+  assert.throws(() => checkForeground(marker, () => "exited"), /quarantined/);
 });
 
 it("fails a build interrupted after its root exits but while a descendant holds stdout", async (test) => {

@@ -144,7 +144,7 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       return { fixture, args: ["review"], data: { id: request(fixture).id } };
     },
-    run: async (app, { fixture, data: { id }, port }) => {
+    run: async (app, { fixture, data: { id } }) => {
       await app.review.titleContains("release/signoff");
       await app.review.claim();
       await app.command("Quit");
@@ -156,7 +156,7 @@ export const scenarios: Scenario[] = [
       await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the window and its review stay");
       await app.closeWindow();
       await app.dialogTitled("Leave the review?");
-      await app.exitsBy(() => app.dialogButton("Release and quit"), port);
+      await app.exitsBy(() => app.dialogButton("Release and quit"));
       assert.equal(request(fixture).claim, null, "Release and quit released the claim");
     },
   }),
@@ -169,9 +169,9 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], data: null };
     },
-    run: async (app, { port }) => {
+    run: async (app) => {
       await app.graph.node("a:release");
-      await app.exitsBy(() => app.closeWindow(), port);
+      await app.exitsBy(() => app.closeWindow());
     },
   }),
 

@@ -1,7 +1,8 @@
 // The app's window as a person sees it: its header, the command palette, Help, the dialogs it
 // opens over the screen, and its parts (the pane, the main area's graph, the Detail, a Human
 // review, Settings). Cases reach the window only through these views (E2E-REAL-APP).
-import { callWindow, embeddedReady } from "../portable.ts";
+import { callWindow } from "../portable.ts";
+import { isPid, waitForProcessExit } from "../platform.ts";
 import { pointerGapClick } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { Chat } from "./chat.ts";
@@ -275,23 +276,19 @@ export class App {
     await callWindow(this.browser, "close");
   }
 
-  /** Wait until the app has exited: its embedded WebDriver server at `port`, which lives in
-   * the app's process, no longer answers. The ended session is then retired, so WebdriverIO
-   * does not ask the gone app to end it again. */
-  async exited(port: number): Promise<void> {
-    const deadline = Date.now() + 30000;
-    while (await embeddedReady(port)) {
-      if (Date.now() > deadline) throw new Error("the app did not exit");
-      await new Promise((done) => setTimeout(done, 100));
+  /** Do `action`, then confirm the exact app that was in this session exited. The command's
+   * own response may be lost on exit, but a failed native observation is never success. */
+  async exitsBy(action: () => Promise<unknown>): Promise<void> {
+    const pid = await this.browser.execute(() =>
+      (window as Window & { __ARTIFACTIZE_E2E_PROCESS__?: { pid: number } }).__ARTIFACTIZE_E2E_PROCESS__?.pid);
+    if (!isPid(pid)) throw new Error("the app did not provide its native process ID before the close action");
+    const failures: unknown[] = [];
+    try { await action(); } catch (error) { failures.push(error); }
+    try { await waitForProcessExit(pid); }
+    catch (error) {
+      if (failures.length) throw new AggregateError([...failures, error], `the close action failed and app PID ${pid} did not confirm exit`);
+      throw error;
     }
     Reflect.set(this.browser, "sessionId", undefined);
-  }
-
-  /** Do `action`, which ends the app, and wait until it has exited. The action's own command
-   * may lose its answer as the app goes; that alone is no failure. */
-  async exitsBy(action: () => Promise<unknown>, port: number): Promise<void> {
-    try { await action(); }
-    catch (error) { if (await embeddedReady(port)) throw error; }
-    await this.exited(port);
   }
 }

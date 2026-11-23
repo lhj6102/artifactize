@@ -16,8 +16,9 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import { homedir, release } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { basename, delimiter, isAbsolute, join, relative, sep, toNamespacedPath } from "node:path";
-import { callWindow, makeDirectory, nativePath, newDirectory, readTextIfExists, removeTree, writeText, type NativePath } from "./portable.ts";
+import { callWindow, makeDirectory, nativePath, newDirectory, readTextIfExists, removeTree, replaceText, writeText, type NativePath } from "./portable.ts";
 
 const WINDOWS = process.platform === "win32";
 const MACOS = process.platform === "darwin";
@@ -223,6 +224,9 @@ $info.Arguments = $env:DESKTOP_BUILD_ARGS
 $info.UseShellExecute = $false
 $info.EnvironmentVariables.Remove('DESKTOP_BUILD_PROGRAM')
 $info.EnvironmentVariables.Remove('DESKTOP_BUILD_ARGS')
+if ($env:DESKTOP_TREE_COMPLETES_WITH_ROOT -eq '1') {
+  $info.EnvironmentVariables['DESKTOP_TEST_BATCH_JOB_PID'] = [string]$PID
+}
 $child = [Diagnostics.Process]::Start($info)
 $child.WaitForExit()
 $code = $child.ExitCode
@@ -275,24 +279,45 @@ export function stopTree(child: ChildProcess): void {
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
 }
 
-/** Whether process `pid` still runs. Signal 0 only checks it, on every OS; a process that
- * exists but belongs to someone else (EPERM) runs too. */
-export function processRunning(pid: number): boolean {
+export type ProcessState = "running" | "exited" | "unknown";
+export const isPid = (pid: unknown): pid is number => typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 && pid <= 0xffffffff;
+
+/** Observe this native PID without signalling it. On Windows the zero-signal libuv probe
+ * opens a process handle; on Unix it checks the PID. Permission or read errors aren't exits. */
+export function processState(pid: number): ProcessState {
+  if (!isPid(pid)) return "unknown";
+  try { process.kill(pid, 0); }
+  catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ESRCH" ? "exited" : "unknown";
+  }
+  if (!LINUX) return "running";
   try {
-    process.kill(pid, 0);
-    if (LINUX) {
-      // A dead orphan can retain its PID in a container whose init does not reap it.
-      try {
-        const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-        if (stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) === "Z") return false;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-        throw error;
-      }
-    }
-    return true;
+    // A dead orphan may retain its PID when the container's init does not reap it.
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    const state = close < 0 ? "" : stat.slice(close + 2, close + 3);
+    return !state ? "unknown" : "ZXx".includes(state) ? "exited" : "running";
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "exited" : "unknown";
+  }
+}
+
+/** For cleanup gates, an inconclusive observation must be treated as still owned. */
+export function processRunning(pid: number): boolean {
+  return processState(pid) !== "exited";
+}
+
+/** Only positive native exit evidence can complete a Quit or restart. */
+export async function waitForProcessExit(pid: number, options: { timeout?: number; observe?: (pid: number) => ProcessState } = {}): Promise<void> {
+  if (!isPid(pid)) throw new Error("the app did not provide an owned native process ID");
+  const { timeout = 30000, observe = processState } = options;
+  const deadline = performance.now() + timeout;
+  for (;;) {
+    const state = observe(pid);
+    if (state === "exited") return;
+    const left = deadline - performance.now();
+    if (left <= 0) throw new Error(`the app's exit was not confirmed for PID ${pid}: ${state}`);
+    await delay(Math.min(100, left));
   }
 }
 
@@ -520,19 +545,38 @@ export function foregroundQuarantine(): NativePath | null {
   return WINDOWS || MACOS ? nativePath(homedir(), ".artifactize-desktop-e2e", "foreground-unreleased") : null;
 }
 
-/** Check under the foreground lock before letting a second suite open another app. */
-export function checkForeground(path: NativePath | null): void {
-  if (!path) return;
-  const failure = readTextIfExists(path);
-  if (failure !== null) throw new Error(`the desktop foreground is quarantined: ${failure.trim()} Confirm the orphaned fixture app has exited before removing ${path}.`);
+type ForegroundRecord = { description: string; pids: number[]; jobOwned: boolean };
+
+/** Until the service has published its child handles, the Windows job wrapper itself owns
+ * all of its descendants. A direct invocation must not claim this recovery guarantee. */
+export function batchJobPids(): number[] {
+  const wrapper = Number(variable("DESKTOP_TEST_BATCH_JOB_PID"));
+  return WINDOWS && isPid(wrapper) && wrapper === process.ppid ? [process.pid, wrapper] : [];
 }
 
-/** Persist foreground ownership before launch, while holding the loopback lock. The marker
- * remains if recovery cannot confirm exit or the batch is killed. */
-export function quarantineForeground(path: NativePath | null, failure: string): void {
+/** Check under the foreground lock. A stale Windows record is recoverable only when the
+ * job's owning wrapper, batch and every recorded app PID are all confirmed gone. */
+export function checkForeground(path: NativePath | null, observe = processState): void {
+  if (!path) return;
+  const saved = readTextIfExists(path);
+  if (saved === null) return;
+  let record: Partial<ForegroundRecord> | null = null;
+  try { record = JSON.parse(saved) as Partial<ForegroundRecord> | null; } catch { /* legacy marker; fail closed */ }
+  const pids = Array.isArray(record?.pids) && record.pids.every(isPid) ? record.pids : [];
+  if (record?.jobOwned === true && new Set(pids).size >= 2 && pids.every((pid) => observe(pid) === "exited")) {
+    releaseForeground(path);
+    return;
+  }
+  const owners = pids.length ? ` Owned PIDs: ${pids.join(", ")}.` : "";
+  throw new Error(`the desktop foreground is quarantined: ${record?.description ?? saved.trim()}${owners} Confirm the orphaned fixture app has exited before removing ${path}.`);
+}
+
+/** Keep the marker replaceable as the launcher publishes additional app PIDs. A killed
+ * writer leaves the last complete record, which already contains the Windows job owner. */
+export function quarantineForeground(path: NativePath | null, description: string, pids: readonly number[] = [], jobOwned = false): void {
   if (!path) return;
   makeDirectory(nativePath(path, ".."), { private: true });
-  writeText(path, failure);
+  replaceText(path, JSON.stringify({ description, pids: [...new Set(pids)], jobOwned } satisfies ForegroundRecord));
 }
 
 /** Only once every app is stopped, clear the persistent half of the foreground lock. */

@@ -272,15 +272,6 @@ export async function embeddedPorts(count: number): Promise<{ ports: number[]; c
   }
 }
 
-/** Whether the embedded WebDriver server at `port` answers: it lives inside the app's process. */
-export async function embeddedReady(port: number): Promise<boolean> {
-  try {
-    const reply = await fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(1000) });
-    await reply.body?.cancel();
-    return reply.ok;
-  } catch { return false; }
-}
-
 // ---------------------------------------------------------------------------------
 // Files read whole
 

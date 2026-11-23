@@ -29,6 +29,7 @@ if (restarts && selected.length > 1) throw new Error("a scenario that starts its
 /** Why preparing the batch failed, for the runner: WDIO wraps it. */
 export type Service = {
   onPrepare?: (...args: never[]) => Promise<void>;
+  onWorkerStart?: (...args: never[]) => Promise<void>;
   onComplete?: (code: number, config: unknown, caps: unknown) => Promise<void>;
   // The pinned service correlates its app child handles with the configured embedded ports.
   embeddedConfigs?: Map<string, { port: number }>;
@@ -129,6 +130,11 @@ export const config = {
         const complete = service.onComplete?.bind(service);
         if (!complete) continue;
         const prepare = service.onPrepare?.bind(service);
+        const start = service.onWorkerStart?.bind(service);
+        const remember = () => owner.remember([...(service.embeddedProcesses?.values() ?? [])].map(({ proc }) => proc.pid));
+        if (start) service.onWorkerStart = async (...args) => {
+          try { await start(...args); } finally { remember(); }
+        };
         if (prepare) service.onPrepare = async (...args) => {
           // A failed service startup may leave an app but skip the usual completion hook.
           owner.arm(service, () => complete(1, {}, []));
@@ -142,9 +148,15 @@ export const config = {
               await keepEvidence(id, nativePath(evidence, id), `Tauri could not start the embedded WebDriver before the scenario ran: ${inspect(error)}${capture}`, shot ?? fallbackImage(fallback));
             }
             throw error;
-          } finally { for (const capture of captures) capture.stop(false); }
+          } finally {
+            remember();
+            for (const capture of captures) capture.stop(false);
+          }
         };
-        service.onComplete = (...args) => owner.stop(service, () => complete(...args));
+        service.onComplete = (...args) => owner.stop(service, () => {
+          remember();
+          return complete(...args);
+        });
       }
       const unset = new Set<string>();
       const prepared: { scope: Owned; input: Awaited<ReturnType<typeof selected[number]["prepare"]>>; env: Environment; app: Context["root"] }[] = [];

@@ -162,7 +162,7 @@ export const scenarios: Scenario[] = [
       await installChatProvider(owned, fixture);
       return { fixture, args: ["--repo", fixture.repo], data: null };
     },
-    run: async (app, { port }) => {
+    run: async (app) => {
       await app.mode("Chat");
       await app.chat.create();
       await app.chat.model(CHAT_MODEL);
@@ -176,7 +176,7 @@ export const scenarios: Scenario[] = [
       await app.dialogClosed();
       await app.command("Quit");
       await app.dialogTitled("Quit while the agent works?");
-      await app.exitsBy(() => app.dialogButton("Quit"), port);
+      await app.exitsBy(() => app.dialogButton("Quit"));
     },
   }),
 ];

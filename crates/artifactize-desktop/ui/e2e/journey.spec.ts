@@ -55,7 +55,7 @@ describe(item.title, () => {
         await leave();
         if (item.restarted) {
           // Quit as a person does, by closing the window, before the app is started again.
-          await app.exitsBy(() => app.closeWindow(), input.port);
+          await app.exitsBy(() => app.closeWindow());
           if (interruption) throw interruption;
           writeJson(nativePath(input.root, FIRST), { carried: carried ?? null });
           return;
