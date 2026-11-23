@@ -62,6 +62,30 @@ async fn moving_a_branch_prefers_a_usable_session_but_keeps_stranded_history_rea
     let preferred = chat.latest_for_navigation(&branch).await.unwrap().unwrap();
     assert_eq!(preferred.id, usable.id);
     assert!(preferred.unavailable.is_none());
+    let nested = worktree.join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    let session = make(
+        "chat-nested",
+        nested.clone(),
+        repository::identify(&nested),
+        "2026-11-01T11:00:00Z",
+    );
+    let state = root.path().join("state");
+    let writer = store::OwnedReceipts::open(&state, &worktree).await.unwrap();
+    writer.create_chat(&session).await.unwrap();
+    drop(writer);
+    assert_eq!(
+        chat.latest_for_navigation(&branch)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        session.id
+    );
+    assert_eq!(
+        chat.current_worktree(&branch).await.unwrap(),
+        Some(worktree.clone())
+    );
     crate::test_os::git(&worktree, &["symbolic-ref", "HEAD", "refs/heads/other"]);
     let old_nested = stranded.worktree.join("former-subdirectory");
     assert_eq!(

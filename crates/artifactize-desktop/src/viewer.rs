@@ -83,6 +83,14 @@ struct Address {
     target: Target,
 }
 
+impl Address {
+    fn same_artifact(&self, other: &Self) -> bool {
+        self.worktree == other.worktree
+            && self.checkout == other.checkout
+            && self.artifact == other.artifact
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewerLaunch {
@@ -150,10 +158,7 @@ impl Sessions {
         let sessions = self.0.lock().expect("viewer sessions");
         match (sessions.places.get(&one), sessions.places.get(&other)) {
             (Some(one), Some(other)) => {
-                one.address.worktree == other.address.worktree
-                    && one.address.checkout == other.address.checkout
-                    && one.address.artifact == other.address.artifact
-                    && one.viewer == other.viewer
+                one.address.same_artifact(&other.address) && one.viewer == other.viewer
             }
             _ => false,
         }
@@ -376,10 +381,12 @@ pub async fn viewer_context(
         let sessions = app.viewers.0.lock().expect("viewer sessions");
         let active = active.filter(|review| sessions.active.as_ref() == Some(review));
         active.map_or((None, false), |review| {
-            let matches = sessions
-                .places
-                .get(&session)
-                .is_some_and(|place| review.addresses.contains(&place.address));
+            let matches = sessions.places.get(&session).is_some_and(|place| {
+                review
+                    .addresses
+                    .iter()
+                    .any(|recorded| recorded.same_artifact(&place.address))
+            });
             (Some(review.shown.into()), matches)
         })
     };

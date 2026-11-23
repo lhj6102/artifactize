@@ -548,12 +548,18 @@ impl Chat {
         .await
     }
 
-    /// The branch's Current can use any saved session whose exact checkout is still usable.
+    /// The oldest usable checkout anchors Current when there is no Verify workspace.
+    /// Activity in a newer session must not redirect scans, edits or tools.
     pub async fn current_worktree(&self, branch: &Place) -> Result<Option<PathBuf>, String> {
-        Ok(self
-            .latest_available_for_branch(branch)
-            .await?
-            .map(|session| session.worktree))
+        let sessions = store::chat::for_branch(&self.state, branch).await?;
+        crate::task::blocking(move || {
+            sessions
+                .into_iter()
+                .filter(|session| session.check_checkout().is_ok())
+                .min_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)))
+                .map(|session| session.worktree)
+        })
+        .await
     }
 
     /// Save a view without changing the session's activity order or requiring a live checkout.

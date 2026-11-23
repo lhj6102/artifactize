@@ -216,19 +216,18 @@ impl App {
         branch: &browse::BranchKey,
     ) -> Result<std::path::PathBuf, Failure> {
         let place = branch.to_place();
-        if let Some(worktree) = self
-            .chat
+        let listed_error = match self.browse.branch(&place) {
+            Ok(listed) => match place.checked_workspace(listed.workspace).await {
+                Ok(workspace) => return Ok(workspace),
+                Err(error) => Failure::Missing(error),
+            },
+            Err(error) => error,
+        };
+        self.chat
             .current_worktree(&place)
             .await
             .map_err(Failure::Read)?
-        {
-            return Ok(worktree);
-        }
-        let workspace = self.browse.branch(&place)?.workspace;
-        place
-            .checked_workspace(workspace)
-            .await
-            .map_err(Failure::Missing)
+            .ok_or(listed_error)
     }
 
     /// Note the state origin a read found and return the state's generation. A replaced state
