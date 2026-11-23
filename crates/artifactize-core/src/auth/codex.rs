@@ -27,7 +27,7 @@ mod interactive;
 use auth_file::{AuthFileError, FileToken, read_auth_file_at};
 #[cfg(test)]
 use interactive::*;
-pub use interactive::{Prompt, login, login_with};
+pub use interactive::{CallbackPort, Prompt, login, login_with};
 #[cfg(test)]
 use sha2::{Digest, Sha256};
 #[cfg(test)]

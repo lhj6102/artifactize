@@ -131,6 +131,7 @@ pub async fn codex_login_start(
                 repo.as_deref(),
                 Some(pasted),
                 browser,
+                callback_port(),
                 |prompt| {
                     let _ = shown.send(prompt.clone());
                 },
@@ -138,6 +139,39 @@ pub async fn codex_login_start(
             .await
         })
     }))
+}
+
+fn callback_port() -> codex::CallbackPort {
+    #[cfg(feature = "e2e")]
+    if codex::auth_root().is_ok_and(|root| isolated_callback(&root)) {
+        return codex::CallbackPort::Ephemeral;
+    }
+    codex::CallbackPort::Registered
+}
+
+#[cfg(feature = "e2e")]
+fn isolated_callback(root: &tauri::Url) -> bool {
+    root.scheme() == "http" && root.host_str() == Some("127.0.0.1")
+}
+
+#[cfg(all(test, not(feature = "e2e")))]
+#[test]
+fn the_release_build_uses_the_registered_callback() {
+    assert_eq!(callback_port(), codex::CallbackPort::Registered);
+}
+
+#[cfg(all(test, feature = "e2e"))]
+#[test]
+fn only_an_ipv4_loopback_http_provider_uses_the_isolated_callback() {
+    for (url, isolated) in [
+        ("http://127.0.0.1:44003", true),
+        ("http://localhost:44003", false),
+        ("http://[::1]:44003", false),
+        ("https://127.0.0.1:44003", false),
+        ("https://auth.openai.com", false),
+    ] {
+        assert_eq!(isolated_callback(&url.parse().unwrap()), isolated, "{url}");
+    }
 }
 
 /// Read the attempt's prompt or the updated status if it already signed in.
