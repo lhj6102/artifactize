@@ -249,7 +249,7 @@ branch: string } |
 	viewerReadText: (session: number, path: string) => typedError<string, Failure>(__TAURI_INVOKE("viewer_read_text", { session, path })),
 	/**  The exact scoped graph wire shape used by the library. Serialize at the IPC edge. */
 	viewerDeclarations: (session: number) => typedError<string, Failure>(__TAURI_INVOKE("viewer_declarations", { session })),
-	viewerClose: (session: number) => __TAURI_INVOKE<void>("viewer_close", { session }),
+	viewerClose: (session: number) => typedError<null, Failure>(__TAURI_INVOKE("viewer_close", { session })),
 	/**  Append to the review that was active when Point began, never to its replacement. */
 	viewerPoint: (session: number, review: string, text: string) => typedError<null, Failure>(__TAURI_INVOKE("viewer_point", { session, review, text })),
 	activeReviewSet: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("active_review_set", { request })),
@@ -1304,6 +1304,8 @@ export type RunPanel = {
 	/**  The branch for Open in Chat, even when it is no longer checked out. */
 	chatBranch: BranchKey,
 	origin: RunOrigin | null,
+	/**  The Run comment's first line. The full comment belongs in Detail. */
+	headline: string | null,
 	/**  The Run's own row, whose Detail its headline opens. */
 	node: string,
 	mark: Mark,

@@ -183,6 +183,21 @@ fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Re
     .map(|body| body.deserialize::<Value>().unwrap())
 }
 
+fn invoke_viewer(
+    window: &WebviewWindow<MockRuntime>,
+    command: &str,
+    args: Value,
+) -> Result<Value, Value> {
+    let label = format!("viewer-{}", args["session"].as_u64().unwrap());
+    let handle = window.app_handle();
+    let caller = handle.get_webview_window(&label).unwrap_or_else(|| {
+        tauri::WebviewWindowBuilder::new(handle, label, Default::default())
+            .build()
+            .unwrap()
+    });
+    invoke(&caller, command, args)
+}
+
 const STILL: fn() -> Value = || json!({"run": {"kind": "keep"}, "query": null, "older": null, "full": true, "resync": false});
 
 /// Show Run `run` in the Main area.
@@ -1092,7 +1107,17 @@ payload.instruction = "Read the page separately."
         json!({"id": id, "tool": "view_page", "job": 2}),
     )
     .unwrap();
-    let contents = invoke(
+    let denied = invoke(
+        &window,
+        "viewer_read_text",
+        json!({"session": launched["viewer"]["session"], "path":"content.txt"}),
+    )
+    .unwrap_err();
+    assert_eq!(
+        denied["message"],
+        "This window does not own that Artifact Viewer session."
+    );
+    let contents = invoke_viewer(
         &window,
         "viewer_read_text",
         json!({"session": launched["viewer"]["session"], "path": "content.txt"}),
@@ -1127,8 +1152,9 @@ payload.instruction = "Read the page separately."
     )
     .unwrap();
     let same_name_session = &same_name["viewer"]["session"];
-    let context =
-        |session: &Value| invoke(&window, "viewer_context", json!({"session": session})).unwrap();
+    let context = |session: &Value| {
+        invoke_viewer(&window, "viewer_context", json!({"session": session})).unwrap()
+    };
     assert_eq!(context(session)["petMatch"], false);
     // The follower is what the pet shows; only the original worktree can receive its Point.
     invoke(&window, "active_review_set", json!({"request": id})).unwrap();
@@ -1143,7 +1169,7 @@ payload.instruction = "Read the page separately."
         "the shown follower's viewer can point at the shared draft"
     );
 
-    let result = invoke(
+    let result = invoke_viewer(
         &window,
         "viewer_point",
         json!({"session": session, "review": id, "text": "Original worktree"}),
@@ -1153,7 +1179,7 @@ payload.instruction = "Read the page separately."
     let other = saved(&fixture, "page/another").request.id.to_string();
     invoke(&window, "active_review_set", json!({"request": other})).unwrap();
     assert!(context(session)["review"].is_null());
-    let refused = invoke(
+    let refused = invoke_viewer(
         &window,
         "viewer_point",
         json!({"session": session, "review": id, "text": "Do not append to the earlier review"}),
@@ -1164,7 +1190,7 @@ payload.instruction = "Read the page separately."
     let external = launched_window(&fixture, Mode::Review, None);
     invoke(&external, "human_claim", json!({"id": other, "job": 4})).unwrap();
     assert_eq!(context(session)["review"], other);
-    let refused = invoke(
+    let refused = invoke_viewer(
         &window,
         "viewer_point",
         json!({"session": session, "review": active["review"], "text": "Delayed Point"}),
@@ -1179,7 +1205,7 @@ payload.instruction = "Read the page separately."
         let draft = invoke(&window, "human_draft", json!({"id": review})).unwrap();
         assert_eq!(draft["points"][0]["text"].as_str(), expected);
     }
-    let result = invoke(
+    let result = invoke_viewer(
         &window,
         "viewer_point",
         json!({"session": session, "review": other, "text": "content.txt L1:C1"}),
@@ -1235,7 +1261,7 @@ payload.instruction = "Read the page."
     )
     .unwrap();
     let viewer = &launch["viewer"];
-    let context = invoke(
+    let context = invoke_viewer(
         &window,
         "viewer_context",
         json!({"session":viewer["session"]}),
@@ -1316,14 +1342,15 @@ payload.instruction = "Read the page."
         .unwrap();
         ran["viewer"]["session"].clone()
     };
-    let context =
-        |session: &Value| invoke(&window, "viewer_context", json!({"session": session})).unwrap();
+    let context = |session: &Value| {
+        invoke_viewer(&window, "viewer_context", json!({"session": session})).unwrap()
+    };
     let old = open_review_viewer(1);
     assert_eq!(context(&old)["petMatch"], true);
 
     os::git(&repo, &["switch", "-qc", "alternate"]);
     assert_eq!(context(&old)["petMatch"], false);
-    let refused = invoke(
+    let refused = invoke_viewer(
         &window,
         "viewer_read_text",
         json!({"session":old,"path":"content.txt"}),

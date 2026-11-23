@@ -362,9 +362,13 @@ fn destroyed<R: Runtime>(window: &tauri::Window<R>) {
     }
 }
 
-fn page_session(webview: &str, address: &str) -> Option<u32> {
+pub(crate) fn page_session(webview: &str, address: &str) -> Option<u32> {
     let session = address.strip_prefix('/')?.parse().ok()?;
-    (webview == format!("{VIEWER}{session}")).then_some(session)
+    viewer_label_matches(webview, session).then_some(session)
+}
+
+pub(crate) fn viewer_label_matches(label: &str, session: u32) -> bool {
+    label == format!("{VIEWER}{session}")
 }
 
 /// Serve viewer session `/{session}`'s plugin page under its own policy.

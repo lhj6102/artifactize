@@ -13,6 +13,12 @@ use crate::{Failure, ids::JobId};
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Caller(String);
 
+impl Caller {
+    pub(crate) fn label(&self) -> &str {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 impl Caller {
     pub(crate) fn test_main() -> Self {

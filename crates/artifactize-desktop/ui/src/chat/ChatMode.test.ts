@@ -97,7 +97,7 @@ function backend() {
         return true;
       case "browse":
         // Opened by its ID, run-9 is read with its live branch.
-        return browseView(2, { run: { kind: "read", id: "run-9", origin: null, node: "r:run-9", mark: { status: "RED", glyph: "✗" }, needs: [], branch: branchKey("fix/rounding"), chatBranch: branchKey("fix/rounding") } });
+        return browseView(2, { run: { kind: "read", id: "run-9", origin: null, headline: null, node: "r:run-9", mark: { status: "RED", glyph: "✗" }, needs: [], branch: branchKey("fix/rounding"), chatBranch: branchKey("fix/rounding") } });
       case "providers_list":
         return { builtin: ["claude-agent", "gemini", "anthropic", "antigravity"], keys: [
           { provider: "gemini", source: "absent" }, { provider: "anthropic", source: "saved" },

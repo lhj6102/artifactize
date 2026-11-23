@@ -277,6 +277,8 @@ pub struct RunPanel {
     /// The branch for Open in Chat, even when it is no longer checked out.
     pub chat_branch: BranchKey,
     pub origin: Option<RunOrigin>,
+    /// The Run comment's first line. The full comment belongs in Detail.
+    pub headline: Option<String>,
     /// The Run's own row, whose Detail its headline opens.
     pub node: crate::ids::NodeKey,
     pub mark: Mark,
@@ -476,6 +478,12 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
                 BranchKey::new,
             ),
             origin: run.run.origin.as_ref().map(Into::into),
+            headline: run
+                .run
+                .comment
+                .as_ref()
+                .and_then(|comment| comment.as_str().lines().next())
+                .map(str::to_owned),
             node: NodeId::run(&run.run.id).into(),
             mark: progress.status.into(),
             needs: progress

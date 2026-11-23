@@ -365,12 +365,24 @@ pub struct ViewerContext {
     pub pet_match: bool,
 }
 
+fn require_viewer(caller: &crate::human::Caller, session: u32) -> Result<(), Failure> {
+    if crate::windows::viewer_label_matches(caller.label(), session) {
+        Ok(())
+    } else {
+        Err(Failure::Action(
+            "This window does not own that Artifact Viewer session.".into(),
+        ))
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn viewer_context(
     app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
     session: u32,
 ) -> Result<ViewerContext, Failure> {
+    require_viewer(&caller, session)?;
     let viewer = app.viewers.get(session)?;
     let checked = viewer.clone();
     let checkout =
@@ -417,7 +429,12 @@ pub enum BuiltinViewer {
 
 #[tauri::command]
 #[specta::specta]
-pub fn viewer_entry(app: tauri::State<'_, App>, session: u32) -> Result<ViewerEntry, Failure> {
+pub fn viewer_entry(
+    app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
+    session: u32,
+) -> Result<ViewerEntry, Failure> {
+    require_viewer(&caller, session)?;
     use plugins::BuiltinViewer as Core;
     Ok(match app.viewers.get(session)?.entry() {
         plugins::ViewerEntry::Builtin { viewer } => ViewerEntry::Builtin {
@@ -451,9 +468,11 @@ pub struct ViewerFile {
 #[specta::specta]
 pub async fn viewer_files(
     app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
     session: u32,
     path: String,
 ) -> Result<Vec<ViewerFile>, Failure> {
+    require_viewer(&caller, session)?;
     let path = path
         .parse()
         .map_err(|error: artifactize_tools::scope::ScopeError| {
@@ -479,9 +498,11 @@ pub async fn viewer_files(
 #[specta::specta]
 pub async fn viewer_read_text(
     app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
     session: u32,
     path: String,
 ) -> Result<String, Failure> {
+    require_viewer(&caller, session)?;
     let path = path
         .parse()
         .map_err(|error: artifactize_tools::scope::ScopeError| {
@@ -497,8 +518,10 @@ pub async fn viewer_read_text(
 #[specta::specta]
 pub async fn viewer_declarations(
     app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
     session: u32,
 ) -> Result<String, Failure> {
+    require_viewer(&caller, session)?;
     let viewer = app.viewers.get(session)?;
     let read = tokio::task::spawn_blocking(move || viewer.declarations());
     let graph = crate::failure::joined(read.await)?.map_err(Failure::Read)?;
@@ -507,8 +530,14 @@ pub async fn viewer_declarations(
 
 #[tauri::command]
 #[specta::specta]
-pub fn viewer_close(app: tauri::State<'_, App>, session: u32) {
+pub fn viewer_close(
+    app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
+    session: u32,
+) -> Result<(), Failure> {
+    require_viewer(&caller, session)?;
     app.viewers.drop_session(session);
+    Ok(())
 }
 
 /// Append to the review that was active when Point began, never to its replacement.
@@ -516,10 +545,12 @@ pub fn viewer_close(app: tauri::State<'_, App>, session: u32) {
 #[specta::specta]
 pub async fn viewer_point(
     app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
     session: u32,
     review: RequestKey,
     text: String,
 ) -> Result<(), Failure> {
+    require_viewer(&caller, session)?;
     let expected = review.into_inner();
     let _turn = crate::human::draft_turns(&app, std::slice::from_ref(&expected)).await?;
     let _claim = app.human.claim_gate.lock().await;

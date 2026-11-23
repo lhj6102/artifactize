@@ -241,6 +241,7 @@ impl App {
             self.currents.reset();
             self.viewers.reset();
             self.windows.close_viewers(self);
+            self.windows.hide_pet(self);
         })
     }
 
