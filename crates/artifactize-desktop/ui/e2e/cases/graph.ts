@@ -2,8 +2,8 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
-import { CHAT_MODEL, GRAPH_ANSWER, GRAPH_GATE, GRAPH_PROMPT, installChatProvider } from "../fixtures/chat.ts";
-import { REVIEW_FINDING, REVIEW_MODEL, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, request, savedRuns } from "../fixtures/repo.ts";
+import { CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, GRAPH_ANSWER, GRAPH_GATE, GRAPH_PROMPT, installChatProvider } from "../fixtures/chat.ts";
+import { REVIEW_FINDING, REVIEW_MODEL, addWorktree, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, git, request, savedRuns } from "../fixtures/repo.ts";
 import { nativePath, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -299,22 +299,38 @@ export const scenarios: Scenario[] = [
     journeys: ["J-MAIN-CURRENT", "J-OPEN-CHAT"],
     prepare: async (own) => {
       const fixture = await createCheckedOnce(own);
+      git(fixture, fixture.repo, "add", "--all");
+      git(fixture, fixture.repo, "commit", "-qm", "Fixture inputs");
+      addWorktree(fixture, "elsewhere");
       // quick changes after the Run: its saved result is stale.
       writeText(nativePath(fixture.repo, "quick", "changed.md"), "quick changed after the Run\n");
       await installChatProvider(own, fixture);
-      return { fixture, data: { gate: fixture.gate } };
+      return { fixture, data: { gate: fixture.gate, run: request(fixture, "other/signoff").runId } };
     },
-    run: async (app, { fixture, data: { gate } }) => {
+    run: async (app, { fixture, data: { gate, run } }) => {
       await app.pane.selectBranch("repo  master");
-      // Save two conversations on the branch. Only the latest uses this model, so the
-      // Graph alone isn't enough to prove Open in Chat landed on the right session.
       await app.mode("Chat");
-      await app.chat.create();
-      assert.notEqual(await app.chat.selected(), CHAT_MODEL);
+      await app.chat.create(); // An older session on the original branch.
       await app.chat.create();
       await app.chat.model(CHAT_MODEL);
+      await app.chat.send(CONTINUE_PROMPT);
+      await app.chat.says(CONTINUE_ANSWER);
+      await app.chat.finished();
+      await app.graph.titled(CONTINUE_PROMPT);
+
+      // Newer globally, but on another branch. Leave this empty Chat selected before Verify.
       await app.mode("Verify");
+      await app.pane.selectBranch("repo  elsewhere");
+      await app.mode("Chat");
+      await app.chat.create();
+      await app.graph.titled("New chat");
+      assert.match(await app.graph.header(), /\belsewhere\b/, "the newer session is on the other branch");
+
+      await app.mode("Verify");
+      await app.pane.selectBranch("repo  master");
+      await app.graph.titled(run);
       await app.graph.openInChat();
+      await app.graph.titled(CONTINUE_PROMPT); // Neither the globally newest nor the older master session.
       await app.chat.viewShown("Graph");
       assert.equal(await app.chat.selected(), CHAT_MODEL);
       await app.graph.until(async () => (await app.graph.scan()) !== "", "the Run's branch is being scanned in Chat");
