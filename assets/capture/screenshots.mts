@@ -21,12 +21,19 @@
 //             folder, outside the repository, then print one line and stay until stopped.
 //   stop      the session's stop: nothing to do; artifactize removes the folder.
 //   fresh     the session's tool: answer one just-captured screenshot as an image.
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { captureAbort, launchCapture, onDisplay, watchCaptureStop} from "./lifecycle.mts";
+import { adopt, cleanup, prepare} from "../../crates/artifactize-desktop/ui/e2e/build.ts";
+import { own } from "../../crates/artifactize-desktop/ui/e2e/fixtures/owned.ts";
+import { nativePath, asNativePath } from "../../crates/artifactize-desktop/ui/e2e/portable.ts";
+import { environment, git, newFixture } from "../../crates/artifactize-desktop/ui/e2e/fixtures/repo.ts";
+import { afterRender } from "../../crates/artifactize-desktop/ui/e2e/keys.ts";
+import { Graph } from "../../crates/artifactize-desktop/ui/e2e/views/graph.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, "..", "..");
@@ -37,39 +44,7 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const WAIT = 60000;
 
-/** A virtual display of its own: Xvfb on the first free display number from a random start.
- * A number another server holds makes Xvfb exit at once, so captures running at the same
- * time never share one; -displayfd says when the display is ready. */
-async function virtualDisplay(): Promise<{ number: number; server: ChildProcess }> {
-  const start = 100 + Math.floor(Math.random() * 800);
-  for (let number = start; number < start + 64; number++) {
-    const server = spawn("Xvfb", [`:${number}`, "-displayfd", "3", "-screen", "0", `${WIDTH}x${HEIGHT}x24`, "-nolisten", "tcp"],
-      { stdio: ["ignore", "ignore", "ignore", "pipe"] });
-    const ready = await new Promise<boolean>((done) => {
-      server.stdio[3]!.once("data", () => done(true));
-      server.once("error", () => done(false));
-      server.once("exit", () => done(false));
-    });
-    if (ready) return { number, server };
-  }
-  throw new Error("Xvfb found no free display");
-}
-
-/** Re-run this script in `mode` on its own virtual display and session bus, which end with
- * it. The child's output goes to stderr when `quiet`, so a session's stdout carries only its
- * ready line. */
-async function wrapped(mode: string[], quiet = false): Promise<number> {
-  const display = await virtualDisplay();
-  try {
-    const env = { ...process.env, DISPLAY: `:${display.number}`, CAPTURE_DISPLAY_OWNED: "1", GDK_BACKEND: "x11", GTK_USE_PORTAL: "0", GIO_USE_VFS: "local", NO_AT_BRIDGE: "1" };
-    delete env.WAYLAND_DISPLAY;
-    const child = spawn("dbus-run-session", ["--", process.execPath, fileURLToPath(import.meta.url), ...mode],
-      { env, stdio: ["ignore", quiet ? process.stderr : "inherit", "inherit"] });
-    return await new Promise((done) => child.once("close", (code) => done(code ?? 1)));
-  } finally {
-    display.server.kill();
-  }
-}
+const wrapped = (mode: string[], quiet = false) => onDisplay(new URL(import.meta.url), mode, WIDTH, HEIGHT, quiet);
 
 /** The session's folder, which artifactize names and removes. */
 function sessionDirectory(): string {
@@ -184,161 +159,150 @@ additionalProperties = false
 
 /** Capture every scene into `output`, building in `work`. */
 async function capture(output: string, work: string): Promise<void> {
-  const e2e = "../../crates/artifactize-desktop/ui/e2e";
-  const { adopt, cleanup, prepare } = await import(`${e2e}/build.ts`);
-  const { environment, git } = await import(`${e2e}/fixtures/repo.ts`);
-  const { Graph } = await import(`${e2e}/views/graph.ts`);
-  const { embeddedPorts } = await import(`${e2e}/portable.ts`);
-  const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
-  mkdirSync(output, { recursive: true });
-  const candidate = adopt(await prepare(work));
-  // The build's cleanup settles the Runs of fixture roots named and laid out like this one.
-  const root = join(candidate.root, "fixtures", "fixture-screenshots");
-  const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
-  let browser: WebdriverIO.Browser | undefined;
-  let closePort: (() => Promise<void>) | undefined;
+  const unwatch = watchCaptureStop();
+  let candidate: Awaited<ReturnType<typeof prepare>> | undefined;
   try {
-    mkdirSync(fixture.repo, { recursive: true });
-    project(fixture.repo);
-    git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
-    // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
-    const grace = spawnSync(candidate.cli, ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", "0"],
-      { env: environment(fixture), encoding: "utf8" });
-    if (grace.status !== 0) throw new Error(`limits ended ${grace.status}: ${grace.stderr}`);
-    const verify = spawnSync(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--wait"],
-      { env: environment(fixture), encoding: "utf8" });
-    // RED is the expected outcome: cli's tests fail on purpose.
-    if (verify.status !== 1) throw new Error(`verify ended ${verify.status}: ${verify.stderr}`);
-
-    const env = environment(fixture);
-    for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
-    Object.assign(process.env, env);
-    const capabilities = service.createTauriCapabilities(candidate.app, {
-      // Started on the example's branch: the Pane selects it.
-      appArgs: ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"],
-      driverProvider: "embedded",
-      startTimeout: WAIT,
-      commandTimeout: WAIT,
-      logLevel: "error",
-    });
-    capabilities["wdio:enforceWebDriverClassic"] = true;
-    // A free WebDriver port of its own, so a capture running beside this one drives its own app.
-    const { ports: [embeddedPort], close } = await embeddedPorts(1);
-    closePort = close;
-    capabilities["wdio:tauriServiceOptions"] = { ...capabilities["wdio:tauriServiceOptions"], embeddedPort };
-    browser = await service.startWdioSession(capabilities) as WebdriverIO.Browser;
-    const app = browser;
-    await app.setWindowSize(WIDTH, HEIGHT);
-    await app.waitUntil(() => app.execute(() => [innerWidth, innerHeight].join("x")).then((size) => size === `${WIDTH}x${HEIGHT}`),
-      { timeout: WAIT, timeoutMsg: `the window is ${WIDTH}x${HEIGHT}` });
-    const shot = async (name: string) => {
-      // Let transitions and the graph's layout settle before the frame is taken.
-      await app.pause(800);
-      writeFileSync(join(output, name), Buffer.from(await app.takeScreenshot(), "base64"));
-    };
-
-    // A. Verify shows the branch's Run from its timeline. The bar, not Verify's Pane,
-    // shows the number of reviews waiting for a person.
-    const VERIFY = 'main[aria-label="Verify"]:not([hidden])';
-    const MAIN = `${VERIFY} section.panel[aria-label="Main area"]`;
-    const MODES = '[aria-label="Bottom bar"] [aria-label="Modes"]';
-    const waitingReview = `${MODES} button[aria-label="Review, 1 waiting"]`;
-    const runChip = app.$(`${VERIFY} [aria-label="Branches"] [role="treeitem"] button[data-chip]:not([data-chip="current"])`);
-    await runChip.waitForDisplayed({ timeout: WAIT });
-    const runId = await runChip.getAttribute("data-chip");
-    await runChip.click();
-    await app.waitUntil(() => app.execute((main, id) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === id, MAIN, runId),
-      { timeout: WAIT, timeoutMsg: "Verify shows the selected Run" });
-    const graph = new Graph(app);
-    await graph.node("a:release");
-    await app.$(waitingReview).waitForDisplayed({ timeout: WAIT, timeoutMsg: "Review counts the waiting sign-off in the bottom bar" });
-    // core → cli, core → release and cli → docs, with the fixture's four different verdicts.
-    await app.waitUntil(() => app.execute((main) => {
-      const graph = document.querySelector(`${main} .run`);
-      // Human sign-off is an active node; its waiting reason is in the Run header and bar.
-      const lights = { core: "green", cli: "red", docs: "blocked", release: "active" };
-      return graph?.querySelectorAll(".svelte-flow__edge").length === 3
-        && Object.entries(lights).every(([name, light]) =>
-          graph.querySelector(`.svelte-flow__node[data-id="a:${name}"][data-light="${light}"]`));
-    }, MAIN), { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges and mixed verdicts" });
-    // The first fit can happen while the graph area is still taking its size, and the Run view
-    // keeps its camera after that; the tool strip's Fit frames the drawn graph the same way on
-    // every capture.
-    await app.$('[aria-label="Graph tools"]').$("button=Fit").click();
-    let viewport = "";
-    await app.waitUntil(async () => {
-      const now = await app.execute(() => document.querySelector<HTMLElement>(".svelte-flow__viewport")?.style.transform ?? "");
-      const still = now !== "" && now === viewport;
-      viewport = now;
-      return still;
-    }, { timeout: WAIT, interval: 250, timeoutMsg: "the fitted camera holds still" });
-    await shot("monitor.png");
-
-    // B. cli's Detail on its Artifact tab: its evals with their verdicts, and, unfolded, cli
-    // between the core it uses and the docs that use it.
-    await graph.open("a:cli", "Artifact cli");
-    const neighboursRow = app.$('[aria-label="Detail"]').$("button=Neighbours");
-    await neighboursRow.waitForExist({ timeout: WAIT });
-    if ((await neighboursRow.getAttribute("aria-expanded")) !== "true") await neighboursRow.click();
-    await app.waitUntil(() => app.execute(() => {
-      const neighbours = document.querySelector('[aria-label="Neighbours"]');
-      const drawn = ["a:core", "a:cli", "a:docs"].every((id) => {
-        const box = neighbours?.querySelector(`.svelte-flow__node[data-id="${id}"]`)?.getBoundingClientRect();
-        return !!box && box.width > 0 && box.height > 0;
-      });
-      return drawn && (neighbours?.querySelectorAll(".svelte-flow__edge").length ?? 0) >= 2;
-    }), { timeout: WAIT, timeoutMsg: "cli's Neighbours show core, cli and docs and their edges" });
-    // The scene shows the Detail as read, not the row the click left the keyboard on.
-    await app.execute(() => (document.activeElement as HTMLElement | null)?.blur());
-    await shot("detail.png");
-
-    // C. Review's own Pane lists the sign-off Verify left. Claim it, run its notes tool,
-    // and display its GREEN form without submitting a result.
-    await app.$(waitingReview).click();
-    const REVIEW = 'main[aria-label="Review"]:not([hidden])';
-    const options = `${REVIEW} [role="listbox"][aria-label="Human reviews"] [role="option"]`;
-    await app.waitUntil(() => app.execute((options) => [...document.querySelectorAll(options)].some((row) => row.textContent?.includes("release/signoff")), options),
-      { timeout: WAIT, timeoutMsg: "Review lists the release sign-off" });
-    const rows = await app.$$(options).getElements();
-    for (const row of rows) {
-      if ((await row.getText()).includes("release/signoff")) {
-        await row.click();
-        break;
-      }
-    }
-    const review = `${REVIEW} [aria-label="Review's main area"] [aria-label="Human review"]`;
-    const claim = app.$(review).$("button=Claim to review");
-    await claim.waitForEnabled({ timeout: WAIT });
-    await claim.click();
-    const notes = app.$(review).$("button=notes");
-    await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the sign-off is claimed and its notes tool is usable" });
-    await notes.click();
-    // The built-in read prints the notes and ends its run with `■ done`.
-    await app.waitUntil(() => app.execute((review) => {
-      const lines = [...document.querySelectorAll(`${review} [role="log"][aria-label="Tool log"] p:not(.muted)`)]
-        .map((row) => row.textContent?.trim());
-      return lines.includes("- Faster startup.") && lines.at(-1) === "■ done";
-    }, review), { timeout: WAIT, timeoutMsg: "the notes tool printed the notes and finished" });
-    // The log may arrive before the tool command returns. GREEN ignores clicks while that
-    // job is still busy, so wait for the tool button to become usable again.
-    await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the finished notes tool is usable again" });
-    await app.$(review).$("button=GREEN").click();
-    await app.$(`${review} [aria-label="Evaluation"] #field-summary`).waitForDisplayed({ timeout: WAIT });
-    await app.$(`${review} [role="radio"][aria-checked="true"].green`).waitForDisplayed({ timeout: WAIT });
-    await shot("review.png");
-  } finally {
+    mkdirSync(output, { recursive: true });
+    candidate = adopt(await prepare(asNativePath(work)));
+    const scope = own(nativePath(candidate.root, "fixtures"));
+    const fixture = newFixture(scope);
+    let stop = () => scope.close();
     try {
-      if (browser) await service.cleanupWdioSession(browser);
-      await cleanup(candidate.root);
-    } finally {
-      await closePort?.();
-      rmSync(work, { recursive: true, force: true });
-    }
+      mkdirSync(fixture.repo, { recursive: true });
+      project(fixture.repo);
+      git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+      // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
+      const grace = spawnSync(candidate.cli, ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", "0"],
+        { env: environment(fixture), encoding: "utf8" });
+      if (grace.status !== 0) throw new Error(`limits ended ${grace.status}: ${grace.stderr}`);
+      const verify = spawnSync(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--wait"],
+        { env: environment(fixture), encoding: "utf8" });
+      // RED is the expected outcome: cli's tests fail on purpose.
+      if (verify.status !== 1) throw new Error(`verify ended ${verify.status}: ${verify.stderr}`);
+
+      const session = await launchCapture(scope, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], environment(fixture), WIDTH, HEIGHT, WAIT, (close) => { stop = close; });
+      const app = session.browser;
+      stop = session.stop;
+      const shot = async (name: string) => {
+        captureAbort.signal.throwIfAborted();
+        await afterRender(app);
+        const png = Buffer.from(await app.takeScreenshot(), "base64");
+        if (png.length < 24 || png.readUInt32BE(16) !== WIDTH || png.readUInt32BE(20) !== HEIGHT) {
+          throw new Error(`${name} was not captured at ${WIDTH}×${HEIGHT} pixels`);
+        }
+        writeFileSync(join(output, name), png);
+      };
+
+      // A. Verify shows the branch's Run from its timeline. The bar, not Verify's Pane,
+      // shows the number of reviews waiting for a person.
+      const VERIFY = 'main[aria-label="Verify"]:not([hidden])';
+      const MAIN = `${VERIFY} section.panel[aria-label="Main area"]`;
+      const MODES = '[aria-label="Bottom bar"] [aria-label="Modes"]';
+      const waitingReview = `${MODES} button[aria-label="Review, 1 waiting"]`;
+      const runChip = app.$(`${VERIFY} [aria-label="Branches"] [role="treeitem"] button[data-chip]:not([data-chip="current"])`);
+      await runChip.waitForDisplayed({ timeout: WAIT });
+      const runId = await runChip.getAttribute("data-chip");
+      await runChip.click();
+      await app.waitUntil(() => app.execute((main, id) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === id, MAIN, runId),
+        { timeout: WAIT, timeoutMsg: "Verify shows the selected Run" });
+      const graph = new Graph(app);
+      await graph.node("a:release");
+      await app.$(waitingReview).waitForDisplayed({ timeout: WAIT, timeoutMsg: "Review counts the waiting sign-off in the bottom bar" });
+      // core → cli, core → release and cli → docs, with the fixture's four different verdicts.
+      await app.waitUntil(() => app.execute((main) => {
+        const graph = document.querySelector(`${main} .run`);
+        // Human sign-off is an active node; its waiting reason is in the Run header and bar.
+        const lights = { core: "green", cli: "red", docs: "blocked", release: "active" };
+        return graph?.querySelectorAll(".svelte-flow__edge").length === 3
+          && Object.entries(lights).every(([name, light]) =>
+            graph.querySelector(`.svelte-flow__node[data-id="a:${name}"][data-light="${light}"]`));
+      }, MAIN), { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges and mixed verdicts" });
+      // The first fit can happen while the graph area is still taking its size, and the Run view
+      // keeps its camera after that; the tool strip's Fit frames the drawn graph the same way on
+      // every capture.
+      await app.$('[aria-label="Graph tools"]').$("button=Fit").click();
+      let viewport = "";
+      await app.waitUntil(async () => {
+        const now = await app.execute(() => document.querySelector<HTMLElement>(".svelte-flow__viewport")?.style.transform ?? "");
+        const still = now !== "" && now === viewport;
+        viewport = now;
+        return still;
+      }, { timeout: WAIT, interval: 250, timeoutMsg: "the fitted camera holds still" });
+      await shot("monitor.png");
+
+      // B. cli's Detail on its Artifact tab: its evals with their verdicts, and, unfolded, cli
+      // between the core it uses and the docs that use it.
+      await graph.open("a:cli", "Artifact cli");
+      const neighboursRow = app.$('[aria-label="Detail"]').$("button=Neighbours");
+      await neighboursRow.waitForExist({ timeout: WAIT });
+      if ((await neighboursRow.getAttribute("aria-expanded")) !== "true") await neighboursRow.click();
+      await app.waitUntil(() => app.execute(() => {
+        const neighbours = document.querySelector('[aria-label="Neighbours"] .svelte-flow');
+        const frame = neighbours?.getBoundingClientRect();
+        const evals = [...document.querySelectorAll('[aria-label="Evals of cli"] [data-eval]')];
+        const marks = evals.some((row) => row.getAttribute("data-eval") === "e:cli/lint" && /GREEN/.test(row.textContent ?? ""))
+          && evals.some((row) => row.getAttribute("data-eval") === "e:cli/tests" && /RED/.test(row.textContent ?? ""));
+        const drawn = ["a:core", "a:cli", "a:docs"].every((id) => {
+          const box = neighbours?.querySelector(`.svelte-flow__node[data-id="${id}"]`)?.getBoundingClientRect();
+          return !!box && !!frame && box.width > 0 && box.height > 0 && box.left >= frame.left - 1
+            && box.right <= frame.right + 1 && box.top >= frame.top - 1 && box.bottom <= frame.bottom + 1;
+        });
+        return marks && drawn && (neighbours?.querySelectorAll(".svelte-flow__edge").length ?? 0) >= 2;
+      }), { timeout: WAIT, timeoutMsg: "cli's Neighbours show core, cli and docs and their edges" });
+      // The scene shows the Detail as read, not the row the click left the keyboard on.
+      await app.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+      await shot("detail.png");
+
+      // C. Review's own Pane lists the sign-off Verify left. Claim it, run its notes tool,
+      // and display its GREEN form without submitting a result.
+      await app.$(waitingReview).click();
+      const REVIEW = 'main[aria-label="Review"]:not([hidden])';
+      const options = `${REVIEW} [role="listbox"][aria-label="Human reviews"] [role="option"]`;
+      await app.waitUntil(() => app.execute((options) => [...document.querySelectorAll(options)].some((row) => row.textContent?.includes("release/signoff")), options),
+        { timeout: WAIT, timeoutMsg: "Review lists the release sign-off" });
+      const rows = await app.$$(options).getElements();
+      for (const row of rows) {
+        if ((await row.getText()).includes("release/signoff")) {
+          await row.click();
+          break;
+        }
+      }
+      const review = `${REVIEW} [aria-label="Review's main area"] [aria-label="Human review"]`;
+      const claim = app.$(review).$("button=Claim to review");
+      await claim.waitForEnabled({ timeout: WAIT });
+      await claim.click();
+      const notes = app.$(review).$("button=notes");
+      await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the sign-off is claimed and its notes tool is usable" });
+      await notes.click();
+      const logHeader = app.$(review).$("button=Tool log");
+      await logHeader.waitForDisplayed({ timeout: WAIT });
+      if ((await logHeader.getAttribute("aria-expanded")) !== "true") await logHeader.click();
+      // The built-in read prints the notes and ends its run with `■ done`.
+      await app.waitUntil(() => app.execute((review) => {
+        const lines = [...document.querySelectorAll(`${review} [role="log"][aria-label="Tool log"] p:not(.muted)`)]
+          .map((row) => row.textContent?.trim());
+        return lines.includes("- Faster startup.") && lines.at(-1) === "■ done";
+      }, review), { timeout: WAIT, timeoutMsg: "the notes tool printed the notes and finished" });
+      // The log may arrive before the tool command returns. GREEN ignores clicks while that
+      // job is still busy, so wait for the tool button to become usable again.
+      await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the finished notes tool is usable again" });
+      await app.$(review).$("button=GREEN").click();
+      await app.$(`${review} [aria-label="Evaluation"] #field-summary`).waitForDisplayed({ timeout: WAIT });
+      await app.$(`${review} [role="radio"][aria-checked="true"].green`).waitForDisplayed({ timeout: WAIT });
+      await shot("review.png");
+    } finally { if (existsSync(scope.root)) await stop(); }
+  } finally {
+    unwatch();
+    // A retained fixture means shutdown could not be proved: cleanup refuses, and so does the
+    // outer scratch removal. Build/setup failures with no live fixture still remove scratch.
+    if (candidate) cleanup(candidate.root);
+    rmSync(work, { recursive: true, force: true });
   }
 }
 
 const mode = process.argv[2];
-if (mode === "stop") process.exit(0);
+if (mode === "check") console.log(JSON.stringify({ frames: SCENES, width: WIDTH, height: HEIGHT, recording: false }));
+else if (mode === "stop") process.exit(0);
 else if (mode === "fresh") fresh();
 else if (process.platform !== "linux") throw new Error("Capturing runs on Linux only.");
 else if (!process.env.CAPTURE_DISPLAY_OWNED) process.exit(await (mode === "session" ? session() : wrapped([])));
