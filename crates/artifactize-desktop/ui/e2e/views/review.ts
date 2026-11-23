@@ -193,14 +193,14 @@ export class Review {
     return (await this.runLines()).at(-1) ?? "";
   }
 
-  /** Unfold the newest run of the tool `name` into its lines. */
+  /** Click the newest run line of the tool `name`, as a person does, to unfold its lines. */
   async unfold(name: string): Promise<void> {
-    await this.browser.execute((root, operation) => {
-      const lines = [...document.querySelectorAll<HTMLButtonElement>(`${root} .run button.fold`)]
-        .filter((line) => line.querySelector(".target")?.textContent === operation);
-      const line = lines.at(-1);
-      if (line?.getAttribute("aria-expanded") === "false") line.click();
-    }, this.root, name);
+    const lines = await this.browser.$$(`${this.root} .run button.fold`).getElements();
+    let newest: WebdriverIO.Element | undefined;
+    for (const line of lines) if ((await line.$(".target").getText()) === name) newest = line;
+    if (!newest || (await newest.getAttribute("aria-expanded")) !== "false") return;
+    await newest.click();
+    await holds(this.browser, async () => (await newest.getAttribute("aria-expanded")) === "true", `${name}'s run unfolded`);
   }
 
   /** Click the tool `name`: its run's line joins the conversation, unfolded into its lines. */

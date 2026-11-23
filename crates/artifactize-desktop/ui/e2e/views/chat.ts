@@ -158,7 +158,7 @@ export class Chat {
   async find(text: string): Promise<string> {
     const field = `${MAIN} > header input[aria-label="Find in the conversation"]`;
     if (!(await this.browser.$(field).isExisting())) {
-      await this.browser.$(`${MAIN} > header button[aria-label="Find (Ctrl+F)"]`).click();
+      await this.browser.$(`${MAIN} > header button[aria-keyshortcuts="Control+F"][aria-label^="Find ("]`).click();
       await holds(this.browser, () => this.browser.execute((query) => document.activeElement === document.querySelector(query), field), "the find field took Find's place, focused");
     }
     await fill(this.browser, field, text);
