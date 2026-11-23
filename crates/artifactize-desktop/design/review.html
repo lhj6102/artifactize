@@ -28,16 +28,15 @@
 <h1>Review: the reviews and a review's evaluation space</h1>
 <p class="lead">
   Review mode: its Pane holds the filter, a plain-text query (<code>type:human waiting</code> to
-  start), and the reviews it matches; a review chosen there, or opened by a reference, fills
-  the Main area, its eval and Artifact named once, in the Main area's header row, with its
-  way back to the Run and Artifact in Verify. A review opened by a reference shows whether or not
-  the filter lists it, the filter staying as it was.
-  A review has one order, the instruction, the Tools, their Tool log, its Points and the Result,
-  and two
-  arrangements: with room, its evaluation space, two panels that meet at a panel line, the review
-  at the left and the Evaluation at the right, where the Detail docks; in one
-  column, on a Human eval's chip inside a Run's Detail or in a narrow Main area, it reads top to
-  bottom. A request opened by ID that is not a waiting review shows read-only in the same place.
+  start), and the reviews it matches, the open one selected, which names its eval; a review
+  chosen there, or opened by a reference, fills the Main area under a header row that holds only
+  its way back to the Run and Artifact in Verify. A review opened by a reference shows whether or
+  not the filter lists it, the filter staying as it was.
+  A review is one column, as a video editor's Inspector, the same in Review and in a Run's Detail:
+  its title and the claim's state, the instruction, then Evidence (the tools,
+  and the Tool log and the Points once there is something in them, folded to one line each) and
+  the Verdict (GREEN or RED, only the chosen verdict's fields, and the actions), Debug folded last.
+  A request opened by ID that is not a waiting review shows read-only in the same place.
 </p>
 
 <figure class="figure">
@@ -53,78 +52,65 @@
     <section class="m-pane">
       <div class="m-search"><div class="m-input"><span>type:human waiting</span></div></div>
       <p class="m-group-label">artifactize</p>
+      <div class="m-session selected"><span class="m-icon i-human tone-human"></span><span class="m-item-name">release/signoff</span><span class="m-age">you · 8m</span></div>
       <div class="m-session"><span class="m-icon i-human tone-human"></span><span class="m-item-name">docs/reads-well</span><span class="m-age">8m</span></div>
       <p class="m-group-label">shop</p>
-      <div class="m-session kfocus"><span class="m-icon i-human tone-human"></span><span class="m-item-name">checkout/looks-right</span><span class="m-age">2h</span></div>
+      <div class="m-session"><span class="m-icon i-human tone-human"></span><span class="m-item-name">checkout/looks-right</span><span class="m-age">2h</span></div>
     </section>
     <div class="m-divider"></div>
-    <section class="m-main focused">
-      <div class="m-main-head"><span class="m-ref"><span class="m-icon i-back"></span>Verify · <span class="m-mono">run-7SR0YW</span> › release</span><h2>release/signoff</h2><span class="m-headline"><span class="m-text">A person approves the release notes</span></span></div>
-      <div class="m-review-split" style="--detail-width: 420px">
-        <div class="m-review">
-          <p class="m-instruction" style="padding-top: 16px">Read the release notes and approve them for publication. Check that every change since v0.21.1 is named and that the install commands are current.</p>
-          <div class="m-sec">
-            <div class="m-sec-head">Tools</div>
-            <div class="m-sec-body">
-              <div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>notes</span><span>Print the release notes.</span></div>
-              <div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>open</span><span>Open CHANGELOG.md in the default application.</span></div>
-            </div>
+    <section class="m-main">
+      <div class="m-stage-head"><span class="m-stage-left"><span class="m-tool m-back"><span class="m-icon i-back"></span>Verify · <span class="m-mono">run-7SR0YW</span> › release</span></span><span class="m-stage-mid"></span><span class="m-stage-tools"></span></div>
+      <div class="m-inspector">
+        <div class="m-rhead"><span class="m-rtitle">A person approves the release notes</span><span class="m-rstate">Yours</span></div>
+        <p class="m-instruction">Read the release notes and approve them for publication. Check that every change since v0.21.1 is named and that the install commands are current.</p>
+        <div class="m-sec">
+          <div class="m-sec-head">Evidence</div>
+          <div class="m-sec-body">
+            <div class="m-toolrow"><span class="m-button small" title="Print the release notes."><span class="m-icon i-play"></span>notes</span><span class="m-button small" title="Open CHANGELOG.md in the default application."><span class="m-icon i-play"></span>open</span><span class="m-button small" title="Open the install page in the Markdown viewer."><span class="m-icon i-play"></span>install</span></div>
+            <div class="m-logline"><span class="m-icon i-fold"></span><span class="m-mono">▶ 22:52:04 · notes</span><span class="m-stderr-mark">warning: CHANGELOG.md has an unreleased section</span><span class="m-spacer"></span><span class="m-mono">■ exit 0 · 8 lines</span></div>
+            <div class="m-point"><span class="m-icon i-point"></span><span class="m-ptext">install.md L12:C3</span><span class="m-from">release · Markdown · 22:54</span><span class="m-button small quiet">Insert</span><span class="m-icon i-remove"></span></div>
           </div>
-          <div class="m-sec">
-            <div class="m-sec-head"><span class="m-icon i-fold"></span>Tool log</div>
-            <div class="m-sec-body"><div class="m-log"><span class="m-quiet">▶ 22:52:04 · notes · release</span>
-<span class="m-stderr"><span class="tone-red">warning:</span> CHANGELOG.md has an unreleased section</span>
-<span class="m-quiet">■ exit 0 · 8 lines</span></div></div>
-          </div>
-          <div class="m-sec">
-            <div class="m-sec-head">Points</div>
-            <div class="m-sec-body">
-              <div class="m-point"><span class="m-icon i-point"></span><span class="m-ptext">install.md L12:C3</span><span class="m-from">release · Markdown · 22:54</span><span class="m-button small quiet">Insert</span><span class="m-icon i-remove"></span></div>
-              <div class="m-point"><span class="m-icon i-point"></span><span class="m-ptext">CHANGELOG.md L3:C1</span><span class="m-from">release · Markdown · 22:55</span><span class="m-button small quiet">Insert</span><span class="m-icon i-remove"></span></div>
-            </div>
-          </div>
-          <div class="m-sec"><div class="m-sec-head"><span class="m-icon i-fold"></span>Debug</div></div>
         </div>
-        <div class="m-review m-eval">
-          <div class="m-review-head">Evaluation<span class="m-stage review">REVIEW (yours)</span></div>
-          <div class="m-sec-head">Result</div>
-          <div class="m-sec-body m-eval-body">
+        <div class="m-sec">
+          <div class="m-sec-head">Verdict</div>
+          <div class="m-sec-body">
             <div class="m-verdicts"><span class="m-verdict green chosen">GREEN</span><span class="m-verdict red">RED</span></div>
             <div class="m-field" style="margin-top: 10px"><span class="m-name">comment</span><div class="m-input area text"><span>Approved; the install section at install.md L12:C3 still names 0.21.1 and is fixed in the next patch.</span></div></div>
+            <div class="m-actions"><span class="m-button quiet">Release claim</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
           </div>
-          <div class="m-actions"><span class="m-button">Release claim</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
         </div>
+        <div class="m-sec"><div class="m-sec-head quiet"><span class="m-icon i-fold"></span>Debug</div></div>
       </div>
     </section>
   </div>
 </div>
-<span class="callout" style="left: 1110px; top: 58px">1</span>
 <span class="callout" style="left: 210px; top: 6px">19</span>
 <span class="callout" style="left: 230px; top: 46px">20</span>
-<span class="callout" style="left: 300px; top: 6px">21</span>
-<span class="callout" style="left: 420px; top: 330px">24</span>
+<span class="callout" style="left: 500px; top: 6px">21</span>
+<span class="callout" style="left: 1150px; top: 48px">1</span>
+<span class="callout" style="left: 1150px; top: 92px">2</span>
+<span class="callout" style="left: 1150px; top: 172px">3</span>
+<span class="callout" style="left: 1150px; top: 206px">24</span>
+<span class="callout" style="left: 1150px; top: 230px">25</span>
+<span class="callout" style="left: 1150px; top: 288px">4</span>
+<span class="callout" style="left: 1150px; top: 424px">5</span>
 <span class="callout" style="left: 770px; top: 766px">23</span>
-<span class="callout" style="left: 640px; top: 140px">2</span>
-<span class="callout" style="left: 640px; top: 290px">3</span>
-<span class="callout" style="left: 1200px; top: 110px">4</span>
-<span class="callout" style="left: 1000px; top: 744px">5</span>
-<span class="callout" style="left: 846px; top: 520px">6</span>
 </div>
-<figcaption>Stage 1280 × 800. Review mode: the filter's two starting terms and the reviews they match in the Pane; a review this reviewer claimed, opened from Verify's Detail although the filter no longer lists it. It is claimed in a Main area wide enough for two columns: two panels under the header row, the review at the left (the instruction, the Tools, the Tool log and the two places pointed so far) and, at the right where the Detail docks, the Evaluation with the GREEN form, one point inserted into its comment, and the actions along its bottom.</figcaption>
+<figcaption>Stage 1280 × 800. Review mode: the filter's two starting terms and the reviews they match in the Pane, the open one selected; a review this reviewer claimed, GREEN chosen. One column, as a video editor's Inspector: the eval's title and the instruction, then Evidence (the tools, the last run of the Tool log folded to one line, one point), then the Verdict with only the chosen verdict's fields and the actions, then Debug folded. Nothing beside it.</figcaption>
 </figure>
 
 <ol class="notes">
   <li><span class="n">19</span><div><b>Filter</b><span>The Pane's head: one field holding the query as typed, as Verify's search does. It starts as <code>type:human waiting</code>, the reviews waiting for a person.</span></div></li>
-  <li><span class="n">20</span><div><b>Reviews</b><span>The reviews the filter matches, grouped under their project, newest first, one line each: the status icon, the eval and, at the right, how long it waits, after the claimant once claimed. The open review, when listed, is the selected row.</span></div></li>
-  <li><span class="n">21</span><div><b>Way back to Verify</b><span>First in the header row, at its left: the Run and the Artifact the review belongs to, a reference chip with the back icon; then the eval and its title; a click shows that Run in Verify with the Artifact's Detail open on the review's eval.</span></div></li>
+  <li><span class="n">20</span><div><b>Reviews</b><span>The reviews the filter matches, grouped under their project, newest first, one line each: the status icon, the eval and, at the right, how long it waits, after the claimant once claimed. The open review, when listed, is the selected row: it names the eval.</span></div></li>
+  <li><span class="n">21</span><div><b>Way back to Verify</b><span>Review's header row holds the way back alone, a tool led by the back icon, by luminance only: the Run and the Artifact the review belongs to.</span></div></li>
+  <li><span class="n">1</span><div><b>Title and state</b><span>The eval's title heads the column; at its right, quietly, where the claim stands: <i>Waiting</i>, <i>Taken · {claimant}</i>, <i>Yours</i>, or the submitted verdict.</span></div></li>
+  <li><span class="n">2</span><div><b>Instruction</b><span>What to judge, read first, in the column's lead size.</span></div></li>
+  <li><span class="n">3</span><div><b>Evidence: tools</b><span>One row of small run buttons, each named by its operation, its description its tooltip.</span></div></li>
+  <li><span class="n">24</span><div><b>Evidence: Tool log</b><span>Absent until a tool has run; then one line, the last run folded: its start, its last warning, its end. A click unfolds every run in a log box.</span></div></li>
+  <li><span class="n">25</span><div><b>Evidence: Points</b><span>Absent until Point adds one; then one row per point, Insert putting its text into the chosen verdict's form.</span></div></li>
+  <li><span class="n">4</span><div><b>Verdict</b><span>GREEN and RED, then only the chosen verdict's fields: label, <code>*</code> on a required field, Optional inside an empty optional one.</span></div></li>
+  <li><span class="n">5</span><div><b>Actions</b><span>The Verdict's last row, kept in view at the column's bottom however long the form: Release claim at the left, Submit, the one primary, at the right, the busy state or a failure between.</span></div></li>
   <li><span class="n">23</span><div><b>Bottom bar</b><span>Review is on; its count is that of the Human reviews waiting for a person, whatever the filter.</span></div></li>
-  <li><span class="n">1</span><div><b>Evaluation</b><span>The right column's head row: <i>Evaluation</i> and the stage pill, CLAIM while unclaimed, TAKEN while another reviewer holds the claim (the claimant beside it), REVIEW (yours) once this reviewer holds the claim. Once submitted it holds no pill: the completed result says the submission went well. The eval's title is said once, in the header row above; the request's ID, its mode, its claimant and how long it has waited fold under Debug at the review's end.</span></div></li>
-  <li><span class="n">2</span><div><b>Tools</b><span>A section of the review: its header row opened above by a group line that runs the column's whole width. Each tool a small button led by the run icon, with its description in secondary ink. The declaring Artifact's name heads a group only when more than one Artifact has tools.</span></div></li>
-  <li><span class="n">3</span><div><b>Tool log</b><span>Under the Tools, the Tool log, folded to its last run (start, its warning, its end and how many lines) until its header row opens it; open, it is as tall as its lines, growing up to the room the column has above the Points and then scrolling: monospace in a box one step darker than the panel, the run's start line and end line quiet, printed lines in ink, stderr in ink behind a red rule with only a <code>warning:</code> or <code>error:</code> prefix in red, and a failing exit's mark in red; it follows its newest line unless scrolled up.</span></div></li>
-  <li><span class="n">24</span><div><b>Points</b><span>The places Point added, under the Tool log, newest last: the text in mono, where and when it was pointed, and Insert, which puts the text at the caret of the form's text field last focused, else into its comment (a number, true/false or choice field is never a target), and the remove icon. Shown once there is one; never submitted.</span></div></li>
-  <li><span class="n">4</span><div><b>The result</b><span>GREEN and RED as a segmented choice outlined in the chosen verdict's colour, then the form from the eval's schema: label in the label grey, <code>*</code> on a required field, Optional in grey inside an empty optional one. What is submitted is the form's values alone.</span></div></li>
-  <li><span class="n">5</span><div><b>Actions</b><span>Along the Evaluation's bottom, under its content: Release claim at the left, Submit, the one primary button, at the right; between them the busy state or a failure. A tool that ended well is said by the log's end line alone.</span></div></li>
-  <li><span class="n">6</span><div><b>Two panels</b><span>The review at the left, the Evaluation at the right in the place and the width of the Detail, so what is written and submitted is always at the right. The header row is closed below by a panel line, and the two panels meet at a panel line that runs from it to the bottom.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -141,48 +127,39 @@
       </div>
       <div class="m-body">
       <div class="m-review">
-        <div class="m-review-head"><span class="m-stage review">REVIEW (yours)</span><span class="m-go"><span class="m-icon i-open"></span>Open in Review</span></div>
+        <div class="m-rhead"><span class="m-rstate">Yours</span><span class="m-spacer"></span><span class="m-go"><span class="m-icon i-open"></span>Open in Review</span></div>
         <p class="m-instruction">Read the release notes and approve them for publication. Check that every change since v0.21.1 is named and that the install commands are current.</p>
         <div class="m-sec">
-          <div class="m-sec-head">Tools</div>
+          <div class="m-sec-head">Evidence</div>
           <div class="m-sec-body">
-            <div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>notes</span><span>Print the release notes.</span></div>
-            <div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>open</span><span>Open CHANGELOG.md in the default application.</span></div>
+            <div class="m-toolrow"><span class="m-button small" title="Print the release notes."><span class="m-icon i-play"></span>notes</span><span class="m-button small" title="Open CHANGELOG.md in the default application."><span class="m-icon i-play"></span>open</span></div>
+            <div class="m-logline"><span class="m-icon i-fold"></span><span class="m-mono">▶ 22:52:04 · notes</span><span class="m-stderr-mark">warning: CHANGELOG.md has an unreleased section</span><span class="m-spacer"></span><span class="m-mono">■ exit 0 · 8 lines</span></div>
+            <div class="m-point"><span class="m-icon i-point"></span><span class="m-ptext">install.md L12:C3</span><span class="m-from">release · Markdown · 22:54</span><span class="m-button small quiet">Insert</span><span class="m-icon i-remove"></span></div>
           </div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-fold"></span>Tool log</div>
-          <div class="m-sec-body"><div class="m-log"><span class="m-quiet">▶ 22:52:04 · notes · release</span>
-<span class="m-stderr"><span class="tone-red">warning:</span> CHANGELOG.md has an unreleased section</span>
-<span class="m-quiet">■ exit 0 · 8 lines</span></div></div>
-        </div>
-        <div class="m-sec">
-          <div class="m-sec-head">Points</div>
-          <div class="m-sec-body"><div class="m-point"><span class="m-icon i-point"></span><span class="m-ptext">install.md L12:C3</span><span class="m-from">release · Markdown · 22:54</span><span class="m-button small quiet">Insert</span><span class="m-icon i-remove"></span></div></div>
-        </div>
-        <div class="m-sec">
-          <div class="m-sec-head">Result</div>
+          <div class="m-sec-head">Verdict</div>
           <div class="m-sec-body">
             <div class="m-verdicts"><span class="m-verdict green chosen">GREEN</span><span class="m-verdict red">RED</span></div>
             <div class="m-field" style="margin-top: 10px"><span class="m-name">comment</span><div class="m-input area text"><span class="m-placeholder">Optional</span></div></div>
-            <div class="m-actions"><span class="m-button">Release claim</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
+            <div class="m-actions"><span class="m-button quiet">Release claim</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
           </div>
         </div>
-        <div class="m-sec"><div class="m-sec-head"><span class="m-icon i-fold"></span>Debug</div></div>
+        <div class="m-sec"><div class="m-sec-head quiet"><span class="m-icon i-fold"></span>Debug</div></div>
       </div>
       </div>
     </aside>
   </div>
 </div>
-<span class="callout" style="left: 440px; top: 300px">7</span>
-<span class="callout" style="left: 250px; top: 580px">8</span>
+<span class="callout" style="left: 470px; top: 216px">7</span>
+<span class="callout" style="left: 470px; top: 336px">8</span>
 </div>
-<figcaption>Stage 520 × 660. The same review on a Human eval's tab in a Run's Detail: one column, the Tool log a box between the Tools and the Result. A Main area too narrow for two columns shows it the same way, no wider than the measure.</figcaption>
+<figcaption>Stage 520 × 660. The same review on a Human eval's tab in a Run's Detail: the same one column as in Review, its title the Detail's, Open in Review at the head's right.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">7</span><div><b>Tool log, in the column</b><span>With one column the log is a section like the others, folded to its last run in an input-surface box until its header row opens it, then scrolling on its own.</span></div></li>
-  <li><span class="n">8</span><div><b>Same order, same actions</b><span>The head row with the stage pill, the instruction, then Tools, Tool log, Points, Result with its row of actions and Debug, each under a group line: nothing moves but the log and the Points.</span></div></li>
+  <li><span class="n">7</span><div><b>Evidence, folded</b><span>The tools, the Tool log's last run on one line and the points, each shown once there is something in it.</span></div></li>
+  <li><span class="n">8</span><div><b>One arrangement</b><span>Review and the Detail draw the same column: the claim's state, the instruction, Evidence, Verdict with its actions, Debug folded.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -193,9 +170,9 @@
     <aside class="m-dock focused" style="top: 0; width: 500px">
       <div class="m-body">
       <div class="m-review">
-        <div class="m-review-head"><span class="m-stage review">REVIEW (yours)</span></div>
+        <div class="m-rhead"><span class="m-rstate">Yours</span></div>
         <div class="m-sec">
-          <div class="m-sec-head">Result</div>
+          <div class="m-sec-head">Verdict</div>
           <div class="m-sec-body">
             <div class="m-verdicts"><span class="m-verdict green">GREEN</span><span class="m-verdict red chosen">RED</span></div>
             <div class="m-form">
@@ -218,7 +195,7 @@
                 <span class="m-button small quiet m-add"><span class="m-icon i-add"></span>Add</span>
               </div>
             </div>
-            <div class="m-actions"><span class="m-button">Release claim</span><span class="m-spacer"></span><span class="m-button primary">Submit RED</span></div>
+            <div class="m-actions"><span class="m-button quiet">Release claim</span><span class="m-spacer"></span><span class="m-button primary">Submit RED</span></div>
           </div>
         </div>
       </div>
@@ -233,7 +210,7 @@
 <span class="callout" style="left: 440px; top: 446px">13</span>
 <span class="callout" style="left: 240px; top: 712px">14</span>
 </div>
-<figcaption>Stage 520 × 760. The Result being edited as RED, its form built from the fail schema: a choice, a true/false field, a number, a list of text and a list of groups; the eval's constants are filled in and not shown. <i>fixes</i> had its last group removed, so one empty group stays to type in. The instruction, Tools and Tool log above it are left out here.</figcaption>
+<figcaption>Stage 520 × 760. The Verdict being edited as RED, its form built from the fail schema: a choice, a true/false field, a number, a list of text and a list of groups; the eval's constants are filled in and not shown. <i>fixes</i> had its last group removed, so one empty group stays to type in. The instruction, Tools and Tool log above it are left out here.</figcaption>
 </figure>
 
 <ol class="notes">
@@ -253,32 +230,30 @@
     <aside class="m-dock focused" style="top: 0; left: 0; right: auto; width: 500px">
       <div class="m-body">
       <div class="m-review">
-        <div class="m-review-head"><span class="m-stage review">REVIEW (yours)</span></div>
+        <div class="m-rhead"><span class="m-rstate">Yours</span></div>
         <div class="m-sec">
-          <div class="m-sec-head">Tool log</div>
-          <div class="m-sec-body"><div class="m-log"><span class="m-quiet">▶ 22:52:04 · notes · release</span>
-# Release notes
-<span class="m-quiet">■ exit 0</span></div></div>
+          <div class="m-sec-head">Evidence</div>
+          <div class="m-sec-body"><div class="m-logline"><span class="m-icon i-fold"></span><span class="m-mono">▶ 22:52:04 · notes</span><span class="m-spacer"></span><span class="m-mono">■ exit 0 · 1 line</span></div></div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head">Result</div>
+          <div class="m-sec-head">Verdict</div>
           <div class="m-sec-body">
             <div class="m-verdicts"><span class="m-verdict green">GREEN</span><span class="m-verdict red">RED</span></div>
-            <div class="m-actions"><span class="m-button">Release claim</span><span class="m-spacer"></span></div>
+            <div class="m-actions"><span class="m-button quiet">Release claim</span><span class="m-spacer"></span></div>
           </div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head">Tool log</div>
-          <div class="m-sec-body"><div class="m-log"><span class="m-quiet">▶ 22:53:40 · check-links · release</span>
+          <div class="m-sec-head">Evidence</div>
+          <div class="m-sec-body"><div class="m-logline"><span class="m-icon i-unfold"></span><span class="m-mono">▶ 22:53:40 · check-links</span><span class="m-spacer"></span><span class="m-mono">running</span></div><div class="m-log"><span class="m-quiet">▶ 22:53:40 · check-links · release</span>
 checking 38 links in RELEASE_NOTES.md
 ok   https://artifactize.dev/install.sh</div></div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head">Result</div>
+          <div class="m-sec-head">Verdict</div>
           <div class="m-sec-body">
             <div class="m-verdicts"><span class="m-verdict green chosen">GREEN</span><span class="m-verdict red">RED</span></div>
             <div class="m-form"><div class="m-field"><span class="m-name">comment</span><div class="m-input area text"><span>Approved for 0.22.0.</span></div></div></div>
-            <div class="m-actions"><span class="m-button disabled">Release claim</span><span class="m-busy"><span class="m-icon i-running tone-running"></span>3s<span class="m-button small">Cancel</span></span><span class="m-button primary">Submit GREEN</span></div>
+            <div class="m-actions"><span class="m-button quiet disabled">Release claim</span><span class="m-busy"><span class="m-icon i-running tone-running"></span>3s<span class="m-button small">Cancel</span></span><span class="m-button primary">Submit GREEN</span></div>
           </div>
         </div>
       </div>
@@ -287,9 +262,8 @@ ok   https://artifactize.dev/install.sh</div></div>
     <aside class="m-dock" style="top: 0; width: 500px">
       <div class="m-body">
       <div class="m-review">
-        <div class="m-review-head"></div>
         <div class="m-sec">
-          <div class="m-sec-head">Result</div>
+          <div class="m-sec-head">Verdict</div>
           <div class="m-sec-body"><dl class="m-kv"><dt>verdict</dt><dd class="tone-green">GREEN</dd><dt>comment</dt><dd>Every change since v0.21.1 is named; the install commands are current.</dd></dl></div>
         </div>
       </div>
@@ -302,34 +276,34 @@ ok   https://artifactize.dev/install.sh</div></div>
 <span class="callout" style="left: 1010px; top: 70px">17</span>
 <span class="callout" style="left: 1010px; top: 160px">18</span>
 </div>
-<figcaption>Stage 1040 × 560. Left, cut to the Tool log and the Result: a claimed review before a form is open (top), and one editing its GREEN form while an output tool, check-links, is still running, its log open with no end line yet (bottom). Right: the review once submitted. The instruction and the Tools are left out here.</figcaption>
+<figcaption>Stage 1040 × 560. Left, cut to Evidence and the Verdict: a claimed review before a verdict is chosen (top), and one editing its GREEN form while an output tool, check-links, is still running, its log unfolded with no end line yet (bottom). Right: the review once submitted. The instruction and the Tools are left out here.</figcaption>
 </figure>
 
 <ol class="notes">
   <li><span class="n">15</span><div><b>Claimed, no form yet</b><span>The action row is there from the claim on: Release claim at the left, usable before GREEN or RED opens a form; Submit joins it at the right once a form is open.</span></div></li>
   <li><span class="n">16</span><div><b>While a tool runs</b><span>Release claim stays in place but cannot be used while any work runs; between the two buttons the running work's seconds and Cancel. Submit stays usable while the running work is a tool's run (here check-links, still printing; J-HUMAN-GREEN), and is disabled only while a claim, a release or a submission runs; the tool buttons are disabled while any work runs (J-HUMAN-TOOL). A launch tool is not running work here: it returns once the file is handed to its application, whose lines keep arriving in the log.</span></div></li>
-  <li><span class="n">17</span><div><b>Tool log, cleared</b><span>Submission clears the Tool log: in two columns its view stays where it was, empty; in one column, as in the Detail, the empty section is no longer shown (J-DETAIL-SECTIONS).</span></div></li>
+  <li><span class="n">17</span><div><b>Tool log, cleared</b><span>Submission clears the Tool log: its line and its box go, and Evidence shows the tools alone.</span></div></li>
   <li><span class="n">18</span><div><b>Completed result</b><span>In place of the form, the result as submitted, each field by name, open and read-only; no actions row, and no pill or word above saying it was submitted: the result says so.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-REV-1">D-REV-1</dt>
-  <dd>A review has one order, the instruction, the Tools, the Tool log, the Points once there is one (D-REV-9) and the Result, and two arrangements by the room it has. <b>One column</b>, on a Human eval's tab in the Detail and in a Main area narrower than twice the Detail's kept width: it reads top to bottom in one scrolling column, left-aligned and no wider than <code>--measure</code>, the Tool log a box between the Tools and the Points, or the Result when there is none. <b>Two columns</b>, Review's evaluation space in a Main area at least twice the Detail's kept width: two panels under the Main area's header row, which a <code>--line-panel</code> line closes. At the left the review: the instruction, its own first block, the Tools and, under them, the Tool log, a box as tall as its lines up to the room left in the panel (D-REV-3), the Points under it (D-REV-9), then Debug; at the right, docked where the Detail docks and of the Detail's kept width, the <b>Evaluation</b>: its head row, then the Result (the GREEN / RED choice and the form, D-REV-4), scrolling on its own, and the actions along its bottom (D-REV-5); both on <code>--surface-panel</code>, meeting at a <code>--line-panel</code> line that runs from the header row's line to the area's bottom, the Evaluation's width following the Detail's, with no drag of its own. The Evaluation's head row is <code>--row-head</code>, closed below by <code>--line-group</code>: <i>Evaluation</i> semibold at <code>--text-small</code>, then the stage pill. In both, the eval's title is said once, above the review: for a review shown in Review in the Main area's header row, after its way back (D-REV-8), its eval <i>{Artifact}/{eval}</i> as the view's name and its title as its headline in <code>--ink-2</code>, and on a Human eval's tab in the Detail's title (D-INS-2). In one column the review opens with its head row, under the Detail's chips, which holds the stage pill and, on a Human eval's tab, submitted or not, <i>Open in Review</i> after it (D-INS-12, J-REVIEW-REF); in both, the stage pill is of <code>--radius-chip</code> on <code>--surface-group</code>, in <code>--ink-2</code> whatever the stage, its word telling it apart (<i>REVIEW (yours)</i> while it is yours); while another reviewer holds the claim, the claimant's name follows the pill in <code>--ink-2</code>. Under the head rows the review has the inspector's anatomy, so its boundaries read at three strengths (D-SYS-3): the instruction, then Tools, Tool log (in one column), Points, Result and Debug, each a section whose header row is opened above by a <code>--line-group</code> line that runs from the panel's left edge to its right, the panel's edges being where those lines end; and inside a section its inputs, on <code>--surface-input</code> inside <code>--line-input</code>. The request's facts (its ID, its mode such as <i>DEFERRED</i>, its claimant and how long it has waited) fold under Debug, last in the column and folded until asked for (D-INS-9), which a click on its row shows and hides (J-HUMAN-LAYOUT), as a Detail's Debug does (D-INS-9). Tools, Points and Result stand under section header rows without the fold icon and with nothing beside their names (D-INS-9); the Tool log's header row has the fold icon, which opens and folds it (D-REV-3). The instruction is the review's first block and what the eye meets first, whatever has focus: at <code>--text-lead</code> in <code>--ink</code>, 1.5 line height, 16px of room above it and 18px below it before the first section line; nothing in the column outweighs it, neither the Tool log, folded to its last run until opened (D-REV-3), nor a field, whose focus ring shows only while it is typed in. The eye reads the instruction, then the evidence (Tools, Tool log, Points), then the verdict. Its states read without colour: Unclaimed shows the primary <b>Claim to review</b> button in the Result; Taken (another reviewer holds the claim) reads <i>TAKEN</i> in the pill, the claimant named beside it, and says <i>Read-only until released.</i> in <code>--ink-2</code> in the Result, with no Claim button and the tools disabled; Claimed shows REVIEW (yours), the GREEN / RED choice, the enabled tools and the action row with Release claim (D-REV-5); Editing adds the form and Submit; Submitted shows no stage pill in the head row and the completed result in place of the form, open and read-only, without the action row, and the Tool log cleared: in two columns its box stays where it was, empty; in one column its empty section is no longer shown (D-REV-3). A review is left, not closed, when another mode is shown or another review is chosen: showing it again shows its draft as it was left, the form with what was typed and its Tool log unchanged (J-MODES, J-HUMAN-DRAFT), and its claim and stage as they are now: a claim or a release made elsewhere while it was out of view shows when it is shown again, as it would have in view (J-LIVE); a review submitted elsewhere meanwhile shows its completed result. <span class="avoid">a review closed, or its draft or Tool log dropped, by switching a mode; a claim or stage shown as it was left when it changed meanwhile; a column stretched to the window's width; the Evaluation at the left or wider than the Detail; a third column; a whole line in a status colour; the Result above the Tools; a line, a banner or a word that draws the eye away from the instruction (where the review was opened from, whether the filter lists it); the eval's title repeated inside the review; a claim said twice; a Taken review that looks claimable; parts of a review told apart by headings and gaps alone; section lines that stop short of the panel's edges; a card, a box or a shadow around the column or a section.</span></dd>
+  <dd>A review is one column, the same in Review and on a Human eval's tab in the Detail, as a video editor's Inspector: no second panel and no split, only what the reviewer reads, looks at and decides, in that order. In Review's Main area the column is <code>--measure</code> wide, centred, on <code>--surface-panel</code>, under the header row (D-REV-8), scrolling on its own; in the Detail it takes the Detail's width. It holds, top to bottom: the head row, the eval's title in <code>--ink-bright</code> at <code>--text-lead</code> cut with an ellipsis (in the Detail the Detail's title says it, and the head row keeps only the rest), and at its right, quiet in <code>--ink-2</code> at <code>--text-small</code>, where the claim stands: <i>Waiting</i>, <i>Taken · {claimant}</i>, <i>Yours</i>, or nothing once submitted, the completed result saying it; in the Detail, <i>Open in Review</i> (D-REF-1) after it. Then the instruction, its own block at <code>--text-lead</code> in <code>--ink</code>, read first. Then two sections, each under a <code>--line-group</code> line with its header row (D-SYS-5): <b>Evidence</b> (D-REV-2, D-REV-3, D-REV-9) and <b>Verdict</b> (D-REV-4, D-REV-5). Last, <b>Debug</b>, folded to its header row in <code>--ink-2</code> at weight 400, which a click (also <code>t</code>) unfolds into the request's ID, its mode, its claimant and how long it has waited. Nothing else stands in the column: no pill, no count and no second title. <span class="avoid">two columns or an Evaluation panel beside the review; a stage pill; the eval's title said twice; the Tool log or Points drawn empty; a section for each of Tools, Tool log and Points; the request's ID or mode outside Debug; a card or a box around the whole review.</span></dd>
   <dt id="D-REV-2">D-REV-2</dt>
-  <dd>Tools are grouped by the Artifact that declares them or whose type provides them, the reviewed one first; a group is led by the Artifact mark and name semibold only when more than one Artifact has tools. Each tool is a small (22px) button, the run icon then the operation's name, with its description in <code>--ink-2</code> at <code>--text-small</code>; a tool's failure is said in words in the Result's action row (D-REV-5), and its run ends red in the Tool log (<code>■ exit N</code> or <code>■ error: …</code>, D-REV-3); no other notice says it. Before a claim the buttons are disabled and a line says so; while any of the review's work runs (a tool, a claim, a release or a submission), they are disabled too, so one tool runs at a time. <span class="avoid">tool buttons in the accent; a tool without its description; a count beside Tools; a heading over the only group.</span></dd>
+  <dd>Evidence starts with the tools: one row of small (22px) buttons that wraps, each the run icon then its operation's name, its description its tooltip and accessible description, grouped by the Artifact that declares them or whose type provides them, the reviewed one first, a group led by the Artifact's name in <code>--ink-2</code> at <code>--text-small</code> only when more than one Artifact has tools. Before a claim the buttons are drawn disabled, their tooltip <i>Claim to run the tools</i>; while any of the review's work runs (a tool, a claim, a release or a submission) they are disabled too, so one tool runs at a time. A tool's failure is said in words in the Verdict's action row (D-REV-5) and its run ends red in the Tool log (D-REV-3); no other notice says it. <span class="avoid">tool buttons in the accent; descriptions as lines under the buttons; a count beside the tools; a heading over the only group.</span></dd>
   <dt id="D-REV-3">D-REV-3</dt>
-  <dd>The Tool log opens folded: its header row leads with the fold icon, and the box shows only the last run: its start line, its last stderr line if it printed one, and its end line followed by how many lines it printed (<i>■ exit 0 · 8 lines</i>), or, while it runs, its newest line; a click on the header row (also Enter on it) unfolds every run's lines, and another folds them. A run that fails unfolds nothing by itself: its red end line already shows folded. Unfolded, the Tool log is monospace on <code>--surface-input</code>, <code>--mono</code> at <code>--text-small</code>: a box with a <code>--line-input</code> border: in one column between the Tools and the Result, in two columns under the Tools, as tall as its lines and growing with them up to the room the panel has left above the Points (D-REV-9) and Debug, then scrolling (D-REV-1). Either way: each run's <code>▶ HH:MM:SS · operation · Artifact</code> and its end line in <code>--ink-2</code>, the end line one of four: <code>■ exit N</code> (its <code>■</code> in <code>--red</code> unless N is 0, its words in <code>--ink-2</code>), <code>■ done</code>, <code>■ launched</code> once a file is handed to its desktop application or an Artifact Viewer opens, after which that application's lines keep arriving under the same run until it exits, or <code>■ error: …</code> in <code>--red</code> when the tool could not run, printed lines in <code>--ink</code>, stderr in <code>--ink</code> behind a 2px <code>--red</code> rule at its left, a <code>warning:</code> or <code>error:</code> prefix it prints in <code>--red</code>, the rest of the line neutral, so it is told apart without colour too; lines wrap within its width; it scrolls on its own and follows its newest line unless scrolled up; its text selects. A submission clears it: its lines go; in two columns its box stays in place, empty, and in one column the empty section is no longer shown (J-DETAIL-SECTIONS). <span class="avoid">a log box taller than its lines while they are few, outweighing the instruction; a Tool log box removed by a submission in two columns; lines of an earlier submission kept after it; a log that grows the review; a count of runs or a word for following beside its name; a marker typed into a printed line (the line keeps its text as printed).</span></dd>
+  <dd>The Tool log is not drawn until a tool of the review has run. Then, under the tools, it is one row of <code>--row</code> in <code>--mono</code> at <code>--text-small</code>, folded to the last run: the fold icon, its start (<i>▶ HH:MM:SS · operation</i>) in <code>--ink-2</code>, its last stderr line if it printed one, in <code>--ink</code> behind a 2px <code>--red</code> rule, cut with an ellipsis, and at the row's right its end line followed by how many lines it printed (<i>■ exit 0 · 8 lines</i>), or, while it runs, its newest line. A click on the row (also Enter on it) unfolds every run's lines in a box under it, the fold icon becoming the unfold icon, and another folds them; a run that fails unfolds nothing by itself: its red end shows folded. Unfolded, the box is <code>--surface-input</code> inside <code>--line-input</code> of <code>--radius-control</code>, <code>--mono</code> at <code>--text-small</code>, as tall as its lines up to half the column's height, then scrolling on its own and following its newest line unless scrolled up; each run's <i>▶ HH:MM:SS · operation · Artifact</i> and its end line in <code>--ink-2</code>, the end line one of four: <i>■ exit N</i> (its ■ in <code>--red</code> unless N is 0), <i>■ done</i>, <i>■ launched</i> once a file is handed to its desktop application or an Artifact Viewer opens, after which that application's lines keep arriving under the same run until it exits, or <i>■ error: …</i> in <code>--red</code> when the tool could not run; printed lines in <code>--ink</code>, stderr in <code>--ink</code> behind a 2px <code>--red</code> rule at its left, a <i>warning:</i> or <i>error:</i> prefix it prints in <code>--red</code>; lines wrap within its width and select. A submission clears it: its row and its box go. <span class="avoid">an empty log drawn before any run; a log box open by default; a log box taller than its lines while they are few, outweighing the instruction; a Tool log header of its own.</span></dd>
   <dt id="D-REV-4">D-REV-4</dt>
-  <dd>The Result begins, once claimed, with the GREEN / RED choice as two <code>--control</code> buttons with <code>--line-group</code> borders; each leads with a small dot in its verdict's colour, the same size on both; the chosen one has its word in <code>--ink</code> and a 1px <code>--outline-selected</code> border, at the other's weight, its face unchanged (D-SYS-13). The buttons show no key cap (D-SYS-12); while a form is open they switch the verdict, each verdict keeping its draft (J-HUMAN-RED). The form's fields follow, one under another, each its label in <code>--label</code> with <code>*</code> in <code>--red</code> when required, then its input on <code>--surface-input</code> with <code>--line-input</code>, <code>Optional</code> in <code>--ink-2</code> inside an empty optional one; the schema's constants are filled in and not shown. By kind: text, a field of two lines that grows; a number, a one-line field of <code>--control</code> height about 120px wide; true/false, its two values side by side as round options, the chosen one a small <code>--current-mark</code> dot on the fixed dark face of every option, with a third option for no value when optional, labelled <code>Optional</code> in <code>--ink-2</code> as an empty optional field is, and chosen while the field has no value; a choice, a one-line field showing the chosen option with the unfold icon at its right, empty as <code>Optional</code> (or a dash when required). A list of text is numbered items, each a text field with the remove icon at its right, then a quiet <b>Add</b> led by the add icon. A list of groups is its groups one under another, each inside a 1px <code>--line-group</code> line of <code>--radius-control</code>, headed in <code>--ink-2</code> at <code>--text-small</code> by the list's name and the group's number with the remove icon at the right, its fields inside, then a quiet <b>Add</b> led by the add icon. Removing the last group of a list of groups leaves one empty group to type in; a list of text has no such floor: removing its last item leaves the list empty under its label, with Add to start it again. A failing path shows in <code>--red</code> under the form and the entries stay. <span class="avoid">a filled green or red button; a key cap on a verdict; a JSON editor; a constant shown, even read-only; a list of groups emptied to nothing; an empty item forced back into a list of text; a checkbox for true/false that cannot say no value.</span></dd>
+  <dd>The Verdict begins, once claimed, with the GREEN / RED choice; until one is chosen nothing follows it but the actions (D-REV-5), and once one is, only that verdict's fields follow as two <code>--control</code> buttons with <code>--line-group</code> borders; each leads with a small dot in its verdict's colour, the same size on both; the chosen one has its word in <code>--ink</code> and a 1px <code>--outline-selected</code> border, at the other's weight, its face unchanged (D-SYS-13). The buttons show no key cap (D-SYS-12); while a form is open they switch the verdict, each verdict keeping its draft (J-HUMAN-RED). The form's fields follow, one under another, each its label in <code>--label</code> with <code>*</code> in <code>--red</code> when required, then its input on <code>--surface-input</code> with <code>--line-input</code>, <code>Optional</code> in <code>--ink-2</code> inside an empty optional one; the schema's constants are filled in and not shown. By kind: text, a field of two lines that grows; a number, a one-line field of <code>--control</code> height about 120px wide; true/false, its two values side by side as round options, the chosen one a small <code>--current-mark</code> dot on the fixed dark face of every option, with a third option for no value when optional, labelled <code>Optional</code> in <code>--ink-2</code> as an empty optional field is, and chosen while the field has no value; a choice, a one-line field showing the chosen option with the unfold icon at its right, empty as <code>Optional</code> (or a dash when required). A list of text is numbered items, each a text field with the remove icon at its right, then a quiet <b>Add</b> led by the add icon. A list of groups is its groups one under another, each inside a 1px <code>--line-group</code> line of <code>--radius-control</code>, headed in <code>--ink-2</code> at <code>--text-small</code> by the list's name and the group's number with the remove icon at the right, its fields inside, then a quiet <b>Add</b> led by the add icon. Removing the last group of a list of groups leaves one empty group to type in; a list of text has no such floor: removing its last item leaves the list empty under its label, with Add to start it again. A failing path shows in <code>--red</code> under the form and the entries stay. <span class="avoid">a filled green or red button; a key cap on a verdict; a JSON editor; a constant shown, even read-only; a list of groups emptied to nothing; an empty item forced back into a list of text; a checkbox for true/false that cannot say no value.</span></dd>
   <dt id="D-REV-5">D-REV-5</dt>
-  <dd>One row holds the review's actions: in one column right under the form, the last of the Result section; in two columns along the Evaluation's bottom, opened above by <code>--line-group</code>, under its scrolling content, so they stay in reach however long the form: <b>Release claim</b>, a quiet button named for what it releases, at the left; Submit, the one primary button (the secondary face with a 1px <code>--line-primary</code> outline, D-SYS-13), naming its verdict (<i>Submit GREEN</i>), at the column's right edge; between them, while any work of the review runs (a claim, a release, a tool or a submission), the busy spinner with its seconds and Cancel, or what failed in <code>--red</code>, a failed tool's run also ending red in the Tool log (D-REV-3). What ended well is not said here: a tool's end line in the Tool log and the completed result of a submission say it. While a claim is being made, before the review is Claimed, the row stands alone under the disabled Claim to review button and holds the busy spinner with its seconds and Cancel (or, once it failed, what failed in <code>--red</code>), with neither Release claim nor Submit, which a review shows only once claimed. The row is there in Claimed and in Editing: Release claim from the claim on, before any form is open too, and Submit once a form is open; Release claim stays in its place while the form is edited, so entering a result never removes the way to release, and using it keeps the draft. While any work runs, Release claim stays in place but cannot be used (disabled, its text in <code>--ink-3</code>). Submit stays in place and usable while a tool runs (J-HUMAN-GREEN), and is disabled the same way while a claim, a release or a submission runs; every tool button is disabled while any work runs (D-REV-2). Submitted, the row is gone with the form. <span class="avoid">Release claim shown only once a form is open; Release claim usable while work runs; two primary buttons; a notice as a toast; a notice for what ended well; Submit or Release claim outside the Evaluation or a window's width away from the form; a button that says Release alone, which reads as releasing what is reviewed; a key cap on Submit or Release claim.</span></dd>
+  <dd>The Verdict's last row holds the review's actions, kept in view at the column's bottom however long the form (it sticks there while the column scrolls, on the column's surface): Release claim, a quiet button, at the left; Submit, the one primary button (the secondary face with a 1px <code>--line-primary</code> outline, D-SYS-13), naming its verdict (<i>Submit GREEN</i>), at the column's right edge; between them, while any work of the review runs (a claim, a release, a tool or a submission), the busy spinner with its seconds and Cancel, or what failed in <code>--red</code>, a failed tool's run also ending red in the Tool log (D-REV-3). What ended well is not said here. Before a claim the Verdict holds only <b>Claim to review</b>, the primary button, with a claim in progress beside it as its seconds and Cancel; a review taken by another reviewer holds one <code>--ink-2</code> line, <i>Taken by {claimant}</i>. Once claimed, Release claim is in the row from the start, before a verdict is chosen too; Submit joins it once a verdict is chosen. While any work runs, Release claim stays in place but cannot be used (its text in <code>--ink-3</code>); Submit stays usable while a tool runs (J-HUMAN-GREEN) and is disabled while a claim, a release or a submission runs. Submitted, the row is gone with the form, and the Verdict shows the result as submitted, each field by name, read-only. <span class="avoid">actions that scroll out of reach under a long form; Release claim moved or hidden while editing; two primary buttons; a word or a toast saying it was submitted.</span></dd>
   <dt id="D-REV-7">D-REV-7</dt>
   <dd>Review's Pane is one <code>--surface-panel</code> column: at its top the filter field, as Verify's Search is drawn (a <code>--surface-input</code> field in <code>--mono</code>, closed below by <code>--line-group</code>, D-PANE-1), holding its query as plain typed text; its suggestions drop under it as the Search's do. Its starting query is <code>type:human waiting</code>. Under it, the reviews it matches, grouped by project under the project's name as a group label (D-SYS-5), newest first, each one <code>--row-pane</code> row, chosen by a click anywhere on it (J-PANE-ROWS): the request's status icon in its colour (a waiting Human review the human icon in <code>--human</code>), the eval as <i>{Artifact}/{eval}</i> in <code>--ink</code> cut with an ellipsis, and at the right in <code>--ink-2</code> with tabular figures how long it waits, led by <i>{claimant} ·</i> once claimed; its branch is the review's header's (D-REV-8). A review's eval is <code>--ink-2</code>; the open review's row is the darker <code>--selection</code> row with its eval in <code>--ink</code> (D-SYS-13); the pointer over a row gives it <code>--surface-group</code> alone, and the keyboard on it the 2px <code>--focus</code> ring inside the whole row. With none matching, one <code>--ink-2</code> line says so. When the search matches more reviews than the library returns at once, <b>More reviews</b> ends the list as <b>Older runs</b> ends a timeline (D-PANE-3): a Pane row of its own, <code>--row-pane</code> high, its words in <code>--ink-2</code> at <code>--text-small</code>, lit on <code>--surface-group</code> under the pointer and ringed by the keyboard's focus, which brings the next reviews in below the last, the open review and the list's scroll kept. <span class="avoid">a pager or page numbers; matching reviews left out with no way to reach them; a second line under each review; a count heading over the list; a waiting list in another mode's Pane; the filter's terms drawn as chips or blocks; a card per review; a dash where there is no claimant.</span></dd>
   <dt id="D-REV-8">D-REV-8</dt>
-  <dd>A review's way back: its header row begins, at its left, with a reference chip (D-REF-1), the back icon and <i>Verify · {Run} › {Artifact}</i>, the Run's ID in <code>--mono</code>; the eval as <i>{Artifact}/{eval}</i> and its title follow (D-REV-1). A review opened by a reference shows the same whether or not the filter lists it, and nothing says which (J-REVIEW-REF). The draft has no mark of its own: what is written is the form as it stands, the same in Review, the Detail and the pet overlay (J-HUMAN-DRAFT). <span class="avoid">a line, a banner or a dialog saying a review is outside the filter; the filter changed to list the review; a <i>saved</i> or <i>draft</i> word beside the form.</span></dd>
+  <dd>Review's header row is the stage header's grammar (D-MAIN-1): 32px on <code>--surface-panel</code>, closed below by <code>--line-panel</code>, controls only. At its left the way back, a tool led by the back icon (D-REF-1): <i>Verify · {Run} › {Artifact}</i>, the Run's ID in <code>--mono</code>, by luminance alone, cut with an ellipsis at 320px. The review's eval is named by the Pane's selected row (D-REV-7) and its title by the column's head (D-REV-1). A review opened by a reference shows the same whether or not the filter lists it, and nothing says which (J-REVIEW-REF). The draft has no mark of its own: what is written is the form as it stands, the same in Review, the Detail and the pet overlay (J-HUMAN-DRAFT). <span class="avoid">the way back as a chip or a bordered button; the eval or its title in the header row; a line, a banner or a dialog saying a review is outside the filter; the filter changed to list the review; a saved or draft word beside the form.</span></dd>
   <dt id="D-REV-9">D-REV-9</dt>
-  <dd>The <b>Points</b> are a section of the review's column (D-REV-1), shown once Point has added one (J-HUMAN-POINTS): under its header row, one <code>--row</code> row per point, newest last, at <code>--text-small</code>: the point icon in <code>--ink-3</code>, the pointed text in <code>--mono</code> <code>--ink</code> cut with an ellipsis, where it was pointed (<i>{Artifact} · {viewer}</i>) and when (<i>HH:MM</i>) in <code>--ink-2</code> with tabular figures, <b>Insert</b>, a small quiet button, drawn disabled while no form is open, and at the row's right the remove icon in <code>--ink-2</code>, which removes the point from the draft. Insert puts the text at the caret of the form's text field last focused, else into its comment field, and leaves the point listed. In two columns the Points sit under the Tool log, at most five rows tall, scrolling on their own past that; in one column they are a section between the Tool log and the Result. A point just added stands on <code>--accent-soft</code> until the next one, as Point's only answer (D-VIEW-2). <span class="avoid">a Notes field or any free text box apart from the form; points written into a field by themselves; points in the submitted result; a toast for a point; a count beside Points.</span></dd>
+  <dd>The Points are not drawn until Point has added one (J-HUMAN-POINTS). Then they stand in Evidence under the Tool log's row (or under the tools before any run), with no header of their own: one <code>--row</code> row per point, newest last, at <code>--text-small</code>: the point icon in <code>--ink-3</code>, the pointed text in <code>--mono</code> <code>--ink</code> cut with an ellipsis, where it was pointed (<i>{Artifact} · {viewer}</i>) and when (<i>HH:MM</i>) in <code>--ink-2</code> with tabular figures, Insert, a small quiet button, drawn disabled while no verdict is chosen, and at the row's right the remove icon in <code>--ink-2</code>, which removes the point from the draft. Insert puts the text at the caret of the chosen verdict's text field last focused, else into its comment field, and leaves the point listed. Past five points they scroll on their own. A point just added stands on <code>--accent-soft</code> until the next one, as Point's only answer (D-VIEW-2). <span class="avoid">a Points header or count; a Notes field or any free text box apart from the form; points written into a field by themselves; points in the submitted result; a toast for a point.</span></dd>
   <dt id="D-REV-6">D-REV-6</dt>
   <dd>A request opened by ID that is not a Human review shows its sections read-only in the same column, its title suffixed <code>read-only</code> in the Main area header; its Debug (a Run's Technical) folds and unfolds by its header row (D-INS-9). <span class="avoid">a disabled form standing in for read-only.</span></dd>
 </dl>

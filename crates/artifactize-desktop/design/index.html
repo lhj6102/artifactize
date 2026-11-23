@@ -72,7 +72,7 @@
   <li><a href="monitor.html">Verify</a><span>Verify mode with a Run shown: the bottom bar, the Pane, the stage header with the Run's way back to Chat and the graph's tools, and the Run graph with its status line, with its nodes, its Navigator and a large graph zoomed out.</span></li>
   <li><a href="current.html">Current</a><span>A Chat session's Graph view: the stage header with the view tabs and the graph's tools, the branch's Current filling the area with the scan's state in its status line, and the chat floating over it, the composer and a reply's card, where Artifacts are dragged into place and into or out of a whole and comments are written and moved.</span></li>
   <li><a href="detail.html">Detail</a><span>The inspector, a panel docked at the graph's right edge: an Artifact's tab, an eval's Summary and, on a Current, an Artifact's Definition and Source.</span></li>
-  <li><a href="review.html">Review</a><span>Review mode: the filter and the reviews in the Pane, a review opened from a reference with its way back to Verify, and its evaluation space: with room, the review (instruction, Tools, Tool log, Points) at the left and the Evaluation (the verdict and its form, the actions) at the right; in the Detail, one column.</span></li>
+  <li><a href="review.html">Review</a><span>Review mode: the filter and the reviews in the Pane, a review opened from a reference with its way back to Verify, and its evaluation space: one column, as an editor's Inspector, the same in the Detail: the title and the claim's state, the instruction, Evidence (the tools, the Tool log and the Points once there is something in them) and the Verdict (GREEN or RED, the chosen verdict's fields, the actions).</span></li>
   <li><a href="viewers.html">Viewers</a><span>The Artifact Viewer windows: a plugin's viewer with Point, the File Explorer, the Markdown viewer and the Artifactize Viewer, and the pet overlay over them.</span></li>
   <li><a href="settings.html">Settings</a><span>The modal over the screen: Providers, Remote and Limits.</span></li>
   <li><a href="overlays.html">Overlays</a><span>The command palette, Help, Open by ID, the Leave and Update dialogs, the graph's find field and the New Artifact, Rename and Delete dialogs.</span></li>
@@ -154,7 +154,7 @@
   <tbody>
     <tr><td><code>--radius-panel</code></td><td>A panel's or the Detail's corner: nearly square</td></tr>
     <tr><td><code>--radius-control</code></td><td>Buttons, fields, nodes, key caps, rows that highlight</td></tr>
-    <tr><td><code>--radius-chip</code></td><td>The Detail's chips and the stage pill: rounded</td></tr>
+    <tr><td><code>--radius-chip</code></td><td>The Detail's chips and the composer: rounded</td></tr>
     <tr><td><code>--row</code></td><td>A list row: palette items, Settings choices; a section's header row</td></tr>
     <tr><td><code>--row-dense</code></td><td>A dense row: eval rows, find results, chips</td></tr>
     <tr><td><code>--row-head</code></td><td>A head row inside a panel: a section's header in Review, a reply card's head</td></tr>
@@ -222,7 +222,8 @@
     <tr><td><span class="m-icon i-pane"></span></td><td><span class="m-icon i-pane big"></span></td><td><code>i-pane</code></td><td>Show or hide the Pane</td></tr>
     <tr><td><span class="m-icon i-reset"></span></td><td><span class="m-icon i-reset big"></span></td><td><code>i-reset</code></td><td>Reset layout: a box placed by hand laid out automatically again</td></tr>
     <tr><th colspan="4">Modes and references</th></tr>
-    <tr><td><span class="m-icon i-new-chat"></span></td><td><span class="m-icon i-new-chat big"></span></td><td><code>i-new-chat</code></td><td>New chat, in Chat's Pane</td></tr>
+    <tr><td><span class="m-icon i-new-chat"></span></td><td><span class="m-icon i-new-chat big"></span></td><td><code>i-new-chat</code></td><td>New chat, in Chat's Pane and on a project's row</td></tr>
+    <tr><td><span class="m-icon i-move"></span></td><td><span class="m-icon i-move big"></span></td><td><code>i-move</code></td><td>Move a chat to another checkout, among its stage tools</td></tr>
     <tr><td><span class="m-icon i-folder-open"></span></td><td><span class="m-icon i-folder-open big"></span></td><td><code>i-folder-open</code></td><td>A project in Chat's Pane, its sessions shown</td></tr>
     <tr><td><span class="m-icon i-folder-closed"></span></td><td><span class="m-icon i-folder-closed big"></span></td><td><code>i-folder-closed</code></td><td>A project in Chat's Pane, folded</td></tr>
     <tr><td><span class="m-icon i-artifact"></span></td><td><span class="m-icon i-artifact big"></span></td><td><code>i-artifact</code></td><td>Artifact, before its name</td></tr>
