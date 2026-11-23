@@ -31,7 +31,7 @@ export const scenarios: Scenario[] = [
       await stage("claimable");
       await app.detail.reviewAction("Claim to review");
       await stage("yours");
-      await app.waitingBadge(2);
+      await app.waitingBadge(1);
       await app.mode("Review");
       const listed = async () => (await app.review.list()).map((row) => row.id);
       await app.until(async () => (await listed()).join() === otherId, "the waiting filter lists only the other review");

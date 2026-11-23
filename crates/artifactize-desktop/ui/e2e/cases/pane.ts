@@ -179,7 +179,10 @@ export const scenarios: Scenario[] = [
       }, "both projects are listed and the older review names Bob");
       await app.review.filterFor("type:human waiting");
       await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "the claimed review is absent from the waiting filter");
+      await app.waitingBadge(1);
+      assert.equal(artifactize(fixture, ["request", "unclaim", older, "--reviewer", "bob"]).status, 0);
       await app.waitingBadge(2);
+      await app.until(async () => (await app.review.list()).some((row) => row.id === older), "releasing Bob's claim restores the waiting review");
       await app.review.openListed(newer);
       assert.match(await app.review.debugState(), new RegExp(`^Request ${newer} `));
     },
