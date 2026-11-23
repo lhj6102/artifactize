@@ -236,6 +236,22 @@ export class AppState {
   /** The persisted Graph view of the shown, usable session, while Chat is in front. */
   readonly liveGraph = $derived(this.mode === "chat" && this.chat.view?.session.view === "graph" && this.chat.view.session.unavailable === null ? this.chat.view.session : null);
 
+  /** The window's title (J-PANE-TOGGLE): while the Pane is hidden it names what Chat or Verify
+   * shows, which the Pane's selected row named; else, and in Review, the app's name. */
+  readonly windowTitle = $derived.by(() => {
+    const app = "Artifactize";
+    if (this.paneShown) return app;
+    if (this.mode === "chat") {
+      const session = this.chat.view?.session;
+      return session ? `${session.title || "New chat"} · ${session.branch || session.project} — ${app}` : app;
+    }
+    const shown = this.monitor.shown;
+    if (this.mode !== "verify" || shown.kind !== "run") return app;
+    const branch = this.browse.view?.branches.find((item) => keyOf(item.key) === keyOf(shown.branch));
+    if (!branch) return `${shown.run} — ${app}`;
+    return `${shown.run} · ${branch.name ? `${branch.project} / ${branch.name}` : branch.project} — ${app}`;
+  });
+
   /** A Run finished on the branch of the shown Chat session, independent of Verify's filter. */
   runFinished(branch: BranchKey): void {
     const session = this.mode === "chat" ? this.chat.view?.session : null;

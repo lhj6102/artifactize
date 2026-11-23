@@ -112,6 +112,16 @@
     if (app.mode === "verify" || app.liveGraph !== null) untrack(() => browsing.showing());
   };
 
+  /** The window's title follows what it names (J-PANE-TOGGLE). */
+  const titling: Attachment = () => {
+    const title = app.windowTitle;
+    try {
+      void getCurrentWindow().setTitle(title).catch(() => {});
+    } catch {
+      // No window to title: a test host.
+    }
+  };
+
   const following: Attachment = () => {
     const opened = r.shown.kind === "review" ? r.shown.id : null;
     if (opened !== null) void app.registerReview(opened);
@@ -236,6 +246,10 @@
       event.preventDefault();
       const graph = app.chat.graph;
       if (graph) graph.finding = true;
+    } else if (chord(event, "f") && app.mode === "chat" && app.chat.view?.session.view === "conversation" && !app.chat.panes.pane?.contains(document.activeElement) && !editable(event.target) && free()) {
+      // Outside fields and the Pane, Ctrl+F finds in the conversation shown (J-CHAT-FIND).
+      event.preventDefault();
+      app.chat.find ??= { text: "", at: 0 };
     } else if (chord(event, "f") && app.mode === "verify" && sourceOf(m.shown) !== null && m.focus !== "pane" && !editable(event.target) && free()) {
       // Outside fields and the Pane, Ctrl+F finds in a graph. Otherwise it searches the Pane.
       event.preventDefault();
@@ -271,7 +285,7 @@
 
 <svelte:window onkeydown={keydown} bind:innerWidth={app.windowWidth} />
 
-<div class="app" {@attach following} {@attach verifying}>
+<div class="app" {@attach following} {@attach verifying} {@attach titling}>
   {#if app.failure}
     <p class="failure">{app.failure}</p>
   {:else if app.launch}

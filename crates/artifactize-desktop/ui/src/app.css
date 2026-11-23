@@ -453,3 +453,13 @@ input[type="search"]::-webkit-search-decoration {
 .ported.outward > .svelte-flow__handle.source {
   opacity: 1;
 }
+
+/* Find in a Chat conversation (D-CHAT-11): each place the text appears on a quiet face, the
+   shown one over the current mark. Highlights leave the conversation's own nodes as drawn. */
+::highlight(chat-find) {
+  background-color: var(--accent-soft);
+  color: var(--ink-bright);
+}
+::highlight(chat-find-current) {
+  text-decoration: underline 2px var(--current-mark);
+}

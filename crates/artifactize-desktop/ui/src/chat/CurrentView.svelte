@@ -1,6 +1,7 @@
 <script lang="ts">
-  // A branch's live graph, below its scan state in the session header and above its composer.
-  import { tick, untrack } from "svelte";
+  // A branch's live graph, filling a session's Graph view under the stage header, its scan state
+  // in the stage's status line; what floats over its bottom (the chat) comes from the session.
+  import { tick, untrack, type Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { BranchKey, Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
@@ -13,7 +14,21 @@
   import GraphTools from "../monitor/GraphTools.svelte";
   import EditDialogs from "./EditDialogs.svelte";
 
-  let { branch: branchKey, worktree, workspace }: { branch: BranchKey; worktree: string; workspace: GraphWorkspace } = $props();
+  let {
+    branch: branchKey,
+    worktree,
+    workspace,
+    bottom = 0,
+    floating,
+  }: {
+    branch: BranchKey;
+    worktree: string;
+    workspace: GraphWorkspace;
+    /** The band the floating chat covers at the graph's bottom, kept free by the camera. */
+    bottom?: number;
+    /** What floats over the graph's bottom, left of the Detail (D-CUR-10). */
+    floating?: Snippet;
+  } = $props();
   const app = getAppState();
   const { current, chat } = app;
   const key = $derived(keyOf(branchKey));
@@ -98,13 +113,14 @@
       {#await import("../monitor/SourceGraph.svelte")}
         <div class="pending"><GraphTools /><p class="note">Loading the graph…</p></div>
       {:then { default: SourceGraph }}
-        <SourceGraph {source} {branch} {workspace} {active} revision={view.revision} opened={opened?.node ?? null} onopen={open} onclose={() => void close()} />
+        <SourceGraph {source} {branch} {workspace} {active} {bottom} revision={view.revision} opened={opened?.node ?? null} onopen={open} onclose={() => void close()} />
       {/await}
     {:else}
       <div class="pending">
         <GraphTools />
       </div>
     {/if}
+    {@render floating?.()}
   </GraphStage>
 </section>
 

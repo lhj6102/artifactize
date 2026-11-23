@@ -1,9 +1,10 @@
 <script lang="ts">
-  // Chat: Artifactize's own agent on a branch (J-CHAT…). Its Pane holds New chat and the
-  // sessions, grouped by project, newest first; its main area holds the shown session's
-  // conversation in a column of the reading measure and the composer under it, the model
-  // selector at its bottom left (its menu opening upward) and Send, or Stop while a turn runs,
-  // at its bottom right. Each verify the agent starts is a Run reference that opens the Run in
+  // Chat: Artifactize's own agent on a branch (J-CHAT…). Its Pane's top row is New chat and
+  // Search, then the projects, each a folder row over its sessions, newest first. Its main area
+  // is the stage (J-STAGE): the view tabs and the shown view's tools in the stage header, then
+  // the conversation in a column of the reading measure with the composer under it, or the
+  // branch's Current with the composer and the reply card floating over its bottom
+  // (J-CHAT-GRAPH). Each verify the agent starts is a Run reference that opens the Run in
   // Verify. Sessions, turns and Run cards are the library's.
   import { Dialog } from "bits-ui";
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
@@ -16,7 +17,7 @@
   import { statusIcon } from "../shell/icons";
   import { tone } from "../shell/tone";
   import { mainSplitMinimum, PANE_MIN } from "../monitor/detail-width";
-  import Panel from "../shell/Panel.svelte";
+  import Stage from "../shell/Stage.svelte";
   import Reference from "../shell/Reference.svelte";
   import { composing } from "../shell/keys";
   import { providerName } from "../settings/provider-names";
@@ -29,25 +30,25 @@
 
   const app = getAppState();
   const { current, chat: c } = app;
+  /** The gap between the floating chat and the graph's bottom. */
+  const FLOAT_GAP = 12;
   const definitions = $derived(app.definitions);
 
   const branches = $derived(c.branches ?? []);
-  /** Where a session works, as the library names it: its project and branch. */
-  const placeOf = (session: ChatSession) => (session.branch ? `${session.project} / ${session.branch}` : session.project);
-  /** The sessions grouped by project and branch, the groups and their sessions newest first. */
-  const groups = $derived.by(() => {
-    const byPlace: [string, ChatSession[]][] = [];
+  /** The sessions grouped by project, the projects and their sessions newest first. */
+  const projects = $derived.by(() => {
+    const byProject: [string, ChatSession[]][] = [];
     for (const session of c.sessions) {
-      const place = placeOf(session);
-      const group = byPlace.find(([name]) => name === place);
+      const group = byProject.find(([name]) => name === session.project);
       if (group) group[1].push(session);
-      else byPlace.push([place, [session]]);
+      else byProject.push([session.project, [session]]);
     }
-    return byPlace;
+    return byProject;
   });
   const view = $derived(c.view);
   const session = $derived(view?.session ?? null);
   const turns = $derived((view?.turns ?? []).map((turn) => ({ ...turn, activity: activity(turn.blocks) })));
+  type Shown = (typeof turns)[number];
   const graph = $derived(session?.view === "graph");
   const mainMin = $derived(graph ? mainSplitMinimum(app.windowWidth) : 30);
   const live = $derived(graph && session?.unavailable === null);
@@ -62,6 +63,20 @@
   const answer = $derived(c.starting !== null && c.starting.worktree === c.worktree ? c.starting : null);
   const starting = $derived(answer?.model ?? null);
   const reading = $derived(answer === null || !answer.known);
+  /** The shown session's reply card in Graph: the turn sent from Graph, while it is read. */
+  const reply = $derived.by(() => {
+    const card = session ? c.replies.get(session.id) : undefined;
+    const turn = card ? turns[card.at] : undefined;
+    return card && turn ? { at: card.at, folded: card.folded, turn } : null;
+  });
+  /** How far the floating chat reaches over the graph, its 12px gap included (D-CUR-10). */
+  let band = $state(0);
+  /** How many places in the conversation hold the find field's text. */
+  let found = $state(0);
+  /** Which of them is shown. */
+  const shownPlace = $derived(found === 0 || !c.find ? 0 : ((c.find.at % found) + found) % found);
+  /** The Pane's Search tool, focused again when its field closes. */
+  let searchTool = $state<HTMLButtonElement>();
 
   /** How long ago `at` (an RFC 3339 time) was, as the Pane says it. */
   function age(at: string, now: number): string {
@@ -151,6 +166,98 @@
     c.scroll[id] = { top: log.scrollTop, following: true };
   }
 
+  /** The floating chat's height, followed as the card folds, unfolds or grows and the composer
+   * grows: the graph's camera keeps its Artifacts out of that band. */
+  const banding: Attachment<HTMLElement> = (float) => {
+    const measure = () => (band = Math.ceil(float.getBoundingClientRect().height) + FLOAT_GAP);
+    const sized = new ResizeObserver(measure);
+    sized.observe(float);
+    measure();
+    return () => {
+      sized.disconnect();
+      band = 0;
+    };
+  };
+
+  /** The reply card follows its newest line as the reply streams. */
+  const followReply: Attachment<HTMLElement> = (body) => {
+    void reply?.turn;
+    body.scrollTop = body.scrollHeight;
+  };
+
+  /** Every place in `root`'s text where `text` (lower case) appears, ignoring case. */
+  function places(root: HTMLElement, text: string): Range[] {
+    const ranges: Range[] = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const value = (node.nodeValue ?? "").toLowerCase();
+      for (let at = value.indexOf(text); at !== -1; at = value.indexOf(text, at + text.length)) {
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + text.length);
+        ranges.push(range);
+      }
+    }
+    return ranges;
+  }
+
+  /** The place last brought into view, so a streaming turn does not move the reader again. */
+  let lastShown = "";
+  /** Find in the conversation (J-CHAT-FIND): mark every place the text appears, through the
+   * CSS highlights so the conversation's own nodes stay as drawn, and bring the shown one into
+   * view when it changes. Re-marks as the conversation streams. */
+  const marking: Attachment<HTMLElement> = (log) => {
+    const find = c.find;
+    void view?.turns;
+    const highlights = typeof CSS !== "undefined" && "highlights" in CSS ? CSS.highlights : null;
+    const text = find && find.text.trim() !== "" ? find.text.toLowerCase() : "";
+    if (!find || text === "") {
+      found = 0;
+      lastShown = "";
+      return;
+    }
+    const ranges = places(log, text);
+    found = ranges.length;
+    if (ranges.length === 0) return;
+    const at = ((find.at % ranges.length) + ranges.length) % ranges.length;
+    if (highlights) {
+      highlights.set("chat-find", new Highlight(...ranges));
+      highlights.set("chat-find-current", new Highlight(ranges[at]));
+    }
+    const key = `${text}#${at}`;
+    if (key !== lastShown) {
+      lastShown = key;
+      ranges[at].startContainer.parentElement?.scrollIntoView?.({ block: "center" });
+    }
+    return () => {
+      highlights?.delete("chat-find");
+      highlights?.delete("chat-find-current");
+    };
+  };
+
+  /** Enter shows the next place, Shift+Enter the one before; Esc closes the field. */
+  function findKey(event: KeyboardEvent) {
+    const find = c.find;
+    if (!find || composing(event)) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      c.find = { text: find.text, at: find.at + (event.shiftKey ? -1 : 1) };
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      c.find = null;
+      c.panes.main?.focus({ preventScroll: true });
+    }
+  }
+
+  /** Esc in the Pane's search: every session listed again, and the top row back. */
+  async function closeSearch() {
+    c.search("");
+    c.searching = false;
+    await tick();
+    searchTool?.focus();
+  }
+
   const follow: Attachment<HTMLElement> = (log) => {
     const id = session?.id;
     const reveal = c.reveal;
@@ -219,33 +326,151 @@
   </div>
 {/snippet}
 
+<!-- What the agent did in a turn and how it ended, in the conversation and in the reply card. -->
+{#snippet turnBody(turn: Shown)}
+  {#each turn.activity as part (part.at)}
+    {#if part.kind === "group"}
+      <ChatActivity tools={part.tools} grouped running={turn.state.kind === "running"} />
+    {:else if part.block.kind === "text"}
+      <ChatMarkdown text={part.block.text} />
+    {:else if part.block.kind === "tool"}
+      <ChatActivity tools={[part.block]} running={turn.state.kind === "running"} />
+    {:else}
+      {@render runCard(part.block.card)}
+    {/if}
+  {/each}
+  {#if turn.state.kind === "stopped"}
+    <p class="end">Stopped</p>
+  {:else if turn.state.kind === "interrupted"}
+    <p class="end">Interrupted · The app or agent process exited before the turn finished.</p>
+  {:else if turn.state.kind === "failed"}
+    <p class="end failed">{turn.state.message}</p>
+  {/if}
+{/snippet}
+
+<!-- The composer: one field, the model at its bottom left and Send at its bottom right. -->
+{#snippet composer(current: ChatSession)}
+  <div class="composer">
+    {#if !graph && current.unavailable}
+      <!-- The session's branch cannot be worked on now: it says why, and sends nothing. -->
+      <p class="unavailable" role="status">{current.unavailable}</p>
+    {/if}
+    {#if rejected}
+      <div class="rejected">
+        <span class="failed" role="status">{rejected.reason}</span>
+        <button class="button small" onclick={() => void c.copy(rejected.text)}>Copy</button>
+        <button class="button small" disabled={typed !== ""} onclick={() => { c.restore(current.id); c.panes.composer?.focus({ preventScroll: true }); }}>Restore</button>
+      </div>
+    {/if}
+    <div class="box" class:off={current.unavailable !== null} class:pointer-edit={c.composerPointer}>
+      <textarea
+        class="bare-field"
+        rows="2"
+        aria-label="Message"
+        disabled={current.unavailable !== null}
+        placeholder="Ask the agent to work on this branch…"
+        bind:this={c.panes.composer}
+        value={typed}
+        onpointerdown={() => (c.composerPointer = true)}
+        onblur={() => (c.composerPointer = false)}
+        oninput={(event) => write(event.currentTarget.value)}
+        onkeydown={composerKey}
+      ></textarea>
+      <div class="row">
+        <ModelPicker session={current} />
+        <span class="spacer"></span>
+        {#if stopping}
+          <span class="stopping" role="status"><span class="tone-running"><Icon name="running" /></span>Stopping…</span>
+        {:else if running}
+          <button class="button icon-button" disabled={current.unavailable !== null} aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
+        {:else}
+          {#if !current.model}<span class="need-model" id="chat-need-model">Choose a model to send</span>{/if}
+          <button class="button icon-button primary" aria-label="Send (Enter)" aria-describedby={current.model ? undefined : "chat-need-model"} aria-keyshortcuts="Enter" disabled={!current.model || typed.trim() === "" || current.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/snippet}
+
+<!-- The chat floating over the graph's bottom: the reply card, then the composer (D-CUR-10). -->
+{#snippet floatingChat(current: ChatSession)}
+  <div class="float" role="group" aria-label="Chat" {@attach banding}>
+    {#if reply}
+      {@const card = reply}
+      <section class="reply" aria-label="Reply">
+        <button class="reply-head" aria-expanded={!card.folded} onclick={() => c.replies.set(current.id, { at: card.at, folded: !card.folded })}>
+          <Icon name={card.folded ? "fold" : "unfold"} />
+          <span class="said">{card.turn.user}</span>
+          {#if card.turn.state.kind === "running"}<span class="tone-running" aria-label="Running"><Icon name="running" /></span>{/if}
+        </button>
+        {#if !card.folded}
+          <div class="reply-body" {@attach followReply}>{@render turnBody(card.turn)}</div>
+        {/if}
+      </section>
+    {/if}
+    {@render composer(current)}
+  </div>
+{/snippet}
+
+<!-- The scan state of the Current shown, in the stage's status line. -->
+{#snippet scan()}
+  {#if session}<ScanState branch={session.branchKey} />{/if}
+{/snippet}
 
 <div class="mode" {@attach following}>
   <PaneGroup direction="horizontal" autoSaveId="chat-layout" class="columns">
     {#if app.paneShown}
       <Split id="chat-pane" order={1} defaultSize={20} minSize={PANE_MIN}>
         <section class="pane" aria-label="Chats" bind:this={c.panes.pane}>
-          <div class="head"><button class="button new" onclick={() => app.newChat()}><Icon name="add" />New chat</button></div>
-          <div class="search"><input type="search" value={c.query} bind:this={c.panes.search} aria-label="Search chats" placeholder="Search chats" oninput={(event) => c.search(event.currentTarget.value)} onkeydown={(event) => {
-            if (event.key === "Escape" && !composing(event)) {
-              event.preventDefault();
-              c.search("");
-            }
-          }} /></div>
+          <div class="top">
+            {#if c.searching || c.query !== ""}
+              <label class="search">
+                <Icon name="find" />
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  type="search"
+                  value={c.query}
+                  bind:this={c.panes.search}
+                  aria-label="Search chats"
+                  placeholder="Search chats"
+                  autofocus
+                  oninput={(event) => c.search(event.currentTarget.value)}
+                  onblur={(event) => { if (event.currentTarget.value === "") c.searching = false; }}
+                  onkeydown={(event) => {
+                    if (event.key === "Escape" && !composing(event)) {
+                      event.preventDefault();
+                      void closeSearch();
+                    }
+                  }}
+                />
+              </label>
+            {:else}
+              <button class="row-button new" onclick={() => app.newChat()}><span class="lead"><Icon name="new-chat" /></span>New chat</button>
+              <button class="row-button tool" aria-label="Search chats" title="Search chats" bind:this={searchTool} onclick={() => (c.searching = true)}><Icon name="find" /></button>
+            {/if}
+          </div>
           <div class="sessions">
-            {#if c.listed && c.query.trim() && groups.length === 0}<p class="empty">No chat matches.</p>{/if}
-            {#each groups as [project, members] (project)}
-              <p class="group">{project}</p>
-              <ul aria-label="Sessions of {project}">
-                {#each members as item (item.id)}
-                  {@const state = sessionState(item)}
-                  <li>
-                    <button class="session" class:selected={c.selected === item.id} aria-current={c.selected === item.id ? "true" : undefined} onclick={() => void c.open(item.id)}>
-                      <span class="title">{item.title || "New chat"}</span> <span class="age" class:running={state === "running"} class:failed={state === "failed"} class:finished={state === "finished"}>{state ?? ages.get(item.id)}</span>
-                    </button>
-                  </li>
-                {/each}
-              </ul>
+            {#if c.listed && c.query.trim() && projects.length === 0}<p class="empty">No chat matches.</p>{/if}
+            {#each projects as [project, members] (project)}
+              {@const open = c.query.trim() !== "" || !c.folded.has(project)}
+              <button class="row-button project" aria-expanded={open} onclick={() => (c.folded.has(project) ? c.folded.delete(project) : c.folded.add(project))}>
+                <span class="lead"><Icon name={open ? "folder-open" : "folder-closed"} /></span><span class="name">{project}</span>
+              </button>
+              {#if open}
+                <ul aria-label="Sessions of {project}">
+                  {#each members as item (item.id)}
+                    {@const state = sessionState(item)}
+                    <li>
+                      <button class="row-button session" class:selected={c.selected === item.id} aria-current={c.selected === item.id ? "true" : undefined} onclick={() => void c.open(item.id)}>
+                        <span class="title">{item.title || "New chat"}</span>
+                        {#if item.branch}<span class="branch">{item.branch}</span>{/if}
+                        <span class="spacer"></span>
+                        <span class="age" class:state class:running={state === "running"} class:failed={state === "failed"} class:finished={state === "finished"}>{state ?? ages.get(item.id)}</span>
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
             {/each}
           </div>
         </section>
@@ -253,118 +478,80 @@
       <PaneResizer class="resizer" />
     {/if}
     <Split id="chat-main" order={2} defaultSize={app.paneShown ? 80 : 100} minSize={mainMin}>
-      <Panel title={session ? session.title || "New chat" : "Chat"} label="Chat's main area" focused={false} notice={mainNotice} bind:noticeOpen={c.noticeOpen} bind:element={c.panes.main}>
-        {#snippet headline()}
-          {#if session}<span class="branch mono">{session.branch || session.project}</span>{/if}
-        {/snippet}
-        {#snippet afterHeadline()}
+      <Stage label="Chat's main area" notice={mainNotice} bind:noticeOpen={c.noticeOpen} bind:element={c.panes.main} status={live ? scan : undefined}>
+        {#snippet tabs()}
           {#if session}
-            <div class="views" role="group" aria-label="Session view">
-              <button type="button" aria-pressed={!graph} onclick={() => void c.setView("conversation")}>Conversation</button>
-              <button type="button" aria-pressed={graph} onclick={() => void c.setView("graph")}>Graph</button>
+            <div class="views" role="tablist" aria-label="Session view">
+              <button type="button" role="tab" aria-selected={!graph} onclick={() => void c.setView("conversation")}>Conversation</button>
+              <button type="button" role="tab" aria-selected={graph} onclick={() => void c.setView("graph")}>Graph</button>
             </div>
-            {#if live}<ScanState branch={session.branchKey} />{/if}
           {/if}
         {/snippet}
-        {#snippet actions()}
+        {#snippet tools()}
+          {#if session && !graph}
+            {#if c.find}
+              {@const find = c.find}
+              <label class="find">
+                <Icon name="find" />
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  aria-label="Find in the conversation"
+                  value={find.text}
+                  autofocus
+                  oninput={(event) => (c.find = { text: event.currentTarget.value, at: 0 })}
+                  onblur={(event) => { if (event.currentTarget.value === "") c.find = null; }}
+                  onkeydown={findKey}
+                />
+                {#if find.text.trim() !== ""}<span class="count" role="status">{found === 0 ? "No match" : `${shownPlace + 1} of ${found}`}</span>{/if}
+              </label>
+            {:else}
+              <button class="tool" aria-label="Find (Ctrl+F)" title="Find" aria-keyshortcuts="Control+F" onclick={() => (c.find = { text: "", at: 0 })}><Icon name="find" /></button>
+            {/if}
+          {/if}
           {#if session && live}
-            <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" onclick={() => void current.scan(session.branchKey, true)}>Refresh</button>
+            <button class="tool" aria-label="Refresh (Ctrl+R)" title="Refresh" aria-keyshortcuts="Control+R F5" onclick={() => void current.scan(session.branchKey, true)}>Refresh</button>
           {/if}
         {/snippet}
         {#if !session}
           <p class="empty">{c.listed && !c.query.trim() && c.sessions.length === 0 ? "Start a session with New chat." : "Choose a session in the Pane, or start one with New chat."}</p>
-        {:else}
-          <div class="chat" class:live>
-            {#if graph}
-              {#if session.unavailable !== null}
-                <p class="empty" role="status">{session.unavailable}</p>
-              {:else if c.graph}
-                {#key session.id}
-                  <CurrentView branch={session.branchKey} worktree={session.worktree} workspace={c.graph} />
-                {/key}
-              {/if}
-            {:else}
-              {#key session.id}
-                <div class="reading">
-                  <div class="convo" role="log" aria-label="Conversation" {@attach follow} onscroll={(event) => remember(event.currentTarget)}>
-                    <div class="column">
-                      {#each turns as turn, at (at)}
-                        <div class="message">{turn.user}</div>
-                        <div class="turn">
-                          {#each turn.activity as part (part.at)}
-                            {#if part.kind === "group"}
-                              <ChatActivity tools={part.tools} grouped running={turn.state.kind === "running"} />
-                            {:else if part.block.kind === "text"}
-                              <ChatMarkdown text={part.block.text} />
-                            {:else if part.block.kind === "tool"}
-                              <ChatActivity tools={[part.block]} running={turn.state.kind === "running"} />
-                            {:else}
-                              {@render runCard(part.block.card)}
-                            {/if}
-                          {/each}
-                          {#if turn.state.kind === "stopped"}
-                            <p class="end">Stopped</p>
-                          {:else if turn.state.kind === "interrupted"}
-                            <p class="end">Interrupted · The app or agent process exited before the turn finished.</p>
-                          {:else if turn.state.kind === "failed"}
-                            <p class="end failed">{turn.state.message}</p>
-                          {/if}
-                        </div>
-                      {/each}
-                    </div>
-                  </div>
-                  {#if away}
-                    <button class="button scroll-end" onclick={(event) => {
-                      const log = event.currentTarget.previousElementSibling;
-                      if (log instanceof HTMLElement) scrollToEnd(log, session.id);
-                    }}><Icon name="unfold" />Scroll to end</button>
-                  {/if}
-                </div>
-              {/key}
-            {/if}
-            <div class="composer">
-              {#if !graph && session.unavailable}
-                <!-- The session's branch cannot be worked on now: it says why, and sends nothing. -->
-                <p class="unavailable" role="status">{session.unavailable}</p>
-              {/if}
-              {#if rejected}
-                <div class="rejected">
-                  <span class="failed" role="status">{rejected.reason}</span>
-                  <button class="button small" onclick={() => void c.copy(rejected.text)}>Copy</button>
-                  <button class="button small" disabled={typed !== ""} onclick={() => { c.restore(session.id); c.panes.composer?.focus({ preventScroll: true }); }}>Restore</button>
-                </div>
-              {/if}
-              <div class="box" class:off={session.unavailable !== null} class:pointer-edit={c.composerPointer}>
-                <textarea
-                  class="bare-field"
-                  rows="2"
-                  aria-label="Message"
-                  disabled={session.unavailable !== null}
-                  placeholder="Ask the agent to work on this branch…"
-                  bind:this={c.panes.composer}
-                  value={typed}
-                  onpointerdown={() => (c.composerPointer = true)}
-                  onblur={() => (c.composerPointer = false)}
-                  oninput={(event) => write(event.currentTarget.value)}
-                  onkeydown={composerKey}
-                ></textarea>
-                <div class="row">
-                  <ModelPicker {session} />
-                  <span class="spacer"></span>
-                  {#if stopping}
-                    <span class="stopping" role="status"><span class="tone-running"><Icon name="running" /></span>Stopping…</span>
-                  {:else if running}
-                    <button class="button icon-button" disabled={session.unavailable !== null} aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
-                  {:else}
-                    {#if !session.model}<span class="need-model" id="chat-need-model">Choose a model to send</span>{/if}
-                    <button class="button icon-button primary" aria-label="Send (Enter)" aria-describedby={session.model ? undefined : "chat-need-model"} aria-keyshortcuts="Enter" disabled={!session.model || typed.trim() === "" || session.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
-                  {/if}
-                </div>
-              </div>
+        {:else if graph}
+          {#if session.unavailable !== null}
+            <div class="graph-off">
+              <p class="empty" role="status">{session.unavailable}</p>
+              {@render floatingChat(session)}
             </div>
+          {:else if c.graph}
+            {@const shownSession = session}
+            {#key session.id}
+              <CurrentView branch={session.branchKey} worktree={session.worktree} workspace={c.graph} bottom={band}>
+                {#snippet floating()}{@render floatingChat(shownSession)}{/snippet}
+              </CurrentView>
+            {/key}
+          {/if}
+        {:else}
+          <div class="chat">
+            {#key session.id}
+              <div class="reading">
+                <div class="convo" role="log" aria-label="Conversation" {@attach follow} {@attach marking} onscroll={(event) => remember(event.currentTarget)}>
+                  <div class="column">
+                    {#each turns as turn, at (at)}
+                      <div class="message">{turn.user}</div>
+                      <div class="turn">{@render turnBody(turn)}</div>
+                    {/each}
+                  </div>
+                </div>
+                {#if away}
+                  <button class="button scroll-end" onclick={(event) => {
+                    const log = event.currentTarget.previousElementSibling;
+                    if (log instanceof HTMLElement) scrollToEnd(log, session.id);
+                  }}><Icon name="unfold" />Scroll to end</button>
+                {/if}
+              </div>
+            {/key}
+            {@render composer(session)}
           </div>
         {/if}
-      </Panel>
+      </Stage>
     </Split>
   </PaneGroup>
 </div>
@@ -425,7 +612,9 @@
   .mono {
     font-family: var(--mono);
   }
-  /* The sidebar: New chat across its top, then the sessions under their project (D-CHAT-1). */
+  /* The sidebar (D-CHAT-1): the top row (New chat and Search), then each project a folder row
+   * over its sessions, every row --row-pane high and chosen across the Pane's width. The
+   * new-chat icon and the folders stand on one x, the sessions' titles on the next. */
   .pane {
     height: 100%;
     display: flex;
@@ -433,24 +622,87 @@
     min-height: 0;
     background: var(--surface-panel);
   }
-  .head {
-    padding: 8px var(--pad);
+  .top {
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: var(--row-pane);
+    box-sizing: border-box;
     border-bottom: 1px solid var(--line-group);
   }
-  .new {
+  /* A row of the Pane: chosen by a click anywhere on it, lit whole by the pointer, the
+   * keyboard's ring inside it. */
+  .row-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
-    justify-content: flex-start;
-    gap: 6px;
-  }
-  .search { padding: 8px var(--pad) 4px; }
-  .search input {
+    height: var(--row-pane);
+    min-width: 0;
+    margin: 0;
+    padding: 0 var(--pad);
     box-sizing: border-box;
-    width: 100%;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--ink-2);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .row-button:not(.selected):hover {
+    background: var(--surface-group);
+  }
+  .row-button:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--focus);
+  }
+  .lead {
+    display: inline-flex;
+    flex: none;
+    color: var(--ink-2);
+  }
+  .top .new {
+    flex: 1;
+    color: var(--ink);
+  }
+  /* Search: the find icon alone in the row's last 36px cell. */
+  .top .tool {
+    flex: none;
+    justify-content: center;
+    width: var(--row-pane);
+    padding: 0;
+  }
+  .top .tool:hover {
+    color: var(--ink);
+  }
+  .search {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
     height: var(--control);
-    padding: 0 8px;
+    margin: 0 8px 0 4px;
+    padding: 0 7px;
+    box-sizing: border-box;
     border: 1px solid var(--line-input);
     border-radius: var(--radius-control);
     background: var(--surface-input);
+    color: var(--ink-2);
+  }
+  .search:focus-within {
+    outline: 1px solid var(--current-mark);
+    outline-offset: -2px;
+  }
+  .search input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: none;
     color: var(--ink);
     font: inherit;
   }
@@ -466,49 +718,50 @@
     padding: 0;
     list-style: none;
   }
-  .group {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin: 0;
-    padding: 10px var(--pad) 4px;
-    font-size: var(--text-label);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ink-2);
+  .project {
+    color: var(--label);
   }
-  .session {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    height: var(--row-pane);
-    margin: 0;
-    padding: 0 var(--pad);
-    border: 0;
-    background: none;
-    color: var(--ink-2);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  .session:not(.selected):hover {
-    background: var(--surface-group);
-  }
-  .session.selected {
-    background: var(--selection);
-    color: var(--ink);
-  }
-  .session:focus-visible { outline-offset: -2px; }
-  .session .title {
+  .project .name {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* A session: its title on the second x, its branch quieter after it, its age or state at the
+   * right. The branch gives way first, down to its first ten characters; then the title. */
+  .session {
+    padding-left: calc(var(--pad) + var(--icon) + 8px);
+  }
+  .session.selected {
+    background: var(--selection);
+  }
+  .session .title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session.selected .title {
+    color: var(--ink);
+  }
+  .session .branch {
+    flex: 0 1000 auto;
+    min-width: 10ch;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-2);
+    font: var(--text-label) var(--mono);
+  }
+  .session .spacer {
+    flex: 1;
+    min-width: 0;
+  }
   .age {
+    flex: none;
     color: var(--ink-2);
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
@@ -516,45 +769,69 @@
   .age.running { color: var(--running); }
   .age.failed { color: var(--red); }
   .age.finished { color: var(--ink); }
-  .branch {
-    color: var(--ink-2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+  /* The view tabs (D-CHAT-10): two words, the shown one bright over the current mark. */
   .views {
-    display: inline-flex;
-    flex: none;
-    height: var(--row-dense);
-    box-sizing: border-box;
-    margin-left: 4px;
-    border: 1px solid var(--line-input);
-    border-radius: var(--radius-control);
+    display: flex;
+    gap: 16px;
+    height: 100%;
   }
   .views button {
+    height: 100%;
+    margin: 0;
+    padding: 0;
     border: 0;
-    padding: 0 10px;
+    border-radius: 0;
     background: none;
     color: var(--ink-off);
     font: inherit;
+    font-weight: 400;
     cursor: pointer;
   }
-  .views button:first-child {
-    border-radius: calc(var(--radius-control) - 1px) 0 0 calc(var(--radius-control) - 1px);
+  .views button:hover {
+    color: var(--ink);
   }
-  .views button + button {
-    border-left: 1px solid var(--line-input);
-    border-radius: 0 calc(var(--radius-control) - 1px) calc(var(--radius-control) - 1px) 0;
-  }
-  .views button[aria-pressed="true"] {
+  .views button[aria-selected="true"] {
     color: var(--ink-bright);
     box-shadow: inset 0 -2px 0 var(--current-mark);
   }
-  .views button:not([aria-pressed="true"]):hover { background: var(--surface-group); }
   .views button:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--focus);
+  }
+  /* Find in the conversation: the find tool's field in its place (D-CHAT-11). */
+  .find {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 240px;
+    max-width: 100%;
+    height: var(--control);
+    padding: 0 7px;
+    box-sizing: border-box;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink-2);
+  }
+  .find:focus-within {
+    outline: 1px solid var(--current-mark);
     outline-offset: -2px;
   }
-  .views + :global(.scan) {
-    margin-left: 12px;
+  .find input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: none;
+    color: var(--ink);
+    font: inherit;
+  }
+  .find .count {
+    flex: none;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
   }
   .empty {
     margin: 0;
@@ -567,10 +844,8 @@
     grid-template-rows: minmax(0, 1fr) auto;
     height: 100%;
     min-height: 0;
-    border-top: 1px solid var(--line-panel);
     background: var(--surface-app);
   }
-  .chat.live { row-gap: 8px; border-top: 0; }
   .reading { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
   .convo { min-height: 0; overflow: auto; overflow-anchor: none; }
   .scroll-end {
@@ -712,6 +987,83 @@
     place-items: center;
     width: var(--control);
     padding: 0;
+  }
+  /* The chat over the graph (D-CUR-10): the reply card and the composer at the canvas's bottom,
+   * centred in the canvas left of the Detail, the conversation column's width; a dark face
+   * inside a thin edge, no shadow. */
+  .float {
+    position: absolute;
+    z-index: 15;
+    left: 0;
+    right: var(--detail-cover, 0px);
+    bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: var(--measure);
+    margin: 0 auto;
+    padding: 0 var(--pad);
+    box-sizing: border-box;
+  }
+  .float .composer {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+  .reply {
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-chip);
+    background: var(--surface-input);
+  }
+  .reply-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: var(--row-head);
+    margin: 0;
+    padding: 0 8px;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: var(--radius-chip);
+    background: none;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: var(--text-small);
+    text-align: left;
+    cursor: pointer;
+  }
+  .reply-head:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--focus);
+  }
+  .reply-head .said {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reply-head .tone-running {
+    display: inline-flex;
+  }
+  .reply-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 120px;
+    overflow: auto;
+    padding: 0 12px 8px 28px;
+    color: var(--ink);
+  }
+  /* A session that cannot be worked on in Graph: one quiet line in the graph's place. */
+  .graph-off {
+    position: relative;
+    height: 100%;
+    background: var(--surface-app);
+  }
+  .graph-off .empty {
+    padding-top: 8px;
   }
   :global(.dialog.new-chat) {
     width: min(420px, 92vw);

@@ -139,9 +139,12 @@ function show() {
 it("lists sessions by project, sends a message and shows the turn as the library streams it", async () => {
   const { calls, state } = backend();
   const { app } = show();
-  // Grouped by the project and branch the library names.
-  await screen.findByText("app / fix/rounding");
-  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  // Grouped by project: an open folder row over its sessions, each with its branch after it.
+  const project = await screen.findByRole("button", { name: "app" });
+  expect(project.getAttribute("aria-expanded")).toBe("true");
+  const row = await screen.findByRole("button", { name: /Fix checkout rounding/ });
+  expect(within(row).getByText("fix/rounding")).toBeTruthy();
+  await fireEvent.click(row);
   const composer = await screen.findByLabelText<HTMLTextAreaElement>("Message");
   await fireEvent.input(composer, { target: { value: "Fix it and verify." } });
   await fireEvent.keyDown(composer, { key: "Enter" });
@@ -317,7 +320,7 @@ it("creates a usable empty Chat after every provider answers with no model", asy
   expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({ worktree: session.worktree, branch: session.branchKey, selection: null });
   expect(screen.queryByRole("dialog", { name: "New chat" })).toBeNull();
   expect(screen.getByRole("log", { name: "Conversation" }).textContent?.trim()).toBe("");
-  expect(screen.getByRole("button", { name: "Graph" }).hasAttribute("disabled")).toBe(false);
+  expect(screen.getByRole("tab", { name: "Graph" }).hasAttribute("disabled")).toBe(false);
 });
 
 it("keeps the typed draft and enables the first Send only after a model is picked", async () => {
@@ -369,19 +372,20 @@ it("switches a session to its library-owned Graph with the same composer, and ke
   await screen.findByRole("log", { name: "Conversation" });
   const composer = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
   await fireEvent.input(composer, { target: { value: "Trace the graph" } });
-  await fireEvent.click(screen.getByRole("button", { name: "Graph" }));
+  await fireEvent.click(screen.getByRole("tab", { name: "Graph" }));
   const graph = await screen.findByRole("region", { name: "Current" });
   await within(graph).findByText("This worktree defines no Artifacts.");
   expect(screen.queryByRole("log", { name: "Conversation" })).toBeNull();
-  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
-  expect(composer.value).toBe("Trace the graph");
+  // The composer floats over the graph with the draft as it was typed.
+  const floating = within(graph).getByRole("group", { name: "Chat" });
+  expect(within(floating).getByRole<HTMLTextAreaElement>("textbox", { name: "Message" }).value).toBe("Trace the graph");
   expect(calls.find(({ cmd }) => cmd === "chat_set_view")?.args).toEqual({ id: session.id, view: "graph" });
   expect(calls.find(({ cmd }) => cmd === "current_scan")?.args).toEqual({ branch: session.branchKey, refresh: false });
   app.mode = "verify";
   await waitFor(() => expect(app.mode).toBe("verify"));
   app.mode = "chat";
-  expect((await screen.findByRole("button", { name: "Graph" })).getAttribute("aria-pressed")).toBe("true");
-  await fireEvent.click(screen.getByRole("button", { name: "Conversation" }));
+  expect((await screen.findByRole("tab", { name: "Graph" })).getAttribute("aria-selected")).toBe("true");
+  await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
   await screen.findByRole("log", { name: "Conversation" });
   expect(calls.filter(({ cmd }) => cmd === "chat_set_view").map(({ args }) => args)).toEqual([
     { id: session.id, view: "graph" }, { id: session.id, view: "conversation" },
@@ -438,15 +442,22 @@ it("delegates search to the library, clears it with Esc, and acknowledges an uns
   state.session = { ...session, outcome: "completed", unseen: true };
   state.other = { ...session, id: "chat-2", title: "Another chat", outcome: "running", running: true };
   show();
-  await screen.findByRole("button", { name: "Fix checkout rounding finished" });
-  expect(screen.getByRole("button", { name: "Another chat running" })).toBeTruthy();
+  await screen.findByRole("button", { name: "Fix checkout rounding fix/rounding finished" });
+  expect(screen.getByRole("button", { name: "Another chat fix/rounding running" })).toBeTruthy();
   expect(calls.some(({ cmd }) => cmd === "chat_mark_seen")).toBe(false);
-  const search = screen.getByRole("searchbox", { name: "Search chats" });
+  // Search turns the top row into the field, focused.
+  await fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+  const search = await screen.findByRole("searchbox", { name: "Search chats" });
+  expect(document.activeElement).toBe(search);
+  expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
   await fireEvent.input(search, { target: { value: "no such chat" } });
   await screen.findByText("No chat matches.");
   expect(calls.filter(({ cmd }) => cmd === "chat_list").at(-1)?.args).toEqual({ worktree: null, query: "no such chat" });
+  // Esc lists every session again and gives the top row back.
   await fireEvent.keyDown(search, { key: "Escape" });
-  const saved = await screen.findByRole("button", { name: "Fix checkout rounding finished" });
+  const saved = await screen.findByRole("button", { name: "Fix checkout rounding fix/rounding finished" });
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Search chats" })));
+  expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
   expect(calls.filter(({ cmd }) => cmd === "chat_list").at(-1)?.args).toEqual({ worktree: null, query: null });
   await fireEvent.click(saved);
   await waitFor(() => expect(saved.textContent).not.toContain("finished"));
@@ -632,9 +643,9 @@ it("keeps where a session is read across streaming, sessions and views, and foll
   await fireEvent.scroll(log, { target: { scrollTop: 0 } });
   app.mode = "chat";
   await waitFor(() => expect(log.scrollTop).toBe(125));
-  await fireEvent.click(screen.getByRole("button", { name: "Graph" }));
+  await fireEvent.click(screen.getByRole("tab", { name: "Graph" }));
   await screen.findByRole("region", { name: "Current" });
-  await fireEvent.click(screen.getByRole("button", { name: "Conversation" }));
+  await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
   log = await screen.findByRole("log");
   await waitFor(() => expect(log.scrollTop).toBe(125));
   await fireEvent.click(screen.getByRole("button", { name: "Scroll to end" }));
@@ -643,4 +654,103 @@ it("keeps where a session is read across streaming, sessions and views, and foll
   height = 1200;
   await emit("session-changed", { session: session.id });
   await waitFor(() => expect(log.scrollTop).toBe(1000));
+});
+
+it("folds and unfolds a project from its folder row, and names nothing of the session in the stage header", async () => {
+  const { state } = backend();
+  state.other = { ...session, id: "chat-2", title: "Another chat", project: "site", branch: "main" };
+  show();
+  const app = await screen.findByRole("button", { name: "app" });
+  const site = screen.getByRole("button", { name: "site" });
+  expect(app.querySelector("svg")?.getAttribute("data-icon")).toBe("folder-open");
+  // A click anywhere on a project folds it: its sessions leave the Pane, its folder closes.
+  await fireEvent.click(app);
+  expect(app.getAttribute("aria-expanded")).toBe("false");
+  expect(app.querySelector("svg")?.getAttribute("data-icon")).toBe("folder-closed");
+  expect(screen.queryByRole("list", { name: "Sessions of app" })).toBeNull();
+  expect(screen.getByRole("list", { name: "Sessions of site" })).toBeTruthy();
+  await fireEvent.click(app);
+  expect(screen.getByRole("list", { name: "Sessions of app" })).toBeTruthy();
+  expect(site.getAttribute("aria-expanded")).toBe("true");
+  // New chat leads the Pane with its own icon; Search is the find icon alone.
+  expect(screen.getByRole("button", { name: "New chat" }).querySelector("svg")?.getAttribute("data-icon")).toBe("new-chat");
+  expect(screen.getByRole("button", { name: "Search chats" }).textContent?.trim()).toBe("");
+  // A shown session: the header holds the view tabs and the tools, never its title or branch.
+  await fireEvent.click(screen.getByRole("button", { name: /^Another chat/ }));
+  const main = screen.getByLabelText("Chat's main area");
+  await within(main).findByRole("log", { name: "Conversation" });
+  const header = main.querySelector("header")!;
+  expect(within(header).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Conversation", "Graph"]);
+  expect(header.textContent).not.toMatch(/Another chat|main|site/);
+});
+
+it("shows a message sent from Graph and its reply in a card above the composer, gone once Conversation is shown", async () => {
+  const { state } = backend();
+  state.session = { ...session, view: "graph", model: { backend: "claude-agent", model: "claude-opus-5-5", effort: "high" } };
+  state.turns = [{ user: "Earlier work", blocks: [{ kind: "text", text: "Done before." }], state: { kind: "completed" } }];
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  const graph = await screen.findByRole("region", { name: "Current" });
+  const floating = within(graph).getByRole("group", { name: "Chat" });
+  // Nothing sent from Graph yet: no card, only the composer.
+  expect(within(floating).queryByRole("region", { name: "Reply" })).toBeNull();
+  const composer = within(floating).getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
+  await fireEvent.input(composer, { target: { value: "Rename the total" } });
+  await fireEvent.keyDown(composer, { key: "Enter" });
+  const card = await within(floating).findByRole("region", { name: "Reply" });
+  const head = within(card).getByRole("button", { name: /Rename the total/ });
+  expect(head.getAttribute("aria-expanded")).toBe("true");
+  expect(within(head).getByLabelText("Running")).toBeTruthy();
+  // The reply streams into the card, the newest message's alone.
+  state.turns = [state.turns[0], { user: "Rename the total", blocks: [{ kind: "text", text: "Renamed it." }], state: { kind: "completed" } }];
+  state.running = false;
+  await emit("session-changed", { session: session.id });
+  await within(card).findByText("Renamed it.");
+  expect(within(card).queryByText("Done before.")).toBeNull();
+  expect(within(head).queryByLabelText("Running")).toBeNull();
+  // A click on its head folds it to the head, and another unfolds it.
+  await fireEvent.click(head);
+  expect(head.getAttribute("aria-expanded")).toBe("false");
+  expect(within(card).queryByText("Renamed it.")).toBeNull();
+  await fireEvent.click(head);
+  await within(card).findByText("Renamed it.");
+  // Conversation holds the whole turn; back in Graph the card is gone.
+  await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+  const log = await screen.findByRole("log", { name: "Conversation" });
+  expect(within(log).getByText("Renamed it.")).toBeTruthy();
+  await fireEvent.click(screen.getByRole("tab", { name: "Graph" }));
+  const again = await screen.findByRole("region", { name: "Current" });
+  expect(within(again).queryByRole("region", { name: "Reply" })).toBeNull();
+});
+
+it("finds text in the conversation from the stage header, steps through its places and closes with Esc", async () => {
+  const { state } = backend();
+  state.turns = [
+    { user: "Apply the discount", blocks: [{ kind: "text", text: "The DISCOUNT is applied twice." }], state: { kind: "completed" } },
+    { user: "Thanks", blocks: [{ kind: "text", text: "No other discount remains." }], state: { kind: "completed" } },
+  ];
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  const main = screen.getByLabelText("Chat's main area");
+  await within(main).findByRole("log", { name: "Conversation" });
+  const tools = within(main).getByRole("toolbar", { name: "Tools" });
+  // Find is the Conversation's one tool, the find icon alone; Ctrl+F outside the Pane opens it.
+  expect(within(tools).getAllByRole("button").map((tool) => tool.getAttribute("aria-label"))).toEqual(["Find (Ctrl+F)"]);
+  await fireEvent.click(within(tools).getByRole("button", { name: "Find (Ctrl+F)" }));
+  const field = within(tools).getByRole<HTMLInputElement>("textbox", { name: "Find in the conversation" });
+  expect(document.activeElement).toBe(field);
+  // Every place, ignoring case: the first is shown, Enter the next, Shift+Enter the one before.
+  await fireEvent.input(field, { target: { value: "discount" } });
+  await waitFor(() => expect(within(tools).getByRole("status").textContent).toBe("1 of 3"));
+  await fireEvent.keyDown(field, { key: "Enter" });
+  await waitFor(() => expect(within(tools).getByRole("status").textContent).toBe("2 of 3"));
+  await fireEvent.keyDown(field, { key: "Enter", shiftKey: true });
+  await fireEvent.keyDown(field, { key: "Enter", shiftKey: true });
+  await waitFor(() => expect(within(tools).getByRole("status").textContent).toBe("3 of 3"));
+  await fireEvent.input(field, { target: { value: "coupon" } });
+  await waitFor(() => expect(within(tools).getByRole("status").textContent).toBe("No match"));
+  // Esc gives the find icon back.
+  await fireEvent.keyDown(field, { key: "Escape" });
+  expect(within(tools).queryByRole("textbox")).toBeNull();
+  expect(within(tools).getByRole("button", { name: "Find (Ctrl+F)" })).toBeTruthy();
 });

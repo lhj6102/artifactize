@@ -71,6 +71,16 @@ export class ChatModeState {
   worktree = $state<string | null>(null);
   /** The model menu is open. */
   picking = $state(false);
+  /** The Pane's top row is the search field (J-CHAT). */
+  searching = $state(false);
+  /** The projects folded in the Pane, by name. */
+  readonly folded = new SvelteSet<string>();
+  /** Each session's reply card in its Graph view (J-CHAT-GRAPH): the turn sent from Graph, by
+   * its place in the conversation, and whether the card is folded to its head. */
+  readonly replies = new SvelteMap<string, { at: number; folded: boolean }>();
+  /** Find in the conversation (J-CHAT-FIND): what is typed and which place is shown; null while
+   * the field is closed. */
+  find = $state<{ text: string; at: number } | null>(null);
   /** The parts focus moves into. */
   readonly panes: { pane?: HTMLElement; search?: HTMLInputElement; main?: HTMLElement; composer?: HTMLTextAreaElement } = $state({});
 
@@ -120,6 +130,7 @@ export class ChatModeState {
     if (this.selected !== id) {
       this.view = null;
       this.picking = false;
+      this.find = null;
     }
     this.reveal = reveal;
     this.#composers[id] ??= new Composer();
@@ -150,6 +161,9 @@ export class ChatModeState {
     const changing = ++this.#views;
     try {
       const session = await call(this.ipc.chatSetView(id, kind));
+      // The reply card is Graph's: Conversation holds the whole turn.
+      if (kind === "conversation") this.replies.delete(id);
+      else this.find = null;
       if (changing !== this.#views || this.view?.session.id !== id) return;
       // A read already in flight may have seen the old view. Read again for its transcript.
       this.view = { ...this.view, session };
@@ -232,6 +246,8 @@ export class ChatModeState {
     try {
       await call(this.ipc.chatSend(id, text, null));
       finish(true);
+      // Sent from Graph: its reply shows in the card above the composer, newest only.
+      if (view.session.view === "graph") this.replies.set(id, { at: view.turns.length, folded: false });
       if (this.selected === id) {
         this.error = null;
         await this.read();

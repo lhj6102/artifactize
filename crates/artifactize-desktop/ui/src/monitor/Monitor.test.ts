@@ -17,8 +17,10 @@ vi.mock("./layout", () => ({
   layout: async () => new Map([["a:app", { x: 0, y: 0 }], ["a:graph", { x: 240, y: 0 }]]),
 }));
 
+/** Every title the app gave its window, oldest first. */
+const windowTitles = vi.hoisted(() => [] as string[]);
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ onCloseRequested: async () => () => {}, destroy: async () => {} }),
+  getCurrentWindow: () => ({ onCloseRequested: async () => () => {}, destroy: async () => {}, setTitle: async (title: string) => void windowTitles.push(title) }),
 }));
 
 beforeAll(() => {
@@ -200,10 +202,12 @@ it("opens on the Current of the branch it was started for, and scans it again on
   };
   await header(1);
   expect(workspace("Chat").hidden).toBe(false);
-  expect(screen.getByLabelText("Chat's main area").querySelector("h2")?.textContent).toBe("Work on main");
+  // The Pane's selected row names the session; the stage header does not (J-STAGE).
+  expect(screen.getByLabelText("Chats").querySelector('[aria-current="true"] .title')?.textContent).toBe("Work on main");
+  expect(screen.getByLabelText("Chat's main area").querySelector("header")?.textContent).not.toContain("Work on main");
   await waitFor(() => expect(screen.getByLabelText("graph: would run (1 eval)")).toBeTruthy());
   expect(screen.getByLabelText("app: reused")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Graph" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("tab", { name: "Graph" }).getAttribute("aria-selected")).toBe("true");
   // No structure text: the graph is the Current's whole.
   expect(screen.queryByText(/Structure and evaluation criteria/)).toBeNull();
   await fireEvent.click(screen.getByRole("button", { name: /^Refresh/ }));
@@ -468,7 +472,7 @@ it("opens the latest session in Graph from a Run header, and rescans when that b
   expect(calls.filter(({ command }) => command === "chat_latest_for_branch" || command === "chat_set_view"))
     .toEqual([{ command: "chat_latest_for_branch", args: { branch: main.key } }, { command: "chat_set_view", args: { id: saved.id, view: "graph" } }]);
   expect(workspace("Chat").hidden).toBe(false);
-  expect(screen.getByRole("button", { name: "Graph" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("tab", { name: "Graph" }).getAttribute("aria-selected")).toBe("true");
   listed = false;
   const reads = navigations().length;
   await emit("state-changed", { resync: false });
@@ -657,4 +661,20 @@ it("coalesces changes and reads Review again only when shown", async () => {
     expect(screen.getAllByRole("option")).toHaveLength(2);
     expect(count("human_search")).toBe(searched + 1);
   } finally { vi.useRealTimers(); }
+});
+
+it("names the shown Run in the window's title while the Pane is hidden, and only the app while it is shown", async () => {
+  const main = branch("main", [runChip("run-0", "RED")]);
+  backend(monitor(), () => browseView(1, { branches: [main] }));
+  windowTitles.length = 0;
+  render(App);
+  const titles = () => windowTitles;
+  await waitFor(() => expect(titles().at(-1)).toBe("Artifactize"));
+  await fireEvent.click(await within(await screen.findByRole("group", { name: "Pane entries" })).findByRole("button", { name: /^app \/ main/ }));
+  await waitFor(() => expect(shownRun()).toBe("run-0"));
+  // Ctrl+B hides the Pane: the title says what its selected row said.
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+  await waitFor(() => expect(titles().at(-1)).toBe("run-0 · app / main — Artifactize"));
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+  await waitFor(() => expect(titles().at(-1)).toBe("Artifactize"));
 });
