@@ -295,14 +295,21 @@ export class Graph {
     await this.node(id, (node) => /, minimized,/.test(node.label) === minimized, `${name} ${minimized ? "minimized" : "expanded"}`);
   }
 
-  /** Whether the tool strip shows `name` (Find, Fit, New Artifact, Reset layout…). */
-  async hasTool(name: string): Promise<boolean> {
-    return this.browser.$(TOOLS).$(`button*=${name}`).isExisting();
+  /** The graph's tool `name` in the stage header: by its words, or by its accessible name when
+   * it is an icon alone (Find). */
+  private async toolButton(name: string) {
+    const named = this.browser.$(TOOLS).$(`button[aria-label^="${name}"]`);
+    return (await named.isExisting()) ? named : this.browser.$(TOOLS).$(`button*=${name}`);
   }
 
-  /** Click the tool strip's `name`. */
+  /** Whether the stage header shows the graph's tool `name` (Find, Fit, New Artifact, Reset layout…). */
+  async hasTool(name: string): Promise<boolean> {
+    return (await this.toolButton(name)).isExisting();
+  }
+
+  /** Click the graph's tool `name` in the stage header. */
   async tool(name: string): Promise<void> {
-    await this.browser.$(TOOLS).$(`button*=${name}`).click();
+    await (await this.toolButton(name)).click();
   }
 
   // -------------------------------------------------------------------------------
@@ -409,13 +416,14 @@ export class Graph {
     return (x, y) => at(x, y).some((value, channel) => Math.abs(value - ground[channel]) > 40);
   }
 
-  /** Click the graph `dx`, `dy` pixels from the middle of its view (as `offCentre` measures). */
+  /** Click the graph `dx`, `dy` pixels from the middle of its protected view (as `offCentre` measures). */
   async clickFromMiddle(dx: number, dy: number): Promise<void> {
     const middle = await this.browser.execute((graph, dock) => {
       const canvas = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
       const detail = document.querySelector(dock)?.getBoundingClientRect();
       const right = detail && detail.left > canvas.left && detail.left < canvas.right ? detail.left : canvas.right;
-      return { x: (canvas.left + right) / 2, y: canvas.top + canvas.height / 2 };
+      const band = Number.parseFloat(getComputedStyle(document.querySelector(`${graph} .canvas`)!).getPropertyValue("--float-inset")) || 0;
+      return { x: (canvas.left + right) / 2, y: canvas.top + (canvas.height + 32 - band) / 2 };
     }, GRAPH, DETAIL);
     await clickAt(this.browser, { x: Math.round(middle.x + dx), y: Math.round(middle.y + dy) });
   }
@@ -492,7 +500,8 @@ export class Graph {
     throw new Error(`the find field does not list ${name}`);
   }
 
-  /** How far the node `id` is drawn from the middle of the graph left of an open Detail. */
+  /** How far the node `id` is drawn from the middle of the graph's protected view left of an
+   * open Detail (D-CUR-10). */
   offCentre(id: string): Promise<{ x: number; y: number } | null> {
     return this.browser.execute((selector, graph) => {
       const node = document.querySelector(selector)?.getBoundingClientRect();
@@ -500,7 +509,10 @@ export class Graph {
       if (!node || !canvas) return null;
       const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
       const right = detail && detail.left > canvas.left && detail.left < canvas.right ? detail.left : canvas.right;
-      return { x: Math.round(node.left + node.width / 2 - (canvas.left + right) / 2), y: Math.round(node.top + node.height / 2 - (canvas.top + canvas.height / 2)) };
+      // The protected view's middle: below the status line's 32px, above a floating chat's band.
+      const band = Number.parseFloat(getComputedStyle(document.querySelector(`${graph} .canvas`)!).getPropertyValue("--float-inset")) || 0;
+      const middle = canvas.top + (canvas.height + 32 - band) / 2;
+      return { x: Math.round(node.left + node.width / 2 - (canvas.left + right) / 2), y: Math.round(node.top + node.height / 2 - middle) };
     }, nodeAt(id), GRAPH);
   }
 }

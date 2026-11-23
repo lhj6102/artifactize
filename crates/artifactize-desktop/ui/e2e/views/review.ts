@@ -80,9 +80,9 @@ export class Review {
 
   /** Wait until Review names `text`: the selected row of the Pane, or a read-only request's head. */
   async titleContains(text: string): Promise<void> {
-    // A Human review by its selected row; a request not listed there by its column's head.
+    // By the Pane's selected row, or, for what the Pane does not list, by the column's head.
     const named = () => this.browser.execute(() => [document.querySelector('[aria-label="Human reviews"] [role="option"][aria-selected="true"]')?.textContent ?? "",
-      document.querySelector(`[aria-label="Review's main area"] .record-title`)?.textContent ?? ""].join(" "));
+      document.querySelector(`[aria-label="Review's main area"] :is(.record-title, .rtitle)`)?.textContent ?? ""].join(" "));
     await holds(this.browser, async () => (await named()).includes(text), `Review names ${text}`);
   }
 

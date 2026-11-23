@@ -65,6 +65,14 @@
   /** The review's title, after its eval: said once, in the header row. */
   const subtitle = $derived(shown.kind === "review" && review?.view ? review.view.title.split(" · ").slice(1).join(" · ") : "");
 
+  /** The column's head: the eval's title; led by the eval itself when no row of the Pane names
+   * the review (opened by a reference the filter does not list). */
+  const headTitle = $derived.by(() => {
+    if (shown.kind !== "review" || !review?.view) return null;
+    const listed = rows.some((row) => row.id === shown.id);
+    return listed ? subtitle || title : review.view.title;
+  });
+
   let typingRevision = 0;
   let pending: { text: string } | null = null;
   let openNewest = false;
@@ -327,7 +335,7 @@
             {#if shown.kind === "review"}
               {#if review}
                 {#key review}
-                  <HumanDetail {review} {active} wide title={subtitle || title} onback={() => void focus("pane")} />
+                  <HumanDetail {review} {active} wide title={headTitle} onback={() => void focus("pane")} />
                 {/key}
               {/if}
             {:else if shown.kind === "request"}
