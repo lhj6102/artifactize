@@ -4,7 +4,8 @@
 //
 // Linux only: the app runs on its own 1920×1080 virtual display, and ffmpeg turns the frames
 // into GIFs. Recording builds the app and its CLI from this checkout; every Run, reuse,
-// dependency wait and verdict shown is real. Nothing is mocked and no model is called.
+// dependency wait and verdict shown is real. Nothing is mocked and no model turn is sent.
+// The graph demo needs a real provider to list the starting model in New chat.
 //
 // The demos (assets/demos/):
 //   A. review-loop.gif — an example shaped like this repository (core, cli, tui, mcp, docs,
@@ -46,8 +47,7 @@ import { adopt, cleanup, prepare, type Candidate} from "../../crates/artifactize
 import { own } from "../../crates/artifactize-desktop/ui/e2e/fixtures/owned.ts";
 import { nativePath, asNativePath } from "../../crates/artifactize-desktop/ui/e2e/portable.ts";
 import { environment, git, newFixture } from "../../crates/artifactize-desktop/ui/e2e/fixtures/repo.ts";
-import { installChatProvider } from "../../crates/artifactize-desktop/ui/e2e/fixtures/chat.ts";
-import { Chat } from "../../crates/artifactize-desktop/ui/e2e/views/chat.ts";
+import { Chat, newChatBranch } from "../../crates/artifactize-desktop/ui/e2e/views/chat.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, "..", "..");
@@ -617,13 +617,23 @@ async function graphGrowth(candidate: Candidate, work: string): Promise<Recordin
       git(fixture, fixture.repo, "commit", "-q", "--allow-empty", "-m", step.caption);
     };
     commit(steps[0]);
-    // The provider only lists fixture models. Creating a session never sends a turn.
-    await installChatProvider(scope, fixture);
     const session = await launchCapture(scope, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], environment(fixture), WIDTH, HEIGHT, WAIT, (close) => { stop = close; });
     const { browser } = session;
     stop = session.stop;
     let at = { x: 0, y: 0 };
     const chat = new Chat(browser);
+    // Use the starting model found by the real New chat dialog, without sending a turn.
+    const dialog = browser.$('[role="dialog"].new-chat');
+    const create = dialog.$("button=Create");
+    const model = dialog.$('[role="status"][aria-labelledby="new-chat-model"]');
+    await browser.waitUntil(async () => {
+      if (await browser.execute(newChatBranch) !== "repo / main") return false;
+      const message = await model.getText();
+      if (message.startsWith("No provider lists a model.")) {
+        throw new Error("Graph growth needs a real provider to list a model in the isolated recording environment.");
+      }
+      return create.isEnabled();
+    }, { timeout: WAIT, timeoutMsg: "New chat on repo / main has a starting model" });
     await chat.createFromDialog("repo / main");
     await chat.show("Graph");
     /** The visible Current's scan, as its header says it. */
@@ -746,23 +756,24 @@ async function capture(output: string, work: string): Promise<void> {
     candidate = adopt(await prepare(asNativePath(join(work, "build"))));
     const frames = join(work, "frames");
     mkdirSync(frames);
-    const loop = await reviewLoop(candidate, frames);
-    const growth = await graphGrowth(candidate, frames);
     mkdirSync(output, { recursive: true });
-    // Each caption sits inside the graph's canvas, clear of the Pane and the app's own header lines.
-    const gifs = [[DEMOS[0], loop], [DEMOS[1], growth]] as const;
-    for (const [name, { segments, at }] of gifs) {
-      // Write beside the old GIF and replace it whole, so a failed encode keeps the last one.
+    const save = (name: string, { segments, at }: Recording) => {
+      // Place the caption in the canvas. Replace each GIF only after its encode succeeds.
       const gif = join(output, name);
-      encode(segments, `${gif}.new.gif`, work, at);
-      renameSync(`${gif}.new.gif`, gif);
-    }
+      const staged = `${gif}.new.gif`;
+      try {
+        encode(segments, staged, work, at);
+        renameSync(staged, gif);
+      } finally { rmSync(staged, { force: true }); }
+      console.log(`${name}: ${(statSync(gif).size / 1e6).toFixed(1)} MB`);
+    };
+    save(DEMOS[0], await reviewLoop(candidate, frames));
+    save(DEMOS[1], await graphGrowth(candidate, frames));
   } finally {
     unwatch();
     if (candidate) cleanup(candidate.root);
     rmSync(work, { recursive: true, force: true });
   }
-  for (const name of DEMOS) console.log(`${name}: ${(statSync(join(output, name)).size / 1e6).toFixed(1)} MB`);
 }
 
 const mode = process.argv[2];
