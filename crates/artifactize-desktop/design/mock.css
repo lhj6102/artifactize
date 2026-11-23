@@ -1182,38 +1182,6 @@
 .m-review .m-tool {
   padding-left: 0;
 }
-.m-verdicts {
-  display: flex;
-  gap: 6px;
-}
-.m-verdict {
-  height: var(--control);
-  padding: 0 12px;
-  border: 1px solid var(--line-group);
-  border-radius: var(--radius-control);
-  color: var(--ink-2);
-  line-height: 22px;
-}
-.m-verdict::before {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 6px;
-  border-radius: 50%;
-  vertical-align: 1px;
-}
-.m-verdict.green::before {
-  background: var(--green);
-}
-.m-verdict.red::before {
-  background: var(--red);
-}
-.m-verdict.chosen {
-  color: var(--ink);
-  border-color: var(--outline-selected);
-}
-
 .m-field {
   display: grid;
   gap: 4px;
@@ -2598,17 +2566,44 @@
 .m-pet-head .m-run {
   color: var(--ink-2);
 }
-.m-pet .m-verdicts {
-  margin-top: 10px;
-}
-.m-pet .m-field {
+/* The pet's draft, compact: its reasons one line each, the reasons field with Point beside it,
+   why Submit waits, then the verdict choice and Submit as the review's composer row. */
+.m-pet-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 84px;
   margin-top: 8px;
+  overflow: hidden;
 }
-.m-pet-actions {
+.m-pet-reasons .m-reason {
+  max-width: 100%;
+}
+.m-pet-reasons .m-msg {
+  padding: 2px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+}
+.m-pet-reasons .m-reason-tools {
+  padding-top: 2px;
+}
+.m-pet-field {
   display: flex;
   align-items: center;
   gap: var(--gap);
-  margin-top: 10px;
+  margin-top: 8px;
+}
+.m-pet-field > .m-input {
+  flex: 1;
+  min-width: 0;
+}
+.m-pet > .m-why {
+  margin: 6px 0 0;
+}
+.m-pet .m-composer-row {
+  margin-top: 6px;
 }
 /* A review's Points: what Point added, one row each: the point icon, its text in mono, where it
    was pointed and when, and Insert at the right. In the pet overlay, compact: text and Insert. */
@@ -3019,25 +3014,31 @@
   min-width: 0;
 }
 
-/* A review as one column, as a video editor's Inspector (D-REV-1): the eval's title with the
-   claim's state, the instruction, then Evidence and Verdict as sections, Debug folded last;
-   centred at the reading measure in Review, the Detail's width in the Detail. */
-.m-inspector {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: var(--measure);
-  margin: 0 auto;
-  overflow: auto;
+/* A review as a conversation (D-REV-1), drawn with Chat's parts: the request asks at the top,
+   unboxed as the agent's text is, growing downward with its runs and points; the reasons stack
+   as the person's bubbles nearest the composer; the composer holds the reasons field, then the
+   verdict choice and Submit. Centred at the reading measure in Review, the Detail's width there. */
+.m-convo.review {
+  justify-content: flex-start;
+  gap: 6px;
+  overflow: hidden;
+}
+.m-convo.review > .m-reasons {
+  margin-top: auto;
+}
+.m-dock .m-chat {
+  border-top: 0;
+  background: transparent;
+}
+.m-dock .m-convo,
+.m-dock .m-composer {
+  max-width: none;
 }
 .m-rhead {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: var(--row-head);
-  padding: 12px var(--pad) 0;
+  min-height: var(--row);
 }
 .m-rtitle {
   flex: 1;
@@ -3050,32 +3051,38 @@
 }
 .m-rstate {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--ink-2);
   font-size: var(--text-small);
 }
-.m-sec-head.quiet {
-  color: var(--ink-2);
-  font-weight: 400;
-}
-/* Evidence: one row of small run buttons, each named by its operation. */
+/* The request's tools: one row of small run buttons, each named by its operation. */
 .m-toolrow {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 0 6px;
-}
-/* The Tool log folded to its last run: one row in --mono at --text-small, the fold icon first. */
-.m-logline {
-  display: flex;
   align-items: center;
-  gap: 8px;
-  height: var(--row);
-  color: var(--ink-2);
-  font: var(--text-small) var(--mono);
-  white-space: nowrap;
-  overflow: hidden;
+  gap: 6px;
+  margin: 4px 0 2px;
 }
-.m-logline .m-stderr-mark {
+.m-toolrow .m-group-name {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* A tool's run as a Chat tool line: its end at the right; its last stderr line behind a red rule. */
+.m-convo.review .m-call .m-target,
+.m-sec-body .m-call .m-target {
+  flex: none;
+}
+.m-call .m-end {
+  margin-left: auto;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.m-call .m-end .tone-red {
+  color: var(--red);
+}
+.m-call .m-stderr-mark {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3083,14 +3090,106 @@
   border-left: 2px solid var(--red);
   color: var(--ink);
 }
-/* The Verdict's actions stay in view at the column's bottom however long the form. */
-.m-inspector .m-actions {
-  position: sticky;
-  bottom: 0;
+.m-call .m-newest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+}
+.m-call .m-button {
+  flex: none;
+}
+.m-call-details > .m-log {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+.m-point.new {
+  background: var(--accent-soft);
+}
+/* The reviewer's reasons: Chat's message bubbles, oldest first, Edit and Remove at each one's left. */
+.m-reasons {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+}
+.m-reason {
+  align-self: flex-end;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 80%;
+}
+.m-reason > .m-msg {
+  max-width: none;
+  min-width: 0;
+}
+.m-reason > .m-msg.editing {
+  flex: 1;
+  background: var(--surface-input);
+  box-shadow: inset 0 0 0 1px var(--current-mark);
+}
+.m-reason-tools {
+  flex: none;
+  display: flex;
+  padding-top: 5px;
+  color: var(--ink-3);
+}
+.m-reason-tools > .m-icon {
+  margin: 0 3px;
+}
+.m-msg .m-kv {
+  margin: 0;
+}
+/* The composer's second row: the verdict choice in the tab grammar, why Submit waits, Submit. */
+.m-vtabs {
+  display: inline-flex;
+  gap: 16px;
+  font-size: var(--text-small);
+}
+.m-vtabs > span {
+  display: inline-flex;
   align-items: center;
-  gap: var(--gap);
-  margin-top: 12px;
-  padding: 8px 0;
-  background: var(--surface-panel);
+  gap: 6px;
+  height: var(--control);
+  padding: 0 4px;
+  color: var(--ink-off);
+  font-weight: 400;
+}
+.m-vtabs > span::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.m-vtabs > .green::before {
+  background: var(--green);
+}
+.m-vtabs > .red::before {
+  background: var(--red);
+}
+.m-vtabs > span.hover:not(.on) {
+  color: var(--ink);
+}
+.m-vtabs > span.on {
+  color: var(--ink-bright);
+  box-shadow: inset 0 -2px 0 var(--current-mark);
+}
+.m-composer-row > .m-why {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-composer-row > .m-failed {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--red);
+  font-size: var(--text-small);
+}
+/* In the composer's place, a review that cannot be written here says why in one quiet line. */
+.m-composer-note {
+  padding: 8px 0 4px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
 }

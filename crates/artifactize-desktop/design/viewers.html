@@ -59,13 +59,9 @@
     <img class="m-pet-sprite" src="pet.svg" alt="" />
     <div class="m-pet-head"><span class="m-icon i-human tone-human"></span>checkout/looks-right<span class="m-run">· run-9PLM3X</span></div>
     <div class="m-point compact" style="background: var(--accent-soft)"><span class="m-icon i-point"></span><span class="m-ptext">#checkout .summary</span><span class="m-button small quiet">Insert</span></div>
-    <div class="m-verdicts"><span class="m-verdict green">GREEN</span><span class="m-verdict red chosen">RED</span></div>
-    <div class="m-field"><span class="m-name">change<span class="m-required">*</span></span>
-      <ol class="m-items"><li><div class="m-input area text"><span>The total keeps four decimals.</span></div><span class="m-icon i-remove"></span></li></ol>
-      <span class="m-button small quiet m-add"><span class="m-icon i-add"></span>Add</span>
-    </div>
-    <div class="m-field"><span class="m-name">comment</span><div class="m-input area text"><span class="m-placeholder">Optional</span></div></div>
-    <div class="m-pet-actions"><span class="m-button small toggle pointing"><span class="m-icon i-point"></span>Point</span><span class="m-spacer"></span><span class="m-button primary">Submit RED</span></div>
+    <div class="m-pet-reasons"><div class="m-reason"><span class="m-reason-tools"><span class="m-icon i-remove" aria-label="Remove the reason"></span></span><div class="m-msg">The total keeps four decimals.</div></div></div>
+    <div class="m-pet-field"><div class="m-input text"><span class="m-placeholder">Enter adds the reason</span></div><span class="m-button small toggle pointing"><span class="m-icon i-point"></span>Point</span></div>
+    <div class="m-composer-row"><span class="m-vtabs"><span class="green">GREEN</span><span class="red on">RED</span></span><span class="m-spacer"></span><span class="m-button primary">Submit RED</span></div>
   </div>
 </div>
 <span class="callout" style="left: 260px; top: 26px">1</span>
@@ -73,10 +69,10 @@
 <span class="callout" style="left: 640px; top: 62px">3</span>
 <span class="callout" style="left: 860px; top: 62px">4</span>
 <span class="callout" style="left: 420px; top: 300px">5</span>
-<span class="callout" style="left: 880px; top: 370px">6</span>
-<span class="callout" style="left: 1236px; top: 395px">7</span>
-<span class="callout" style="left: 1236px; top: 470px">8</span>
-<span class="callout" style="left: 1010px; top: 700px">9</span>
+<span class="callout" style="left: 900px; top: 560px">6</span>
+<span class="callout" style="left: 1250px; top: 584px">7</span>
+<span class="callout" style="left: 1250px; top: 635px">8</span>
+<span class="callout" style="left: 1083px; top: 698px">9</span>
 </div>
 <figcaption>Stage 1280 × 760. The <code>html</code> example plugin's viewer over another application, pointing: the reviewer clicked Point and holds the pointer over the order total, outlined; the click will add its selector to the review's Points, as the earlier point shown in the pet overlay at the screen's bottom right was added, nothing written into the form and nothing submitted. Once added, pointing ends and both Points read as off again. The strip shows the page's latest status line, its page and title. The page inside is the plugin's, drawn here in the app's tokens.</figcaption>
 </figure>
@@ -89,8 +85,8 @@
   <li><span class="n">5</span><div><b>Pointed place</b><span>While pointing, what is under the pointer is outlined by a white dashed line over a dark edge, as a viewer's handles are; a click adds its readable text to the review's Points and pointing ends.</span></div></li>
   <li><span class="n">6</span><div><b>The pet</b><span>The app's own pet, the brand's faceted emerald in its bezel with a face, sits on the overlay's top edge.</span></div></li>
   <li><span class="n">7</span><div><b>Review</b><span>The active review's eval and Run in monospace; a click shows the review in Review.</span></div></li>
-  <li><span class="n">8</span><div><b>The same draft</b><span>The review's Points, compact: each its text and Insert, the newest on the soft fill until the next; then the verdict choice and the open form with its comment; what is typed here is what Review shows.</span></div></li>
-  <li><span class="n">9</span><div><b>Point and Submit</b><span>Point at the left, pointing in the viewer that is open for the review's Artifact; Submit, naming the verdict, at the right.</span></div></li>
+  <li><span class="n">8</span><div><b>The same draft</b><span>The review's Points, compact: each its text and Insert, which puts it into the reasons field, the newest on the soft fill until the next; then its reasons, one line each with Remove; then the reasons field, where Enter adds a reason: what is written here is what Review shows.</span></div></li>
+  <li><span class="n">9</span><div><b>Point, verdict and Submit</b><span>Point beside the reasons field, pointing in the viewer that is open for the review's Artifact; under it the GREEN / RED choice and Submit, naming the verdict, as the review's composer row.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -189,8 +185,9 @@
   <div class="m-pet" style="right: 24px; bottom: 16px">
     <img class="m-pet-sprite" src="pet.svg" alt="" />
     <div class="m-pet-head"><span class="m-icon i-human tone-human"></span>structure/scope-reads-clearly<span class="m-run">· run-4KD9TQ</span></div>
-    <div class="m-verdicts"><span class="m-verdict green">GREEN</span><span class="m-verdict red">RED</span></div>
-    <div class="m-pet-actions"><span class="m-button small toggle pointing"><span class="m-icon i-point"></span>Point</span></div>
+    <div class="m-pet-field"><div class="m-input text"><span class="m-placeholder">Enter adds the reason</span></div><span class="m-button small toggle pointing"><span class="m-icon i-point"></span>Point</span></div>
+    <p class="m-why">Choose GREEN or RED</p>
+    <div class="m-composer-row"><span class="m-vtabs"><span class="green">GREEN</span><span class="red">RED</span></span><span class="m-spacer"></span><span class="m-button primary disabled">Submit</span></div>
   </div>
 </div>
 <span class="callout" style="left: 240px; top: 218px">14</span>
@@ -215,27 +212,29 @@
   <div class="m-pet" style="left: 24px; bottom: 24px">
     <img class="m-pet-sprite" src="pet.svg" alt="" />
     <div class="m-pet-head"><span class="m-icon i-human tone-human"></span>docs/reads-well<span class="m-run">· run-2HQV8W</span></div>
-    <div class="m-verdicts"><span class="m-verdict green">GREEN</span><span class="m-verdict red">RED</span></div>
-    <div class="m-pet-actions"><span class="m-button small toggle"><span class="m-icon i-point"></span>Point</span></div>
+    <div class="m-pet-field"><div class="m-input text"><span class="m-placeholder">Enter adds the reason</span></div><span class="m-button small toggle"><span class="m-icon i-point"></span>Point</span></div>
+    <p class="m-why">Choose GREEN or RED</p>
+    <div class="m-composer-row"><span class="m-vtabs"><span class="green">GREEN</span><span class="red">RED</span></span><span class="m-spacer"></span><span class="m-button primary disabled">Submit</span></div>
   </div>
   <div class="m-pet" style="left: 408px; bottom: 24px">
     <img class="m-pet-sprite" src="pet.svg" alt="" />
     <div class="m-pet-head"><span class="m-icon i-human tone-human"></span>docs/reads-well<span class="m-run">· run-2HQV8W</span></div>
     <div class="m-point compact"><span class="m-icon i-point"></span><span class="m-ptext">guide.md L4:C1</span><span class="m-button small quiet">Insert</span></div>
-    <div class="m-verdicts"><span class="m-verdict green chosen">GREEN</span><span class="m-verdict red">RED</span></div>
-    <div class="m-field"><span class="m-name">comment</span><div class="m-input area text"><span>Reads well; the headings from guide.md L4:C1 on read in order.</span></div></div>
-    <div class="m-pet-actions"><span class="m-button small toggle disabled"><span class="m-icon i-point"></span>Point</span><span class="m-why">Open the review's viewer to point.</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
+    <div class="m-pet-reasons"><div class="m-reason"><span class="m-reason-tools"><span class="m-icon i-remove" aria-label="Remove the reason"></span></span><div class="m-msg">Reads well; the headings from guide.md L4:C1 on read in order.</div></div></div>
+    <div class="m-pet-field"><div class="m-input text"><span class="m-placeholder">Enter adds the reason</span></div><span class="m-button small toggle disabled" title="Open the review's viewer to point."><span class="m-icon i-point"></span>Point</span></div>
+    <p class="m-why">Open the review's viewer to point.</p>
+    <div class="m-composer-row"><span class="m-vtabs"><span class="green on">GREEN</span><span class="red">RED</span></span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
   </div>
 </div>
 <span class="callout" style="left: 180px; top: 210px">18</span>
 <span class="callout" style="left: 560px; top: 266px">19</span>
 </div>
-<figcaption>Stage 760 × 300. The overlay just after the claim, no point yet and no verdict chosen, a viewer of the review's Artifact open (left); and with GREEN's form open while no viewer of the review's Artifact is open (right): Point is disabled and says why.</figcaption>
+<figcaption>Stage 760 × 300. The overlay just after the claim, no point, no reason and no verdict yet, a viewer of the review's Artifact open (left); and with a point, a reason and GREEN chosen while no viewer of the review's Artifact is open (right): Point is disabled and says why.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">18</span><div><b>Before a verdict</b><span>The choice alone, no Points until one is added; Point already adds to them; Submit joins once a verdict's form is open.</span></div></li>
-  <li><span class="n">19</span><div><b>No viewer open</b><span>Point is disabled while no Artifact Viewer of the review's Artifact is open, saying why beside it; the form and Submit work as in Review.</span></div></li>
+  <li><span class="n">18</span><div><b>Before a verdict</b><span>The reasons field and Point, no Points or reasons until one is added; Submit waits for GREEN or RED, saying so above the row.</span></div></li>
+  <li><span class="n">19</span><div><b>No viewer open</b><span>Point is disabled while no Artifact Viewer of the review's Artifact is open, saying why under the field; the reasons, the verdict and Submit work as in Review.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
@@ -253,7 +252,7 @@
   <dt id="D-VIEW-6">D-VIEW-6</dt>
   <dd>A project's own viewer plugin fills everything under the strip with its page, which the app does not restyle; the <code>html</code> example shows the Artifact's page in an embedded browser. Point stands in the strip as for every viewer (D-VIEW-2) and tells the page to point; what the page shows while pointing is its own, held to the same outline: what is under the pointer outlined by a 2px dashed <code>--handle</code> line over its <code>--handle-edge</code> edge. While the plugin's page has not yet reached the viewer's bridge (a page asks it for its context when it starts), the strip says, after the viewer's name, <i>Loading {plugin}…</i> in <code>--ink-2</code>; a page that finished loading without reaching it says there, in <code>--red</code>, that it did not connect; the line goes once the page reaches the bridge, and from then on the same place holds the latest status line the page reports (for <code>html</code>, the page shown and its title once loaded, or why it failed), in <code>--ink-2</code>, each replacing the last. <span class="avoid">the app's controls drawn over a plugin's page; a plugin page that reaches the app's window or its state.</span></dd>
   <dt id="D-PET-1">D-PET-1</dt>
-  <dd>The pet overlay is a small window of its own, without a frame, above every window, 16px from the bottom right of the screen's work area: a card 320px wide on <code>--surface-raised</code>, a <code>--line-panel</code> border of <code>--radius-chip</code>, the faint shadow (D-SYS-2), padded 12px. The pet sits on its top edge at the left, 40px, partly over the card, smaller than the card's words are loud; beside it the head row in <code>--mono</code> at <code>--text-small</code>: the human icon in <code>--human</code>, the active review's eval, then <i>· {Run}</i> in <code>--ink-2</code>; the pet and the whole head row are a link to the review in Review (J-PET). Under it the review's Points, compact, once there is one: one <code>--row</code> row each, the point icon, the text in <code>--mono</code> cut with an ellipsis and Insert at the right (D-REV-9), at most three rows tall, scrolling past that; then the review's Result as the review's column draws it (D-REV-4): the GREEN / RED choice, then the chosen verdict's form with its comment field, Points and form scrolling inside the card past 280px; then one row: Point at the left (a small button, D-VIEW-2; while no viewer of the review's Artifact is open it is unavailable, drawn with no face, a <code>--line-section</code> edge and <code>--ink-3</code>, apart from Point off, which keeps the button face in <code>--ink-2</code>, and followed by why in <code>--ink-2</code>), and Submit, the one primary button naming its verdict, at the right once a form is open. A failure to submit shows in <code>--red</code> above that row, the form kept. <span class="avoid">a second draft, or a free text box apart from the form; where and when a point was made, which the review's Points say; Release claim in the overlay; the overlay over the review's evaluation space; a card that grows taller than the screen's lower half; a frame or title bar.</span></dd>
+  <dd>The pet overlay is a small window of its own, without a frame, above every window, 16px from the bottom right of the screen's work area: a card 320px wide on <code>--surface-raised</code>, a <code>--line-panel</code> border of <code>--radius-chip</code>, the faint shadow (D-SYS-2), padded 12px. The pet sits on its top edge at the left, 40px, partly over the card, smaller than the card's words are loud; beside it the head row in <code>--mono</code> at <code>--text-small</code>: the human icon in <code>--human</code>, the active review's eval, then <i>· {Run}</i> in <code>--ink-2</code>; the pet and the whole head row are a link to the review in Review (J-PET). Under it the review's draft, compact, each part once there is something in it: the Points, one <code>--row</code> row each, the point icon, the text in <code>--mono</code> cut with an ellipsis and Insert at the right, which puts the text into the overlay's reasons field (D-REV-9); then the reasons, each a one-line bubble as the review's are (D-REV-10) at <code>--text-small</code>, cut with an ellipsis, Remove at its left; Points and reasons each at most three rows tall, scrolling past that. Then one row: the reasons field, a one-line <code>--control</code> field on <code>--surface-input</code> taking the row's width, its placeholder <i>Enter adds the reason</i> in <code>--ink-2</code>, and Point at its right (a small button, D-VIEW-2; while no viewer of the review's Artifact is open it is unavailable, drawn with no face, a <code>--line-section</code> edge and <code>--ink-3</code>, apart from Point off, which keeps the button face in <code>--ink-2</code>, with why on its own line under the field in <code>--ink-2</code> at <code>--text-small</code>). Last, the review's composer row (D-REV-5): the GREEN / RED choice as tabs at the left and Submit, the one primary button naming its verdict, at the right, disabled with why on its own line above the row in <code>--ink-2</code> at <code>--text-small</code> whenever Review's would be. A failure to submit shows in <code>--red</code> in that line, the draft kept. <span class="avoid">a second draft, or a free text box apart from the reasons field; a verdict mark on a reason; where and when a point was made, which the review's Points say; a reason edited in the overlay; Release claim in the overlay; the overlay over the review's evaluation space; a card that grows taller than the screen's lower half; a frame or title bar.</span></dd>
   <dt id="D-PET-2">D-PET-2</dt>
   <dd>The pet is the app's own drawing, an image asset (<code>pet.svg</code>, the same file as the app's): the brand icon's round faceted emerald in its ivory and silver bezel, with eyes, cheeks, two feet and a sprout. It is the one picture of the app whose colours are its own and not tokens, like the brand mark, drawn at 60% of its saturation so the review's name and what is being done read first; it stands still and carries no status. <span class="avoid">a pet in a status colour; a pet that outweighs the card's words; an animated pet that draws the eye while a person types; a third-party character.</span></dd>
 </dl>
