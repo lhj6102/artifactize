@@ -2391,7 +2391,7 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
         }),
     )
     .unwrap();
-    assert_eq!(from_nested, session["selection"]);
+    assert_eq!(from_nested, session["model"]);
     let away = fixture.repo.with_file_name("moved-away");
     fs::rename(&fixture.repo, &away).unwrap();
     let old_launch = window(&fixture, Mode::Graph);
