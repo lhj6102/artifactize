@@ -17,7 +17,9 @@ use std::{
 
 use artifactize_core::{
     changes::Subscription,
-    chat::{Block, Chat, Model, Outcome, SendError, SessionView, ToolKind, TurnState, View},
+    chat::{
+        Block, Chat, Model, MoveError, Outcome, SendError, SessionView, ToolKind, TurnState, View,
+    },
     runs, store,
     types::{RunId, SessionId},
 };
@@ -69,12 +71,13 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     let long = format!("begin {} end", "한".repeat(7_000));
     let noisy = support::os::exiting_program(root.path(), 7, &long);
 
-    support::declaration::write(&worktree, worktree.join("index.artf"), json!({
+    let declaration = json!({
         "name":"app", "fingerprint":false, "evals":[{
             "id":"test", "title":"Check", "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
             "payload":{"instruction":"Check the fixture."}
         }]
-    }).to_string()).unwrap();
+    }).to_string();
+    support::declaration::write(&worktree, worktree.join("index.artf"), &declaration).unwrap();
     support::os::git(&worktree, &["init", "-q", "--initial-branch=first"]);
     support::os::git(
         &worktree,
@@ -91,6 +94,16 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         ],
     );
     root.track(&state, &worktree);
+    let destination = root.path().join("another-project");
+    fs::create_dir(&destination).unwrap();
+    fs::write(destination.join("notes.txt"), "destination before").unwrap();
+    support::os::git(
+        &destination,
+        &["init", "-q", "--initial-branch=destination"],
+    );
+    support::declaration::write(&destination, destination.join("index.artf"), &declaration)
+        .unwrap();
+    root.track(&state, &destination);
     let final_answer = Gate::default();
     let interrupted = Gate::default();
     final_answer.close();
@@ -147,7 +160,34 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
                     interrupted.wait();
                     vec![openai::message("This answer was stopped.")]
                 }
-                5 => vec![openai::message("Ready to continue.")],
+                5 => vec![openai::function_call(
+                    "read_destination",
+                    "read",
+                    &json!({"path":"notes.txt"}),
+                )],
+                6 => vec![openai::function_call(
+                    "edit_destination",
+                    "edit",
+                    &json!({
+                        "path":"notes.txt", "old_text":"destination before", "new_text":"destination after"
+                    }),
+                )],
+                7 => vec![
+                    openai::function_call(
+                        "command_destination",
+                        "run_command",
+                        &json!({
+                            "program":support::os::cat_program(), "args":["notes.txt"]
+                        }),
+                    ),
+                    openai::function_call(
+                        "verify_destination",
+                        "verify_start",
+                        &json!({"scope":{"kind":"all"}}),
+                    ),
+                ],
+                8 => vec![openai::message("Ready to continue.")],
+                9 => vec![openai::message("Still here.")],
                 _ => {
                     return Reply::Json(
                         500,
@@ -158,6 +198,8 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             openai::completed(request, output, openai::usage(12, 8))
         }
     });
+    let _release_final = owned_run::ReleaseGate::new(final_answer.clone());
+    let _release_interrupted = owned_run::ReleaseGate::new(interrupted.clone());
     let cli = support::os::cli();
     let added = support::os::run(
         Command::new(&cli)
@@ -227,6 +269,13 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             .blocks
             .iter()
             .any(|block| matches!(block, Block::Text { text } if text == "Reading the notes."))
+    );
+    let destination = support::os::canonical(&destination);
+    assert_eq!(
+        chat.set_worktree(&session.id, &destination, Some(&destination))
+            .await
+            .unwrap_err(),
+        MoveError::Busy
     );
     assert!(mid.turns[0].blocks.iter().any(|block| matches!(block, Block::Tool { tool_kind: ToolKind::Read, summary, result: Some(artifactize_core::chat::ToolResult { output, failed: Some(false), .. }), .. } if summary == "read notes.txt" && output.contains("before"))));
     assert_eq!(
@@ -337,10 +386,10 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     // New handle and connection: no in-memory message map participates in the restored view.
     let restarted = Chat::new(state.clone(), cli.clone());
     let restored = restarted.open(&session.id).await.unwrap();
-    assert_eq!(cards(&restored), [run]);
+    assert_eq!(cards(&restored), std::slice::from_ref(&run));
     assert!(restored.session.unseen());
     restarted.mark_seen(&session.id).await.unwrap();
-    let restarted = Chat::new(state.clone(), cli);
+    let restarted = Chat::new(state.clone(), cli.clone());
     let seen = restarted.open(&session.id).await.unwrap().session;
     assert_eq!(seen.outcome(), Some(Outcome::Completed));
     assert!(!seen.unseen());
@@ -372,6 +421,78 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     assert_eq!(stopped.session.outcome(), Some(Outcome::Stopped));
     assert!(stopped.session.unseen());
     interrupted.open();
+    let old_branch = stopped.session.branch();
+    restarted
+        .set_view(&session.id, SessionView::Graph)
+        .await
+        .unwrap();
+    let moved = restarted
+        .set_worktree(&session.id, &destination, Some(&destination))
+        .await
+        .unwrap();
+    assert_eq!(moved.worktree, destination);
+    assert_eq!(moved.label().project, "another-project");
+    assert_eq!(moved.label().branch, "destination");
+    assert_eq!(moved.title, stopped.session.title);
+    assert_eq!(moved.created_at, stopped.session.created_at);
+    assert!(moved.updated_at > stopped.session.updated_at);
+    assert_eq!(moved.model, stopped.session.model);
+    assert_eq!(moved.view, SessionView::Graph);
+    assert_eq!(moved.unavailable, None);
+    assert!(
+        restarted
+            .list(Some(&worktree), None)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        restarted
+            .list(Some(&destination), Some("another-project destination"))
+            .await
+            .unwrap()[0]
+            .id,
+        session.id
+    );
+    assert!(
+        restarted
+            .latest_for_navigation(&old_branch)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        restarted
+            .latest_for_navigation(&moved.branch())
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        session.id
+    );
+    let unchanged = restarted
+        .set_worktree(&session.id, &destination, Some(&destination))
+        .await
+        .unwrap();
+    assert_eq!(unchanged.updated_at, moved.updated_at);
+    drop(restarted);
+    let restarted = Chat::new(state.clone(), cli);
+    let after_move = restarted.open(&session.id).await.unwrap();
+    assert_eq!(after_move.session.worktree, destination);
+    assert_eq!(after_move.turns.len(), 2);
+    assert_eq!(after_move.turns[0].user, "Edit and verify the notes");
+    assert_eq!(after_move.turns[1].user, "Stop this answer");
+    assert!(after_move.turns[0].blocks.iter().any(
+        |block| matches!(block, Block::Run { card } if card.id == run && card.state.is_some())
+    ));
+    assert_eq!(
+        store::read_run(&state, run.as_str())
+            .await
+            .unwrap()
+            .run
+            .origin,
+        run_view.run.origin
+    );
     let changed = Model {
         model: "second-model".parse().unwrap(),
         ..selection
@@ -392,7 +513,56 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             .iter()
             .any(|block| matches!(block, Block::Text { text } if text == "Ready to continue."))
     );
+    assert_eq!(continued.turns[2].user, "Continue");
+    assert!(continued.turns[2].blocks.iter().any(|block| matches!(block, Block::Tool { name, result: Some(result), .. } if name == "read" && result.output.contains("destination before"))));
+    assert!(continued.turns[2].blocks.iter().any(|block| matches!(block, Block::Tool { name, result: Some(result), .. } if name == "run_command" && result.output.contains("destination after"))));
+    assert_eq!(
+        fs::read_to_string(destination.join("notes.txt")).unwrap(),
+        "destination after"
+    );
+    assert_eq!(
+        fs::read_to_string(worktree.join("notes.txt")).unwrap(),
+        "after"
+    );
+    let moved_run = cards(&continued).pop().unwrap();
+    assert_ne!(moved_run, run);
+    let new_run = store::read_run(&state, moved_run.as_str()).await.unwrap();
+    assert_eq!(new_run.run.repo_path, destination);
+    assert_eq!(new_run.run.origin, run_view.run.origin);
+    restarted
+        .send(&session.id, "One more turn".into(), None)
+        .await
+        .unwrap();
+    let later = observe(&restarted, &session.id, &mut changes, |view| {
+        !view.running && view.turns.len() == 4
+    })
+    .await;
+    assert!(matches!(later.turns[3].state, TurnState::Completed));
     let seen = provider.requests();
+    let note = format!(
+        "This Chat session moved from {:?} to {:?}.",
+        support::os::path_text(&support::os::canonical(&worktree)),
+        support::os::path_text(&destination)
+    );
+    let starts = seen
+        .iter()
+        .filter(|req| {
+            req.body["instructions"]
+                .as_str()
+                .is_some_and(|text| text.contains(&note))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        starts.len(),
+        1,
+        "the move is sent only on the first provider request"
+    );
+    assert!(starts[0].body["input"].to_string().contains("Continue"));
+    assert!(seen.iter().all(|req| {
+        !req.body["input"]
+            .to_string()
+            .contains("This Chat session moved from")
+    }));
     let request = seen
         .iter()
         .find(|req| req.path.ends_with("/responses"))
@@ -419,6 +589,15 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     ] {
         assert!(names.contains(name), "missing {name}: {names:?}");
     }
+    let back = restarted
+        .set_worktree(
+            &session.id,
+            &support::os::canonical(&worktree),
+            Some(&worktree),
+        )
+        .await
+        .unwrap();
+    assert_eq!(back.branch(), old_branch);
     support::os::git(&worktree, &["checkout", "-q", "-b", "second"]);
     let second = Model {
         model: "scripted-model".parse().unwrap(),
@@ -450,7 +629,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             .to_string()
             .contains("Check out first")
     );
-    assert_eq!(restarted.open(&session.id).await.unwrap().turns.len(), 3);
+    assert_eq!(restarted.open(&session.id).await.unwrap().turns.len(), 4);
     support::os::git(&worktree, &["checkout", "-q", "first"]);
     assert_eq!(
         restarted.default_model(&worktree).await.unwrap(),
@@ -1072,7 +1251,10 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     .await;
     assert!(matches!(resumed.turns[0].state, TurnState::Interrupted));
     assert!(matches!(resumed.turns[1].state, TurnState::Completed));
-    // A separate app process owns the provider turn; this process may still stop it.
+    // A separate app process owns the provider turn; only Stop can interrupt it.
+    let other = root.path().join("other");
+    fs::create_dir(&other).unwrap();
+    let other = support::os::canonical(&other);
     hold.close();
     let mut child = tokio::process::Command::new(std::env::current_exe().unwrap());
     child
@@ -1087,6 +1269,12 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     })
     .await;
     assert!(matches!(active.turns[2].state, TurnState::Running));
+    assert_eq!(
+        chat.set_worktree(&session.id, &other, Some(&other))
+            .await
+            .unwrap_err(),
+        MoveError::Busy
+    );
     chat.stop_running().await.unwrap();
     let stopped = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
     hold.open();

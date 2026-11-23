@@ -2511,6 +2511,106 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn chat_set_worktree_moves_the_session_to_a_listed_project_and_survives_restart() {
+    let root = os::tempdir();
+    let origin = root.path().join("origin");
+    let destination = root.path().join("destination");
+    let invalid = root.path().join("not-listed");
+    let state = root.path().join("state");
+    for (repo, branch) in [
+        (&origin, "old-branch"),
+        (&destination, "new-branch"),
+        (&invalid, "other"),
+    ] {
+        fs::create_dir(repo).unwrap();
+        os::git(repo, &["init", "--quiet", "--initial-branch", branch]);
+        support::declaration::write(
+            repo,
+            repo.join("index.artf"),
+            "name = 'app'\nbasis = true\n",
+        )
+        .unwrap();
+    }
+    let fixture = Fixture {
+        repo: os::canonical(&origin),
+        state: state.clone(),
+        _root: run_fixture::RepoLease::new(root, &state, &origin),
+    };
+    let first = window(&fixture, Mode::Monitor);
+    let other = launched_window(&fixture, Mode::Monitor, Some(os::canonical(&destination)));
+    let create = |window: &Window| {
+        let choices = invoke(window, "chat_branches", json!({})).unwrap();
+        let workspace = &choices[0]["workspace"];
+        invoke(
+            window,
+            "chat_create",
+            json!({"worktree": workspace, "selection":null}),
+        )
+        .unwrap()
+    };
+    let original = create(&first);
+    let saved_destination = create(&other);
+    let id = &original["id"];
+    invoke(&first, "chat_set_view", json!({"id":id,"view":"graph"})).unwrap();
+    let listed = invoke(&first, "chat_branches", json!({})).unwrap();
+    let target = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["key"] == saved_destination["branchKey"])
+        .unwrap();
+    let move_to = |worktree: &Value| {
+        invoke(
+            &first,
+            "chat_set_worktree",
+            json!({"id":id,"worktree":worktree}),
+        )
+    };
+    let invalid_path = os::path_text(&os::canonical(&invalid));
+    let failure = move_to(&json!(invalid_path)).unwrap_err();
+    assert_eq!(failure["kind"], "invalid");
+    assert!(failure["message"].as_str().unwrap().contains(&invalid_path));
+    let moved = move_to(&target["workspace"]).unwrap();
+    for field in ["id", "title", "model", "createdAt"] {
+        assert_eq!(moved[field], original[field]);
+    }
+    assert_eq!(moved["worktree"], target["workspace"]);
+    assert_eq!(moved["branchKey"], target["key"]);
+    assert_eq!(moved["branch"], "new-branch");
+    assert_eq!(moved["project"], "destination");
+    assert_eq!(moved["view"], "graph");
+    assert_eq!(moved["unavailable"], Value::Null);
+    assert_eq!(move_to(&target["workspace"]).unwrap(), moved);
+    let old_list = invoke(
+        &first,
+        "chat_list",
+        json!({"worktree":original["worktree"],"query":null}),
+    )
+    .unwrap();
+    assert_eq!(old_list, json!([]));
+    let listing = invoke(
+        &first,
+        "chat_list",
+        json!({"worktree":target["workspace"],"query":"destination new-branch"}),
+    )
+    .unwrap();
+    assert!(listing.as_array().unwrap().contains(&moved));
+    let latest = |window: &Window, branch: &Value| {
+        invoke(window, "chat_latest_for_branch", json!({"branch":branch})).unwrap()
+    };
+    assert_eq!(latest(&first, &original["branchKey"]), Value::Null);
+    assert_eq!(latest(&first, &moved["branchKey"]), moved);
+    drop(other);
+    drop(first);
+
+    let restarted = window(&fixture, Mode::Monitor);
+    let restored = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
+    assert_eq!(restored["session"], moved);
+    assert_eq!(restored["turns"], json!([]));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn review_search_omits_a_deleted_repository_even_with_no_waiting_filter() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Review);
