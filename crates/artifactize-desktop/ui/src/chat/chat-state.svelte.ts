@@ -220,7 +220,7 @@ export class ChatModeState {
    * stays independent of the pending submission. */
   async send(): Promise<void> {
     const view = this.view;
-    if (!view || view.running || view.session.unavailable !== null) return;
+    if (!view || view.running || view.session.unavailable !== null || view.session.model === null) return;
     const id = view.session.id;
     const composer = this.composer(id);
     if (!composer) return;
@@ -344,12 +344,12 @@ export class ChatModeState {
     }
   }
 
-  /** Start a session on `worktree`, on the library's default model, and show it. */
+  /** Start a session with the displayed default, or without a model when none was listed. */
   async create(worktree: string): Promise<boolean> {
-    // Without a model yet the dialog says why and does not offer Create.
-    if (this.starting?.worktree !== worktree || this.starting.model === null) return false;
+    const starting = this.starting;
+    if (starting?.worktree !== worktree || !starting.known || starting.error !== undefined) return false;
     try {
-      const session = await call(this.ipc.chatCreate(worktree, this.starting.branch, null));
+      const session = await call(this.ipc.chatCreate(worktree, starting.branch, starting.model));
       await this.list();
       await this.open(session.id);
       return true;

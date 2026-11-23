@@ -356,7 +356,8 @@
                   {:else if running}
                     <button class="button icon-button" disabled={session.unavailable !== null} aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
                   {:else}
-                    <button class="button icon-button primary" aria-label="Send (Enter)" aria-keyshortcuts="Enter" disabled={typed.trim() === "" || session.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
+                    {#if !session.model}<span class="need-model" id="chat-need-model">Choose a model to send</span>{/if}
+                    <button class="button icon-button primary" aria-label="Send (Enter)" aria-describedby={session.model ? undefined : "chat-need-model"} aria-keyshortcuts="Enter" disabled={!session.model || typed.trim() === "" || session.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
                   {/if}
                 </div>
               </div>
@@ -403,14 +404,14 @@
               {:else if reading}
                 Reading the providers' models…
               {:else}
-                No provider lists a model. Connect one in Settings.
+                No provider lists a model. The session starts without one; connect a provider in Settings to send.
               {/if}
             </p>
           </div>
         </div>
         <div class="dialog-actions">
           <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
-          <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={!c.worktree || !starting}>Create</button>
+          <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={!c.worktree || reading || answer?.error !== undefined}>Create</button>
         </div>
       </form>
     </Dialog.Content>
@@ -703,6 +704,7 @@
   .rejected { margin: 0 0 6px; }
   .rejected .failed { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .stopping { color: var(--ink-2); min-height: var(--control); }
+  .need-model { min-width: 0; color: var(--ink-2); font-size: var(--text-small); }
   .stopping .tone-running { display: inline-flex; }
   .icon-button {
     display: inline-grid;

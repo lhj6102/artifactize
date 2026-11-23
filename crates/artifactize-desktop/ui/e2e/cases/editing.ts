@@ -1,7 +1,6 @@
 // Editing a branch's definitions on its Current: the Definition and Source, parts, new, renamed
 // and deleted Artifacts, places by hand and comments, each written into the files the CLI reads.
 import assert from "node:assert/strict";
-import { installChatProvider } from "../fixtures/chat.ts";
 import { CORE_NOTE, createEditing, definitionText, rewriteDefinition } from "../fixtures/repo.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -15,7 +14,6 @@ export const scenarios: Scenario[] = [
     journeys: ["J-DEFINITION", "J-DEFINITION-EDIT", "J-DEFINITION-DRAFT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
-      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
@@ -74,7 +72,6 @@ export const scenarios: Scenario[] = [
     journeys: ["J-DEFINITION-CONFLICT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
-      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
@@ -105,7 +102,6 @@ export const scenarios: Scenario[] = [
     journeys: ["J-PARTS-EDIT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
-      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
@@ -133,7 +129,6 @@ export const scenarios: Scenario[] = [
     journeys: ["J-NODE-NEW", "J-NODE-RENAME", "J-NODE-DELETE"],
     prepare: async (own) => {
       const fixture = createEditing(own);
-      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
@@ -187,7 +182,6 @@ export const scenarios: Scenario[] = [
     journeys: ["J-NODE-MOVE", "J-LAYOUT-RESET", "J-PARTS-DRAG"],
     prepare: async (own) => {
       const fixture = createEditing(own);
-      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
@@ -262,7 +256,6 @@ export const scenarios: Scenario[] = [
     journeys: ["J-COMMENT", "J-COMMENT-EDIT", "J-COMMENT-MOVE"],
     prepare: async (own) => {
       const fixture = createEditing(own, { comments: true });
-      await installChatProvider(own, fixture);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {

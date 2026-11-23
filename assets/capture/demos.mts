@@ -5,7 +5,7 @@
 // Linux only: the app runs on its own 1920×1080 virtual display, and ffmpeg turns the frames
 // into GIFs. Recording builds the app and its CLI from this checkout; every Run, reuse,
 // dependency wait and verdict shown is real. Nothing is mocked and no model turn is sent.
-// The graph demo needs a real provider to list the starting model in New chat.
+// The graph demo only needs an empty session, so it works even without a provider.
 //
 // The demos (assets/demos/):
 //   A. review-loop.gif — an example shaped like this repository (core, cli, tui, mcp, docs,
@@ -47,7 +47,7 @@ import { adopt, cleanup, prepare, type Candidate} from "../../crates/artifactize
 import { own } from "../../crates/artifactize-desktop/ui/e2e/fixtures/owned.ts";
 import { nativePath, asNativePath } from "../../crates/artifactize-desktop/ui/e2e/portable.ts";
 import { environment, git, newFixture } from "../../crates/artifactize-desktop/ui/e2e/fixtures/repo.ts";
-import { Chat, newChatBranch } from "../../crates/artifactize-desktop/ui/e2e/views/chat.ts";
+import { Chat } from "../../crates/artifactize-desktop/ui/e2e/views/chat.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, "..", "..");
@@ -622,18 +622,7 @@ async function graphGrowth(candidate: Candidate, work: string): Promise<Recordin
     stop = session.stop;
     let at = { x: 0, y: 0 };
     const chat = new Chat(browser);
-    // Use the starting model found by the real New chat dialog, without sending a turn.
-    const dialog = browser.$('[role="dialog"].new-chat');
-    const create = dialog.$("button=Create");
-    const model = dialog.$('[role="status"][aria-labelledby="new-chat-model"]');
-    await browser.waitUntil(async () => {
-      if (await browser.execute(newChatBranch) !== "repo / main") return false;
-      const message = await model.getText();
-      if (message.startsWith("No provider lists a model.")) {
-        throw new Error("Graph growth needs a real provider to list a model in the isolated recording environment.");
-      }
-      return create.isEnabled();
-    }, { timeout: WAIT, timeoutMsg: "New chat on repo / main has a starting model" });
+    // Use the real New chat dialog regardless of the model catalog; never send a turn.
     await chat.createFromDialog("repo / main");
     await chat.show("Graph");
     /** The visible Current's scan, as its header says it. */

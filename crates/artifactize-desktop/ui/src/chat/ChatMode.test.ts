@@ -44,7 +44,7 @@ const session: ChatSession = {
   branchKey: branchKey("fix/rounding"),
   view: "conversation",
   unavailable: null,
-  selection: { backend: "claude-agent", model: "claude-opus-5-5", effort: null },
+  model: { backend: "claude-agent", model: "claude-opus-5-5", effort: null },
   createdAt: "2026-11-21T00:00:00Z",
   updatedAt: "2026-11-21T00:00:00Z",
   running: false,
@@ -75,7 +75,7 @@ function backend() {
         return null;
       case "chat_set_model": {
         const chosen = (args as { selection: ChatModel }).selection;
-        state.session = { ...state.session, selection: { ...chosen, effort: chosen.effort ?? "high" } };
+        state.session = { ...state.session, model: { ...chosen, effort: chosen.effort ?? "high" } };
         return state.session;
       }
       case "chat_set_view":
@@ -188,7 +188,7 @@ it("stops a running turn, which ends marked as stopped", async () => {
 it("filters the upward model menu and saves a model and effort immediately, even while streaming", async () => {
   const { calls, state } = backend();
   state.running = true;
-  state.session = { ...session, selection: { ...session.selection, effort: "high" } };
+  state.session = { ...session, model: { backend: "claude-agent", model: "claude-opus-5-5", effort: "high" } };
   show();
   await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
   const trigger = await screen.findByRole("button", { name: /claude-opus-5-5.*high/ });
@@ -256,20 +256,24 @@ function unlisted(models: { slug: string; displayName: string }[]) {
   const answered = new Promise<void>((done) => (answer = done));
   // The library's default: the custom provider `lab`'s first model, once its providers answered.
   const starting = models[0] ? { backend: "lab", model: models[0].slug, effort: "medium" } : null;
+  let created: ChatSession | null = null;
   mockIPC(async (cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
     switch (cmd) {
       case "chat_list":
-        return [];
+        return created ? [created] : [];
       case "chat_branches":
         return [{ key: session.branchKey, project: session.project, name: session.branch, workspace: session.worktree }];
       case "chat_default_model":
         await answered;
         return starting;
-      case "chat_create":
-        return { ...session, id: "chat-2", worktree: (args as { worktree: string }).worktree, selection: starting! };
+      case "chat_create": {
+        const { worktree, selection } = args as { worktree: string; selection: ChatModel | null };
+        created = { ...session, id: "chat-2", title: "New chat", worktree, model: selection };
+        return created;
+      }
       case "chat_open":
-        return { session: { ...session, id: "chat-2" }, running: false, turns: [] } satisfies ChatView;
+        return { session: created!, running: false, turns: [] } satisfies ChatView;
       default:
         return null;
     }
@@ -277,7 +281,7 @@ function unlisted(models: { slug: string; displayName: string }[]) {
   return { calls, answer };
 }
 
-it("offers Create in New chat only once the model the session starts with is known", async () => {
+it("waits for the provider list and creates with the model displayed in New chat", async () => {
   const { calls, answer } = unlisted([{ slug: "lab-large", displayName: "Lab large" }]);
   show();
   await fireEvent.click(await screen.findByRole("button", { name: "New chat" }));
@@ -291,7 +295,7 @@ it("offers Create in New chat only once the model the session starts with is kno
   expect(create.hasAttribute("disabled")).toBe(false);
   await fireEvent.click(create);
   await waitFor(() => expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({
-    worktree: session.worktree, branch: session.branchKey, selection: null,
+    worktree: session.worktree, branch: session.branchKey, selection: { backend: "lab", model: "lab-large", effort: "medium" },
   }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await waitFor(() => expect(document.activeElement).toBe(composer));
@@ -299,15 +303,61 @@ it("offers Create in New chat only once the model the session starts with is kno
   expect(screen.getByRole("log", { name: "Conversation" }).textContent?.trim()).toBe("");
 });
 
-it("says no provider lists a model once every provider has answered with none", async () => {
+it("creates a usable empty Chat after every provider answers with no model", async () => {
   const { calls, answer } = unlisted([]);
   show();
   await fireEvent.click(await screen.findByRole("button", { name: "New chat" }));
   const dialog = await screen.findByRole("dialog", { name: "New chat" });
   answer();
-  await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("No provider lists a model. Connect one in Settings."));
-  expect(within(dialog).getByRole("button", { name: "Create" }).hasAttribute("disabled")).toBe(true);
-  expect(calls.some((call) => call.cmd === "chat_create")).toBe(false);
+  await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("No provider lists a model. The session starts without one; connect a provider in Settings to send."));
+  const create = within(dialog).getByRole("button", { name: "Create" });
+  expect(create.hasAttribute("disabled")).toBe(false);
+  await fireEvent.click(create);
+  await screen.findByRole("button", { name: "Choose a model" });
+  expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({ worktree: session.worktree, branch: session.branchKey, selection: null });
+  expect(screen.queryByRole("dialog", { name: "New chat" })).toBeNull();
+  expect(screen.getByRole("log", { name: "Conversation" }).textContent?.trim()).toBe("");
+  expect(screen.getByRole("button", { name: "Graph" }).hasAttribute("disabled")).toBe(false);
+});
+
+it("keeps the typed draft and enables the first Send only after a model is picked", async () => {
+  const { calls, state } = backend();
+  state.session = { ...session, model: null };
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
+  const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send (Enter)" });
+  await fireEvent.input(composer, { target: { value: "My first draft" } });
+  await fireEvent.keyDown(composer, { key: "Enter" });
+  expect(send.disabled).toBe(true);
+  expect(screen.getByText("Choose a model to send")).toBeTruthy();
+  expect(composer.value).toBe("My first draft");
+  expect(calls.some(({ cmd }) => cmd === "chat_send")).toBe(false);
+  await fireEvent.click(screen.getByRole("button", { name: "Choose a model" }));
+  const model = await screen.findByRole("menuitemradio", { name: "Sonnet 5.5" });
+  expect(screen.queryAllByRole("menuitemradio", { checked: true })).toHaveLength(0);
+  await fireEvent.click(model);
+  await waitFor(() => expect(send.disabled).toBe(false));
+  expect(screen.queryByText("Choose a model to send")).toBeNull();
+  state.send = () => {
+    expect(state.session.model?.model).toBe("claude-sonnet-5-5");
+    return Promise.resolve();
+  };
+  await fireEvent.click(send);
+  await waitFor(() => expect(calls.find(({ cmd }) => cmd === "chat_send")?.args).toEqual({ id: session.id, text: "My first draft", selection: null }));
+});
+
+it("shows the library's no-model refusal if a Send slips past the displayed state", async () => {
+  const { state } = backend();
+  state.send = () => Promise.reject({ kind: "noModel", message: "Choose a model before sending." });
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
+  await fireEvent.input(composer, { target: { value: "Keep this draft" } });
+  await fireEvent.keyDown(composer, { key: "Enter" });
+  await screen.findByText("Choose a model before sending.");
+  expect(composer.value).toBe("Keep this draft");
+  expect(screen.getByRole("log", { name: "Conversation" }).textContent?.trim()).toBe("");
 });
 
 it("switches a session to its library-owned Graph with the same composer, and keeps it through mode switches", async () => {

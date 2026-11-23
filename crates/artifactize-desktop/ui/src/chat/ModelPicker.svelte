@@ -11,9 +11,9 @@
   let { session }: { session: ChatSession } = $props();
   const app = getAppState();
   const c = app.chat;
-  const model = $derived(session.selection);
-  const label = $derived(c.providers.find(({ provider }) => provider === model.backend)?.listing);
-  const modelName = $derived(label?.kind === "models" ? label.models.find((item) => item.slug === model.model)?.displayName ?? model.model : model.model);
+  const model = $derived(session.model);
+  const label = $derived(c.providers.find(({ provider }) => provider === model?.backend)?.listing);
+  const modelName = $derived(label?.kind === "models" ? label.models.find((item) => item.slug === model?.model)?.displayName ?? model?.model : model?.model);
   const query = $derived(c.modelQuery.trim().toLowerCase());
   const groups = $derived.by(() => c.providers.flatMap<MenuProvider & { name: string }>(({ provider, listing }) => {
     if (listing.kind === "notSetUp") return [];
@@ -59,7 +59,7 @@
 
 <div class="picker" {@attach dismiss}>
   <button class="model" bind:this={trigger} disabled={session.unavailable !== null} aria-haspopup="menu" aria-expanded={c.picking} aria-busy={c.choosing.has(session.id)} onclick={() => c.picking ? c.picking = false : void c.openPicker()}>
-    <span class="model-name">{modelName}</span>{#if model.effort}<span class="effort-label"> · {model.effort}</span>{/if}<Icon name="unfold" />
+    <span class="model-name" class:empty={!model}>{modelName ?? "Choose a model"}</span>{#if model?.effort}<span class="effort-label"> · {model.effort}</span>{/if}<Icon name="unfold" />
   </button>
   {#if c.picking && session.unavailable === null}
     <div class="menu" {@attach room} role="menu" aria-label="Models" style:--effort-width={`${efforts.length * 52}px`}>
@@ -78,12 +78,12 @@
             <p class="note">Reading models…</p>
           {:else if listing.kind === "models"}
             {#each listing.models as item (item.slug)}
-              {@const selected = model.backend === provider && model.model === item.slug}
+              {@const selected = model?.backend === provider && model?.model === item.slug}
               <div class="item-row" class:selected role="presentation">
                 <button class="item name" role="menuitemradio" aria-checked={selected} disabled={c.choosing.has(session.id)} onclick={() => pick(provider, item.slug, null)}>{item.displayName}</button>
                 {#each efforts as effort (effort)}
                   {#if item.efforts.includes(effort)}
-                    <button class="item effort" role="menuitemradio" aria-label={`${item.displayName} · ${effort}`} aria-checked={selected && model.effort === effort} disabled={c.choosing.has(session.id)} onclick={() => pick(provider, item.slug, effort)}>{effort}</button>
+                    <button class="item effort" role="menuitemradio" aria-label={`${item.displayName} · ${effort}`} aria-checked={selected && model?.effort === effort} disabled={c.choosing.has(session.id)} onclick={() => pick(provider, item.slug, effort)}>{effort}</button>
                   {:else}
                     <span class="effort" aria-hidden="true"></span>
                   {/if}
@@ -122,6 +122,7 @@
     cursor: pointer;
   }
   .model-name, .name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .model-name.empty { color: var(--ink-2); }
   .effort-label { flex: none; color: var(--ink-2); }
   .model:hover { background: var(--surface-group); }
   /* D-CHAT-7: the menu opens into the space above the selector. */

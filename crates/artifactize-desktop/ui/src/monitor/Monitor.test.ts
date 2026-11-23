@@ -61,7 +61,7 @@ const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-dig
 const saved = {
   id: "chat-main", title: "Work on main", worktree: "/work/main", project: "app", branch: "main",
   branchKey: branchKey("main"), view: "conversation", unavailable: null,
-  selection: { backend: "fixture", model: "small", effort: null },
+  model: { backend: "fixture", model: "small", effort: null },
   createdAt: "2026-11-21T00:00:00Z", updatedAt: "2026-11-21T00:00:00Z", running: false, outcome: null, unseen: false,
 } satisfies ChatSession;
 
@@ -102,7 +102,7 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
         case "chat_branches":
           return [branch("other", []), branch("main", [])];
         case "chat_default_model":
-          return saved.selection;
+          return saved.model;
         case "human_waiting_count":
           return snapshot().waiting.length;
         case "human_open_reference":

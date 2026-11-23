@@ -22,8 +22,8 @@ export class Chat {
 
   constructor(browser: WebdriverIO.Browser) { this.browser = browser; }
 
-  /** Click New chat, then Create once the dialog knows the model the session starts with: a
-   * new, empty session shows. The starting model as the dialog said it (`{provider} · {model}`). */
+  /** Click New chat, then Create once the model lookup settles. Return the dialog's model
+   * status: a listed default or the explanation for creating without one. */
   async create(): Promise<string> {
     await this.browser.$('[aria-label="Chats"]').$("button=New chat").click();
     return this.createFromDialog();
@@ -39,7 +39,7 @@ export class Chat {
     const sessionCount = () => this.browser.execute(() => document.querySelectorAll('[aria-label="Chats"] button.session').length);
     const before = await sessionCount();
     const create = dialog.$("button=Create");
-    await create.waitForEnabled({ timeoutMsg: "timed out: the starting model is ready and Create is enabled" });
+    await create.waitForEnabled({ timeoutMsg: "timed out: the model lookup has settled and Create is enabled" });
     const starting = (await dialog.$('[role="status"][aria-labelledby="new-chat-model"]').getText()).trim();
     await create.click();
     await dialog.waitForDisplayed({ reverse: true });
