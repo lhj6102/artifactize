@@ -29,7 +29,7 @@
 | `request logs ID` | `--stream stdout\|stderr\|both` (기본 `both`), `[--tail N \| --start N [--end N] \| --end N]` (기본 `--tail 50`), `--search TEXT` | 실행 중에 수집한 Runtime `stdout`/`stderr` 로그를 조회합니다(`complete`, `partial`, `saved_audit`, `missing`, 또는 Agent·Human 요청의 `not_runtime`; `--tail`과 `--start`/`--end` 범위 조회는 함께 쓸 수 없음). | `0` |
 | `request claim ID` | `--reviewer NAME` | 대기 중인 Human 승인 요청을 맡을 리뷰어를 지정합니다(기본 리뷰어: `$USER`, 없으면 Unix는 `$LOGNAME`, Windows는 `%USERNAME%`). | `0` |
 | `request unclaim ID` | `--reviewer NAME` | 맡고 있던 Human 승인 요청에서 리뷰어 지정을 해제하며, 판정은 제출하지 않습니다. | `0` |
-| `request tool ID TOOL` | `--reviewer NAME` | 맡은 요청에 선언된 Human 도구를 실행합니다. | `0` (`2` 도구 오류) |
+| `request tool ID TOOL` | `--reviewer NAME` | 맡은 요청에 선언된 Human `launch` 또는 `output` 도구를 실행합니다. `viewer` 도구는 데스크톱 앱에서 Artifact를 열도록 안내합니다. `--json`을 지정하면 뷰어 정보를 반환합니다. | `0` (`2` 도구 오류) |
 | `request submit ID` | `--verdict GREEN\|RED`, `[--fields JSON \| --fields-file PATH]`, `--reviewer NAME` | 결과 필드(`--fields`와 `--fields-file`은 함께 쓸 수 없으며 둘 다 생략하면 `{}` 제출)를 판정 스키마로 검증하고 Human 승인 요청에 대한 판정을 제출합니다. | `0` (`RED` 제출도 `0`) |
 | `session show REF` | `--summary` | 저장된 Agent 리뷰 대화 전문(또는 턴·토큰·도구 호출 요약)을 출력합니다. | `0` |
 | `session send REF MSG` | — | 저장된 Agent 리뷰 대화에 후속 질문을 보내되 기존 판정은 그대로 둡니다. | `0` |

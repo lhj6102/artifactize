@@ -17,7 +17,7 @@ profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"], ti
 payload.instruction = "Run the tests of {library}."
 ```
 
-- 지정한 실행 기준 폴더([대상 종류](artifacts.md#target-kinds-path-and-select))에서 `command`를 직접 실행합니다. 셸 명령 문자열을 해석하는 대신 `args`의 각 항목을 개별 인자로 넘깁니다(Windows에서 `.cmd`/`.bat` 배치 스크립트는 `cmd.exe`로 실행). 표준 입력(`stdin`)은 비워 둡니다. 호출한 프로세스의 환경 변수를 명령에 넘기되 기존 `ARTIFACTIZE_*` 변수는 제외하고, `ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, `ARTIFACTIZE_TMP_DIR`을 새로 넣어 전달합니다. `TMPDIR`/`TMP`/`TEMP`는 전용 임시 디렉터리를 가리킵니다.
+- 지정한 실행 기준 폴더([대상 종류](artifacts.md#target-kinds-path-and-select))에서 `command`를 직접 실행합니다. 셸 명령 문자열을 해석하는 대신 `args`의 각 항목을 개별 인자로 넘깁니다(Windows에서는 `.cmd`/`.bat` 배치 스크립트도 지원). 표준 입력(`stdin`)은 비워 둡니다. 호출한 프로세스의 환경 변수를 명령에 넘기되 기존 `ARTIFACTIZE_*` 변수는 제외하고, `ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, `ARTIFACTIZE_TMP_DIR`을 새로 넣어 전달합니다. `TMPDIR`/`TMP`/`TEMP`는 전용 임시 디렉터리를 가리킵니다.
 - `args`에 적은 `{name}`이나 `{name}/하위경로`는 해당 Artifact의 절대 경로(또는 Live URI)로 바뀝니다. 다른 Artifact를 참조하면 해당 Artifact가 eval의 입력으로 추가됩니다. eval에서 평가 대상 자체를 참조하면 `{name}`을 해당 경로나 URI로 바꾸기만 하고 의존성은 추가하지 않습니다.
 - Artifactize는 실행 중에 수집한 `stdout`과 `stderr`를 Run에 저장합니다. 저장된 출력은 `artifactize request logs REQUEST_ID`나 데스크톱 앱 Detail 패널에서 볼 수 있습니다. 실행 전후의 fingerprint나 Live 스냅샷을 비교해 값이 달라졌으면 판정 대신 `ERROR`(`INPUT_CHANGED`)를 기록합니다.
 

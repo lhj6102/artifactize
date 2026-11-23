@@ -1,6 +1,6 @@
 # Fingerprints and Reuse
 
-When you run `artifactize verify`, any eval whose criteria and covered inputs have not changed since a saved `GREEN` or `RED` verdict reuses that earlier result instead of executing again.
+When an eval has a reuse key that matches a saved `GREEN` or `RED` verdict, `artifactize verify` can reuse that result instead of executing the eval again. Unchanged inputs alone are not enough: for example, a runtime eval observing a Live Artifact or an eval with fingerprinting disabled has no reuse key.
 
 ## Fingerprints (`artifactsum`, `script`, `false`) {#fingerprints-artifactsum-script-false}
 

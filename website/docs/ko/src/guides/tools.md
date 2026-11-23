@@ -37,7 +37,7 @@ notes = { builtin = "read", args = ["notes.md"] }                # kind = "outpu
 | `help` | — | `[program, subcommand...]` | `[program, subcommand...]` | `program subcommand... --help`를 실행하고 출력을 정리해 UTF-8 텍스트로 반환합니다. |
 | `graph` | — | `[]` | `[]` (`launch`) | Agent: 현재 프로젝트의 Artifact/eval 트리와 기준·관계를 출력합니다. Human: `artifactize-desktop`에서 프로젝트의 Current 화면을 엽니다. |
 | `declarations` | — | `[]` | — | Artifact가 대상으로 삼은 `.artifactize/` 경로에 선언된 Artifact, eval 기준, 참조 관계를 출력합니다. `artifactize` 유형에 포함된 도구입니다. |
-| `open` | — | — | `[파일, 폴더, 또는 http(s) URL]` (`launch`) | OS 기본 프로그램으로 대상을 엽니다(Linux/WSL은 `xdg-open`, macOS는 `open`, Windows는 기본 프로그램). |
+| `open` | — | — | `[파일, 폴더, 또는 http(s) URL]` (`launch`) | OS 기본 프로그램으로 대상을 엽니다. |
 
 **범위 제한**: 내장 파일 도구(`read`, `list`, `glob`, `grep`, `view_image`, `section`)는 허용된 Artifact 범위 안에서만 파일과 폴더에 접근할 수 있습니다. `..`와 절대 경로는 거부하고 심볼릭 링크는 따라가지 않습니다. `list`는 심볼릭 링크 항목을 `symlink`로 표시하고, 다른 파일 도구는 심볼릭 링크를 거부하거나 건너뜁니다. 파일 Artifact에서는 그 파일 하나만 보여 줍니다. 상위 폴더 Artifact에 선언한 내장 파일 도구 가운데 호출할 때 경로를 받는 도구가 있습니다. 이런 도구는 해당 eval이 `{part}`를 직접 참조할 때만 폴더 `parts`에 접근할 수 있으며, 그렇지 않으면 폴더 `parts`를 건너뜁니다. `read = { builtin = "read", args = [...] }`, `list`, `section`처럼 경로를 미리 지정한 Agent용 내장 도구는 그 경로가 도구를 선언한 Artifact의 범위 안에 있는지 확인합니다. 따라서 폴더 `part`의 경로를 지정하는 도구는 그 `part`에 선언하세요. 파일이나 Aspect로 선언한 하위 Artifact의 파일은 상위 폴더를 통해 읽을 수 있습니다. 다만 하위 Artifact에 선언된 도구를 사용하거나 해당 Artifact를 선행 의존성으로 추가하려면 `{part}`를 직접 참조해야 합니다. 내장 `help`와 아래의 사용자 지정 명령 도구는 OS 샌드박스 없이 실행됩니다. 따라서 직접 작성한 프로그램 중 읽기 전용으로 동작하고 신뢰할 수 있는 것만 선언하세요.
 

@@ -29,7 +29,7 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `request logs ID` | `--stream stdout\|stderr\|both` (default `both`), `[--tail N \| --start N [--end N] \| --end N]` (default `--tail 50`), `--search TEXT` | Reads bounded runtime `stdout`/`stderr` capture (`complete`, `partial`, `saved_audit`, `missing`, or `not_runtime` for Agent/Human requests; `--tail` and `--start`/`--end` range queries are mutually exclusive). | `0` |
 | `request claim ID` | `--reviewer NAME` | Claims a waiting Human request (default reviewer: `$USER`, then `$LOGNAME` on Unix or `%USERNAME%` on Windows). | `0` |
 | `request unclaim ID` | `--reviewer NAME` | Releases a Human claim without submitting a verdict. | `0` |
-| `request tool ID TOOL` | `--reviewer NAME` | Runs a declared Human tool on a claimed request. | `0` (`2` tool error) |
+| `request tool ID TOOL` | `--reviewer NAME` | Runs a declared Human `launch` or `output` tool on a claimed request. A `viewer` tool instead tells you to open the Artifact in the desktop app (or returns a viewer descriptor with `--json`). | `0` (`2` tool error) |
 | `request submit ID` | `--verdict GREEN\|RED`, `[--fields JSON \| --fields-file PATH]`, `--reviewer NAME` | Validates owner fields (mutually exclusive `--fields` or `--fields-file`; omitting both submits `{}`) against the verdict's schema and settles the Human request. | `0` (also for `RED`) |
 | `session show REF` | `--summary` | Prints saved Agent review transcript (or token/turn/tool-call summary). | `0` |
 | `session send REF MSG` | — | Continues a saved Agent conversation with a follow-up question (verdict unchanged). | `0` |
