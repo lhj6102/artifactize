@@ -150,7 +150,10 @@ branch: string } |
 } | null) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict, kept })),
 	/**  Read the saved response and both verdict forms. A released review retains its draft. */
 	humanDraft: (id: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft", { id })),
-	/**  Change one field or verdict of the current reviewer's saved draft. */
+	/**
+	 *  Change one field, reason or the verdict of the current reviewer's saved draft. Empty
+	 *  reason text is `invalid`; a reason another surface changed first is refused.
+	 */
 	humanDraftEdit: (id: string, change: DraftChange) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_edit", { id, change })),
 	/**  Remove a Point from the current reviewer's draft without submitting it. */
 	humanDraftRemovePoint: (id: string, point: ReviewPoint) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_remove_point", { id, point })),
@@ -756,7 +759,18 @@ export type Draft = {
 	fields: ([string, FieldValue])[],
 };
 
-export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "groupField"; verdict: Verdict; name: string; item: number; field: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number };
+export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "groupField"; verdict: Verdict; name: string; item: number; field: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number } | 
+/**  Append one reason; empty text is refused. */
+{ kind: "addReason"; text: string } | 
+/**  Replace reason `index`, refused if it no longer reads `previous`. */
+{ kind: "editReason"; index: number; previous: string; text: string } | 
+/**  Remove reason `index`, refused if it no longer reads `previous`. */
+{ kind: "removeReason"; index: number; previous: string };
+
+export type DraftReadiness = {
+	green: Readiness,
+	red: Readiness,
+};
 
 /**
  *  What the library says of an edit before it is made: the definition files it would write, by
@@ -1186,6 +1200,9 @@ export type QueryView = {
 	start: string,
 };
 
+/**  Whether a verdict's answer can be submitted; `reason` is the library's sentence. */
+export type Readiness = { kind: "ready" } | { kind: "blocked"; reason: string };
+
 /**  A newer release and how to update to it. */
 export type ReleaseNotice = {
 	running: string,
@@ -1232,6 +1249,10 @@ export type ResultItem = {
 
 export type ReviewDraft = {
 	verdict: Verdict | null,
+	/**  Why, oldest first, independent of the verdict. */
+	reasons: string[],
+	/**  Whether each verdict can be submitted now, whichever is chosen. */
+	readiness: DraftReadiness,
 	points: ReviewPoint[],
 	green: FormView,
 	red: FormView,

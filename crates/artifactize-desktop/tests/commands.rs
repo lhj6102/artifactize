@@ -939,8 +939,14 @@ additionalProperties = false
         json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
     )
     .unwrap();
-    let edit = |comment: &str| json!({"id": id, "change": {"kind": "field", "verdict": "GREEN", "name": "comment", "value": {"kind": "text", "value": comment}}});
-    invoke(&window, "human_draft_edit", edit("Before Submit")).unwrap();
+    // The reasons fill GREEN's only text field.
+    invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "addReason", "text": "Before Submit"}}),
+    )
+    .unwrap();
+    let edit = |comment: &str| json!({"id": id, "change": {"kind": "editReason", "index": 0, "previous": "Before Submit", "text": comment}});
     let stale = invoke(
         &other,
         "human_submit",
@@ -954,7 +960,8 @@ additionalProperties = false
         stale["message"]
             .as_str()
             .unwrap()
-            .contains("verdict or fields changed")
+            .contains("verdict or fields changed"),
+        "{stale}"
     );
 
     fs::write(
@@ -1007,6 +1014,264 @@ additionalProperties = false
             .owner_fields()["comment"],
         "Saved during Submit"
     );
+}
+
+/// An eval whose RED takes its reasons as a list and needs a severity.
+const REASONS: &str = r#"name = "reasons"
+fingerprint = false
+
+[evals.approve]
+title = "Approve the fixture"
+profile = { kind = "human" }
+payload.instruction = "Review the fixture."
+
+[evals.approve.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved", "comment"]
+additionalProperties = false
+
+[evals.approve.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string" }, minItems = 1 }
+properties.severity = { enum = ["minor", "major"] }
+required = ["change", "severity"]
+additionalProperties = false
+"#;
+
+/// The field names a FormView shows.
+fn field_names(form: &Value) -> Vec<String> {
+    form["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|field| field["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn blocked(reason: &str) -> Value {
+    json!({"kind": "blocked", "reason": reason})
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn reasons_are_edited_in_order_survive_a_restart_and_a_release_and_submit_as_red_items() {
+    let fixture = fixture_with(&[("reasons", REASONS)]);
+    let window = window(&fixture, Mode::Review);
+    let other = tauri::WebviewWindowBuilder::new(&window.app, "other", Default::default())
+        .build()
+        .unwrap();
+    let id = saved(&fixture, "reasons/approve").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let change = |change: Value| json!({"id": id, "change": change});
+
+    let fresh = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(fresh["reasons"], json!([]));
+    // The reasons' fields are left out; constants and the other owner fields stay.
+    assert_eq!(field_names(&fresh["green"]), ["approved"]);
+    assert_eq!(field_names(&fresh["red"]), ["severity"]);
+    assert_eq!(fresh["readiness"]["green"], json!({"kind": "ready"}));
+    assert_eq!(fresh["readiness"]["red"], blocked("RED needs a reason."));
+
+    let empty = invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "addReason", "text": "  \n"})),
+    )
+    .unwrap_err();
+    assert_eq!(empty["kind"], "invalid");
+    let first = invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "addReason", "text": "Totals are wrong"})),
+    )
+    .unwrap();
+    assert_eq!(first["readiness"]["red"], blocked("Fill in severity."));
+    invoke(
+        &other,
+        "human_draft_edit",
+        change(json!({"kind": "addReason", "text": "The footer overlaps"})),
+    )
+    .unwrap();
+
+    // An edit or removal names the reason it saw; a reason changed meanwhile is refused.
+    for stale in [
+        json!({"kind": "editReason", "index": 0, "previous": "Totals look wrong", "text": "x"}),
+        json!({"kind": "removeReason", "index": 1, "previous": "Totals are wrong"}),
+        json!({"kind": "removeReason", "index": 2, "previous": "The footer overlaps"}),
+    ] {
+        let refused = invoke(&window, "human_draft_edit", change(stale)).unwrap_err();
+        assert_eq!(refused["kind"], "action", "{refused}");
+    }
+    let cleared = invoke(
+        &window,
+        "human_draft_edit",
+        change(
+            json!({"kind": "editReason", "index": 0, "previous": "Totals are wrong", "text": " "}),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(cleared["kind"], "invalid");
+    invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "editReason", "index": 0, "previous": "Totals are wrong", "text": "Totals are off by one"})),
+    )
+    .unwrap();
+    invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "addReason", "text": "A typo"})),
+    )
+    .unwrap();
+    let removed = invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "removeReason", "index": 2, "previous": "A typo"})),
+    )
+    .unwrap();
+    let reasons = json!(["Totals are off by one", "The footer overlaps"]);
+    assert_eq!(removed["reasons"], reasons);
+    let rated = invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "field", "verdict": "RED", "name": "severity", "value": {"kind": "choice", "value": 1}})),
+    )
+    .unwrap();
+    assert_eq!(rated["readiness"]["red"], json!({"kind": "ready"}));
+    assert_eq!(rated["readiness"]["green"], json!({"kind": "ready"}));
+    // The field the reasons fill is not edited as a field.
+    assert!(
+        invoke(
+            &window,
+            "human_draft_edit",
+            change(json!({"kind": "field", "verdict": "RED", "name": "change", "value": {"kind": "list", "value": ["x"]}})),
+        )
+        .is_err()
+    );
+
+    // The draft outlives the app and a release.
+    drop(other);
+    drop(window);
+    let window = self::window(&fixture, Mode::Review);
+    let restarted = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(restarted["reasons"], reasons);
+    invoke(&window, "human_release", json!({"ids": [id], "job": 1})).unwrap();
+    let released = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(released["reasons"], reasons);
+    invoke(&window, "human_claim", json!({"id": id, "job": 2})).unwrap();
+
+    invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "verdict", "verdict": "RED"})),
+    )
+    .unwrap();
+    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 3})).unwrap();
+    assert_eq!(submitted["settled"], "published");
+    assert_eq!(
+        saved(&fixture, "reasons/approve")
+            .request
+            .result()
+            .map(|result| result.to_json()),
+        Some(json!({
+            "verdict": "RED",
+            "change": ["Totals are off by one", "The footer overlaps"],
+            "severity": "major",
+        }))
+    );
+    let after = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(after["reasons"], json!([]));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn green_joins_its_reasons_into_its_text_field_and_red_names_its_missing_owner_field() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    for text in ["Read the notes", "The version matches"] {
+        invoke(
+            &window,
+            "human_draft_edit",
+            json!({"id": id, "change": {"kind": "addReason", "text": text}}),
+        )
+        .unwrap();
+    }
+    let draft = invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+    )
+    .unwrap();
+    // RED's one list takes the reasons; its required text stays an owner field.
+    assert_eq!(field_names(&draft["red"]), ["reason"]);
+    assert_eq!(draft["readiness"]["red"], blocked("Fill in reason."));
+    assert_eq!(draft["readiness"]["green"], json!({"kind": "ready"}));
+    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 2})).unwrap();
+    assert_eq!(submitted["settled"], "published");
+    assert_eq!(
+        saved(&fixture, "release/signoff")
+            .request
+            .result()
+            .map(|result| result.to_json()),
+        Some(json!({
+            "verdict": "GREEN",
+            "approved": true,
+            "comment": "Read the notes\n\nThe version matches",
+        }))
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_verdict_without_a_field_for_reasons_is_blocked_while_reasons_exist() {
+    let declaration = r#"name = "plain"
+fingerprint = false
+
+[evals.approve]
+title = "Approve the fixture"
+profile = { kind = "human" }
+payload.instruction = "Review the fixture."
+"#;
+    let fixture = fixture_with(&[("plain", declaration)]);
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "plain/approve").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let draft = invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "addReason", "text": "Why"}}),
+    )
+    .unwrap();
+    assert_eq!(
+        draft["readiness"]["green"],
+        blocked("GREEN takes no reasons; remove them.")
+    );
+    assert_eq!(
+        draft["readiness"]["red"],
+        blocked("RED takes no reasons; remove them.")
+    );
+    invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+    )
+    .unwrap();
+    let refused = invoke(&window, "human_draft_submit", json!({"id": id, "job": 2})).unwrap_err();
+    assert_eq!(refused["kind"], "invalid");
+    assert_eq!(refused["message"], "GREEN takes no reasons; remove them.");
+    let removed = invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "removeReason", "index": 0, "previous": "Why"}}),
+    )
+    .unwrap();
+    assert_eq!(removed["readiness"]["green"], json!({"kind": "ready"}));
+    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 3})).unwrap();
+    assert_eq!(submitted["settled"], "published");
 }
 
 #[test]

@@ -10,9 +10,36 @@ use crate::{App, Failure, ids::RequestKey};
 #[serde(rename_all = "camelCase")]
 pub struct ReviewDraft {
     pub verdict: Option<Verdict>,
+    /// Why, oldest first, independent of the verdict.
+    pub reasons: Vec<String>,
+    /// Whether each verdict can be submitted now, whichever is chosen.
+    pub readiness: DraftReadiness,
     pub points: Vec<ReviewPoint>,
     pub green: FormView,
     pub red: FormView,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct DraftReadiness {
+    pub green: Readiness,
+    pub red: Readiness,
+}
+
+/// Whether a verdict's answer can be submitted; `reason` is the library's sentence.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Readiness {
+    Ready,
+    Blocked { reason: String },
+}
+
+impl From<review::Readiness> for Readiness {
+    fn from(readiness: review::Readiness) -> Self {
+        match readiness {
+            review::Readiness::Ready => Self::Ready,
+            review::Readiness::Blocked(reason) => Self::Blocked { reason },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -71,6 +98,21 @@ pub enum DraftChange {
         name: String,
         item: u32,
     },
+    /// Append one reason; empty text is refused.
+    AddReason {
+        text: String,
+    },
+    /// Replace reason `index`, refused if it no longer reads `previous`.
+    EditReason {
+        index: u32,
+        previous: String,
+        text: String,
+    },
+    /// Remove reason `index`, refused if it no longer reads `previous`.
+    RemoveReason {
+        index: u32,
+        previous: String,
+    },
 }
 
 impl From<DraftChange> for review::DraftEdit {
@@ -114,6 +156,17 @@ impl From<DraftChange> for review::DraftEdit {
                 name,
                 item,
             },
+            DraftChange::AddReason { text } => Self::AddReason { text },
+            DraftChange::EditReason {
+                index,
+                previous,
+                text,
+            } => Self::EditReason {
+                index,
+                previous,
+                text,
+            },
+            DraftChange::RemoveReason { index, previous } => Self::RemoveReason { index, previous },
         }
     }
 }
@@ -131,13 +184,19 @@ fn view(
     draft: review::Draft,
 ) -> Result<ReviewDraft, Failure> {
     let green = draft
-        .form(request, Verdict::Green.into())
+        .owner_form(request, Verdict::Green.into())
         .map_err(Failure::Invalid)?;
     let red = draft
-        .form(request, Verdict::Red.into())
+        .owner_form(request, Verdict::Red.into())
         .map_err(Failure::Invalid)?;
+    let readiness = DraftReadiness {
+        green: draft.readiness(request, Verdict::Green.into()).into(),
+        red: draft.readiness(request, Verdict::Red.into()).into(),
+    };
     Ok(ReviewDraft {
         verdict: draft.verdict.map(Into::into),
+        reasons: draft.reasons,
+        readiness,
         points: draft.points.into_iter().map(Into::into).collect(),
         green: super::form::project(Verdict::Green, &green),
         red: super::form::project(Verdict::Red, &red),
@@ -159,7 +218,8 @@ pub async fn human_draft(
     view(&request.request, draft)
 }
 
-/// Change one field or verdict of the current reviewer's saved draft.
+/// Change one field, reason or the verdict of the current reviewer's saved draft. Empty
+/// reason text is `invalid`; a reason another surface changed first is refused.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_draft_edit(
@@ -167,6 +227,8 @@ pub async fn human_draft_edit(
     id: RequestKey,
     change: DraftChange,
 ) -> Result<ReviewDraft, Failure> {
+    let change = review::DraftEdit::from(change);
+    change.check().map_err(Failure::Invalid)?;
     let id = id.into_inner();
     let turn = super::draft_turns(&app, std::slice::from_ref(&id)).await?;
     let _claim = app.human.claim_gate.lock().await;
@@ -175,7 +237,7 @@ pub async fn human_draft_edit(
         &app.launch.state,
         &request.request.id,
         &app.launch.reviewer,
-        change.into(),
+        change,
     )
     .await
     .map_err(Failure::Action)?;

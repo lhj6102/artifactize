@@ -238,6 +238,90 @@ async fn schema_ten_reviews_keep_their_receipts_and_gain_drafts() {
     );
 }
 
+#[tokio::test]
+async fn a_draft_saved_before_reasons_turns_its_red_text_into_a_reason_and_submits_it() {
+    use artifactize_core::review::{self, Answer, DraftEdit, Job, Readiness, read_draft};
+
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(returning()).await;
+    let id = &run.requests[0].id;
+    let alice = "alice".parse().unwrap();
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, id, &alice).await.unwrap();
+    drop(receipts);
+    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    db.execute(
+        "INSERT INTO review_drafts(request_id, reviewer, data) VALUES (?, 'alice', ?)",
+        rusqlite::params![
+            id,
+            json!({
+                "verdict": "RED",
+                "green": [["approved", {"kind": "fixed"}]],
+                "red": [["reason", {"kind": "text", "value": "The totals are wrong"}]],
+                "points": [],
+            })
+            .to_string()
+        ],
+    )
+    .unwrap();
+    drop(db);
+
+    let draft = read_draft(&fixture.state, id, &alice)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.reasons, ["The totals are wrong"]);
+    let request = store::read_request(&fixture.state, id.as_str())
+        .await
+        .unwrap()
+        .request;
+    assert_eq!(
+        draft.readiness(&request, artifactize_core::runtime::Verdict::Red),
+        Readiness::Ready
+    );
+    // The first save keeps the adopted reasons as reasons.
+    let saved = review::edit_draft(
+        &fixture.state,
+        id,
+        &alice,
+        DraftEdit::AddReason {
+            text: "The footer overlaps".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_draft(&fixture.state, id, &alice).await.unwrap(),
+        Some(saved)
+    );
+
+    let submitted = Job::Submit {
+        id: id.clone(),
+        answer: Answer::SavedDraft,
+        claim: false,
+    }
+    .run(
+        fixture.state.clone(),
+        alice.clone(),
+        CancellationToken::new(),
+        review::log::channel().0,
+    )
+    .await;
+    assert!(
+        matches!(submitted, review::Outcome::Submitted { result: Ok(_), .. }),
+        "{:?}",
+        submitted.notice()
+    );
+    let settled = store::read_request(&fixture.state, id.as_str())
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(settled.request.result().unwrap()).unwrap(),
+        json!({"verdict": "RED", "reason": "The totals are wrong\n\nThe footer overlaps"})
+    );
+    assert_eq!(read_draft(&fixture.state, id, &alice).await.unwrap(), None);
+}
+
 #[test]
 fn a_long_open_viewer_cannot_read_a_new_folder_parts_files() {
     let root = support::os::tempdir();
