@@ -1,7 +1,7 @@
 // The left pane: hiding and resizing it, starring a branch, searching, and the reviews waiting
 // for a person as other processes change them.
 import assert from "node:assert/strict";
-import { addRepository, addWorktrees, artifactize, createProject, createRelease, declareRelease, orderRuns, request, requests, savedRuns, verify, verifyWaiting } from "../fixtures/repo.ts";
+import { addRepository, addWorktrees, artifactize, createProject, createRelease, declareRelease, orderRuns, request, requests, savedRuns, signOff, verify, verifyWaiting } from "../fixtures/repo.ts";
 import { nativePath, removeTree, type NativePath } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
@@ -196,6 +196,33 @@ export const scenarios: Scenario[] = [
       await app.until(async () => (await app.review.list()).some((row) => row.id === older), "releasing Bob's claim restores the waiting review");
       await app.review.openListed(newer);
       assert.match(await app.review.debugState(), new RegExp(`^Request ${newer} `));
+    },
+  }),
+  scenario({
+    id: "review-live-arrival",
+    title: "a Human review created while Review is shown, with a review open, joins the list and the bar's count without leaving Review; claimed, released and submitted elsewhere it leaves and returns",
+    journeys: ["J-LIVE", "J-REVIEW-LIST", "J-BAR"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["review"], data: { first: request(fixture).id } };
+    },
+    run: async (app, { fixture, data: { first } }) => {
+      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === first, "the one waiting review listed");
+      await app.waitingBadge(1);
+      // Created by another process while Review shows a review: the list and the count follow.
+      await addRepository(fixture, "other");
+      const second = requests(fixture).find((saved) => saved.evalId === "release/signoff" && saved.id !== first)!.id;
+      await app.until(async () => (await app.review.list()).some((row) => row.id === second), "the new review joins the list in Review");
+      await app.waitingBadge(2);
+      assert.equal(await app.currentMode(), "Review", "still in Review");
+      assert.equal(artifactize(fixture, ["request", "claim", second, "--reviewer", "bob"]).status, 0);
+      await app.until(async () => !(await app.review.list()).some((row) => row.id === second), "claimed elsewhere, it leaves the waiting list");
+      await app.waitingBadge(1);
+      assert.equal(artifactize(fixture, ["request", "unclaim", second, "--reviewer", "bob"]).status, 0);
+      await app.until(async () => (await app.review.list()).some((row) => row.id === second), "released elsewhere, it returns");
+      signOff(fixture, second);
+      await app.until(async () => !(await app.review.list()).some((row) => row.id === second), "submitted elsewhere, it leaves the list");
+      await app.waitingBadge(1);
     },
   }),
   scenario<{ folder: NativePath; review: string }>({

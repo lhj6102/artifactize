@@ -57,6 +57,12 @@ export class App {
     await holds(this.browser, async () => (await button.getAttribute("aria-current")) === "page", `${mode} selected in the bottom bar`);
   }
 
+  /** The mode the bottom bar marks as shown. */
+  async currentMode(): Promise<string> {
+    const label = await this.browser.$('[aria-label="Modes"] button[aria-current="page"]').getAttribute("aria-label");
+    return (label ?? "").split(",")[0];
+  }
+
   async waitingBadge(count: number): Promise<void> {
     const button = this.browser.$('[aria-label="Modes"] button[aria-label^="Review"]');
     await holds(this.browser, async () => (await button.getAttribute("aria-label")) === (count ? `Review, ${count} waiting` : "Review"), `${count} Human reviews waiting`);
