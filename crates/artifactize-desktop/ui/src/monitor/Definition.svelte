@@ -273,8 +273,8 @@
   .remove {
     display: grid;
     place-items: center;
-    width: 18px;
-    height: 18px;
+    width: var(--control);
+    height: var(--control);
     padding: 0;
     border: 0;
     border-radius: var(--radius-control);

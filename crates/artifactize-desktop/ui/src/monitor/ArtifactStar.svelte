@@ -23,8 +23,8 @@
     flex: none;
     display: inline-grid;
     place-items: center;
-    width: 20px;
-    height: 20px;
+    width: var(--control);
+    height: var(--control);
     margin: 0;
     padding: 0;
     border: 0;

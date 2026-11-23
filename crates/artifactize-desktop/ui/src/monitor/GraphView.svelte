@@ -294,13 +294,20 @@
     fitAll();
   }
 
-  /** Fit View: every Artifact, kept as an element or not, in the canvas as it is now. It
-   * measures the canvas itself rather than trust the last size change reported, which may
-   * not have arrived yet. */
+  /** Fit View: every Artifact, kept as an element or not, in the canvas as it is now, left of a
+   * docked Detail. It measures the canvas itself rather than trust the last size change
+   * reported, which may not have arrived yet. */
   function fitAll() {
     const now = v.canvas ? area(v.canvas.clientWidth, v.canvas.clientHeight) : null;
     if (now) v.area = now;
-    if (v.area) void flow.setViewport(whole(bounds, v.area, FIT, insets), { duration: 0 });
+    const shown = uncovered();
+    if (shown) void flow.setViewport(whole(bounds, shown, FIT, insets), { duration: 0 });
+  }
+
+  /** The part of the canvas that shows: left of a docked Detail (D-CUR-10, D-GRAPH-CAMERA). */
+  function uncovered(): Area | null {
+    if (!v.area) return null;
+    return { width: Math.max(1, v.area.width - v.covered), height: v.area.height };
   }
 
   /** Each Artifact's light by its tree id, for the Navigator. */
@@ -330,8 +337,9 @@
   function zoomBy(factor: number) {
     const now = flow.getViewport();
     const zoom = Math.min(Math.max(now.zoom * factor, MIN_ZOOM), MAX_ZOOM);
-    if (!v.area || zoom === now.zoom) return;
-    void flow.setViewport(zoomedAround(now, zoom, v.area, insets), { duration: 0 });
+    const shown = uncovered();
+    if (!shown || zoom === now.zoom) return;
+    void flow.setViewport(zoomedAround(now, zoom, shown, insets), { duration: 0 });
   }
 
   /** The Navigator asked for `point` in the middle of the view, the zoom kept. */

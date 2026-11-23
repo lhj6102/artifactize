@@ -107,7 +107,7 @@
     width: var(--dock-width);
     contain: inline-size;
     overflow: hidden;
-    border-top: 1px solid var(--line-group);
+    border-top: 1px solid var(--line-panel);
     border-left: 1px solid var(--line-panel);
   }
   .edge {

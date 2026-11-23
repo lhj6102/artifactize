@@ -340,7 +340,7 @@
             {#if shown.kind === "run"}
               <span class="tool-sep"></span>
               <button class="tool" aria-pressed={runOpen} disabled={!run} onclick={toggleRun}>Run details</button>
-              <button class="tool" onclick={() => void app.showBranchGraph(run?.chatBranch ?? shown.branch)}><Icon name="open" />Open in Chat</button>
+              <button class="tool" disabled={!run} onclick={() => void app.showBranchGraph(run?.chatBranch ?? shown.branch)}><Icon name="open" />Open in Chat</button>
             {/if}
           {/snippet}
           {#if shown.kind === "run"}

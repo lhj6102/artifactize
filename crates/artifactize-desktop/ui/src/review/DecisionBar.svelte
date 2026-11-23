@@ -226,13 +226,10 @@
     font-size: var(--text-small);
     font-variant-numeric: tabular-nums;
   }
-  /* The pet overlay's decision row: the choice at the left, Submit at the right. */
+  /* The pet overlay's decision row: the review's decision bar without the claim, the choice at
+     the left and Submit at the right. */
   .bar.compact {
-    min-height: 0;
     margin-top: 0;
-    padding: 0;
-    border: 0;
-    background: none;
   }
   .bar.compact .decide {
     flex: 1;

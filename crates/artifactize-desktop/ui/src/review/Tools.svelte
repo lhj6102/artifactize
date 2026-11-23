@@ -48,7 +48,8 @@
         {#if groups.length > 1}<p class="artifact">{group.artifact}</p>{/if}
         <div class="row">
           {#each group.tools as tool (tool.name)}
-            {@const hint = usable || review.settled ? tool.description : "Claim to run the tools"}
+            {@const claimant = review.view?.claim && !review.owned ? review.view.claim.reviewer : null}
+            {@const hint = review.owned || review.settled ? tool.description : claimant ? `Taken by ${claimant}` : "Claim to run the tools"}
             <button class="button small" title={hint} disabled={!usable} onclick={() => run(tool)}><Icon name="play" />{tool.operation}</button>
           {/each}
         </div>
