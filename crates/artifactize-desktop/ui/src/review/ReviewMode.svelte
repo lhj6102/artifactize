@@ -8,6 +8,7 @@
   // in a review steps back to the list.
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
   import { onMount, tick, untrack } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import type { Attachment } from "svelte/attachments";
   import { Coalesced } from "../ipc/coalesced";
   import { REVIEW_DEFAULT_QUERY, call, CommandError, message, onStateChanged, type BrowseView, type ReviewMatch } from "../ipc/client";
@@ -28,15 +29,25 @@
   const { browse, reviewMode: r } = app;
 
   const rows = $derived(r.invalidFilter ? [] : r.matches);
-  /** The reviews grouped by project, each group in the list's order. */
+  /** Group by project within each page; an appended page never rearranges existing rows. */
   const groups = $derived.by(() => {
-    const byProject: [string, ReviewMatch[]][] = [];
-    for (const row of rows) {
-      const group = byProject.find(([project]) => project === row.projectKey);
-      if (group) group[1].push(row);
-      else byProject.push([row.projectKey, [row]]);
+    const groups: { key: string; project: string; rows: ReviewMatch[] }[] = [];
+    let start = 0;
+    const ends = r.pageEnds.length ? r.pageEnds : [rows.length];
+    for (const [page, end] of ends.entries()) {
+      const next: { key: string; project: string; rows: ReviewMatch[] }[] = [];
+      for (const row of rows.slice(start, end)) {
+        const key = `${page}:${row.projectKey}`;
+        const group = next.find((each) => each.key === key);
+        if (group) group.rows.push(row);
+        else next.push({ key, project: row.projectKey, rows: [row] });
+      }
+      const last = groups.at(-1);
+      if (last && next[0]?.project === last.project) last.rows.push(...next.shift()!.rows);
+      groups.push(...next);
+      start = end;
     }
-    return byProject;
+    return groups;
   });
   const shown = $derived(r.shown);
   const review = $derived(shown.kind === "review" ? app.reviews[shown.id] : undefined);
@@ -54,36 +65,81 @@
   /** The review's title, after its eval: said once, in the header row. */
   const subtitle = $derived(shown.kind === "review" && review?.view ? review.view.title.split(" · ").slice(1).join(" · ") : "");
 
-  /** Search the library for `text`; the newest search wins. */
-  let searches = 0;
   let typingRevision = 0;
-  async function search(text: string, typed?: number): Promise<void> {
-    const mine = ++searches;
+  let pending: { text: string } | null = null;
+  let openNewest = false;
+  let loadingMore = $state(false);
+
+  /** All search IPC, including typing, refreshes and the next cursor, goes through one reader. */
+  async function read(): Promise<void> {
+    if (typing !== undefined) return;
+    const typed = pending;
+    pending = null;
+    if (!typed && r.invalidFilter !== null) return;
+    const revision = typingRevision;
+    const text = typed?.text ?? r.query;
+    const more = !typed && loadingMore;
     try {
-      const page = await call(app.ipc.humanSearch(text, null));
-      if (mine !== searches || (typed !== undefined && typed !== typingRevision)) return;
+      let cursor = more ? r.next : null;
+      if (more && cursor === null) return;
+      const rows = new SvelteMap((more ? r.matches : []).map((row) => [row.id, row]));
+      const ends = more ? [...r.pageEnds] : [];
+      const wanted = r.pageEnds.length || 1;
+      do {
+        const page = await call(app.ipc.humanSearch(text, cursor));
+        if (revision !== typingRevision) return;
+        for (const row of page.reviews) rows.set(row.id, row);
+        ends.push(rows.size);
+        cursor = page.next === cursor ? null : page.next;
+      } while (!more && !typed && cursor !== null && ends.length < wanted);
+      const top = more ? r.panes.pane?.scrollTop : undefined;
       r.query = text;
-      if (typed !== undefined) r.invalidFilter = null;
-      r.matches = page.reviews;
-      r.next = page.next;
+      r.invalidFilter = null;
+      r.matches = [...rows.values()];
+      r.pageEnds = ends;
+      r.next = cursor;
       r.searched = true;
       r.error = null;
+      if (openNewest) {
+        openNewest = false;
+        if (r.matches[0]) open(r.matches[0]);
+      }
+      if (top !== undefined) {
+        await tick();
+        if (r.panes.pane) r.panes.pane.scrollTop = top;
+      }
     } catch (failure) {
-      if (mine !== searches || (typed !== undefined && typed !== typingRevision)) return;
-      if (typed !== undefined) {
+      if (revision !== typingRevision) return;
+      if (typed) {
         if (failure instanceof CommandError && failure.failure.kind === "invalid") r.invalidFilter = text;
         else { r.invalidFilter = null; query = r.query; }
       }
       r.error = message(failure);
+    } finally {
+      if (more) loadingMore = false;
     }
   }
 
+  const refresh = new Coalesced(read, () => app.mode === "review" || !r.searched);
+
   function setQuery(text: string) {
-    const typed = ++typingRevision;
+    typingRevision++;
+    loadingMore = false;
+    pending = null;
     r.invalidFilter = null;
     query = text;
     clearTimeout(typing);
-    typing = setTimeout(() => void search(text, typed), 120);
+    typing = setTimeout(() => {
+      typing = undefined;
+      pending = { text };
+      refresh.request();
+    }, 120);
+  }
+
+  function moreReviews() {
+    if (r.next === null || loadingMore || typing !== undefined || pending || r.invalidFilter !== null) return;
+    loadingMore = true;
+    refresh.request();
   }
 
   /** Open the review of `row` in the main area, the keyboard following it. */
@@ -99,6 +155,7 @@
   }
 
   function paneKey(event: KeyboardEvent) {
+    if (event.target instanceof HTMLButtonElement) return;
     if (plain(event, "ArrowDown") || plain(event, "j")) move(1);
     else if (plain(event, "ArrowUp") || plain(event, "k")) move(-1);
     else if (plain(event, "Enter")) {
@@ -173,24 +230,25 @@
     if (app.launch.mode !== "review") return;
     app.mode = "review";
     if (app.launch.request) void app.openRequest(app.launch.request).then(() => focus("main"));
-    else void search(r.query).then(() => {
-      if (r.matches.length > 0) open(r.matches[0]);
-    });
+    else {
+      openNewest = true;
+      refresh.request();
+    }
   }
 
   /** A claim, a submission or a new review elsewhere: the list follows it, one search at a time
    * and only while Review is on screen; a change missed while it was not is read when it is. */
-  const refresh = new Coalesced(() => r.invalidFilter === null ? search(r.query) : Promise.resolve(), () => app.mode === "review");
   const following: Attachment = () => {
     if (app.mode === "review") untrack(() => refresh.showing());
   };
 
   onMount(() => {
-    void search(r.query);
     if (browse.view) accept(browse.view);
+    if (!openNewest && !r.searched) refresh.request();
     const unshown = browse.onShown(accept);
     const unchanged = onStateChanged(() => refresh.request());
     return () => {
+      clearTimeout(typing);
       unshown();
       unchanged();
     };
@@ -221,9 +279,9 @@
             onkeydown={paneKey}
             {@attach scrollTo(() => (r.selected === null ? ":not(*)" : `[data-key="${CSS.escape(r.selected)}"]`))}
           >
-            {#each groups as [projectKey, members] (projectKey)}
-              <li class="group" role="presentation">{members[0]?.project}</li>
-              {#each members as row (row.id)}
+            {#each groups as group (group.key)}
+              <li class="group" role="presentation">{group.rows[0]?.project}</li>
+              {#each group.rows as row (row.id)}
                 {@const opened = r.shown.kind === "review" && r.shown.id === (app.reviews[row.id]?.id ?? row.id)}
                 <li role="option" aria-selected={opened} class:selected={opened} class:cursor={r.selected === row.id} data-key={row.id} onclick={() => open(row)} onkeydown={() => {}}>
                   <span class="glyph {tone(row.mark.status)}"><Icon name={statusIcon(row.mark.status)} label={row.mark.status.replaceAll("_", " ")} /></span>
@@ -234,6 +292,9 @@
             {:else}
               <li class="empty">{r.searched ? "No review matches the filter." : "Loading…"}</li>
             {/each}
+            {#if r.next !== null && !r.invalidFilter}
+              <li role="presentation"><button class="more" aria-disabled={loadingMore} onclick={moreReviews}>More reviews</button></li>
+            {/if}
           </ul>
         </section>
       </Split>
@@ -321,6 +382,9 @@
   }
   /* A project's name over its reviews: a group label (D-SYS-5). */
   .group {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 10px var(--pad) 4px;
     font-size: var(--text-label);
     font-weight: 600;
@@ -371,6 +435,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .more {
+    width: 100%;
+    height: var(--row-pane);
+    padding: 0 var(--pad);
+    border: 0;
+    background: none;
+    text-align: left;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: var(--text-small);
+    cursor: pointer;
+  }
+  .more:hover { background: var(--surface-group); }
+  .more:focus-visible { outline-offset: -2px; }
   .list li.empty {
     padding: 6px var(--pad);
     color: var(--ink-2);

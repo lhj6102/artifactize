@@ -16,6 +16,8 @@ export class ReviewModeState {
   query = $state<string>(REVIEW_DEFAULT_QUERY);
   /** The reviews the library found for the filter, newest first. */
   matches = $state.raw<ReviewMatch[]>([]);
+  /** Each loaded page ends here in matches, so later pages stay below earlier ones. */
+  pageEnds = $state.raw<number[]>([]);
   /** The library's next page of the filter, if there is one. */
   next = $state<number | null>(null);
   /** The library has answered the filter at least once. */
