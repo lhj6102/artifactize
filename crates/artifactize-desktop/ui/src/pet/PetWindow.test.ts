@@ -1,5 +1,5 @@
 // The pet overlay against a mocked command boundary: it holds the active review's library
-// draft (Points, the verdict and its form), points in an open viewer of the review's Artifact
+// draft (Points, reasons, the verdict and its fields), points in an open viewer of the review's Artifact
 // only, submits as Review does, and leads back to the review in the main window.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -36,34 +36,46 @@ function backend(submitError?: string) {
   return { calls, library };
 }
 
-it("writes the review's form and opens the verdict the draft holds", async () => {
+it("writes reasons and the verdict to the shared draft, split as Review's is, and submits as Review does", async () => {
   const { calls, library } = backend();
   // Saved before (another window, an earlier run of the app): GREEN was chosen.
   library.draft.verdict = "GREEN";
+  const user = userEvent.setup();
   render(PetWindow, { request: "run-a-2" });
   await screen.findByRole("button", { name: "Show release/signoff in Review" });
-  // The draft holds GREEN: its form is open, Submit names it.
-  await screen.findByRole("button", { name: "Submit GREEN" });
+  const submit = await screen.findByRole<HTMLButtonElement>("button", { name: /^Submit GREEN/ });
   expect(screen.getAllByRole("radio").map((button) => button.textContent?.trim())).toEqual(["GREEN", "RED"]);
-  expect(screen.queryByRole("button", { name: /^(GREEN|RED)$/ })).toBeNull();
-  await fireEvent.input(screen.getByLabelText(/comment/i), { target: { value: "Looks right." } });
-  await waitFor(() => expect(library.draft.green.draft.fields[1][1]).toEqual({ kind: "text", value: "Looks right." }));
-  await fireEvent.click(screen.getByRole("radio", { name: "RED" }));
-  await screen.findByRole("button", { name: "Submit RED" });
+  // No claim in the overlay: no Claim to review, no Release claim.
+  expect(screen.queryByRole("button", { name: /claim/i })).toBeNull();
+  const field = screen.getByRole<HTMLInputElement>("textbox", { name: "Reason" });
+  const add = screen.getByRole<HTMLButtonElement>("button", { name: "Add reason (Enter)" });
+  expect(add.disabled).toBe(true);
+  await user.type(field, "Looks right");
+  expect(submit.disabled).toBe(true);
+  expect(screen.getByText("Add the typed reason first")).toBeTruthy();
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(library.draft.reasons).toEqual(["Looks right"]));
+  expect(field.value).toBe("");
+  const reasons = screen.getByRole("list", { name: "Reasons" });
+  expect(within(reasons).getByText("Looks right")).toBeTruthy();
+  // Each reason has Remove alone; none is edited in the overlay.
+  expect(within(reasons).queryByRole("button", { name: /Edit/ })).toBeNull();
+  await user.click(screen.getByRole("radio", { name: "RED (r)" }));
+  await screen.findByRole("button", { name: /^Submit RED/ });
   expect(library.draft.verdict).toBe("RED");
-  await fireEvent.click(screen.getByRole("button", { name: "Submit RED" }));
+  await user.click(screen.getByRole("button", { name: /^Submit RED/ }));
   await waitFor(() => expect(calls.some((call) => call.cmd === "human_draft_submit")).toBe(true));
 });
 
-it("shows a submission error once and keeps the verdict form open", async () => {
+it("says a submission refusal once, above the decision row, the draft kept", async () => {
   const error = "A comment is required.";
   const { library } = backend(error);
   library.draft.verdict = "GREEN";
+  library.draft.reasons = ["Fine"];
   render(PetWindow, { request: "run-a-2" });
-  await fireEvent.click(await screen.findByRole("button", { name: "Submit GREEN" }));
-  expect((await screen.findByRole("alert")).textContent).toBe(error);
-  expect(screen.getAllByText(error)).toHaveLength(1);
-  expect(screen.getByLabelText(/comment/i)).toBeTruthy();
+  await fireEvent.click(await screen.findByRole("button", { name: /^Submit GREEN/ }));
+  await waitFor(() => expect(screen.getAllByText(error)).toHaveLength(1));
+  expect(screen.getByText("Fine")).toBeTruthy();
 });
 
 it("points only in the open viewer matched to the review's original request, saying why otherwise", async () => {
@@ -100,49 +112,45 @@ it("leads back to the review in the main window", async () => {
   expect(calls.some((call) => call.cmd === "main_focus")).toBe(true);
 });
 
-it("shows a saved verdict's form with what was entered, sending nothing; a fresh draft opens none", async () => {
+it("shows a saved draft's verdict and reasons, sending nothing; a fresh draft chooses none and says so", async () => {
   const fresh = backend();
   render(PetWindow, { request: "run-a-2" });
   await screen.findByRole("button", { name: "Show release/signoff in Review" });
-  // No verdict chosen yet: the choice waits, no form is open.
-  await screen.findByRole("button", { name: "GREEN" });
-  expect(screen.queryByRole("radiogroup", { name: "Verdict" })).toBeNull();
+  await screen.findByText("Choose GREEN or RED");
+  expect(screen.getAllByRole("radio").every((tab) => tab.getAttribute("aria-checked") === "false")).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: /^Submit/ }).disabled).toBe(true);
   expect(fresh.calls.some((call) => call.cmd === "human_draft_edit")).toBe(false);
   cleanup();
   clearMocks();
   // Saved with RED and a reason, as before a restart.
   const saved = backend();
   saved.library.draft.verdict = "RED";
-  saved.library.draft.red.draft.fields = [["reason", { kind: "text", value: "The total is wrong." }]];
+  saved.library.draft.reasons = ["The total is wrong."];
   render(PetWindow, { request: "run-a-2" });
-  const chosen = await screen.findByRole("radio", { name: "RED" });
-  expect(chosen.getAttribute("aria-checked")).toBe("true");
-  expect((await screen.findByDisplayValue("The total is wrong.")).tagName).toMatch(/INPUT|TEXTAREA/);
+  const chosen = await screen.findByRole("radio", { name: "RED (r)" });
+  await waitFor(() => expect(chosen.getAttribute("aria-checked")).toBe("true"));
+  expect(await screen.findByText("The total is wrong.")).toBeTruthy();
   expect(saved.calls.some((call) => call.cmd === "human_draft_edit")).toBe(false);
 });
 
-it("reads compact Points from the shared draft and inserts only when a form is open", async () => {
+it("reads compact Points from the shared draft; Insert puts one into the overlay's reasons field", async () => {
   const { library } = backend();
   const user = userEvent.setup();
   render(PetWindow, { request: "run-a-2" });
   const point = await screen.findByRole<HTMLButtonElement>("button", { name: "Point" });
   expect(point.disabled).toBe(true);
   expect(screen.queryByRole("list", { name: "Points" })).toBeNull();
-  expect(screen.queryByRole("textbox")).toBeNull();
   const text = "release.md L2:C4";
   library.draft.points = [{ text, source: "release · File Explorer", at: "2026-11-23T00:00:00Z" }];
   await emit("human-draft-changed", { id: "run-a-2" });
   const points = await screen.findByRole("list", { name: "Points" });
   expect(within(points).getByText(text)).toBeTruthy();
   expect(points.textContent).not.toContain("File Explorer");
-  const insert = within(points).getByRole<HTMLButtonElement>("button", { name: "Insert" });
-  expect(insert.disabled).toBe(true);
   expect(within(points).queryByRole("button", { name: /remove/i })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "GREEN" }));
-  const comment = await screen.findByLabelText<HTMLTextAreaElement>(/^comment/);
-  await user.type(comment, "Here: ");
-  await user.click(insert);
-  expect(comment.value).toBe(`Here: ${text}`);
-  await waitFor(() => expect(library.draft.green.draft.fields).toContainEqual(["comment", { kind: "text", value: `Here: ${text}` }]));
+  const field = screen.getByRole<HTMLInputElement>("textbox", { name: "Reason" });
+  await user.type(field, "Here: ");
+  await user.click(within(points).getByRole("button", { name: "Insert" }));
+  expect(field.value).toBe(`Here: ${text}`);
+  expect(library.draft.reasons).toEqual([]);
   expect(library.draft.points).toHaveLength(1);
 });

@@ -3,12 +3,12 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, expect, it } from "vitest";
 import { waitFor } from "@testing-library/svelte";
 import { AppState } from "../shell/app.svelte";
-import { draftLibrary, humanView } from "./fixtures";
+import { draftLibrary, greenForm, humanView, scoredRed } from "./fixtures";
 
 afterEach(() => clearMocks());
 
 function backend() {
-  const library = draftLibrary();
+  const library = draftLibrary(greenForm, scoredRed);
   mockIPC(async (command, args) => {
     if (command === "human_open") return humanView("review");
     const drafted = library.answer(command, args);
@@ -23,8 +23,9 @@ for (const [first, second] of [["run-a-2", "run-follower-2"], ["run-follower-2",
     const app = new AppState();
     const opened = app.review(first);
     await opened.load();
-    await opened.choose("GREEN");
-    await opened.form!.set("comment", { kind: "text", value: "first draft" });
+    await opened.choose("RED");
+    await opened.form!.set("note", { kind: "text", value: "first draft" });
+    await opened.addReason("first reason");
     const originalForm = opened.form;
 
     // The screen may already hold this handle when its read discovers the alias.
@@ -33,14 +34,15 @@ for (const [first, second] of [["run-a-2", "run-follower-2"], ["run-follower-2",
     expect(app.reviews["run-a-2"]).toBe(opened);
     expect(app.reviews["run-follower-2"]).toBe(opened);
     expect(held.form).toBe(originalForm);
-    await held.form!.set("comment", { kind: "text", value: "through the alias" });
-    expect(opened.form!.values.comment).toEqual({ kind: "text", value: "through the alias" });
-    await held.choose("RED");
+    await held.form!.set("note", { kind: "text", value: "through the alias" });
+    expect(opened.form!.values.note).toEqual({ kind: "text", value: "through the alias" });
+    await held.addReason("second reason");
+    expect(opened.reasons).toEqual(["first reason", "second reason"]);
+    await held.choose("GREEN");
     expect(opened.form).toBe(held.form);
-    await opened.choose("GREEN");
-    expect(held.form!.values.comment).toEqual({ kind: "text", value: "through the alias" });
-    held.stopEditing();
-    expect(opened.form).toBeNull();
+    await opened.choose("RED");
+    expect(held.form!.values.note).toEqual({ kind: "text", value: "through the alias" });
+    expect(held.verdict).toBe("RED");
   });
 }
 

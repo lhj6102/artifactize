@@ -314,8 +314,7 @@ it("keeps the Open in Review reference on a submitted Human eval's tab", async (
     review: () => reviewing, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
   expect(await screen.findByRole("button", { name: "Open in Review" })).toBeTruthy();
-  const result = await screen.findByRole("region", { name: "Verdict" });
-  await waitFor(() => expect(result.querySelector(".completed")).not.toBeNull());
+  await screen.findByRole("group", { name: "Result" });
   expect(screen.getByRole("button", { name: "Open in Review" })).toBeTruthy();
 });
 

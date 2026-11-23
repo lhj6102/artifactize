@@ -1,7 +1,9 @@
-// One request in the shared Human Detail: what it shows, which area has focus, the open form and
-// the running job. Every write goes through a backend job; the request's state is whatever the
-// backend last read. Its draft (its Points, the chosen verdict and both forms' values) is the
-// library's, one per review and reviewer, shared with the pet overlay and a viewer's Point.
+// One Human review, shown as a conversation in Review, the Detail and the pet overlay: what it
+// shows, which area has focus and the running job. Every write goes through a backend job; the
+// request's state is whatever the backend last read. Its draft (its Points, its reasons, the
+// chosen verdict and each verdict's own fields) is the library's, one per review and reviewer,
+// shared by every surface and a viewer's Point; whether a verdict can be submitted is the
+// library's readiness.
 import type { Jobs } from "../ipc/jobs.svelte";
 import { CommandError, call, commands, message, type Commands } from "../ipc/client";
 import type {
@@ -128,8 +130,12 @@ export class FormDraft {
   }
 }
 
+/** What the review's running work is: the decision bar shows a claim's, a release's and a
+ * submission's seconds and Cancel in their places; a tool's stand on its run's line. */
+export type Action = "claim" | "release" | "submit" | "tool";
+
 /** The review's running work; `tool` marks a tool's run, which a submission cancels first. */
-type Busy = { label: string; job: number; since: number; tool: boolean };
+type Busy = { label: string; action: Action; job: number; since: number; tool: boolean };
 
 /** One canonical request owns these facts. Alias handles adopt this same instance,
  * never copy its forms, drafts or running work. It is shared through AppState. */
@@ -144,7 +150,8 @@ class ReviewState {
   /** Settles once the running work has ended, its busy state cleared. */
   idle: Promise<void> = Promise.resolve();
   notice = $state.raw<Notice | null>(null);
-  formOpen = $state(false);
+  /** Why the library refused the last submission, until the draft changes or it is tried again. */
+  refusal = $state<string | null>(null);
   forms = $state.raw<Record<Verdict, FormDraft> | null>(null);
   /** The library's draft of this review for this reviewer, as last read or answered. */
   draft = $state.raw<ReviewDraft | null>(null);
@@ -154,9 +161,8 @@ class ReviewState {
   draftReadJob: Promise<void> | null = null;
   draftRevision = 0;
   choice = 0;
-  /** The saved draft's verdict was brought back as its open form: once per review shown, so
-   * leaving the form is not undone by the next read. */
-  restored = false;
+  /** Reason edits, one after another, so each names the reason it saw. */
+  reasonsQueue: Promise<void> = Promise.resolve();
 
   constructor(id: string) { this.id = id; }
 }
@@ -177,19 +183,35 @@ export class Review {
   set busy(value: Busy | null) { this.#state.busy = value; }
   get notice(): Notice | null { return this.#state.notice; }
   set notice(value: Notice | null) { this.#state.notice = value; }
-  readonly form = $derived(this.#state.formOpen && this.draft?.verdict ? this.#state.forms?.[this.draft.verdict] ?? null : null);
   get draft(): ReviewDraft | null { return this.#state.draft; }
+  get refusal(): string | null { return this.#state.refusal; }
 
   get latestPoint(): ReviewPoint | null { return this.#state.latestPoint; }
 
   readonly settled = $derived(this.view?.stage === "completed");
   readonly owned = $derived(this.view?.stage === "review");
   readonly claimable = $derived(this.view?.stage === "claim" && this.view.claim === null);
-  /** A form takes the keys only while the request can still be reviewed. */
-  readonly editing = $derived(this.form !== null && !this.settled);
-  /** Submit is open while a form is, also while a tool runs (a submission cancels it first),
-   * but not while a claim, a release or a submission runs. */
-  readonly submittable = $derived(this.editing && (this.busy === null || this.busy.tool));
+  /** The verdict the draft holds, once claimed: none until GREEN or RED is chosen. */
+  readonly verdict = $derived(this.owned ? this.draft?.verdict ?? null : null);
+  /** The chosen verdict's own fields, the field the reasons fill left out by the library. */
+  readonly form = $derived(this.verdict ? this.#state.forms?.[this.verdict] ?? null : null);
+  readonly reasons = $derived(this.owned ? this.draft?.reasons ?? [] : []);
+
+  /** Why Submit cannot submit now, `typed` being what the reasons field holds and has not
+   * added; `null` when it can. */
+  blocked(typed: string): string | null {
+    const verdict = this.verdict;
+    if (!verdict || !this.draft) return "Choose GREEN or RED";
+    if (typed.trim() !== "") return "Add the typed reason first";
+    const ready = verdict === "GREEN" ? this.draft.readiness.green : this.draft.readiness.red;
+    return ready.kind === "blocked" ? ready.reason : null;
+  }
+
+  /** Submit is open while nothing blocks it, also while a tool runs (a submission cancels it
+   * first), but not while a claim, a release or a submission runs. */
+  submittable(typed: string): boolean {
+    return this.owned && !this.settled && this.blocked(typed) === null && (this.busy === null || this.busy.tool);
+  }
 
   readonly #jobs: Jobs;
   readonly #intern: ((id: string, review: Review) => Review) | undefined;
@@ -226,7 +248,7 @@ export class Review {
     this.tool = Math.min(this.tool, Math.max(view.tools.length - 1, 0));
     // Settled here or by another command: nothing is left to edit, and the Tool log is cleared.
     if (view.stage === "completed") {
-      this.stopEditing();
+      this.#state.choice += 1;
       this.#state.draft = null;
       this.#state.latestPoint = null;
       this.log = [];
@@ -269,16 +291,9 @@ export class Review {
     }
   }
 
-  /** The library's answer: the draft whole, the open form following it. */
+  /** The library's answer: the draft whole, its verdict, reasons and fields following it. */
   #take(draft: ReviewDraft): void {
-    const state = this.#state;
     this.#saveDraft(draft);
-    // A draft saved with a verdict (before a restart, in another window) shows that verdict
-    // chosen, its form open with what was entered; nothing is sent (J-HUMAN-DRAFT).
-    if (!state.restored && this.owned) {
-      state.restored = true;
-      state.formOpen = draft.verdict !== null;
-    }
   }
 
   #saveDraft(draft: ReviewDraft): void {
@@ -293,6 +308,7 @@ export class Review {
       state.forms = { GREEN: form("GREEN"), RED: form("RED") };
     }
     for (const form of Object.values(state.forms)) form.showPending();
+    state.refusal = null;
     const newest = draft.points.at(-1);
     // The library timestamps in fixed-width UTC RFC3339, so this preserves nanosecond order.
     if (newest && (!state.latestPoint || newest.at > state.latestPoint.at)) state.latestPoint = newest;
@@ -315,10 +331,10 @@ export class Review {
     if (acted.view) this.#show(acted.view);
   }
 
-  async #job<T>(label: string, work: (job: number) => Promise<T>, tool = false): Promise<T | undefined> {
+  async #job<T>(label: string, action: Action, work: (job: number) => Promise<T>): Promise<T | undefined> {
     if (this.busy) return undefined;
     const job = this.#jobs.next();
-    this.busy = { label, job, since: Date.now(), tool };
+    this.busy = { label, action, job, since: Date.now(), tool: action === "tool" };
     let ended!: () => void;
     this.#state.idle = new Promise((resolve) => (ended = resolve));
     try {
@@ -333,7 +349,7 @@ export class Review {
   async claim(): Promise<void> {
     if (this.busy || this.settled) return;
     try {
-      const acted = await this.#job("Claiming the review", (job) =>
+      const acted = await this.#job("Claiming the review", "claim", (job) =>
         call(this.ipc.humanClaim(this.id, job)),
       );
       if (acted) this.#acted(acted);
@@ -345,34 +361,31 @@ export class Review {
 
   async #fieldsSaved(): Promise<void> {
     const forms = this.#state.forms;
-    if (forms) await Promise.all([forms.GREEN.ready, forms.RED.ready]);
+    await Promise.all([this.#state.reasonsQueue, ...(forms ? [forms.GREEN.ready, forms.RED.ready] : [])]);
   }
 
-  /** Release the claim, also while the form is edited: the form is left, its draft kept. */
+  /** Release the claim, also while reasons are written: the draft is kept for the next claim. */
   async release(): Promise<void> {
     if (this.busy || this.settled) return;
     try {
-      // The form stays while the release runs, its Submit disabled; released, the form is
-      // left and its draft kept for the next claim.
-      const acted = await this.#job("Releasing the claim", async (job) => {
+      // What was written reaches the library first; released, its draft stays for the next claim.
+      const acted = await this.#job("Releasing the claim", "release", async (job) => {
         await this.#fieldsSaved();
         return call(this.ipc.humanRelease([this.id], job));
       });
-      if (acted && this.editing) this.stopEditing();
       if (acted) this.#acted(acted);
     } catch (error) {
       this.notice = { text: message(error), error: true };
     }
   }
 
-  /** Open the form of `verdict`: the library's draft takes the verdict, each verdict keeping
-   * what was typed into its form. */
+  /** Choose `verdict`: the library's draft takes it, the reasons kept and each verdict keeping
+   * what was typed into its own fields. */
   async choose(verdict: Verdict): Promise<void> {
-    if (this.busy || this.settled) return;
-    this.area = "fields";
+    if (!this.owned || this.settled || (this.busy && !this.busy.tool)) return;
     const state = this.#state;
     const choice = ++state.choice;
-    if (this.form?.verdict === verdict) return;
+    if (this.verdict === verdict) return;
     const answered = this.#answering();
     let answer: ReviewDraft;
     try {
@@ -383,56 +396,79 @@ export class Review {
     }
     // Another verdict was chosen, or editing stopped, while this form was on its way.
     if (state !== this.#state || choice !== state.choice) return;
-    state.restored = true;
     await answered(answer);
-    if (state === this.#state && choice === state.choice && this.owned) state.formOpen = true;
   }
 
-  /** Leave the form; the library keeps its draft, and the same verdict reopens it. */
-  stopEditing(): void {
-    this.#state.choice += 1;
-    this.#state.formOpen = false;
+  /** Add `text` as the newest reason; empty text adds nothing. Whether the library took it. */
+  addReason(text: string): Promise<boolean> {
+    if (text.trim() === "") return Promise.resolve(false);
+    return this.#reasons({ kind: "addReason", text });
   }
 
-  /** Submit the open form; the result says how the settled request stands, or `null` when
-   * nothing was settled. */
-  async submit(): Promise<Settled | null> {
+  /** Change reason `index`, which read `previous` when its edit began, to `text`. */
+  editReason(index: number, previous: string, text: string): Promise<boolean> {
+    if (text.trim() === "" || text === previous) return Promise.resolve(text === previous);
+    return this.#reasons({ kind: "editReason", index, previous, text });
+  }
+
+  /** Remove reason `index`, which read `previous`. */
+  removeReason(index: number, previous: string): Promise<boolean> {
+    return this.#reasons({ kind: "removeReason", index, previous });
+  }
+
+  /** One reason edit after another; the library's answer replaces the draft whole. A refused
+   * edit says why and shows the draft as it now stands. */
+  #reasons(change: DraftChange): Promise<boolean> {
+    if (!this.owned || this.settled) return Promise.resolve(false);
+    const state = this.#state;
+    const wrote = state.reasonsQueue.then(async () => {
+      const answered = this.#answering();
+      try {
+        await answered(await call(this.ipc.humanDraftEdit(this.id, change)));
+        return true;
+      } catch (error) {
+        if (state !== this.#state) return false;
+        this.notice = { text: message(error), error: true };
+        if (this.owned) await this.readDraft();
+        return false;
+      }
+    });
+    state.reasonsQueue = wrote.then(() => {});
+    return wrote;
+  }
+
+  /** Submit the chosen verdict, made of the reasons and its own fields, `typed` being what the
+   * reasons field holds and has not added; the result says how the settled request stands, or
+   * `null` when nothing was settled. */
+  async submit(typed = ""): Promise<Settled | null> {
+    if (!this.submittable(typed)) return null;
     // A running tool ends first: submitting settles the review its run belongs to.
-    if (this.busy?.tool && this.editing) {
+    if (this.busy?.tool) {
       const idle = this.#state.idle;
       this.cancel();
       await idle;
     }
-    const form = this.form;
-    if (this.busy || this.settled) return null;
-    if (!form) {
-      this.notice = { text: "Choose GREEN or RED first.", error: true };
-      return null;
-    }
+    const verdict = this.verdict;
+    const state = this.#state;
+    if (this.busy || this.settled || !verdict) return null;
     try {
-      const submitted = await this.#job(`Submitting ${form.verdict}`, async (job) => {
-        // What is typed reaches the library first: it submits the draft it keeps.
+      const submitted = await this.#job(`Submitting ${verdict}`, "submit", async (job) => {
+        // What is written reaches the library first: it submits the draft it keeps.
         await this.#fieldsSaved();
         return call(this.ipc.humanDraftSubmit(this.id, job));
       });
       if (!submitted) return null;
-      form.error = null;
-      this.#state.formOpen = false;
-      this.#state.draft = null;
+      state.refusal = null;
+      state.draft = null;
       this.log = [];
       this.#acted(submitted);
       return submitted.settled;
     } catch (error) {
-      if (error instanceof CommandError && error.failure.kind !== "read") {
-        form.error = error.message;
-      } else {
-        this.notice = { text: message(error), error: true };
-      }
+      if (error instanceof CommandError && error.failure.kind !== "read") state.refusal = error.message;
+      else this.notice = { text: message(error), error: true };
       return null;
     }
   }
-
-  /** Settles once no Notes are on their way to the library. */
 
 
   /** Run a tool at once; the backend checks the claim when it starts. What the tool prints
@@ -446,11 +482,12 @@ export class Review {
     }
     this.tool = index;
     try {
-      const notice = await this.#job(`Running ${tool.operation}`, (job) =>
+      const notice = await this.#job(`Running ${tool.operation}`, "tool", (job) =>
         call(this.ipc.humanRun(this.id, tool.name, job)),
-      true);
+      );
       if (!notice) return;
-      this.notice = notice;
+      // A tool's failure is said on its run's line, and nowhere else (D-REV-2).
+      this.notice = notice.error ? null : notice;
       // A viewer tool opened a viewer session: its Artifact Viewer window shows it (J-VIEWER).
       if (notice.viewer) await call(this.ipc.viewerWindow(notice.viewer.session, notice.viewer.title));
       // Declarations may have changed; show what the next run resolves.
@@ -470,14 +507,10 @@ export class Review {
     if (this.busy) void this.ipc.humanCancel(this.busy.job);
   }
 
-  /** Esc closes one thing at a time: the job, then the form; `true` means leave the Detail. */
+  /** Esc closes one thing at a time: the running work first; `true` means leave the review. */
   escape(): boolean {
     if (this.busy) {
       this.cancel();
-      return false;
-    }
-    if (this.editing) {
-      this.stopEditing();
       return false;
     }
     return true;

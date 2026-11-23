@@ -1,25 +1,17 @@
 <script lang="ts">
-  // The chosen verdict's owner fields as a person enters them: a text, a choice, a list of items,
-  // or repeated groups of fields, each to add and remove. Constants are filled in and not shown.
-  // Enter never submits; the Submit button of the review's action row and Ctrl+S do. Values are
-  // checked and coerced by the backend's form.
-  import type { Attachment } from "svelte/attachments";
+  // What the chosen verdict asks besides the reasons (D-REV-4, J-HUMAN-FORM), in the request under
+  // the tools: a text, a number, true/false, a choice, a list of items, or repeated groups of
+  // fields, each to add and remove. The field the reasons fill is not among them (the library
+  // leaves it out) and constants are filled in and not shown; a verdict that asks nothing more
+  // shows nothing. Enter never submits. Values are checked and coerced by the backend's form.
   import type { FieldValue, FormField } from "../ipc/client";
-  import type { FormDraft, Review } from "./review.svelte";
-  import type { FormCaret } from "./form-caret";
-  import VerdictChoices from "./VerdictChoices.svelte";
+  import type { FormDraft } from "./review.svelte";
   import Icon from "../shell/Icon.svelte";
 
-  let { review, form, caret, showError = true }: { review: Review; form: FormDraft; caret: FormCaret; showError?: boolean } = $props();
+  let { form }: { form: FormDraft } = $props();
   /** What a person enters: constants are the form's own. */
   const entered = (fields: FormField[]) => fields.filter((field) => field.input.kind !== "fixed");
   const shown = $derived(entered(form.fields));
-
-  /** Typing goes to the form: the first field takes focus when a verdict opens. */
-  const takeFocus: Attachment<HTMLElement> = (root) => {
-    void form;
-    queueMicrotask(() => root.querySelector<HTMLElement>("input, textarea, select")?.focus());
-  };
 
   function set(name: string, value: FieldValue) {
     void form.set(name, value);
@@ -41,7 +33,7 @@
 
 <!-- One scalar input: `id` names it for its label, `label` for screen readers, `onset` takes
      the new value. -->
-{#snippet scalar(field: FormField, value: FieldValue | undefined, id: string, onset: (value: FieldValue) => void, comment = false)}
+{#snippet scalar(field: FormField, value: FieldValue | undefined, id: string, onset: (value: FieldValue) => void)}
   {#if field.input.kind === "bool"}
     {@const chosen = value?.kind === "bool" ? value.value : null}
     <div class="choices" role="radiogroup" aria-labelledby={id}>
@@ -77,7 +69,6 @@
   {:else if field.input.kind === "text"}
     <textarea
       {id}
-      data-comment={comment || undefined}
       rows="2"
       placeholder={placeholder(field.required)}
       value={text(value)}
@@ -96,9 +87,9 @@
   {/if}
 {/snippet}
 
-<div class="form" {@attach caret.attach} {@attach takeFocus}>
-  <VerdictChoices {review} selected={form.verdict} />
-
+{#if shown.length > 0}
+<div class="form" role="group" aria-label="{form.verdict}'s fields">
+  <p class="asks">With {form.verdict}, the eval also asks</p>
   {#each shown as field (field.name)}
       {@const value = form.values[field.name]}
       <div class="field">
@@ -149,23 +140,30 @@
           </div>
           <button class="button small add" onclick={() => void form.add(field.name)}><Icon name="add" />Add</button>
         {:else}
-          {@render scalar(field, value, `field-${field.name}`, (next) => set(field.name, next), field.name === "comment")}
+          {@render scalar(field, value, `field-${field.name}`, (next) => set(field.name, next))}
         {/if}
         {#if field.hint}<span class="hint">{field.hint}</span>{/if}
       </div>
   {/each}
 
-  {#if showError && form.error}
+  {#if form.error}
     <div class="error" role="alert">{form.error}</div>
   {/if}
 </div>
+{/if}
 
 <style>
   .form {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+    margin: 6px 0 2px;
     overflow-wrap: anywhere;
+  }
+  .asks {
+    margin: 0 0 -6px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
   }
   .field {
     display: grid;

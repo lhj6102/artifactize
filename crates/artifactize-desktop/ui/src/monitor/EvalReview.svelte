@@ -69,7 +69,7 @@
         {:else if review.claimable}
           <button class="button small" disabled={review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
         {/if}
-        <Reference onclick={() => request && void app.showReview(request)}>Open in Review</Reference>
+        <Reference onclick={() => request && void app.showReview(request, app.mode === "verify")}>Open in Review</Reference>
         <ReviewProgress {review} />
     </div>
   {/if}

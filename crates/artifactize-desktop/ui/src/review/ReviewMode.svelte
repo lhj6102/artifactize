@@ -20,7 +20,8 @@
   import { tone } from "../shell/tone";
   import { statusIcon } from "../shell/icons";
   import { scrollTo } from "../shell/attach";
-  import { plain } from "../shell/keys";
+  import { composing, plain } from "../shell/keys";
+  import { mark } from "../shell/find";
   import RecordDetail from "../monitor/RecordDetail.svelte";
   import HumanDetail from "./HumanDetail.svelte";
   import type { ReviewFocus } from "./review-mode-state.svelte";
@@ -72,6 +73,42 @@
     const listed = rows.some((row) => row.id === shown.id);
     return listed ? subtitle || title : review.view.title;
   });
+
+  /** Find in the conversation (J-REVIEW-BACK): what is looked for and which place is shown. */
+  let find = $state<{ text: string; at: number } | null>(null);
+  let found = $state(0);
+  let lastShown = "";
+  const shownPlace = $derived(found === 0 || !find ? 0 : ((find.at % found) + found) % found);
+  /** Mark what Find looks for in the shown conversation; re-marks as it changes. */
+  const marking: Attachment<HTMLElement> = (body) => {
+    const looking = find;
+    void review?.view;
+    void review?.draft;
+    void review?.log;
+    if (!looking) {
+      found = 0;
+      lastShown = "";
+      return;
+    }
+    const marked = mark(body, looking.text, looking.at, lastShown);
+    found = marked.found;
+    lastShown = marked.shown;
+    return marked.clear;
+  };
+  /** Enter shows the next place, Shift+Enter the one before; Esc closes the field. */
+  function findKey(event: KeyboardEvent) {
+    const looking = find;
+    if (!looking || composing(event)) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      find = { text: looking.text, at: looking.at + (event.shiftKey ? -1 : 1) };
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      find = null;
+      void focus("main");
+    }
+  }
 
   let typingRevision = 0;
   let pending: { text: string } | null = null;
@@ -185,13 +222,8 @@
     event.preventDefault();
   }
 
-  /** Close of a request or a review returns to the list; a review first cancels its running
-   * work, then leaves its form, as Esc in it does. */
-  function close() {
-    if (review === undefined || review.escape()) void focus("pane");
-  }
-
-  /** The way back: the review's Run in Verify, its Artifact's Detail open on the review's eval. */
+  /** The way back and Open in Verify: the review's Run in Verify, its Artifact's Detail open on
+   * the review's eval. */
   function goBack() {
     const target = review?.view?.target;
     if (!target) return;
@@ -321,17 +353,36 @@
           onkeydown={mainKey}
         >
           {#snippet back()}
-            {#if shown.kind === "review" && review?.view}
-              <!-- The way back: the Run that asked for the review, and its Artifact. -->
+            {#if shown.kind === "review" && review?.view && r.back}
+              <!-- The way back, only for a review opened from Verify: its Run and Artifact. -->
               <Reference back onclick={goBack}>Verify · <span class="mono">{review.view.target.run}</span> › {review.view.artifact}</Reference>
             {/if}
           {/snippet}
           {#snippet tools()}
-            {#if shown.kind !== "none" && !app.monitor.settings}
-              <button class="tool" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={close}>Close</button>
+            {#if shown.kind === "review" && review?.view && !app.monitor.settings}
+              {#if find}
+                {@const looking = find}
+                <label class="find">
+                  <Icon name="find" />
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input
+                    aria-label="Find in the conversation"
+                    value={looking.text}
+                    autofocus
+                    oninput={(event) => (find = { text: event.currentTarget.value, at: 0 })}
+                    onblur={(event) => { if (event.currentTarget.value === "") find = null; }}
+                    onkeydown={findKey}
+                  />
+                  {#if looking.text.trim() !== ""}<span class="count" role="status">{found === 0 ? "No match" : `${shownPlace + 1} of ${found}`}</span>{/if}
+                </label>
+              {:else}
+                <button class="tool" aria-label="Find in the conversation" title="Find in the conversation" onclick={() => (find = { text: "", at: 0 })}><Icon name="find" /></button>
+              {/if}
+              <span class="tool-sep"></span>
+              <button class="tool" onclick={goBack}><Icon name="open" />Open in Verify</button>
             {/if}
           {/snippet}
-          <div class="body">
+          <div class="body" {@attach marking}>
             {#if shown.kind === "review"}
               {#if review}
                 {#key review}
@@ -345,6 +396,10 @@
                   <!-- Not in the Pane's list: the column's head names it, read-only (D-REV-6). -->
                   <p class="record-title">{title}</p>
                   <RecordDetail detail={shown.detail} bind:log={r.folds.log} />
+                  <!-- The decision bar says why nothing is written here (D-REV-6, D-REV-12). -->
+                  <div class="readonly" role="group" aria-label="Decision">
+                    <span>{shown.detail.profile === "human" ? "This review no longer waits for a person: read-only." : "Only a waiting Human review is written here: read-only."}</span>
+                  </div>
                 </div>
               {/key}
             {:else}
@@ -358,6 +413,41 @@
 </div>
 
 <style>
+  /* Find in the conversation: the find tool's field in its place, as Chat's (D-CHAT-11). */
+  .find {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 240px;
+    max-width: 100%;
+    height: var(--control);
+    padding: 0 7px;
+    box-sizing: border-box;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink-2);
+  }
+  .find:focus-within {
+    outline: 1px solid var(--current-mark);
+    outline-offset: -2px;
+  }
+  .find input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: none;
+    color: var(--ink);
+    font: inherit;
+  }
+  .find .count {
+    flex: none;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
   .mode,
   .main {
     height: 100%;
@@ -481,6 +571,20 @@
     min-height: 0;
     max-width: var(--measure);
     margin: 0 auto;
+  }
+  .readonly {
+    flex: none;
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+    margin: 8px var(--pad) 12px;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-chip);
+    background: var(--surface-panel);
+    color: var(--ink-2);
+    font-size: var(--text-small);
   }
   .record-title {
     flex: none;

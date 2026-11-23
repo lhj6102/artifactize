@@ -538,7 +538,7 @@ it("opens the newest waiting review when started with review alone", async () =>
   expect(within(main).getByLabelText("Human review")).toBeTruthy();
 });
 
-it("opens a review by reference without changing the filter or adding a banner, and leads back to Verify", async () => {
+it("opens a review by reference without changing the filter or adding a banner, and Open in Verify shows its Run", async () => {
   const main = branch("main", [runChip("run-a", "GREEN")]);
   backend({ ...monitor("run-a-2"), mode: "review" }, () => browseView(1, { branches: [main] }), { view: current }, "claimed by you");
   render(App);
@@ -547,33 +547,39 @@ it("opens a review by reference without changing the filter or adding a banner, 
   expect(within(area).queryByText(/outside the filter/)).toBeNull();
   // The filter is left as it was.
   expect((screen.getByLabelText("Filter the reviews") as HTMLInputElement).value).toBe("type:human waiting");
-  await fireEvent.click(within(area).getByRole("button", { name: "Verify · run-a › release" }));
+  // Not followed from Verify: no way back, but Open in Verify.
+  expect(within(area).queryByRole("button", { name: /^Verify · / })).toBeNull();
+  await fireEvent.click(within(area).getByRole("button", { name: "Open in Verify" }));
   expect(workspace("Verify").hidden).toBe(false);
   await waitFor(() => expect(shownRun()).toBe("run-a"));
 });
 
-it("closes a review in Review with the one Close in its header, after leaving the review's form", async () => {
+it("holds Find and Open in Verify in a review's stage header; Esc leaves the reasons field, then returns to the Pane", async () => {
   backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1")] }));
   render(App);
   const main = await screen.findByLabelText("Review's main area");
   await waitFor(() => expect(shownReview()).toMatch(/release\/signoff/));
   const region = await within(main).findByLabelText("Human review");
   await within(main).findByRole("button", { name: "Claim to review (c)" });
-  // The way back to its Run leads the header; Close is its one control, and the review keeps
-  // none of its own.
+  // Opened from the Pane's newest review, not from Verify: no way back; Find and Open in Verify.
   const header = main.querySelector("header")!;
-  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Verify · run-a › release", "Close"]);
-  expect(within(main).getAllByRole("button", { name: /Close/ })).toHaveLength(1);
+  expect(within(header).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim())).toEqual(["Find in the conversation", "Open in Verify"]);
+  await fireEvent.click(within(header).getByRole("button", { name: "Find in the conversation" }));
+  const find = within(header).getByRole("textbox", { name: "Find in the conversation" });
+  await fireEvent.input(find, { target: { value: "release notes" } });
+  await waitFor(() => expect(within(header).getByRole("status").textContent).toBe("1 of 1"));
+  await fireEvent.keyDown(find, { key: "Escape" });
+  expect(within(header).queryByRole("textbox", { name: "Find in the conversation" })).toBeNull();
 
   await fireEvent.keyDown(region, { key: "c" });
   await within(main).findByText("Yours");
-  await fireEvent.keyDown(region, { key: "g" });
-  await within(main).findByLabelText(/comment/);
-  // The first Close leaves the form with the review still open; the next returns to the Pane.
-  await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
-  await waitFor(() => expect(within(main).queryByLabelText(/comment/)).toBeNull());
+  const reason = await within(main).findByRole("textbox", { name: "Reason" });
+  reason.focus();
+  // The first Esc leaves the reasons field with the review still open; the next returns to the Pane.
+  await fireEvent.keyDown(reason, { key: "Escape" });
+  await waitFor(() => expect(document.activeElement).toBe(region));
   expect(shownReview()).toMatch(/release\/signoff/);
-  await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
+  await fireEvent.keyDown(region, { key: "Escape" });
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("listbox", { name: "Human reviews" })));
 });
 

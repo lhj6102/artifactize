@@ -150,11 +150,11 @@
   /** The section `t` folds and unfolds: a Run's Technical, else Debug. */
   const last = $derived(detail?.target === "run" ? "Technical" : "Debug");
 
-  /** The Human review this tab shows, while it runs work or edits its form: ← leaves it alone,
+  /** The Human review this tab shows, while it runs work: ← leaves it alone,
    * and Esc steps through it first (the Monitor's close asks it). */
   const holding = $derived.by(() => {
     const reviewing = human && detail?.request ? review(detail.request) : undefined;
-    return reviewing !== undefined && (reviewing.busy !== null || reviewing.editing);
+    return reviewing !== undefined && reviewing.busy !== null;
   });
 
   /** An eval chosen from the Artifact tab's list: the list goes with that tab, so the keyboard
@@ -266,7 +266,7 @@
         {#key detail.request}
           {@const reviewing = review(detail.request)}
           {@const request = detail.request}
-          {#if reviewing}<HumanDetail review={reviewing} {active} {onback} onopenreview={() => app.showReview(request)} />{/if}
+          {#if reviewing}<HumanDetail review={reviewing} {active} {onback} onopenreview={() => app.showReview(request, app.mode === "verify")} />{/if}
         {/key}
       {:else}
         <RecordDetail {detail} {run} path={source.kind !== "current"} debugFacts={tab === null ? drawnIn : []} bind:log={() => log, (value) => (d.log = value ? target : null)} />

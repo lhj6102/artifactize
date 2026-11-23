@@ -23,6 +23,7 @@
   import { composing } from "../shell/keys";
   import { providerName } from "../settings/provider-names";
   import { activity } from "./tool-line";
+  import { places } from "../shell/find";
   import ChatActivity from "./ChatActivity.svelte";
   import ChatMarkdown from "./ChatMarkdown.svelte";
   import ModelPicker from "./ModelPicker.svelte";
@@ -179,22 +180,6 @@
     void reply?.turn;
     body.scrollTop = body.scrollHeight;
   };
-
-  /** Every place in `root`'s text where `text` (lower case) appears, ignoring case. */
-  function places(root: HTMLElement, text: string): Range[] {
-    const ranges: Range[] = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const value = (node.nodeValue ?? "").toLowerCase();
-      for (let at = value.indexOf(text); at !== -1; at = value.indexOf(text, at + text.length)) {
-        const range = document.createRange();
-        range.setStart(node, at);
-        range.setEnd(node, at + text.length);
-        ranges.push(range);
-      }
-    }
-    return ranges;
-  }
 
   /** The place last brought into view, so a streaming turn does not move the reader again. */
   let lastShown = "";

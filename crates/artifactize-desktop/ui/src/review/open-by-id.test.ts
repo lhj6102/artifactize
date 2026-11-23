@@ -46,7 +46,7 @@ describe("openRequest", () => {
     expect(app.reviewMode.shown).toEqual({ kind: "review", id: view.id });
     await waitFor(() => expect(opened.form?.verdict).toBe("GREEN"));
     expect(opened.owned).toBe(true);
-    expect(opened.submittable).toBe(true);
+    expect(opened.submittable("")).toBe(true);
   });
 
   it("opens a submitted review, and one another reviewer holds, read-only", async () => {

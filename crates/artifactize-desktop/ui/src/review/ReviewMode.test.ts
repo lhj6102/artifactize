@@ -21,6 +21,23 @@ const row = (id: string, project = "app"): ReviewMatch => ({
   mark: { status: "WAITING_HUMAN", glyph: "▶" }, claimant: null, mine: false,
 });
 
+it("leads back to Verify only from a review followed from Verify; Open in Verify is always there", async () => {
+  mockIPC((command) => {
+    if (command === "human_search") return { reviews: [row("release")], next: null };
+    if (command === "human_open_reference") return { view: humanView("claim", { id: "release" }), outsideFilter: false, outsideReason: null };
+    if (command === "human_open") return humanView("claim", { id: "release" });
+    return null;
+  }, { shouldMockEvents: true });
+  const { app } = renderHosted(ReviewMode);
+  const area = await screen.findByRole("region", { name: "Review's main area" });
+  await app.showReview("release", true);
+  expect(await within(area).findByRole("button", { name: "Verify · run-a › release" })).toBeTruthy();
+  expect(within(area).getByRole("button", { name: "Open in Verify" })).toBeTruthy();
+  await app.showReview("release");
+  await waitFor(() => expect(within(area).queryByRole("button", { name: /^Verify · / })).toBeNull());
+  expect(within(area).getByRole("button", { name: "Open in Verify" })).toBeTruthy();
+});
+
 it("reads three cursor pages once each without replacing the opened review or its list position", async () => {
   const reads: (number | null)[] = [];
   let pageTwo!: (page: ReviewPage) => void;

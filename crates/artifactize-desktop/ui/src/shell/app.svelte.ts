@@ -200,10 +200,12 @@ export class AppState {
   }
 
   /** Show Review with the Human review `id` open, as a reference opens it: its exact request,
-   * without changing Review's filter or list (J-REVIEW-REF). */
-  async showReview(id: string): Promise<void> {
+   * without changing Review's filter or list (J-REVIEW-REF). `back`: it was followed from
+   * Verify, so its stage header leads back there (J-REVIEW-BACK). */
+  async showReview(id: string, back = false): Promise<void> {
     const r = this.reviewMode;
     this.mode = "review";
+    r.back = back;
     try {
       const opened = await call(this.ipc.humanOpenReference(id, r.query));
       const review = this.review(id);

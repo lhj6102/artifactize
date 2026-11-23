@@ -1,19 +1,21 @@
 <script lang="ts">
   // The pet overlay (J-PET, D-PET-1): a small frameless window above every window while this
   // reviewer works away from the active review's evaluation space. It holds the review's eval and
-  // Run (a link to the review in Review), the same library draft's Points, the GREEN and RED
-  // choice and the open form, Point (pointing in an open viewer of the review's Artifact) and
-  // Submit. The main window shows and hides it; it follows the active review as it changes.
+  // Run (a link to the review in Review) and the same library draft, split as Review's is,
+  // compactly: its Points with Insert, its reasons with Remove, the reasons field with Add and
+  // Point (pointing in an open viewer of the review's Artifact), then apart the GREEN and RED
+  // choice and Submit. The main window shows and hides it; it follows the active review.
   import { emit, listen } from "@tauri-apps/api/event";
   import { createContext, onMount, untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import { commands, onActiveReviewChanged, onHumanDraftChanged, onStateChanged, subscribe } from "../ipc/client";
   import { Jobs } from "../ipc/jobs.svelte";
   import { Review } from "../review/review.svelte";
-  import { FormCaret } from "../review/form-caret";
+  import { ReasonsCaret } from "../review/reasons-caret.svelte";
   import ReviewPoints from "../review/ReviewPoints.svelte";
-  import VerdictChoices from "../review/VerdictChoices.svelte";
-  import VerdictForm from "../review/VerdictForm.svelte";
+  import Reasons from "../review/Reasons.svelte";
+  import ReasonsBox from "../review/ReasonsBox.svelte";
+  import DecisionBar from "../review/DecisionBar.svelte";
   import Icon from "../shell/Icon.svelte";
   import { ARM, ASK, PRESENCE, type Presence } from "../viewers/viewer-state.svelte";
   import { PET_OPEN } from "./pet";
@@ -29,7 +31,9 @@
   const [getPetState, setPetState] = createContext<PetState>();
   setPetState(new PetState(untrack(() => request)));
   const pet = getPetState();
-  const caret = new FormCaret();
+  const caret = new ReasonsCaret();
+  /** What the overlay's reasons field holds and has not added: its own until Add. */
+  let typed = $state("");
   const review = $derived(pet.review);
   const view = $derived(review.view);
   const { viewers } = pet;
@@ -38,14 +42,17 @@
   const run = $derived(view?.target.run ?? "");
   const evalId = $derived(view?.target.node.replace(/^e:/, "") ?? "");
 
-  /** Read review `id`; a verdict its draft holds comes back as that verdict's open form. */
+  /** Read review `id`, its draft with it. */
   async function show(id: string) {
-    if (pet.review.id !== id) pet.review = new Review(id, pet.jobs);
+    if (pet.review.id !== id) {
+      pet.review = new Review(id, pet.jobs);
+      typed = "";
+    }
     await pet.review.load();
   }
 
   async function submit() {
-    await review.submit();
+    await review.submit(typed);
   }
 
   function open() {
@@ -85,24 +92,19 @@
       <span class="tone-human"><Icon name="human" /></span><span class="eval">{evalId}</span><span class="run">· {run}</span>
     </button>
     {#if view && review.owned}
-      <div class="scroll">
-        {#if review.draft?.points.length}
-          <ReviewPoints {review} compact insert={(text) => caret.insert(text)} />
-        {/if}
-        <!-- The verdict's form carries the GREEN / RED choice once open, as the review's does. -->
-        {#if review.form}
-          {#key review.form}<VerdictForm {review} form={review.form} {caret} showError={false} />{/key}
-        {:else}
-          <VerdictChoices {review} />
-        {/if}
-      </div>
-      {#if review.form?.error}<p class="error" role="alert">{review.form.error}</p>{:else if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
-      <div class="row">
-        <button class="button small point" aria-pressed={pointer?.pointing ?? false} disabled={pointer === null} onclick={() => pointer && void emit(ARM, { session: pointer.session })}><Icon name="point" />Point</button>
-        {#if pointer === null}<span class="why">Open {view.artifact} in a viewer to point.</span>{/if}
-        {#if review.form}
-          <button class="button primary submit" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
-        {/if}
+      {#if review.draft?.points.length}
+        <ReviewPoints {review} compact ready={caret.ready} insert={(text) => caret.insert(text)} />
+      {/if}
+      <Reasons {review} compact />
+      <ReasonsBox {review} {caret} compact bind:typed>
+        {#snippet after()}
+          <button class="button small point" class:off={pointer === null} aria-pressed={pointer?.pointing ?? false} disabled={pointer === null} onclick={() => pointer && void emit(ARM, { session: pointer.session })}><Icon name="point" />Point</button>
+        {/snippet}
+      </ReasonsBox>
+      {#if pointer === null}<p class="why">Open {view.artifact} in a viewer to point.</p>{/if}
+      {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
+      <div class="decision">
+        <DecisionBar {review} {typed} compact onsubmit={() => void submit()} />
       </div>
     {:else if view}
       <p class="why">{review.settled ? "Submitted." : "This review is no longer claimed here."}</p>
@@ -173,22 +175,13 @@
   .run {
     color: var(--ink-2);
   }
-  .scroll {
+  /* The decision row stands apart from the reasons row (D-PET-1). */
+  .decision {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    min-width: 0;
-    max-height: 280px;
-    overflow: auto;
+    gap: 4px;
+    margin-top: 4px;
   }
-  .row {
-    display: flex;
-    align-items: center;
-    gap: var(--gap);
-    min-width: 0;
-  }
-  .row > button { flex: none; }
-  .submit { margin-inline-start: auto; }
   .point { color: var(--ink-2); }
   .point[aria-pressed="true"] { color: var(--ink-bright); }
   .point:disabled {
@@ -199,11 +192,6 @@
   .why, .error {
     min-width: 0;
     overflow-wrap: anywhere;
-  }
-  .row .why {
-    /* Even a long name leaves enough vertical room for the scrollable form. */
-    max-height: 6lh;
-    overflow: auto;
   }
   .why {
     margin: 0;
