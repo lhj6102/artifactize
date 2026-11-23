@@ -1,6 +1,6 @@
 // Chat through the same visible controls a person uses.
 import { clickRowGutter, scrollViewport } from "../input.ts";
-import { fill } from "../keys.ts";
+import { fill, press } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
 const MAIN = `main[aria-label="Chat"]:not([hidden]) section[aria-label="Chat's main area"]`;
@@ -45,29 +45,33 @@ export class Chat {
     await dialog.waitForDisplayed({ reverse: true });
     await holds(this.browser, async () => await sessionCount() === before + 1, "Create added another session to the Chat Pane");
     await holds(this.browser, () => this.browser.execute((main, log) => {
-      const shown = document.querySelector(main);
-      return shown?.querySelector("header h2")?.textContent?.trim() === "New chat"
-        && shown.querySelector(log)?.textContent?.trim() === "";
+      const selected = document.querySelector('[aria-label="Chats"] button.session[aria-current="true"] .title');
+      return selected?.textContent?.trim() === "New chat" && document.querySelector(main)?.querySelector(log)?.textContent?.trim() === "";
     }, MAIN, LOG), "the new session is selected with an empty conversation");
     return starting;
   }
 
-  /** Select a view through the active session's header switch. */
+  /** Select a view through the stage header's view tabs. */
   async show(view: "Conversation" | "Graph"): Promise<void> {
-    const button = this.viewButton(view);
-    await button.waitForDisplayed();
-    if (await button.getAttribute("aria-pressed") !== "true") await button.click();
+    const tab = this.viewTab(view);
+    await tab.waitForDisplayed();
+    if (await tab.getAttribute("aria-selected") !== "true") await tab.click();
     await this.viewShown(view);
   }
 
   /** Observe only: the app or an in-app reference opened a session in this view. */
   async viewShown(view: "Conversation" | "Graph"): Promise<void> {
-    const button = this.viewButton(view);
-    await holds(this.browser, async () => await button.isDisplayed() && await button.getAttribute("aria-pressed") === "true", `the session shows its ${view} view`);
+    const tab = this.viewTab(view);
+    await holds(this.browser, async () => await tab.isDisplayed() && await tab.getAttribute("aria-selected") === "true", `the session shows its ${view} view`);
   }
 
-  private viewButton(view: "Conversation" | "Graph") {
-    return this.browser.$(`${MAIN} > header [aria-label="Session view"]`).$(`button=${view}`);
+  private viewTab(view: "Conversation" | "Graph") {
+    return this.browser.$(`${MAIN} > header [role="tablist"][aria-label="Session view"]`).$(`[role="tab"]=${view}`);
+  }
+
+  /** The branch the Pane's selected session row names after its title. */
+  shownBranch(): Promise<string> {
+    return this.browser.execute(() => document.querySelector('[aria-label="Chats"] button.session[aria-current="true"] .branch')?.textContent?.trim() ?? "");
   }
 
   /** The model the shown session's selector names. */
@@ -90,8 +94,95 @@ export class Chat {
     await holds(this.browser, async () => !(await this.browser.$(menu).isDisplayed()) && await this.selected() === name, `${name} selected and its model menu closed`);
   }
 
+  /** Search the sessions: Search in the Pane's top row turns into its field, then the text. */
   async filter(text: string): Promise<void> {
-    await fill(this.browser, '[aria-label="Chats"] input[aria-label="Search chats"]', text);
+    const field = '[aria-label="Chats"] input[aria-label="Search chats"]';
+    if (!(await this.browser.$(field).isExisting())) {
+      await this.browser.$('[aria-label="Chats"] button[aria-label="Search chats"]').click();
+      await holds(this.browser, () => this.browser.execute((query) => document.activeElement === document.querySelector(query), field), "the search field took the top row, focused");
+    }
+    await fill(this.browser, field, text);
+  }
+
+  /** Esc in the emptied search field: the top row is New chat and Search again. */
+  async closeFilter(): Promise<void> {
+    const field = '[aria-label="Chats"] input[aria-label="Search chats"]';
+    await fill(this.browser, field, "");
+    await press(this.browser, ["Escape"], async () => !(await this.browser.$(field).isExisting())
+      && await this.browser.$('[aria-label="Chats"]').$("button=New chat").isDisplayed(), "the top row is New chat and Search again");
+  }
+
+  /** The projects in the Pane, in order, each with whether it is open. */
+  projects(): Promise<{ name: string; open: boolean }[]> {
+    return this.browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Chats"] button.project')]
+      .map((row) => ({ name: row.innerText.trim(), open: row.getAttribute("aria-expanded") === "true" })));
+  }
+
+  /** Click a project's row: it folds, or unfolds. */
+  async toggleProject(name: string): Promise<void> {
+    const row = this.browser.$('[aria-label="Chats"]').$(`button.project=${name}`);
+    const was = await row.getAttribute("aria-expanded");
+    await row.click();
+    await holds(this.browser, async () => await row.getAttribute("aria-expanded") !== was, `${name} ${was === "true" ? "folded" : "unfolded"}`);
+  }
+
+  /** Find in the conversation from the stage header's Find, typing `text`; what the field says. */
+  async find(text: string): Promise<string> {
+    const field = `${MAIN} > header input[aria-label="Find in the conversation"]`;
+    if (!(await this.browser.$(field).isExisting())) {
+      await this.browser.$(`${MAIN} > header button[aria-label="Find (Ctrl+F)"]`).click();
+      await holds(this.browser, () => this.browser.execute((query) => document.activeElement === document.querySelector(query), field), "the find field took Find's place, focused");
+    }
+    await fill(this.browser, field, text);
+    return this.findCount();
+  }
+
+  /** What the find field says: which place of how many, or that none matches. */
+  findCount(): Promise<string> {
+    return until(this.browser, () => this.browser.execute((main) => document.querySelector(`${main} > header .find [role="status"]`)?.textContent?.trim() ?? "", MAIN),
+      (said) => said !== "", "the find field says what it found");
+  }
+
+  /** Enter (or Shift+Enter) in the find field: the next (or previous) place is shown. */
+  async findStep(back = false): Promise<string> {
+    const before = await this.findCount();
+    await press(this.browser, back ? ["Shift", "Enter"] : ["Enter"], async () => (await this.findCount()) !== before || before === "1 of 1", "another place is shown");
+    return this.findCount();
+  }
+
+  /** Esc in the find field: Find's icon is back. */
+  async closeFind(): Promise<void> {
+    await press(this.browser, ["Escape"], async () => !(await this.browser.$(`${MAIN} > header input[aria-label="Find in the conversation"]`).isExisting()), "the find field closed");
+  }
+
+  /** The reply card over the graph: its head (the message sent from Graph), whether it is open,
+   * and its reply's text; null while there is none. */
+  reply(): Promise<{ said: string; open: boolean; text: string } | null> {
+    return this.browser.execute((main) => {
+      const card = document.querySelector<HTMLElement>(`${main} [role="group"][aria-label="Chat"] section[aria-label="Reply"]`);
+      if (!card) return null;
+      const head = card.querySelector<HTMLElement>(".reply-head");
+      return { said: head?.querySelector(".said")?.textContent?.trim() ?? "", open: head?.getAttribute("aria-expanded") === "true", text: card.querySelector<HTMLElement>(".reply-body")?.innerText.trim() ?? "" };
+    }, MAIN);
+  }
+
+  /** Click the reply card's head: it folds to the head, or unfolds. */
+  async toggleReply(): Promise<void> {
+    const before = await this.reply();
+    await this.browser.$(`${MAIN} section[aria-label="Reply"] .reply-head`).click();
+    await holds(this.browser, async () => (await this.reply())?.open === !before?.open, "the reply card folded or unfolded");
+  }
+
+  /** In Graph: the floating chat's box and the canvas's, to check it floats over the canvas's
+   * bottom, centred left of the Detail. */
+  floating(): Promise<{ chat: { left: number; right: number; bottom: number }; canvas: { left: number; right: number; bottom: number }; detail: number | null } | null> {
+    return this.browser.execute((main) => {
+      const chat = document.querySelector(`${main} [role="group"][aria-label="Chat"]`)?.getBoundingClientRect();
+      const canvas = document.querySelector(`${main} [data-graph-area]`)?.getBoundingClientRect();
+      const detail = document.querySelector(`${main} aside[aria-label="Detail"]`)?.getBoundingClientRect();
+      if (!chat || !canvas) return null;
+      return { chat: { left: chat.left, right: chat.right, bottom: chat.bottom }, canvas: { left: canvas.left, right: canvas.right, bottom: canvas.bottom }, detail: detail ? detail.left : null };
+    }, MAIN);
   }
 
   async sessionsUntil(titles: string[]): Promise<void> {

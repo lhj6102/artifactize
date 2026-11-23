@@ -1,18 +1,19 @@
-// The main area as a person reads it: its header, and the graph of a Run or a Current with its
-// tool strip, its find field and its navigator; each action waits for what it shows.
+// The main area as a person reads it: its stage header of tools, its status line, and the graph
+// of a Run or a Current with its find field and its navigator; what is shown is named by the
+// Pane's selected row. Each action waits for what it shows.
 import { PNG } from "pngjs";
 import { clickAt, dispatchInput, visibleCenter } from "../input.ts";
 import { afterRender, press, typeText } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
 const REVIEW_MAIN = `section.panel[aria-label="Review's main area"]`;
-const VERIFY_MAIN = 'main[aria-label="Verify"]:not([hidden]) section.panel[aria-label="Main area"]';
-const CHAT_MAIN = `main[aria-label="Chat"]:not([hidden]) section.panel[aria-label="Chat's main area"]`;
+const VERIFY_MAIN = 'main[aria-label="Verify"]:not([hidden]) section.stage-area[aria-label="Main area"]';
+const CHAT_MAIN = `main[aria-label="Chat"]:not([hidden]) section.stage-area[aria-label="Chat's main area"]`;
 const MAIN = `:is(${VERIFY_MAIN}, ${CHAT_MAIN})`;
 const DETAIL = 'main:not([hidden]) aside[aria-label="Detail"]';
 /** The main area's graph, never the one a Detail draws of an Artifact's neighbours. */
 const GRAPH = `${MAIN} .graph`;
-const TOOLS = `${MAIN} [aria-label="Graph tools"]`;
+const TOOLS = `${MAIN} > header [aria-label="Graph tools"]`;
 const FIND = `${MAIN} input[aria-label="Find in the graph"]`;
 
 /** A drawn Artifact: its id (`a:name`, a part `a:whole/a:part`), what it reads aloud (its name
@@ -47,13 +48,13 @@ export class Graph {
   }
 
   // -------------------------------------------------------------------------------
-  // The main area's header
+  // The stage header, its status line, and the Pane's row that names what is shown
 
   async expandNotice(summary: string, full: string): Promise<void> {
-    const notice = this.browser.$(`${MAIN} > header .notice button`);
-    await holds(this.browser, async () => await notice.isDisplayed() && (await notice.getText()).includes(summary), `the header summarizes: ${summary}`);
+    const notice = this.browser.$(`${MAIN} .status-line .notice button`);
+    await holds(this.browser, async () => await notice.isDisplayed() && (await notice.getText()).includes(summary), `the status line summarizes: ${summary}`);
     await notice.click();
-    await holds(this.browser, async () => await notice.getAttribute("aria-expanded") === "true" && (await notice.getText()).includes(full), `the expanded header explains: ${full}`);
+    await holds(this.browser, async () => await notice.getAttribute("aria-expanded") === "true" && (await notice.getText()).includes(full), `the expanded notice explains: ${full}`);
   }
 
   async openOrigin(session: string): Promise<void> {
@@ -69,31 +70,40 @@ export class Graph {
     await link.click();
   }
 
-  /** The header's title: the Run's ID, the Chat session's title, or `Nothing chosen`. */
+  /** What names the shown view, as the Pane's selected row says it (J-STAGE): in Verify the
+   * shown Run's entry (its ID) or the selected branch without Runs; in Chat the selected
+   * session's title; `Nothing chosen` when nothing is. */
   title(): Promise<string> {
-    return this.browser.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? "", MAIN);
+    return this.browser.execute(() => {
+      const chat = document.querySelector('main[aria-label="Chat"]:not([hidden])');
+      if (chat) return chat.querySelector('[aria-label="Chats"] button.session[aria-current="true"] .title')?.textContent?.trim() ?? "Nothing chosen";
+      const verify = document.querySelector('main[aria-label="Verify"]:not([hidden])');
+      const entry = verify?.querySelector('[aria-label="Pane entries"] button[data-chip][aria-pressed="true"]');
+      if (entry) return entry.getAttribute("data-chip") ?? "";
+      const branch = verify?.querySelector('[aria-label="Branches"] > [role="treeitem"][aria-selected="true"] .label');
+      return branch?.textContent?.replace(/\s+/g, " ").trim() ?? "Nothing chosen";
+    });
   }
 
-  /** Wait until the header's title is `title`. */
+  /** Wait until the Pane's selected row names `title`. */
   async titled(title: string): Promise<void> {
     await until(this.browser, () => this.title(), (shown) => shown === title, `the main area shows ${title}`);
   }
 
-  /** The Run's headline as it reads aloud: its verdict and what needs attention. */
-  headline(): Promise<string> {
-    return this.browser.execute((main) => document.querySelector(`${main} > header button.headline`)?.getAttribute("aria-label") ?? "", MAIN);
-  }
-
-  /** What the header's row says beside the title, as text. */
+  /** The stage header's words and tools' names, as text: it names and rates nothing. */
   header(): Promise<string> {
-    return this.browser.execute((main) => (document.querySelector<HTMLElement>(`${main} > header`)?.innerText ?? "").replace(/\s+/g, " ").trim(), MAIN);
+    return this.browser.execute((main) => {
+      const header = document.querySelector<HTMLElement>(`${main} > header`);
+      const tools = [...(header?.querySelectorAll("button") ?? [])].map((tool) => tool.getAttribute("aria-label") ?? tool.textContent?.trim() ?? "");
+      return [header?.innerText ?? "", ...tools].join(" ").replace(/\s+/g, " ").trim();
+    }, MAIN);
   }
 
-  /** A Current's scan as its header says it: `Scanned at …` once a scan ended, `N left` while
-   * one runs, then a failure's words if any. */
+  /** A Current's scan as its status line says it: `Scanned at …` once a scan ended, `N left`
+   * while one runs, then a failure's words if any. */
   scan(): Promise<string> {
     return this.browser.execute((main) => {
-      const scan = document.querySelector(`${main} > header .scan`);
+      const scan = document.querySelector(`${main} .status-line .scan`);
       const said = scan?.querySelector("time")?.getAttribute("aria-label") ?? scan?.querySelector(".checking")?.getAttribute("aria-label") ?? "";
       const failure = scan?.querySelector(".failure")?.textContent?.trim();
       return failure ? `${said} ${failure}` : said;
@@ -133,10 +143,19 @@ export class Graph {
       .map((term) => [term.textContent?.trim() ?? "", term.nextElementSibling?.textContent?.trim() ?? ""])), REVIEW_MAIN), (facts) => Object.keys(facts).length > 0, "Debug unfolded");
   }
 
-  /** Click the Run's headline: the Run's own Detail opens. */
+  /** Click Run details among the stage header's tools: the Run's own Detail opens. */
   async openRunDetail(): Promise<void> {
-    await this.browser.$(`${MAIN} > header button.headline`).click();
-    await holds(this.browser, async () => (await this.browser.$(`${DETAIL} h2`).isExisting()), "the Run's Detail opened");
+    const tool = this.browser.$(`${VERIFY_MAIN} > header`).$("button=Run details");
+    await tool.waitForEnabled({ timeoutMsg: "timed out: the Run is read and Run details is enabled" });
+    if (await tool.getAttribute("aria-pressed") !== "true") await tool.click();
+    await holds(this.browser, async () => await tool.getAttribute("aria-pressed") === "true" && await this.browser.$(`${DETAIL} h2`).isExisting(), "the Run's Detail opened");
+  }
+
+  /** Click Run details again: the Run's Detail closes. */
+  async closeRunDetail(): Promise<void> {
+    const tool = this.browser.$(`${VERIFY_MAIN} > header`).$("button=Run details");
+    if (await tool.getAttribute("aria-pressed") === "true") await tool.click();
+    await holds(this.browser, async () => await tool.getAttribute("aria-pressed") === "false" && !(await this.browser.$(DETAIL).isExisting()), "the Run's Detail closed");
   }
 
   /** Whether the main area has the keyboard. */

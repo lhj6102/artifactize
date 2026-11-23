@@ -196,14 +196,16 @@ async function capture(output: string, work: string): Promise<void> {
       // A. Verify shows the branch's Run from its timeline. The bar, not Verify's Pane,
       // shows the number of reviews waiting for a person.
       const VERIFY = 'main[aria-label="Verify"]:not([hidden])';
-      const MAIN = `${VERIFY} section.panel[aria-label="Main area"]`;
+      const MAIN = `${VERIFY} section.stage-area[aria-label="Main area"]`;
       const MODES = '[aria-label="Bottom bar"] [aria-label="Modes"]';
       const waitingReview = `${MODES} button[aria-label="Review, 1 waiting"]`;
       const runChip = app.$(`${VERIFY} [aria-label="Branches"] [role="treeitem"] button[data-chip]:not([data-chip="current"])`);
       await runChip.waitForDisplayed({ timeout: WAIT });
       const runId = await runChip.getAttribute("data-chip");
       await runChip.click();
-      await app.waitUntil(() => app.execute((main, id) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === id, MAIN, runId),
+      // The Pane's shown entry names the Run the Main area shows (J-STAGE).
+      await app.waitUntil(() => app.execute((verify, id) => document.querySelector(`${verify} [aria-label="Pane entries"] button[data-chip][aria-pressed="true"]`)?.getAttribute("data-chip") === id
+        && !!document.querySelector(`${verify} section.stage-area[aria-label="Main area"] .run`), VERIFY, runId),
         { timeout: WAIT, timeoutMsg: "Verify shows the selected Run" });
       const graph = new Graph(app);
       await graph.node("a:release");
@@ -211,7 +213,7 @@ async function capture(output: string, work: string): Promise<void> {
       // core → cli, core → release and cli → docs, with the fixture's four different verdicts.
       await app.waitUntil(() => app.execute((main) => {
         const graph = document.querySelector(`${main} .run`);
-        // Human sign-off is an active node; its waiting reason is in the Run header and bar.
+        // Human sign-off is an active node; its waiting reason is in the Run's Detail and the bar.
         const lights = { core: "green", cli: "red", docs: "blocked", release: "active" };
         return graph?.querySelectorAll(".svelte-flow__edge").length === 3
           && Object.entries(lights).every(([name, light]) =>

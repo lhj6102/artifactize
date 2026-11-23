@@ -355,7 +355,8 @@ export const scenarios: Scenario[] = [
       const { id: run } = JSON.parse(done.stdout) as { id: string };
       await app.pane.choose("repo  master", run);
       await app.graph.titled(run);
-      assert.match(await app.graph.headline(), /YELLOW/);
+      await app.graph.openRunDetail();
+      assert.match(await app.detail.section("Outcome"), /YELLOW/);
     },
   }),
 ];

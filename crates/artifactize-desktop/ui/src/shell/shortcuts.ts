@@ -18,7 +18,7 @@ const WINDOW: Section = {
     ["Ctrl+,", "Settings, and back"],
     ["Ctrl+O", "Open a request by ID"],
     ["/", "Search the branches"],
-    ["Ctrl+F", "Search the branches outside a graph"],
+    ["Ctrl+F", "Search the branches outside a graph or a conversation"],
     ["Ctrl+R / F5", "Refresh"],
     ["?", "These shortcuts"],
     ["q", "Quit"],
@@ -27,7 +27,7 @@ const WINDOW: Section = {
 
 const COMPOSER: Section = {
   title: "Conversation",
-  keys: [["Enter", "Send"], ["Shift+Enter", "Break a line"], ["Esc", "Stop the running turn"]],
+  keys: [["Enter", "Send"], ["Shift+Enter", "Break a line"], ["Esc", "Stop the running turn"], ["Ctrl+F", "Find in the conversation"]],
 };
 
 const GRAPH: Section = {

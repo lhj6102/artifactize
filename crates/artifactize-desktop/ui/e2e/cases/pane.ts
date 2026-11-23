@@ -26,17 +26,20 @@ export const scenarios: Scenario[] = [
       const held = async () => (await app.pane.branches()).map((branch) => [branch.name, branch.selected, branch.expanded, branch.entries.map((entry) => [entry.id, entry.shown])]);
       const before = await held();
       assert.equal((await app.pane.shown()).visible, true);
+      assert.equal(await app.windowTitle(), "Artifactize", "with the Pane shown its row names the Run");
       await app.command("Show or hide the Pane");
       await app.until(async () => !(await app.pane.shown()).visible, "the switch hid the pane");
       const hidden = await app.pane.layout();
       assert.equal(hidden.divider, false, "its divider goes with it");
       assert.equal((await app.pane.shown()).visible, false);
       assert.ok(Math.abs(await app.graph.width() - await app.windowWidth()) <= 1, "the main area takes the window's width");
-      assert.equal(await app.graph.title(), run, "with its view as it was");
+      // With its view as it was, the window's title naming what the Pane's row named.
+      await app.until(async () => await app.windowTitle() === `${run} · repo / master — Artifactize`, "the window's title names the shown Run");
       await app.mode("Chat");
       assert.equal((await app.pane.shown("Chat")).visible, false, "Chat keeps the shared Pane hidden");
       await app.mode("Review");
       assert.equal((await app.pane.shown("Review")).visible, false, "Review keeps the shared Pane hidden");
+      await app.until(async () => await app.windowTitle() === "Artifactize", "in Review the window's title is the app's");
       await app.command("Show or hide the Pane");
       await app.until(async () => (await app.pane.shown("Review")).visible, "Review restored its Pane");
       await app.mode("Chat");

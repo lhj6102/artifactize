@@ -317,7 +317,7 @@ it("lists the composer's shortcuts in Conversation Help instead of branch naviga
   await fireEvent.keyDown(window, { key: "?" });
   const help = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
   const conversation = within(help).getByRole("heading", { name: "Conversation" }).parentElement!;
-  expect([...conversation.querySelectorAll("dd")].map((action) => action.textContent)).toEqual(["Send", "Break a line", "Stop the running turn"]);
+  expect([...conversation.querySelectorAll("dd")].map((action) => action.textContent)).toEqual(["Send", "Break a line", "Stop the running turn", "Find in the conversation"]);
   expect(within(help).queryByRole("heading", { name: "Pane" })).toBeNull();
 });
 

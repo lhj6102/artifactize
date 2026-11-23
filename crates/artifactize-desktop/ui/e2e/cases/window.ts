@@ -43,12 +43,16 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(expanded.entries.map((entry) => [entry.id, entry.shown]), [[run, true]], "its Run in progress is its newest entry");
       assert.match(expanded.entries[0].text, /^Waiting for sign-off \d+[smh]/);
       await app.graph.titled(run);
-      // The title shows at once; the headline once the Run, drawn here, has loaded.
+      // Its entry names it at once; the graph once the Run, drawn here, has loaded.
       await app.graph.node("a:release", (node) => node.label === "release: in progress, 0 of 1 evals GREEN", "release waits for its sign-off");
       await app.graph.node("a:docs", (node) => node.label === "docs: GREEN, 1 of 1 evals GREEN", "docs passed");
       // ship's eval reads release: an edge leads from release to ship.
       await app.graph.edge("a:release", "a:ship");
-      assert.match(await app.graph.headline(), /^WAITING_HUMAN: release\/signoff /);
+      // The stage header names nothing: what the Run waits for is its Detail's, from Run details.
+      assert.doesNotMatch(await app.graph.header(), /WAITING|release\/signoff|run-/);
+      await app.graph.openRunDetail();
+      assert.match(await app.detail.section("Waits for"), /release\/signoff/);
+      await app.graph.closeRunDetail();
       // Another branch's timeline lists its Runs newest first; a click on the older shows it.
       if (!(await app.pane.branch("repo  scope-one")).expanded) await app.pane.toggle("repo  scope-one");
       const timeline = await app.pane.branch("repo  scope-one", (branch) => branch.entries.length === 2, "scope-one's two Runs listed");

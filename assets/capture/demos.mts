@@ -11,7 +11,7 @@
 //   A. review-loop.gif — an example shaped like this repository (core, cli, tui, mcp, docs,
 //      site, release) goes through four Runs of real `verify`, recorded from the app with its
 //      bottom bar on Verify, the branch expanded in its Pane and each new Run shown from its
-//      timeline under the Run header. Played back fast. Each eval is a runtime check that fails
+//      timeline, its entry naming it. Played back fast. Each eval is a runtime check that fails
 //      while its Artifact's code.txt
 //      contains BUG; between Runs this script removes the BUG it just saw, as an AI would fix
 //      the code. Try 1 fails mcp and site; try 2 reuses the rest at once and fails docs partway;
@@ -20,7 +20,7 @@
 //      the Run's records say; the script checks each try reused exactly the unchanged evals.
 //   B. graph-growth.gif — this repository's own Artifact graph, release by release from the
 //      history of main (or of origin/main when it is ahead), each committed in turn to a Git
-//      checkout, in Chat's Graph view opened by `graph --repo`, with its scan header, the
+//      checkout, in Chat's Graph view opened by `graph --repo`, with its scan status line, the
 //      fitted graph and the release in the graph's top-left corner. One blank
 //      step says 0.1.0–0.6.0 had no Artifacts yet; the graph starts at 0.7.0 and ends at the
 //      current main. examples/ is left out. Declarations the current app no longer reads
@@ -57,8 +57,10 @@ const DEMOS = ["review-loop.gif", "graph-growth.gif"];
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const WAIT = 60000;
-const VERIFY_MAIN ='main[aria-label="Verify"]:not([hidden]) section.panel[aria-label="Main area"]';
-const CHAT_MAIN = `main[aria-label="Chat"]:not([hidden]) section.panel[aria-label="Chat's main area"]`;
+const VERIFY_MAIN = 'main[aria-label="Verify"]:not([hidden]) section.stage-area[aria-label="Main area"]';
+const CHAT_MAIN = `main[aria-label="Chat"]:not([hidden]) section.stage-area[aria-label="Chat's main area"]`;
+/** The Pane's shown timeline entry: it names the Run the Main area shows (J-STAGE). */
+const SHOWN_ENTRY = 'main[aria-label="Verify"]:not([hidden]) [aria-label="Pane entries"] button[data-chip][aria-pressed="true"]';
 const VERIFY_MODE = '[aria-label="Bottom bar"] [aria-label="Modes"] button[aria-label="Verify"][aria-current="page"]';
 /** Demo A plays back this many times faster than it ran. */
 const SPEED = 8;
@@ -365,7 +367,7 @@ async function reviewLoop(candidate: Candidate, work: string): Promise<Recording
     const { browser } = session;
     stop = session.stop;
     const segments: Segment[] = [];
-    // The graph's top-left corner, below the Main area's header row and the graph's tool strip.
+    // The graph's top-left corner, below the stage header that holds the graph's tools.
     let at = { x: 0, y: 0 };
     const finishWatchers = () => Promise.all([...watchers].map(endWatcher));
     try {
@@ -373,21 +375,22 @@ async function reviewLoop(candidate: Candidate, work: string): Promise<Recording
       const chip = (id: string) => `main[aria-label="Verify"] [aria-label="Branches"] button[data-chip="${id}"]`;
       /** The Main area shows the Run `id`'s own graph, not the one drawn before it was opened: a
        * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
-      const opened = (id: string) => browser.execute((id, main, edges) => {
+      const opened = (id: string) => browser.execute((id, main, edges, entry) => {
         const panel = document.querySelector(main);
-        const canvas = panel?.querySelector(":scope > header h2")?.textContent?.trim() === id ? panel?.querySelector(".run .svelte-flow") : null;
+        const canvas = document.querySelector(entry)?.getAttribute("data-chip") === id ? panel?.querySelector(".run .svelte-flow") : null;
         const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
         const box = node?.getBoundingClientRect();
         const before = (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before;
         return !!canvas && (canvas !== before?.canvas || before.run === id) && !!box && box.width > 0
           && canvas.querySelectorAll(".svelte-flow__edge").length === edges
           && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
-      }, id, VERIFY_MAIN, EDGES());
-      /** The Run `id` ended and its graph is drawn and lit as it ended: its headline says
+      }, id, VERIFY_MAIN, EDGES(), SHOWN_ENTRY);
+      /** The Run `id` ended and its graph is drawn and lit as it ended: its Pane entry says
        * `verdict`, each Artifact is lit as `lights` plans, and every edge is drawn. */
-      const ended = (id: string, verdict: string, lights: [string, string][]) => browser.execute((id, main, verdict, planned, edges) => {
+      const ended = (id: string, verdict: string, lights: [string, string][]) => browser.execute((id, main, verdict, planned, edges, entry) => {
         const shown = document.querySelector(main);
-        const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
+        const named = document.querySelector(entry);
+        const panel = named?.getAttribute("data-chip") === id ? shown?.querySelector(".run") : null;
         // Every edge drawn as a visible line, not only present in the page.
         const lines = [...(panel?.querySelectorAll<SVGPathElement>(".svelte-flow__edge path.svelte-flow__edge-path") ?? [])].filter((line) => {
           const box = line.getBoundingClientRect();
@@ -395,10 +398,10 @@ async function reviewLoop(candidate: Candidate, work: string): Promise<Recording
         });
         if (lines.length !== edges) return false;
         const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => `${node.dataset.id}=${node.dataset.light}`).sort();
-        // The header row's headline names the Run's verdict once it ended.
-        const said = shown?.querySelector(":scope > header button.headline .status")?.textContent?.trim() ?? "";
+        // The Run's entry in the Pane names its verdict once it ended.
+        const said = named?.querySelector(".status")?.textContent?.trim() ?? "";
         return said === verdict && lights.join() === planned.map(([name, light]) => `a:${name}=${light}`).sort().join();
-      }, id, VERIFY_MAIN, verdict, lights, EDGES());
+      }, id, VERIFY_MAIN, verdict, lights, EDGES(), SHOWN_ENTRY);
       /** The evals whose saved GREEN result the next try reuses: those GREEN so far whose
        * Artifact, and every Artifact they use, the fixes left as they were. */
       const reusable = new Set<string>();
@@ -413,12 +416,12 @@ async function reviewLoop(candidate: Candidate, work: string): Promise<Recording
         const id = (JSON.parse(started) as { run: string }).run;
         // Show the new Run as soon as it starts the branch's timeline, then record it until it ends.
         await browser.$(chip(id)).waitForExist({ timeout: WAIT, timeoutMsg: `the branch's timeline starts with ${id}` });
-        await browser.execute((main) => {
+        await browser.execute((main, entry) => {
           const shown = document.querySelector(main);
           const canvas = shown?.querySelector(".run .svelte-flow") ?? null;
-          const run = canvas ? shown?.querySelector(":scope > header h2")?.textContent?.trim() ?? null : null;
+          const run = canvas ? document.querySelector(entry)?.getAttribute("data-chip") ?? null : null;
           (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before = { canvas, run };
-        }, VERIFY_MAIN);
+        }, VERIFY_MAIN, SHOWN_ENTRY);
         await browser.$(chip(id)).click();
         await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Main area draws ${id}'s graph` });
         // `run show --wait` exits with the Run's outcome: 0 when it is satisfied. A Run that has
@@ -443,11 +446,11 @@ async function reviewLoop(candidate: Candidate, work: string): Promise<Recording
           });
         });
         /** The Run `id` is shown in progress: an Artifact of its graph still waits or runs. */
-        const live = () => browser.execute((id, main) => {
+        const live = () => browser.execute((id, main, entry) => {
           const shown = document.querySelector(main);
-          const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
+          const panel = document.querySelector(entry)?.getAttribute("data-chip") === id ? shown?.querySelector(".run") : null;
           return [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].some((node) => node.dataset.light === "waiting" || node.dataset.light === "active");
-        }, id, VERIFY_MAIN);
+        }, id, VERIFY_MAIN, SHOWN_ENTRY);
         const recorded = await record(browser, frames, settled, () => ended(id, last ? "GREEN" : "RED", [...lights]), live);
         const area = await corner(browser, `${VERIFY_MAIN} .run .canvas`);
         at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
@@ -630,11 +633,11 @@ async function graphGrowth(candidate: Candidate, work: string): Promise<Recordin
     // Use the real New chat dialog regardless of the model catalog; never send a turn.
     await chat.createFromDialog("repo / main");
     await chat.show("Graph");
-    /** The visible Current's scan, as its header says it. */
+    /** The visible Current's scan, as its status line says it. */
     const scanState = () => browser.execute((main) => {
-      const head = document.querySelector(`${main} > header`);
-      if (!head?.querySelector('[aria-label="Session view"] button[aria-pressed="true"]')?.textContent?.includes("Graph")) return { at: "", failure: "" };
-      const scan = head.querySelector(".scan");
+      const shown = document.querySelector(main);
+      if (!shown?.querySelector(':scope > header [aria-label="Session view"] [role="tab"][aria-selected="true"]')?.textContent?.includes("Graph")) return { at: "", failure: "" };
+      const scan = shown.querySelector(".status-line .scan");
       return {
         at: scan?.querySelector(".checking") ? "" : (scan?.querySelector("time")?.getAttribute("datetime") ?? ""),
         failure: scan?.querySelector(".failure")?.textContent?.trim() ?? "",

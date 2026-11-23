@@ -199,11 +199,13 @@ async function rendered(browser: WebdriverIO.Browser, screen: Screen) {
       { timeout: LAUNCH_TIMEOUT, timeoutMsg: "graph launch did not open New chat on repo / master" });
   } else {
     await browser.waitUntil(() => browser.execute((entry) => {
-      const main = document.querySelector('main[aria-label="Verify"]:not([hidden]) section.panel[aria-label="Main area"]');
-      // Without arguments: the Pane lists the fixture's branch, the Main area shows nothing chosen.
+      const main = document.querySelector('main[aria-label="Verify"]:not([hidden]) section.stage-area[aria-label="Main area"]');
+      // Without arguments: the Pane lists the fixture's branch, nothing chosen, and the Main area
+      // says how to choose one.
       if (entry === "monitor") {
         return [...document.querySelectorAll('[aria-label="Branches"] [role="treeitem"]')].some((row) => row.textContent?.includes("repo"))
-          && main?.querySelector(":scope > header h2")?.textContent?.trim() === "Nothing chosen";
+          && !document.querySelector('[aria-label="Branches"] [role="treeitem"][aria-selected="true"]')
+          && main?.querySelector(".empty")?.textContent?.trim() === "Choose a branch in the Pane.";
       }
       if (entry === "review") {
         const review = document.querySelector(`main[aria-label="Review"]:not([hidden]) [aria-label="Review's main area"]`);

@@ -11,7 +11,7 @@ import { scenario, type Scenario } from "../scenario.ts";
 export const scenarios: Scenario[] = [
   scenario({
     id: "graph-verdicts",
-    title: "each node of a Run says its verdict by its icon and its name read aloud, the header names what needs attention, and the headline opens the Run's Detail with its outcome",
+    title: "each node of a Run says its verdict by its icon and its name read aloud, the Pane's entry names the Run, and Run details in the stage header opens the Run's Detail with its outcome",
     journeys: ["J-GRAPH-COLOURS", "J-MAIN-RUN"],
     prepare: async (own) => {
       const fixture = await createStates(own);
@@ -29,10 +29,12 @@ export const scenarios: Scenario[] = [
         icons.set(light, node.icon);
       }
       assert.equal(new Set(icons.values()).size, icons.size, "one icon per verdict");
-      // One header row: the Run's ID, then its verdict and each eval that needs attention.
+      // The Pane's shown entry names the Run; the stage header holds tools only (J-STAGE).
       assert.match(await app.graph.title(), /^run-/);
-      const headline = await app.graph.headline();
-      for (const need of ["red/check RED", "crash/check ERROR", "gate/signoff"]) assert.ok(headline.includes(need), `${need} named in the headline: ${headline}`);
+      const header = await app.graph.header();
+      assert.match(header, /Run details/);
+      assert.match(header, /Open in Chat/);
+      assert.doesNotMatch(header, /run-|WAITING|red\/check/, `the stage header names and rates nothing: ${header}`);
       await app.graph.openRunDetail();
       const outcome = await app.detail.section("Outcome");
       assert.match(outcome, /Status WAITING.HUMAN/, `the Run's status in its outcome: ${outcome}`);
@@ -258,8 +260,8 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "current-scan",
-    title: "started with graph --repo on a branch without a session it offers New chat there, whose Graph shows the branch's Current: its graph drawn at once, Artifacts being checked until their fingerprints are in, then coloured in place by what verify would do",
-    journeys: ["J-LAUNCH", "J-CHAT-GRAPH"],
+    title: "started with graph --repo on a branch without a session it offers New chat there, whose Graph shows the branch's Current: its graph drawn at once, Artifacts being checked until their fingerprints are in, then coloured in place by what verify would do; the chat floats over it with the reply card of a message sent from Graph, and Conversation finds text in place",
+    journeys: ["J-LAUNCH", "J-CHAT-GRAPH", "J-STAGE", "J-CHAT-FIND", "J-CHAT"],
     prepare: async (own) => {
       const fixture = createChecking(own);
       await installChatProvider(own, fixture);
@@ -277,17 +279,45 @@ export const scenarios: Scenario[] = [
       await app.graph.node("a:quick", (node) => /^quick: (would run|waiting)/.test(node.label), "quick too");
       // Every Artifact checked, the scan still ends after its last one: the header then says when.
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
+      // The stage header: the view tabs, then the graph's tools and the Current's, naming nothing.
+      const header = await app.graph.header();
+      for (const tool of ["Conversation", "Graph", "Find", "Zoom in", "Fit", "New Artifact", "Refresh"]) assert.ok(header.includes(tool), `${tool} in the stage header: ${header}`);
+      assert.doesNotMatch(header, /New chat|master|Scanned/, `the stage header names and rates nothing: ${header}`);
+      // The chat floats over the graph's bottom, centred, with no reply card before a message.
+      const float = await app.chat.floating();
+      assert.ok(float, "the chat floats over the graph");
+      assert.ok(float.chat.bottom < float.canvas.bottom && float.canvas.bottom - float.chat.bottom <= 16, `12px above the canvas's bottom: ${JSON.stringify(float)}`);
+      assert.ok(Math.abs((float.chat.left - float.canvas.left) - (float.canvas.right - float.chat.right)) <= 2, `centred in the canvas: ${JSON.stringify(float)}`);
+      assert.equal(await app.chat.reply(), null);
       await app.chat.model(CHAT_MODEL);
       await app.chat.send(GRAPH_PROMPT, false);
       await app.chat.working();
       await app.chat.viewShown("Graph");
+      // The message sent from Graph heads the reply card as the reply streams.
+      await app.until(async () => (await app.chat.reply())?.said === GRAPH_PROMPT, "the reply card shows the message sent from Graph");
       await app.graph.node("a:slow");
       writeText(nativePath(fixture.root, GRAPH_GATE), "answer");
       await app.chat.finished();
+      await app.until(async () => (await app.chat.reply())?.text.includes(GRAPH_ANSWER) === true, "the reply streamed into the card");
       await app.chat.viewShown("Graph");
+      await app.chat.toggleReply();
+      assert.equal((await app.chat.reply())?.text, "", "folded to its head");
+      await app.chat.toggleReply();
+      // Conversation holds the whole turn; Find marks where a text appears and steps through it.
       await app.chat.show("Conversation");
       await app.chat.says(GRAPH_ANSWER);
+      assert.equal(await app.chat.find("SEE"), "1 of 2", "ignoring case: you see, I see");
+      assert.equal(await app.chat.findStep(), "2 of 2");
+      assert.equal(await app.chat.findStep(true), "1 of 2");
+      assert.equal(await app.chat.find("no such words"), "No match");
+      await app.chat.closeFind();
+      // The card was the Graph view's: gone once Conversation was shown.
       await app.chat.show("Graph");
+      assert.equal(await app.chat.reply(), null);
+      // A project folds from its row and unfolds again.
+      await app.chat.toggleProject("repo");
+      assert.deepEqual(await app.chat.projects(), [{ name: "repo", open: false }]);
+      await app.chat.toggleProject("repo");
       await app.chat.create();
       await app.chat.viewShown("Conversation");
       await app.chat.openSaved(GRAPH_PROMPT);
@@ -330,7 +360,7 @@ export const scenarios: Scenario[] = [
       await app.mode("Chat");
       await app.chat.create();
       await app.graph.titled("New chat");
-      assert.match(await app.graph.header(), /\belsewhere\b/, "the newer session is on the other branch");
+      assert.equal(await app.chat.shownBranch(), "elsewhere", "the newer session is on the other branch");
       await app.chat.show("Graph");
       await app.graph.node("a:elsewhere-only");
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "elsewhere's Current finished scanning");
