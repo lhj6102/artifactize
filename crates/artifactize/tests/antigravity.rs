@@ -286,7 +286,7 @@ impl Fixture {
 
             let restarted = Chat::new(self.state.clone(), self.cli.clone());
             let restored = restarted.open(&session.id).await.unwrap();
-            assert_eq!(restored.session.selection, model);
+            assert_eq!(restored.session.model.as_ref(), Some(&model));
             assert!(restored.turns[0].blocks.iter().any(|block| matches!(block, Block::Run { card } if card.id == run)));
             restarted.send(&session.id, "continue after restart".into(), None).await.unwrap();
             let resumed = observe(&restarted, &session.id, changes, |view| !view.running && view.turns.len() == 2).await;

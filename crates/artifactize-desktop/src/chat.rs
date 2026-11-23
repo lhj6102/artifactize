@@ -57,7 +57,7 @@ pub struct ChatSession {
     pub branch_key: BranchKey,
     pub view: ChatSessionView,
     pub unavailable: Option<String>,
-    pub selection: ChatModel,
+    pub model: Option<ChatModel>,
     pub created_at: String,
     pub updated_at: String,
     pub running: bool,
@@ -83,7 +83,7 @@ impl From<chat::Session> for ChatSession {
                 chat::SessionView::Graph => ChatSessionView::Graph,
             },
             unavailable: session.unavailable,
-            selection: session.selection.into(),
+            model: session.model.map(Into::into),
             created_at: session.created_at.to_string(),
             updated_at: session.updated_at.to_string(),
             running: session.running,
@@ -363,7 +363,7 @@ pub async fn chat_default_model(
         .map_err(Failure::Read)
 }
 
-/// Create an empty Chat session for the chosen worktree; `null` uses its default model.
+/// Create an empty Chat session for the chosen worktree; `null` leaves its model unset.
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_create(
@@ -507,7 +507,10 @@ pub async fn chat_send(
             selection.map(TryInto::try_into).transpose()?,
         )
         .await
-        .map_err(Failure::Action)
+        .map_err(|error| match error {
+            error @ chat::SendError::NoModel => Failure::NoModel(error.to_string()),
+            chat::SendError::Failed(message) => Failure::Action(message),
+        })
 }
 
 /// Ask the library to stop the turn, regardless of which process owns it.

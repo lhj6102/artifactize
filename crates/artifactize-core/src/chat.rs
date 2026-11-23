@@ -57,6 +57,20 @@ pub struct Model {
     pub effort: Option<String>,
 }
 
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SendError {
+    #[error("Choose a model before sending a Chat message.")]
+    NoModel,
+    #[error("{0}")]
+    Failed(String),
+}
+
+impl From<String> for SendError {
+    fn from(message: String) -> Self {
+        Self::Failed(message)
+    }
+}
+
 /// Whether an accepted quit could read active ownership and deliver Stop to those turns.
 #[derive(Debug)]
 pub enum StopRunningError {
@@ -99,7 +113,8 @@ pub struct Session {
     pub worktree: PathBuf,
     #[serde(default)]
     pub repository: Option<repository::Identity>,
-    pub selection: Model,
+    #[serde(default, alias = "selection")]
+    pub model: Option<Model>,
     #[serde(default)]
     pub view: SessionView,
     pub created_at: Timestamp,
@@ -361,12 +376,8 @@ impl Chat {
         worktree: &Path,
         identity: &repository::Identity,
     ) -> Result<Option<Model>, String> {
-        if let Some(selection) = self
-            .latest_for_branch(&Place::for_checkout(worktree, identity))
-            .await?
-            .map(|session| session.selection)
-        {
-            return Ok(Some(selection));
+        if let Some(model) = self.last_model(worktree, identity).await? {
+            return Ok(Some(model));
         }
         let providers = providers::list(Some(&self.state), Some(worktree))?;
         let backends = Provider::ALL
@@ -389,7 +400,19 @@ impl Chat {
             }))
     }
 
-    /// Persist a session even before it has a message. An explicit selection must be listed.
+    async fn last_model(
+        &self,
+        workspace: &Path,
+        checkout: &repository::Identity,
+    ) -> Result<Option<Model>, String> {
+        let branch = Place::for_checkout(workspace, checkout);
+        Ok(store::chat::for_branch(&self.state, &branch)
+            .await?
+            .into_iter()
+            .find_map(|session| session.model))
+    }
+
+    /// Persist an empty session, with no model unless one is explicitly selected.
     pub async fn create(
         &self,
         worktree: &Path,
@@ -408,22 +431,18 @@ impl Chat {
         let (workspace, repository) = checkout_for(workspace, branch).await?;
         let worktree = workspace.as_path();
         crate::config::read_workspace_config(worktree).map_err(|error| error.to_string())?;
-        let selection = match selection {
-            Some(selection) => {
-                let previous = if selection.effort.is_none() {
-                    self.latest_for_branch(&Place::for_checkout(worktree, &repository))
-                        .await?
-                        .map(|session| session.selection)
-                } else {
-                    None
-                };
+        let model = if let Some(selection) = selection {
+            let previous = if selection.effort.is_none() {
+                self.last_model(worktree, &repository).await?
+            } else {
+                None
+            };
+            Some(
                 self.resolve_model(worktree, selection, previous.as_ref())
-                    .await?
-            }
-            None => self
-                .starting_model(worktree, &repository)
-                .await?
-                .ok_or("No provider lists a model. Connect a provider first.")?,
+                    .await?,
+            )
+        } else {
+            None
         };
         let now = crate::broker::now();
         let session = Session {
@@ -431,7 +450,7 @@ impl Chat {
             title: "New chat".into(),
             worktree: worktree.into(),
             repository: Some(repository),
-            selection,
+            model,
             view: SessionView::default(),
             created_at: now,
             updated_at: now,
@@ -644,7 +663,7 @@ impl Chat {
     pub async fn set_model(&self, id: &SessionId, selection: Model) -> Result<Session, String> {
         let session = self.available(id).await?;
         let selection = self
-            .resolve_model(&session.worktree, selection, Some(&session.selection))
+            .resolve_model(&session.worktree, selection, session.model.as_ref())
             .await?;
         let receipts = Receipts::open(&self.state, &session.worktree).await?;
         let saved = receipts.set_chat_model(&self.state, id, selection).await;
@@ -671,11 +690,11 @@ impl Chat {
         id: &SessionId,
         text: String,
         selection: Option<Model>,
-    ) -> Result<(), String> {
+    ) -> Result<(), SendError> {
         if text.trim().is_empty() || text.len() > PROMPT_BYTES {
-            return Err(format!(
+            return Err(SendError::Failed(format!(
                 "Chat messages must have text and be at most {PROMPT_BYTES} bytes."
-            ));
+            )));
         }
         let active = self.claim(id)?;
         let chat = self.clone();
@@ -696,7 +715,7 @@ impl Chat {
         });
         acknowledgement
             .await
-            .map_err(|_| "The queued Chat turn did not start.")?
+            .map_err(|_| SendError::Failed("The queued Chat turn did not start.".into()))?
     }
 
     async fn prepare(
@@ -705,13 +724,14 @@ impl Chat {
         text: &str,
         selection: Option<Model>,
         cancel: &CancellationToken,
-    ) -> Result<Prepared, String> {
+    ) -> Result<Prepared, SendError> {
         let mut session = self.available(id).await?;
+        let current = session.model.as_ref().ok_or(SendError::NoModel)?;
         let context = self.context(&session.worktree)?;
         let selection = if let Some(selection) = selection {
             Some(tokio::select! {
-                _ = cancel.cancelled() => return Err("Chat stopped before accepting the turn.".into()),
-                resolved = self.resolve_model(context.repo(), selection, Some(&session.selection)) => resolved?,
+                _ = cancel.cancelled() => return Err(SendError::Failed("Chat stopped before accepting the turn.".into())),
+                resolved = self.resolve_model(context.repo(), selection, Some(current)) => resolved?,
             })
         } else {
             None
@@ -753,8 +773,8 @@ impl Chat {
                     outcome: Outcome::Running,
                     unseen: false,
                 });
-                session.selection = receipts.accept_chat(&session, selection).await?;
-                Ok::<_, String>((recorder, history))
+                let model = receipts.accept_chat(&session, selection).await?;
+                Ok::<_, String>((recorder, history, model))
             }
             .await;
             if prepared.is_err() {
@@ -763,15 +783,16 @@ impl Chat {
             prepared
         }
         .await;
-        let (recorder, history) = match prepared {
+        let (recorder, history, model) = match prepared {
             Ok(prepared) => prepared,
             Err(error) => {
                 let _ = receipts.close().await;
-                return Err(error);
+                return Err(error.into());
             }
         };
         Ok(Prepared {
             session,
+            model,
             context,
             receipts,
             owner,
@@ -783,6 +804,7 @@ impl Chat {
     async fn finish(&self, prepared: Prepared, text: String, active: Active) {
         let Prepared {
             mut session,
+            model,
             context,
             receipts,
             owner,
@@ -805,7 +827,7 @@ impl Chat {
                 let tools = tools::Tools::new(&context, output.path())
                     .guard_checkout(session.repository.as_ref());
                 let turn = agent::chat_turn(
-                    &session.selection,
+                    &model,
                     &context,
                     &tools,
                     history,
@@ -980,6 +1002,7 @@ impl Chat {
 
 struct Prepared {
     session: Session,
+    model: Model,
     context: runs::Context,
     receipts: Receipts,
     owner: store::chat::Owner,

@@ -17,7 +17,7 @@ use std::{
 
 use artifactize_core::{
     changes::Subscription,
-    chat::{Block, Chat, Model, Outcome, ToolKind, TurnState, View},
+    chat::{Block, Chat, Model, Outcome, SendError, SessionView, ToolKind, TurnState, View},
     runs, store,
     types::{RunId, SessionId},
 };
@@ -327,7 +327,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         .await
         .unwrap();
     assert!(changed_while_streaming.running);
-    assert_eq!(changed_while_streaming.selection, next_model);
+    assert_eq!(changed_while_streaming.model.as_ref(), Some(&next_model));
     final_answer.open();
     let ended = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
     assert!(matches!(ended.turns[0].state, TurnState::Completed));
@@ -384,7 +384,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         !view.running && view.turns.len() == 3
     })
     .await;
-    assert_eq!(continued.session.selection, changed);
+    assert_eq!(continued.session.model.as_ref(), Some(&changed));
     assert!(matches!(continued.turns[2].state, TurnState::Completed));
     assert!(
         continued.turns[2]
@@ -447,6 +447,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             .send(&session.id, "Must not run here".into(), None)
             .await
             .unwrap_err()
+            .to_string()
             .contains("Check out first")
     );
     assert_eq!(restarted.open(&session.id).await.unwrap().turns.len(), 3);
@@ -504,6 +505,100 @@ fn worktree(root: &owned_run::Root) -> (std::path::PathBuf, std::path::PathBuf) 
     .unwrap();
     root.track(&state, &repo);
     (repo, state)
+}
+
+#[tokio::test]
+async fn a_model_free_chat_can_open_current_and_send_after_selecting_a_model() {
+    let root = owned_run::Root::from(support::os::tempdir());
+    let (repo, state) = worktree(&root);
+    let cli = support::os::cli();
+    let chat = Chat::new(state.clone(), cli.clone());
+    let session = chat.create(&repo, None).await.unwrap();
+    assert_eq!(session.model, None);
+    chat.set_view(&session.id, SessionView::Graph)
+        .await
+        .unwrap();
+    assert_eq!(
+        chat.current_worktree(&session.branch()).await.unwrap(),
+        Some(support::os::canonical(&repo)),
+    );
+    assert_eq!(
+        chat.send(&session.id, "Do not start a turn".into(), None)
+            .await,
+        Err(SendError::NoModel),
+    );
+    let restarted = Chat::new(state.clone(), cli.clone());
+    let empty = restarted.open(&session.id).await.unwrap();
+    assert_eq!(empty.session.model, None);
+    assert_eq!(empty.session.view, SessionView::Graph);
+    assert!(empty.turns.is_empty());
+
+    let provider = FakeProvider::start(|request| {
+        if request.method == "GET" {
+            openai::models(&["chosen-model"])
+        } else {
+            support::chat::text(request, "Ready.", 4, 2)
+        }
+    });
+    let output = support::os::run(
+        Command::new(&cli)
+            .arg("--repo")
+            .arg(&repo)
+            .arg("--state-dir")
+            .arg(&state)
+            .args([
+                "provider",
+                "add",
+                "scripted",
+                "--api",
+                "openai-chat",
+                "--url",
+                &provider.openai_base(),
+            ]),
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let model = Model {
+        backend: "scripted".parse().unwrap(),
+        model: "chosen-model".parse().unwrap(),
+        effort: None,
+    };
+    assert_eq!(
+        restarted
+            .set_model(&session.id, model.clone())
+            .await
+            .unwrap()
+            .model,
+        Some(model.clone())
+    );
+    let mut changes = Subscription::new(&state).await;
+    let reopened = Chat::new(state.clone(), cli);
+    assert_eq!(
+        reopened.open(&session.id).await.unwrap().session.model,
+        Some(model.clone())
+    );
+    reopened
+        .send(&session.id, "First real turn".into(), None)
+        .await
+        .unwrap();
+    let view = observe(&reopened, &session.id, &mut changes, |view| !view.running).await;
+    assert_eq!(view.turns.len(), 1);
+    assert!(
+        matches!(view.turns[0].state, TurnState::Completed),
+        "{:?}",
+        view.turns[0].state
+    );
+    let sent = provider.requests();
+    let turn = sent
+        .iter()
+        .find(|request| request.method == "POST")
+        .unwrap();
+    assert_eq!(turn.body["model"], "chosen-model");
+    assert_eq!(reopened.default_model(&repo).await.unwrap(), Some(model));
+    changes.close().await.unwrap();
 }
 
 const FILE_AND_VERIFY_TOOLS: &[&str] = &[
@@ -627,8 +722,8 @@ async fn codex_chat_fixture() {
         chat.default_model(&repo).await.unwrap(),
         Some(model.clone())
     );
-    let session = chat.create(&repo, None).await.unwrap();
-    assert_eq!(session.selection, model);
+    let session = chat.create(&repo, Some(model.clone())).await.unwrap();
+    assert_eq!(session.model, Some(model.clone()));
     let mut changes = Subscription::new(&state).await;
     let rejected = Model {
         effort: Some("bogus".into()),
@@ -638,6 +733,7 @@ async fn codex_chat_fixture() {
         chat.send(&session.id, "Reject this effort".into(), Some(rejected))
             .await
             .unwrap_err()
+            .to_string()
             .contains("does not offer effort")
     );
     let selection = Model {
@@ -648,7 +744,7 @@ async fn codex_chat_fixture() {
         .set_model(&session.id, selection.clone())
         .await
         .unwrap();
-    assert_eq!(saved.selection, selection);
+    assert_eq!(saved.model, Some(selection.clone()));
     assert!(chat.open(&session.id).await.unwrap().turns.is_empty());
     assert_eq!(
         Chat::new(state.clone(), support::os::cli())
@@ -656,8 +752,8 @@ async fn codex_chat_fixture() {
             .await
             .unwrap()
             .session
-            .selection,
-        selection
+            .model,
+        Some(selection.clone())
     );
     chat.send(&session.id, "What can you do?".into(), None)
         .await
@@ -790,6 +886,7 @@ async fn claude_chat_fixture() {
         chat.create(&repo, Some(selection.clone()))
             .await
             .unwrap_err()
+            .to_string()
             .contains("does not offer effort")
     );
     selection.effort = Some("low".into());

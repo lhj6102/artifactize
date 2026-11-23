@@ -25,11 +25,11 @@ async fn moving_a_branch_prefers_a_usable_session_but_keeps_stranded_history_rea
         title: id.into(),
         worktree: path,
         repository: Some(repository),
-        selection: Model {
+        model: Some(Model {
             backend: "codex".parse().unwrap(),
             model: "fixture-model".parse().unwrap(),
             effort: None,
-        },
+        }),
         view: SessionView::Graph,
         created_at: stamp.parse().unwrap(),
         updated_at: stamp.parse().unwrap(),
@@ -167,11 +167,11 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
                 branch: Some(branch.into()),
             }),
             worktree: directory,
-            selection: Model {
+            model: Some(Model {
                 backend: "codex".parse().unwrap(),
                 model: "fixture-model".parse().unwrap(),
                 effort: None,
-            },
+            }),
             view: SessionView::Conversation,
             created_at: time,
             updated_at: time,
@@ -196,7 +196,7 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
         title: "The latest session".into(),
         worktree: checkout.clone(),
         repository: Some(repository::identify(&checkout)),
-        selection: saved_model,
+        model: Some(saved_model),
         view: SessionView::Conversation,
         created_at: "2026-10-25T12:00:00Z".parse().unwrap(),
         updated_at: "2026-10-25T12:00:00Z".parse().unwrap(),
@@ -300,4 +300,17 @@ fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
     assert!(matches!(&turns[0].blocks[0], Block::Tool {
         result: Some(transcript::ToolResult { exit_code: Some(0), omitted_lines: 0, output_truncated: false, output, .. }), summary, ..
     } if summary == "ran fixture (exit 0)" && output == "one\ntwo\n"));
+}
+
+#[test]
+fn a_session_saved_with_the_previous_selection_field_keeps_its_model() {
+    let record = serde_json::json!({
+        "id": "chat-legacy", "title": "Older chat", "worktree": "workspace",
+        "selection": {"backend": "codex", "model": "saved-model", "effort": "high"},
+        "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
+    });
+    let session: Session = serde_json::from_value(record).unwrap();
+    let saved = session.model.unwrap();
+    assert_eq!(saved.model.as_str(), "saved-model");
+    assert_eq!(saved.effort.as_deref(), Some("high"));
 }

@@ -8,7 +8,7 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	launch: () => typedError<LaunchView, Failure>(__TAURI_INVOKE("launch")),
-	/**  Create an empty Chat session for the chosen worktree; `null` uses its default model. */
+	/**  Create an empty Chat session for the chosen worktree; `null` leaves its model unset. */
 	chatCreate: (worktree: PathKey, branch: 
 /**  A Git repository's branch, by the repository's common directory. */
 { kind: "branch"; common: PathKey; 
@@ -36,7 +36,7 @@ branch: string } |
 	branchKey: BranchKey,
 	view: ChatSessionView,
 	unavailable: string | null,
-	selection: ChatModel,
+	model: ChatModel | null,
 	createdAt: string,
 	updatedAt: string,
 	running: boolean,
@@ -554,7 +554,7 @@ export type ChatSession = {
 	branchKey: BranchKey,
 	view: ChatSessionView,
 	unavailable: string | null,
-	selection: ChatModel,
+	model: ChatModel | null,
 	createdAt: string,
 	updatedAt: string,
 	running: boolean,
@@ -809,7 +809,7 @@ export type Failure =
 /**  A sign-in, sign-out, listing or store call failed, with the CLI's own message. */
 { kind: "account"; message: string } | 
 /**  Reading or saving a machine-wide setting failed, with the CLI's own message. */
-{ kind: "setting"; message: string };
+{ kind: "setting"; message: string } | { kind: "noModel"; message: string };
 
 export type Field = {
 	key: string,

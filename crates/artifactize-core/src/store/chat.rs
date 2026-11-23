@@ -218,11 +218,16 @@ impl Receipts {
             .call(move |db| {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let current = saved_chat(&transaction, &session.id)?;
-                session.selection = selection.unwrap_or(current.selection);
+                let model = selection.or(current.model).ok_or_else(|| {
+                    Error::Invalid(
+                        "The saved Chat model was removed before the turn started.".into(),
+                    )
+                })?;
+                session.model = Some(model.clone());
                 session.view = current.view;
                 save(&transaction, &session)?;
                 transaction.commit()?;
-                Ok::<_, Error>(session.selection)
+                Ok::<_, Error>(model)
             })
             .await
             .map_err(|error| error.to_string())
@@ -240,8 +245,8 @@ impl Receipts {
             .call(move |db| {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let mut session = load_session(&transaction, &state, &id)?;
-                if session.selection != selection {
-                    session.selection = selection;
+                if session.model.as_ref() != Some(&selection) {
+                    session.model = Some(selection);
                     session.updated_at = crate::broker::now();
                     save(&transaction, &session)?;
                 }
@@ -371,7 +376,7 @@ impl Receipts {
             if released != 0 && let Some(mut session) = settled {
                 // A selector change accepted during the turn is for the next message.
                 let current = saved_chat(&transaction, &id)?;
-                session.selection = current.selection;
+                session.model = current.model;
                 session.view = current.view;
                 session.updated_at = session.updated_at.max(current.updated_at);
                 save(&transaction, &session)?;
