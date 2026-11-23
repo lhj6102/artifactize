@@ -276,8 +276,9 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
     table.data[offset + 3] = 255;
   });
   writeFileSync(palette, PNG.sync.write(table));
+  // A nearby palette colour can win after dithering, even when the original pixel was pinned.
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, ...barInput, "-i", palette,
-    "-filter_complex", `${frames}[v];[v][2:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
+    "-filter_complex", `${frames}[v];[v][2:v]paletteuse=dither=none:diff_mode=rectangle`,
     gif]);
   const framesWritten = Number(run("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0",
     "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", gif]).trim());
@@ -286,7 +287,9 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   const barRows = spawnSync("ffmpeg", ["-v", "error", "-i", gif, "-vf",
     `select='eq(n,0)+eq(n,${count - 1})',format=rgb24,crop=iw:1:0:ih-2`, "-fps_mode", "passthrough", "-f", "rawvideo", "-"],
     { maxBuffer: GIF.width * 3 * 4 });
-  if (barRows.status !== 0 || !barRows.stdout.equals(Buffer.concat([row(track), row(colour)]))) {
+  if (barRows.error) throw barRows.error;
+  if (barRows.status !== 0) throw new Error(`could not read ${gif}'s progress bar: ${barRows.stderr.toString().trim()}`);
+  if (!barRows.stdout.equals(Buffer.concat([row(track), row(colour)]))) {
     throw new Error(`${gif} must start with an empty progress bar and end with a full one`);
   }
 }
@@ -518,11 +521,13 @@ function convertJson(text: string): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** Every file under `directory` named like `match`. */
+/** Every matching file in the release tree, excluding Git's independently mutable metadata. */
 function files(directory: string, match: (name: string) => boolean): string[] {
-  return readdirSync(directory, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && match(entry.name))
-    .map((entry) => join(entry.parentPath, entry.name));
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory() && entry.name !== ".git") return files(path, match);
+    return entry.isFile() && match(entry.name) ? [path] : [];
+  });
 }
 
 /** Put `ref`'s tree, without examples/, in `tree`, a Git checkout, in the format the current
