@@ -4,7 +4,7 @@ type = "files"
 
 [evals.reads-the-record]
 title = "The board reads the record the development skills write"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.reads-the-record.payload]
@@ -24,7 +24,7 @@ dev-worker/SKILL.md of {dev-skills}. Check that:
 
 [evals.follows-rules]
 title = "The board's text is plain for a first-time visitor"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-rules.payload]

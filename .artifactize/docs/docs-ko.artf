@@ -4,7 +4,7 @@ type = "files"
 
 [evals.matches-english]
 title = "The Korean documentation conveys the same facts and structure as the English documentation"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.matches-english.payload]
@@ -21,7 +21,7 @@ Use the list, glob, grep and read tools of {docs-en} and {docs-ko}. Tool paths a
 
 [evals.follows-write-in-korean]
 title = "The Korean documentation follows the Korean writing rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-write-in-korean.payload]

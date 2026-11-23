@@ -34,7 +34,7 @@ additionalProperties = false
 
 [evals.serves-purpose]
 title = "Every platform rule serves the checklist's purpose, and none overlap or contradict"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.serves-purpose.payload]

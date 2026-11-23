@@ -4,7 +4,7 @@ type = "files"
 
 [evals.correct]
 title = "The development skills state today's commands, outcomes and CI correctly"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.correct.payload]
