@@ -2935,7 +2935,7 @@
 }
 /* A project's New chat: the new-chat icon alone in the row's last 36px cell, shown while the
    pointer or the keyboard is on the row. */
-.m-project .m-row-tool {
+.m-chat-project .m-row-tool {
   display: none;
   align-self: stretch;
   width: var(--row-pane);
@@ -2944,11 +2944,11 @@
   justify-content: center;
   color: var(--ink-2);
 }
-.m-project.hover .m-row-tool,
-.m-project.kfocus .m-row-tool {
+.m-chat-project.hover .m-row-tool,
+.m-chat-project.kfocus .m-row-tool {
   display: inline-flex;
 }
-.m-project .m-row-tool.hover {
+.m-chat-project .m-row-tool.hover {
   color: var(--ink);
 }
 .m-pane-top .m-new {
@@ -2974,10 +2974,10 @@
   padding-left: 7px;
 }
 .m-pane-top.hover-new .m-new,
-.m-project.hover {
+.m-chat-project.hover {
   background: var(--surface-group);
 }
-.m-project {
+.m-chat-project {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2985,17 +2985,17 @@
   padding: 0 var(--pad);
   color: var(--label);
 }
-.m-project .m-icon {
+.m-chat-project .m-icon {
   color: var(--ink-2);
 }
-.m-project .m-item-name {
+.m-chat-project .m-item-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.m-project.kfocus {
+.m-chat-project.kfocus {
   box-shadow: inset 0 0 0 2px var(--focus);
 }
 .m-chatlist .m-session {
