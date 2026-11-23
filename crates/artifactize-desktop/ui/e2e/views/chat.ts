@@ -251,7 +251,8 @@ export class Chat {
   async scrollUp(run: string): Promise<void> {
     const before = await this.reading(run);
     await scrollViewport(this.browser, await this.browser.$(`${MAIN} ${LOG}`).getElement(), -10000);
-    await holds(this.browser, async () => (await this.reading(run)).top < before.top && !(await this.reading(run)).atEnd, "the conversation is scrolled up");
+    await holds(this.browser, async () => (await this.reading(run)).top < before.top && !(await this.reading(run)).atEnd
+      && await this.browser.$(MAIN).$("button=Scroll to end").isDisplayed(), "the conversation is scrolled up and Scroll to end is shown");
   }
 
   async scrollToEnd(run: string): Promise<void> {

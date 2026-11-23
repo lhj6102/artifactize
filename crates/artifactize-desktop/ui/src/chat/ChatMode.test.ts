@@ -665,6 +665,15 @@ it("keeps where a session is read across streaming, sessions and views, and foll
   height = 1200;
   await emit("session-changed", { session: session.id });
   await waitFor(() => expect(log.scrollTop).toBe(1000));
+  // Scrolling up before the browser dispatches its async scroll event must not be snapped back
+  // to the end when a streaming chunk arrives in the same frame.
+  log.scrollTop = 250;
+  height = 1400;
+  state.turns = [{ user: "Go", blocks: [{ kind: "text", text: "Streamed while scrolling up" }], state: { kind: "running" } }];
+  await emit("session-changed", { session: session.id });
+  await screen.findByText("Streamed while scrolling up");
+  await screen.findByRole("button", { name: "Scroll to end" });
+  expect(log.scrollTop).toBe(250);
 });
 
 it("folds and unfolds a project from its folder row, and names nothing of the session in the stage header", async () => {

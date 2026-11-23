@@ -146,11 +146,17 @@
     }
   }
 
+  /** The scroll position this component last placed on the mounted conversation element, so a
+   * streaming update arriving before the browser's async scroll event cannot snap a user's
+   * scroll back to the end. */
+  let placed: { log: HTMLElement; top: number } | null = null;
+
   /** Read the same place again after a view or session switch; only follow at the end. */
   function remember(log: HTMLElement) {
     const id = session?.id;
     if (!id || app.mode !== "chat") return;
     const top = log.scrollTop;
+    placed = { log, top };
     // A programmatic reveal may already be at the bottom; only an actual scroll or the button
     // should end that reading position.
     if (c.scroll[id]?.top === top) return;
@@ -159,6 +165,7 @@
 
   function scrollToEnd(log: HTMLElement, id: string) {
     log.scrollTop = log.scrollHeight;
+    placed = { log, top: log.scrollTop };
     c.scroll[id] = { top: log.scrollTop, following: true };
   }
 
@@ -242,18 +249,29 @@
     const id = session?.id;
     const reveal = c.reveal;
     const turns = view?.turns; // Recheck when a library snapshot brings a new line or Run card.
-    if (!id || !turns || app.mode !== "chat") return;
+    if (!id || !turns || app.mode !== "chat") {
+      placed = null;
+      return;
+    }
     let attached = true;
     function place() {
       if (!attached || !id || app.mode !== "chat") return;
       const card = reveal && [...log.querySelectorAll<HTMLElement>("[data-run]")].find((item) => item.dataset.run === reveal);
       if (card && c.reveal === reveal) {
         card.scrollIntoView({ block: "center" });
+        placed = { log, top: log.scrollTop };
         c.scroll[id] = { top: log.scrollTop, following: false };
         c.reveal = null;
       } else if (!c.reveal) {
+        if (placed !== null && placed.log === log && log.scrollTop !== placed.top) {
+          remember(log);
+          return;
+        }
         const kept = c.scroll[id];
-        log.scrollTop = !kept || kept.following ? log.scrollHeight : kept.top;
+        const following = !kept || kept.following;
+        log.scrollTop = following ? log.scrollHeight : kept.top;
+        placed = { log, top: log.scrollTop };
+        if (following) c.scroll[id] = { top: log.scrollTop, following: true };
       }
     }
     queueMicrotask(place);
