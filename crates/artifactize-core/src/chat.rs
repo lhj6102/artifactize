@@ -356,7 +356,7 @@ impl Chat {
         Ok(changed)
     }
 
-    /// The starting model for a new session: the worktree's last choice, or the first
+    /// The starting model for a new session: the worktree's last available choice, or the first
     /// listed model in Settings order after every provider has answered.
     pub async fn default_model(&self, worktree: &Path) -> Result<Option<Model>, String> {
         self.default_model_for(worktree, None).await
@@ -376,8 +376,10 @@ impl Chat {
         worktree: &Path,
         identity: &repository::Identity,
     ) -> Result<Option<Model>, String> {
-        if let Some(model) = self.last_model(worktree, identity).await? {
-            return Ok(Some(model));
+        if let Some(model) = self.last_model(worktree, identity).await?
+            && let Ok(available) = self.resolve_model(worktree, model, None).await
+        {
+            return Ok(Some(available));
         }
         let providers = providers::list(Some(&self.state), Some(worktree))?;
         let backends = Provider::ALL

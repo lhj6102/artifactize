@@ -597,7 +597,26 @@ async fn a_model_free_chat_can_open_current_and_send_after_selecting_a_model() {
         .find(|request| request.method == "POST")
         .unwrap();
     assert_eq!(turn.body["model"], "chosen-model");
-    assert_eq!(reopened.default_model(&repo).await.unwrap(), Some(model));
+    assert_eq!(
+        reopened.default_model(&repo).await.unwrap(),
+        Some(model.clone())
+    );
+
+    let output = support::os::run(
+        Command::new(support::os::cli())
+            .arg("--repo")
+            .arg(&repo)
+            .arg("--state-dir")
+            .arg(&state)
+            .args(["provider", "remove", "scripted"]),
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_ne!(reopened.default_model(&repo).await.unwrap(), Some(model));
+    assert_eq!(reopened.create(&repo, None).await.unwrap().model, None);
     changes.close().await.unwrap();
 }
 
