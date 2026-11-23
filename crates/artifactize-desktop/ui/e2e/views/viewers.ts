@@ -313,10 +313,11 @@ export class Windows {
       if (why && why.scrollWidth > why.clientWidth + 1) overflow.push("Point explanation");
       const submit = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Submit GREEN");
       const box = submit?.getBoundingClientRect();
-      const inset = Number.parseFloat(getComputedStyle(card).paddingRight) + card.clientLeft;
+      const row = card.querySelector<HTMLElement>('[role="group"][aria-label="Decision"]') ?? card;
+      const end = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight) - row.clientLeft;
       return {
         overflow,
-        submitAtRight: !!submit && !!box && !submit.disabled && Math.abs(frame.right - inset - box.right) < 2
+        submitAtRight: !!submit && !!box && !submit.disabled && Math.abs(end - box.right) < 2
           && box.top >= frame.top && box.bottom <= frame.bottom && box.bottom <= innerHeight
           && submit.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)),
       };
