@@ -1,0 +1,5 @@
+interface:
+  display_name: "release-master"
+  short_description: "Cut release/* from main-green, pass QA gates, tag v* to publish, and verify live"
+policy:
+  allow_implicit_invocation: false

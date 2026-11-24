@@ -1,6 +1,6 @@
 path = ".agents/skills/"
 type = "files"
-# The dev-master and dev-worker skills for Claude Code and Codex (.claude/skills links here).
+# The dev-master, dev-worker and release-master skills for Claude Code and Codex (.claude/skills links here).
 
 [evals.correct]
 title = "The development skills state today's commands, outcomes and CI correctly"
@@ -9,14 +9,14 @@ red_at = "P1"
 
 [evals.correct.payload]
 instruction = """
-Read dev-master/SKILL.md, dev-worker/SKILL.md and both agents/openai.yaml of {dev-skills}.
+Read dev-master/SKILL.md, dev-worker/SKILL.md, release-master/SKILL.md and all three agents/openai.yaml of {dev-skills}.
 Check that:
 - every artifactize command, flag, selector, exit code, outcome name and output line they
   state matches {engine-cli};
 - every CI job, informational job and workflow trigger they mention matches the workflows
   of {release-automation};
-- the two skills agree with each other on the branch model, the main-green tag, the verify
-  command and the pull request note format;
+- the three skills agree with each other on the branch model, the main-green tag, the
+  release/* and v* release flow, the verify command and the pull request note format;
 - each SKILL.md has the frontmatter fields name, description and
   disable-model-invocation: true, and each openai.yaml sets policy.allow_implicit_invocation
   to false.
