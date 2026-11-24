@@ -12,14 +12,7 @@
     event.preventDefault();
     void s.remoteLogin();
   }
-  /** What this machine pushed since the local day began when the status was read, by the
-   * pushes the status lists. */
-  const pushedToday = $derived.by(() => {
-    if (s.remote?.state !== "configured") return 0;
-    const read = new Date(s.remoteRead);
-    const midnight = new Date(read.getFullYear(), read.getMonth(), read.getDate()).getTime();
-    return s.remote.pushes.filter((push) => (push.at ?? 0) >= midnight).reduce((sum, push) => sum + push.count, 0);
-  });
+  const pushedToday = $derived(s.remote?.state === "configured" ? s.remote.pushedToday : 0);
   /** Signed in: the store's URL and share level as facts, without the fields that sign in. */
   const signedIn = $derived(s.remote?.state === "configured" && s.remote.connection.state === "signedIn");
 </script>
@@ -36,11 +29,11 @@
       <dt>Status</dt>
       <!-- One line in its tone: signed in and the reviewer, or what a push or a check said. -->
       {#if s.remoteError}
-        <dd class="error" role="alert">{s.remoteError}</dd>
+        <dd class="status-line error" role="alert">{s.remoteError}</dd>
       {:else if s.remoteNotice}
-        <dd class="notice" role="status">{s.remoteNotice}</dd>
+        <dd class="status-line notice" role="status">{s.remoteNotice.text}{#if !s.remoteNotice.dryRun} · <span data-testid="remote-pushed">{pushedToday} pushed today</span>{/if}</dd>
       {:else}
-        <dd class="notice">Signed in · <span data-testid="remote-principal">{connection.principal} (scopes: {connection.scopes.join(", ")})</span> · <span data-testid="remote-pushed">{pushedToday} pushed today</span></dd>
+        <dd class="status-line notice">Signed in · <span data-testid="remote-principal">{connection.principal} (scopes: {connection.scopes.join(", ")})</span> · <span data-testid="remote-pushed">{pushedToday} pushed today</span></dd>
       {/if}
     </dl>
     <div class="row">
@@ -67,9 +60,9 @@
       </div>
     </form>
     {#if s.remoteError}
-      <p class="error" role="alert" aria-label="Remote store">{s.remoteError}</p>
+      <p class="status-line error" role="alert" aria-label="Remote store">{s.remoteError}</p>
     {:else if s.remote?.state === "configured" && !signedIn && s.remote.connection.state !== "signedIn"}
-      <p class="error" aria-label="Remote store"><span data-testid="remote-status">{s.remote.url}</span> · {s.remote.connection.state === "unreachable" ? "unreachable" : "not signed in"}: {s.remote.connection.error}</p>
+      <p class="status-line error" aria-label="Remote store"><span data-testid="remote-status">{s.remote.url}</span> · {s.remote.connection.state === "unreachable" ? "unreachable" : "not signed in"}: {s.remote.connection.error}</p>
     {:else if s.remote?.state === "unconfigured"}
       <p class="muted" role="status" aria-label="Remote store">Signed out</p>
     {/if}
@@ -80,6 +73,12 @@
   /* One section of at most 640px that shows only what its state can use. */
   .remote {
     max-width: 640px;
+  }
+  .status-line {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .spacer {
     flex: 1;

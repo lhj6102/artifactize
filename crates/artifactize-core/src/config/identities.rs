@@ -169,3 +169,18 @@ mod tests {
         }
     }
 }
+
+/// Match other declaration keys so plugin type names remain short and portable.
+const MAX_ARTIFACT_TYPE_BYTES: usize = 64;
+
+identity!(ArtifactType, |value: &str| {
+    value.len() <= MAX_ARTIFACT_TYPE_BYTES
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && crate::platform::paths::portable_filename(value).is_ok()
+});

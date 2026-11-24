@@ -7,3 +7,7 @@ pub const EIGHT: &str = "DROP TRIGGER run_revision; DROP TRIGGER request_revisio
     UPDATE runs SET data=json_set(data,'$.definitions',json((SELECT d.data FROM run_definitions d WHERE d.run_id=runs.id))) WHERE id IN (SELECT run_id FROM run_definitions);
     DROP TABLE run_definitions;
     ALTER TABLE runs DROP COLUMN revision; ALTER TABLE requests DROP COLUMN revision; ALTER TABLE executions DROP COLUMN revision;";
+
+/// Drop tables introduced after schema 10 before opening a fixture as that version.
+pub const TEN: &str =
+    "DROP TABLE chat_active_turns; DROP TABLE chat_sessions; DROP TABLE review_drafts;";

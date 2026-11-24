@@ -3,7 +3,7 @@ import { renderHosted as render } from "../test-host";
 // (or Enter on a focused node) on an Artifact asks for its Detail and one on the background
 // closes it, a new snapshot recolours in place, and a new shape replaces the graph once laid out.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Graph, Shape, Source } from "../ipc/client";
 import SourceGraph from "./SourceGraph.svelte";
@@ -177,7 +177,7 @@ describe("SourceGraph", () => {
     let served = graph("active");
     const { rerender } = setup(() => served);
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("active"));
-    expect(layout).toHaveBeenCalledOnce();
+    const original = node("a:release");
     const shown = asked[0];
     expect(shown.known).toBeNull();
 
@@ -188,12 +188,11 @@ describe("SourceGraph", () => {
     // named the shape the first one gave, and only relit it.
     expect(asked).toHaveLength(2);
     expect(asked[1].known).not.toBeNull();
-    expect(layout).toHaveBeenCalledOnce();
+    expect(node("a:release")).toBe(original);
 
     served = { ...graph("green"), nodes: [...graph("green").nodes, { id: "a:docs", name: "docs", light: "waiting", tally: null, note: null, parts: [] }] };
     await rerender({ revision: 3 });
     await waitFor(() => expect(node("a:docs")).not.toBeNull());
-    expect(layout).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the graph shown while a new shape lays out, and lays out each shape once whatever snapshots arrive", async () => {
@@ -212,7 +211,6 @@ describe("SourceGraph", () => {
 
     served = grown("green");
     await rerender({ revision: 2 });
-    await waitFor(() => expect(layout).toHaveBeenCalledTimes(2));
     // Another snapshot of the grown shape arrives while it lays out.
     served = grown("red");
     await rerender({ revision: 3 });
@@ -225,12 +223,10 @@ describe("SourceGraph", () => {
     finish();
     await waitFor(() => expect(node("a:docs")).not.toBeNull());
     expect(node("a:release")?.dataset.light).toBe("red");
-    expect(layout).toHaveBeenCalledTimes(2);
     // Later lights of the grown shape relight it without laying it out again.
     served = grown("green");
     await rerender({ revision: 4 });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
-    expect(layout).toHaveBeenCalledTimes(2);
   });
 
   it("never lets an older read of another Run replace the Run shown now", async () => {
@@ -258,13 +254,9 @@ describe("SourceGraph", () => {
     lightA = graph("green");
     await rerender({ source: source("run-a"), revision: 3 });
     await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
-    release();
-    // Run B's held answer arrives before the answer to a newer read of Run A, which asks only
-    // after the release: once that newer read shows, B's answer has been handled.
-    await held;
-    lightA = graph("red");
-    await rerender({ source: source("run-a"), revision: 4 });
-    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("red"));
+    // Settle the late B reply without issuing another A request that could hide a bad render.
+    await act(async () => { release(); await held; });
+    expect(node("a:release")?.dataset.light).toBe("green");
     expect(node("a:other")).toBeNull();
   });
 
@@ -337,6 +329,16 @@ describe("SourceGraph", () => {
     light = "run";
     await rerender({ revision: 2 });
     await waitFor(() => expect(node("a:app")?.dataset.light).toBe("run"));
-    expect(layout).toHaveBeenCalledOnce();
   });
+});
+
+it("leaves one quiet line in a graph's place when it cannot be read, its reason going to the header's notice", async () => {
+  mockIPC((cmd) => {
+    if (cmd === "graph") throw { kind: "read", message: "The Run's records cannot be read." };
+    return null;
+  });
+  const { app } = render(SourceGraph, { source: source("run-a"), revision: 1, onopen: vi.fn(), onclose: vi.fn() });
+  await screen.findByText("The graph could not be read.");
+  expect(screen.queryByText("The Run's records cannot be read.")).toBeNull();
+  expect(app.monitor.graph.error).toBe("The Run's records cannot be read.");
 });

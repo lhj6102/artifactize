@@ -1,11 +1,11 @@
 import { createContext } from "svelte";
 
 export class HumanDetailState {
-  now = $state(Date.now());
   root = $state<HTMLElement>();
-  instruction = $state<HTMLElement>();
-  /** The review's width in pixels, once measured. */
-  width = $state(0);
+  /** The conversation's scrolling part. */
+  convo = $state<HTMLElement>();
+  /** What this surface's reasons field holds and has not added: its own until Enter adds it. */
+  typed = $state("");
 }
 
 export const [getHumanDetailState, setHumanDetailState] = createContext<HumanDetailState>();

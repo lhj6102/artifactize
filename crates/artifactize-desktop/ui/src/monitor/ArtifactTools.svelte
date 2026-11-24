@@ -23,10 +23,9 @@
     artifact: string;
   } = $props();
   const app = getAppState();
-  // The Detail keys this component by worktree and Artifact: its tools stay one owner's. Each
-  // call names the branch checked out in that worktree now.
+  // The Detail keys this component by worktree, branch and Artifact, the owner of these tools.
   // svelte-ignore state_referenced_locally
-  const tools = app.artifactTools(workspace, artifact);
+  const tools = app.artifactTools(workspace, branch, artifact);
 
   onMount(() => void tools.load(branch));
 
@@ -76,7 +75,7 @@
   /* A long operation name wraps inside its button rather than widening the Detail. */
   .tool .button {
     height: auto;
-    min-height: 22px;
+    min-height: var(--row-dense);
     max-width: 100%;
     white-space: normal;
     text-align: left;

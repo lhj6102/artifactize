@@ -48,8 +48,9 @@ it("lists the Artifact's tools and runs one at once, its Tool log shown from the
   await fireEvent.click(await within(tools).findByRole("button", { name: "open" }));
   await waitFor(() => expect(runs).toEqual([{ branch: branchKey("main"), artifact: "notes", tool: "open_notes", job: expect.any(Number) }]));
   // What ended well is the log's to say: no notice beside the tools.
+  await waitFor(() => expect((within(tools).getByRole("button", { name: "open" }) as HTMLButtonElement).disabled).toBe(false));
   expect(within(tools).queryByText("Started open.")).toBeNull();
-  app.logged([{ key: { kind: "artifact", workspace: "/work/main", artifact: "notes" }, entries: [{ run: "1", at: 0, operation: "open", artifact: "notes", lines: [], end: { text: "■ launched", error: false } }] }]);
+  app.logged([{ key: { kind: "artifact", workspace: "/work/main", branch: branchKey("main"), artifact: "notes" }, entries: [{ run: "1", at: 0, operation: "open", artifact: "notes", lines: [], end: { text: "■ launched", error: false } }] }]);
   await screen.findByRole("log", { name: "Tool log" });
   expect(screen.getByRole("button", { name: "Tool log" }).getAttribute("aria-expanded")).toBe("true");
 });
@@ -76,7 +77,7 @@ it("shows no Tools section when the Artifact declares no Human tools", async () 
   mockIPC((command) => (command === "artifact_tools" ? [] : null));
   const { app } = renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "core" });
   // The owner has read the Artifact's tools, none, and the component has drawn what it read.
-  await waitFor(() => expect(app.knownTools("/work/main", "core")?.tools).toEqual([]));
+  await waitFor(() => expect(app.knownTools("/work/main", branchKey("main"), "core")?.tools).toEqual([]));
   await tick();
   expect(screen.queryByRole("region", { name: "Tools of core" })).toBeNull();
   expect(screen.queryByText("Tools")).toBeNull();
@@ -84,14 +85,16 @@ it("shows no Tools section when the Artifact declares no Human tools", async () 
 
 it("routes a Tool log to the Artifact of its worktree only", () => {
   const app = new AppState();
-  const main = app.artifactTools("/work/main", "notes");
-  const other = app.artifactTools("/work/feat-x", "notes");
+  const main = app.artifactTools("/work/main", branchKey("main"), "notes");
+  const other = app.artifactTools("/work/feat-x", branchKey("feat-x"), "notes");
+  const switched = app.artifactTools("/work/main", branchKey("feat-x"), "notes");
   const entry = { run: "1", at: 0, operation: "open", artifact: "notes", lines: [{ text: "opened", error: false }], end: null };
-  app.logged([{ key: { kind: "artifact", workspace: "/work/main", artifact: "notes" }, entries: [entry] }]);
+  app.logged([{ key: { kind: "artifact", workspace: "/work/main", branch: branchKey("main"), artifact: "notes" }, entries: [entry] }]);
   expect(main.log).toEqual([entry]);
   expect(other.log).toEqual([]);
+  expect(switched.log).toEqual([]);
   // The same worktree and Artifact are one owner, whichever Detail asks again.
-  expect(app.artifactTools("/work/main", "notes")).toBe(main);
+  expect(app.knownTools("/work/main", branchKey("main"), "notes")).toBe(main);
 });
 
 it("shares one read between the Details that open the Artifact while it runs", async () => {
@@ -102,7 +105,7 @@ it("shares one read between the Details that open the Artifact while it runs", a
     reads += 1;
     return new Promise<ToolView[]>((resolve) => (answer = resolve));
   });
-  const tools = new AppState().artifactTools("/work/main", "notes");
+  const tools = new AppState().artifactTools("/work/main", branchKey("main"), "notes");
   const first = tools.load(branchKey("main"));
   const second = tools.load(branchKey("main"));
   await waitFor(() => expect(reads).toBe(1));
@@ -135,6 +138,6 @@ it("reads the tools again after a run only when the run failed", async () => {
   expect(reads).toBe(1);
   notice = { text: "open_notes did not run.", error: true };
   await fireEvent.click(run);
+  expect(await within(tools).findByText("open_notes did not run.")).toBeTruthy();
   await waitFor(() => expect(reads).toBe(2));
-  expect(within(tools).getByRole("status").textContent).toBe("open_notes did not run.");
 });

@@ -271,7 +271,7 @@ impl Catalog {
                 let branch = branches.get(scope).and_then(Option::as_deref);
                 let name = tree.file_name().map_or_else(
                     || crate::platform::path_text(tree),
-                    |name| name.to_string_lossy().into_owned(),
+                    crate::platform::display_name,
                 );
                 let label = match (branch, &repository) {
                     (Some(branch), _) if branch == name => branch.to_owned(),
@@ -335,7 +335,7 @@ impl Catalog {
                 || match scope {
                     Scope::Worktree(_, path) => path.file_name().map_or_else(
                         || crate::platform::path_text(path),
-                        |name| name.to_string_lossy().into(),
+                        crate::platform::display_name,
                     ),
                     _ => "repository".into(),
                 },

@@ -1,2 +1,3 @@
 basis = true
 path = "input/"
+type = "files"

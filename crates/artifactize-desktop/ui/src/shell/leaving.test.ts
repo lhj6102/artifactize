@@ -19,14 +19,29 @@ describe("Leaving", () => {
     await Promise.all([leaving.closeRequested(first.event), leaving.closeRequested(second.event)]);
     await leaving.closeRequested(third.event);
     expect([first.prevented(), second.prevented(), third.prevented()]).toEqual([true, true, true]);
-    expect(leaving.taken).toEqual(["run-a-2"]);
+    expect(leaving.held).toEqual({ taken: ["run-a-2"], turns: [] });
   });
 
-  it("lets the window close without claims", async () => {
+  it("asks first while a Chat turn runs, even without claims", async () => {
     mockIPC((cmd) => (cmd === "human_taken" ? [] : null));
+    const leaving = new Leaving();
+    leaving.turns = async () => ["Fix checkout rounding"];
+    const request = close();
+    await leaving.closeRequested(request.event);
+    expect(request.prevented()).toBe(true);
+    expect(leaving.held).toEqual({ taken: [], turns: ["Fix checkout rounding"] });
+  });
+
+  it("routes a native close without claims through durable shutdown", async () => {
+    const called: string[] = [];
+    mockIPC((cmd) => {
+      called.push(cmd);
+      return cmd === "human_taken" ? [] : null;
+    });
     const leaving = new Leaving();
     const request = close();
     await leaving.closeRequested(request.event);
-    expect(request.prevented()).toBe(false);
+    expect(request.prevented()).toBe(true);
+    expect(called).toEqual(["human_taken", "main_close"]);
   });
 });

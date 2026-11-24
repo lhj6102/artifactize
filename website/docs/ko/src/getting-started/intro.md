@@ -2,12 +2,12 @@
 
 Evaluation-driven development for people and AI agents.
 
-Artifactize로 프로젝트의 각 부분을 어떻게 검증할지 선언합니다. 입력이 그대로라면 이전 리뷰 결과를 재사용합니다.
+Artifactize로 프로젝트의 각 부분을 어떻게 검증할지 선언합니다. 평가 기준과 입력이 일치하면 재사용할 수 있는 리뷰 결과를 다시 씁니다.
 
 - **Artifact**: 프로젝트에서 리뷰할 작업 단위입니다. 폴더, 단일 파일, 폴더 안에서 고른 경로(**Aspect**), 외부 서비스 URI(**Live**)를 대상으로 삼을 수 있으며 `.artifactize/<name>.artf` 파일에 `path`를 적어 선언합니다.
 - **eval**: Artifact 하나를 검증해 `GREEN` 또는 `RED` 판정을 내리는 평가입니다. `runtime` eval은 테스트나 린터를 실행하고, `agent` eval은 읽기 전용 도구로 대상을 살펴 판정합니다. `human` eval에서는 리뷰어가 직접 판정합니다.
 - **Artifact Graph**: `{name}`으로 참조한 입력과 eval의 의존 관계, 그리고 `parts`로 묶은 Artifact의 구성 관계를 보여 줍니다.
-- **fingerprint와 재사용**: 각 평가는 평가 기준과 입력이 그대로일 때 이전 판정을 재사용합니다. 자세한 동작은 [fingerprint와 재사용](/docs/ko/concepts/reuse.html)을 보세요.
+- **fingerprint와 재사용**: 재사용 키가 일치하면 이전 판정을 다시 쓸 수 있습니다. 자세한 동작은 [fingerprint와 재사용](/docs/ko/concepts/reuse.html)을 보세요.
 
 ## 기본 작업 흐름 {#how-a-project-flows}
 

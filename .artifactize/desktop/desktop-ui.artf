@@ -1,20 +1,15 @@
 path = "crates/artifactize-desktop/ui/"
+type = "files"
 parts = ["desktop-e2e"]
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.follows-frontend-style]
 title = "The desktop UI follows the frontend checklist"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-frontend-style.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "max", timeout_ms = 1800000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.follows-frontend-style.payload]
@@ -46,24 +41,25 @@ same values and the same one dark scheme, as tokens.css of {desktop-design}."""
 
 [evals.follows-design]
 title = "The desktop UI follows the design's screens and rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-design.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "max", timeout_ms = 1800000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.follows-design.payload]
 instruction = """
 Read the design {desktop-design}: index.html (the tokens by role and the rules of the system, D-SYS-*), then each \
-screen page (monitor.html, current.html, detail.html, review.html, settings.html, overlays.html), whose figures \
-are drawn with mock.css and whose D- rules say what must hold on that screen. Then review the Svelte and CSS of \
-{desktop-ui}: src/app.css and src/tokens.css, src/App.svelte, and the components under src/monitor, src/review, \
-src/settings and src/shell (the generated bindings in src/ipc are not UI; the tests and e2e are reviewed \
+screen page (chat.html, monitor.html (Verify), current.html, detail.html, review.html, viewers.html, settings.html, \
+overlays.html), whose figures are drawn with mock.css and whose D- rules say what must hold on that screen. Then \
+review the Svelte and CSS of {desktop-ui}: src/app.css and src/tokens.css, src/App.svelte and the other windows' \
+entries, and the components under src/chat, src/monitor, src/review, src/viewers, src/pet, src/settings and src/shell (the generated bindings in src/ipc are not UI; the tests and e2e are reviewed \
 elsewhere). For each D- rule, find the component or stylesheet that renders what the rule describes and judge \
-whether it holds: the surfaces, lines and tokens it names, the sizes within the tolerances the rule states, the order and anatomy of \
-the elements, the treatment of selection, hover and focus, and what the rule says to avoid. Mock markup need not \
+whether it holds: the surfaces, lines and token use it names, the sizes within the tolerances the rule states, the order and anatomy of \
+the elements, the treatment of selection, hover and focus, and what the rule says to avoid. Inspect src/tokens.css as \
+needed to trace how components use tokens; matching the declared token properties, values and color scheme is \
+the tokens-match-design eval's job. Mock markup need not \
 be copied: the app renders the same anatomy with its own components. Behaviour is reviewed by other evals; judge \
-appearance and arrangement only, and do not invent requirements the pages do not state. Keyboard shortcuts are optional: \
-a missing, extra or different shortcut is not a finding; the visible way (button, menu, palette, click) is what \
-must follow the design. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
+appearance and arrangement only, and do not invent requirements the pages do not state. Apply the visible-way \
+and optional shortcut rule in {desktop-ux-features} when comparing the rendered controls with the design. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""

@@ -8,14 +8,14 @@ fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_erro
         null, 17, [], {"visibility":"hide","slug":null}, {"visibility":17,"slug":"skip"},
         {"visibility":"list","slug":"first","display_name":null,"extra":17},
         {"visibility":"list","slug":"second","display_name":42},
-        {"visibility":"list","slug":"third","display_name":""}
+        {"visibility":"list","slug":"third","display_name":"","efforts":[],"default_effort":null}
     ]});
     assert_eq!(
         serde_json::to_value(picker_models(&serde_json::to_vec(&body).unwrap()).unwrap()).unwrap(),
         json!([
-            {"slug":"first","display_name":"first"},
-            {"slug":"second","display_name":"second"},
-            {"slug":"third","display_name":""},
+            {"slug":"first","display_name":"first","efforts":[],"default_effort":null},
+            {"slug":"second","display_name":"second","efforts":[],"default_effort":null},
+            {"slug":"third","display_name":"","efforts":[],"default_effort":null},
         ])
     );
     for body in [
@@ -53,7 +53,7 @@ fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_erro
         br#"{"models":null,"models":[{"visibility":"hide","visibility":"list","slug":17,"slug":"last","display_name":"old","display_name":null}]}"#;
     assert_eq!(
         serde_json::to_value(picker_models(duplicates).unwrap()).unwrap(),
-        json!([{"slug":"last","display_name":"last"}])
+        json!([{"slug":"last","display_name":"last","efforts":[],"default_effort":null}])
     );
 }
 

@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "windows",
+  "description": "The Artifact Viewer windows and the pet overlay: the app's commands and events, and closing themselves.",
+  "windows": ["viewer-*", "pet"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-destroy"
+  ]
+}

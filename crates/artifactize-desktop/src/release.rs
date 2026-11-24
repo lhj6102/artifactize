@@ -80,11 +80,8 @@ pub async fn release_notice(app: tauri::State<'_, App>) -> Result<ReleaseView, F
 /// Open the newer release's download or page in the browser.
 #[tauri::command]
 #[specta::specta]
-pub async fn release_open(app: tauri::State<'_, App>) -> Result<(), Failure> {
-    let checked = release::check(&app.launch.state).await;
-    let release::Outcome::Newer { update, .. } = checked.outcome else {
-        return Err(Failure::Missing("No newer release is out.".into()));
-    };
+pub async fn release_open(latest: String) -> Result<(), Failure> {
+    let update = release::shown_update(&latest).map_err(Failure::Invalid)?;
     let url = link(&update).ok_or_else(|| Failure::Missing("The update has no page.".into()))?;
     artifactize_tools::opener::open(url.as_ref())
         .await

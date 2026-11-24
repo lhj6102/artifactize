@@ -456,7 +456,7 @@ raise SystemExit(subprocess.call([node, entry], env=env))
 
 /// Build a program named `name` in `directory` from Rust `source`. A compiled program runs the
 /// same on every system and needs no shell.
-fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::PathBuf {
+pub fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::PathBuf {
     let file = directory.join(format!("{name}-source.rs"));
     std::fs::write(&file, source).unwrap();
     let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
@@ -473,6 +473,17 @@ fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::Pa
         String::from_utf8_lossy(&output.stderr)
     );
     program
+}
+
+/// A native filename component that cannot be sent as Unicode on this OS.
+pub fn non_unicode_component() -> std::ffi::OsString {
+    #[cfg(unix)]
+    let text = "native-path:/unix/wP8";
+    #[cfg(windows)]
+    let text = "native-path:/windows/YQAA2A";
+    artifactize_tools::files::path_from_text(text)
+        .unwrap()
+        .into_os_string()
 }
 
 /// A repository-local program that records its help arguments without a shell.
@@ -503,6 +514,23 @@ pub fn working_directory_program(directory: &Path, name: &str) -> std::path::Pat
 }
 "#,
     )
+}
+
+/// Make an executable whose native directory cannot be reopened with ordinary path spelling.
+/// The caller removes the returned directory explicitly after tests finish using it.
+pub fn program_with_special_path(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let program = working_directory_program(root, "worker");
+    #[cfg(windows)]
+    let directory = std::fs::canonicalize(root).unwrap().join("programs.");
+    #[cfg(unix)]
+    let directory = {
+        use std::os::unix::ffi::OsStrExt;
+        root.join(std::ffi::OsStr::from_bytes(b"programs-\xff"))
+    };
+    fs::create_dir(&directory).unwrap();
+    let target = directory.join(program.file_name().unwrap());
+    fs::copy(program, &target).unwrap();
+    (directory, target)
 }
 
 /// Build a program named `name` in `directory` that appends its argument count and first
@@ -1839,6 +1867,13 @@ pub fn interrupt(pid: u32) {
     }
 }
 
+/// Exercise the Unix-only terminal hangup event in an isolated signal probe.
+#[cfg(unix)]
+pub fn hangup_self() {
+    // SAFETY: This test probe subscribed to SIGHUP before sending it to itself.
+    assert_eq!(unsafe { libc::raise(libc::SIGHUP) }, 0);
+}
+
 /// Freeze a process: SIGSTOP on Unix, and on Windows every thread suspended.
 pub fn suspend(pid: u32) {
     #[cfg(unix)]
@@ -2743,6 +2778,10 @@ pub fn isolated_test_command(test: &str, environment: &[(&str, std::ffi::OsStrin
 }
 
 /// Prepare an exact child probe for a caller to customize before owning it with start/finish.
+pub fn test_executable() -> std::path::PathBuf {
+    std::env::current_exe().expect("the test fixture is running")
+}
+
 pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command.args(["--exact", test, "--nocapture"]);
@@ -3373,6 +3412,11 @@ pub fn is_detached(pid: u32) -> bool {
 }
 
 /// Human/model and persisted path spelling, independent of native separators.
+/// JSON paths the tool opens verbatim use the operating system's spelling.
+pub fn native_path_text(path: &Path) -> &str {
+    path.to_str().expect("fixture paths are Unicode")
+}
+
 pub fn path_text(path: &Path) -> String {
     let text = path.to_str().expect("fixture paths are Unicode");
     #[cfg(windows)]
@@ -3546,8 +3590,8 @@ pub fn write_python_script(path: &Path, code: &str) {
 pub fn python_authors_environment() -> String {
     r#"
 assert os.path.expanduser('~') != os.environ['TMPDIR']
-assert context['tmpDir'] == os.environ['TMPDIR'].replace('\\', '/')
-assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR'].replace('\\', '/')
+assert context['tmpDir'] == os.environ['TMPDIR']
+assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR']
 own = ('ARTIFACTIZE_WORKSPACE_DIR', 'ARTIFACTIZE_OUTPUT_DIR', 'ARTIFACTIZE_TMP_DIR', 'ARTIFACTIZE_SESSION_DIR')
 assert not [name for name in os.environ if name.upper().startswith('ARTIFACTIZE_') and name not in own]
 "#

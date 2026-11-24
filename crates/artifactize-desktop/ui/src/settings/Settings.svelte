@@ -12,9 +12,13 @@
   import ProvidersTab from "./ProvidersTab.svelte";
   import RemoteStore from "./RemoteStore.svelte";
   import { SettingsState, setSettingsState } from "./settings-state.svelte";
+  import { getAppState } from "../shell/app.svelte";
 
   let { active, onclose }: { active: boolean; onclose?: () => void } = $props();
   const s = new SettingsState(useIpc());
+  /** The window's reviewer and a newer release: Settings' header holds them (D-SET-1). */
+  const app = getAppState();
+  const { launch, release } = app;
   setSettingsState(s);
 
   const TABS = [
@@ -33,9 +37,9 @@
   function tabKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    const at = TABS.findIndex((tab) => tab.id === s.tab);
-    s.tab = TABS[(at + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length].id;
-    document.getElementById(`settings-tab-${s.tab}`)?.focus();
+    const at = TABS.findIndex((tab) => tab.id === app.settingsTab);
+    app.settingsTab = TABS[(at + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length].id;
+    document.getElementById(`settings-tab-${app.settingsTab}`)?.focus();
   }
 
   const signedIn = $derived(s.codex?.state === "stored");
@@ -50,7 +54,7 @@
             label: signedIn ? "Sign in to Codex again" : "Sign in to Codex",
             enabled: () => !s.busy && s.codex?.state !== "file" && s.codex?.state !== "refused",
             run: () => {
-              s.tab = "providers";
+              app.settingsTab = "providers";
               s.choose({ kind: "builtin", provider: "codex" });
               void s.signIn();
             },
@@ -69,27 +73,31 @@
           id="settings-tab-{tab.id}"
           role="tab"
           class="tab"
-          aria-selected={s.tab === tab.id}
+          aria-selected={app.settingsTab === tab.id}
           aria-controls="settings-panel-{tab.id}"
-          tabindex={s.tab === tab.id ? 0 : -1}
-          onclick={() => (s.tab = tab.id)}
+          tabindex={app.settingsTab === tab.id ? 0 : -1}
+          onclick={() => (app.settingsTab = tab.id)}
           onkeydown={tabKey}>{tab.label}</button
         >
       {/each}
     </div>
     <div class="spacer"></div>
+    {#if launch}<span class="reviewer">Reviewer {launch.reviewer}</span>{/if}
+    {#if release.notice}
+      <button class="button" onclick={() => (release.open = true)}>{release.notice.latest} available</button>
+    {/if}
     {#if onclose}<button class="button" aria-keyshortcuts="Escape" onclick={onclose}>Close</button>{/if}
   </header>
-  {#if s.tab === "providers"}
-    <div id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
+  {#if app.settingsTab === "providers"}
+    <div class="dialog-body" id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
       <ProvidersTab />
     </div>
-  {:else if s.tab === "remote"}
-    <div id="settings-panel-remote" role="tabpanel" aria-labelledby="settings-tab-remote">
+  {:else if app.settingsTab === "remote"}
+    <div class="dialog-body" id="settings-panel-remote" role="tabpanel" aria-labelledby="settings-tab-remote">
       <RemoteStore />
     </div>
   {:else}
-    <div id="settings-panel-limits" role="tabpanel" aria-labelledby="settings-tab-limits">
+    <div class="dialog-body" id="settings-panel-limits" role="tabpanel" aria-labelledby="settings-tab-limits">
       <LimitsTab />
     </div>
   {/if}
@@ -97,20 +105,31 @@
 
 <style>
   .settings {
-    height: 100%;
-    overflow: auto;
-    padding: 4px 0 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
   header {
     display: flex;
+    flex: none;
     align-items: center;
     gap: 16px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     margin-bottom: 12px;
   }
   .spacer {
     flex: 1;
   }
+  /* The name the app claims reviews as, cut inside the header when long. */
+  .reviewer {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-2);
+  }
+  header > :global(button), .tabs { flex: none; }
   h1 {
     margin: 0;
     font-size: var(--text-title);
@@ -120,25 +139,25 @@
     display: flex;
     gap: 2px;
   }
-  /* Text tabs: the active one in ink with an accent line under it. */
+  /* Text tabs: the active one in ink with the current mark beneath it. */
   .tab {
     font: inherit;
     border: 0;
     border-bottom: 2px solid transparent;
     border-radius: 0;
-    padding: 4px 10px;
+    height: var(--control);
+    padding: 0 10px;
     background: none;
     color: var(--ink-2);
     cursor: pointer;
   }
-  .tab:hover {
+  .tab:not([aria-selected="true"]):hover {
     background: var(--surface-group);
     color: var(--ink);
   }
   .tab[aria-selected="true"] {
     color: var(--ink);
-    font-weight: 600;
-    border-bottom-color: var(--accent);
+    border-bottom-color: var(--current-mark);
   }
   .settings :global(.muted) {
     color: var(--ink-2);
@@ -165,6 +184,9 @@
     grid-template-columns: max-content 1fr;
     gap: 4px 16px;
     margin: 0 0 8px;
+  }
+  .settings :global(label) {
+    color: var(--label);
   }
   .settings :global(dt) {
     color: var(--ink-2);

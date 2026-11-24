@@ -831,7 +831,7 @@ async fn a_write_names_the_runs_it_touched_and_a_new_run_changes_the_list() {
         let run = |id: &str| Change::RunInvalidated(id.parse().unwrap());
         let mut request = first_requests[1].clone();
         request.state =
-            crate::store::RequestState::failed("stopped".into(), None, crate::broker::now());
+            crate::store::RequestState::failed("stopped".into(), None, "2026-01-01T00:01:00Z".parse().unwrap());
         receipts.save_request(&request).await.unwrap();
         assert_eq!(next(&mut subscriber).await, run("run-1"));
         receipts.save_run(&second).await.unwrap();

@@ -243,40 +243,33 @@ function listenLoopback(port: number): Promise<Server | undefined> {
 
 const closed = (server: Server) => new Promise<void>((done) => server.close(() => done()));
 
-/** `count` free loopback ports for the embedded WebDriver servers the service starts, this
- * process's alone until it ends. They lie between 20000 and 32767, below the ports a system
- * assigns by itself, so no listener that asks the system for a port, a fixture's or another
- * program's, gets one. Each is an even port whose claim, the odd port above it, this process
- * listens on from before it chose the port until it ends; a runner takes a port only with its
- * claim, so no other runner of this machine gets the port before this one's app listens on it,
- * nor between two starts of that app. */
-export async function embeddedPorts(count: number): Promise<number[]> {
+/** Reserve each embedded WebDriver port with a companion listener until its owner finishes. */
+export async function embeddedPorts(count: number): Promise<{ ports: number[]; close: () => Promise<void> }> {
   const ports: number[] = [];
-  for (let attempt = 0; ports.length < count; attempt += 1) {
-    if (attempt >= 200 * count) throw new Error("no free pair of loopback ports was found between 20000 and 32767");
-    const port = 20000 + 2 * Math.floor(Math.random() * 6384);
-    const claim = await listenLoopback(port + 1);
-    if (!claim) continue;
-    const free = await listenLoopback(port);
-    if (!free) {
-      await closed(claim);
-      continue;
-    }
-    await closed(free);
-    // The claim lasts as long as this process and does not keep it running.
-    claim.unref();
-    ports.push(port);
-  }
-  return ports;
-}
-
-/** Whether the embedded WebDriver server at `port` answers: it lives inside the app's process. */
-export async function embeddedReady(port: number): Promise<boolean> {
+  const claims: Server[] = [];
+  const close = async () => { await Promise.all(claims.splice(0).map(closed)); };
   try {
-    const reply = await fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(1000) });
-    await reply.body?.cancel();
-    return reply.ok;
-  } catch { return false; }
+    for (let attempt = 0; ports.length < count; attempt += 1) {
+      if (attempt >= 200 * count) throw new Error("no free pair of loopback ports was found between 20000 and 32767");
+      const port = 20000 + 2 * Math.floor(Math.random() * 6384);
+      const claim = await listenLoopback(port + 1);
+      if (!claim) continue;
+      claims.push(claim);
+      const free = await listenLoopback(port);
+      if (!free) {
+        await closed(claim);
+        claims.pop();
+        continue;
+      }
+      await closed(free);
+      claim.unref();
+      ports.push(port);
+    }
+    return { ports, close };
+  } catch (error) {
+    await close();
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------------
@@ -307,9 +300,9 @@ export function updateDatabase(path: NativePath, change: (database: DatabaseSync
   } finally { database.close(); }
 }
 
-/** Call the app window's own Tauri API (the frame's close, focus or title), which the page cannot
- * reach; what it answers. */
-export async function callWindow(browser: WebdriverIO.Browser, method: "setFocus" | "close" | "title"): Promise<unknown> {
+/** Call the app window's own Tauri API (the frame's close, focus, title or visibility), which the
+ * page cannot reach; what it answers. */
+export async function callWindow(browser: WebdriverIO.Browser, method: "setFocus" | "close" | "title" | "isVisible"): Promise<unknown> {
   const answer = await browser.executeAsync((name: string, done: (answer: { value?: unknown; error?: string }) => void) => {
     type Api = { __TAURI__: { window: { getCurrentWindow: () => Record<string, () => Promise<unknown>> } } };
     (window as unknown as Api).__TAURI__.window.getCurrentWindow()[name]().then((value) => done({ value }), (error: unknown) => done({ error: String(error) }));

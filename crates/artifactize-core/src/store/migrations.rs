@@ -5,6 +5,28 @@ use std::path::Path;
 
 /// Schema 6 is the first supported additive-upgrade baseline, not a converter for older layouts.
 pub(super) const FIRST_VERSION: u32 = 6;
+/// Private drafts and Chat metadata are added together so the experimental branch has one upgrade.
+/// Chat messages use the existing Agent recorder; the active-turn owner permits crash recovery.
+pub(super) const WORKSPACES: &str = "CREATE TABLE review_drafts(
+    request_id TEXT NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+    reviewer TEXT NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY(request_id,reviewer)
+);
+CREATE TABLE chat_sessions(
+    id TEXT PRIMARY KEY,
+    worktree TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE INDEX chat_by_worktree ON chat_sessions(worktree,updated_at DESC,id DESC);
+CREATE TABLE chat_active_turns(
+    session_id TEXT PRIMARY KEY REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    owner_pid INTEGER NOT NULL,
+    owner_start_time INTEGER NOT NULL,
+    data TEXT NOT NULL
+);";
+
 pub(super) fn apply(transaction: &Transaction<'_>) -> Result<(), Error> {
     let mut version: u32 =
         transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -43,6 +65,10 @@ pub(super) fn apply(transaction: &Transaction<'_>) -> Result<(), Error> {
                 // A Run that ended with only sign-offs left is YELLOW, no longer SIGNOFFS_PENDING.
                 transaction.execute_batch("UPDATE runs SET data=json_set(data,'$.status','YELLOW') WHERE status='SIGNOFFS_PENDING' AND json_valid(data);
                     UPDATE runs SET status='YELLOW' WHERE status='SIGNOFFS_PENDING';")?;
+                version += 1;
+            }
+            10 => {
+                transaction.execute_batch(WORKSPACES)?;
                 version += 1;
             }
             version => return Err(Error::Invalid(super::schema_error(version))),

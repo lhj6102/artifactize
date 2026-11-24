@@ -215,19 +215,35 @@ impl AgentTool {
 pub enum HumanTool {
     Command(HumanCommandTool),
     Builtin(HumanBuiltinTool),
+    Viewer(HumanViewerTool),
 }
 
 impl<'de> Deserialize<'de> for HumanTool {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::Error;
         let value = Value::deserialize(deserializer)?;
-        if value.get("builtin").is_some() {
+        if value.get("kind").and_then(Value::as_str) == Some("viewer") {
+            serde_json::from_value(value).map(Self::Viewer)
+        } else if value.get("builtin").is_some() {
             serde_json::from_value(value).map(Self::Builtin)
         } else {
             serde_json::from_value(value).map(Self::Command)
         }
         .map_err(D::Error::custom)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HumanViewerTool {
+    pub kind: ViewerKind,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ViewerKind {
+    Viewer,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -301,6 +317,7 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
 pub enum HumanToolKind {
     Launch,
     Output,
+    Viewer,
 }
 
 impl HumanTool {
@@ -308,17 +325,20 @@ impl HumanTool {
         match self {
             Self::Command(tool) => &tool.description,
             Self::Builtin(tool) => &tool.description,
+            Self::Viewer(tool) => &tool.description,
         }
     }
     pub fn kind(&self) -> HumanToolKind {
         match self {
             Self::Command(tool) => tool.kind,
             Self::Builtin(tool) => tool.kind(),
+            Self::Viewer(_) => HumanToolKind::Viewer,
         }
     }
     pub(super) fn validate(&self) -> Result<(), String> {
         description(self.description())?;
         match self {
+            Self::Viewer(_) => {}
             Self::Command(tool) => {
                 script(&tool.command, &tool.args)?;
                 if tool.command.contains(['{', '}']) {
@@ -360,7 +380,7 @@ impl HumanTool {
 }
 
 fn validate_agent_target(builtin: Builtin, args: &[String]) -> Result<(), String> {
-    if builtin == Builtin::Graph {
+    if matches!(builtin, Builtin::Graph | Builtin::Declarations) {
         return Ok(());
     }
     if builtin == Builtin::Help {

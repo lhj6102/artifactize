@@ -4,13 +4,15 @@
 //
 // Linux only: the app runs on its own 1920×1080 virtual display, and ffmpeg turns the frames
 // into GIFs. Recording builds the app and its CLI from this checkout; every Run, reuse,
-// dependency wait and verdict shown is real. Nothing is mocked and no model is called.
+// dependency wait and verdict shown is real. Nothing is mocked and no model turn is sent.
+// The graph demo only needs an empty session, so it works even without a provider.
 //
 // The demos (assets/demos/):
 //   A. review-loop.gif — an example shaped like this repository (core, cli, tui, mcp, docs,
 //      site, release) goes through four Runs of real `verify`, recorded from the app with its
-//      branch expanded in the Pane, each new Run shown from its timeline in the Main area, and played back
-//      fast. Each eval is a runtime check that fails while its Artifact's code.txt
+//      bottom bar on Verify, the branch expanded in its Pane and each new Run shown from its
+//      timeline, its entry naming it. Played back fast. Each eval is a runtime check that fails
+//      while its Artifact's code.txt
 //      contains BUG; between Runs this script removes the BUG it just saw, as an AI would fix
 //      the code. Try 1 fails mcp and site; try 2 reuses the rest at once and fails docs partway;
 //      try 3 fails release near the end; try 4 passes to the end and is SATISFIED. An overlay
@@ -18,8 +20,8 @@
 //      the Run's records say; the script checks each try reused exactly the unchanged evals.
 //   B. graph-growth.gif — this repository's own Artifact graph, release by release from the
 //      history of main (or of origin/main when it is ahead), each committed in turn to a Git
-//      checkout, in the app opened by `graph --repo` on that branch's Current, with the
-//      release in the graph's top-left corner. One blank
+//      checkout, in Chat's Graph view opened by `graph --repo`, with its scan status line, the
+//      fitted graph and the release in the graph's top-left corner. One blank
 //      step says 0.1.0–0.6.0 had no Artifacts yet; the graph starts at 0.7.0 and ends at the
 //      current main. examples/ is left out. Declarations the current app no longer reads
 //      are converted once to the current format: 0.7–0.8's artifactize.json, and dependency
@@ -40,6 +42,13 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { captureAbort, launchCapture, onDisplay, watchCaptureStop, endWatcher} from "./lifecycle.mts";
+import { adopt, cleanup, prepare, type Candidate} from "../../crates/artifactize-desktop/ui/e2e/build.ts";
+import { own } from "../../crates/artifactize-desktop/ui/e2e/fixtures/owned.ts";
+import { nativePath, asNativePath } from "../../crates/artifactize-desktop/ui/e2e/portable.ts";
+import { environment, git, newFixture } from "../../crates/artifactize-desktop/ui/e2e/fixtures/repo.ts";
+import { Chat } from "../../crates/artifactize-desktop/ui/e2e/views/chat.ts";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, "..", "..");
 const output = join(repository, "assets", "demos");
@@ -48,10 +57,15 @@ const DEMOS = ["review-loop.gif", "graph-growth.gif"];
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const WAIT = 60000;
+const VERIFY_MAIN = 'main[aria-label="Verify"]:not([hidden]) section.stage-area[aria-label="Main area"]';
+const CHAT_MAIN = `main[aria-label="Chat"]:not([hidden]) section.stage-area[aria-label="Chat's main area"]`;
+/** The Pane's shown timeline entry: it names the Run the Main area shows (J-STAGE). */
+const SHOWN_ENTRY = 'main[aria-label="Verify"]:not([hidden]) [aria-label="Pane entries"] button[data-chip][aria-pressed="true"]';
+const VERIFY_MODE = '[aria-label="Bottom bar"] [aria-label="Modes"] button[aria-label="Verify"][aria-current="page"]';
 /** Demo A plays back this many times faster than it ran. */
 const SPEED = 8;
 /** The GIFs' width, frame rate and palette; one step of demo B stays this long. */
-const GIF = { width: 1280, fps: 25, colours: 128, step: 1.6, hold: 1.5 };
+const GIF = { width: WIDTH, fps: 25, colours: 128, step: 1.6, hold: 1.5 };
 /** The progress bar: its height in GIF pixels and its colour, the introduction video's. */
 const PROGRESS = { height: 4, colour: "0x3EE08F", track: "0xE3E8EE" };
 /** The statuses' colours as the app's theme sets them: GREEN, RED, running and waiting. */
@@ -62,39 +76,7 @@ const STATUS_COLOURS = ["--green", "--red", "--running", "--queued"].map((token)
   return `0x${value}`;
 });
 
-/** A virtual display of its own: Xvfb on the first free display number from a random start.
- * A number another server holds makes Xvfb exit at once, so captures running at the same
- * time never share one; -displayfd says when the display is ready. */
-async function virtualDisplay(): Promise<{ number: number; server: ChildProcess }> {
-  const start = 100 + Math.floor(Math.random() * 800);
-  for (let number = start; number < start + 64; number++) {
-    const server = spawn("Xvfb", [`:${number}`, "-displayfd", "3", "-screen", "0", `${WIDTH}x${HEIGHT}x24`, "-nolisten", "tcp"],
-      { stdio: ["ignore", "ignore", "ignore", "pipe"] });
-    const ready = await new Promise<boolean>((done) => {
-      server.stdio[3]!.once("data", () => done(true));
-      server.once("error", () => done(false));
-      server.once("exit", () => done(false));
-    });
-    if (ready) return { number, server };
-  }
-  throw new Error("Xvfb found no free display");
-}
-
-/** Re-run this script in `mode` on its own virtual display and session bus, which end with
- * it. The child's output goes to stderr when `quiet`, so a session's stdout carries only its
- * ready line. */
-async function wrapped(mode: string[], quiet = false): Promise<number> {
-  const display = await virtualDisplay();
-  try {
-    const env = { ...process.env, DISPLAY: `:${display.number}`, CAPTURE_DISPLAY_OWNED: "1", GDK_BACKEND: "x11", GTK_USE_PORTAL: "0", GIO_USE_VFS: "local", NO_AT_BRIDGE: "1" };
-    delete env.WAYLAND_DISPLAY;
-    const child = spawn("dbus-run-session", ["--", process.execPath, fileURLToPath(import.meta.url), ...mode],
-      { env, stdio: ["ignore", quiet ? process.stderr : "inherit", "inherit"] });
-    return await new Promise((done) => child.once("close", (code) => done(code ?? 1)));
-  } finally {
-    display.server.kill();
-  }
-}
+const wrapped = (mode: string[], quiet = false) => onDisplay(new URL(import.meta.url), mode, WIDTH, HEIGHT, quiet);
 
 /** The session's folder, which artifactize names and removes. */
 function sessionDirectory(): string {
@@ -144,9 +126,19 @@ function gif(source: string): void {
 }
 
 function run(program: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): string {
-  const done = spawnSync(program, args, { ...options, encoding: "utf8", maxBuffer: 1 << 28 });
+  const done = spawnSync(program, args, { timeout: 120000, ...options, encoding: "utf8", maxBuffer: 1 << 28 });
   if (done.status !== 0) throw new Error(`${program} ${args.join(" ")} failed: ${done.stderr || done.error}`);
   return done.stdout;
+}
+
+/** Give concat the same RGB24 PNG stream even when a platform's WebDriver returns RGBA. */
+async function writeFrame(browser: WebdriverIO.Browser, file: string): Promise<void> {
+  captureAbort.signal.throwIfAborted();
+  const fromUi = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"));
+  const { PNG } = fromUi("pngjs") as typeof import("../../crates/artifactize-desktop/ui/node_modules/@types/pngjs/index.d.ts");
+  const frame = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), "base64"));
+  if (frame.width !== WIDTH || frame.height !== HEIGHT) throw new Error(`demo frame must be ${WIDTH}×${HEIGHT} pixels`);
+  writeFileSync(file, PNG.sync.write(frame, { colorType: 2 }));
 }
 
 /** Frames as they were taken: each PNG and the moment it was taken, in seconds. */
@@ -177,7 +169,7 @@ async function record(browser: WebdriverIO.Browser, directory: string, done: Pro
   done.then(() => { finished = true; }, () => { finished = true; });
   const take = async () => {
     const file = join(directory, `${String(frames.length).padStart(5, "0")}.png`);
-    writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
+    await writeFrame(browser, file);
     frames.push({ file, at: performance.now() / 1000 });
   };
   // Frames that show the Run still in progress: the loop must be seen running, not only ended.
@@ -247,58 +239,61 @@ function encode(segments: Segment[], gif: string, work: string, at: { x: number;
   list.push(`file '${segments.at(-1)!.frames.at(-1)!.file}'`);
   const concat = join(work, `${basename(gif)}.txt`);
   writeFileSync(concat, `${list.join("\n")}\n`);
-  // Drawn after fps and scaling, so it advances on every GIF frame and stays a crisp thin line;
-  // laid over in RGB, since a subsampled overlay would wash out a status's thin strips.
   const { height, colour, track } = PROGRESS;
-  // The GIF's frames: the planned length on the frame grid.
-  const count = Math.max(Math.round(clock * GIF.fps), 1);
-  // The bar grows with the frame's number, counted from 1 here, so it is empty on the first
-  // frame and full on the last whatever their times.
-  const progress = `drawbox=x=0:y=ih-${height}:w=iw:h=${height}:color=${track}:t=fill[track];` +
-    `color=c=${colour}:s=${GIF.width}x${height}[bar];[track][bar]overlay=x='-w+W*min((n-1)/${Math.max(count - 1, 1)},1)':y=H-h:shortest=1:format=rgb`;
+  const count = Math.max(Math.round(clock * GIF.fps), 2);
+  const rgb = (hex: string) => Buffer.from(hex.slice(2), "hex");
+  const row = (hex: string) => Buffer.alloc(GIF.width * 3, rgb(hex));
+  // Generate the bar as RGB24 bytes. YUV-only FFmpeg colour filters can change its exact RGB.
+  const strips = join(work, `${basename(gif)}.bar.rgb`);
+  const stride = GIF.width * 3;
+  const pixels = Buffer.alloc(stride * height * count, rgb(track));
+  for (let n = 0; n < count; n += 1) {
+    const filled = Math.round(GIF.width * n / (count - 1)) * 3;
+    for (let y = 0; y < height; y += 1) {
+      const start = (n * height + y) * stride;
+      pixels.fill(rgb(colour), start, start + filled);
+    }
+  }
+  writeFileSync(strips, pixels);
+  const barInput = ["-f", "rawvideo", "-pixel_format", "rgb24", "-video_size", `${GIF.width}x${height}`, "-framerate", String(GIF.fps), "-i", strips];
   // The repeated last entry would otherwise play its hold a second time: end at the planned length.
-  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=end_frame=${count},scale=${GIF.width}:-1:flags=lanczos,${progress}`;
+  const frames = `[0:v]${captions.join(",")},fps=${GIF.fps},trim=end_frame=${count},scale=${GIF.width}:-1:flags=lanczos,format=rgb24,crop=iw:ih-${height}:0:0[top];[top][1:v]vstack=shortest=1`;
   // The bar's few pixels would not earn its colours a palette entry, nor would the statuses'
   // thin strips, icons and words always: generate the palette with entries to spare, then set
   // the last ones to the bar, its track and each status's colour exactly.
   const pinned = [colour, track, ...STATUS_COLOURS];
   const generated = join(work, `${basename(gif)}.palette.png`);
   const palette = join(work, `${basename(gif)}.pinned.png`);
-  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat,
+  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, ...barInput,
     "-filter_complex", `${frames},palettegen=max_colors=${GIF.colours - pinned.length}:stats_mode=diff:reserve_transparent=0`,
     "-update", "1", generated]);
-  // The palette is a 16×16 image read row by row: its last entries are its last row's end.
-  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", generated, "-vf",
-    pinned.map((pin, at) => `drawbox=x=${16 - pinned.length + at}:y=15:w=1:h=1:color=${pin}:t=fill`).join(","),
-    "-update", "1", palette]);
-  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, "-i", palette,
-    "-filter_complex", `${frames}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
-    gif]);
-}
-
-/** Launch the app on `args` in `env`, at the demo's size. */
-async function launch(service: any, app: string, args: string[], env: NodeJS.ProcessEnv): Promise<WebdriverIO.Browser> {
-  const { embeddedPorts } = await import("../../crates/artifactize-desktop/ui/e2e/portable.ts");
-  for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
-  Object.assign(process.env, env);
-  const capabilities = service.createTauriCapabilities(app, {
-    appArgs: args, driverProvider: "embedded", startTimeout: WAIT, commandTimeout: WAIT, logLevel: "error",
+  // Write the final entries of the 16×16 palette directly, without a color conversion.
+  const fromUi = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"));
+  const { PNG } = fromUi("pngjs") as typeof import("../../crates/artifactize-desktop/ui/node_modules/@types/pngjs/index.d.ts");
+  const table = PNG.sync.read(readFileSync(generated));
+  if (table.width !== 16 || table.height !== 16) throw new Error("expected a 16×16 GIF palette");
+  pinned.forEach((pin, at) => {
+    const offset = (16 * 16 - pinned.length + at) * 4;
+    rgb(pin).copy(table.data, offset);
+    table.data[offset + 3] = 255;
   });
-  capabilities["wdio:enforceWebDriverClassic"] = true;
-  // A free WebDriver port of its own, so a capture running beside this one drives its own app.
-  const [embeddedPort] = await embeddedPorts(1);
-  capabilities["wdio:tauriServiceOptions"] = { ...capabilities["wdio:tauriServiceOptions"], embeddedPort };
-  const browser = await service.startWdioSession(capabilities) as WebdriverIO.Browser;
-  try {
-    await browser.setWindowSize(WIDTH, HEIGHT);
-    await browser.waitUntil(() => browser.execute(() => [innerWidth, innerHeight].join("x")).then((size) => size === `${WIDTH}x${HEIGHT}`),
-      { timeout: WAIT, timeoutMsg: `the window is ${WIDTH}x${HEIGHT}` });
-  } catch (error) {
-    // The app runs already: end it before the caller removes what it runs from.
-    await service.cleanupWdioSession(browser);
-    throw error;
+  writeFileSync(palette, PNG.sync.write(table));
+  // A nearby palette colour can win after dithering, even when the original pixel was pinned.
+  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat, ...barInput, "-i", palette,
+    "-filter_complex", `${frames}[v];[v][2:v]paletteuse=dither=none:diff_mode=rectangle`,
+    gif]);
+  const framesWritten = Number(run("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0",
+    "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", gif]).trim());
+  if (framesWritten !== count) throw new Error(`${gif} has ${framesWritten} frames; expected ${count}`);
+  // Read the first and last progress rows from the encoded GIF, not the filter inputs.
+  const barRows = spawnSync("ffmpeg", ["-v", "error", "-i", gif, "-vf",
+    `select='eq(n,0)+eq(n,${count - 1})',format=rgb24,crop=iw:1:0:ih-2`, "-fps_mode", "passthrough", "-f", "rawvideo", "-"],
+    { maxBuffer: GIF.width * 3 * 4 });
+  if (barRows.error) throw barRows.error;
+  if (barRows.status !== 0) throw new Error(`could not read ${gif}'s progress bar: ${barRows.stderr.toString().trim()}`);
+  if (!barRows.stdout.equals(Buffer.concat([row(track), row(colour)]))) {
+    throw new Error(`${gif} must start with an empty progress bar and end with a full one`);
   }
-  return browser;
 }
 
 /** How long one try's Run may take: its longest chain of checks takes 16 s. */
@@ -355,151 +350,140 @@ payload.instruction = "Run the ${id} of {${artifact.name}}${uses ? ` with ${uses
   }
 }
 
-/** Stop `child` if it still runs, and wait until it has exited. */
-async function stopped(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  const exited = new Promise((done) => child.once("close", done));
-  child.kill();
-  await exited;
-}
-
-async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
-  const root = join(candidate.root, "fixtures", "fixture-review-loop");
-  // Laid out as the suite's fixtures, so its teardown cancels the Runs left open and waits
-  // until they have ended before the build is removed.
-  const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
-  mkdirSync(fixture.repo, { recursive: true });
-  loopProject(root, fixture.repo);
-  e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
-  const env = e2e.environment(fixture);
-  /** The `run show --wait` watchers still running. */
-  const watchers = new Set<ChildProcess>();
-  // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
-  const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
-  const segments: Segment[] = [];
-  // The graph's top-left corner, below the Main area's header row and the graph's tool strip.
-  let at = { x: 0, y: 0 };
-  /** The Main area while it shows the Run `id`. */
-  const MAIN = 'section.panel[aria-label="Main area"]';
+async function reviewLoop(candidate: Candidate, work: string): Promise<Recording> {
+  const scope = own(nativePath(candidate.root, "fixtures"));
+  const fixture = newFixture(scope);
+  const root = fixture.root;
+  let stop = () => scope.close();
   try {
-    const chip = (id: string) => `[aria-label="Branches"] button[data-chip="${id}"]`;
-    /** The Main area shows the Run `id`'s own graph, not the one drawn before it was opened: a
-     * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
-    const opened = (id: string) => browser.execute((id, main, edges) => {
-      const panel = document.querySelector(main);
-      const canvas = panel?.querySelector(":scope > header h2")?.textContent?.trim() === id ? panel?.querySelector(".run .svelte-flow") : null;
-      const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
-      const box = node?.getBoundingClientRect();
-      const before = (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before;
-      return !!canvas && (canvas !== before?.canvas || before.run === id) && !!box && box.width > 0
-        && canvas.querySelectorAll(".svelte-flow__edge").length === edges
-        && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
-    }, id, MAIN, EDGES());
-    /** The Run `id` ended and its graph is drawn and lit as it ended: its headline says
-     * `verdict`, each Artifact is lit as `lights` plans, and every edge is drawn. */
-    const ended = (id: string, verdict: string, lights: [string, string][]) => browser.execute((id, main, verdict, planned, edges) => {
-      const shown = document.querySelector(main);
-      const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
-      // Every edge drawn as a visible line, not only present in the page.
-      const lines = [...(panel?.querySelectorAll<SVGPathElement>(".svelte-flow__edge path.svelte-flow__edge-path") ?? [])].filter((line) => {
-        const box = line.getBoundingClientRect();
-        return !/NaN/.test(line.getAttribute("d") ?? "NaN") && (box.width > 0 || box.height > 0) && getComputedStyle(line).visibility !== "hidden";
-      });
-      if (lines.length !== edges) return false;
-      const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => `${node.dataset.id}=${node.dataset.light}`).sort();
-      // The header row's headline names the Run's verdict once it ended.
-      const said = shown?.querySelector(":scope > header button.headline .status")?.textContent?.trim() ?? "";
-      return said === verdict && lights.join() === planned.map(([name, light]) => `a:${name}=${light}`).sort().join();
-    }, id, MAIN, verdict, lights, EDGES());
-    /** The evals whose saved GREEN result the next try reuses: those GREEN so far whose
-     * Artifact, and every Artifact they use, the fixes left as they were. */
-    const reusable = new Set<string>();
-    /** The Artifacts whose code still has its BUG. */
-    const bugs = new Set(LOOP.filter((artifact) => artifact.bug).map((artifact) => artifact.name));
-    for (const [index, fails] of FAILS.entries()) {
-      const lights = planned(bugs);
-      const last = fails.length === 0;
-      const frames = join(work, `loop-${index + 1}`);
-      mkdirSync(frames);
-      const started = run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], { env: { ...env } });
-      const id = (JSON.parse(started) as { run: string }).run;
-      // Show the new Run as soon as it starts the branch's timeline, then record it until it ends.
-      await browser.$(chip(id)).waitForExist({ timeout: WAIT, timeoutMsg: `the branch's timeline starts with ${id}` });
-      await browser.execute((main) => {
+    mkdirSync(fixture.repo, { recursive: true });
+    loopProject(root, fixture.repo);
+    git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+    const env = environment(fixture);
+    /** The `run show --wait` watchers still running. */
+    const watchers = new Set<ChildProcess>();
+    // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
+    const session = await launchCapture(scope, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env, WIDTH, HEIGHT, WAIT, (close) => { stop = close; });
+    const { browser } = session;
+    stop = session.stop;
+    const segments: Segment[] = [];
+    // The graph's top-left corner, below the stage header that holds the graph's tools.
+    let at = { x: 0, y: 0 };
+    const finishWatchers = () => Promise.all([...watchers].map(endWatcher));
+    try {
+      await browser.$(VERIFY_MODE).waitForDisplayed({ timeout: WAIT });
+      const chip = (id: string) => `main[aria-label="Verify"] [aria-label="Branches"] button[data-chip="${id}"]`;
+      /** The Main area shows the Run `id`'s own graph, not the one drawn before it was opened: a
+       * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
+      const opened = (id: string) => browser.execute((id, main, edges, entry) => {
+        const panel = document.querySelector(main);
+        const canvas = document.querySelector(entry)?.getAttribute("data-chip") === id ? panel?.querySelector(".run .svelte-flow") : null;
+        const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
+        const box = node?.getBoundingClientRect();
+        const before = (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before;
+        return !!canvas && (canvas !== before?.canvas || before.run === id) && !!box && box.width > 0
+          && canvas.querySelectorAll(".svelte-flow__edge").length === edges
+          && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
+      }, id, VERIFY_MAIN, EDGES(), SHOWN_ENTRY);
+      /** The Run `id` ended and its graph is drawn and lit as it ended: its Pane entry says
+       * `verdict`, each Artifact is lit as `lights` plans, and every edge is drawn. */
+      const ended = (id: string, verdict: string, lights: [string, string][]) => browser.execute((id, main, verdict, planned, edges, entry) => {
         const shown = document.querySelector(main);
-        const canvas = shown?.querySelector(".run .svelte-flow") ?? null;
-        const run = canvas ? shown?.querySelector(":scope > header h2")?.textContent?.trim() ?? null : null;
-        (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before = { canvas, run };
-      }, MAIN);
-      await browser.$(chip(id)).click();
-      await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Main area draws ${id}'s graph` });
-      // `run show --wait` exits with the Run's outcome: 0 when it is satisfied. A Run that has
-      // not ended by the deadline fails the recording; teardown stops a watcher still running.
-      const settled = new Promise<{ code: number | null; text: string }>((done, failed) => {
-        const watcher = spawn(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", id, "--wait", "--json"], { env });
-        watchers.add(watcher);
-        const deadline = setTimeout(() => {
-          failed(new Error(`${id} did not end within ${TRY_DEADLINE / 1000} s`));
-          watcher.kill();
-        }, TRY_DEADLINE);
-        let text = "";
-        watcher.stdout.on("data", (chunk) => { text += chunk; });
-        watcher.once("error", (error) => {
-          clearTimeout(deadline);
-          failed(error);
+        const named = document.querySelector(entry);
+        const panel = named?.getAttribute("data-chip") === id ? shown?.querySelector(".run") : null;
+        // Every edge drawn as a visible line, not only present in the page.
+        const lines = [...(panel?.querySelectorAll<SVGPathElement>(".svelte-flow__edge path.svelte-flow__edge-path") ?? [])].filter((line) => {
+          const box = line.getBoundingClientRect();
+          return !/NaN/.test(line.getAttribute("d") ?? "NaN") && (box.width > 0 || box.height > 0) && getComputedStyle(line).visibility !== "hidden";
         });
-        watcher.once("close", (code) => {
-          clearTimeout(deadline);
-          watchers.delete(watcher);
-          done({ code, text });
+        if (lines.length !== edges) return false;
+        const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => `${node.dataset.id}=${node.dataset.light}`).sort();
+        // The Run's entry in the Pane names its verdict once it ended.
+        const said = named?.querySelector(".status")?.textContent?.trim() ?? "";
+        return said === verdict && lights.join() === planned.map(([name, light]) => `a:${name}=${light}`).sort().join();
+      }, id, VERIFY_MAIN, verdict, lights, EDGES(), SHOWN_ENTRY);
+      /** The evals whose saved GREEN result the next try reuses: those GREEN so far whose
+       * Artifact, and every Artifact they use, the fixes left as they were. */
+      const reusable = new Set<string>();
+      /** The Artifacts whose code still has its BUG. */
+      const bugs = new Set(LOOP.filter((artifact) => artifact.bug).map((artifact) => artifact.name));
+      for (const [index, fails] of FAILS.entries()) {
+        const lights = planned(bugs);
+        const last = fails.length === 0;
+        const frames = join(work, `loop-${index + 1}`);
+        mkdirSync(frames);
+        const started = run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], { env: { ...env } });
+        const id = (JSON.parse(started) as { run: string }).run;
+        // Show the new Run as soon as it starts the branch's timeline, then record it until it ends.
+        await browser.$(chip(id)).waitForExist({ timeout: WAIT, timeoutMsg: `the branch's timeline starts with ${id}` });
+        await browser.execute((main, entry) => {
+          const shown = document.querySelector(main);
+          const canvas = shown?.querySelector(".run .svelte-flow") ?? null;
+          const run = canvas ? document.querySelector(entry)?.getAttribute("data-chip") ?? null : null;
+          (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before = { canvas, run };
+        }, VERIFY_MAIN, SHOWN_ENTRY);
+        await browser.$(chip(id)).click();
+        await browser.waitUntil(() => opened(id), { timeout: WAIT, timeoutMsg: `the Main area draws ${id}'s graph` });
+        // `run show --wait` exits with the Run's outcome: 0 when it is satisfied. A Run that has
+        // not ended by the deadline fails the recording; teardown stops a watcher still running.
+        const settled = new Promise<{ code: number | null; text: string }>((done, failed) => {
+          const watcher = spawn(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "show", id, "--wait", "--json"], { env });
+          watchers.add(watcher);
+          const deadline = setTimeout(() => {
+            failed(new Error(`${id} did not end within ${TRY_DEADLINE / 1000} s`));
+            watcher.kill();
+          }, TRY_DEADLINE);
+          let text = "";
+          watcher.stdout.on("data", (chunk) => { text += chunk; });
+          watcher.once("error", (error) => {
+            clearTimeout(deadline);
+            failed(error);
+          });
+          watcher.once("close", (code) => {
+            clearTimeout(deadline);
+            watchers.delete(watcher);
+            done({ code, text });
+          });
         });
-      });
-      /** The Run `id` is shown in progress: an Artifact of its graph still waits or runs. */
-      const live = () => browser.execute((id, main) => {
-        const shown = document.querySelector(main);
-        const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
-        return [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].some((node) => node.dataset.light === "waiting" || node.dataset.light === "active");
-      }, id, MAIN);
-      const recorded = await record(browser, frames, settled, () => ended(id, last ? "GREEN" : "RED", [...lights]), live);
-      const area = await corner(browser, `${MAIN} .run .canvas`);
-      at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
-      const { code, text } = await settled;
-      const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string; source: { kind: string } | null }[] };
-      // Unchanged work is reused, as the Run's records say: exactly the evals it could reuse
-      // took their saved result, and every other one ran or was blocked.
-      const reused = view.requests.filter((request) => request.source?.kind === "cache").map((request) => request.evalId).sort();
-      if (reused.join() !== [...reusable].sort().join()) {
-        throw new Error(`try ${index + 1} reused ${reused.join(", ") || "nothing"}; planned ${[...reusable].sort().join(", ") || "nothing"}`);
-      }
-      segments.push({ frames: recorded, speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED} · ${reused.length} of ${view.requests.length} evals reused`, hold: GIF.hold });
-      // Every eval settled as planned, each once: GREEN, RED where the BUG still is, BLOCKED
-      // below it; and the Run with them.
-      const settledAs = view.requests.map((request) => `${request.evalId} ${request.status}`).sort();
-      const plan = LOOP.flatMap((artifact) => artifact.evals.map(([check]) => `${artifact.name}/${check} ${lights.get(artifact.name)!.toUpperCase()}`)).sort();
-      if (settledAs.join() !== plan.join() || view.status !== (last ? "GREEN" : "RED") || view.validation?.satisfied !== last || (code === 0) !== last) {
-        throw new Error(`try ${index + 1} ended ${view.status} (exit ${code}) with ${settledAs.join(", ")}; planned ${plan.join(", ")}`);
-      }
-      // The fix: remove the BUG from what just failed, as an AI would fix the code. What it
-      // changes, and what uses it, is evaluated again; the rest of what passed is reused.
-      for (const request of view.requests) if (request.status === "GREEN") reusable.add(request.evalId);
-      for (const name of fails) {
-        writeFileSync(join(fixture.repo, name, "code.txt"), "done\n");
-        bugs.delete(name);
-        for (const artifact of LOOP.filter((each) => each.name === name || each.uses.includes(name))) {
-          for (const [check] of artifact.evals) reusable.delete(`${artifact.name}/${check}`);
+        /** The Run `id` is shown in progress: an Artifact of its graph still waits or runs. */
+        const live = () => browser.execute((id, main, entry) => {
+          const shown = document.querySelector(main);
+          const panel = document.querySelector(entry)?.getAttribute("data-chip") === id ? shown?.querySelector(".run") : null;
+          return [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].some((node) => node.dataset.light === "waiting" || node.dataset.light === "active");
+        }, id, VERIFY_MAIN, SHOWN_ENTRY);
+        const recorded = await record(browser, frames, settled, () => ended(id, last ? "GREEN" : "RED", [...lights]), live);
+        const area = await corner(browser, `${VERIFY_MAIN} .run .canvas`);
+        at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
+        const { code, text } = await settled;
+        const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string; source: { kind: string } | null }[] };
+        // Unchanged work is reused, as the Run's records say: exactly the evals it could reuse
+        // took their saved result, and every other one ran or was blocked.
+        const reused = view.requests.filter((request) => request.source?.kind === "cache").map((request) => request.evalId).sort();
+        if (reused.join() !== [...reusable].sort().join()) {
+          throw new Error(`try ${index + 1} reused ${reused.join(", ") || "nothing"}; planned ${[...reusable].sort().join(", ") || "nothing"}`);
+        }
+        segments.push({ frames: recorded, speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED} · ${reused.length} of ${view.requests.length} evals reused`, hold: GIF.hold });
+        // Every eval settled as planned, each once: GREEN, RED where the BUG still is, BLOCKED
+        // below it; and the Run with them.
+        const settledAs = view.requests.map((request) => `${request.evalId} ${request.status}`).sort();
+        const plan = LOOP.flatMap((artifact) => artifact.evals.map(([check]) => `${artifact.name}/${check} ${lights.get(artifact.name)!.toUpperCase()}`)).sort();
+        if (settledAs.join() !== plan.join() || view.status !== (last ? "GREEN" : "RED") || view.validation?.satisfied !== last || (code === 0) !== last) {
+          throw new Error(`try ${index + 1} ended ${view.status} (exit ${code}) with ${settledAs.join(", ")}; planned ${plan.join(", ")}`);
+        }
+        // The fix: remove the BUG from what just failed, as an AI would fix the code. What it
+        // changes, and what uses it, is evaluated again; the rest of what passed is reused.
+        for (const request of view.requests) if (request.status === "GREEN") reusable.add(request.evalId);
+        for (const name of fails) {
+          writeFileSync(join(fixture.repo, name, "code.txt"), "done\n");
+          bugs.delete(name);
+          for (const artifact of LOOP.filter((each) => each.name === name || each.uses.includes(name))) {
+            for (const [check] of artifact.evals) reusable.delete(`${artifact.name}/${check}`);
+          }
         }
       }
-    }
-  } finally {
-    try {
-      for (const watcher of watchers) await stopped(watcher);
-      await service.cleanupWdioSession(browser);
-    } finally {
-      // The Runs this demo started end before its project, its state and the build go.
-      e2e.cancelRuns(fixture);
-    }
-  }
-  return { segments, at };
+    } finally { await finishWatchers(); }
+      return { segments, at };
+  } finally { if (existsSync(scope.root)) await stop(); }
 }
 
 /** The newer of this checkout's main and the remote's: a local main is often behind the
@@ -540,17 +524,19 @@ function convertJson(text: string): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** Every file under `directory` named like `match`. */
+/** Every matching file in the release tree, excluding Git's independently mutable metadata. */
 function files(directory: string, match: (name: string) => boolean): string[] {
-  return readdirSync(directory, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && match(entry.name))
-    .map((entry) => join(entry.parentPath, entry.name));
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory() && entry.name !== ".git") return files(path, match);
+    return entry.isFile() && match(entry.name) ? [path] : [];
+  });
 }
 
 /** Put `ref`'s tree, without examples/, in `tree`, a Git checkout, in the format the current
  * app reads: older forms converted here, then a tree that declares its Artifacts where they
  * live migrated by the built CLI `cli`. The checkout's own Git folder stays. */
-function checkout(ref: string, tree: string, cli: string): void {
+function checkout(ref: string, tree: string, state: string, cli: string, env: NodeJS.ProcessEnv): void {
   for (const entry of readdirSync(tree)) if (entry !== ".git") rmSync(join(tree, entry), { recursive: true, force: true });
   run("sh", ["-c", `git -C "$1" archive "$2" | tar -x -C "$3" --exclude=examples`, "sh", repository, ref, tree]);
   // 0.7–0.8 named the ignore file differently; the folders it lists are not part of the graph.
@@ -606,64 +592,70 @@ function checkout(ref: string, tree: string, cli: string): void {
   }
   // A release from before definitions lived in .artifactize/: its own CLI's successor moves them.
   const defined = existsSync(join(tree, ".artifactize")) && files(join(tree, ".artifactize"), (name) => name.endsWith(".artf")).length > 0;
-  if (!defined) run(cli, ["--repo", tree, "config", "migrate"]);
+  const config = ["--repo", tree, "--state-dir", state, "config"];
+  if (!defined) run(cli, [...config, "migrate"], { env });
+  // Keep every release in the lineage, but never ask the app to open an invalid graph.
+  try { run(cli, [...config, "check"], { env }); }
+  catch (error) { throw new Error(`${ref}'s historical declarations did not pass config check`, { cause: error }); }
 }
 
-async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
-  const root = join(candidate.root, "fixtures", "fixture-graph-growth");
-  const fixture = { root, repo: join(root, "repo"), state: join(root, "state") };
-  const main = newestMain();
-  const tags = releases(main);
-  const first = tags.findIndex((tag) => tag === "v0.7.0");
-  if (first < 0) throw new Error("main has no v0.7.0 release");
-  const steps = [...tags.slice(first).map((tag) => ({ ref: tag, caption: tag.slice(1) })), { ref: main, caption: "main" }];
-  const frames = join(work, "growth");
-  mkdirSync(frames);
-  const segments: Segment[] = [];
-  // 0.1.0–0.6.0 had no graph to draw, and the app opens only on a project with an Artifact:
-  // their one step is a blank card in the app's background colour, with its caption.
-  const blank = join(frames, "before.png");
-  run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-frames:v", "1", blank]);
-  segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: `${tags[0].slice(1)}–${tags[first - 1].slice(1)} · no Artifacts yet`, hold: GIF.step });
-  // Each step is committed to the checkout's main branch, whose Current the app shows.
-  mkdirSync(fixture.repo, { recursive: true });
-  e2e.git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
-  const commit = (step: { ref: string; caption: string }) => {
-    checkout(step.ref, fixture.repo, candidate.cli);
-    e2e.git(fixture, fixture.repo, "add", "-A");
-    e2e.git(fixture, fixture.repo, "commit", "-q", "--allow-empty", "-m", step.caption);
-  };
-  commit(steps[0]);
-  const browser = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
-  let at = { x: 0, y: 0 };
+async function graphGrowth(candidate: Candidate, work: string): Promise<Recording> {
+  const scope = own(nativePath(candidate.root, "fixtures"));
+  const fixture = newFixture(scope);
+  let stop = () => scope.close();
   try {
-    /** When the shown Current was last scanned, as its header says it; "" while none ended. */
-    const scannedAt = () => browser.execute(() => {
-      const scan = document.querySelector('section.panel[aria-label="Main area"] > header .scan');
-      return scan?.querySelector(".checking") ? "" : (scan?.querySelector("time")?.getAttribute("datetime") ?? "");
-    });
+    const main = newestMain();
+    const tags = releases(main);
+    const first = tags.findIndex((tag) => tag === "v0.7.0");
+    if (first < 0) throw new Error("main has no v0.7.0 release");
+    const steps = [...tags.slice(first).map((tag) => ({ ref: tag, caption: tag.slice(1) })), { ref: main, caption: "main" }];
+    const frames = join(work, "growth");
+    mkdirSync(frames);
+    const segments: Segment[] = [];
+    // 0.1.0–0.6.0 had no graph to draw: their one step is a blank card with its caption.
+    const blank = join(frames, "before.png");
+    run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-pix_fmt", "rgb24", "-frames:v", "1", blank]);
+    segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: "0.1.0–0.6.0 · no Artifacts yet", hold: GIF.step });
+    // Each step is committed to the checkout's main branch, whose Current the app shows.
+    mkdirSync(fixture.repo, { recursive: true });
+    git(fixture, fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+    const commit = (step: { ref: string; caption: string }) => {
+      checkout(step.ref, fixture.repo, fixture.state, candidate.cli, environment(fixture));
+      git(fixture, fixture.repo, "add", "-A");
+      git(fixture, fixture.repo, "commit", "-q", "--allow-empty", "-m", step.caption);
+    };
+    commit(steps[0]);
+    const session = await launchCapture(scope, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], environment(fixture), WIDTH, HEIGHT, WAIT, (close) => { stop = close; });
+    const { browser } = session;
+    stop = session.stop;
+    let at = { x: 0, y: 0 };
+    const chat = new Chat(browser);
+    // Use the real New chat dialog regardless of the model catalog; never send a turn.
+    await chat.createFromDialog("repo / main");
+    await chat.show("Graph");
+    /** The visible Current's scan, as its status line says it. */
+    const scanState = () => browser.execute((main) => {
+      const shown = document.querySelector(main);
+      if (!shown?.querySelector(':scope > header [aria-label="Session view"] [role="tab"][aria-selected="true"]')?.textContent?.includes("Graph")) return { at: "", failure: "" };
+      const scan = shown.querySelector(".status-line .scan");
+      return {
+        at: scan?.querySelector(".checking") ? "" : (scan?.querySelector("time")?.getAttribute("datetime") ?? ""),
+        failure: scan?.querySelector(".failure")?.textContent?.trim() ?? "",
+      };
+    }, CHAT_MAIN);
     for (const [index, step] of steps.entries()) {
+      captureAbort.signal.throwIfAborted();
       // A scan that ended after this step's checkout: the one Refresh starts, or the first.
-      const before = index > 0 ? await scannedAt() : "";
+      const before = index > 0 ? (await scanState()).at : "";
       if (index > 0) {
         commit(step);
-        await browser.$("button=Refresh").click();
+        await browser.$(`${CHAT_MAIN} > header button[aria-label^="Refresh"]`).click();
       }
       await browser.waitUntil(async () => {
-        const now = await scannedAt();
-        return now !== "" && now !== before;
-      }, { timeout: WAIT, timeoutMsg: `${step.caption}'s scan ended` });
-      // Names read from about half size on: every Artifact of a graph this size is then drawn as
-      // an element, so its nodes and edges can be compared below; Fit zooms out again after. The
-      // zoom is read once the graph's tools work, its layout done: until then the strip shows no
-      // zoom of its own. Each wait for the drawing below zooms in again while it is less.
-      const legible = async () => {
-        const zoomIn = browser.$('[aria-label="Graph tools"] [aria-label="Zoom in"]');
-        if (!(await zoomIn.isEnabled())) return false;
-        if (Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10) >= 50) return true;
-        await zoomIn.click();
-        return false;
-      };
+        const { at, failure } = await scanState();
+        if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
+        return at !== "" && at !== before;
+      }, { timeout: WAIT, timeoutMsg: `${step.caption}'s Current scan ended` });
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them but a part's, which the Current draws as
       // the part inside its whole. A part of several wholes is drawn once in each, so the
@@ -672,7 +664,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       // The graph drawn is this release's only once these are exactly its own, never the
       // previous one's.
       const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
-        { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string; kind: string }[] };
+        { env: environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string; kind: string }[] };
       const names = new Set(Object.keys(graph.artifacts));
       // Where each Artifact is drawn: one copy inside each whole that names it as a part, its key
       // the path of wholes down to it, and once at the top for an Artifact that is no part. A part
@@ -694,110 +686,98 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         [...new Set(graph.relations.filter(({ source, target, kind }) => kind !== "part" && source !== target && names.has(source) && names.has(target))
           .map(({ source, target }) => `a:${source}>a:${target}`))].sort().join(" "),
       ].join("\n");
-      await browser.waitUntil(async () => await legible() && browser.execute((expected) => {
-        const set = (values: string[]) => [...new Set(values)].sort().join(" ");
-        const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
-        // Every copy by its key, the wholes it is drawn inside included: a previous release's
-        // drawing with the same Artifacts nested otherwise does not pass.
-        const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.id ?? ""));
-        const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
-        const refresh = document.querySelector<HTMLButtonElement>('section.panel[aria-label="Main area"] > header .actions button');
-        // The graph shown was read at the scan that just ended, not kept from the one before.
-        const host = document.querySelector<HTMLElement>('section.panel[aria-label="Main area"] .host');
-        const current = !!host && host.dataset.read !== undefined && host.dataset.read === host.dataset.drawn;
-        return !!refresh && !refresh.disabled && current && `${artifacts}\n${edges}` === expected;
-      }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
-      const failure = await browser.execute(() => document.querySelector('section.panel[aria-label="Main area"] > header .failure')?.textContent ?? "");
-      if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Complete and still: exactly this release's Artifact nodes and edges, every node drawn
-      // inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
-      // over 300 ms.
-      const drawn = (inside: boolean) => browser.waitUntil(async () => (inside || await legible()) && browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
+      // Observe the revision that Current rendered, not the previous checkout's graph.
+      const fit = browser.$(`${CHAT_MAIN} [aria-label="Graph tools"]`).$("button=Fit");
+      await browser.waitUntil(() => browser.execute((main) => {
+        const host = document.querySelector<HTMLElement>(`${main} .current .host`);
+        return !!host?.dataset.read && host.dataset.read === host.dataset.drawn;
+      }, CHAT_MAIN), { timeout: WAIT, timeoutMsg: `${step.caption}'s Current graph is drawn` });
+      await fit.waitForEnabled({ timeout: WAIT });
+      await fit.click();
+      // The keyboard leaves Fit again, so no step shows its focus ring.
+      await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+      // Once fitted, the Navigator is gone: it shows whenever any part is outside the canvas.
+      // At a readable zoom, check the Artifact copies and visible SVG connections too. At lower
+      // zoom, or when a large graph paints edges, verify the actual canvas has painted pixels.
+      await browser.waitUntil(() => browser.executeAsync<boolean, [string, string]>((main, expected, done) => {
         const shown = () => {
-          const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
-          const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
+          const current = document.querySelector(`${main} .current`);
+          const host = current?.querySelector<HTMLElement>(".host");
+          const area = host?.querySelector<HTMLElement>("[data-graph-area]");
+          if (!host?.dataset.read || host.dataset.read !== host.dataset.drawn || !area || area.querySelector("[data-navigator]")) return null;
+          const rect = area.getBoundingClientRect();
+          if (!rect.width || !rect.height) return null;
+          const nodes = [...area.querySelectorAll<HTMLElement>(".svelte-flow__node[data-artifact]")];
           const set = (values: string[]) => [...new Set(values)].sort().join(" ");
+          const [copies, connections] = expected.split("\n");
           const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
-          const artifacts = set(nodes.filter((node) => node.dataset.artifact !== undefined).map((node) => node.dataset.id ?? ""));
-          // The camera, the revision drawn and every node's light: none may change while it holds.
-          const camera = `${document.querySelector(".current .svelte-flow__viewport")?.getAttribute("style")} ${document.querySelector<HTMLElement>('section.panel[aria-label="Main area"] .host')?.dataset.drawn} ${nodes.map((node) => `${node.dataset.id}=${node.dataset.light}`).join(",")}`;
-          // Fitted out until names do not read, the graph checked above is painted as blocks.
-          if (inside && nodes.length === 0 && document.querySelector(".current canvas.paint")) return `painted ${camera}`;
-          if (`${artifacts}\n${set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")))}` !== expected) return null;
-          const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
-          const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
-            const box = line.getBoundingClientRect();
-            return !/NaN/.test(line.getAttribute("d") ?? "NaN") && (box.width > 0 || box.height > 0) && getComputedStyle(line).visibility !== "hidden";
-          }).length;
-          const within = !!canvas && nodes.every((node) => {
+          if (nodes.length > 0 && (set(nodes.map((node) => node.dataset.id ?? "")) !== copies || nodes.some((node) => {
             const box = node.getBoundingClientRect();
-            return box.width > 0 && (!inside || (box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom));
-          });
-          return within && nodes.length > 0 && lines === edges ? `${nodes.length} ${edges} ${camera}` : null;
+            return box.width <= 0 || box.left < rect.left - 1 || box.right > rect.right + 1 || box.top < rect.top - 1 || box.bottom > rect.bottom + 1;
+          }))) return null;
+          const paint = area.querySelector<HTMLCanvasElement>("canvas.paint");
+          if (paint) {
+            const context = paint.getContext("2d");
+            if (!context || !paint.width || !paint.height) return null;
+            const pixels = context.getImageData(0, 0, paint.width, paint.height).data;
+            const painted = pixels.some((byte, at) => at % 4 === 3 && byte > 0);
+            if (!painted) return null;
+          } else {
+            if (nodes.length === 0) return null;
+            const edges = [...area.querySelectorAll<HTMLElement>(".svelte-flow__edge")];
+            if (set(edges.map((edge) => ends(edge.dataset.id ?? ""))) !== connections || edges.some((edge) => {
+              const path = edge.querySelector("path.svelte-flow__edge-path");
+              const box = path?.getBoundingClientRect();
+              return !path || !box || /NaN/.test(path.getAttribute("d") ?? "NaN") || (!box.width && !box.height) || getComputedStyle(path).visibility === "hidden";
+            })) return null;
+          }
+          const camera = area.querySelector(".svelte-flow__viewport")?.getAttribute("style");
+          return `${host.dataset.drawn} ${camera} ${nodes.map((node) => `${node.dataset.id}=${node.dataset.light}`).join(",")}`;
         };
         const before = shown();
         setTimeout(() => done(before !== null && before === shown()), 300);
-      }, inside, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is drawn${inside ? " in view" : ""}` });
-      // Refresh keeps the camera: once the grown graph is drawn, fit it into view the way a
-      // person would.
-      await drawn(false);
-      await browser.$('[aria-label="Graph tools"]').$("button=Fit").click();
-      await drawn(true);
+      }, CHAT_MAIN, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s whole graph is in view` });
       at = await corner(browser, ".current .canvas");
       const file = join(frames, `${step.caption}.png`);
-      writeFileSync(file, Buffer.from(await browser.takeScreenshot(), "base64"));
+      await writeFrame(browser, file);
       segments.push({ frames: [{ file, at: 0 }], speed: 1, caption: step.caption, hold: GIF.step });
     }
-  } finally {
-    try {
-      await service.cleanupWdioSession(browser);
-    } finally {
-      // Nothing of its state keeps running once its project and the build go.
-      e2e.cancelRuns(fixture);
-    }
-  }
-  return { segments, at };
+    return { segments, at };
+  } finally { if (existsSync(scope.root)) await stop(); }
 }
 
 /** Record every demo into `output`, building and keeping frames in `work`. */
 async function capture(output: string, work: string): Promise<void> {
-  const base = "../../crates/artifactize-desktop/ui/e2e";
-  let candidate: { root: string } | undefined;
-  // The work folder goes whatever fails, the build and its setup included.
+  let candidate: Candidate | undefined;
+  const unwatch = watchCaptureStop();
   try {
-    const { adopt, prepare } = await import(`${base}/build.ts`);
-    const e2e = await import(`${base}/fixtures/repo.ts`);
-    const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
     mkdirSync(work, { recursive: true });
-    candidate = adopt(await prepare(join(work, "build")));
+    candidate = adopt(await prepare(asNativePath(join(work, "build"))));
     const frames = join(work, "frames");
     mkdirSync(frames);
-    const loop = await reviewLoop(service, e2e, candidate, frames);
-    const growth = await graphGrowth(service, e2e, candidate, frames);
     mkdirSync(output, { recursive: true });
-    // Each caption sits inside the graph's canvas, clear of the Pane and the app's own header lines.
-    const gifs = [[DEMOS[0], loop], [DEMOS[1], growth]] as const;
-    for (const [name, { segments, at }] of gifs) {
-      // Write beside the old GIF and replace it whole, so a failed encode keeps the last one.
+    const save = (name: string, { segments, at }: Recording) => {
+      // Place the caption in the canvas. Replace each GIF only after its encode succeeds.
       const gif = join(output, name);
-      encode(segments, `${gif}.new.gif`, work, at);
-      renameSync(`${gif}.new.gif`, gif);
-    }
+      const staged = `${gif}.new.gif`;
+      try {
+        encode(segments, staged, work, at);
+        renameSync(staged, gif);
+      } finally { rmSync(staged, { force: true }); }
+      console.log(`${name}: ${(statSync(gif).size / 1e6).toFixed(1)} MB`);
+    };
+    save(DEMOS[0], await reviewLoop(candidate, frames));
+    save(DEMOS[1], await graphGrowth(candidate, frames));
   } finally {
-    try {
-      if (candidate) {
-        const { cleanup } = await import(`${base}/build.ts`);
-        await cleanup(candidate.root);
-      }
-    } finally {
-      rmSync(work, { recursive: true, force: true });
-    }
+    unwatch();
+    if (candidate) cleanup(candidate.root);
+    rmSync(work, { recursive: true, force: true });
   }
-  for (const name of DEMOS) console.log(`${name}: ${(statSync(join(output, name)).size / 1e6).toFixed(1)} MB`);
 }
 
 const mode = process.argv[2];
-if (mode === "stop") process.exit(0);
+if (mode === "check") console.log(JSON.stringify({ frames: DEMOS, width: WIDTH, height: HEIGHT, recording: false }));
+else if (mode === "stop") process.exit(0);
 else if (mode === "gif") gif(process.argv[3]);
 else if (process.platform !== "linux") throw new Error("Recording runs on Linux only.");
 else if (!process.env.CAPTURE_DISPLAY_OWNED) process.exit(await (mode === "session" ? session() : wrapped([])));

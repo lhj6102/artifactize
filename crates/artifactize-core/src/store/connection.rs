@@ -48,12 +48,12 @@ mod tests {
         assert!(
             status.success(),
             "{status:?}: {}",
-            String::from_utf8_lossy(&stderr)
+            crate::platform::output_text(&stderr)
         );
         assert!(
             stderr.is_empty(),
             "a cancelled SQLite close must not panic on its worker: {}",
-            String::from_utf8_lossy(&stderr)
+            crate::platform::output_text(&stderr)
         );
         root.close().unwrap();
     }

@@ -6,9 +6,9 @@
   // / [eval] [eval] …`, and shows its Summary or its log (an Agent's transcript, a runtime's
   // saved output), or in a Run the shared Human Detail. Its width is the Detail's: everything in
   // it wraps or scrolls in its own box.
-  import { tick } from "svelte";
+  import { tick, untrack, type Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { call, useIpc, message, type BranchView, type Source } from "../ipc/client";
+  import { call, useIpc, message, type BranchView, type RunPanel, type Source } from "../ipc/client";
   import type { Review } from "../review/review.svelte";
   import { getAppState } from "../shell/app.svelte";
   import { DetailPaneState, setDetailPaneState } from "./detail-pane-state.svelte";
@@ -16,22 +16,25 @@
   import Panel from "../shell/Panel.svelte";
   import Section from "../shell/Section.svelte";
   import Icon from "../shell/Icon.svelte";
-  import { markIcon } from "../shell/icons";
+  import { markIcon, markLabel } from "../shell/icons";
   import RecordDetail from "./RecordDetail.svelte";
-  import { NeighboursState } from "./neighbours-state.svelte";
+  import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
   import Neighbours from "./Neighbours.svelte";
+  import { toolsKey } from "./artifact-tools.svelte";
   import ArtifactTools from "./ArtifactTools.svelte";
+  import EvalReview from "./EvalReview.svelte";
   import ArtifactStar from "./ArtifactStar.svelte";
   import Definition from "./Definition.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
+  import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
-  import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
 
   let {
     source,
     revision,
     branch,
+    run = null,
     node,
     tab,
     focused,
@@ -50,8 +53,9 @@
     /** The snapshot's or scan's revision: the Detail reads again when it grows. */
     revision: number;
     /** The branch shown: an Artifact's tools run in its worktree. */
-    branch: BranchView | null;
+    branch: Pick<BranchView, "key" | "workspace"> | null;
     /** The Artifact (or the Run) the Detail is of. */
+    run?: RunPanel | null;
     node: string;
     /** The eval whose tab is shown, or `null` for the Artifact's own. */
     tab: string | null;
@@ -74,6 +78,7 @@
 
   /** The opened Artifact's neighbours, read by its Neighbours section. */
   const neighbours = new NeighboursState();
+  setNeighboursState(neighbours);
   /** A part of several wholes is drawn in each: Debug names them, in graph order. */
   const drawnIn = $derived.by((): [string, string][] => {
     const graph = neighbours.graph;
@@ -81,7 +86,8 @@
     return [["Drawn in", graph.wholes.join(", ")]];
   });
   const commands = useIpc();
-  const { sections } = getAppState();
+  const app = getAppState();
+  const { sections } = app;
   const d = new DetailPaneState();
   setDetailPaneState(d);
   const key = $derived(keyOf(source));
@@ -102,6 +108,13 @@
   const read: Attachment<HTMLElement> = () => {
     void revision;
     const [at, wanted, of] = [source, target, node];
+    const place = `${keyOf(at)}\n${wanted}`;
+    untrack(() => {
+      if (d.logTarget !== place) {
+        d.logTarget = place;
+        d.log = null;
+      }
+    });
     let current = true;
     call(commands.detailRow(at, of)).then(
       (view) => {
@@ -137,11 +150,11 @@
   /** The section `t` folds and unfolds: a Run's Technical, else Debug. */
   const last = $derived(detail?.target === "run" ? "Technical" : "Debug");
 
-  /** The Human review this tab shows, while it runs work or edits its form: ← leaves it alone,
+  /** The Human review this tab shows, while it runs work: ← leaves it alone,
    * and Esc steps through it first (the Monitor's close asks it). */
   const holding = $derived.by(() => {
     const reviewing = human && detail?.request ? review(detail.request) : undefined;
-    return reviewing !== undefined && (reviewing.busy !== null || reviewing.editing);
+    return reviewing !== undefined && reviewing.busy !== null;
   });
 
   /** An eval chosen from the Artifact tab's list: the list goes with that tab, so the keyboard
@@ -160,13 +173,17 @@
     element?.focus();
   }
 
+  const toggleLast = () => sections.toggle(last);
+  useCommands(() => [{ id: "graph.detail-debug", group: "Graph", label: `Toggle ${last}`, keys: "t", run: toggleLast }],
+    () => active && detail !== null && !human && !log);
+
   function keydown(event: KeyboardEvent) {
     // A Human review takes its own keys; from the tabs only Esc and ← close.
     if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
     if (plain(event, "ArrowLeft") && holding) return;
     if (plain(event, "Escape") || plain(event, "ArrowLeft")) onback();
     else if (human || log) return;
-    else if (plain(event, "t")) sections.toggle(last);
+    else if (plain(event, "t")) toggleLast();
     else return;
     event.preventDefault();
   }
@@ -189,14 +206,14 @@
         <!-- The `/` stays with the Artifact's chip: only eval chips flow onto further lines. -->
         <span class="head">
           <button class="chip" role="tab" aria-selected={false} aria-label="Artifact {row.name}" onclick={() => void showArtifact()}>
-            <img class="mark" src={brandMark} alt="" /><span class="label">{row.name}</span>
+            <span class="mark"><Icon name="artifact" /></span><span class="label">{row.name}</span>
           </button>
           <span class="slash" aria-hidden="true">/</span>
         </span>
         {#each evals as item (item.id)}
           {@const icon = markIcon(item.glyph, item.tone)}
           <button class="chip" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
-            <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} />{:else}{item.glyph}{/if}</span><span class="label">{item.name}</span>
+            <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} label={markLabel(icon)} />{:else}{item.glyph}{/if}</span><span class="label">{item.name}</span>
           </button>
         {/each}
       </div>
@@ -210,27 +227,35 @@
             {#each evals as item (item.id)}
               {@const icon = markIcon(item.glyph, item.tone)}
               <li>
-                <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => void showEval(item.id)}>
-                  <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} />{:else}{item.glyph}{/if}</span>
-                  <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
-                  <span class="status">
-                    {#each item.text as segment, part (part)}<span class={tone(segment.tone)}>{segment.text}</span>{/each}
-                  </span>
-                  <span class="muted right">{item.right}</span>
-                </button>
+                {#snippet evalRow(stage?: Snippet)}
+                  <button class="eval" class:ink-dim={item.weight === "dim"} data-eval={item.id} onclick={() => void showEval(item.id)}>
+                    <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} />{:else}{item.glyph}{/if}</span>
+                    <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
+                    <span class="status">
+                      <span class="verdict-status">{#each item.text as segment, part (part)}<span class={tone(segment.tone)}>{segment.text}</span>{/each}</span>
+                      {#if stage} {@render stage()}{/if}
+                    </span>
+                    <span class="muted right">{item.right}</span>
+                  </button>
+                {/snippet}
+                {#if source.kind === "run" && item.tone === "human"}
+                  <EvalReview {source} node={item.id} {revision} row={evalRow} />
+                {:else}
+                  {@render evalRow()}
+                {/if}
               </li>
             {/each}
           </ul>
         </Section>
         {/if}
-        <Neighbours {source} {revision} {node} {onopen} state={neighbours} />
+        <Neighbours {source} {revision} {node} {onopen} />
         {#if branch}
-          {#key `${branch.workspace}\n${row.name}`}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
+          {#key toolsKey(branch.workspace, branch.key, row.name)}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
         {/if}
         <!-- On a Current the Artifact's definition, which its graph and its Detail edit, stands
              where a Run's Path does. -->
         {#if branch && source.kind === "current"}
-          {#key row.name}<Definition branch={branch.key} name={row.name} />{/key}
+          {#key row.name}<Definition branch={branch.key} name={row.name} {active} />{/key}
         {/if}
       {/if}
       {#if d.error}
@@ -240,10 +265,11 @@
       {:else if human && detail.request}
         {#key detail.request}
           {@const reviewing = review(detail.request)}
-          {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
+          {@const request = detail.request}
+          {#if reviewing}<HumanDetail review={reviewing} {active} {onback} onopenreview={() => app.showReview(request, app.mode === "verify")} />{/if}
         {/key}
       {:else}
-        <RecordDetail {detail} path={source.kind !== "current"} debugFacts={tab === null ? drawnIn : []} bind:log={() => log, (value) => (d.log = value ? target : null)} />
+        <RecordDetail {detail} {run} path={source.kind !== "current"} debugFacts={tab === null ? drawnIn : []} bind:log={() => log, (value) => (d.log = value ? target : null)} />
       {/if}
     </div>
   </div>
@@ -284,6 +310,7 @@
     align-items: center;
   }
   .mark {
+    display: inline-flex;
     flex: none;
     width: var(--icon);
     height: var(--icon);
@@ -327,7 +354,7 @@
      while there is room; what the right column says wraps in what is left. */
   .eval {
     display: grid;
-    grid-template-columns: var(--icon) minmax(0, max-content) minmax(0, max-content) minmax(0, 1fr);
+    grid-template-columns: var(--icon) minmax(0, 1fr) fit-content(30%) fit-content(32%);
     align-items: center;
     gap: 8px;
     width: 100%;
@@ -353,6 +380,7 @@
     overflow-wrap: anywhere;
   }
   .eval .right {
+    color: var(--ink-2);
     font-size: var(--text-small);
     justify-self: end;
     min-width: 0;
@@ -360,11 +388,7 @@
     overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
   }
-  .weight-bold .name,
-  .weight-bold .status {
-    font-weight: 600;
-  }
-  .weight-dim {
+  .eval.ink-dim {
     color: var(--ink-2);
   }
   .muted {

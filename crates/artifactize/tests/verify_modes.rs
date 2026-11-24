@@ -650,7 +650,8 @@ async fn c2_a_run_that_an_earlier_version_ended_signoffs_pending_reads_as_yellow
         [run.as_str()],
     )
     .unwrap();
-    db.execute_batch("PRAGMA user_version=9;").unwrap();
+    db.execute_batch(&format!("{} PRAGMA user_version=9;", support::schema::TEN))
+        .unwrap();
     drop(db);
     let upgraded = store::read_run(&fixture.state, &run).await.unwrap();
     assert_eq!(upgraded.run.status(), RunStatus::Yellow);

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="pet-title">
+  <title id="pet-title">Artifactize pet</title>
+  <!-- The app's pet: the brand icon's round faceted emerald, set in its ivory and silver bezel,
+       with a face, two feet and a sprout. Original artwork; its colours are the brand icon's. -->
+  <defs>
+    <linearGradient id="pet-emerald" x1="20" y1="18" x2="44" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2fd3a8"/>
+      <stop offset=".45" stop-color="#008f78"/>
+      <stop offset="1" stop-color="#00665b"/>
+    </linearGradient>
+    <clipPath id="pet-gem"><circle cx="32" cy="35" r="16.2"/></clipPath>
+  </defs>
+  <ellipse cx="23.5" cy="55.2" rx="5" ry="3.3" fill="#e9e2d6" stroke="#160d1b" stroke-width="2"/>
+  <ellipse cx="40.5" cy="55.2" rx="5" ry="3.3" fill="#e9e2d6" stroke="#160d1b" stroke-width="2"/>
+  <path d="M31 13.5C29 9.5 25.5 7 21.5 7.2 24.5 9.6 26 12 26.5 15Z" fill="#e9e2d6" stroke="#160d1b" stroke-width="1.8" stroke-linejoin="round"/>
+  <circle cx="32" cy="35" r="21" fill="#ece5d9" stroke="#160d1b" stroke-width="2.4"/>
+  <circle cx="32" cy="35" r="18.2" fill="#b9b3b4" stroke="#160d1b" stroke-width="1.2"/>
+  <circle cx="32" cy="35" r="16.2" fill="url(#pet-emerald)"/>
+  <g clip-path="url(#pet-gem)">
+    <polygon points="14,33 23,20 31,27 23,36" fill="#63e3c3" opacity=".75"/>
+    <polygon points="23,20 41,19 31,27" fill="#3fd0ab" opacity=".85"/>
+    <polygon points="41,19 50,33 40,37 31,27" fill="#028a72"/>
+    <polygon points="23,36 31,27 40,37 32,49" fill="#019a7d" opacity=".9"/>
+    <polygon points="14,33 23,36 32,49 19,46" fill="#00715f"/>
+    <polygon points="40,37 50,33 46,46 32,49" fill="#005a50"/>
+  </g>
+  <circle cx="32" cy="35" r="16.2" fill="none" stroke="#160d1b" stroke-width="1.6"/>
+  <ellipse cx="22" cy="39.6" rx="2.6" ry="1.5" fill="#ff9fb3" opacity=".55"/>
+  <ellipse cx="42" cy="39.6" rx="2.6" ry="1.5" fill="#ff9fb3" opacity=".55"/>
+  <ellipse cx="26.2" cy="34.2" rx="2.7" ry="3.5" fill="#10201c"/>
+  <circle cx="27.1" cy="32.9" r="1" fill="#ffffff"/>
+  <ellipse cx="37.8" cy="34.2" rx="2.7" ry="3.5" fill="#10201c"/>
+  <circle cx="38.7" cy="32.9" r="1" fill="#ffffff"/>
+  <path d="M29.6 40.4Q32 42.6 34.4 40.4" fill="none" stroke="#10201c" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

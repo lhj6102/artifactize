@@ -4,14 +4,18 @@
 // (the sign-off idle grace the next Runs take).
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Settings from "./Settings.svelte";
-import type { ClaudeAgentStatus, CodexStatus, CustomProvider, KeySource, Provider, RemoteStatus } from "../ipc/client";
+import type { AntigravityPrompt, AntigravityStatus, ClaudeAgentStatus, CodexStatus, CustomProvider, KeySource, NativeStart, Provider, RemoteStatus } from "../ipc/client";
 
 const STORE = "http://127.0.0.1:8417/";
 const TOKEN = "azt_secret-store-token";
 const KEY = "sk-secret-provider-key";
+const AGY = { path: "/fixture/bin/agy", version: "1.5.14", requiredVersion: "1.5.1" };
+const AGY_OUT: AntigravityStatus = { ...AGY, state: "signedOut" };
+const AGY_IN: AntigravityStatus = { ...AGY, state: "signedIn", account: null };
+const AGY_URL = "https://accounts.google.com/o/oauth2/v2/auth?state=test";
 
 /** The tests' clock: local noon of a fixed day, so a midnight never falls inside a test. */
 const NOON = new Date(2026, 10, 14, 12).getTime();
@@ -23,7 +27,8 @@ const signedIn: RemoteStatus = {
   share: "summary",
   tokenSource: "file",
   connection: { state: "signedIn", principal: "alice-laptop", scopes: ["read", "publish"] },
-  // Two pushes on the frozen day, one two days before it.
+  // The library reports the tally independently of the visible ledger window.
+  pushedToday: 5,
   pushes: [
     { at: NOON - 2 * 86400000, count: 9 },
     { at: NOON - 3600000, count: 2 },
@@ -38,9 +43,15 @@ function backend(options: {
   wait?: () => Promise<unknown>;
   login?: (token: string) => RemoteStatus | Error;
   claude?: () => ClaudeAgentStatus;
+  claudeComplete?: ClaudeAgentStatus;
   claudeWait?: () => Promise<unknown>;
+  antigravity?: () => AntigravityStatus;
+  antigravityPrompt?: () => Promise<NativeStart<AntigravityPrompt, AntigravityStatus>>;
+  antigravityWait?: () => Promise<AntigravityStatus>;
 }) {
   const calls: Calls = [];
+  let agy = AGY_OUT as AntigravityStatus;
+  const agyStatus = () => options.antigravity?.() ?? agy;
   let remote = none;
   let grace = 120;
   const environment = new Set(["openai"]);
@@ -54,7 +65,8 @@ function backend(options: {
     switch (cmd) {
       case "providers_list":
         return {
-          builtin: ["codex", "claude-agent", "openai", "anthropic", "gemini"],
+          builtin: ["codex", "claude-agent", "antigravity", "openai", "anthropic", "gemini"],
+          aliasTargets: ["codex", "openai", "anthropic", "gemini"],
           keys: Object.keys(VARIABLES).map((provider) => ({
             provider: provider as Provider,
             variable: VARIABLES[provider],
@@ -86,6 +98,8 @@ function backend(options: {
       case "codex_status":
         return options.codex?.() ?? { state: "absent" };
       case "codex_login_start":
+        return 7;
+      case "codex_login_prompt":
         return { url: "http://127.0.0.1:9/oauth/authorize?state=s", callback: false, signIn: 7 };
       case "codex_login_wait":
         return options.wait?.() ?? { state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } };
@@ -97,7 +111,9 @@ function backend(options: {
       case "claude_agent_status":
         return options.claude?.() ?? { state: "signedOut" };
       case "claude_agent_login_start":
-        return { url: "https://claude.example/oauth/authorize?code=true", signIn: 9 };
+        return 9;
+      case "claude_agent_login_prompt":
+        return options.claudeComplete ?? { url: "https://claude.example/oauth/authorize?code=true", signIn: 9 };
       case "claude_agent_login_wait":
         return options.claudeWait?.() ?? { state: "signedIn", method: "claude.ai", plan: "max" };
       case "claude_agent_login_paste":
@@ -105,9 +121,30 @@ function backend(options: {
         return null;
       case "claude_agent_logout":
         return { state: "signedOut" };
+      case "antigravity_status":
+        return agyStatus();
+      case "antigravity_login_start":
+        return 11;
+      case "antigravity_login_prompt":
+        return options.antigravityPrompt?.().then((started) => {
+          if ("state" in started) agy = started;
+          return started;
+        }) ?? { url: AGY_URL, signIn: 11 };
+      case "antigravity_login_wait":
+        return options.antigravityWait?.().then((status) => (agy = status)) ?? (agy = AGY_IN);
+      case "antigravity_login_paste":
+      case "antigravity_login_cancel":
+      case "chat_open_link":
+        return null;
+      case "antigravity_logout":
+        return (agy = AGY_OUT);
       case "models_list":
-        if (payload.provider === "anthropic") throw { kind: "account", message: "ANTHROPIC_API_KEY is required to list models." };
-        return [{ slug: "gpt-fake", displayName: "GPT Fake" }];
+        if (payload.provider === "antigravity") {
+          if (agyStatus().state === "signedOut") return { kind: "notSetUp", reason: "Not signed in." };
+          return { kind: "models", models: [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }] };
+        }
+        if (payload.provider === "anthropic") return { kind: "failed", error: "The provider refused to list models." };
+        return { kind: "models", models: [{ slug: "gpt-fake", displayName: "GPT Fake" }] };
       case "remote_status":
         return remote;
       case "remote_login": {
@@ -116,6 +153,9 @@ function backend(options: {
         remote = result;
         return result;
       }
+      case "remote_push":
+        if (!payload.dryRun && remote.state === "configured") remote = { ...remote, pushedToday: remote.pushedToday + 2, pushes: [...remote.pushes, { at: NOON, count: 2 }] };
+        return { pushed: 2, existing: 1, skipped: 0 };
       case "remote_logout":
         remote = none;
         return none;
@@ -157,6 +197,7 @@ describe("Settings", () => {
       expect([...list.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
         "Codex",
         "Claude Agent",
+        "Antigravity",
         "OpenAI",
         "Anthropic",
         "Gemini",
@@ -265,7 +306,7 @@ describe("Settings", () => {
     expect(screen.queryByText("http://127.0.0.1:9/oauth/authorize?state=s")).toBeNull();
     expect(calls.find((call) => call.cmd === "codex_login_start")?.args).toEqual({ browser: true });
     // The wait names the sign-in the start returned.
-    expect(calls.find((call) => call.cmd === "codex_login_wait")?.args).toEqual({ signIn: 7 });
+    await waitFor(() => expect(calls.find((call) => call.cmd === "codex_login_wait")?.args).toEqual({ signIn: 7 }));
     await fireEvent.click(screen.getByRole("button", { name: "Finish by hand" }));
     await screen.findByText("http://127.0.0.1:9/oauth/authorize?state=s");
     // The port was taken: only a pasted URL finishes it.
@@ -274,6 +315,7 @@ describe("Settings", () => {
     await fireEvent.input(field, { target: { value: " http://localhost:1455/auth/callback?code=c&state=s " } });
     await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
     expect(calls.find((call) => call.cmd === "codex_login_paste")?.args).toEqual({
+      signIn: 7,
       redirect: "http://localhost:1455/auth/callback?code=c&state=s",
     });
     finish({ state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } });
@@ -292,8 +334,9 @@ describe("Settings", () => {
     });
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Codex" }));
+    await waitFor(() => expect(calls.filter((call) => call.cmd === "codex_login_wait")).toHaveLength(1));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
-    expect(calls.some((call) => call.cmd === "codex_login_cancel")).toBe(true);
+    expect(calls.find((call) => call.cmd === "codex_login_cancel")?.args).toEqual({ signIn: 7 });
     fail({ kind: "account", message: "Codex sign-in was cancelled." });
     expect((await screen.findByText("Codex sign-in was cancelled.")).classList.contains("error")).toBe(true);
     await waitFor(() => {
@@ -302,6 +345,7 @@ describe("Settings", () => {
     });
     state = { state: "file", path: "/home/a/.codex/auth.json", expiry: { state: "usable", expiresAt: null } };
     await fireEvent.click(screen.getByRole("button", { name: "Sign in with Codex" }));
+    await waitFor(() => expect(calls.filter((call) => call.cmd === "codex_login_wait")).toHaveLength(2));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
     fail({ kind: "account", message: "Codex sign-in was cancelled." });
     // A read-only auth file is never changed here: no sign-in.
@@ -350,7 +394,7 @@ describe("Settings", () => {
     const calls = backend({ claude: () => state });
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
-    expect(screen.getByTestId("claude-agent-sign-in").textContent).toMatch(/never reads, copies or stores it/);
+    expect(screen.getByText("Login kept by").nextElementSibling?.textContent).toBe("Claude Code");
     expect(screen.queryByLabelText("API key")).toBeNull();
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("claude not found"));
     expect(screen.getByRole("button", { name: "Sign in with Claude Code" }).hasAttribute("disabled")).toBe(true);
@@ -362,7 +406,7 @@ describe("Settings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
     // Signed in, the facts stand alone.
-    expect(screen.queryByTestId("claude-agent-sign-in")).toBeNull();
+    expect(screen.getByText("Login kept by").nextElementSibling?.textContent).toBe("Claude Code");
     expect(calls.filter((call) => call.cmd === "claude_agent_status")).toHaveLength(3);
     await fireEvent.click(screen.getByRole("button", { name: "List models" }));
     await screen.findByText("GPT Fake");
@@ -382,7 +426,7 @@ describe("Settings", () => {
     const field = screen.getByLabelText("Code");
     await fireEvent.input(field, { target: { value: " abc#def " } });
     await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
-    expect(calls.find((call) => call.cmd === "claude_agent_login_paste")?.args).toEqual({ code: "abc#def" });
+    expect(calls.find((call) => call.cmd === "claude_agent_login_paste")?.args).toEqual({ signIn: 9, code: "abc#def" });
     finish({ state: "signedIn", method: "claude.ai", plan: "max" });
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
@@ -397,14 +441,148 @@ describe("Settings", () => {
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Claude Code" }));
+    await waitFor(() => expect(calls.find((call) => call.cmd === "claude_agent_login_wait")?.args).toEqual({ signIn: 9 }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
-    expect(calls.some((call) => call.cmd === "claude_agent_login_cancel")).toBe(true);
+    expect(calls.find((call) => call.cmd === "claude_agent_login_cancel")?.args).toEqual({ signIn: 9 });
     // Claude Code was signed in elsewhere meanwhile: only a status read after the cancellation shows it.
     state = { state: "signedIn", method: "claude.ai", plan: "max" };
     fail({ kind: "account", message: "Claude Code sign-in was cancelled." });
-    await screen.findByText("Claude Code sign-in was cancelled.");
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Claude Code sign-in was cancelled."));
+    expect(screen.queryByText("Signed in · claude.ai · max")).toBeNull();
+    expect(screen.getByText("Login kept by").nextElementSibling?.textContent).toBe("Claude Code");
+    await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
+  });
+
+  it("shows each status Antigravity reports and does not offer it as a custom alias", async () => {
+    let state: AntigravityStatus = { ...AGY, path: null, version: null, state: "missing" };
+    const calls = backend({ antigravity: () => state });
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "Antigravity" }));
+    const nav = screen.getByRole("navigation", { name: "Providers" });
+    const account = screen.getByRole("region", { name: "Antigravity" });
+    const fact = within(account).getByTestId("antigravity-status");
+    await waitFor(() => expect(fact.textContent?.trim()).toBe("agy not found"));
+    const signIn = within(account).getByRole("button", { name: "Sign in with Antigravity" });
+    expect(signIn.hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByLabelText("API key")).toBeNull();
+
+    const oldError = "Antigravity CLI 1.4.0 is too old; update `agy` to 1.5.1 or newer.";
+    const transitions: [AntigravityStatus, string][] = [
+      [{ ...AGY, state: "tooOld", version: "1.4.0", error: oldError }, oldError],
+      [AGY_OUT, "Not signed in"],
+      [AGY_IN, "Signed in with Google"],
+      [{ ...AGY_IN, account: "reviewer@example.test" }, "Signed in with Google · reviewer@example.test"],
+      [{ ...AGY, state: "quota", error: "Google account quota exhausted." }, "Google account quota exhausted."],
+      [{ ...AGY, state: "rateLimited", error: "Antigravity rate limited this account." }, "Antigravity rate limited this account."],
+      [{ ...AGY, state: "failed", error: "Antigravity's account probe timed out." }, "Antigravity's account probe timed out."],
+    ];
+    for (const [next, text] of transitions) {
+      state = next;
+      await fireEvent.click(within(account).getByRole("button", { name: "Check again" }));
+      await waitFor(() => expect(fact.textContent?.trim()).toBe(text));
+      expect(fact.classList.contains("error")).toBe("error" in state);
+      expect(within(account).getByText("Antigravity CLI")).toBeTruthy();
+      expect(within(account).getByText("Chat only")).toBeTruthy();
+      if (state.state === "tooOld") {
+        expect(within(account).getByText("/fixture/bin/agy · 1.4.0 · requires 1.5.1 or newer")).toBeTruthy();
+        expect(signIn.hasAttribute("disabled")).toBe(true);
+      } else {
+        expect(within(account).getByText("/fixture/bin/agy · 1.5.14")).toBeTruthy();
+      }
+    }
+    expect(calls.filter(({ cmd }) => cmd === "antigravity_status")).toHaveLength(transitions.length + 1);
+
+    await fireEvent.click(within(nav).getByRole("button", { name: "Custom provider" }));
+    await fireEvent.click(screen.getByRole("radio", { name: "alias of a built-in provider" }));
+    const choices = within(screen.getByRole("combobox", { name: "Provider" })).getAllByRole("option");
+    expect(choices.map((option) => option.textContent?.trim())).toEqual(["Codex", "OpenAI", "Anthropic", "Gemini"]);
+  });
+
+  it("opens the Antigravity prompt, signs in by hand, lists the account's models, and signs out", async () => {
+    let finish: (status: AntigravityStatus) => void = () => {};
+    const calls = backend({ antigravityWait: () => new Promise((done) => (finish = done)) });
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "Antigravity" }));
+    const fact = screen.getByTestId("antigravity-status");
+    await waitFor(() => expect(fact.textContent?.trim()).toBe("Not signed in"));
+    const list = screen.getByRole("button", { name: "List models" });
+    await fireEvent.click(list);
+    expect((await screen.findByText("Not signed in.")).classList.contains("muted")).toBe(true);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Sign in with Antigravity" }));
+    const manual = await screen.findByRole("button", { name: "Finish by hand" });
+    expect(fact.textContent?.trim()).toBe("sign-in in progress");
+    expect(fact.classList.contains("warn")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(screen.queryByText(AGY_URL)).toBeNull();
+    expect(screen.queryByLabelText("Code")).toBeNull();
+    expect(calls.find(({ cmd }) => cmd === "chat_open_link")?.args).toEqual({ url: AGY_URL });
+    expect(calls.find(({ cmd }) => cmd === "antigravity_login_wait")?.args).toEqual({ signIn: 11 });
+    await fireEvent.click(manual);
+    await screen.findByText(AGY_URL);
+    const field = screen.getByRole<HTMLInputElement>("textbox", { name: "Code" });
+    await fireEvent.input(field, { target: { value: " test-code " } });
+    await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
+    expect(calls.find(({ cmd }) => cmd === "antigravity_login_paste")?.args).toEqual({ signIn: 11, code: "test-code" });
+    expect(field.value).toBe("");
+    finish(AGY_IN);
+
+    const signOut = await screen.findByRole("button", { name: "Sign out of Antigravity" });
+    expect(fact.textContent?.trim()).toBe("Signed in with Google");
+    expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
+    expect(screen.queryByText("Not signed in.")).toBeNull();
+    await fireEvent.click(list);
+    await screen.findByText("Gemini Demo");
+    expect(screen.getByText("gemini-demo")).toBeTruthy();
+    expect(calls.filter(({ cmd }) => cmd === "models_list").map(({ args }) => args)).toEqual([
+      { provider: "antigravity" }, { provider: "antigravity" },
+    ]);
+    await fireEvent.click(signOut);
+    await waitFor(() => expect(fact.textContent?.trim()).toBe("Not signed in"));
+    expect(screen.queryByText("Gemini Demo")).toBeNull();
+    expect(calls.filter(({ cmd }) => cmd === "antigravity_logout")).toHaveLength(1);
+  });
+
+  it.each([true, false])("cancels Antigravity while the CLI is pending (before prompt: %s)", async (beforePrompt) => {
+    let fail: (failure: unknown) => void = () => {};
+    const pending = <T,>() => new Promise<T>((_, reject) => (fail = reject));
+    const calls = backend(beforePrompt ? { antigravityPrompt: pending } : { antigravityWait: pending });
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "Antigravity" }));
+    await screen.findByText("Not signed in");
+    await fireEvent.click(screen.getByRole("button", { name: "Sign in with Antigravity" }));
+    if (!beforePrompt) await screen.findByRole("button", { name: "Finish by hand" });
+    await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
+    expect(calls.find(({ cmd }) => cmd === "antigravity_login_cancel")?.args).toEqual({ signIn: 11 });
+    fail({ kind: "account", message: "Antigravity sign-in was cancelled." });
+    await waitFor(() => expect(screen.getByTestId("antigravity-status").textContent?.trim()).toBe("Antigravity sign-in was cancelled."));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Sign in with Antigravity" }).hasAttribute("disabled")).toBe(false));
+    expect(screen.queryByRole("button", { name: "Finish by hand" })).toBeNull();
+    expect(calls.filter(({ cmd }) => cmd === "antigravity_status")).toHaveLength(2);
+  });
+
+  it.each([
+    { name: "Antigravity", provider: "Antigravity", prefix: "antigravity", fact: "Signed in with Google" },
+    { name: "Claude Code", provider: "Claude Agent", prefix: "claude_agent", fact: "Signed in · claude.ai · max" },
+  ])("shows $name signing in without ever needing a prompt", async ({ name, provider, prefix, fact }) => {
+    const calls = backend({
+      antigravityPrompt: async () => AGY_IN,
+      claudeComplete: { state: "signedIn", method: "claude.ai", plan: "max" },
+    });
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: provider }));
+    await screen.findByText("Not signed in");
+    await fireEvent.click(screen.getByRole("button", { name: `Sign in with ${name}` }));
+    await screen.findByText(fact);
+    expect(screen.getByRole("button", { name: `Sign out of ${name}` })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Finish by hand" })).toBeNull();
+    expect(calls.filter(({ cmd }) => cmd.startsWith(`${prefix}_login_`)).map(({ cmd }) => cmd)).toEqual([
+      `${prefix}_login_start`, `${prefix}_login_prompt`,
+    ]);
+    expect(calls.some(({ cmd }) => cmd === "chat_open_link")).toBe(false);
   });
 
   it("lists models and shows the CLI's error for a provider without its key", async () => {
@@ -416,7 +594,7 @@ describe("Settings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
     expect(screen.queryByText("GPT Fake")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "List models" }));
-    await screen.findByText("ANTHROPIC_API_KEY is required to list models.");
+    await screen.findByText("The provider refused to list models.");
   });
 
   it("masks the store token and drops it from the screen once submitted, refused or not", async () => {
@@ -446,6 +624,16 @@ describe("Settings", () => {
     expect(screen.queryByLabelText("Token")).toBeNull();
     expect(calls.filter((call) => call.cmd === "remote_login").at(-1)?.args).toEqual({ url: STORE, share: "full", token: TOKEN });
     expect(document.body.innerHTML).not.toContain(TOKEN);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Push (dry run)" }));
+    await screen.findByText(/Would push 2/);
+    expect(screen.queryByTestId("remote-pushed")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Push results" }));
+    const report = await screen.findByText(/Pushed 2, already in the store 1/);
+    await waitFor(() => expect(within(report).getByTestId("remote-pushed").textContent).toBe("7 pushed today"));
+    await fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+    await screen.findByTestId("remote-principal");
+    expect(screen.getByTestId("remote-pushed").textContent).toBe("7 pushed today");
 
     await fireEvent.click(screen.getByRole("button", { name: "Sign out of the store" }));
     // Signed out: the fields and the button that sign in come back.

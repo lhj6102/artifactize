@@ -1,10 +1,10 @@
 // The left pane as a person reads it: the search field, the branches with their timelines, and
 // the waiting reviews; each action waits for what it shows.
 import { afterRender, press, typeText } from "../keys.ts";
-import { clickAt, visibleCenter } from "../input.ts";
+import { clickAt, clickRowGutter, visibleCenter } from "../input.ts";
 import { holds, until } from "./wait.ts";
 
-/** A timeline entry: the Run it shows (`current` for the Current), its status and age as they
+/** A timeline entry: the Run it shows, its status and age as they
  * read (`GREEN 5m ago`), the line under it, and whether it is the one shown. */
 export type Entry = { id: string; text: string; sub: string; shown: boolean };
 
@@ -12,11 +12,8 @@ export type Entry = { id: string; text: string; sub: string; shown: boolean };
  * selected, expanded and starred, its newest Run's status while folded, and its timeline. */
 export type Branch = { name: string; label: string; selected: boolean; expanded: boolean; starred: boolean; latest: string; entries: Entry[] };
 
-/** A waiting review's row: its request, its eval, where it waits, what else it says. */
-export type WaitingRow = { id: string; eval: string; where: string; meta: string; selected: boolean };
-
 const PANE = 'section[aria-label="Pane"]';
-const SEARCH = 'input[aria-label="Search branches and reviews"]';
+const SEARCH = 'input[aria-label="Search the branches"]';
 const ENTRIES = '[role="group"][aria-label="Pane entries"]';
 
 export class Pane {
@@ -68,10 +65,12 @@ export class Pane {
     return `[aria-label="Branches"] > [role="treeitem"]:nth-child(${at + 1})`;
   }
 
-  /** Click the branch's name: it is selected and expanded. */
-  async selectBranch(name: string): Promise<Branch> {
+  /** Click the branch row: it is selected and expanded. */
+  async selectBranch(name: string, gutter = false): Promise<Branch> {
     await this.branch(name);
-    await this.browser.$(`${await this.row(name)} button.name`).click();
+    const row = this.browser.$(`${await this.row(name)} button.name`);
+    if (gutter) await clickRowGutter(this.browser, await row.getElement(), PANE);
+    else await row.click();
     return this.branch(name, (entry) => entry.selected && entry.expanded, `${name} selected and expanded`);
   }
 
@@ -89,12 +88,14 @@ export class Pane {
     return this.branch(name, (entry) => entry.entries.length > before, `${name} lists older Runs`);
   }
 
-  /** Click the timeline entry `id` (a Run's ID, or `current`) of the branch, expanding it first:
+  /** Click the timeline entry `id` (a Run's ID) of the branch, expanding it first:
    * it is the one shown. */
-  async choose(name: string, id: string): Promise<void> {
+  async choose(name: string, id: string, gutter = false): Promise<void> {
     if (!(await this.branch(name)).expanded) await this.toggle(name);
     await this.branch(name, (entry) => entry.entries.some((chip) => chip.id === id), `${name} lists ${id}`);
-    await this.browser.$(`${await this.row(name)} button[data-chip=${JSON.stringify(id)}]`).click();
+    const row = this.browser.$(`${await this.row(name)} button[data-chip=${JSON.stringify(id)}]`);
+    if (gutter) await clickRowGutter(this.browser, await row.getElement(), PANE);
+    else await row.click();
     await this.branch(name, (entry) => entry.entries.some((chip) => chip.id === id && chip.shown), `${name}'s ${id} shown`);
   }
 
@@ -111,7 +112,7 @@ export class Pane {
       const root = document.querySelector(pane);
       const divider = document.querySelector<HTMLElement>(".monitor [data-pane-resizer]");
       return {
-        parts: [...(root?.querySelectorAll('input[aria-label="Search branches and reviews"], [aria-label="Branches"], section[aria-label="Waiting"]') ?? [])]
+        parts: [...(root?.querySelectorAll('input[aria-label="Search the branches"], [aria-label="Branches"]') ?? [])]
           .map((part) => part.getAttribute("aria-label") ?? ""),
         query: root?.querySelector<HTMLInputElement>("input")?.value ?? "",
         divider: !!divider && divider.getBoundingClientRect().width > 0,
@@ -125,21 +126,21 @@ export class Pane {
   stacked(): Promise<boolean> {
     return this.browser.execute((pane) => {
       const root = document.querySelector(pane);
-      const boxes = ['input[aria-label="Search branches and reviews"]', '[aria-label="Branches"]', 'section[aria-label="Waiting"]']
+      const boxes = ['input[aria-label="Search the branches"]', '[aria-label="Branches"]']
         .map((selector) => root?.querySelector(selector)?.getBoundingClientRect());
       if (boxes.some((box) => !box || box.width === 0)) return false;
-      const [search, branches, waiting] = boxes as DOMRect[];
-      return branches.top >= search.bottom - 1 && waiting.top >= branches.bottom - 1
-        && Math.abs(branches.left - waiting.left) <= 2 && search.left >= branches.left - 2 && search.right <= branches.right + 2;
+      const [search, branches] = boxes as DOMRect[];
+      return branches.top >= search.bottom - 1 && search.left >= branches.left - 2 && search.right <= branches.right + 2;
     }, PANE);
   }
 
   /** Whether the pane shows, and how wide it is. */
-  shown(): Promise<{ visible: boolean; width: number }> {
+  shown(mode: "Verify" | "Chat" | "Review" = "Verify"): Promise<{ visible: boolean; width: number }> {
+    const pane = { Verify: PANE, Chat: '[aria-label="Chats"]', Review: '[aria-label="Reviews"]' }[mode];
     return this.browser.execute((pane) => {
       const box = document.querySelector(pane)?.getBoundingClientRect();
       return { visible: !!box && box.width > 0, width: Math.round(box?.width ?? 0) };
-    }, PANE);
+    }, `main[aria-label="${mode}"]:not([hidden]) ${pane}`);
   }
 
   /** Drag the divider between the pane and the main area by `dx` pixels: the pane's new width. */
@@ -214,34 +215,4 @@ export class Pane {
     await press(this.browser, keys, done, what);
   }
 
-  // -------------------------------------------------------------------------------
-  // Waiting reviews
-
-  /** The waiting stack: its bar as it reads (`Waiting (N)`) and its rows, newest first. */
-  waiting(): Promise<{ bar: string; rows: WaitingRow[] }> {
-    return this.browser.execute(() => ({
-      bar: document.querySelector('section[aria-label="Waiting"] .bar')?.textContent?.trim() ?? "",
-      rows: [...document.querySelectorAll<HTMLElement>('[aria-label="Waiting reviews"] [role="option"]')].map((row) => ({
-        id: row.dataset.key ?? "",
-        eval: row.querySelector(".eval")?.textContent?.trim() ?? "",
-        where: row.querySelector(".where")?.textContent?.trim() ?? "",
-        meta: row.querySelector(".meta")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
-        selected: row.getAttribute("aria-selected") === "true",
-      })),
-    }));
-  }
-
-  /** Wait until the waiting stack satisfies `ok`. */
-  async waitingUntil(ok: (stack: { bar: string; rows: WaitingRow[] }) => boolean, what: string): Promise<{ bar: string; rows: WaitingRow[] }> {
-    return until(this.browser, () => this.waiting(), ok, what);
-  }
-
-  /** Click the waiting review `id`: it is selected and opens in the main area. */
-  async openWaiting(id: string): Promise<void> {
-    await this.waitingUntil((stack) => stack.rows.some((row) => row.id === id), `${id} waits in the stack`);
-    const row = this.browser.$(`[aria-label="Waiting reviews"] [data-key=${JSON.stringify(id)}]`);
-    // A dialog that just closed can keep the page from taking the pointer for a moment.
-    await clickAt(this.browser, await visibleCenter(this.browser, await row.getElement()));
-    await this.waitingUntil((stack) => stack.rows.some((each) => each.id === id && each.selected), `${id} selected`);
-  }
 }

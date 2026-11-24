@@ -1,77 +1,72 @@
 <script lang="ts">
-  // The one Human review component, shared by the Detail and the Review view. It has one order,
-  // the instruction, the Tools, their Tool log and the Result with its row of actions, then
-  // Debug, and two arrangements by the room it has. In one column (a Human eval's tab in the
-  // Detail, or a Main area narrower than twice the Detail's width) it reads top to bottom, no
-  // wider than the measure, the Tool log a box between the Tools and the Result. In two (a Main
-  // area at least twice as wide), the Tool log is the view, a panel filling the left, and the
-  // rest is a column at the right, where the Detail docks and of its width. Its eval's title is
-  // said once, above it; the review opens with its stage alone.
+  // A Human review as a conversation (D-REV-1, J-HUMAN-LAYOUT), the same in Review's main area
+  // and on a Human eval's tab in the Detail: the head line; the request, unboxed as Chat's agent
+  // text is (its instruction, its tools, the chosen verdict's own fields when the eval asks more,
+  // and Debug folded); each tool's run and each point, newest last; the reviewer's reasons as
+  // bubbles at the bottom, or the submitted result as the last bubble; then, where Chat's composer
+  // stands, the reasons box and under it the decision bar.
   import { HumanDetailState, setHumanDetailState } from "./human-detail-state.svelte";
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { onStateChanged, type Settled } from "../ipc/client";
+  import { Coalesced } from "../ipc/coalesced";
   import type { Review } from "./review.svelte";
   import Tools from "./Tools.svelte";
-  import ToolLog from "./ToolLog.svelte";
+  import ToolRuns from "./ToolRuns.svelte";
+  import ReviewPoints from "./ReviewPoints.svelte";
+  import Reasons from "./Reasons.svelte";
+  import ReasonsBox from "./ReasonsBox.svelte";
+  import DecisionBar from "./DecisionBar.svelte";
   import VerdictForm from "./VerdictForm.svelte";
+  import { ReasonsCaret } from "./reasons-caret.svelte";
   import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
-  import Icon from "../shell/Icon.svelte";
-  import Section from "../shell/Section.svelte";
+  import Reference from "../shell/Reference.svelte";
   import { useCommands } from "../shell/commands.svelte";
-  import { chord, composing, editable, label, plain } from "../shell/keys";
-  import { clampWidth } from "../monitor/detail-width";
+  import { chord, composing, editable, plain } from "../shell/keys";
+  import Icon from "../shell/Icon.svelte";
 
   let {
     review,
     active = true,
     wide = false,
+    title = null,
     onback,
     onsubmitted,
+    onopenreview,
   }: {
     review: Review;
     /** Its screen is shown: only then it offers palette commands. */
     active?: boolean;
-    /** It fills the Main area: with room for two, the Tool log is the view at the left. */
+    /** It fills Review's Main area: its column is centred at the reading measure. */
     wide?: boolean;
+    /** The eval's title, said by the head line (in the Detail, its title says it). */
+    title?: string | null;
     onback: () => void;
     /** A submission settled the request, published or saved locally only. */
     onsubmitted?: (settled: Settled) => void;
+    /** Shown outside Review (a Human eval's tab in the Detail): open it there (D-REV-11). */
+    onopenreview?: () => void;
   } = $props();
-  const { sections, monitor: m } = getAppState();
+  const app = getAppState();
+  const { sections } = app;
   const h = new HumanDetailState();
   setHumanDetailState(h);
+  const caret = new ReasonsCaret();
 
   const view = $derived(review.view);
-  /** The stage pill's words; a submitted review has none. */
-  const stage = $derived(view?.stage === "completed" ? null : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM");
-  /** The default share of the area the Detail takes, as the dock's width says. */
-  const DOCK_SHARE = 0.46;
-  const DOCK_MOST = 680;
-  /** Two panels: the Main area is at least twice as wide as the Detail would be. */
-  const split = $derived.by(() => {
-    if (!wide || h.width === 0) return false;
-    const dock = clampWidth(m.detailWidth ?? Math.min(h.width * DOCK_SHARE, DOCK_MOST), h.width);
-    return h.width >= 2 * dock;
-  });
-
-  /** The review's width, measured as it changes. */
-  const measure: Attachment<HTMLElement> = (root) => {
-    const sized = new ResizeObserver(() => (h.width = root.clientWidth));
-    sized.observe(root);
-    return () => sized.disconnect();
-  };
+  const debugOpen = $derived(sections.open("Debug"));
+  const pointed = $derived(review.owned && (review.draft?.points.length ?? 0) > 0);
 
   onMount(() => {
     void review.load();
-    // Waiting time and the busy seconds redraw without reading the state.
     const clock = setInterval(() => {
-      h.now = Date.now();
-      if (!review.busy) void review.load(false);
+      if (!review.busy && active) void review.load(false);
     }, 1000);
-    // A settlement or claim elsewhere shows on the next read; an open form is set aside.
-    const stop = onStateChanged(() => void review.load());
+    // A settlement or claim elsewhere shows on the next read, one read at a time and only while
+    // the review is on screen.
+    const reading = new Coalesced(() => review.load(), () => active);
+    const stop = onStateChanged(() => reading.request());
     // Tools that already took focus (a reopened request with Tools focused) keep it.
     if (h.root && !h.root.contains(document.activeElement)) h.root.focus();
     return () => {
@@ -80,29 +75,41 @@
     };
   });
 
+  /** The conversation follows its newest line while it is read at its end (D-CHAT-2). */
+  const following: Attachment<HTMLElement> = (log) => {
+    let atEnd = true;
+    const scrolled = () => {
+      atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+    };
+    const grown = new MutationObserver(() => {
+      if (atEnd) log.scrollTop = log.scrollHeight;
+    });
+    grown.observe(log, { childList: true, subtree: true, characterData: true });
+    log.addEventListener("scroll", scrolled);
+    return () => {
+      grown.disconnect();
+      log.removeEventListener("scroll", scrolled);
+    };
+  };
+
   async function submit() {
-    const settled = await review.submit();
+    const settled = await review.submit(h.typed);
     if (!settled) return;
     onsubmitted?.(settled);
     await tick();
-    // Submission removes the focused form or Submit button. Keep Esc reachable, without
-    // taking focus back if the person moved to another control or screen while it ran.
+    // Submission removes the reasons box and the bar. Keep Esc reachable, without taking focus
+    // back if the person moved to another control or screen while it ran.
     if (active && h.root?.isConnected && document.activeElement === document.body) h.root.focus();
   }
 
-  /** Esc: cancel the job, then stop editing, then leave. Stopping editing removes the
-   * focused field, so focus returns to the review and the next Esc still reaches it. */
-  async function back() {
-    if (review.escape()) {
-      onback();
-      return;
-    }
-    await tick();
-    if (h.root && !h.root.contains(document.activeElement)) h.root.focus();
+  /** The keyboard back on the review, after Esc left a field or an edit. */
+  function refocus() {
+    h.root?.focus({ preventScroll: true });
   }
 
-  function scrollInstruction(rows: number) {
-    h.instruction?.scrollBy({ top: rows * 20 });
+  /** Esc: cancel the running work, then leave. */
+  function back() {
+    if (review.escape()) onback();
   }
 
   function keydown(event: KeyboardEvent) {
@@ -113,24 +120,25 @@
       event.stopPropagation();
     };
     if ((event.ctrlKey || event.metaKey) && (event.key === "PageUp" || event.key === "PageDown")) {
-      scrollInstruction(event.key === "PageDown" ? 10 : -10);
+      h.convo?.scrollBy({ top: (event.key === "PageDown" ? 10 : -10) * 20 });
       return handled();
     }
     if (event.key === "Escape") {
-      void back();
+      back();
       return handled();
     }
-    // `q` quits only outside a form or work, as in the terminal.
-    if ((review.busy || review.editing) && plain(event, "q")) return handled();
+    // `q` quits only outside a field or work, as in the terminal.
+    if (review.busy && plain(event, "q")) return handled();
     // Submit is open while a tool runs: it cancels the tool first (Review.submit).
-    if (chord(event, "s") && (review.busy === null || review.busy.tool)) void submit();
-    else if (review.busy || editable(event.target)) return;
-    else if (plain(event, "c")) void review.claim();
+    if (chord(event, "s")) void submit();
+    else if (editable(event.target)) return;
     else if (plain(event, "g")) void review.choose("GREEN");
     else if (plain(event, "r")) void review.choose("RED");
+    else if (review.busy) return;
+    else if (plain(event, "c")) void review.claim();
     else if (plain(event, "u")) void review.release();
     else if (plain(event, "t")) sections.toggle("Debug");
-    else if (plain(event, "ArrowLeft") && !review.editing) onback();
+    else if (plain(event, "ArrowLeft")) onback();
     else return;
     handled();
   }
@@ -138,13 +146,12 @@
   useCommands(() => {
     if (!active) return [];
     const ready = () => !review.busy && !review.settled;
+    const choosable = () => review.owned && (review.busy === null || review.busy.tool);
     return [
       { id: "human.claim", group: "Human review", label: "Claim to review", keys: "c", enabled: () => ready() && review.claimable, run: () => void review.claim() },
-      { id: "human.green", group: "Human review", label: "Open the GREEN form", keys: "g", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("GREEN") },
-      { id: "human.red", group: "Human review", label: "Open the RED form", keys: "r", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("RED") },
-      { id: "human.to-green", group: "Human review", label: "Choose GREEN", enabled: () => ready() && review.editing, run: () => void review.choose("GREEN") },
-      { id: "human.to-red", group: "Human review", label: "Choose RED", enabled: () => ready() && review.editing, run: () => void review.choose("RED") },
-      { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => review.submittable, run: () => void submit() },
+      { id: "human.green", group: "Human review", label: "Choose GREEN", keys: "g", enabled: choosable, run: () => void review.choose("GREEN") },
+      { id: "human.red", group: "Human review", label: "Choose RED", keys: "r", enabled: choosable, run: () => void review.choose("RED") },
+      { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => review.submittable(h.typed), run: () => void submit() },
       { id: "human.release", group: "Human review", label: "Release the claim", keys: "u", enabled: () => ready() && review.owned, run: () => void review.release() },
       { id: "human.cancel", group: "Human review", label: "Cancel the running work", keys: "Esc", enabled: () => review.busy !== null, run: () => review.cancel() },
       { id: "human.debug", group: "Human review", label: "Show or hide Debug", keys: "t", run: () => sections.toggle("Debug") },
@@ -152,279 +159,236 @@
   });
 </script>
 
-{#snippet head()}
-  <!-- The stage alone: CLAIM, or REVIEW (yours) once claimed here; the claimant beside it while
-       another reviewer holds the claim. -->
-  <div class="head">
-    {#if stage}<span class="stage" data-stage={view?.stage}>{stage}</span>{/if}
-    {#if view?.claim && !view.claim.mine && !review.owned}<span class="claimant">{view.claim.reviewer}</span>{/if}
-  </div>
-{/snippet}
-
-{#snippet column()}
-  {#if view}
-    {@render head()}
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <div
-      class="instruction"
-      tabindex="0"
-      role="region"
-      aria-label="Instruction"
-      bind:this={h.instruction}
-      onfocusin={() => {
-        if (!review.editing) review.area = "instruction";
-      }}
-    >
-      <p class="text">{view.instruction}</p>
-      {#if view.shared}<p class="shared">{view.shared}</p>{/if}
-    </div>
-    <Section name="Tools" folds={false}>
-      <Tools {review} />
-    </Section>
-    {#if !split && !(review.settled && review.log.length === 0)}
-      <Section name="Tool log" folds={false}>
-        <ToolLog entries={review.log} empty="What the tools print shows here." />
-      </Section>
-    {/if}
-    <Section name="Result" folds={false}>
-      <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
-        {#if review.settled}
-          <!-- The completed result by field, read-only; a request settled without one, its error. -->
-          <div class="completed">
-            {#if view.completed}<ResultEntries entries={view.completed} />{:else}<pre>{view.result}</pre>{/if}
-          </div>
-          <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
-          {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
-        {:else if review.owned && review.form}
-          <VerdictForm {review} form={review.form} />
-        {:else if review.owned}
-          <div class="verdicts">
-            <button class="button" aria-label="GREEN (g)" aria-keyshortcuts="g" onclick={() => void review.choose("GREEN")}>GREEN</button>
-            <button class="button" aria-label="RED (r)" aria-keyshortcuts="r" onclick={() => void review.choose("RED")}>RED</button>
-          </div>
-        {:else if view.claim}
-          <p class="muted">Read-only until released.</p>
-        {:else}
-          <button class="button primary" aria-label="Claim to review (c)" aria-keyshortcuts="c" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
-        {/if}
-        <!-- One row of actions, the last of the Result: Release claim at the left, Submit at the
-             right, and between them what running work or a failure has to say. -->
-        {#if !review.settled && (review.owned || review.busy || review.notice?.error)}
-          <div class="actions">
-            {#if review.owned}
-              <button class="button small" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
-            {/if}
-            <span class="said">
-              {#if review.busy}
-                <span class="busy" role="status"><span class="running"><Icon name="running" label={review.busy.label} /></span><span class="seconds">{Math.floor((h.now - review.busy.since) / 1000)}s</span><button class="button small" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button></span>
-              {:else if review.notice?.error}
-                <span class="error" role="status">{review.notice.text}</span>
-              {/if}
-            </span>
-            {#if review.form}
-              <button class="button small primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={!review.submittable} onclick={() => void submit()}>Submit {review.form.verdict}</button>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    </Section>
-    <Section name="Debug">
-      <dl>
-        <dt>State</dt>
-        <dd>{view.meta}</dd>
-        {#each view.technical as field, at (at)}
-          <dt>{field.key}</dt>
-          <dd>{field.value}</dd>
-        {/each}
-      </dl>
-    </Section>
-  {/if}
-{/snippet}
-
 <!-- The review takes focus so its letter keys work before any control is chosen; keys from
      its controls and fields bubble up here. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-<section class="human" class:split tabindex="0" aria-label="Human review" bind:this={h.root} onkeydown={keydown} {@attach measure}>
+<section class="human" class:wide tabindex="0" aria-label="Human review" bind:this={h.root} onkeydown={keydown}>
   {#if !view}
     <p class="loading">{review.notice?.text ?? "Loading…"}</p>
-  {:else if split}
-    <div class="viewer">
-      <div class="head"><span class="name">Tool log</span></div>
-      <ToolLog entries={review.log} view />
-    </div>
-    <div class="side">{@render column()}</div>
   {:else}
-    <div class="one">{@render column()}</div>
+    <div class="convo" bind:this={h.convo} {@attach following}>
+      <div class="column">
+        <!-- The head line: the eval's title; in the Detail only Open in Review (D-REV-11). -->
+        {#if title || onopenreview}
+          <div class="rhead">
+            {#if title}<span class="rtitle">{title}</span>{:else}<span class="spacer"></span>{/if}
+            {#if onopenreview}<Reference onclick={onopenreview}>Open in Review</Reference>{/if}
+          </div>
+        {/if}
+        <!-- The request asks, unboxed: the instruction, the tools, the verdict's own fields, Debug. -->
+        <div class="request" role="region" aria-label="Instruction" onfocusin={() => (review.area = "tools")}>
+          <p class="text">{view.instruction}</p>
+          {#if view.shared}<p class="shared">{view.shared}</p>{/if}
+          {#if view.tools.length > 0}<Tools {review} />{/if}
+          {#if review.form}
+            {#key review.form}<VerdictForm form={review.form} />{/key}
+          {/if}
+          <div class="debug">
+            <button class="fold" aria-expanded={debugOpen} aria-label="Debug (t)" aria-keyshortcuts="t" onclick={() => sections.toggle("Debug")}>
+              <span class="icon"><Icon name={debugOpen ? "unfold" : "fold"} /></span>Debug
+            </button>
+            {#if debugOpen}
+              <dl>
+                <dt>State</dt>
+                <dd>{view.meta}</dd>
+                {#each view.technical as field, at (at)}
+                  <dt>{field.key}</dt>
+                  <dd>{field.value}</dd>
+                {/each}
+              </dl>
+            {/if}
+          </div>
+        </div>
+        <!-- Newest last as they happen: each tool's run, then each point. -->
+        <ToolRuns {review} />
+        {#if pointed}
+          <ReviewPoints {review} ready={caret.ready} insert={(text) => caret.insert(text)} />
+        {/if}
+        <!-- The reasons, pushed to the conversation's bottom; once submitted, the result as the
+             reviewer's last bubble. -->
+        <div class="answers">
+          {#if review.settled}
+            <div class="message result" role="group" aria-label="Result">
+              {#if view.completed}<ResultEntries entries={view.completed} />{:else}<pre>{view.result}</pre>{/if}
+            </div>
+            <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
+            {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
+          {:else}
+            <Reasons {review} onleave={refocus} />
+          {/if}
+        </div>
+      </div>
+    </div>
+    {#if !review.settled}
+      <div class="bottom">
+        {#if review.owned}
+          <ReasonsBox {review} {caret} bind:typed={h.typed} onleave={refocus} />
+        {:else if review.claimable}
+          <p class="quiet">Claim it to write reasons and a verdict</p>
+        {/if}
+        <DecisionBar {review} typed={h.typed} onsubmit={() => void submit()} />
+      </div>
+    {/if}
   {/if}
 </section>
 
 <style>
-  /* Sizes flow from the parent down: every column is at most the width it is given, and long
-   * text wraps inside it. */
+  /* The conversation scrolls on its own; the reasons box and the bar stand under it. */
   .human {
+    display: flex;
+    flex-direction: column;
     height: 100%;
     min-height: 0;
     min-width: 0;
     outline: none;
   }
-  .human:focus-visible,
-  .instruction:focus-visible {
+  .human:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: -2px;
   }
-  /* One column, left-aligned and no wider than the measure, scrolling as a whole. */
-  .one {
-    height: 100%;
+  .convo {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    container-type: size;
+  }
+  .column,
+  .bottom {
+    box-sizing: border-box;
+    width: 100%;
     max-width: var(--measure);
-    overflow: auto;
+    padding: 0 var(--pad);
   }
-  /* Two panels under the header row's panel line: the Tool log's view at the left and the column
-     at the right, of the Detail's width, meeting at a panel line. */
-  .human.split {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--dock-width);
-    border-top: 1px solid var(--line-panel);
+  .column {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 100%;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
-  .viewer {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-height: 0;
-    min-width: 0;
-    background: var(--surface-input);
+  .wide .column,
+  .wide .bottom {
+    margin: 0 auto;
   }
-  .side {
-    min-height: 0;
-    min-width: 0;
-    overflow: auto;
-    border-left: 1px solid var(--line-panel);
-    background: var(--surface-panel);
+  /* In the Detail: the Detail's width. */
+  .human:not(.wide) .column,
+  .human:not(.wide) .bottom {
+    max-width: none;
   }
-  /* A panel's head row: the view's name, or the column's stage pill; the two in one band. */
-  .head {
+  .bottom {
+    flex: none;
+    padding-bottom: 12px;
+  }
+  .rhead {
     display: flex;
     align-items: center;
     gap: var(--gap);
-    height: var(--row-head);
-    padding: 0 var(--pad);
-    border-bottom: 1px solid var(--line-group);
-    background: var(--surface-panel);
+    min-height: var(--row);
   }
-  .name {
-    font-size: var(--text-small);
-    font-weight: 600;
+  .rtitle {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-bright);
+    font-size: var(--text-lead);
   }
-  .stage {
-    font-size: var(--text-label);
-    font-weight: 600;
-    padding: 1px 8px;
-    border-radius: var(--radius-chip);
-    background: var(--surface-group);
-    color: var(--ink-2);
+  .spacer {
+    flex: 1;
   }
-  .stage[data-stage="review"] {
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
-  .claimant,
-  .muted,
-  .loading {
-    color: var(--ink-2);
-  }
-  .loading {
-    margin: 0;
-    padding: 6px var(--pad);
-  }
-  .instruction {
-    padding: 10px var(--pad);
-    outline: none;
+  .request {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
   }
   .text {
     margin: 0;
+    color: var(--ink);
+    font-size: var(--text-body);
+    line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   .shared {
-    margin: 6px 0 0;
-    color: var(--ink-2);
-    overflow-wrap: anywhere;
-  }
-  .result {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-  }
-  .result p {
     margin: 0;
-  }
-  .verdicts {
-    display: flex;
-    gap: 6px;
-  }
-  /* The last row of the Result: Release claim at the left, Submit at the column's right edge. */
-  /* One row, also in the narrowest (320px) Detail: compact buttons at both ends, what the work
-     says between them, each group keeping its own width. */
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .actions > :global(.button) {
-    flex: none;
-  }
-  .said {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .actions > .primary {
-    margin-left: auto;
-  }
-  .busy {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .running {
-    display: inline-flex;
-    color: var(--running);
-  }
-  .seconds {
     color: var(--ink-2);
-    font-variant-numeric: tabular-nums;
-  }
-  .error {
-    color: var(--red);
     overflow-wrap: anywhere;
+  }
+  /* Debug: one folded line of Chat's tool-line anatomy (D-CHAT-4). */
+  .fold {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--row-dense);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: var(--text-small);
+    cursor: pointer;
+  }
+  .fold:hover {
+    background: var(--surface-group);
+  }
+  .fold .icon {
+    display: inline-flex;
+    color: var(--ink-3);
   }
   dl {
     display: grid;
     grid-template-columns: fit-content(40%) minmax(0, 1fr);
     gap: 4px 16px;
-    margin: 0;
+    margin: 2px 0 4px 22px;
+    font-size: var(--text-small);
   }
   dt {
     color: var(--ink-2);
-    text-align: right;
-    overflow-wrap: anywhere;
   }
   dd {
     margin: 0;
-    white-space: pre-wrap;
+    min-width: 0;
     overflow-wrap: anywhere;
-    font-variant-numeric: tabular-nums;
+    white-space: pre-wrap;
   }
-  /* The completed result: one step below the panel, outlined by the faintest line. */
-  pre {
-    margin: 0;
-    font: var(--text-small) / 1.5 var(--mono);
-    white-space: pre-wrap;
+  .answers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: auto;
+  }
+  /* The submitted result as the reviewer's last bubble, each field by name, read-only. */
+  .message {
+    align-self: flex-end;
+    max-width: 80%;
+    min-width: 0;
+    padding: 6px 10px;
+    border-radius: var(--radius-chip);
+    background: var(--surface-group);
     overflow-wrap: anywhere;
-    background: var(--surface-input);
-    border: 1px solid var(--line-input);
-    border-radius: var(--radius-control);
-    padding: 6px 8px;
+  }
+  .message pre {
+    margin: 0;
+    white-space: pre-wrap;
+    font: inherit;
+  }
+  .quiet {
+    margin: 0;
+    padding: 8px 0 4px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
+  }
+  .loading {
+    margin: 0;
+    padding: 6px var(--pad);
+    color: var(--ink-2);
+  }
+  .error {
+    margin: 0;
+    color: var(--red);
+    overflow-wrap: anywhere;
   }
 </style>

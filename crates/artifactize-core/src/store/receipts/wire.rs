@@ -25,6 +25,7 @@ pub struct Run {
     pub modes: crate::runs::RunModes,
     pub control: Option<crate::runs::Control>,
     pub request_key: Option<crate::types::RequestKey>,
+    pub origin: Option<crate::runs::Origin>,
     /// What the requester said it is working on; for people only.
     pub comment: Option<crate::types::RunComment>,
     pub created_at: Timestamp,
@@ -67,6 +68,8 @@ struct RunWire {
     pub control: Option<crate::runs::Control>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_key: Option<crate::types::RequestKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<crate::runs::Origin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<crate::types::RunComment>,
     pub status: RunStatus,
@@ -117,6 +120,7 @@ impl TryFrom<RunWire> for Run {
             modes: wire.modes,
             control: wire.control,
             request_key: wire.request_key,
+            origin: wire.origin,
             comment: wire.comment,
             id: wire.id,
             repo_path: wire.repo_path,
@@ -147,6 +151,7 @@ impl From<Run> for RunWire {
             modes: record.modes.clone(),
             control: record.control.clone(),
             request_key: record.request_key.clone(),
+            origin: record.origin.clone(),
             comment: record.comment.clone(),
             status: record.status(),
             completed_at: record.completed_at(),
@@ -243,6 +248,8 @@ pub struct Request {
     /// Where the saved conversation behind this request's result lives: its own review's,
     /// or for a reused result the producing review's. Absent when none was saved.
     pub session: Option<crate::agent::session::SessionRef>,
+    /// Free-form Human response accompanying the schema-owned answer on this receipt.
+    pub review_notes: Option<String>,
     pub human_definition: Option<store::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
     pub references: BTreeMap<crate::config::ReferenceName, crate::types::ArtifactName>,
@@ -317,6 +324,8 @@ struct RequestWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<crate::agent::session::SessionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_definition: Option<store::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
     pub references: BTreeMap<crate::config::ReferenceName, crate::types::ArtifactName>,
@@ -389,6 +398,7 @@ impl TryFrom<RequestWire> for Request {
             origin: wire.origin,
             session_id: wire.session_id,
             session: wire.session,
+            review_notes: wire.review_notes,
             human_definition: wire.human_definition,
             payload: wire.payload,
             references: wire.references,
@@ -436,6 +446,7 @@ impl From<Request> for RequestWire {
             origin: record.origin,
             session_id: record.session_id,
             session: record.session,
+            review_notes: record.review_notes,
             human_definition: record.human_definition,
             payload: record.payload,
             references: record.references,

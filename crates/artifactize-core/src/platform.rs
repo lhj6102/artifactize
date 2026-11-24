@@ -114,7 +114,19 @@ pub fn file_uri_path(uri: &str) -> Option<std::path::PathBuf> {
 /// The absolute folder a caller names; a relative one would resolve against this
 /// process's working directory, which the caller cannot see.
 pub fn absolute_folder(text: &str) -> Option<std::path::PathBuf> {
-    Some(std::path::PathBuf::from(text)).filter(|path| path.is_absolute())
+    artifactize_tools::files::path_from_text(text)
+        .ok()
+        .filter(|path| path.is_absolute())
+}
+
+/// Whether lookup resolves to a directory, following native links and aliases.
+pub fn is_directory(path: &std::path::Path) -> bool {
+    path.is_dir()
+}
+
+/// Whether lookup resolves to an existing target. Other I/O errors leave it unknown.
+pub fn target_exists(path: &std::path::Path) -> std::io::Result<bool> {
+    paths::target_exists(path)
 }
 
 /// Whether native lookup reaches a regular file, following links and honoring the volume's
@@ -144,6 +156,21 @@ pub fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     }
 }
 
+/// The civil day on this machine at `instant`, using its offset at that instant (including
+/// daylight-saving changes). If the system cannot describe it, use the UTC date.
+pub(crate) fn local_day(instant: time::OffsetDateTime) -> time::Date {
+    let offset = chrono::DateTime::from_timestamp(instant.unix_timestamp(), instant.nanosecond())
+        .map(|utc| utc.with_timezone(&chrono::Local).offset().local_minus_utc())
+        .and_then(|seconds| time::UtcOffset::from_whole_seconds(seconds).ok())
+        .unwrap_or(time::UtcOffset::UTC);
+    instant.to_offset(offset).date()
+}
+
+/// Captured program text with terminal control codes removed.
+pub(crate) fn clean_program_text(bytes: &[u8]) -> String {
+    String::from_utf8(crate::runtime::clean_output(bytes)).expect("clean output is UTF-8")
+}
+
 /// A program's textual output, lossy only where its bytes are not UTF-8.
 pub fn output_text(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)
@@ -158,6 +185,11 @@ pub fn output_lines(bytes: &[u8]) -> String {
 /// bytes on Unix, an unpaired UTF-16 unit on Windows).
 pub fn os_text(value: &std::ffi::OsStr) -> Option<&str> {
     value.to_str()
+}
+
+/// A filesystem name for display when a lossless path key is not needed.
+pub(crate) fn display_name(value: &std::ffi::OsStr) -> String {
+    value.to_string_lossy().into_owned()
 }
 
 /// A captured output line, accepting either common ending even when the program
@@ -257,9 +289,19 @@ pub(crate) fn path_kind(path: &std::path::Path) -> std::io::Result<FileKind> {
     }
 }
 
-/// A declared program as text: a path among its spellings is written with `/`.
+/// Decode an authored program before path inspection or native lookup. Legacy declarations
+/// can use a native Windows verbatim spelling, whose literal slashes must not be translated.
+pub(crate) fn program_path(command: &str) -> std::io::Result<std::path::PathBuf> {
+    #[cfg(windows)]
+    if command.starts_with(r"\\?\") {
+        return Ok(command.into());
+    }
+    artifactize_tools::files::path_from_text(command)
+}
+
+/// A declared program as reversible path text, using `/` in its readable spelling.
 pub(crate) fn program_text(command: &str) -> String {
-    path_text(std::path::Path::new(command))
+    program_path(command).map_or_else(|_| command.to_owned(), |path| path_text(&path))
 }
 
 /// Serialize a declared program as [`program_text`].
@@ -393,4 +435,38 @@ pub(crate) fn marker_metadata(path: &std::path::Path) -> std::io::Result<std::fs
 #[cfg(test)]
 pub(crate) fn successful_outcome() -> ProcessOutcome {
     ProcessOutcome::from_native(std::process::ExitStatus::default())
+}
+
+#[cfg(test)]
+mod stop_tests {
+    use super::*;
+    use std::{path::PathBuf, time::Duration};
+
+    const READY: &str = "ARTIFACTIZE_TEST_STOP_PROBE_READY";
+    const WATCHDOG: Duration = Duration::from_secs(15);
+
+    #[tokio::test]
+    async fn a_terminal_interrupt_completes_stop_requested() {
+        let root = crate::test_os::tempdir();
+        let ready = root.path().join("ready");
+        let mut child = crate::test_os::test_command(
+            "platform::stop_tests::terminal_interrupt_probe",
+            &[(READY, ready.clone().into_os_string())],
+        );
+        crate::test_os::new_group(&mut child);
+        let mut child = crate::test_os::spawn_test(&mut tokio::process::Command::from(child));
+        crate::test_os::wait_until(WATCHDOG, || ready.is_file());
+        crate::test_os::interrupt(child.id());
+        assert!(child.wait().await.success());
+    }
+
+    #[tokio::test]
+    async fn terminal_interrupt_probe() {
+        let Some(ready) = crate::test_os::environment_variable(READY) else {
+            return;
+        };
+        let stop = stop_requested().unwrap();
+        std::fs::write(PathBuf::from(ready), "subscribed").unwrap();
+        stop.await;
+    }
 }

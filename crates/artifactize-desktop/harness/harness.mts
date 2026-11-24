@@ -7,17 +7,20 @@
 import { createConnection, createServer, type Socket } from "node:net";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { installChatProvider } from "../ui/e2e/fixtures/chat.ts";
 import { own, type Owned } from "../ui/e2e/fixtures/owned.ts";
-import { cancelRuns, createRelease, environment, type Fixture } from "../ui/e2e/fixtures/repo.ts";
+import { cancelRuns, createRelease, environment, savedRuns, type Fixture } from "../ui/e2e/fixtures/repo.ts";
 import { assertHeadless, displayEnvironment, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
-import { asNativePath, embeddedPorts, nativePath } from "../ui/e2e/portable.ts";
+import { asNativePath, embeddedPorts, nativePath, newDirectory, runProgramOk, type NativePath } from "../ui/e2e/portable.ts";
 import { page, press, recordKeys, typeText } from "../ui/e2e/keys.ts";
 import { adopt, cargoGate, cleanup, prepare, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
+import { newChatBranch } from "../ui/e2e/views/chat.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "./commands.mts";
 
 // Resolve the public package entry from the frontend which declares this dependency.
@@ -28,6 +31,91 @@ const LAUNCH_TIMEOUT = 60000;
 const REQUEST_TIMEOUT = 45 * 60000; // Includes the standalone API's bounded startup retries.
 const ENDPOINT = "control.json";
 type Session = { browser: WebdriverIO.Browser; stop: () => Promise<void> };
+
+/** Register a fixture app's recovery before asking the service to start it. */
+export function superviseSession(recover: () => void, releasePort: () => Promise<void>) {
+  let stopped = false;
+  return {
+    get stopped() { return stopped; },
+    async stop(cleanup?: () => Promise<void>): Promise<void> {
+      if (stopped) return;
+      let serviceFailure: { cause: unknown } | undefined;
+      try { await cleanup?.(); } catch (cause) { serviceFailure = { cause }; }
+      try {
+        if (!cleanup || serviceFailure !== undefined) recover();
+      } catch (error) {
+        if (serviceFailure !== undefined) throw new AggregateError([serviceFailure.cause, error], "service shutdown and app recovery failed");
+        throw error;
+      }
+      await releasePort();
+      stopped = true;
+      if (serviceFailure !== undefined) throw serviceFailure.cause;
+    },
+  };
+}
+
+type AppOwner = { readonly stopped: boolean; stop: () => Promise<void> };
+
+/** Keep the teardown owner alive until it confirms native exit. The retry delay avoids
+ * spinning on an OS that has not yet finished a requested exit. */
+const OWNER_RETRY_MS = 1000;
+
+export async function releaseFixture(
+  owner: AppOwner | undefined,
+  scope: Owned | undefined,
+  candidateRoot: NativePath | undefined,
+  retry: () => Promise<unknown> = () => delay(OWNER_RETRY_MS),
+): Promise<void> {
+  let stopFailure: { cause: unknown } | undefined;
+  while (owner && !owner.stopped) {
+    try { await owner.stop(); }
+    catch (cause) { stopFailure ??= { cause }; }
+    if (!owner.stopped) await retry();
+  }
+  // Confirm app exit before ending its Runs, and settle those Runs before deleting inputs.
+  const failures: unknown[] = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (scope && existsSync(scope.root)) await scope.close();
+      if (candidateRoot && existsSync(candidateRoot)) cleanup(candidateRoot);
+      break;
+    } catch (error) {
+      failures.push(error);
+      if (attempt < 2) await retry();
+      else {
+        const left = [scope?.root, candidateRoot].filter((path) => path !== undefined && existsSync(path));
+        throw new AggregateError(stopFailure ? [stopFailure.cause, ...failures] : failures, `desktop cleanup failed after 3 attempts; inputs kept: ${left.join(", ")}`);
+      }
+    }
+  }
+  if (stopFailure) throw stopFailure.cause;
+}
+
+/** Retire the control endpoint only when nothing remains to be torn down. */
+export async function releaseOwnedSession(
+  directory: string, owner: AppOwner | undefined, scope: Owned | undefined, candidate: NativePath | undefined,
+  retry?: () => Promise<unknown>,
+): Promise<void> {
+  const control = join(directory, ENDPOINT);
+  const receipt = join(directory, "cleanup-pending.json");
+  const paths = () => [scope?.root, candidate].filter((path) => path !== undefined && existsSync(path));
+  try { await releaseFixture(owner, scope, candidate, retry); }
+  catch (failure) {
+    // Startup can fail before the endpoint exists. Record only the inputs that remain.
+    const left = paths();
+    if (left.length) {
+      try { writeFileSync(receipt, JSON.stringify({ paths: left }), { mode: 0o600 }); }
+      catch (error) { throw new AggregateError([failure, error], `could not record remaining cleanup: ${left.join(", ")}`); }
+    }
+    throw failure;
+  } finally {
+    if ((!owner || owner.stopped) && paths().length === 0) {
+      rmSync(control, { force: true });
+      rmSync(receipt, { force: true });
+    }
+  }
+}
+
 /** The app's launch modes: none, `--repo`, `review` and `graph --repo`. */
 const SCREENS = ["monitor", "repo", "review", "graph"] as const;
 type Screen = (typeof SCREENS)[number];
@@ -104,18 +192,28 @@ async function settled(browser: WebdriverIO.Browser, before?: Checkpoint): Promi
 
 /** A launch is ready when the fixture's actual entry-point content has rendered. */
 async function rendered(browser: WebdriverIO.Browser, screen: Screen) {
-  await browser.waitUntil(() => browser.execute((entry) => {
-    const main = document.querySelector('section.panel[aria-label="Main area"]');
-    // Without arguments: the Pane lists the fixture's branch, the Main area shows nothing chosen.
-    if (entry === "monitor") {
-      return [...document.querySelectorAll('[aria-label="Branches"] [role="treeitem"]')].some((row) => row.textContent?.includes("repo"))
-        && main?.querySelector(":scope > header h2")?.textContent?.trim() === "Nothing chosen";
-    }
-    if (entry === "review") return !!main?.querySelector('[aria-label="Human review"] .instruction');
-    // The branch's Run graph and its Current both draw the fixture's release.
-    const shown = entry === "repo" ? ".graph" : ".current";
-    return !!main?.querySelector(`${shown} .svelte-flow__node[data-id="a:release"]`);
-  }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
+  if (screen === "graph") {
+    // This entry point gets an unused state directory, so it opens New chat, not a
+    // Graph view in a saved session. The E2E restart case covers that other path.
+    await browser.waitUntil(async () => await browser.execute(newChatBranch) === "repo / master",
+      { timeout: LAUNCH_TIMEOUT, timeoutMsg: "graph launch did not open New chat on repo / master" });
+  } else {
+    await browser.waitUntil(() => browser.execute((entry) => {
+      const main = document.querySelector('main[aria-label="Verify"]:not([hidden]) section.stage-area[aria-label="Main area"]');
+      // Without arguments: the Pane lists the fixture's branch, nothing chosen, and the Main area
+      // says how to choose one.
+      if (entry === "monitor") {
+        return [...document.querySelectorAll('[aria-label="Branches"] [role="treeitem"]')].some((row) => row.textContent?.includes("repo"))
+          && !document.querySelector('[aria-label="Branches"] [role="treeitem"][aria-selected="true"]')
+          && main?.querySelector(".empty")?.textContent?.trim() === "Choose a branch in the Pane.";
+      }
+      if (entry === "review") {
+        const review = document.querySelector(`main[aria-label="Review"]:not([hidden]) [aria-label="Review's main area"]`);
+        return !!review?.querySelector('[aria-label="Human review"] .instruction');
+      }
+      return !!main?.querySelector('.graph .svelte-flow__node[data-id="a:release"]');
+    }, screen), { timeout: LAUNCH_TIMEOUT, timeoutMsg: `${screen} fixture content did not render` });
+  }
   // The key helpers read what the page received from the passive recorder, as in the suite;
   // it goes on the page once that page has rendered.
   await recordKeys(browser);
@@ -138,8 +236,9 @@ async function pressKey(browser: WebdriverIO.Browser, key: string): Promise<void
 }
 
 /** The service merges process.env into the app environment, so sanitize that source too. */
-async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Environment, args: string[] = []): Promise<Session> {
-  const env: Environment = { ...environment(fixture), ...platformEnv };
+async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Environment, register: (owner: AppOwner) => void, args: string[] = []): Promise<Session> {
+  const receipt = nativePath(newDirectory(asNativePath(candidate.root), "app-owner-"), "process.json");
+  const env: Environment = { ...environment(fixture), ...platformEnv, ARTIFACTIZE_E2E_OWNER_FILE: receipt };
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   for (const [name, value] of Object.entries(env)) if (value !== undefined) process.env[name] = value;
   const capabilities = createTauriCapabilities(candidate.app, {
@@ -150,26 +249,29 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Envir
     logLevel: "error",
   });
   capabilities["wdio:enforceWebDriverClassic"] = true;
-  const [port] = await embeddedPorts(1);
+  const { ports: [port], close } = await embeddedPorts(1);
   capabilities["wdio:tauriServiceOptions"] = {
     ...capabilities["wdio:tauriServiceOptions"],
     embeddedPort: port,
     logDir: join(candidate.root, "logs"),
   };
+  // Emergency recovery is for this private app birth identity only. The service still owns
+  // ordinary startup and cleanup, even when startup fails before returning a browser.
+  const ownership = superviseSession(() => {
+    runProgramOk(candidate.app, ["--stop-e2e-owner", receipt], { cwd: asNativePath(candidate.root), env, timeout: LAUNCH_TIMEOUT });
+  }, close);
+  const session: { cleanup?: () => Promise<void> } = {};
+  const owner = {
+    get stopped() { return ownership.stopped; },
+    stop: () => ownership.stop(session.cleanup),
+  };
+  register(owner);
   const browser = await startWdioSession(capabilities);
+  session.cleanup = () => cleanupWdioSession(browser);
   // Commands must fail within one attempt rather than replaying actions after transport loss.
   browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
   browser.options.connectionRetryCount = 0;
-
-  // One stop at a time; a stop that failed is tried again by the next, rather than reported done.
-  let ending: Promise<void> | undefined;
-  return {
-    browser,
-    stop: () => ending ??= cleanupWdioSession(browser).catch((error: unknown) => {
-      ending = undefined;
-      throw error;
-    }),
-  };
+  return { browser, stop: owner.stop };
 }
 
 async function handle(candidate: Candidate, session: Session, fixture: Fixture, request: Request): Promise<unknown> {
@@ -325,10 +427,14 @@ async function serve(): Promise<void> {
   let shown: { session: Session; fixture: Fixture } | undefined;
   let fixture: Fixture;
   let scope: Owned | undefined;
-  let startupFailure: unknown;
-  const acquire = async (...args: Parameters<typeof launch>): Promise<Session> => {
-    try { return await launch(...args); }
-    catch (error) { startupFailure = error; throw error; }
+  let owner: AppOwner | undefined;
+  const acquire = async (input: Candidate, target: Fixture, env: Environment, args?: string[]): Promise<Session> => {
+    if (owner && !owner.stopped) throw new Error("Cannot launch again before the previous app has stopped.");
+    try {
+      return await launch(input, target, env, (started) => { owner = started; }, args);
+    } catch (error) {
+      return throwAfterCleanup(error, async () => { await owner?.stop(); });
+    }
   };
   let stopping = false;
   let phase: "startup" | "ready" = "startup";
@@ -339,25 +445,7 @@ async function serve(): Promise<void> {
   // Startup is an active command too, so an in-flight acquisition is joined first.
   const release = async () => {
     if (server.listening) server.close();
-    const failures: unknown[] = [];
-    // A stop that failed is tried once more: the app must be gone before its files are.
-    for (let tries = 0; shown && tries < 2; tries += 1) {
-      try {
-        await shown.session.stop();
-        shown = undefined;
-      } catch (error) { failures.push(error); }
-    }
-    if (startupFailure !== undefined) failures.push(new Error("App startup failed", { cause: startupFailure }));
-    if (shown) {
-      // The app may still run on the fixture and the build: both are kept, and said so.
-      failures.push(new Error(`The app did not stop; its fixture and build are kept at ${candidate?.root ?? "the build folder"}`));
-    } else {
-      // The fixture's Runs end and its files go, then the build.
-      try { await scope?.close(); } catch (error) { failures.push(error); }
-      try { if (candidate) cleanup(candidate.root); } catch (error) { failures.push(error); }
-    }
-    rmSync(join(sessionDir, ENDPOINT), { force: true });
-    if (failures.length > 0) throw new AggregateError(failures, "Desktop cleanup failed");
+    await releaseOwnedSession(sessionDir, owner, scope, candidate?.root);
   };
   let edits = 0;
   let graphLaunches = 0;
@@ -410,7 +498,22 @@ async function serve(): Promise<void> {
               shown = undefined;
               const target = request.screen === "graph" ? { ...fixture, state: nativePath(fixture.root, `graph-state-${++graphLaunches}`) } : fixture;
               // A graph launch's own state holds the Runs started in it: they end with the fixture's.
-              if (target !== fixture) scope?.defer(() => cancelRuns(target));
+              if (target !== fixture) {
+                if (!scope) throw new Error("the app session has no fixture owner");
+                scope.defer(() => {
+                  cancelRuns(target);
+                  // The signal integration fixture asks for durable observation before this
+                  // owner removes the files. No observation changes the Run.
+                  const observed = join(sessionDir, "observe-run");
+                  if (process.env.DESKTOP_TEST_SIGNAL_OUTPUT && existsSync(observed)) {
+                    const id = readFileSync(observed, "utf8").trim();
+                    const run = savedRuns(target).find((saved) => saved.id === id);
+                    if (!run || ["RUNNING", "WAITING_HUMAN"].includes(run.status)) throw new Error(`Run ${id} was not settled before fixture teardown`);
+                    writeFileSync(join(sessionDir, "run-settled.json"), JSON.stringify(run));
+                  }
+                });
+                await installChatProvider(scope, target);
+              }
               const args = { monitor: [], repo: ["--repo", target.repo], review: ["review"], graph: ["graph", "--repo", target.repo] }[request.screen];
               const session = await acquire(input, target, platformEnv, args);
               // Accept the replacement before rendering can fail or shutdown can drain us.

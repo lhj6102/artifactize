@@ -25,7 +25,7 @@ pub(super) fn register(
                     io::ErrorKind::AlreadyExists,
                     format!(
                         "will not replace {}: not installed by the app",
-                        link.display()
+                        crate::platform::path_text(&link)
                     ),
                 ));
             }

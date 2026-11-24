@@ -50,7 +50,7 @@ pub fn read_sites(repo: &Path) -> Result<BTreeMap<ArtifactName, Site>, ConfigErr
         .map(|(file, source)| {
             let name = discovery::definition_name(
                 file.file_stem()
-                    .and_then(|name| name.to_str())
+                    .and_then(crate::platform::os_text)
                     .unwrap_or_default(),
             )
             .map_err(|error| ConfigError::new(&file, error))?;
@@ -91,10 +91,20 @@ fn read_declared(
         .map(|(file, _)| file)
         .filter_map(|file| {
             file.file_stem()
-                .and_then(|name| name.to_str())
+                .and_then(crate::platform::os_text)
                 .map(|name| (name.to_owned(), file))
         })
         .collect::<BTreeMap<_, _>>();
+    let expected = root.join(site.declaration_path());
+    if by_name
+        .get(name.as_str())
+        .is_none_or(|file| **file != expected)
+    {
+        return Err(ScopeReadError::Moved {
+            name: name.clone(),
+            path: site.declaration_path(),
+        });
+    }
     let mut selected = BTreeMap::new();
     let mut pending = vec![name.clone()];
     while let Some(next) = pending.pop() {
@@ -168,7 +178,10 @@ pub(crate) fn read_eval_scope(
     let Some(mut config) = combined else {
         return Ok(None);
     };
-    if crate::scope::resolve_config(&mut config).is_err() {
+    if crate::scope::resolve_config(&mut config)
+        .and_then(|()| crate::scope::validate_eval_tools(&config))
+        .is_err()
+    {
         return Ok(None);
     }
     Ok(Some(config))

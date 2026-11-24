@@ -1,8 +1,9 @@
 // The builds the suite and the desktop's own tools run: the E2E test app with the CLI (a
 // candidate), the production app for a person's launch, and the Rust gates. Each build has
 // its own folder, Cargo output included, removed when its owner is done with it.
+import { readdirSync } from "node:fs";
 import { executableName, packageCommand, pathNotUrl, setVariable, startTree, stopTree, tempEnvironment, testWindowOptions, variable, type Environment } from "./platform.ts";
-import { absolutePath, asNativePath, copyFile, exists, makeDirectory, nativePath, newDirectory, readJson, removeTree, scratchDirectory, suitePath, writeJson, type NativePath } from "./portable.ts";
+import { absolutePath, asNativePath, copyFile, exists, makeDirectory, nativePath, newDirectory, readJson, removeTree, runProgram, scratchDirectory, suitePath, writeJson, type NativePath } from "./portable.ts";
 
 export const workspace = absolutePath(suitePath(), "../../../..");
 const ui = absolutePath(suitePath(), "..");
@@ -14,9 +15,14 @@ export type Candidate = { root: NativePath; cli: NativePath; app: NativePath; ma
  * is returned. An interrupt of this process ends its whole process tree. */
 export async function runStep(program: string, args: readonly string[], options: { env: Environment; cwd: NativePath; capture?: boolean }): Promise<string> {
   const child = startTree(program, args, { cwd: options.cwd, env: options.env, capture: options.capture ?? false });
-  const interrupt = () => stopTree(child);
-  process.once("SIGINT", interrupt);
-  process.once("SIGTERM", interrupt);
+  let interrupted = false;
+  let stopFailure: unknown;
+  const interrupt = () => {
+    interrupted = true;
+    try { stopTree(child); } catch (error) { stopFailure = error; }
+  };
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
   let stdout = "";
   child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
   try {
@@ -24,6 +30,7 @@ export async function runStep(program: string, args: readonly string[], options:
       child.once("error", fail);
       child.once("close", (status) => done(status));
     });
+    if (interrupted) throw new Error(`${program} ${args.join(" ")} was interrupted`, { cause: stopFailure });
     if (code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${code}`);
     return stdout;
   } finally {
@@ -69,6 +76,7 @@ async function building<T>(parent: NativePath | undefined, build: (root: NativeP
   }
 }
 
+const verifiedCandidates = new Map<string, Candidate>();
 function save(root: NativePath, cli: NativePath, app: NativePath): Candidate {
   const candidate = { root, cli, app, manifest: nativePath(root, "candidate.json") };
   writeJson(candidate.manifest, candidate);
@@ -79,6 +87,9 @@ function save(root: NativePath, cli: NativePath, app: NativePath): Candidate {
 export function prepare(parent?: NativePath): Promise<Candidate> {
   return building(parent, async (root, base) => {
     const env = await frontend(root, base, "e2e");
+    // `json-render-diagnostics` keeps only Cargo's own reports on the captured standard output:
+    // Cargo renders every compiler diagnostic as text on standard error, which runStep leaves
+    // on this process's standard error, so a failed build prints why it failed before it throws.
     const output = await runStep("cargo", ["build", "--locked", "-p", "artifactize", "-p", "artifactize-desktop",
       "--features", "artifactize-desktop/e2e", "--bins", "--message-format=json-render-diagnostics"], { env, cwd: workspace, capture: true });
     // Cargo's own report names the executables it built.
@@ -99,11 +110,27 @@ export function prepare(parent?: NativePath): Promise<Candidate> {
 /** The candidate the manifest `DESKTOP_TEST_CANDIDATE` names. */
 export function readCandidate(manifest = variable("DESKTOP_TEST_CANDIDATE")): Candidate {
   if (!manifest) throw new Error("DESKTOP_TEST_CANDIDATE is not set; prepare a candidate first");
+  const cached = verifiedCandidates.get(manifest);
+  if (cached) return cached;
   const candidate = readJson(asNativePath(manifest)) as Candidate;
   for (const path of [candidate.cli, candidate.app]) {
     if (typeof path !== "string" || !exists(asNativePath(path))) throw new Error(`the candidate's ${path} is missing`);
   }
+  checkE2eApp(candidate.app, candidate.root);
+  verifiedCandidates.set(manifest, candidate);
   return candidate;
+}
+
+/** Check the actual executable that will be handed to the service, without opening a window. */
+export function checkE2eApp(app: NativePath, cwd: NativePath, env?: Environment): void {
+  const checked = runProgram(app, ["--check-e2e-build"], { cwd, env, timeout: 15000 });
+  // This is not a manifest field or a caller-provided stamp. The E2E-only binary's
+  // `check_build` (desktop src/e2e_metadata.rs) reads the compiled Tauri context and its
+  // embedded asset manifest, before the window builder runs.
+  const facts = checked.status === 0 ? JSON.parse(checked.stdout) as { embeddedDriver?: boolean; globalTauri?: boolean; testFrontend?: boolean; missingWindowAccess?: string[] } : null;
+  if (!facts || facts.embeddedDriver !== true || facts.globalTauri !== true || facts.testFrontend !== true || facts.missingWindowAccess?.length !== 0) {
+    throw new Error(`not an E2E test app: ${app}: ${checked.stderr.trim() || checked.stdout.trim() || `metadata probe exited ${checked.status}`}`);
+  }
 }
 
 /** Makes `candidate` the one this process's fixtures belong to. */
@@ -127,6 +154,11 @@ export function snapshotCandidate(parent: NativePath): Promise<Candidate> {
 
 /** Remove a candidate's folder once nothing runs from it any more. */
 export function cleanup(root: NativePath): void {
+  const fixtures = nativePath(root, "fixtures");
+  const remaining = exists(fixtures) ? readdirSync(fixtures) : [];
+  if (remaining.length) {
+    throw new Error(`fixtures not released (${remaining.join(", ")}); kept the candidate and its inputs at ${root}`);
+  }
   removeTree(root);
 }
 

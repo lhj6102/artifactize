@@ -20,6 +20,7 @@ mod location;
 pub mod migrate;
 mod mutex;
 mod plain;
+pub mod plugins;
 mod profile;
 mod schemas;
 mod site;
@@ -37,8 +38,8 @@ pub(crate) use discovery::read_workspace_declarations;
 use discovery::{logical_join, read_regular_text};
 pub use eval::{EvalDeclaration, EvalPayload, LocalEvalId, Priority};
 pub use identities::{
-    ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId, ProfileVariantName,
-    ReferenceName, ToolName, ToolOperationName,
+    ArtifactType, ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId,
+    ProfileVariantName, ReferenceName, ToolName, ToolOperationName,
 };
 pub use mutex::MutexTag;
 pub use profile::{Profile, ProfileKind, Reasoning};
@@ -47,7 +48,7 @@ pub(crate) use site::{read_artifact_scope, read_eval_scope};
 pub use stored::{Field, StoredPayload, StoredProfile};
 pub use tools::{
     AgentTool, Builtin, BuiltinTool, CommandTool, HumanBuiltinTool, HumanCommandTool, HumanTool,
-    HumanToolKind, SessionCommand, ToolProtocol, ToolSession,
+    HumanToolKind, HumanViewerTool, SessionCommand, ToolProtocol, ToolSession,
 };
 pub use validation::MAX_TIMEOUT_MS;
 pub(crate) use validation::{artifact_name, identifier};

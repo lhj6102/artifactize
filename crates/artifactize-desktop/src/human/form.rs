@@ -27,6 +27,15 @@ impl From<Verdict> for runtime::Verdict {
     }
 }
 
+impl From<runtime::Verdict> for Verdict {
+    fn from(verdict: runtime::Verdict) -> Self {
+        match verdict {
+            runtime::Verdict::Green => Self::Green,
+            runtime::Verdict::Red => Self::Red,
+        }
+    }
+}
+
 /// How one owner field is entered.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -86,6 +95,56 @@ pub enum FieldValue {
     Groups(Vec<Vec<(String, FieldValue)>>),
 }
 
+impl From<FieldValue> for review::FieldValue {
+    fn from(value: FieldValue) -> Self {
+        match value {
+            FieldValue::Fixed => Self::Fixed,
+            FieldValue::Bool(value) => Self::Bool(value),
+            FieldValue::Choice(value) => Self::Choice(value),
+            FieldValue::Text(value) => Self::Text(value),
+            FieldValue::Integer(value) => Self::Integer(value),
+            FieldValue::Number(value) => Self::Number(value),
+            FieldValue::List(value) => Self::List(value),
+            FieldValue::Groups(groups) => Self::Groups(
+                groups
+                    .into_iter()
+                    .map(|fields| {
+                        fields
+                            .into_iter()
+                            .map(|(name, value)| (name, value.into()))
+                            .collect()
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl From<review::FieldValue> for FieldValue {
+    fn from(value: review::FieldValue) -> Self {
+        match value {
+            review::FieldValue::Fixed => Self::Fixed,
+            review::FieldValue::Bool(value) => Self::Bool(value),
+            review::FieldValue::Choice(value) => Self::Choice(value),
+            review::FieldValue::Text(value) => Self::Text(value),
+            review::FieldValue::Integer(value) => Self::Integer(value),
+            review::FieldValue::Number(value) => Self::Number(value),
+            review::FieldValue::List(value) => Self::List(value),
+            review::FieldValue::Groups(groups) => Self::Groups(
+                groups
+                    .into_iter()
+                    .map(|fields| {
+                        fields
+                            .into_iter()
+                            .map(|(name, value)| (name, value.into()))
+                            .collect()
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
 /// The frontend's draft of one verdict: field values by name.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -137,139 +196,117 @@ pub fn template(
         Some(kept) if kept.verdict == verdict => filled(request, kept)?,
         _ => new(request, verdict)?,
     };
-    Ok(FormView {
+    Ok(project(verdict, &form))
+}
+
+pub(super) fn project(verdict: Verdict, form: &Form) -> FormView {
+    FormView {
         verdict,
         fields: form.fields.iter().map(form_field).collect(),
-        draft: draft_of(verdict, &form),
-    })
+        draft: draft_of(verdict, form),
+    }
 }
 
 /// The review's form for `draft`: the recorded schema's fields with the draft's values.
+fn library_draft(draft: Draft) -> review::Draft {
+    let verdict = draft.verdict.into();
+    let fields = draft
+        .fields
+        .into_iter()
+        .map(|(name, value)| (name, value.into()))
+        .collect();
+    let mut draft = review::Draft::default();
+    match verdict {
+        runtime::Verdict::Green => draft.green = fields,
+        runtime::Verdict::Red => draft.red = fields,
+    }
+    draft
+}
+
 fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
-    let mut form = new(request, draft.verdict)?;
-    fill(&mut form.fields, &draft.fields);
-    Ok(form)
+    let verdict = draft.verdict.into();
+    library_draft(draft)
+        .form(request, verdict)
+        .map_err(Failure::Action)
 }
 
-/// `fields` holding the draft `values` their kinds take, by name.
-fn fill(fields: &mut [Field], values: &[(String, FieldValue)]) {
-    for field in fields {
-        let Some((_, value)) = values.iter().find(|(name, _)| *name == field.name) else {
-            continue;
-        };
-        field.input = match (&field.input, value) {
-            (Input::Bool(_), FieldValue::Bool(value)) => Input::Bool(*value),
-            (Input::Choice(choice), FieldValue::Choice(index)) => {
-                let mut choice = choice.clone();
-                choice.select(index.map(|index| index as usize));
-                Input::Choice(choice)
-            }
-            (Input::Text(_), FieldValue::Text(text)) => Input::Text(text.clone()),
-            (Input::Integer(_), FieldValue::Integer(text)) => Input::Integer(text.clone()),
-            (Input::Number(_), FieldValue::Number(text)) => Input::Number(text.clone()),
-            (Input::List(_), FieldValue::List(items)) => Input::List(items.clone()),
-            (Input::Groups { fields, .. }, FieldValue::Groups(values)) => Input::Groups {
-                fields: fields.clone(),
-                items: values
-                    .iter()
-                    .map(|values| {
-                        let mut item = fields.clone();
-                        fill(&mut item, values);
-                        item
-                    })
-                    .collect(),
-            },
-            // A constant stays fixed; a value of another kind is not this field's.
-            (input, _) => input.clone(),
-        };
-    }
-}
-
-/// A field's draft value as the form holds it.
-fn value_of(input: &Input) -> FieldValue {
-    match input {
-        Input::Fixed(_) => FieldValue::Fixed,
-        Input::Bool(value) => FieldValue::Bool(*value),
-        Input::Choice(choice) => FieldValue::Choice(choice.selected().map(|index| index as u32)),
-        Input::Text(text) => FieldValue::Text(text.clone()),
-        Input::Integer(text) => FieldValue::Integer(text.clone()),
-        Input::Number(text) => FieldValue::Number(text.clone()),
-        Input::List(items) => FieldValue::List(items.clone()),
-        Input::Groups { items, .. } => {
-            FieldValue::Groups(items.iter().map(|item| values_of(item)).collect())
-        }
-    }
-}
-
-fn values_of(fields: &[Field]) -> Vec<(String, FieldValue)> {
-    fields
-        .iter()
-        .map(|field| (field.name.clone(), value_of(&field.input)))
-        .collect()
-}
-
-/// The draft a form holds: each field's value.
 fn draft_of(verdict: Verdict, form: &Form) -> Draft {
     Draft {
         verdict,
-        fields: values_of(&form.fields),
+        fields: review::values_of(&form.fields)
+            .into_iter()
+            .map(|(name, value)| (name, value.into()))
+            .collect(),
     }
+}
+
+fn edited(request: &Request, draft: Draft, edit: review::DraftEdit) -> Result<Draft, Failure> {
+    let verdict = draft.verdict;
+    let mut draft = library_draft(draft);
+    draft.edit(request, edit).map_err(Failure::Action)?;
+    let form = draft
+        .form(request, verdict.into())
+        .map_err(Failure::Action)?;
+    Ok(draft_of(verdict, &form))
 }
 
 /// `draft` with field `name` set to `value`, as the library's form takes it.
 pub fn edit_field(
     request: &Request,
-    mut draft: Draft,
+    draft: Draft,
     name: &str,
     value: FieldValue,
 ) -> Result<Draft, Failure> {
-    match draft.fields.iter_mut().find(|(field, _)| field == name) {
-        Some((_, current)) => *current = value,
-        None => draft.fields.push((name.to_owned(), value)),
-    }
-    let verdict = draft.verdict;
-    Ok(draft_of(verdict, &filled(request, draft)?))
+    let verdict = draft.verdict.into();
+    edited(
+        request,
+        draft,
+        review::DraftEdit::Field {
+            verdict,
+            name: name.to_owned(),
+            value: value.into(),
+        },
+    )
 }
 
-/// `draft` with an empty item added to the list field `name`: an empty text, or a group of
-/// the list's fields as the library's form builds it.
+/// `draft` with an empty item added to the list field `name`.
 pub fn add_item(request: &Request, draft: Draft, name: &str) -> Result<Draft, Failure> {
-    edit_list(request, draft, name, |form, index| form.add(index))
+    let verdict = draft.verdict.into();
+    edited(
+        request,
+        draft,
+        review::DraftEdit::AddItem {
+            verdict,
+            name: name.to_owned(),
+        },
+    )
 }
 
-/// `draft` with item `item` removed from the list field `name`; the library's form keeps one
-/// empty item to type in.
+/// `draft` with item `item` removed from the list field `name`.
 pub fn remove_item(
     request: &Request,
     draft: Draft,
     name: &str,
     item: u32,
 ) -> Result<Draft, Failure> {
-    edit_list(request, draft, name, |form, index| {
-        form.remove(index, item as usize)
-    })
-}
-
-fn edit_list(
-    request: &Request,
-    draft: Draft,
-    name: &str,
-    edit: impl FnOnce(&mut Form, usize),
-) -> Result<Draft, Failure> {
-    let verdict = draft.verdict;
-    let mut form = filled(request, draft)?;
-    let index = form
-        .fields
-        .iter()
-        .position(|field| {
-            field.name == name && matches!(field.input, Input::List(_) | Input::Groups { .. })
-        })
-        .ok_or_else(|| Failure::Missing(format!("{name} is not a list of this form.")))?;
-    edit(&mut form, index);
-    Ok(draft_of(verdict, &form))
+    let verdict = draft.verdict.into();
+    edited(
+        request,
+        draft,
+        review::DraftEdit::RemoveItem {
+            verdict,
+            name: name.to_owned(),
+            item,
+        },
+    )
 }
 
 /// The complete result of `draft`, or the form's own error for it.
-pub fn result(request: &Request, draft: Draft) -> Result<serde_json::Value, Failure> {
-    filled(request, draft)?.result().map_err(Failure::Invalid)
+pub fn submission(
+    request: &Request,
+    draft: Draft,
+) -> Result<artifactize_core::review::Submission, Failure> {
+    filled(request, draft)?
+        .submission()
+        .map_err(Failure::Invalid)
 }

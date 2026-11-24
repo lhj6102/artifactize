@@ -16,6 +16,7 @@ exclude = ["index.artf"]
 test-support = ["rusqlite/trace"]
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 artifactize-tools.workspace = true
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 base64 = "0.22"

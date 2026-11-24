@@ -62,6 +62,9 @@ pub(super) fn migrate(context: Context) -> Result<u8, String> {
             )
             .map_err(|error| error.to_string())?;
         }
+        for name in report.typed {
+            writeln!(output, "{name}: type = \"files\"").map_err(|error| error.to_string())?;
+        }
         for name in report.ignored {
             writeln!(output, "{name}: ignore added: .artifactize/")
                 .map_err(|error| error.to_string())?;

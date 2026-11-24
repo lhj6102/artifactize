@@ -103,6 +103,39 @@ pub enum Place {
 }
 
 impl Place {
+    /// A saved or live checkout's branch. Both the workspace and Git identity are canonical.
+    pub fn for_checkout(workspace: &Path, identity: &Identity) -> Self {
+        match (&identity.common_dir, &identity.worktree_path) {
+            (Some(common), Some(tree)) => Self::Git {
+                common: common.clone(),
+                head: checkout_head(identity.branch.clone(), || tree.clone()),
+            },
+            _ => Self::Folder(workspace.to_owned()),
+        }
+    }
+
+    /// The Run's original branch, even when no worktree currently has it checked out.
+    pub fn recorded_run(run: &crate::store::Run) -> Self {
+        Self::for_checkout(&run.repo_path, &run.repository)
+    }
+
+    /// Refuse a stale path rather than scanning or editing a different branch.
+    pub async fn checked_workspace(&self, workspace: PathBuf) -> Result<PathBuf, String> {
+        let place = self.clone();
+        crate::task::blocking(move || {
+            if !workspace.is_dir() {
+                return Err("This worktree no longer exists.".into());
+            }
+            let path =
+                crate::platform::canonicalize(&workspace).map_err(|error| error.to_string())?;
+            if Self::for_checkout(&path, &repository::identify(&path)) != place {
+                return Err("This branch is no longer checked out in the worktree.".into());
+            }
+            Ok(path)
+        })
+        .await?
+    }
+
     /// The project the branch belongs to: every branch of a Git repository shares one.
     pub fn project(&self) -> Project {
         match self {
@@ -118,6 +151,14 @@ impl Place {
 pub enum Project {
     Git(#[serde(with = "crate::platform::path_serde")] PathBuf),
     Folder(#[serde(with = "crate::platform::path_serde")] PathBuf),
+}
+
+impl Project {
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Git(path) | Self::Folder(path) => path,
+        }
+    }
 }
 
 /// One Run of a branch as its chip shows it.
@@ -147,9 +188,41 @@ pub struct Branch {
 }
 
 impl Branch {
-    /// The Run in progress a branch's timeline starts with: the newest Run, while it runs.
+    /// A saved Run on an absent branch, shown only while following its exact reference.
+    pub fn historical(run: &crate::store::Run) -> Self {
+        let place = Place::recorded_run(run);
+        let Label {
+            project,
+            branch: name,
+            ..
+        } = label(&place);
+        Self {
+            place,
+            project,
+            name,
+            workspace: run.repo_path.clone(),
+            runs: vec![Chip {
+                id: run.id.clone(),
+                status: run.status(),
+                created_at: run.created_at,
+                completed_at: run.completed_at(),
+                comment: run.comment.clone(),
+            }],
+        }
+    }
+
+    /// In-progress Runs first, then ended Runs, newest first within each group.
+    pub fn timeline(&self) -> impl Iterator<Item = &Chip> {
+        let newest = self.runs.iter().rev();
+        newest
+            .clone()
+            .filter(|chip| chip.status.is_open())
+            .chain(newest.filter(|chip| !chip.status.is_open()))
+    }
+
+    /// The newest Run still in progress, even if a later one already ended.
     pub fn running(&self) -> Option<&Chip> {
-        self.runs.last().filter(|chip| chip.status.is_open())
+        self.runs.iter().rev().find(|chip| chip.status.is_open())
     }
 
     /// When its newest Run started.
@@ -163,6 +236,7 @@ impl Branch {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Label {
     pub project: String,
+    pub project_key: Option<Project>,
     pub branch: String,
 }
 
@@ -191,7 +265,7 @@ impl Discovery {
 
     /// Whether `path` is a folder now.
     fn is_folder(&self, path: &Path) -> bool {
-        path.is_dir()
+        crate::platform::is_directory(path)
     }
 
     /// Whether the folder `path` holds declarations.
@@ -238,10 +312,14 @@ impl DirectoryKeys {
     }
 
     fn head(&mut self, branch: Option<String>, tree: &Path) -> Head {
-        branch
-            .and_then(|name| BranchName::try_from(name).ok())
-            .map_or_else(|| Head::Detached(self.resolve(tree)), Head::Branch)
+        checkout_head(branch, || self.resolve(tree))
     }
+}
+
+fn checkout_head(branch: Option<String>, detached: impl FnOnce() -> PathBuf) -> Head {
+    branch
+        .and_then(|name| BranchName::try_from(name).ok())
+        .map_or_else(|| Head::Detached(detached()), Head::Branch)
 }
 
 /// Where `identity` (of the workspace `repo`) lives, and `repo` relative to its worktree.
@@ -267,7 +345,7 @@ fn place_of(identity: &Identity, repo: &Path, keys: &mut DirectoryKeys) -> (Plac
 fn folder_name(path: &Path) -> String {
     path.file_name().map_or_else(
         || crate::platform::path_text(path),
-        |name| name.to_string_lossy().into_owned(),
+        crate::platform::display_name,
     )
 }
 
@@ -304,7 +382,21 @@ fn branch_name(place: &Place) -> String {
 fn label(place: &Place) -> Label {
     Label {
         project: project_name(place),
+        project_key: Some(place.project()),
         branch: branch_name(place),
+    }
+}
+
+impl Label {
+    /// Name a worktree whose Run is not in the current monitor snapshot.
+    pub fn at(repo: &Path) -> Self {
+        Self::for_identity(repo, &crate::repository::identify(repo))
+    }
+
+    /// Name the saved Git head of a worktree, not the branch checked out there today.
+    pub fn for_identity(repo: &Path, identity: &crate::repository::Identity) -> Self {
+        let (place, _) = place_of(identity, repo, &mut DirectoryKeys::default());
+        label(&place)
     }
 }
 
@@ -319,6 +411,27 @@ pub struct Listing {
 
 /// A branch's Runs so far, and when its newest started with its workspace in the worktree.
 type Grouped = (Vec<Chip>, Option<(Timestamp, PathBuf)>);
+
+/// Resolve only one Run's live branch using the same identities as the timeline listing.
+fn branch_for(run: &crate::store::Run, discovery: &mut Discovery) -> Option<Place> {
+    let row = CatalogRun {
+        id: run.id.clone(),
+        created_at: run.created_at,
+        completed_at: run.completed_at(),
+        repo_path: run.repo_path.clone(),
+        repository: run.repository.clone(),
+        status: run.status(),
+        comment: run.comment.clone(),
+        red: 0,
+        error: 0,
+        waiting: Vec::new(),
+    };
+    branches(&[row], None, discovery)
+        .branches
+        .into_iter()
+        .find(|branch| branch.runs.iter().any(|chip| chip.id == run.id))
+        .map(|branch| branch.place)
+}
 
 /// The live branches of the projects of `runs`, with their Runs, and the branch of `launch`
 /// (the folder the app was started for) even before its project has a Run.
@@ -415,7 +528,9 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
                     .filter(|path| present.contains(path))
                     .unwrap_or(tree),
             };
-            let Label { project, branch } = label(&place);
+            let Label {
+                project, branch, ..
+            } = label(&place);
             Branch {
                 place,
                 project,

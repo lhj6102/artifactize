@@ -4,7 +4,7 @@
 
 .m-window {
   display: grid;
-  grid-template-rows: var(--bar-height) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) var(--bar-height);
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -14,36 +14,54 @@
   text-align: left;
 }
 
-/* The icon set: our own marks, each drawn on a 12 by 12 box with a 1.5 stroke, round caps and
-   joins, solid only where the shape is a solid (the half of in progress, the dots of queued and
-   waiting, the run triangle, a star that is on). An icon is a mask: it takes the colour of the text around it,
-   so a status's icon is in that status's colour and an action's in the ink of its control.
-   index.html lists every one by name. */
+/* The icon set: our own marks, each drawn on a 12 by 12 box with --icon-stroke, round caps and
+   joins, and filled shapes where a mark is solid. An icon is a mask: it takes the colour of the
+   text around it. Embedded SVG images cannot inherit CSS tokens, so check.mjs checks their
+   stroke widths against --icon-stroke. index.html lists every icon by name. */
 :root {
-  --i-green: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.5 5 9l4.5-6'/%3E%3C/svg%3E");
-  --i-red: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3l6 6M9 3l-6 6'/%3E%3C/svg%3E");
-  --i-error: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2v5M6 9.75v.01'/%3E%3C/svg%3E");
-  --i-running: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3Cpath d='M6 1.75a4.25 4.25 0 0 0 0 8.5z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
-  --i-human: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='3.75' r='2'/%3E%3Cpath d='M2.25 10.5c.4-2 1.9-3 3.75-3s3.35 1 3.75 3'/%3E%3C/svg%3E");
-  --i-queued: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='2' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
-  --i-waiting: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='2.25' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3Ccircle cx='6' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3Ccircle cx='9.75' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
-  --i-blocked: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3Cpath d='M3 9l6-6'/%3E%3C/svg%3E");
-  --i-notrun: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3C/svg%3E");
-  --i-run: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 2.75v6.5L9.5 6z'/%3E%3C/svg%3E");
-  --i-reused: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.75 6a3.75 3.75 0 1 1-1.2-2.75M9.75 2v2.25H7.5'/%3E%3C/svg%3E");
-  --i-checking: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25' stroke-dasharray='1.4 2.05'/%3E%3C/svg%3E");
-  --i-play: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 2.25v7.5L10 6z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
-  --i-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 1.5l1.35 2.9 3.15.4-2.3 2.2.6 3.2L6 8.65 3.2 10.2l.6-3.2-2.3-2.2 3.15-.4z' stroke-width='1.1'/%3E%3C/svg%3E");
-  --i-star-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 1.5l1.35 2.9 3.15.4-2.3 2.2.6 3.2L6 8.65 3.2 10.2l.6-3.2-2.3-2.2 3.15-.4z' fill='currentColor' stroke-width='1.1'/%3E%3C/svg%3E");
-  --i-fold: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 2.5 8 6 4.5 9.5'/%3E%3C/svg%3E");
-  --i-unfold: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
-  --i-remove: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 3.5l5 5M8.5 3.5l-5 5'/%3E%3C/svg%3E");
-  --i-add: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2.5v7M2.5 6h7'/%3E%3C/svg%3E");
-  --i-minus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6h7'/%3E%3C/svg%3E");
-  --i-fit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4.5V2h2.5M7.5 2H10v2.5M10 7.5V10H7.5M4.5 10H2V7.5'/%3E%3C/svg%3E");
-  --i-find: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='5.25' cy='5.25' r='3.25'/%3E%3Cpath d='M7.75 7.75 10.5 10.5'/%3E%3C/svg%3E");
-  --i-pane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='2.25' width='8.5' height='7.5' rx='1'/%3E%3Cpath d='M4.75 2.25v7.5'/%3E%3C/svg%3E");
-  --i-reset: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 4.25A3.75 3.75 0 1 1 2.25 6.5'/%3E%3Cpath d='M2.5 1.75v2.5H5'/%3E%3C/svg%3E");
+  --i-artifact: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.2 1.8a1.1 1.1 0 0 1 1.6 0l3.4 3.4a1.1 1.1 0 0 1 0 1.6l-3.4 3.4a1.1 1.1 0 0 1-1.6 0L1.8 6.8a1.1 1.1 0 0 1 0-1.6z'/%3E%3C/svg%3E");
+  --i-green: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.5 5 9l4.5-6'/%3E%3C/svg%3E");
+  --i-red: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3l6 6M9 3l-6 6'/%3E%3C/svg%3E");
+  --i-error: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2v5'/%3E%3Ccircle cx='6' cy='9.75' r='.8' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-yellow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 6.75 4 9l3.5-5'/%3E%3Ccircle cx='9.5' cy='3.5' r='1.5' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-running: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3Cpath d='M6 1.75a4.25 4.25 0 0 0 0 8.5z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-human: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='3.75' r='2'/%3E%3Cpath d='M2.25 10.5c.4-2 1.9-3 3.75-3s3.35 1 3.75 3'/%3E%3C/svg%3E");
+  --i-queued: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='2' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-waiting: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='2.25' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3Ccircle cx='6' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3Ccircle cx='9.75' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-blocked: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3Cpath d='M3 9l6-6'/%3E%3C/svg%3E");
+  --i-notrun: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3C/svg%3E");
+  --i-run: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 2.75v6.5L9.5 6z'/%3E%3C/svg%3E");
+  --i-reused: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.75 6a3.75 3.75 0 1 1-1.2-2.75M9.75 2v2.25H7.5'/%3E%3C/svg%3E");
+  --i-checking: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 6a4.25 4.25 0 1 0 8.5 0a4.25 4.25 0 1 0 -8.5 0' stroke-dasharray='1.4 2.05'/%3E%3C/svg%3E");
+  --i-play: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 2.25v7.5L10 6z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 1.5l1.35 2.9 3.15.4-2.3 2.2.6 3.2L6 8.65 3.2 10.2l.6-3.2-2.3-2.2 3.15-.4z'/%3E%3C/svg%3E");
+  --i-star-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 1.5l1.35 2.9 3.15.4-2.3 2.2.6 3.2L6 8.65 3.2 10.2l.6-3.2-2.3-2.2 3.15-.4z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-fold: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 2.5 8 6 4.5 9.5'/%3E%3C/svg%3E");
+  --i-unfold: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+  --i-remove: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 3.5l5 5M8.5 3.5l-5 5'/%3E%3C/svg%3E");
+  --i-add: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2.5v7M2.5 6h7'/%3E%3C/svg%3E");
+  --i-minus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6h7'/%3E%3C/svg%3E");
+  --i-fit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4.5V2h2.5M7.5 2H10v2.5M10 7.5V10H7.5M4.5 10H2V7.5'/%3E%3C/svg%3E");
+  --i-find: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='5.25' cy='5.25' r='3.25'/%3E%3Cpath d='M7.75 7.75 10.5 10.5'/%3E%3C/svg%3E");
+  --i-pane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 2.25h6.5a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1h-6.5a1 1 0 0 1-1-1v-5.5a1 1 0 0 1 1-1zM4.75 2.25v7.5'/%3E%3C/svg%3E");
+  --i-chat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 2.5h6.5a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5.5L3.25 10.25V8.5h-.5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z'/%3E%3C/svg%3E");
+  --i-verify: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 2.25h3.5v2.5h-3.5zM6.75 7.25h3.5v2.5h-3.5zM3.5 4.75V8.5h3.25'/%3E%3C/svg%3E");
+  --i-review: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.75h4.25L9.25 3.75v6.5H3zM4.75 6.75 5.9 7.9 7.75 5.5'/%3E%3C/svg%3E");
+  --i-settings: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.20 4.85 L10.50 5.07 L10.50 6.93 L9.20 7.15 L9.08 7.45 L9.84 8.53 L8.53 9.84 L7.45 9.08 L7.15 9.20 L6.93 10.50 L5.07 10.50 L4.85 9.20 L4.55 9.08 L3.47 9.84 L2.16 8.53 L2.92 7.45 L2.80 7.15 L1.50 6.93 L1.50 5.07 L2.80 4.85 L2.92 4.55 L2.16 3.47 L3.47 2.16 L4.55 2.92 L4.85 2.80 L5.07 1.50 L6.93 1.50 L7.15 2.80 L7.45 2.92 L8.53 2.16 L9.84 3.47 L9.08 4.55Z'/%3E%3Ccircle cx='6' cy='6' r='1.5'/%3E%3C/svg%3E");
+  --i-point: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='3.25'/%3E%3Cpath d='M6 1v1.5M6 9.5V11M1 6h1.5M9.5 6H11'/%3E%3Ccircle cx='6' cy='6' r='.9' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-send: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 10V2.5M2.75 5.75 6 2.5l3.25 3.25'/%3E%3C/svg%3E");
+  --i-stop: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3h6v6H3z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-back: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 2.25 2 4.75l2.5 2.5M2 4.75h5.25a2.75 2.75 0 0 1 0 5.5H6'/%3E%3C/svg%3E");
+  --i-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 1.75h3.25V5M10.25 1.75 5.75 6.25M8.75 7.5v2a.75.75 0 0 1-.75.75H2.5a.75.75 0 0 1-.75-.75V4a.75.75 0 0 1 .75-.75h2'/%3E%3C/svg%3E");
+  --i-file: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.75h4L9.25 4v6.25H3zM7 1.75V4h2.25'/%3E%3C/svg%3E");
+  --i-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75z'/%3E%3C/svg%3E");
+  --i-edit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.25 9.75l.5-2.25 5.5-5.5 1.75 1.75-5.5 5.5zM7 3.25 8.75 5'/%3E%3C/svg%3E");
+  --i-command: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 3.25 5 5.75 2.5 8.25M6.5 8.75h3'/%3E%3C/svg%3E");
+  --i-new-chat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2.25H3a.75.75 0 0 0-.75.75v6a.75.75 0 0 0 .75.75h6a.75.75 0 0 0 .75-.75V6'/%3E%3Cpath d='M8.5 1.75l1.75 1.75L6.5 7.25H4.75V5.5z'/%3E%3C/svg%3E");
+  --i-move: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 9.5H2.5a.75.75 0 0 1-.75-.75v-5.5a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v1.5'/%3E%3Cpath d='M6.25 8.25h4.25M8.75 6.5l1.75 1.75L8.75 10'/%3E%3C/svg%3E");
+  --i-folder-closed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75z'/%3E%3Cpath d='M1.75 5.25h8.5'/%3E%3C/svg%3E");
+  --i-folder-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.75 9.25V3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.25a.75.75 0 0 1 .75.75v1.25'/%3E%3Cpath d='M1.75 9.5l1.6-3.75h7.4l-1.6 3.75z'/%3E%3C/svg%3E");
+  --i-reset: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.0' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 4.25A3.75 3.75 0 1 1 2.25 6.5'/%3E%3Cpath d='M2.5 1.75v2.5H5'/%3E%3C/svg%3E");
 }
 .m-icon,
 .m-light {
@@ -56,8 +74,10 @@
   mask: var(--icon-src) center / contain no-repeat;
   vertical-align: -1px;
 }
+.i-artifact { --icon-src: var(--i-artifact); }
 .i-green { --icon-src: var(--i-green); }
 .i-red { --icon-src: var(--i-red); }
+.i-yellow { --icon-src: var(--i-yellow); }
 .i-error { --icon-src: var(--i-error); }
 .i-running { --icon-src: var(--i-running); }
 .i-human { --icon-src: var(--i-human); }
@@ -80,20 +100,115 @@
 .i-find { --icon-src: var(--i-find); }
 .i-pane { --icon-src: var(--i-pane); }
 .i-reset { --icon-src: var(--i-reset); }
+.i-chat { --icon-src: var(--i-chat); }
+.i-verify { --icon-src: var(--i-verify); }
+.i-review { --icon-src: var(--i-review); }
+.i-point { --icon-src: var(--i-point); }
+.i-settings { --icon-src: var(--i-settings); }
+.i-send { --icon-src: var(--i-send); }
+.i-stop { --icon-src: var(--i-stop); }
+.i-back { --icon-src: var(--i-back); }
+.i-open { --icon-src: var(--i-open); }
+.i-file { --icon-src: var(--i-file); }
+.i-folder { --icon-src: var(--i-folder); }
+.i-edit { --icon-src: var(--i-edit); }
+.i-command { --icon-src: var(--i-command); }
+.i-new-chat { --icon-src: var(--i-new-chat); }
+.i-move { --icon-src: var(--i-move); }
+.i-folder-closed { --icon-src: var(--i-folder-closed); }
+.i-folder-open { --icon-src: var(--i-folder-open); }
 .m-light {
   background: var(--light);
   -webkit-mask-image: var(--light-icon);
   mask-image: var(--light-icon);
 }
 
-/* The global bar: brand left, the window's own controls right. */
+/* The bottom bar: the window's one bar, along its bottom in every mode, as a page bar: the
+   brand at its left, the modes in its middle, Settings at its right, each mode and Settings an
+   icon over its word. It comes first in a figure's markup and is placed in the window's last
+   row. */
 .m-bar {
-  display: flex;
-  align-items: center;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
   gap: var(--gap);
   padding: 0 var(--pad);
   background: var(--surface-bar);
-  border-bottom: 1px solid var(--line-panel);
+  border-top: 1px solid var(--line-panel);
+}
+.m-bar > .m-bar-side {
+  display: flex;
+  align-items: stretch;
+  gap: var(--gap);
+  min-width: 0;
+}
+.m-bar > .m-bar-side > .m-brand {
+  color: var(--bar-ink);
+}
+.m-bar > .m-bar-side.end {
+  justify-content: flex-end;
+}
+.m-window > .m-screen {
+  grid-row: 1;
+}
+/* The modes and Settings: borderless cells as tall as the bar, each its icon over its word in
+   the bar's grey; the shown mode's cell is the bar's black, its icon and word white at the same
+   weight, over the bar's mark along its bottom; Settings is its icon alone. */
+.m-modes {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.m-mode {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 80px;
+  color: var(--bar-ink);
+  font-size: var(--text-label);
+  box-shadow: inset 0 -2px 0 transparent;
+}
+.m-mode-mark {
+  position: relative;
+  display: flex;
+}
+.m-mode > .m-icon,
+.m-mode-mark > .m-icon {
+  width: var(--icon-bar);
+  height: var(--icon-bar);
+}
+.m-mode.m-bar-icon {
+  width: 44px;
+}
+.m-mode.on {
+  background: var(--bar-active);
+  color: var(--bar-ink-on);
+  box-shadow: inset 0 -2px 0 var(--bar-mark);
+}
+/* The count of Human reviews waiting for a person, at the top right of Review's icon. */
+.m-count {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 3px);
+  display: grid;
+  place-items: center;
+  width: var(--bar-count-size);
+  height: var(--bar-count-size);
+  border-radius: calc(var(--bar-count-size) / 2);
+  background: var(--bar-count-fill);
+  color: var(--bar-count-ink);
+  font-size: var(--text-label);
+  font-weight: 400;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.m-count.overflow {
+  width: max-content;
+  padding-inline: 2px;
 }
 .m-brand {
   display: flex;
@@ -115,9 +230,11 @@
 .m-reviewer {
   color: var(--ink-2);
 }
-/* A switch of the bar: it shows or hides a panel and reads as on, in ink over a 2px accent
-   line, while that panel is shown. */
+/* A switch of the bar: it shows or hides the Panes and reads as on, in ink under a 2px accent
+   line along its top, the bar's edge toward the workspace, while they are shown. */
 .m-button.m-switch {
+  align-self: stretch;
+  height: auto;
   background: transparent;
   border-color: transparent;
   border-radius: 0;
@@ -125,7 +242,7 @@
 }
 .m-button.m-switch.on {
   color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 /* Controls: a quiet button, the one primary button, and a key cap. */
@@ -143,9 +260,8 @@
   white-space: nowrap;
 }
 .m-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--ink-on-accent);
+  border-color: var(--line-primary);
+  color: var(--ink-bright);
 }
 .m-button.small {
   height: 22px;
@@ -164,11 +280,7 @@
   background: var(--surface-group);
   padding: 0 4px;
 }
-.m-button.primary .m-kbd {
-  color: var(--ink-on-accent);
-  background: transparent;
-  border-color: color-mix(in srgb, var(--ink-on-accent) 40%, transparent);
-}
+
 .m-link {
   color: var(--accent);
   text-decoration: underline;
@@ -206,10 +318,11 @@
   padding: 6px 8px;
 }
 .m-input .m-placeholder {
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
+/* The field being typed in: a thin current mark, apart from the keyboard focus ring. */
 .m-input.focused {
-  outline: 2px solid var(--focus);
+  outline: 1px solid var(--current-mark);
   outline-offset: -1px;
 }
 
@@ -234,11 +347,6 @@
   min-height: 0;
   min-width: 0;
   background: var(--surface-panel);
-  border-top: 2px solid transparent;
-}
-.m-pane.focused,
-.m-main.focused {
-  border-top-color: var(--accent);
 }
 
 /* The Pane: Search, Branches, the Waiting stack. */
@@ -252,7 +360,7 @@
   overflow: hidden;
 }
 .m-branch {
-  padding: 4px var(--pad) 6px 6px;
+  padding: 0;
   border-bottom: 1px solid var(--line-group);
 }
 .m-branch-head {
@@ -260,7 +368,8 @@
   grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 4px;
-  min-height: 28px;
+  min-height: var(--row-pane);
+  padding: 0 var(--pad) 0 6px;
 }
 .m-chevron {
   width: 20px;
@@ -295,7 +404,11 @@
   font-weight: 700;
 }
 .m-star {
-  color: var(--ink-3);
+  width: 24px;
+  height: 24px;
+  -webkit-mask-size: var(--icon);
+  mask-size: var(--icon);
+  color: var(--ink-2);
 }
 .m-star.on {
   color: var(--ink);
@@ -305,8 +418,26 @@
   grid-template-columns: 10px auto minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
-  margin-left: 24px;
+  padding: 0 var(--pad) 4px 30px;
   font-size: var(--text-small);
+}
+.m-branch.folded {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--row-pane);
+}
+.m-branch.folded > .m-branch-head {
+  min-height: 18px;
+}
+.m-branch.folded > .m-latest {
+  padding-bottom: 0;
+}
+.m-branch.folded.hover {
+  background: var(--surface-group);
+}
+.m-branch.folded.kfocus {
+  box-shadow: inset 0 0 0 2px var(--focus);
 }
 .m-dot {
   width: 8px;
@@ -320,7 +451,7 @@
   box-shadow: inset 0 0 0 1.5px var(--ink-2);
 }
 .m-status {
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0.02em;
 }
 .m-num {
@@ -332,7 +463,7 @@
   font-variant-numeric: tabular-nums;
 }
 .m-timeline {
-  margin: 2px 0 0 24px;
+  margin: 0;
 }
 .m-entry {
   position: relative;
@@ -340,15 +471,21 @@
   grid-template-columns: 18px minmax(0, 1fr) auto;
   column-gap: 8px;
   align-items: baseline;
-  padding: 3px 8px 3px 0;
-  border-radius: var(--radius-control);
+  align-content: center;
+  height: var(--row-pane);
+  padding: 0 var(--pad) 0 30px;
+  line-height: 15px;
+  box-sizing: border-box;
   font-size: var(--text-small);
 }
 .m-entry .m-dot {
   align-self: center;
 }
 .m-entry.filled {
-  background: var(--surface-group);
+  background: var(--selection);
+}
+.m-entry.filled .m-sub {
+  color: var(--ink);
 }
 .m-entry .m-sub {
   grid-column: 2 / 4;
@@ -361,9 +498,9 @@
 .m-entry:not(:last-child)::before {
   content: "";
   position: absolute;
-  left: 8.5px;
-  top: 18px;
-  bottom: -10px;
+  left: 38.5px;
+  top: 22px;
+  bottom: -14px;
   width: 1px;
   background: var(--line-group);
 }
@@ -396,7 +533,7 @@
   color: var(--ink-2);
 }
 
-/* The Main area: one header row (the view's name, its headline, a notice, its actions), then
+/* A panel header row (the Detail's, Review's): its title, its headline, its actions; then
    the view. */
 .m-main-head {
   display: flex;
@@ -410,11 +547,9 @@
   margin: 0;
   font-size: var(--text-small);
   font-weight: 600;
-  color: var(--ink-2);
-}
-.m-main.focused .m-main-head h2 {
   color: var(--ink);
 }
+
 .m-headline {
   display: flex;
   gap: 8px;
@@ -427,7 +562,7 @@
 }
 .m-headline .m-status {
   flex: none;
-  font-weight: 700;
+  font-weight: 400;
 }
 .m-headline .m-text {
   min-width: 0;
@@ -463,21 +598,6 @@
   overflow-wrap: anywhere;
   overflow: auto;
 }
-/* What needs attention, in a Run's headline: each eval's status icon and its name, cut at the
-   row's end. */
-.m-attention {
-  display: flex;
-  gap: 12px;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-}
-.m-attention > span {
-  flex: none;
-}
-.m-attention .m-icon {
-  margin-right: 4px;
-}
 
 /* The graph's tool strip: what acts on the graph, in one row between the header and the
    canvas, and nothing else. */
@@ -492,30 +612,7 @@
   border-top: 1px solid var(--line-group);
   font-size: var(--text-small);
 }
-.m-zoomer {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  border: 1px solid var(--line-group);
-  border-radius: var(--radius-control);
-  background: var(--surface-group);
-}
-.m-zoomer > span {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 20px;
-  color: var(--ink-2);
-}
-.m-zoomer > .m-zoom {
-  width: 44px;
-  border-left: 1px solid var(--line-group);
-  border-right: 1px solid var(--line-group);
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.m-strip > .m-button,
-.m-strip > .m-zoomer {
+.m-strip > .m-button {
   flex: none;
 }
 /* The marks of a graph, in Help: each status's icon in its colour beside its word. */
@@ -586,6 +683,7 @@
    else: the icon before its name and the strip along its bottom, both in the status's colour.
    After the name, how many of its evals are GREEN of how many. */
 .m-node {
+  --light: transparent;
   position: absolute;
   box-sizing: border-box;
   display: flex;
@@ -614,23 +712,23 @@
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
-/* The opened node: its own outline turns neutral-bright and 2px, the strip staying. Under the
-   pointer the outline only steps up. The focus ring is a second mark, 2px outside, only while
-   the keyboard moves focus. */
+/* The opened node keeps its own outline and is ringed by the current mark 2px outside it, a gap
+   of the canvas between, clear of its status strip and, for a minimized whole, of the outline
+   stacked behind it. Under the pointer an unselected outline only steps up. The focus ring is a
+   second mark, further out, only while the keyboard moves focus. */
 .m-node.selected,
 .m-whole.selected {
-  border-color: var(--outline-selected);
-  box-shadow: 0 0 0 1px var(--outline-selected), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
 }
 .m-whole.selected {
-  box-shadow: 0 0 0 1px var(--outline-selected);
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark);
 }
-.m-node.hovered {
+.m-node.hovered:not(.selected) {
   border-color: var(--ink-3);
 }
 .m-node.focused {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: 5px;
 }
 /* Ports: where edges reach a node or a box, a triangle pointing in on its left side; where they
    leave it, a square on its right; each in the edges' neutral colour, straddling its outline. */
@@ -657,6 +755,7 @@
   transform: translate(50%, -50%);
 }
 .m-whole {
+  --light: transparent;
   position: absolute;
   border: 1px solid var(--line-node);
   border-radius: var(--radius-control);
@@ -687,6 +786,12 @@
    under its name. */
 .m-node.minimized {
   box-shadow: 3px 3px 0 -1px var(--surface-app), 3px 3px 0 0 var(--line-node), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-node.minimized.selected {
+  box-shadow: 3px 3px 0 -1px var(--surface-app), 3px 3px 0 0 var(--line-node), 0 0 0 6px var(--surface-app), 0 0 0 7px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-node.minimized.focused {
+  outline-offset: 9px;
 }
 .m-node .m-text {
   flex: 1;
@@ -722,8 +827,8 @@
   background: var(--light);
 }
 .m-block.selected {
-  outline: 2px solid var(--outline-selected);
-  outline-offset: 1px;
+  outline: 1px solid var(--current-mark);
+  outline-offset: 2px;
 }
 .m-far-whole {
   position: absolute;
@@ -779,12 +884,6 @@
   border-left: 1px solid var(--line-panel);
   overflow: hidden;
 }
-.m-dock .m-main-head {
-  border-top: 2px solid transparent;
-}
-.m-dock.focused .m-main-head {
-  border-top-color: var(--accent);
-}
 .m-dock.focused .m-main-head h2 {
   color: var(--ink);
 }
@@ -816,16 +915,8 @@
   white-space: nowrap;
 }
 .m-chip.chosen {
-  background: var(--surface-group);
   color: var(--ink);
-  font-weight: 600;
-}
-.m-chip .m-mark {
-  width: 11px;
-  height: 11px;
-  border: 1.5px solid currentColor;
-  border-radius: 2px;
-  transform: rotate(45deg) scale(0.75);
+  box-shadow: inset 0 -2px 0 var(--current-mark);
 }
 .m-slash {
   color: var(--ink-2);
@@ -848,6 +939,10 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+/* The Detail's body scrolls inside itself when what it holds is longer than the dock. */
+.m-dock > .m-body {
+  overflow-y: auto;
 }
 /* A section of the inspector: a header row (the fold icon and its name, nothing else), opened
    above by a group line, then its body; folded, the row alone. In a review and in Settings the
@@ -958,10 +1053,12 @@
   color: var(--ink-2);
 }
 .m-log .m-stderr {
-  color: var(--red);
+  color: var(--ink);
+  box-shadow: inset 2px 0 0 var(--red);
+  padding-left: 6px;
 }
-/* A choice within a tab, Summary or its log: the chosen one bold in the strong text colour,
-   the other in the quieter one. */
+/* A choice within a tab, Summary or its log: the chosen one in the strong text colour over the
+   current mark, the other in the quieter one, both at one weight. */
 .m-views {
   display: flex;
   gap: 8px;
@@ -970,7 +1067,7 @@
 }
 .m-views .chosen {
   color: var(--ink);
-  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--current-mark);
 }
 .m-views .other {
   color: var(--ink-2);
@@ -988,10 +1085,13 @@
 }
 .m-instruction {
   margin: 0;
-  padding: 0 var(--pad) 10px;
+  padding: 6px var(--pad) 18px;
+  color: var(--ink);
+  font-size: var(--text-lead);
+  line-height: 1.5;
 }
 .m-summary .m-status {
-  font-weight: 700;
+  font-weight: 400;
   margin-right: 10px;
 }
 .m-cost {
@@ -1054,12 +1154,12 @@
   background: var(--surface-group);
   color: var(--ink-2);
   font-size: var(--text-label);
-  font-weight: 600;
+  font-weight: 400;
   line-height: 18px;
 }
 .m-stage.review {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--surface-group);
+  color: var(--ink-2);
 }
 .m-meta {
   color: var(--ink-2);
@@ -1082,34 +1182,12 @@
 .m-review .m-tool {
   padding-left: 0;
 }
-.m-verdicts {
-  display: flex;
-  gap: 6px;
-}
-.m-verdict {
-  height: var(--control);
-  padding: 0 12px;
-  border: 1px solid var(--line-group);
-  border-radius: var(--radius-control);
-  color: var(--ink-2);
-  line-height: 22px;
-}
-.m-verdict.green.chosen {
-  color: var(--green);
-  border-color: var(--green);
-  font-weight: 600;
-}
-.m-verdict.red.chosen {
-  color: var(--red);
-  border-color: var(--red);
-  font-weight: 600;
-}
 .m-field {
   display: grid;
   gap: 4px;
 }
 .m-field .m-name {
-  font-weight: 600;
+  color: var(--label);
 }
 .m-required {
   color: var(--red);
@@ -1151,9 +1229,7 @@
   background: var(--surface-input);
 }
 .m-radio.on::before {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 3px var(--surface-input);
-  background: var(--accent);
+  background: radial-gradient(circle, var(--current-mark) 0 2.5px, var(--surface-input) 3px);
 }
 /* A list of text: numbered items, each a field with the remove icon at its right. */
 .m-items {
@@ -1279,6 +1355,42 @@
   border-radius: var(--radius-chip);
   box-shadow: 0 8px 24px var(--scrim);
 }
+/* A dialog never leaves the work area: taller than the room, its content scrolls under its
+   title and above its actions, which stay in view; a thin thumb shows there is more. */
+.m-dialog {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: calc(100% - 64px);
+}
+.m-dialog > * {
+  flex: none;
+}
+.m-dialog > .m-kv,
+.m-dialog > .m-providers,
+.m-dialog > .m-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.m-dialog-body {
+  display: flex;
+  flex-direction: column;
+}
+.m-scrolls {
+  position: relative;
+  padding-right: 12px;
+}
+.m-scrolls::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 4px;
+  height: 55%;
+  border-radius: 2px;
+  background: var(--line-input);
+}
 .m-dialog h2 {
   margin: 0 0 10px;
   font-size: 15px;
@@ -1294,12 +1406,26 @@
   padding: 0;
 }
 .m-palette-input {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line-group);
-  color: var(--ink-3);
+  margin: 8px 8px 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  color: var(--ink-2);
+  outline: 1px solid var(--current-mark);
+  outline-offset: -1px;
 }
 .m-palette-group {
-  padding: 6px;
+  position: relative;
+  padding: 6px 12px 6px 6px;
+  overflow: hidden;
+}
+.m-scrollthumb {
+  position: absolute;
+  right: 3px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--line-input);
 }
 .m-palette-heading {
   padding: 6px 8px 2px;
@@ -1315,9 +1441,11 @@
   align-items: center;
   padding: 0 8px;
   border-radius: var(--radius-control);
+  color: var(--ink-2);
 }
 .m-palette-item.selected {
   background: var(--selection);
+  color: var(--ink);
 }
 .m-find {
   position: absolute;
@@ -1344,8 +1472,12 @@
   font: var(--text-small) var(--mono);
   border-radius: var(--radius-control);
 }
+.m-find .m-found li {
+  color: var(--ink-2);
+}
 .m-find .m-found li.active {
   background: var(--selection);
+  color: var(--ink);
 }
 /* What the find field says when it has no rows, or more than it lists: one line in secondary
    ink under the input or the rows. */
@@ -1382,8 +1514,7 @@
 }
 .m-tab.active {
   color: var(--ink);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--current-mark);
 }
 .m-providers {
   display: grid;
@@ -1397,9 +1528,12 @@
   line-height: var(--row);
   border-radius: var(--radius-control);
 }
+.m-choice {
+  color: var(--ink-2);
+}
 .m-choice.current {
   background: var(--selection);
-  font-weight: 600;
+  color: var(--ink);
 }
 .m-setup section {
   padding: 0 0 10px;
@@ -1473,6 +1607,12 @@
   background: var(--surface-raised);
   box-shadow: 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
 }
+.m-node.lifted.selected {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-whole.lifted.selected {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), 0 2px 8px var(--scrim);
+}
 .m-node.target,
 .m-whole.target {
   border-color: var(--accent);
@@ -1480,6 +1620,12 @@
 }
 .m-whole.target {
   box-shadow: 0 0 0 1px var(--accent);
+}
+.m-node.target.selected {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px var(--surface-app), 0 0 0 4px var(--current-mark), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-whole.target.selected {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 3px var(--surface-app), 0 0 0 4px var(--current-mark);
 }
 /* A Definition's parts: one dense row each, the name and its remove button. */
 .m-parts {
@@ -1498,7 +1644,7 @@
 .m-parts li .m-name {
   flex: none;
 }
-/* The Source: the file's text in a field one step below the panel, its line numbers in faint
+/* The Source: the file's text in a field one step below the panel, its line numbers in secondary
    ink; the line an error names carries the selection background. */
 .m-source {
   margin: 0;
@@ -1521,7 +1667,7 @@
   display: inline-block;
   width: 28px;
   margin-right: 8px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   text-align: right;
 }
 .m-source span.marked {
@@ -1571,6 +1717,1540 @@
   font-size: var(--text-small);
   line-height: 1.4;
   white-space: pre-wrap;
-  outline: 2px solid var(--focus);
+  outline: 1px solid var(--current-mark);
   outline-offset: -1px;
+}
+
+/* A reference's way back or onward: a link chip, its icon and words in the accent inside a
+   group line; it shows another mode's exact target (a Chat session, a Run and its Artifact). */
+.m-ref {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  max-width: 320px;
+  padding: 0 8px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-ref .m-mono {
+  font-family: var(--mono);
+}
+.m-mono {
+  font-family: var(--mono);
+}
+/* A Human eval's review in an Artifact's Evals: its stage beside the row, its actions under it. */
+.m-row-review {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 2px var(--pad) 6px calc(var(--pad) + var(--icon) + 8px);
+  font-size: var(--text-small);
+}
+.m-row-stage {
+  color: var(--ink-2);
+}
+.m-row-stage.yours {
+  color: var(--accent);
+}
+
+/* A mode's Pane holding a list: a head row (Chat's New, Review's filter), then the rows. */
+.m-pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  min-height: 40px;
+  padding: 8px var(--pad);
+  border-bottom: 1px solid var(--line-group);
+}
+.m-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+/* A two-line row: a name, and under it where it belongs and its age in the quieter ink. */
+.m-item {
+  display: grid;
+  grid-template-columns: var(--icon) minmax(0, 1fr);
+  column-gap: 8px;
+  padding: 4px var(--pad);
+}
+.m-item.plain {
+  grid-template-columns: minmax(0, 1fr);
+}
+.m-item > .m-icon {
+  margin-top: 4px;
+}
+.m-item .m-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-item .m-item-sub {
+  grid-column: -2;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-item.selected {
+  background: var(--selection);
+}
+.m-item.selected.keyed {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.m-empty {
+  margin: 0;
+  padding: 8px var(--pad);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* A filter field holding its terms as chips, then the text being typed. */
+.m-filter {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--control);
+  padding: 2px 4px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  font: var(--text-small) var(--mono);
+}
+.m-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 4px 0 6px;
+  border-radius: var(--radius-chip);
+  background: var(--surface-group);
+  color: var(--ink);
+}
+.m-term .m-icon {
+  color: var(--ink-2);
+}
+
+/* Chat: the conversation in a column of the reading measure, newest at the bottom, and the
+   composer under it. */
+.m-chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line-panel);
+  background: var(--surface-app);
+}
+.m-convo {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 16px var(--pad) 12px;
+  box-sizing: border-box;
+}
+.m-msg {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: 6px 10px;
+  border-radius: var(--radius-chip);
+  background: var(--surface-group);
+  white-space: pre-wrap;
+}
+.m-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.m-turn p {
+  margin: 2px 0;
+}
+.m-turn-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* A tool the agent used: one quiet line, no box: its icon, then what it did as a verb and what
+   it acted on; a failure follows in red on the same line. */
+.m-call {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row-dense);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.m-call > .m-icon {
+  color: var(--ink-3);
+}
+.m-call .m-target {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-call .m-failed {
+  color: var(--red);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Tools in a row that went well, unfolded under their summary line; a tool's details unfolded
+   under its line: a key/value grid, then the end of its output. */
+.m-call-parts {
+  display: flex;
+  flex-direction: column;
+  padding-left: 22px;
+}
+.m-call-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 10px;
+  margin: 2px 0 4px 22px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-call-details .m-out {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  color: var(--ink);
+  font: var(--text-small) var(--mono);
+  white-space: pre;
+  overflow: hidden;
+}
+/* The agent's Markdown: lists, inline code and code blocks, each block with Copy at its top
+   right; links as the app's links. */
+.m-turn ul {
+  margin: 2px 0;
+  padding-left: 20px;
+}
+.m-turn code {
+  padding: 0 4px;
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  font: var(--text-small) var(--mono);
+}
+.m-codeblock {
+  position: relative;
+  border: 1px solid var(--line-section);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+}
+.m-codeblock pre {
+  margin: 0;
+  padding: 8px 10px;
+  font: var(--text-small) var(--mono);
+  white-space: pre;
+  overflow: hidden;
+}
+.m-codeblock .m-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+/* Away from the conversation's end: Scroll to end, raised, centred at its bottom. */
+.m-scroll-end {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  box-shadow: 0 2px 8px var(--scrim);
+  font-size: var(--text-small);
+}
+/* Stop once clicked, until the turn has stopped; a message the library did not accept. */
+.m-stopping {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-refused {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--red);
+  font-size: var(--text-small);
+}
+.m-refused > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Chat's Pane: New chat across its top, the search field, then the sessions under their
+   project's label, one line each: the title, and at the right its state or its age. */
+/* The stage's view tabs, Chat's Conversation and Graph, in the middle of the stage header: the
+   tab grammar, the shown view's word --ink-bright over a 2px --current-mark underline at the
+   row's bottom, the other --ink-off, the same weight, no edge or face. */
+.m-viewswitch {
+  display: inline-flex;
+  align-items: stretch;
+  align-self: stretch;
+  gap: 16px;
+  font-size: var(--text-small);
+}
+.m-viewswitch > span {
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  color: var(--ink-off);
+  font-weight: 400;
+}
+.m-viewswitch > span.hover:not(.on) {
+  color: var(--ink);
+}
+.m-viewswitch > span.on {
+  color: var(--ink-bright);
+  box-shadow: inset 0 -2px 0 var(--current-mark);
+}
+/* Older runs: a row of its own across the Pane, as a text button. */
+.m-older {
+  display: flex;
+  align-items: center;
+  min-height: var(--row-pane);
+  padding: 0 var(--pad) 0 56px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-older.hover {
+  background: var(--surface-group);
+  color: var(--ink);
+}
+.m-session .m-state {
+  font-size: var(--text-small);
+  font-weight: 400;
+}
+.m-new {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: var(--control);
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  color: var(--ink);
+}
+.m-group-label {
+  margin: 0;
+  padding: 10px var(--pad) 4px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.m-session {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row-pane);
+  padding: 0 var(--pad);
+}
+.m-session .m-item-name {
+  color: var(--ink-2);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-session .m-age {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-session.selected {
+  background: var(--selection);
+}
+.m-session.selected .m-item-name {
+  color: var(--ink);
+}
+/* A Pane row under the pointer, across the whole row; a row the keyboard is on, its 2px ring
+   inside the whole row. */
+.m-session.hover:not(.selected),
+.m-branch-head.hover,
+.m-entry.hover:not(.filled),
+.m-menu-item.hover:not(.chosen),
+.m-choice.hover:not(.current),
+.m-palette-item.hover:not(.selected),
+.m-find .m-found li.hover:not(.active),
+.m-tree li.hover:not(.selected) {
+  background: var(--surface-group);
+}
+.m-session.kfocus,
+.m-branch-head.kfocus,
+.m-entry.kfocus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+/* A Run reference: a row inside a group line, the Run's status icon, Verify, the Run ID, its
+   status word and what needs attention, then Open in Verify. */
+.m-runref {
+  display: grid;
+  grid-template-columns: var(--icon) max-content max-content max-content minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-section);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+  font-size: var(--text-small);
+}
+.m-runref .m-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.m-composer {
+  width: 100%;
+  max-width: var(--measure);
+  margin: 0 auto 12px;
+  padding: 0 var(--pad);
+  box-sizing: border-box;
+}
+.m-composer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-chip);
+  background: var(--surface-input);
+}
+/* Empty: the field's edge and its placeholder; holding a draft: its text; being typed in: the
+   editing mark and the caret; keyboard focus: the focus ring outside, apart from all three. */
+.m-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.1em;
+  margin-left: 1px;
+  background: var(--ink);
+  vertical-align: -2px;
+}
+.m-composer-box.editing {
+  border-color: var(--line-input);
+  outline: 1px solid var(--current-mark);
+  outline-offset: -1px;
+}
+.m-composer-box.kfocus {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 4px var(--focus);
+}
+.m-composer-text {
+  min-height: 36px;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.m-composer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+.m-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control);
+  padding: 0 8px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  font-size: var(--text-small);
+}
+.m-picker .m-provider,
+.m-picker-effort {
+  color: var(--ink-2);
+}
+.m-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--control);
+  height: var(--control);
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  color: var(--ink);
+}
+.m-icon-button.primary {
+  border-color: var(--line-primary);
+  color: var(--ink-bright);
+}
+/* The model menu: raised, opening upward from the selector; a group label per provider, a row
+   per model, the session's on the selection; Connect provider after a group line. */
+.m-menu {
+  position: absolute;
+  width: 300px;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-control);
+  box-shadow: 0 2px 8px var(--scrim);
+}
+.m-menu .m-label {
+  padding: 6px 8px 2px;
+}
+.m-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row);
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+}
+.m-menu-item {
+  color: var(--ink-2);
+}
+.m-menu-item.chosen {
+  background: var(--selection);
+  color: var(--ink);
+}
+/* A model's reasoning efforts on its row in the model menu, the session's one marked. */
+.m-efforts {
+  display: grid;
+  grid-template-columns: repeat(4, 52px);
+  align-self: stretch;
+  margin: 0 -8px 0 auto;
+}
+.m-effort {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  font-weight: 400;
+}
+.m-effort.hover:not(.on) {
+  background: var(--surface-group);
+  color: var(--ink);
+}
+.m-effort.on {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--current-mark);
+}
+.m-menu-item .m-right {
+  margin-left: auto;
+  color: var(--ink-2);
+  font: var(--text-small) var(--mono);
+}
+.m-menu .m-input {
+  margin-bottom: 4px;
+}
+.m-menu-note {
+  padding: 0 8px 4px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-menu-sep {
+  margin: 4px 0;
+  border-top: 1px solid var(--line-group);
+}
+
+/* An Artifact Viewer: a window of the app of its own. The host's strip runs along its top: the
+   Artifact's name, the viewer's name, the active review and Point; the viewer fills the rest. */
+.m-vwindow {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-app);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 2px 8px var(--scrim);
+  color: var(--ink);
+  font: var(--text-body) / 1.45 var(--font);
+  text-align: left;
+}
+.m-frame {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--surface-bar);
+  border-bottom: 1px solid var(--line-panel);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-frame b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.m-vstrip {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  min-height: var(--row-head);
+  padding: 0 var(--pad);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line-panel);
+  font-size: var(--text-small);
+}
+.m-vstrip .m-vname {
+  font-weight: 600;
+}
+.m-vstrip .m-vkind {
+  color: var(--ink-2);
+}
+.m-vstrip .m-vreview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+}
+/* Point is a toggle: grey while off, bright while armed, its face and border unchanged. */
+.m-button.toggle {
+  color: var(--ink-2);
+}
+.m-button.toggle.disabled {
+  background: transparent;
+  border-color: var(--line-section);
+  color: var(--ink-3);
+}
+.m-button.toggle.pointing {
+  color: var(--ink-bright);
+}
+.m-vbody {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--tree-width, 240px) minmax(0, 1fr);
+}
+.m-vbody.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.m-vbody.graph {
+  grid-template-columns: minmax(0, 1fr) var(--detail-width, 340px);
+}
+/* The File Explorer's tree: dense rows, a fold icon before a folder, the file icon before a
+   file, the shown file on the selection. */
+.m-tree {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--surface-panel);
+  border-right: 1px solid var(--line-panel);
+  font-size: var(--text-small);
+}
+.m-tree li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--row-dense);
+  padding: 0 var(--pad) 0 calc(var(--pad) + var(--depth, 0) * 14px);
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.m-tree li .m-icon {
+  color: var(--ink-2);
+}
+.m-tree li.selected {
+  background: var(--selection);
+  color: var(--ink);
+}
+/* The document view: a head row with the file's path, then its text with line numbers. */
+.m-doc {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-input);
+}
+.m-doc-head {
+  display: flex;
+  align-items: center;
+  min-height: var(--row-head);
+  padding: 0 var(--pad);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line-group);
+  font: var(--text-small) var(--mono);
+}
+.m-doc .m-source {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 0;
+}
+/* The Markdown viewer: the rendered document in a column of the reading measure. */
+.m-md {
+  min-width: 0;
+  padding: 16px 24px;
+  overflow: hidden;
+  background: var(--surface-panel);
+}
+.m-md > * {
+  max-width: var(--measure);
+}
+.m-md h1 {
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-group);
+  font-size: var(--text-heading);
+}
+.m-md h2 {
+  margin: 14px 0 6px;
+  font-size: var(--text-title);
+}
+.m-md p,
+.m-md ul {
+  margin: 0 0 8px;
+}
+.m-md code {
+  padding: 0 4px;
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  font: var(--text-small) var(--mono);
+}
+.m-md .pointed {
+  outline: 2px dashed var(--handle);
+  box-shadow: 0 0 0 3px var(--handle-edge);
+  outline-offset: 1px;
+}
+/* The Artifactize Viewer: Artifacts as nodes without a verdict, their type at the right;
+   references as plain neutral connections; the Artifact's panel docked at the right. */
+.m-dnode {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 168px;
+  height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-node);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+}
+.m-dnode.selected {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark);
+}
+.m-dnode.pointed {
+  outline: 2px dashed var(--handle);
+  box-shadow: 0 0 0 3px var(--handle-edge);
+  outline-offset: 2px;
+}
+/* Selected and pointed at once: the current ring first, the handle line outside it. */
+.m-dnode.selected.pointed {
+  box-shadow: 0 0 0 2px var(--surface-app), 0 0 0 3px var(--current-mark), 0 0 0 9px var(--handle-edge);
+  outline-offset: 5px;
+}
+.m-dnode .m-name {
+  flex: 1;
+}
+.m-type {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  color: var(--ink-2);
+  font: var(--text-label) var(--mono);
+}
+.m-dpanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-panel);
+  border-left: 1px solid var(--line-panel);
+  overflow: hidden;
+}
+.m-deval {
+  padding: 6px var(--pad) 10px;
+  border-top: 1px solid var(--line-group);
+}
+.m-deval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row-dense);
+  font-family: var(--mono);
+  font-size: var(--text-small);
+}
+.m-deval-head.pointed {
+  outline: 2px dashed var(--handle);
+  box-shadow: 0 0 0 3px var(--handle-edge);
+  outline-offset: 1px;
+  border-radius: var(--radius-control);
+}
+.m-deval dl {
+  margin: 4px 0 0;
+}
+.m-deval dt {
+  margin-top: 6px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-deval dd {
+  margin: 0;
+}
+.m-reads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* The pet overlay: a small window of its own, above every window at the screen's bottom right.
+   A raised card, the pet sitting on its top edge; the review's eval and Run, the verdict
+   choice, the open form of the draft, then Point and Submit. */
+.m-pet {
+  position: absolute;
+  width: 320px;
+  padding: 10px 12px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-chip);
+  box-shadow: 0 2px 8px var(--scrim);
+  color: var(--ink);
+  font: var(--text-body) / 1.45 var(--font);
+  text-align: left;
+}
+.m-pet-sprite {
+  position: absolute;
+  left: 10px;
+  top: -24px;
+  width: 40px;
+  height: 40px;
+  filter: saturate(0.6);
+}
+.m-pet-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  padding-left: 60px;
+  font: var(--text-small) var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.m-pet-head .m-run {
+  color: var(--ink-2);
+}
+/* The pet's draft, compact: its reasons one line each, the reasons field with Point beside it,
+   why Submit waits, then the verdict choice and Submit as the review's composer row. */
+.m-pet-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 84px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.m-pet-reasons .m-reason {
+  max-width: 100%;
+}
+.m-pet-reasons .m-msg {
+  padding: 2px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+}
+.m-pet-reasons .m-reason-tools {
+  padding-top: 2px;
+}
+.m-pet-field {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  margin-top: 8px;
+}
+.m-pet-field > .m-input {
+  flex: 1;
+  min-width: 0;
+}
+.m-pet > .m-why {
+  margin: 6px 0 0;
+}
+.m-pet .m-decision {
+  min-height: 36px;
+  margin-top: 6px;
+}
+.m-pet .m-decide {
+  flex: 1;
+}
+/* A review's Points: what Point added, one row each: the point icon, its text in mono, where it
+   was pointed and when, and Insert at the right. In the pet overlay, compact: text and Insert. */
+.m-point {
+  display: grid;
+  grid-template-columns: var(--icon) minmax(0, 1fr) max-content max-content var(--icon);
+  column-gap: 8px;
+  align-items: center;
+  min-height: var(--row);
+  font-size: var(--text-small);
+}
+.m-point > .m-icon {
+  color: var(--ink-3);
+}
+.m-point .m-ptext {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-point .m-from {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.m-point.compact {
+  grid-template-columns: var(--icon) minmax(0, 1fr) max-content;
+}
+.m-why {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* A screen's backdrop where an Artifact Viewer and the pet float over another application. */
+.m-desktop {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--surface-bar);
+  overflow: hidden;
+}
+
+/* A review's evaluation space with room: the review at the left (instruction, Tools, the Tool
+   log taking the rest, Debug), the Evaluation at the right, of the Detail's width: its head row
+   with the stage, the verdict choice and its form, and the actions along the column's bottom. */
+.m-review-split > .m-review:first-child {
+  border-left: 0;
+  background: var(--surface-panel);
+}
+.m-eval {
+  display: flex;
+  flex-direction: column;
+}
+.m-eval-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 10px;
+}
+.m-review.m-eval .m-actions {
+  margin: 0;
+  padding: 8px var(--pad);
+  border-top: 1px solid var(--line-group);
+}
+
+
+/* The stage header: one 32px row over Chat's and Verify's main area, the same in both and
+   controls only: the way back at its left, the view tabs in its middle, the shown view's
+   tools at its right. Nothing in it says what is shown or how it stands; the Pane's selected
+   row does. */
+.m-stage-head {
+  display: grid;
+  grid-template-columns: auto auto minmax(max-content, 1fr);
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  flex: none;
+  padding: 0 var(--pad);
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--line-panel);
+  background: var(--surface-panel);
+  font-size: var(--text-small);
+}
+.m-stage-head + .m-chat,
+.m-stage-head + .m-canvas,
+.m-stage-head + .m-stage-body > .m-canvas {
+  border-top: 0;
+}
+/* The way back in the stage header: a tool like the others, the back icon and its words, by
+   luminance alone; cut with an ellipsis at 320px. */
+.m-stage-left .m-back {
+  max-width: 320px;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-stage-left {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.m-stage-mid {
+  display: flex;
+  align-self: stretch;
+}
+.m-stage-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
+}
+/* A tool of the stage header: borderless, its icon and word in --ink-2, a step brighter under
+   the pointer, --ink-bright while what it opens is open, --ink-3 while it has nothing to act
+   on; the keyboard's ring inside it. */
+.m-tool {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: var(--control);
+  height: var(--control);
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.m-tool.hover {
+  color: var(--ink);
+}
+.m-tool.on {
+  color: var(--ink-bright);
+}
+.m-tool.disabled {
+  color: var(--ink-3);
+}
+.m-tool.kfocus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.m-tool.m-zoom {
+  min-width: 44px;
+  padding: 0 2px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.m-tool-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--line-group);
+}
+/* Find, opened: the icon has become a field in its own place, being typed in. */
+.m-tool-field {
+  flex: 0 1 240px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  height: var(--control);
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  outline: 1px solid var(--current-mark);
+  outline-offset: -1px;
+  color: var(--ink);
+  overflow: hidden;
+}
+.m-tool-field .m-icon {
+  color: var(--ink-2);
+}
+.m-tool-field .m-placeholder,
+.m-tool-field .m-count-of {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.m-tool-field .m-count-of {
+  margin-left: auto;
+}
+/* Find's list, dropped from the field in the stage header over the canvas's top right. */
+.m-find.drop {
+  left: var(--field-left, auto);
+  right: auto;
+  top: 4px;
+  width: auto;
+  min-width: 240px;
+  max-width: min(380px, calc(100% - var(--field-left, 0px) - var(--pad)));
+  box-sizing: border-box;
+}
+.m-find.drop .m-found {
+  margin-top: 0;
+}
+/* A place in the conversation that Find matched; the current one with the edit mark under it. */
+.m-hit {
+  background: var(--accent-soft);
+  color: var(--ink-bright);
+  border-radius: 2px;
+}
+.m-hit.now {
+  box-shadow: inset 0 -2px 0 var(--current-mark);
+}
+/* The stage's status line: what the shown graph's state says (a Current's scan, what went
+   wrong) as one quiet line on the canvas at its top left, no face behind it. */
+.m-stage-status {
+  position: absolute;
+  left: var(--pad);
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 2 * var(--pad));
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.m-stage-status > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.m-stage-status .m-notice {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: start;
+}
+.m-stage-status .m-notice.open {
+  display: block;
+  width: 460px;
+  height: auto;
+  max-height: 96px;
+  padding: 6px 8px;
+  line-height: 16px;
+}
+/* Chat over the graph: the composer and the reply card float at the canvas's bottom, centred
+   in the canvas left of the Detail, the conversation column's width; a dark face inside a
+   thin edge, no shadow. */
+.m-float {
+  position: absolute;
+  left: 0;
+  right: var(--float-right, 0px);
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 var(--pad);
+  box-sizing: border-box;
+}
+.m-float .m-composer {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.m-reply {
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  background: var(--surface-input);
+}
+.m-reply-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row-head);
+  padding: 0 8px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-reply-head .m-said {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-reply-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 120px;
+  overflow: hidden;
+  padding: 0 12px 8px 28px;
+  color: var(--ink);
+}
+.m-reply-body p {
+  margin: 0;
+}
+/* The band Fit and the zoom keep free of nodes, under the floating chat (drawn only to point
+   at it in the design). */
+.m-inset {
+  position: absolute;
+  left: 0;
+  right: var(--float-right, 0px);
+  bottom: 0;
+  border-top: 1px dashed var(--line-group);
+  pointer-events: none;
+}
+.m-navigator.over-float {
+  bottom: var(--float-inset);
+}
+/* Chat's Pane: a top row (New chat and Search), then each project a row with its folder, its
+   sessions under it on one indent, every row --row-pane high and chosen across the Pane. The
+   new-chat icon and the folders stand on one x; the titles on the next. */
+.m-pane-top {
+  display: flex;
+  align-items: center;
+  height: var(--row-pane);
+  box-sizing: border-box;
+  flex: none;
+}
+/* Under the top row, with no line between them: the projects under one quiet group label. */
+.m-chatlist > .m-group-label:first-child {
+  padding-top: 6px;
+}
+/* A project's New chat: the new-chat icon alone in the row's last 36px cell, shown while the
+   pointer or the keyboard is on the row. */
+.m-chat-project .m-row-tool {
+  display: none;
+  align-self: stretch;
+  width: var(--row-pane);
+  margin-right: calc(-1 * var(--pad));
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+}
+.m-chat-project.hover .m-row-tool,
+.m-chat-project.kfocus .m-row-tool {
+  display: inline-flex;
+}
+.m-chat-project .m-row-tool.hover {
+  color: var(--ink);
+}
+.m-pane-top .m-new {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  height: auto;
+  gap: 8px;
+  padding: 0 0 0 var(--pad);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+}
+.m-pane-top .m-tool {
+  width: var(--row-pane);
+  height: var(--row-pane);
+  border-radius: 0;
+}
+.m-pane-top .m-tool-field {
+  flex: 1;
+  margin: 0 8px 0 4px;
+  padding-left: 7px;
+}
+.m-pane-top.hover-new .m-new,
+.m-chat-project.hover {
+  background: var(--surface-group);
+}
+.m-chat-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row-pane);
+  padding: 0 var(--pad);
+  color: var(--label);
+}
+.m-chat-project .m-icon {
+  color: var(--ink-2);
+}
+.m-chat-project .m-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-chat-project.kfocus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.m-chatlist .m-session {
+  padding-left: calc(var(--pad) + var(--icon) + 8px);
+}
+.m-chatlist .m-session .m-item-name {
+  flex: 0 1 auto;
+}
+.m-chatlist .m-session .m-sbranch {
+  flex: 0 1000 auto;
+  min-width: 10ch;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+  font: var(--text-label) var(--mono);
+}
+.m-chatlist .m-session .m-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A review as a conversation (D-REV-1), drawn with Chat's parts: the request asks at the top,
+   unboxed as the agent's text is, growing downward with its runs and points; the reasons stack
+   as the person's bubbles nearest the composer; the composer holds the reasons field, then the
+   verdict choice and Submit. Centred at the reading measure in Review, the Detail's width there. */
+.m-convo.review {
+  justify-content: flex-start;
+  gap: 6px;
+  overflow: hidden;
+}
+.m-convo.review > .m-reasons {
+  margin-top: auto;
+}
+.m-dock .m-chat {
+  border-top: 0;
+  background: transparent;
+}
+.m-dock .m-convo,
+.m-dock .m-composer {
+  max-width: none;
+}
+.m-rhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--row);
+}
+.m-rtitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-bright);
+  font-size: var(--text-lead);
+}
+.m-rstate {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* The request's tools: one row of small run buttons, each named by its operation. */
+.m-toolrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+.m-toolrow .m-group-name {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+/* A tool's run as a Chat tool line: its end at the right; its last stderr line behind a red rule. */
+.m-convo.review .m-call .m-target,
+.m-sec-body .m-call .m-target {
+  flex: none;
+}
+.m-call .m-end {
+  margin-left: auto;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.m-call .m-end .tone-red {
+  color: var(--red);
+}
+.m-call .m-stderr-mark {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 6px;
+  border-left: 2px solid var(--red);
+  color: var(--ink);
+}
+.m-call .m-newest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+}
+.m-call .m-button {
+  flex: none;
+}
+.m-call-details > .m-log {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+.m-point.new {
+  background: var(--accent-soft);
+}
+/* The reviewer's reasons: Chat's message bubbles, oldest first, Edit and Remove at each one's left. */
+.m-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+}
+.m-reason {
+  align-self: flex-end;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 80%;
+}
+.m-reason > .m-msg {
+  max-width: none;
+  min-width: 0;
+}
+.m-reason > .m-msg.editing {
+  flex: 1;
+  background: var(--surface-input);
+  box-shadow: inset 0 0 0 1px var(--current-mark);
+}
+.m-reason-tools {
+  flex: none;
+  display: flex;
+  padding-top: 5px;
+  color: var(--ink-3);
+}
+.m-reason-tools > .m-icon {
+  margin: 0 3px;
+}
+.m-msg .m-kv {
+  margin: 0;
+}
+/* The composer's second row: the verdict choice in the tab grammar, why Submit waits, Submit. */
+.m-vtabs {
+  display: inline-flex;
+  gap: 16px;
+  font-size: var(--text-small);
+}
+.m-vtabs > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control);
+  padding: 0 4px;
+  color: var(--ink-off);
+  font-weight: 400;
+}
+.m-vtabs > span::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.m-vtabs > .green::before {
+  background: var(--green);
+}
+.m-vtabs > .red::before {
+  background: var(--red);
+}
+.m-vtabs > span.hover:not(.on) {
+  color: var(--ink);
+}
+.m-vtabs > span.on {
+  color: var(--ink-bright);
+  box-shadow: inset 0 -2px 0 var(--current-mark);
+}
+.m-composer-row > .m-why {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-composer-row > .m-failed {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--red);
+  font-size: var(--text-small);
+}
+/* The reasons box: Chat's composer field holding only the reasons field and Add reason at its
+   right. Under it, apart, the decision bar: the claim at the left, the verdict and Submit at
+   the right, on its own surface. */
+.m-composer-box.m-reasonbox {
+  flex-direction: row;
+  align-items: flex-end;
+}
+.m-reasonbox > .m-composer-text {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+}
+.m-reasonbox > .m-button {
+  flex: none;
+}
+/* Too narrow for both groups, the decide group drops under the claim, still at the right. */
+.m-decision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--gap);
+  min-height: 40px;
+  margin-top: 8px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  background: var(--surface-panel);
+}
+.m-claim,
+.m-decide {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  min-width: 0;
+}
+.m-decide {
+  margin-left: auto;
+}
+.m-claim > .m-rstate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-decide > .m-why {
+  white-space: nowrap;
+}
+.m-decide > .m-busy {
+  flex: none;
+}
+.m-vtabs.disabled > span {
+  color: var(--ink-3);
+}
+.m-vtabs.disabled > span::before {
+  opacity: 0.5;
+}
+/* In the composer's place, a review that cannot be written here says why in one quiet line. */
+.m-composer-note {
+  padding: 8px 0 4px;
+  color: var(--ink-2);
+  font-size: var(--text-small);
 }

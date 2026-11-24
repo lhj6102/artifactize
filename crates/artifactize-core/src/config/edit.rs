@@ -284,6 +284,25 @@ fn compare_changes(
 
 /// Apply one validated operation. An absent entry in `based_on` is never an implicit CAS.
 pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result<BasedOn, Refusal> {
+    apply_bases(project, based_on, operation, false)
+}
+
+/// Apply an editor's snapshot. Newly created files are implicitly based on absence; an
+/// existing file must have been shown. Validation and conflicts stay in the same transaction.
+pub fn apply_shown(
+    project: &Path,
+    based_on: &BasedOn,
+    operation: Operation,
+) -> Result<BasedOn, Refusal> {
+    apply_bases(project, based_on, operation, true)
+}
+
+fn apply_bases(
+    project: &Path,
+    based_on: &BasedOn,
+    operation: Operation,
+    allow_creation: bool,
+) -> Result<BasedOn, Refusal> {
     let root = crate::platform::canonicalize(project).map_err(io)?;
     let state = crate::store::state_dir(None).map_err(io)?;
     let locks =
@@ -304,11 +323,30 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
         &lock_path,
     )
     .map_err(io)?;
-    lock.lock().map_err(io)?;
+    crate::platform::paths::lock(&lock).map_err(io)?;
     let sources = discovery::sources(&root)?;
     compare_named_bases(&root, based_on, &operation)?;
     let proposed = proposal::propose(&root, &sources, operation)?;
     let changes = proposal::changes(&sources, &proposed);
+    let mut bases;
+    let based_on = if allow_creation {
+        bases = based_on.clone();
+        for file in changes.keys() {
+            let relative = file.strip_prefix(&root).expect("project file");
+            if !bases.contains_key(relative) {
+                if let Some(current) = disk(file)? {
+                    return Err(Refusal::Changed {
+                        file: relative.to_owned(),
+                        current: Some(current),
+                    });
+                }
+                bases.insert(relative.to_owned(), None);
+            }
+        }
+        &bases
+    } else {
+        based_on
+    };
     compare_changes(&root, based_on, &changes)?;
     discovery::read_sources(root.clone(), &proposed)?;
     let originals = changes

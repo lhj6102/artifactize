@@ -1,5 +1,5 @@
 path = "crates/artifactize-desktop/design/monitor.html"
-# Monitor: the one screen with a Run shown
+# Verify: the monitor with a Run shown
 
 [views.agent_tools]
 read = { builtin = "read", args = ["monitor.html"] }

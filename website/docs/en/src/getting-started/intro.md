@@ -2,12 +2,12 @@
 
 Evaluation-driven development for people and AI agents.
 
-Artifactize lets you declare how each part of a project is verified and reuses reviews whose inputs have not changed.
+Artifactize lets you declare how each part of a project is verified and reuses eligible reviews when their criteria and inputs still match.
 
 - **Artifact**: a reviewable piece of your project—a folder, a single file, selected paths (an **aspect**), or observed external state (a Live URI)—declared in `.artifactize/<name>.artf` with an explicit `path`.
 - **Eval**: one check on an Artifact that returns a `GREEN` or `RED` verdict—a `runtime` command (such as tests or a linter), an `agent` review by an LLM using declared read-only tools, or a `human` sign-off.
 - **Artifact Graph**: the dependency graph formed when evals reference the Artifacts they read as `{name}` and wholes list their `parts`.
-- **Fingerprint and reuse**: each check reuses its earlier verdict while its criteria and covered inputs still match; see [Fingerprints and Reuse](/docs/concepts/reuse.html).
+- **Fingerprint and reuse**: a check can reuse an earlier verdict when its reuse key matches; see [Fingerprints and Reuse](/docs/concepts/reuse.html).
 
 ## How a project flows
 

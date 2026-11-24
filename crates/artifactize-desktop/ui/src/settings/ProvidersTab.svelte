@@ -4,21 +4,18 @@
   // read back.
   import type { EndpointApi, Provider } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
+  import AntigravityAccount from "./AntigravityAccount.svelte";
   import ClaudeAgentAccount from "./ClaudeAgentAccount.svelte";
   import CodexAccount from "./CodexAccount.svelte";
   import { getSettingsState, type Choice } from "./settings-state.svelte";
+  import { PROVIDER_NAMES } from "./provider-names";
 
   const s = getSettingsState();
 
-  const NAMES: Record<Provider, string> = {
-    codex: "Codex",
-    "claude-agent": "Claude Agent",
-    openai: "OpenAI",
-    anthropic: "Anthropic",
-    gemini: "Gemini",
-  };
+  const NAMES = PROVIDER_NAMES;
   /** The built-in providers, in the order the library lists them. */
   const builtin = $derived(s.providers?.builtin ?? []);
+  const aliasChoices = $derived(s.providers?.aliasTargets ?? []);
   const APIS: Record<EndpointApi, string> = {
     openaiResponses: "OpenAI Responses",
     openaiChat: "OpenAI Chat Completions",
@@ -80,6 +77,8 @@
       <CodexAccount />
     {:else if s.choice.kind === "builtin" && s.choice.provider === "claude-agent"}
       <ClaudeAgentAccount />
+    {:else if s.choice.kind === "builtin" && s.choice.provider === "antigravity"}
+      <AntigravityAccount />
     {:else if s.choice.kind === "builtin"}
       {@const provider = s.choice.provider}
       <section aria-labelledby="key-title">
@@ -128,17 +127,20 @@
           {#if s.draft.kind === "alias"}
             <label for="custom-provider">Provider</label>
             <select id="custom-provider" class="input" bind:value={s.draft.provider}>
-              {#each builtin as provider (provider)}
+              {#each aliasChoices as provider (provider)}
                 <option value={provider}>{NAMES[provider]}</option>
               {/each}
             </select>
           {:else}
             <label for="custom-api">API</label>
-            <select id="custom-api" class="input" bind:value={s.draft.api}>
-              {#each Object.entries(APIS) as [value, name] (value)}
-                <option {value}>{name}</option>
-              {/each}
-            </select>
+            <div class="api-choice">
+              <select id="custom-api" class="input" bind:value={s.draft.api}>
+                {#each Object.entries(APIS) as [value, name] (value)}
+                  <option {value}>{name}</option>
+                {/each}
+              </select>
+              <span aria-hidden="true"><Icon name="unfold" /></span>
+            </div>
             <label for="custom-url">Base URL</label>
             <input id="custom-url" class="input" bind:value={s.draft.url} placeholder={ROOTS[s.draft.api]} autocomplete="off" spellcheck="false" />
             <label for="custom-key">Key</label>
@@ -173,13 +175,15 @@
         <div class="row">
           <button class="button" disabled={s.listing} onclick={() => void s.listModels()}>List models</button>
         </div>
-        {#if s.modelsError}<p class="error" role="alert">{s.modelsError}</p>{/if}
-        {#if s.models}
-          {#if s.models.length === 0}
+        {#if s.models?.kind === "failed"}<p class="error" role="alert">{s.models.error}</p>
+        {:else if s.models?.kind === "notSetUp" || s.models?.kind === "cliMissing"}<p class="muted">{s.models.reason}</p>
+        {:else if s.models?.kind === "cliTooOld"}<p class="error">{s.models.error}</p>
+        {:else if s.models?.kind === "models"}
+          {#if s.models.models.length === 0}
             <p class="muted">No models listed.</p>
           {:else}
             <ul class="models" aria-label="Models">
-              {#each s.models as model (model.slug)}
+              {#each s.models.models as model (model.slug)}
                 <li>{model.displayName}<code>{model.slug}</code></li>
               {/each}
             </ul>
@@ -191,6 +195,21 @@
 </div>
 
 <style>
+  .api-choice { position: relative; min-width: 0; }
+  .api-choice select {
+    appearance: none;
+    width: 100%;
+    padding-inline-end: calc(var(--control) + 4px);
+    text-overflow: ellipsis;
+  }
+  .api-choice span {
+    position: absolute;
+    inset: 0 6px 0 auto;
+    display: flex;
+    align-items: center;
+    color: var(--ink-2);
+    pointer-events: none;
+  }
   .providers {
     display: grid;
     grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
@@ -212,7 +231,7 @@
     width: 100%;
     text-align: left;
     font: inherit;
-    color: var(--ink);
+    color: var(--ink-2);
     background: none;
     border: 0;
     border-radius: var(--radius-control);
@@ -221,16 +240,12 @@
     cursor: pointer;
     overflow-wrap: anywhere;
   }
-  .choice:hover {
+  .choice:not([aria-current="true"]):hover {
     background: var(--surface-group);
   }
   .choice[aria-current="true"] {
     background: var(--selection);
-    font-weight: 600;
-  }
-  /* While the keyboard is in the list, the chosen provider carries the selection's bar. */
-  nav:focus-within .choice[aria-current="true"] {
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
   .setup {
     min-width: 0;

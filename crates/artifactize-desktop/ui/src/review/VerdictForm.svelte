@@ -1,23 +1,17 @@
 <script lang="ts">
-  // The chosen verdict's owner fields as a person enters them: a text, a choice, a list of items,
-  // or repeated groups of fields, each to add and remove. Constants are filled in and not shown.
-  // Enter never submits; the Submit button of the review's action row and Ctrl+S do. Values are
-  // checked and coerced by the backend's form.
-  import type { Attachment } from "svelte/attachments";
+  // What the chosen verdict asks besides the reasons (D-REV-4, J-HUMAN-FORM), in the request under
+  // the tools: a text, a number, true/false, a choice, a list of items, or repeated groups of
+  // fields, each to add and remove. The field the reasons fill is not among them (the library
+  // leaves it out) and constants are filled in and not shown; a verdict that asks nothing more
+  // shows nothing. Enter never submits. Values are checked and coerced by the backend's form.
   import type { FieldValue, FormField } from "../ipc/client";
-  import type { FormDraft, Review } from "./review.svelte";
+  import type { FormDraft } from "./review.svelte";
   import Icon from "../shell/Icon.svelte";
 
-  let { review, form }: { review: Review; form: FormDraft } = $props();
+  let { form }: { form: FormDraft } = $props();
   /** What a person enters: constants are the form's own. */
   const entered = (fields: FormField[]) => fields.filter((field) => field.input.kind !== "fixed");
   const shown = $derived(entered(form.fields));
-
-  /** Typing goes to the form: the first field takes focus when a verdict opens. */
-  const takeFocus: Attachment<HTMLElement> = (root) => {
-    void form;
-    queueMicrotask(() => root.querySelector<HTMLElement>("input, textarea, select")?.focus());
-  };
 
   function set(name: string, value: FieldValue) {
     void form.set(name, value);
@@ -34,15 +28,6 @@
 
   type Group = [string, FieldValue][];
   const groups = (value: FieldValue | undefined): Group[] => (value?.kind === "groups" ? value.value : []);
-  /** The groups with one group's field edited. */
-  function setGroups(name: string, next: Group[]) {
-    set(name, { kind: "groups", value: next });
-  }
-  /** `group` with field `name` set to `value`. */
-  const within = (group: Group, name: string, value: FieldValue): Group => {
-    const at = group.findIndex(([sub]) => sub === name);
-    return at < 0 ? [...group, [name, value]] : group.with(at, [name, value]);
-  };
   const valueIn = (group: Group, name: string) => group.find(([sub]) => sub === name)?.[1];
 </script>
 
@@ -67,7 +52,7 @@
     </div>
   {:else if field.input.kind === "choice"}
     {@const chosen = value?.kind === "choice" ? value.value : null}
-    <select
+    <div class="choice"><select
       {id}
       class:empty={chosen === null}
       value={chosen === null ? "" : String(chosen)}
@@ -80,7 +65,7 @@
       {#each field.input.options as option, at (at)}
         <option value={String(at)}>{option}</option>
       {/each}
-    </select>
+    </select><span><Icon name="unfold" /></span></div>
   {:else if field.input.kind === "text"}
     <textarea
       {id}
@@ -102,20 +87,9 @@
   {/if}
 {/snippet}
 
-<div class="form" {@attach takeFocus}>
-  <div class="verdicts" role="radiogroup" aria-label="Verdict">
-    {#each ["GREEN", "RED"] as const as verdict (verdict)}
-      <button
-        role="radio"
-        aria-checked={form.verdict === verdict}
-        class="verdict {verdict.toLowerCase()}"
-        onclick={() => void review.choose(verdict)}
-      >
-        {verdict}
-      </button>
-    {/each}
-  </div>
-
+{#if shown.length > 0}
+<div class="form" role="group" aria-label="{form.verdict}'s fields">
+  <p class="asks">With {form.verdict}, the eval also asks</p>
   {#each shown as field (field.name)}
       {@const value = form.values[field.name]}
       <div class="field">
@@ -157,7 +131,7 @@
                     <label class="name" for={id} id={sub.input.kind === "bool" ? id : undefined}>
                       {sub.name}{#if sub.required}<span class="required" aria-label="required">*</span>{/if}
                     </label>
-                    {@render scalar(sub, valueIn(group, sub.name), id, (next) => setGroups(field.name, list.with(at, within(group, sub.name, next))))}
+                    {@render scalar(sub, valueIn(group, sub.name), id, (next) => void form.setGroupField(field.name, at, sub.name, next))}
                     {#if sub.hint}<span class="hint">{sub.hint}</span>{/if}
                   </div>
                 {/each}
@@ -176,43 +150,20 @@
     <div class="error" role="alert">{form.error}</div>
   {/if}
 </div>
+{/if}
 
 <style>
   .form {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+    margin: 6px 0 2px;
     overflow-wrap: anywhere;
   }
-  .verdicts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  /* The chosen verdict takes its colour as text and border; the face stays. */
-  .verdict {
-    font: inherit;
-    height: var(--control);
-    border: 1px solid var(--line-group);
-    background: var(--surface-group);
+  .asks {
+    margin: 0 0 -6px;
     color: var(--ink-2);
-    border-radius: var(--radius-control);
-    padding: 0 12px;
-    cursor: pointer;
-  }
-  /* Hover only highlights: the face stays and the edge steps up to a field's line. */
-  .verdict:hover {
-    border-color: var(--line-input);
-  }
-  .verdict.green[aria-checked="true"] {
-    color: var(--green);
-    border-color: var(--green);
-    font-weight: 600;
-  }
-  .verdict.red[aria-checked="true"] {
-    color: var(--red);
-    border-color: var(--red);
-    font-weight: 600;
+    font-size: var(--text-small);
   }
   .field {
     display: grid;
@@ -220,7 +171,7 @@
     gap: 4px;
   }
   .name {
-    font-weight: 600;
+    color: var(--label);
   }
   .required {
     color: var(--red);
@@ -231,7 +182,7 @@
     font-size: var(--text-small);
   }
   /* Fields sit one step below the panel, outlined by the faintest line. */
-  input,
+  input:not([type="radio"]),
   textarea,
   select {
     font: inherit;
@@ -247,20 +198,22 @@
     height: auto;
     min-height: 44px;
     padding: 4px 8px;
-    resize: vertical;
+    field-sizing: content;
+    min-height: calc(2lh + 10px);
+    resize: none;
   }
   /* An empty choice reads as a placeholder does. */
   select.empty {
-    color: var(--ink-3);
+    color: var(--ink-2);
   }
   select.empty option {
     color: var(--ink);
   }
   ::placeholder {
-    color: var(--ink-3);
+    color: var(--ink-2);
   }
   /* A number takes a short one-line field. */
-  .number {
+  input.number:not([type="radio"]) {
     width: 120px;
   }
   /* A list of text is numbered items, each its field with the remove icon at its right. */
@@ -287,14 +240,11 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .choices input {
-    accent-color: var(--accent);
-  }
   .remove {
     display: inline-grid;
     place-items: center;
-    width: 22px;
-    height: 22px;
+    width: var(--row-dense);
+    height: var(--row-dense);
     border: 0;
     background: none;
     color: var(--ink-2);
@@ -328,19 +278,31 @@
     color: var(--ink-2);
     font-size: var(--text-small);
   }
-  input:focus,
-  textarea:focus,
-  select:focus {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
-  }
   .choices {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
   }
-  .choices input {
-    width: auto;
+  .choices label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .choice {
+    position: relative;
+  }
+  .choice select {
+    appearance: none;
+    padding-inline-end: 24px;
+  }
+  .choice span {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    color: var(--ink-2);
+    pointer-events: none;
   }
   .error {
     color: var(--red);

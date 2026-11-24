@@ -35,6 +35,7 @@ pub enum Builtin {
     Help,
     Open,
     Graph,
+    Declarations,
 }
 
 /// JSON clients represent numbers as IEEE-754 doubles; larger integer counters

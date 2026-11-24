@@ -13,18 +13,18 @@
     void s.claudePaste();
   }
 
+  const error = $derived(s.claudeError ?? (s.claude?.state === "failed" ? s.claude.error : null));
   const signedIn = $derived(s.claude?.state === "signedIn");
 </script>
 
 <section aria-labelledby="claude-agent-title">
   <h2 id="claude-agent-title">Claude Agent</h2>
-  {#if !signedIn}
-    <p class="muted" data-testid="claude-agent-sign-in">The login stays Claude Code's own; artifactize never reads, copies or stores it.</p>
-  {/if}
   <dl class="facts" aria-label="Claude Code sign-in">
     <dt>Sign-in</dt>
-    <dd data-testid="claude-agent-status" class:warn={s.claudePrompt !== null} class:error={s.claude?.state === "failed" && !s.claudePrompt}>
-      {#if s.claudePrompt}
+    <dd data-testid="claude-agent-status" class:warn={error === null && s.claudeAttempt !== null} class:error={error !== null} role={error === null ? undefined : "alert"}>
+      {#if error !== null}
+        {error}
+      {:else if s.claudeAttempt !== null}
         sign-in in progress
       {:else if !s.claude}
         …
@@ -34,19 +34,17 @@
         Not signed in
       {:else if s.claude.state === "signedIn"}
         Signed in · {s.claude.method}{s.claude.plan ? ` · ${s.claude.plan}` : ""}
-      {:else}
-        {s.claude.error}
       {/if}
     </dd>
-    {#if s.claudeError}
-      <dt>Error</dt>
-      <dd class="error" role="alert">{s.claudeError}</dd>
-    {/if}
+    <dt>Login kept by</dt>
+    <dd>Claude Code</dd>
   </dl>
-  {#if s.claudePrompt}
+  {#if s.claudeAttempt !== null}
     <div class="row">
       <button class="button" type="button" onclick={() => s.cancelClaudeSignIn()}>Cancel sign-in</button>
     </div>
+  {/if}
+  {#if s.claudePrompt}
     <Section name="Finish by hand" unfolded={s.byHand} ontoggle={() => (s.byHand = !s.byHand)}>
       <pre class="url">{s.claudePrompt.url}</pre>
       <form class="row" onsubmit={paste}>
@@ -54,7 +52,7 @@
         <button class="button" type="submit" disabled={!s.claudeCode.trim()}>Finish sign-in</button>
       </form>
     </Section>
-  {:else}
+  {:else if s.claudeAttempt === null}
     <div class="row">
       <button class="button" disabled={s.claudeBusy} onclick={() => void s.loadClaude()}>Check again</button>
       {#if signedIn}

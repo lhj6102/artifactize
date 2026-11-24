@@ -25,6 +25,7 @@ pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> 
     };
     let valid = match builtin {
         Builtin::Graph => args.is_empty(),
+        Builtin::Declarations => !human && args.is_empty(),
         Builtin::Read | Builtin::List => args.len() == 1,
         Builtin::Section => {
             args.len() == SECTION_WITH_HEADING || !human && args.len() == SECTION_HEADING_AT_CALL
@@ -95,7 +96,10 @@ pub fn validate_target(
     scope: &Scope,
     owner: &ArtifactId,
 ) -> Result<(), String> {
-    if matches!(builtin, Builtin::Graph | Builtin::Help) {
+    if matches!(
+        builtin,
+        Builtin::Graph | Builtin::Declarations | Builtin::Help
+    ) {
         return Ok(());
     }
     let target = args.first().ok_or("Missing builtin target.")?;

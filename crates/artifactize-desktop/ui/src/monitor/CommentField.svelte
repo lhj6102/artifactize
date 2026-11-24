@@ -9,7 +9,8 @@
   import { composing } from "../shell/keys";
 
   let { name, onclose }: { name: string; onclose: (written: string | null) => void } = $props();
-  const { definitions: defs } = getAppState();
+  const app = getAppState();
+  const defs = $derived(app.definitions);
 
   /** Focused when it opens, the caret at the end of the text. */
   const focus: Attachment<HTMLTextAreaElement> = (field) => {
@@ -41,6 +42,7 @@
 <!-- Typed in, the graph's keys do nothing: the field holds them. -->
 <textarea
   class="field nodrag nopan nowheel"
+  class:pointer-open={!defs.field?.keyboard}
   aria-label="Comment on {name}"
   rows="3"
   bind:value={defs.fieldText}
@@ -52,6 +54,10 @@
 ></textarea>
 
 <style>
+  /* Webviews can match :focus-visible for text fields even when a pointer opened them. */
+  .field.pointer-open:focus-visible {
+    outline: none;
+  }
   .field {
     display: block;
     box-sizing: border-box;
@@ -66,8 +72,6 @@
     color: var(--ink);
     font: var(--text-small) / 1.4 var(--font);
     resize: none;
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
     cursor: text;
   }
 </style>

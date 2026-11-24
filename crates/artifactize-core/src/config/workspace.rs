@@ -46,6 +46,8 @@ pub struct Artifact {
     pub name: ArtifactName,
     pub tags: Vec<String>,
     pub views: Views,
+    pub type_name: Option<super::ArtifactType>,
+    pub(crate) plugin: Option<std::sync::Arc<super::plugins::Plugin>>,
     pub basis: Option<bool>,
     pub fingerprint: Option<Fingerprint>,
 }
@@ -70,6 +72,9 @@ impl serde::Serialize for Artifact {
         map.serialize_entry("name", &self.name)?;
         map.serialize_entry("tags", &self.tags)?;
         map.serialize_entry("views", &self.views)?;
+        if let Some(name) = &self.type_name {
+            map.serialize_entry("type", name)?;
+        }
         map.serialize_entry("basis", &self.basis)?;
         map.serialize_entry("fingerprint", &self.fingerprint)?;
         map.end()

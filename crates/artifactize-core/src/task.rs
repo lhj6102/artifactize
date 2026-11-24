@@ -8,3 +8,9 @@ pub fn joined<T>(result: Result<T, tokio::task::JoinError>) -> Result<T, tokio::
         other => other,
     }
 }
+
+pub(crate) async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    joined(tokio::task::spawn_blocking(work).await).map_err(|error| error.to_string())
+}

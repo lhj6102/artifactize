@@ -260,16 +260,18 @@ print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':c
     assert_eq!(data["artifactId"], "a");
     assert_eq!(
         data["artifactPath"],
-        json!(crate::test_os::path_text(&fixture.repo))
+        json!(crate::test_os::native_path_text(&fixture.repo))
     );
     assert_eq!(
         data["scope"]["a"]["path"],
-        json!(crate::test_os::path_text(&fixture.repo))
+        json!(crate::test_os::native_path_text(&fixture.repo))
     );
     assert_eq!(data["scope"]["a"]["nested"], json!({}));
     assert_eq!(
         data["executionPaths"]["shared.txt"],
-        json!(crate::test_os::path_text(&fixture.repo.join("shared.txt")))
+        json!(crate::test_os::native_path_text(
+            &fixture.repo.join("shared.txt")
+        ))
     );
     assert!(!Path::new(data["outputDir"].as_str().unwrap()).exists());
 }
@@ -806,7 +808,7 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        ["inspect_a"]
+        ["fixture_read_leaf", "fixture_read_part", "inspect_a"]
     );
     let result = registry
         .call(
@@ -822,13 +824,13 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
     assert_eq!(data["a"]["nested"], json!({"cases":"leaf"}));
     assert_eq!(
         data["leaf"],
-        json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","nested":{}})
+        json!({"path":crate::test_os::native_path_text(&fixture.repo.join("cases")),"kind":"folder","nested":{}})
     );
     assert_eq!(data["a"].as_object().unwrap().len(), 3);
     // An aspect's entry is its declaration's folder with its selection.
     assert_eq!(
         data["part"],
-        json!({"path":crate::platform::path_text(&fixture.repo),"kind":"aspect","nested":{},"select":["parts/one.txt"]})
+        json!({"path":crate::test_os::native_path_text(&fixture.repo),"kind":"aspect","nested":{},"select":["parts/one.txt"]})
     );
 }
 

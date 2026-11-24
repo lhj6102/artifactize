@@ -257,8 +257,55 @@ fn compose(root: &Path) -> io::Result<()> {
             added.entry(owner.clone()).or_default().push(name.clone());
         }
     }
+    // This fixture shorthand supplies simple tools for reviews that test another seam.
+    // Admission tests write their exact production declarations directly, not through here.
+    let mut profiles = std::collections::BTreeMap::<_, Vec<_>>::new();
+    for (_, name, _, _, value) in &nodes {
+        for eval in value["evals"]
+            .as_object()
+            .into_iter()
+            .flat_map(|evals| evals.values())
+        {
+            let tool = match eval["profile"]["kind"].as_str() {
+                Some("agent") => "agent_tools",
+                Some("human") => "human_tools",
+                _ => continue,
+            };
+            profiles.entry(name.clone()).or_default().push(tool);
+            let instruction = eval["payload"]["instruction"].as_str().unwrap_or_default();
+            for other in artifactize_core::scope::instruction_references(instruction) {
+                profiles.entry(other.to_string()).or_default().push(tool);
+            }
+        }
+    }
     for (file, name, _, _, mut value) in nodes {
+        let fallback = profiles
+            .get(&name)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut tools = String::new();
+        if value.get("type").is_none() {
+            for kind in fallback {
+                if value["views"][kind]
+                    .as_object()
+                    .is_none_or(serde_json::Map::is_empty)
+                {
+                    tools.push_str(if kind == "agent_tools" {
+                        "\n[views.agent_tools.fixture_read]\nbuiltin = 'read'\n"
+                    } else {
+                        "\n[views.human_tools.fixture_help]\nbuiltin = 'help'\nargs = ['artifactize']\n"
+                    });
+                }
+            }
+        }
         let Some(added) = added.get(&name) else {
+            if !tools.is_empty() {
+                let mut source = fs::read_to_string(&file)?;
+                source.push_str(&tools);
+                fs::write(file, source)?;
+            }
             continue;
         };
         let object = value.as_object_mut().unwrap();
@@ -273,7 +320,8 @@ fn compose(root: &Path) -> io::Result<()> {
                 parts.push(Value::String(part.clone()));
             }
         }
-        fs::write(file, to_toml(value).map_err(io::Error::other)?)?;
+        let source = to_toml(value).map_err(io::Error::other)?;
+        fs::write(file, source + &tools)?;
     }
     Ok(())
 }

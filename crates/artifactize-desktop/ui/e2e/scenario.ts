@@ -36,7 +36,7 @@ export type Scenario = {
   restarted?: (app: App, input: Context, carried: unknown) => Promise<void>;
 };
 
-export function scenario<T>(definition: Omit<Scenario, "prepare" | "run"> & {
+export function scenario<T>(definition: Omit<Scenario, "prepare" | "run" | "restarted"> & {
   prepare: (own: Owned) => Promise<Prepared<T>>;
   run: (app: App, input: Context<T>) => Promise<unknown>;
   restarted?: (app: App, input: Context<T>, carried: unknown) => Promise<void>;
@@ -76,7 +76,11 @@ export async function keepEvidence(id: string, evidence: NativePath, failure: st
   const restarted = variable("DESKTOP_TEST_PHASE") === "restarted";
   const kept = restarted ? asNativePath(`${evidence}-started-again`) : evidence;
   const report = nativePath(kept, "failure.txt");
-  if (exists(report)) return;
+  if (exists(report)) {
+    const image = nativePath(kept, "window.png");
+    if (shown instanceof Uint8Array && !exists(image)) writeBytes(image, shown);
+    return;
+  }
   const waiting = waits.running.length ? `the wait it was in then: ${waits.running.join(", within it: ")}\n` : waits.last ? `no wait ran then; its last wait, which had ended: ${waits.last}\n` : "";
   const said = `OS: ${systemName}\nscenario: ${id}${restarted ? " (started again)" : ""}\n${waiting}\n${failure}\n`;
   writeText(nativePath(makeDirectory(kept), "failure.txt"), said);
@@ -93,6 +97,9 @@ export const LAST_WINDOW = "last-window.png";
 
 /** The file a scenario's spec writes into its folder once its run has passed to its end. */
 export const COMPLETED = "completed";
+
+/** The service did not confirm that it stopped all of the batch's apps. */
+export const APPS_UNRELEASED = "apps-unreleased";
 
 /** The file a scenario's first phase writes, with what its run returned, once it has passed:
  * its restarted phase starts from it. */

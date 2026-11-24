@@ -19,7 +19,7 @@ vi.hoisted(() => {
   vi.stubEnv("MODE", "e2e");
 });
 
-const launch: LaunchView = { mode: "monitor", state: "/state", reviewer: "alice", request: null };
+const launch: LaunchView = { mode: "monitor", state: "/state", reviewer: "alice", request: null, graphBranch: null };
 
 /** A read the test answers, optionally with a notice that shows once the window took it. */
 type Read = { navigate: Navigate; answer: (notice?: string, branches?: BrowseView["branches"]) => Promise<void>; fail: (message: string) => Promise<void> };
@@ -31,6 +31,12 @@ function backend(): Read[] {
   mockIPC(
     (cmd, args) => {
       switch (cmd) {
+        case "chat_list":
+          return [];
+        case "human_search":
+          return { reviews: [], next: null };
+        case "human_waiting_count":
+          return 0;
         case "launch":
           return launch;
         case "browse":
@@ -112,7 +118,7 @@ describe("the manual refresh witness", () => {
     await manual.answer();
     await vi.waitFor(() => expect(witnessed()).toEqual({ generation: 1, branches: [] }), WAIT);
 
-    await fireEvent.click(screen.getByRole("button", { name: /Commands/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /commands \(Ctrl\+K\)/ }));
     await fireEvent.click(await screen.findByRole("option", { name: /Refresh/ }));
     const palette = await next(reads, true);
     expect(witnessed()?.generation).toBe(1);

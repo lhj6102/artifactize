@@ -8,6 +8,76 @@
 #[path = "../../artifactize-core/tests/support/os/observation.rs"]
 mod observation;
 
+/// Check the settings and frontend of this actual binary, without opening a window.
+pub fn check_build(context: &mut tauri::Context<tauri::Wry>) -> std::process::ExitCode {
+    let plugin_path = b"/@wdio/tauri-plugin/";
+    let test_frontend = context
+        .assets()
+        .get(&"/.vite/manifest.json".into())
+        .is_some_and(|contents| {
+            contents
+                .windows(plugin_path.len())
+                .any(|part| part == plugin_path)
+        });
+    // The runner's frame actions (callWindow): focus, orderly close and native title reads.
+    // Query the resolved permissions for each window that the suite addresses, including a
+    // representative label for the Artifact Viewer's generated viewer-* labels.
+    let authority = context.runtime_authority_mut();
+    let missing_window_access: Vec<_> = [
+        ("main", "set_focus"),
+        ("main", "close"),
+        ("main", "title"),
+        ("viewer-1", "title"),
+        ("pet", "title"),
+    ]
+    .into_iter()
+    .filter_map(|(window, name)| {
+        let command = format!("plugin:window|{name}");
+        authority
+            .resolve_access(&command, window, window, &tauri::ipc::Origin::Local)
+            .is_none()
+            .then(|| format!("{window}: {name}"))
+    })
+    .collect();
+    println!(
+        "{}",
+        serde_json::json!({
+            "embeddedDriver": true,
+            "globalTauri": context.config().app.with_global_tauri,
+            "testFrontend": test_frontend,
+            "missingWindowAccess": missing_window_access,
+        })
+    );
+    std::process::ExitCode::SUCCESS
+}
+
+/// Recover an app started by the service when its ordinary shutdown failed. Its owner file
+/// is created before the WebDriver starts; never send a signal based on a PID alone.
+pub fn stop_owner(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    struct Owner {
+        pid: artifactize_core::process::ProcessId,
+        start_time: String,
+    }
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        // A service startup can fail before it creates the app. Without an owner receipt
+        // it did not reach WebDriver initialization and there is no fixture session to stop.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let owner: Owner = serde_json::from_reader(file)?;
+    // Leave time to finish native process exit, but do not block fixture teardown forever.
+    const EXIT_BOUND: std::time::Duration = std::time::Duration::from_secs(10);
+    observation::stop_owned(
+        owner.pid.get(),
+        owner.start_time.parse()?,
+        false,
+        EXIT_BOUND,
+    )?;
+    Ok(())
+}
+
 /// Evidence of a zero-status return from the normal Tauri event loop.
 pub struct ExitReceipt {
     file: Option<std::path::PathBuf>,
@@ -34,9 +104,10 @@ fn companion_port() -> Result<Option<u16>, String> {
     let Some(executable) = var("ARTIFACTIZE_E2E_COMPANION_EXE") else {
         return Ok(None);
     };
-    let actual = std::env::current_exe().and_then(std::fs::canonicalize);
-    let expected = std::fs::canonicalize(executable);
-    if actual.map_err(|error| error.to_string())? != expected.map_err(|error| error.to_string())? {
+    let actual =
+        artifactize_core::platform::current_executable().map_err(|error| error.to_string())?;
+    let expected = std::path::PathBuf::from(executable);
+    if !artifactize_core::platform::paths_equal(&actual, &expected) {
         return Ok(None);
     }
     let port = var("ARTIFACTIZE_E2E_COMPANION_PORT")
@@ -61,8 +132,9 @@ pub fn arm_companion_close<R: tauri::Runtime>(
             tokio::time::sleep(ABANDONED_AFTER).await;
             abandoned.store(true, std::sync::atomic::Ordering::Release);
             eprintln!("E2E graph companion reached its shutdown watchdog without closing");
-            if let Err(error) = window.close() {
-                eprintln!("E2E graph companion could not close: {error}");
+            if let Err(error) = window.destroy() {
+                eprintln!("E2E graph companion could not destroy its window: {error}");
+                std::process::exit(1);
             }
         });
     }
@@ -97,7 +169,11 @@ pub fn init<R: tauri::Runtime>()
         file: owner.map(|path| path.with_extension("exit.json")),
         identity: identity.clone(),
     };
-    let receipt = serde_json::json!(exit.file);
+    let receipt = serde_json::json!(
+        exit.file
+            .as_deref()
+            .map(artifactize_core::platform::path_text)
+    );
     let fixed_date = artifactize_core::platform::environment::var("ARTIFACTIZE_E2E_DATE")
         .map(|value| {
             value
@@ -115,3 +191,6 @@ pub fn init<R: tauri::Runtime>()
         .build();
     Ok((metadata, exit, companion))
 }
+
+mod platform;
+pub use platform::arm_window_image;

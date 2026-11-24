@@ -17,6 +17,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.open("a:core", "Artifact core");
       let shown = await app.detail.definitionUntil("core", (each) => each.file === ".artifactize/core.artf", "core's Definition names its file");
       assert.equal(shown.path, "core/");
@@ -66,15 +68,26 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "definition-conflict",
-    title: "an edit of a file changed on disk since the Current read it, by another writer, writes nothing and names the file, and the Current then shows the file as it is",
+    title: "graph edits preserve unsaved Source, and edits of files changed by another writer are refused and show what is on disk",
     journeys: ["J-DEFINITION-CONFLICT"],
     prepare: async (own) => {
       const fixture = createEditing(own);
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.open("a:core", "Artifact core");
       await app.detail.definitionUntil("core", (each) => each.path === "core/", "core's Definition");
+      const before = definitionText(fixture, "core")!;
+      const unsaved = `${before}# Unsaved review comment\n`;
+      await app.detail.editSource("core", unsaved);
+      await app.graph.drag("a:core", 0, 60);
+      await app.graph.expandNotice("Has unsaved text", ".artifactize/core.artf has unsaved text in its Source; nothing written.");
+      await app.detail.definitionUntil("core", (shown) => shown.source === unsaved, "the typed Source text stayed in the editor");
+      assert.equal(definitionText(fixture, "core"), before, "the graph edit left the file untouched");
+      await app.detail.sourceAction("Revert");
+      await app.detail.definitionUntil("core", (shown) => shown.source === before, "Revert put back the saved Source");
       const theirs = definitionText(fixture, "core")!.replace("basis = true\n", "basis = true\nparts = [\"kit\"]\n");
       rewriteDefinition(fixture, "core", theirs);
       await app.detail.writePath("core", "moved/", (each) => each.refusals.includes(".artifactize/core.artf changed on disk; nothing written."), "the edit refused, naming the file");
@@ -92,6 +105,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       // docs, on its own at the top level, becomes core's part and then leaves it.
       await app.graph.node("a:docs");
       await app.graph.open("a:core", "Artifact core");
@@ -117,6 +132,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:core");
       await app.graph.tool("New Artifact");
       assert.equal((await app.detail.dialog())?.title, "New Artifact");
@@ -168,7 +185,10 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:core");
+      await app.graph.camera();
       assert.equal(await app.graph.hasTool("Reset layout"), false, "laid out automatically");
       // Where core is beside docs, at the zoom shown: whatever the camera does.
       const offset = async () => {
@@ -184,20 +204,28 @@ export const scenarios: Scenario[] = [
         const after = await app.graph.box("a:core");
         return !!after && Math.abs(after.y - before.y - 60) <= 12 && Math.abs(after.x - before.x) <= 12;
       }, "core drawn where it was released");
+      await app.graph.camera();
       // For the app started again: where core was laid out automatically, and where it is now.
-      return { automatic, placed: await offset() };
+      const placedAt = await offset();
+      // The next graph launch must switch this saved session back from Conversation.
+      await app.chat.show("Conversation");
+      return { automatic, placed: placedAt };
     },
     // A later app draws core where it was placed, beside the others; Reset layout then lays the
     // level out automatically again, and a node dropped on a whole becomes its part.
     restarted: async (app, { fixture }, carried) => {
       const { automatic, placed: placedAt } = carried as Record<"automatic" | "placed", { x: number; y: number }>;
+      await app.chat.viewShown("Graph");
       await app.graph.node("a:core");
+      await app.graph.camera();
       const offset = async () => {
         const [core, docs, zoom] = [(await app.graph.box("a:core"))!, (await app.graph.box("a:docs"))!, await app.graph.zoom()];
         return { x: (core.x - docs.x) / (zoom / 100), y: (core.y - docs.y) / (zoom / 100) };
       };
-      const restarted = await offset();
-      assert.ok(Math.abs(restarted.x - placedAt.x) <= 8 && Math.abs(restarted.y - placedAt.y) <= 8, `core placed as it was dropped: ${JSON.stringify({ placedAt, restarted })}`);
+      await app.graph.until(async () => {
+        const restarted = await offset();
+        return Math.abs(restarted.x - placedAt.x) <= 8 && Math.abs(restarted.y - placedAt.y) <= 8;
+      }, `core placed as it was dropped (${JSON.stringify(placedAt)})`);
       await app.graph.until(() => app.graph.hasTool("Reset layout"), "Reset layout offered for the top level");
       await app.graph.tool("Reset layout");
       await app.eventually(() => ["app", "bundle", "core", "docs"].every((name) => !placed(definitionText(fixture, name))), "every place left the files");
@@ -236,6 +264,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
     },
     run: async (app, { fixture }) => {
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:core", (node) => node.comment === CORE_NOTE, "core's comment drawn under it");
       // The first scan over, nothing redraws the Detail while a comment is typed.
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the Current scanned");

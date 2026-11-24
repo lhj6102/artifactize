@@ -12,22 +12,28 @@
   import "@xyflow/svelte/dist/style.css";
   import { call, useIpc, message, type BranchKey, type Shape, type ShapeKey, type Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
-  import { SourceGraphState, setSourceGraphState } from "./source-graph-state.svelte";
+  import { setSourceGraphState } from "./source-graph-state.svelte";
   import GraphView from "./GraphView.svelte";
   import GraphTools from "./GraphTools.svelte";
   import { relight } from "./graph";
   import { keyOf } from "./monitor-state.svelte";
-import { NO_ANNOTATIONS } from "./annotations";
+  import type { GraphWorkspace } from "./graph-workspace.svelte";
+  import { NO_ANNOTATIONS } from "./annotations";
 
   let {
     source,
     branch,
     revision,
     opened = null,
+    workspace,
+    active,
     onopen,
     onclose,
+    bottom = 0,
   }: {
     source: Source;
+    workspace?: GraphWorkspace;
+    active?: boolean;
     /** The branch the Run or Current is of: its graphs share their minimized wholes. */
     branch: BranchKey;
     /** The snapshot's or scan's revision: a new one means a new graph to read. */
@@ -38,12 +44,16 @@ import { NO_ANNOTATIONS } from "./annotations";
     onopen: (id: string, tab?: string | null) => void;
     /** Close the open Detail. */
     onclose: () => void;
+    /** The band a floating chat covers at the canvas's bottom, kept free by the camera. */
+    bottom?: number;
   } = $props();
   const commands = useIpc();
-  const { monitor: m, definitions } = getAppState();
+  const app = getAppState();
+  const m = $derived(workspace ?? app.monitor);
+  const definitions = $derived(branch ? app.definitionsFor(branch) : app.definitions);
   /** The places and comments of the branch's definitions as they are now; none until read. */
   const annotations = $derived(definitions.of(branch) ? definitions.annotations : NO_ANNOTATIONS);
-  const g = new SourceGraphState();
+  const g = untrack(() => m.graph);
   setSourceGraphState(g);
   const current = $derived(source.kind === "current");
   const key = $derived(keyOf(source));
@@ -68,7 +78,7 @@ import { NO_ANNOTATIONS } from "./annotations";
         // The first layout waits for the branch's places, so that it shows where they are.
         // Places that cannot be read leave the graph laid out automatically.
         Promise.resolve()
-          .then(() => definitions.ready(branch))
+          .then(() => app.prepareDefinitions(branch).ready(branch))
           .catch(() => {})
           .then(() => lay(next.source, next.shape, graph, () => read === g.reads, () => graph))
           .then(() => {
@@ -88,10 +98,10 @@ import { NO_ANNOTATIONS } from "./annotations";
    * comments, and show it lit as `lit` says once laid out, while `still` holds; again if they
    * changed meanwhile. */
   function lay(at: Source, shape: ShapeKey, graph: Shape, still: () => boolean, lit: () => Shape): Promise<void> {
-    const [minimized, placed] = untrack(() => [m.minimizedOn(branch), annotations] as const);
+    const [minimized, placed] = untrack(() => [app.monitor.minimizedOn(branch), annotations] as const);
     return g.positions(at, shape, graph, minimized, placed).then((positions) => {
       if (!still()) return;
-      if (untrack(() => m.minimizedOn(branch) !== minimized || annotations !== placed)) return lay(at, shape, graph, still, lit);
+      if (untrack(() => app.monitor.minimizedOn(branch) !== minimized || annotations !== placed)) return lay(at, shape, graph, still, lit);
       g.shown = { source: at, shape, graph: lit(), minimized, positions, annotations: placed };
     });
   }
@@ -111,7 +121,7 @@ import { NO_ANNOTATIONS } from "./annotations";
   /** Minimize the whole `id` on the branch's graphs, or expand it; done once the graph shown is
    * laid out again for it. */
   function minimize(id: string, minimized: boolean): Promise<void> {
-    m.minimize(branch, id, minimized);
+    app.monitor.minimize(branch, id, minimized);
     const held = g.shown;
     if (!held) return Promise.resolve();
     const still = () => g.shown !== null && keyOf(g.shown.source) === keyOf(held.source) && g.shown.shape === held.shape;
@@ -120,12 +130,14 @@ import { NO_ANNOTATIONS } from "./annotations";
       if (still()) g.error = message(failure);
     });
   }
+
 </script>
 
 <!-- The revision the graph was read at, and the one drawn: equal once the newest read shows. -->
 <div class="host" data-read={revision} data-drawn={g.drawn} {@attach reread} {@attach replace}>
 {#if g.error}
-  <div class="pending"><GraphTools /><p class="note error">{g.error}</p></div>
+  <!-- Why stands in the header's notice; the graph's place says only that it is not drawn. -->
+  <div class="pending"><GraphTools /><p class="note">The graph could not be read.</p></div>
 {:else if !g.shown}
   <div class="pending"><GraphTools /><p class="note">Laying out…</p></div>
 {:else}
@@ -139,11 +151,14 @@ import { NO_ANNOTATIONS } from "./annotations";
         annotations={g.shown.annotations}
         {branch}
         {current}
+        {workspace}
+        {active}
         empty={current ? "This worktree defines no Artifacts." : "This Run has no Artifacts."}
         {opened}
         {onopen}
         {onclose}
         onminimize={minimize}
+        {bottom}
       />
     </SvelteFlowProvider>
   {/key}
@@ -164,8 +179,5 @@ import { NO_ANNOTATIONS } from "./annotations";
     margin: 0;
     padding: 6px var(--pad);
     color: var(--ink-2);
-  }
-  .note.error {
-    color: var(--red);
   }
 </style>

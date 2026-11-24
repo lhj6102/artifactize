@@ -2,14 +2,14 @@
 // for a person as other processes change them.
 import assert from "node:assert/strict";
 import { addRepository, addWorktrees, artifactize, createProject, createRelease, declareRelease, orderRuns, request, requests, savedRuns, signOff, verify, verifyWaiting } from "../fixtures/repo.ts";
-import { nativePath } from "../portable.ts";
+import { nativePath, removeTree, type NativePath } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 export const scenarios: Scenario[] = [
   scenario({
     id: "pane-toggle-resize",
     title: "the Pane switch hides the pane and its divider, the main area taking the window's width with its view, and shows it again as it was; dragging the divider and the Detail's edge resizes them, kept when shown again",
-    journeys: ["J-PANE-TOGGLE", "J-RESIZE"],
+    journeys: ["J-PANE-TOGGLE", "J-RESIZE", "J-PANE-ROWS"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       await addRepository(fixture, "other");
@@ -25,22 +25,37 @@ export const scenarios: Scenario[] = [
       // What the pane holds, ages left out: they tick on.
       const held = async () => (await app.pane.branches()).map((branch) => [branch.name, branch.selected, branch.expanded, branch.entries.map((entry) => [entry.id, entry.shown])]);
       const before = await held();
-      assert.equal((await app.header()).paneOn, true, "the switch reads as on");
-      await app.headerButton("Pane");
+      assert.equal((await app.pane.shown()).visible, true);
+      assert.equal(await app.windowTitle(), "Artifactize", "with the Pane shown its row names the Run");
+      await app.command("Show or hide the Pane");
       await app.until(async () => !(await app.pane.shown()).visible, "the switch hid the pane");
       const hidden = await app.pane.layout();
       assert.equal(hidden.divider, false, "its divider goes with it");
-      assert.equal((await app.header()).paneOn, false, "the switch reads as off");
+      assert.equal((await app.pane.shown()).visible, false);
       assert.ok(Math.abs(await app.graph.width() - await app.windowWidth()) <= 1, "the main area takes the window's width");
-      assert.equal(await app.graph.title(), run, "with its view as it was");
-      await app.headerButton("Pane");
+      // With its view as it was, the window's title naming what the Pane's row named.
+      await app.until(async () => await app.windowTitle() === `${run} · repo / master — Artifactize`, "the window's title names the shown Run");
+      await app.mode("Chat");
+      assert.equal((await app.pane.shown("Chat")).visible, false, "Chat keeps the shared Pane hidden");
+      await app.mode("Review");
+      assert.equal((await app.pane.shown("Review")).visible, false, "Review keeps the shared Pane hidden");
+      await app.until(async () => await app.windowTitle() === "Artifactize", "in Review the window's title is the app's");
+      await app.command("Show or hide the Pane");
+      await app.until(async () => (await app.pane.shown("Review")).visible, "Review restored its Pane");
+      await app.mode("Chat");
+      assert.equal((await app.pane.shown("Chat")).visible, true, "Chat shares Review's restored Pane");
+      await app.mode("Verify");
       await app.until(async () => (await app.pane.shown()).visible, "the switch showed the pane again");
       assert.ok(Math.abs((await app.pane.shown()).width - width) <= 2, "at the width it had");
       assert.equal((await app.pane.search()).query, "sort:name", "its search as it was");
       assert.deepEqual(await held(), before, "its selection and expanded branches as they were");
       // The split stays as dragged whatever the main area shows.
-      const other = await app.pane.selectBranch("other  master");
+      const other = await app.pane.selectBranch("other  master", true);
       assert.notEqual(other.entries[0].id, run, "another branch's Run");
+      await app.graph.titled(other.entries[0].id);
+      await app.pane.choose("repo  master", run, true);
+      await app.graph.titled(run);
+      await app.pane.choose("other  master", other.entries[0].id);
       await app.graph.titled(other.entries[0].id);
       assert.ok(Math.abs((await app.pane.shown()).width - width) <= 2, "the split stays as dragged");
       // The Detail's left edge sets its width, kept when it opens again.
@@ -97,7 +112,7 @@ export const scenarios: Scenario[] = [
       return { fixture, data: { newest: [...runs].reverse() } };
     },
     run: async (app, { data: { newest } }) => {
-      const listed = (entries: { id: string }[]) => entries.map((entry) => entry.id).filter((id) => id !== "current");
+      const listed = (entries: { id: string }[]) => entries.map((entry) => entry.id);
       await app.pane.selectBranch("repo  master");
       const first = listed((await app.pane.branch("repo  master", (branch) => listed(branch.entries).length > 0, "its timeline listed")).entries);
       assert.ok(first.length > 0 && first.length < newest.length, `the newest Runs listed, not all of them: ${first.length} of ${newest.length}`);
@@ -109,7 +124,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "pane-search",
-    title: "a click in the search field focuses it; free text and key:value terms narrow the branches and the waiting reviews alike, and typing a term suggests keys and their values, a click taking one",
+    title: "a click in the search field focuses it; free text and key:value terms narrow the branches, and typing a term suggests keys and their values, a click taking one",
     journeys: ["J-PANE-SEARCH", "J-PANE-SUGGEST"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -122,11 +137,9 @@ export const scenarios: Scenario[] = [
       await app.pane.focusSearch();
       assert.equal((await app.pane.search()).query, "sort:recent", "the starting query");
       const names = async () => (await app.pane.branches()).map((branch) => branch.name).sort();
-      const waiting = async () => (await app.pane.waiting()).rows.map((row) => row.where).sort();
-      await app.until(async () => JSON.stringify(await waiting()) === JSON.stringify(["other  master", "repo  master", "repo  scope-one", "repo  scope-two"]), "every branch's waiting review listed");
       await app.pane.searchFor("sort:recent scope");
-      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]) && JSON.stringify(await waiting()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]),
-        "free text narrowed the branches and the waiting reviews to the scope ones");
+      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one", "repo  scope-two"]),
+        "free text narrowed the branches to the scope ones");
       await app.pane.searchFor("sort:recent branch:one");
       await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["repo  scope-one"]), "branch: narrowed to scope-one");
       // A key is suggested, then its values; a click takes each.
@@ -134,8 +147,8 @@ export const scenarios: Scenario[] = [
       await app.pane.typeSearch("rep");
       assert.equal(await app.pane.takeSuggestion("repo:"), "sort:recent repo:");
       assert.equal(await app.pane.takeSuggestion("repo:other"), "sort:recent repo:other ");
-      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["other  master"]) && JSON.stringify(await waiting()) === JSON.stringify(["other  master"]),
-        "repo:other narrowed the branches and the waiting reviews to its own");
+      await app.until(async () => JSON.stringify(await names()) === JSON.stringify(["other  master"]),
+        "repo:other narrowed the branches to its own");
       await app.pane.typeSearch("bra");
       await app.until(async () => (await app.pane.search()).suggestions.includes("branch:"), "the branch key suggested");
       await app.pane.leaveSearch();
@@ -145,8 +158,8 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "waiting-live",
-    title: "the waiting reviews of every repository list newest first with who claimed them; a claim, a submission and a new Run made by another process show without a reload, and a click opens a review in the main area",
-    journeys: ["J-WAITING", "J-LIVE", "J-MAIN-REVIEW"],
+    title: "Review lists waiting Human reviews with a live unfiltered badge, and opens a listed request",
+    journeys: ["J-BAR", "J-REVIEW-LIST", "J-REVIEW-FILTER", "J-LIVE"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       const older = request(fixture);
@@ -156,27 +169,85 @@ export const scenarios: Scenario[] = [
       return { fixture, data: { older: older.id, newer: newer.id } };
     },
     run: async (app, { fixture, data: { older, newer } }) => {
-      const stack = await app.pane.waitingUntil((shown) => shown.rows.length === 2, "both waiting reviews listed");
-      assert.equal(stack.bar, "Waiting (2)");
-      assert.deepEqual(stack.rows.map((row) => [row.id, row.eval, row.where]), [[newer, "release/signoff", "other  master"], [older, "release/signoff", "repo  master"]],
-        "newest at the top, each with its eval, project and branch");
-      assert.match(stack.rows[0].meta, /^\d+[smh]/, "how long it waits");
-      // Another process claims a review: its row names who claimed it.
+      await app.mode("Review");
+      await app.waitingBadge(2);
+      assert.equal(await app.review.filter(), "type:human waiting");
+      await app.until(async () => (await app.review.list()).length === 2, "both waiting reviews listed");
+      // A filter the library cannot read lists nothing and says why.
+      await app.review.filterFor("type:robot");
+      await app.until(async () => (await app.review.list()).length === 0 && /Unknown kind `robot`/.test(await app.review.notice()), "the unreadable filter lists nothing and says why");
+      assert.equal(await app.review.listEmpty(), "No review matches the filter.");
+      await app.review.filterFor("type:human repo:other");
+      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "only the other repository's review matches the new filter");
+      await app.waitingBadge(2);
       assert.equal(artifactize(fixture, ["request", "claim", older, "--reviewer", "bob"]).status, 0);
-      await app.pane.waitingUntil((shown) => shown.rows.find((row) => row.id === older)?.meta.endsWith("· bob") === true, "the claim shows in its row");
-      // Another process submits it: it leaves the stack.
-      signOff(fixture, older);
-      await app.pane.waitingUntil((shown) => shown.bar === "Waiting (1)" && shown.rows.every((row) => row.id !== older), "the submitted review left the stack");
-      // Another process starts a Run on a new repository: its branch is listed.
-      const third = nativePath(fixture.root, "third");
-      declareRelease(fixture, {}, third, "# Notes of third\n");
-      await verifyWaiting(fixture, third);
-      await app.pane.branch("third  master");
-      await app.pane.waitingUntil((shown) => shown.rows.length === 2, "the new Run's review waits too");
-      // A click on a row opens its review in the main area.
-      await app.pane.openWaiting(newer);
-      await app.graph.titled("Review");
+      // First show both requests, including Bob's newly observable claim. The next result
+      // cannot pass by rereading the old repo:other results or by missing the claim.
+      await app.review.filterFor("type:human");
+      await app.until(async () => {
+        const rows = await app.review.list();
+        return rows.some((row) => row.id === newer) && rows.some((row) => row.id === older && /bob/.test(row.name));
+      }, "both projects are listed and the older review names Bob");
+      await app.review.filterFor("type:human waiting");
+      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "the claimed review is absent from the waiting filter");
+      await app.waitingBadge(1);
+      assert.equal(artifactize(fixture, ["request", "unclaim", older, "--reviewer", "bob"]).status, 0);
+      await app.waitingBadge(2);
+      await app.until(async () => (await app.review.list()).some((row) => row.id === older), "releasing Bob's claim restores the waiting review");
+      await app.review.openListed(newer);
       assert.match(await app.review.debugState(), new RegExp(`^Request ${newer} `));
+    },
+  }),
+  scenario({
+    id: "review-live-arrival",
+    title: "a Human review created while Review is shown, with a review open, joins the list and the bar's count without leaving Review; claimed, released and submitted elsewhere it leaves and returns",
+    journeys: ["J-LIVE", "J-REVIEW-LIST", "J-BAR"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      return { fixture, args: ["review"], data: { first: request(fixture).id } };
+    },
+    run: async (app, { fixture, data: { first } }) => {
+      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === first, "the one waiting review listed");
+      await app.waitingBadge(1);
+      // Created by another process while Review shows a review: the list and the count follow.
+      await addRepository(fixture, "other");
+      const second = requests(fixture).find((saved) => saved.evalId === "release/signoff" && saved.id !== first)!.id;
+      await app.until(async () => (await app.review.list()).some((row) => row.id === second), "the new review joins the list in Review");
+      await app.waitingBadge(2);
+      assert.equal(await app.currentMode(), "Review", "still in Review");
+      assert.equal(artifactize(fixture, ["request", "claim", second, "--reviewer", "bob"]).status, 0);
+      await app.until(async () => !(await app.review.list()).some((row) => row.id === second), "claimed elsewhere, it leaves the waiting list");
+      await app.waitingBadge(1);
+      assert.equal(artifactize(fixture, ["request", "unclaim", second, "--reviewer", "bob"]).status, 0);
+      await app.until(async () => (await app.review.list()).some((row) => row.id === second), "released elsewhere, it returns");
+      signOff(fixture, second);
+      await app.until(async () => !(await app.review.list()).some((row) => row.id === second), "submitted elsewhere, it leaves the list");
+      await app.waitingBadge(1);
+    },
+  }),
+  scenario<{ folder: NativePath; review: string }>({
+    id: "review-removed-folder",
+    title: "a waiting review disappears when its folder goes even if Verify no longer listed the folder",
+    journeys: ["J-LIVE", "J-REVIEW-LIST"],
+    prepare: async (own) => {
+      const fixture = await createRelease(own);
+      const folder = nativePath(fixture.root, "folder-only");
+      declareRelease(fixture, {}, folder, "# A second release\n");
+      removeTree(nativePath(folder, ".git")); // This workspace is a folder, not a Git worktree.
+      const run = await verifyWaiting(fixture, folder);
+      const review = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff")!.id;
+      return { fixture, data: { folder, review } };
+    },
+    run: async (app, { data: { folder, review } }) => {
+      const visible = async () => (await app.pane.branches()).some((branch) => branch.label.includes("folder-only"));
+      await app.until(visible, "the folder is listed before its declarations are removed");
+      removeTree(nativePath(folder, ".artifactize"));
+      await app.until(async () => !await visible(), "Verify no longer lists the folder");
+      await app.mode("Review");
+      await app.until(async () => (await app.review.list()).some((row) => row.id === review), "the folder's review still waits as its folder still exists");
+      removeTree(folder);
+      await app.until(async () => !(await app.review.list()).some((row) => row.id === review), "Review dropped the missing folder's waiting request on its own");
+      await app.waitingBadge(1);
     },
   }),
 ];

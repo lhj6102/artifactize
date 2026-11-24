@@ -17,13 +17,16 @@ it("shows the whole notice on a click and folds it on the next", async () => {
     children: createRawSnippet(() => ({ render: () => "<p>graph</p>" })),
   });
   const status = screen.getByRole("status");
-  const toggle = screen.getByRole("button", { name: notice });
+  const toggle = screen.getByRole("button");
+  expect(toggle.textContent?.trim()).toMatch(/^Unreadable run.*…$/);
+  expect(toggle.textContent).not.toBe(notice);
   expect(status.contains(toggle)).toBe(true);
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(status.classList.contains("open")).toBe(false);
   await fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(status.classList.contains("open")).toBe(true);
+  expect(toggle.textContent).toBe(notice);
   await fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
 });

@@ -18,8 +18,7 @@
     <path
       d={shape.d}
       fill={shape.fill ? "currentColor" : "none"}
-      stroke={shape.fill && shape.width === undefined ? "none" : "currentColor"}
-      stroke-width={shape.width ?? 1.5}
+      stroke={shape.fill ? "none" : "currentColor"}
       stroke-dasharray={shape.dash?.join(" ")}
     />
   {/each}
@@ -30,6 +29,7 @@
     flex: none;
     width: var(--icon);
     height: var(--icon);
+    stroke-width: var(--icon-stroke);
     stroke-linecap: round;
     stroke-linejoin: round;
     vertical-align: -1px;

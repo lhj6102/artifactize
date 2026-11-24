@@ -813,6 +813,7 @@ async fn b1_read_tools_match_cli_json_table() {
                 assert_eq!(actual[0]["status"], "GREEN");
             }
             "run_show" => {
+                assert_eq!(actual["origin"], json!({"kind":"mcp"}));
                 assert_eq!(actual["id"], json!(run));
                 assert_eq!(actual["status"], "GREEN");
                 assert_eq!(actual["requests"][0]["evalId"], "app/review");
@@ -878,6 +879,41 @@ async fn b1_read_tools_match_cli_json_table() {
     client.close().await;
 }
 
+#[tokio::test]
+async fn mcp_installs_lists_and_removes_a_project_plugin() {
+    let project = Project::new(json!([]));
+    let mut client = Client::new(project.command(), "2026-07-28").await;
+    let plugin =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins/html");
+    let added = client
+        .call(
+            "plugin_add",
+            json!({"path": support::os::path_text(&plugin)}),
+        )
+        .await;
+    assert_eq!(added["action"], "added");
+    assert_eq!(added["type"], "html");
+    let listed = client.call("plugin_list", json!({})).await;
+    let text = listed["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["text"].as_str().unwrap())
+        .collect::<String>();
+    let types: Value = serde_json::from_str(&text).unwrap();
+    assert!(
+        types
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["type"] == "html")
+    );
+    let removed = client.call("plugin_remove", json!({"type":"html"})).await;
+    assert_eq!(removed, json!({"type":"html","action":"removed"}));
+    assert!(!project.repo.join(".artifactize/plugins/html").exists());
+    client.close().await;
+}
+
 async fn assert_inventory(client: &mut Client) -> Value {
     let tools = client.rpc("tools/list", json!({})).await;
     let mut names: Vec<_> = tools["result"]["tools"]
@@ -895,6 +931,9 @@ async fn assert_inventory(client: &mut Client) -> Value {
             "config_graph",
             "doctor",
             "models",
+            "plugin_add",
+            "plugin_list",
+            "plugin_remove",
             "remote_status",
             "request_list",
             "request_logs",

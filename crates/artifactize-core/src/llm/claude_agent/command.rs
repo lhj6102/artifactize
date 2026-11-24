@@ -12,7 +12,7 @@ use crate::platform::environment;
 pub const PROGRAM: &str = "claude";
 /// The MCP server artifactize hosts in this process; Claude Code names its tools
 /// `mcp__artifactize__<tool>`.
-pub const SERVER: &str = "artifactize";
+pub const SERVER: &str = crate::llm::stdio_mcp::NAME;
 
 /// What one Claude Code session is started with. A probe sets no model and offers no tools.
 #[derive(Debug, Default)]

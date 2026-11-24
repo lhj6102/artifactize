@@ -14,10 +14,12 @@
   <span>Artifactize desktop / design / settings</span>
   <nav aria-label="Design pages">
     <a href="index.html">Overview</a>
-    <a href="monitor.html">Monitor</a>
+    <a href="chat.html">Chat</a>
+    <a href="monitor.html">Verify</a>
     <a href="current.html">Current</a>
     <a href="detail.html">Detail</a>
     <a href="review.html">Review</a>
+    <a href="viewers.html">Viewers</a>
     <a href="settings.html" aria-current="page">Settings</a>
     <a href="overlays.html">Overlays</a>
   </nav>
@@ -36,32 +38,32 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar" style="position: relative; z-index: 2">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
-    <span class="m-spacer"></span>
-    <span class="m-reviewer">alice</span>
-    <span class="m-button" style="outline: 2px solid var(--focus); outline-offset: -2px">Settings</span>
-    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-mode-mark"><span class="m-icon i-review"></span><span class="m-count">2</span></span>Review</span></span>
+    <span class="m-bar-side end"><span class="m-mode m-bar-icon" aria-label="Settings" title="Settings" style="outline: 2px solid var(--focus); outline-offset: -2px"><span class="m-icon i-settings"></span></span></span>
   </header>
   <div class="m-screen" style="position: relative">
     <section class="m-pane">
       <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
-      <div class="m-branches"><div class="m-branch"><div class="m-branch-head"><span class="m-chevron"></span><span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span><span class="m-star on m-icon i-star-on"></span></div><div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">3h ago</span></div></div></div>
-      <section class="m-waiting"><h2>(0)</h2></section>
+      <div class="m-branches"><div class="m-branch folded"><div class="m-branch-head"><span class="m-chevron"></span><span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span><span class="m-star on m-icon i-star-on"></span></div><div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">3h ago</span></div></div></div>
     </section>
     <div class="m-divider"></div>
-    <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
+    <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="height: 640px">
       <div class="m-settings-head">
         <h2>Settings</h2>
         <div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div>
         <span class="m-spacer"></span>
+        <span class="m-reviewer">Reviewer alice</span>
+        <span class="m-button">0.22.0 available</span>
         <span class="m-button">Close</span>
       </div>
       <div class="m-providers">
         <div>
           <div class="m-choice">Codex</div>
           <div class="m-choice current">Claude Agent</div>
+          <div class="m-choice">Antigravity</div>
           <div class="m-choice">OpenAI</div>
           <div class="m-choice">Anthropic</div>
           <div class="m-choice">Gemini</div>
@@ -84,10 +86,10 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 150px; top: 120px">1</span>
-<span class="callout" style="left: 560px; top: 96px">2</span>
-<span class="callout" style="left: 150px; top: 200px">3</span>
-<span class="callout" style="left: 1140px; top: 190px">4</span>
+<span class="callout" style="left: 150px; top: 84px">1</span>
+<span class="callout" style="left: 560px; top: 60px">2</span>
+<span class="callout" style="left: 150px; top: 164px">3</span>
+<span class="callout" style="left: 1140px; top: 154px">4</span>
 </div>
 <figcaption>Stage 1280 × 800. The Providers tab with Claude Agent chosen.</figcaption>
 </figure>
@@ -96,17 +98,21 @@
 <div class="stage" style="--w: 1280; --h: 560">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-mode-mark"><span class="m-icon i-review"></span><span class="m-count">2</span></span>Review</span></span>
+    <span class="m-bar-side end"><span class="m-mode m-bar-icon" aria-label="Settings" title="Settings"><span class="m-icon i-settings"></span></span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
-    <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
+    <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-button">Close</span></div>
-      <div class="m-providers">
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
+      <div class="m-providers m-scrolls">
         <div>
-          <div class="m-choice current">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
+          <div class="m-choice current">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice">Antigravity</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
         </div>
         <div class="m-setup">
           <section>
@@ -130,24 +136,69 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 640px; top: 142px">5</span>
-<span class="callout" style="left: 640px; top: 342px">6</span>
+<span class="callout" style="left: 640px; top: 106px">5</span>
+<span class="callout" style="left: 640px; top: 306px">6</span>
 </div>
 <figcaption>Stage 1280 × 560. Provider setups: Codex signing in (what finishes it by hand folded), an API key read from the environment, and the form of sol-proxy, a saved custom provider. The figure stacks three setups that the app shows one at a time, as excerpts: each also has its Models, with List models, below what is drawn here (shown in the first figure).</figcaption>
+</figure>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 400">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-mode-mark"><span class="m-icon i-review"></span><span class="m-count">2</span></span>Review</span></span>
+    <span class="m-bar-side end"><span class="m-mode m-bar-icon" aria-label="Settings" title="Settings"><span class="m-icon i-settings"></span></span></span>
+  </header>
+  <div class="m-screen" style="position: relative">
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
+    <div class="m-divider"></div>
+    <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
+    <div class="m-scrim"></div>
+    <div class="m-dialog m-settings" style="top: 24px">
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
+      <div class="m-providers m-scrolls">
+        <div>
+          <div class="m-choice">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice current">Antigravity</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
+        </div>
+        <div class="m-setup">
+          <section>
+            <h3>Antigravity</h3>
+            <dl class="m-facts"><dt>agy</dt><dd>/home/alice/.local/bin/agy · 1.5.14</dd><dt>Sign-in</dt><dd>Signed in with Google</dd><dt>Login kept by</dt><dd>Antigravity CLI</dd><dt>Serves</dt><dd>Chat only</dd></dl>
+            <div class="m-row-line"><span class="m-button">Check again</span><span class="m-button">Sign out of Antigravity</span></div>
+          </section>
+          <section>
+            <h3>Models</h3>
+            <div class="m-row-line"><span class="m-button">List models</span></div>
+            <ul class="m-models"><li>Gemini 4 Pro<code>gemini-4-pro</code></li><li>Gemini 4 Flash<code>gemini-4-flash</code></li></ul>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 1140px; top: 104px">10</span>
+</div>
+<figcaption>Stage 1280 × 400. Antigravity chosen and signed in: the Google account's models, for Chat only.</figcaption>
 </figure>
 
 <figure class="figure">
 <div class="stage" style="--w: 1280; --h: 490">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-mode-mark"><span class="m-icon i-review"></span><span class="m-count">2</span></span>Review</span></span>
+    <span class="m-bar-side end"><span class="m-mode m-bar-icon" aria-label="Settings" title="Settings"><span class="m-icon i-settings"></span></span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
-    <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
+    <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab active">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab active">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-setup" style="margin-top: 12px; max-width: 640px">
         <section>
           <h3>Shared review store</h3>
@@ -164,8 +215,8 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 700px; top: 320px">7</span>
-<span class="callout" style="left: 700px; top: 160px">9</span>
+<span class="callout" style="left: 700px; top: 284px">7</span>
+<span class="callout" style="left: 700px; top: 124px">9</span>
 </div>
 <figcaption>Stage 1280 × 490. The Remote tab signed out, after a sign-in that failed (top), and signed in (bottom): the figure stacks the two states that the app shows one at a time.</figcaption>
 </figure>
@@ -174,14 +225,18 @@
 <div class="stage" style="--w: 1280; --h: 260">
 <div class="stage-inner">
 <div class="m-window">
-  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <header class="m-bar">
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode on"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-mode-mark"><span class="m-icon i-review"></span><span class="m-count">2</span></span>Review</span></span>
+    <span class="m-bar-side end"><span class="m-mode m-bar-icon" aria-label="Settings" title="Settings"><span class="m-icon i-settings"></span></span></span>
+  </header>
   <div class="m-screen" style="position: relative">
-    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>(0)</h2></section></section>
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div></section>
     <div class="m-divider"></div>
-    <section class="m-main"><div class="m-main-head"><h2>run-5K2QXA</h2><span class="m-headline"><span class="m-status tone-green"><span class="m-icon i-green"></span> GREEN</span></span></div><div class="m-strip"><span class="m-button small"><span class="m-icon i-find"></span>Find</span><span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span><span class="m-button small"><span class="m-icon i-fit"></span>Fit</span></div><div class="m-canvas"></div></section>
+    <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab">Remote</span><span class="m-tab active">Limits</span></div><span class="m-spacer"></span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab">Remote</span><span class="m-tab active">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-setup" style="margin-top: 12px; max-width: 640px">
         <section>
           <h3>Sign-off idle grace</h3>
@@ -192,18 +247,19 @@
     </div>
   </div>
 </div>
-<span class="callout" style="left: 520px; top: 164px">8</span>
+<span class="callout" style="left: 520px; top: 128px">8</span>
 </div>
 <figcaption>Stage 1280 × 260. The Limits tab: the sign-off idle grace, in the field that changes it.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>Dialog</b><span>A raised surface with a panel line over a scrim; the bar stays above the scrim so its Settings button closes the dialog again.</span></div></li>
+  <li><span class="n">1</span><div><b>Dialog</b><span>A raised surface with a panel line over a scrim; the bar stays above the scrim so its Settings button closes the dialog again. Its header names this machine's reviewer and, while a newer release is out, holds the release notice, which opens the Update dialog.</span></div></li>
   <li><span class="n">2</span><div><b>Text tabs</b><span>Providers, Remote, Limits as text with a 2px accent line under the active one; a tab focused from the keyboard shows the focus ring.</span></div></li>
-  <li><span class="n">3</span><div><b>Provider list</b><span>24px rows: the built-in providers, then custom ones by name, then <i>Custom provider</i> led by the add icon; the chosen row has the selection background and is semibold.</span></div></li>
+  <li><span class="n">3</span><div><b>Provider list</b><span>24px rows: the built-in providers, then custom ones by name, then <i>Custom provider</i> led by the add icon; the chosen row is the darker selection row with its name brighter, at one weight.</span></div></li>
   <li><span class="n">4</span><div><b>Setup</b><span>Sections separated by group lines: a title, facts as a key/value grid, then the actions in one row of 24px buttons; no line of description: labels and facts say what a section is. Models has List models and, under it, each model by its name with its ID beside it (<i>No models listed.</i> when there are none, a failure in red; J-SET-MODELS). Claude Agent's facts say what Claude Code reports: <code>claude</code> not found, not signed in, signed in with its method and plan, or its error. An API-key provider's Key fact says where its key comes from, never its value: the environment variable by name, saved here, or not set; with both an environment variable and a saved key, the environment variable, used first, as the key in use, and the saved key as also saved here.</span></div></li>
-  <li><span class="n">5</span><div><b>Sign-in in progress</b><span>The state fact turns to <i>sign-in in progress</i> in the warning tone, with Cancel sign-in under it. What finishes a sign-in the browser did not return from stays folded under <i>Finish by hand</i>: the URL the sign-in printed as selectable text, a field for Codex's redirect URL or Claude Code's code, and Finish sign-in.</span></div></li>
+  <li><span class="n">5</span><div><b>Sign-in in progress</b><span>The state fact turns to <i>sign-in in progress</i> in the warning tone, with Cancel sign-in under it. What finishes a sign-in the browser did not return from stays folded under <i>Finish by hand</i>: the URL the sign-in printed as selectable text, a field for Codex's redirect URL, Claude Code's code or the code Google's page gives Antigravity, and Finish sign-in.</span></div></li>
   <li><span class="n">6</span><div><b>Custom provider</b><span>A labelled form: name, the kind (an alias of a built-in provider, which then shows a choice of that provider, or an endpoint with its API, base URL and optional key), Save as the primary button. Remove provider stands beside Save only for a saved custom provider, as sol-proxy here; the empty form that <i>+ Custom provider</i> opens has Save alone, since there is nothing yet to remove.</span></div></li>
+  <li><span class="n">10</span><div><b>Antigravity</b><span>The facts say what the user's own Antigravity CLI reports: <code>agy</code> not found, too old (its version and the one needed), not signed in, <i>Signed in with Google</i> (the account named only when the CLI reports one, since the CLI keeps the login), or its error, with the <code>agy</code> path and version as their own fact; <i>Login kept by</i> names the Antigravity CLI and <i>Serves</i> says <i>Chat only</i>, since no eval can use it. Signed in, Models lists the account's models (J-SET-ANTIGRAVITY).</span></div></li>
   <li><span class="n">7</span><div><b>Remote</b><span>Signed in: the store's URL and share level as facts, the status as one short line in its tone (signed in, the reviewer with the token's scopes, what was pushed today), then Check status, Push (dry run), Push results and Sign out of the store. A push's or a dry run's result takes the status line in green, an error in red (J-SET-REMOTE-STATUS). The URL, share level and token fields and Sign in to the store show only while signed out.</span></div></li>
   <li><span class="n">9</span><div><b>Remote, signed out</b><span>The URL, the share level (summary or full) and the token fields, then Sign in to the store, the primary button, and Check status beside it; under them the status as one line: <i>Signed out</i> in secondary ink, or, when a sign-in or a check failed, the error in red in its place.</span></div></li>
   <li><span class="n">8</span><div><b>Limits</b><span>One line says what the grace is, since its name cannot: <i>How long a Run with only sign-offs left, none of them claimed, waits before it ends.</i> Under it the seconds field holds the grace in force, <i>seconds</i> after it, with Save beside it.</span></div></li>
@@ -212,17 +268,17 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-SET-1">D-SET-1</dt>
-  <dd>Settings is a <code>--surface-raised</code> dialog with a 1px <code>--line-panel</code> border and <code>--radius-chip</code> corners over a <code>--scrim</code>, at most 900px wide and the window's height less 80px, 12–16px padding; the bar stays above the scrim. Its header row holds the title at <code>--text-title</code> semibold, the tabs, and Close at the end; the tab's content follows right under it. It opens on Providers. <span class="avoid">a full-screen page; a 20px radius; a line that explains the dialog; a key cap on Close.</span></dd>
+  <dd>Settings is a <code>--surface-raised</code> dialog with a 1px <code>--line-panel</code> border and <code>--radius-chip</code> corners over a <code>--scrim</code>, at most 900px wide and the window's height less 80px, never past the bottom bar: shorter than its content, the tab's content scrolls under the header row, which stays, 12–16px padding; the bar stays above the scrim. Its header row holds the title at <code>--text-title</code> semibold, the tabs, then at the right this machine's reviewer as <i>Reviewer {name}</i> in <code>--ink-2</code>, the name the app claims reviews as, the release notice while a newer release is out, and Close at the end. The release notice, <i>{version} available</i> as a button before Close, shows only while the app's release lookup (at start and once a day) has found a stable release newer than the running one, and never on a Microsoft Store install, which the Store updates; a click on it opens the Update dialog (D-OVL-5), and it stays after that dialog closes; the tab's content follows right under it. It opens on Providers. <span class="avoid">a full-screen page; a 20px radius; a line that explains the dialog; a key cap on Close; a release notice for the running version, a pre-release or a Store install; a badge or dot standing in for it.</span></dd>
   <dt id="D-SET-2">D-SET-2</dt>
-  <dd>The tabs are text: <code>--ink-2</code>, the active one <code>--ink</code> semibold with a 2px <code>--accent</code> line below; a click on one shows that tab; they are a tab list: the active tab takes keyboard focus as a control, with the 2px <code>--focus</code> ring (D-SYS-7), and the active one is read aloud as selected. <span class="avoid">pill tabs; the active tab filled.</span></dd>
+  <dd>The tabs are text: <code>--ink-2</code>, the active one <code>--ink</code> at the same weight with a 2px <code>--current-mark</code> line below (D-SYS-13); a click on one shows that tab; they are a tab list: the active tab takes keyboard focus as a control, with the 2px <code>--focus</code> ring (D-SYS-7), and the active one is read aloud as selected. <span class="avoid">pill tabs; the active tab filled.</span></dd>
   <dt id="D-SET-3">D-SET-3</dt>
-  <dd>Providers is two columns: a 180px list of <code>--row</code> rows (built-in providers in their order, custom providers by name, <code>+ Custom provider</code> last, drawn as the add icon and <i>Custom provider</i>, D-SYS-8), the current one on <code>--selection</code> and semibold; the chosen provider's setup at the right in sections separated by <code>--line-group</code>, each under a section header row of the inspector's anatomy without the fold icon (D-INS-9: <code>--row</code> high, the name at <code>--text-small</code> semibold), then facts as a key/value grid, with no line of description (what a normal state needs saying is a label or a fact), (keys in <code>--ink-2</code>), and actions as 24px buttons in one row; a key field is a <code>--surface-input</code> field and never shows a value. <span class="avoid">cards per provider; a password field pre-filled; a description that repeats a section's name or its button.</span></dd>
+  <dd>Providers is two columns: a 180px list of <code>--row</code> rows (built-in providers in their order, custom providers by name, <code>+ Custom provider</code> last, drawn as the add icon and <i>Custom provider</i>, D-SYS-8), the current one the darker <code>--selection</code> row with its name in <code>--ink</code>, the others' in <code>--ink-2</code> (D-SYS-13); the chosen provider's setup at the right in sections separated by <code>--line-group</code>, each under a section header row of the inspector's anatomy without the fold icon (D-INS-9: <code>--row</code> high, the name at <code>--text-small</code> semibold), then facts as a key/value grid, with no line of description (what a normal state needs saying is a label or a fact), (keys in <code>--ink-2</code>), and actions as 24px buttons in one row; a key field is a <code>--surface-input</code> field and never shows a value. <span class="avoid">cards per provider; a password field pre-filled; a description that repeats a section's name or its button.</span></dd>
   <dt id="D-SET-4">D-SET-4</dt>
   <dd>Remote and Limits use the same section anatomy: fields on <code>--surface-input</code> in a labelled grid, one row of buttons. Remote shows its status or a result as one line in its tone (<code>--green</code> done, <code>--yellow</code> warning, <code>--red</code> failed, D-SET-7); Limits shows a line only when a save fails, in <code>--red</code>, and nothing after a save that succeeds, the field then holding the new grace (D-SET-8). <span class="avoid">a status in a coloured box.</span></dd>
   <dt id="D-SET-5">D-SET-5</dt>
-  <dd>A provider's setup states its account as a fact of the grid: Codex signed in or out; Claude Agent as Claude Code reports it (<code>claude</code> not found, not signed in, signed in with its login method and plan, or the error it failed with) with Check again beside it; an API-key provider's key as set from the environment (naming the variable), saved here, or not set, never its value; with both a set environment variable and a saved key, the fact names the environment variable as the key in use, since a set environment variable is used first, and says that a key is also saved here, neither value shown (J-SET-KEY). Its actions are one row of 24px buttons (Sign in with Codex / Sign out of Codex, Sign in with Claude Code / Sign out of Claude Code, Save key / Remove saved key) and a key field is a <code>--surface-input</code> field that empties once saved. While a sign-in is in progress the fact reads so in <code>--yellow</code> and Cancel sign-in is the one button under it. What finishes a sign-in by hand, for when the browser does not return, stays under a folded row, <i>Finish by hand</i> (the fold icon and its name, as a section's header row, D-INS-9): unfolded, it shows the URL the sign-in printed as selectable <code>--mono</code> text on <code>--surface-input</code>, one field for what the browser could not return (for Codex the redirect URL, for Claude Code the code its page gives) and Finish sign-in beside the field. That the login stays Claude Code's own, which artifactize never reads, copies or stores, is one fact of the grid, <i>Login kept by</i>: <i>Claude Code</i>, in every state, not a sentence. An error takes the account fact's place in <code>--red</code>: for Claude Agent the error Claude Code reported, from its status, a sign-in or a sign-out, in Claude Code's own words; the fact updates when a sign-in ends. Models is its own section, for a chosen built-in or saved custom provider (J-SET-MODELS): one row holds List models, a 24px button; under it the list, one <code>--row</code> row per model, its name in <code>--ink</code> and its ID beside it in <code>--mono</code> and <code>--ink-2</code>; <i>No models listed.</i> in <code>--ink-2</code> when there are none, and a failure as one <code>--red</code> line in the list's place. While the list is being read, List models is drawn disabled; for a provider just chosen, before List models is used, the section holds the button alone, no list, line or error under it (J-SET-MODELS). <span class="avoid">a modal per sign-in; a saved key shown as the key in use while an environment variable is set; the sign-in's URL and paste field shown before they are asked for; a table of IDs beside names; a saved key echoed back.</span></dd>
+  <dd>A provider's setup states its account as a fact of the grid: Codex signed in or out; Claude Agent as Claude Code reports it (<code>claude</code> not found, not signed in, signed in with its login method and plan, or the error it failed with) with Check again beside it; Antigravity as the user's Antigravity CLI reports it (<code>agy</code> not found, too old with its version and the version needed, not signed in, signed in, or the error it failed with) with Check again beside it; signed in reads <i>Signed in with Google</i>, and names the Google account only when the CLI reports one, since the CLI keeps the login and artifactize never reads it; the <code>agy</code> path and version the CLI reports are one fact, <i>agy</i>, in every state that has them; and one more fact, <i>Serves</i>: <i>Chat only</i>, in every state, since no eval can use it (J-SET-ANTIGRAVITY); an API-key provider's key as set from the environment (naming the variable), saved here, or not set, never its value; with both a set environment variable and a saved key, the fact names the environment variable as the key in use, since a set environment variable is used first, and says that a key is also saved here, neither value shown (J-SET-KEY). Its actions are one row of 24px buttons (Sign in with Codex / Sign out of Codex, Sign in with Claude Code / Sign out of Claude Code, Sign in with Antigravity / Sign out of Antigravity, Save key / Remove saved key) and a key field is a <code>--surface-input</code> field that empties once saved. While a sign-in is in progress the fact reads so in <code>--yellow</code> and Cancel sign-in is the one button under it. What finishes a sign-in by hand, for when the browser does not return, stays under a folded row, <i>Finish by hand</i> (the fold icon and its name, as a section's header row, D-INS-9): unfolded, it shows the URL the sign-in printed as selectable <code>--mono</code> text on <code>--surface-input</code>, one field for what the browser could not return (for Codex the redirect URL, for Claude Code the code its page gives, for Antigravity the code Google's page gives) and Finish sign-in beside the field. That the login stays Claude Code's own, or the Antigravity CLI's, which artifactize never reads, copies or stores, is one fact of the grid, <i>Login kept by</i>: <i>Claude Code</i> or <i>Antigravity CLI</i>, in every state, not a sentence. An error takes the account fact's place in <code>--red</code>: for Claude Agent the error Claude Code reported, from its status, a sign-in or a sign-out, in Claude Code's own words, and for Antigravity the CLI's, in its own words; the fact updates when a sign-in ends. Models is its own section, for a chosen built-in or saved custom provider (J-SET-MODELS): one row holds List models, a 24px button; under it the list, one <code>--row</code> row per model, its name in <code>--ink</code> and its ID beside it in <code>--mono</code> and <code>--ink-2</code>; <i>No models listed.</i> in <code>--ink-2</code> when there are none; a provider not set up yet, such as Antigravity while it is not signed in, answers with the reason the library gives (<i>Not signed in.</i>) as one <code>--ink-2</code> line in the list's place; and a failure as one <code>--red</code> line there. While the list is being read, List models is drawn disabled; for a provider just chosen, before List models is used, the section holds the button alone, no list, line or error under it (J-SET-MODELS). <span class="avoid">a modal per sign-in; a saved key shown as the key in use while an environment variable is set; the sign-in's URL and paste field shown before they are asked for; a table of IDs beside names; a saved key echoed back.</span></dd>
   <dt id="D-SET-6">D-SET-6</dt>
-  <dd><code>+ Custom provider</code> opens an empty form in the setup column, and a listed custom provider opens its filled form: Name, Kind (a choice between an alias of a built-in provider and an endpoint, drawn as the form's round options, D-REV-4), for an alias the built-in provider it uses (a choice of Codex, Claude Agent, OpenAI, Anthropic or Gemini; the alias then runs with that provider's own sign-in or key, set up under that provider), and for an endpoint API (OpenAI Responses, OpenAI Chat Completions, Anthropic Messages or Gemini, a one-line choice field with the unfold icon at its right), Base URL and an optional Key, as a labelled grid of <code>--surface-input</code> fields; Save is the primary button; Remove provider sits beside it only on a saved custom provider's form, and the empty form of <code>+ Custom provider</code> has Save alone; a saved provider is listed by its name under the built-in ones and chosen. <span class="avoid">a wizard; the key shown after saving; Remove provider, enabled or disabled, on a provider not yet saved.</span></dd>
+  <dd><code>+ Custom provider</code> opens an empty form in the setup column, and a listed custom provider opens its filled form: Name, Kind (a choice between an alias of a built-in provider and an endpoint, drawn as the form's round options, D-REV-4), for an alias the built-in provider it uses (a choice of the built-in providers the library offers as alias targets, Codex, OpenAI, Anthropic or Gemini, never Claude Agent or Antigravity, which run through their own CLIs; the alias then runs with that provider's own sign-in or key, set up under that provider), and for an endpoint API (OpenAI Responses, OpenAI Chat Completions, Anthropic Messages or Gemini, a one-line choice field with the unfold icon at its right), Base URL and an optional Key, as a labelled grid of <code>--surface-input</code> fields; Save is the primary button; Remove provider sits beside it only on a saved custom provider's form, and the empty form of <code>+ Custom provider</code> has Save alone; a saved provider is listed by its name under the built-in ones and chosen. <span class="avoid">a wizard; the key shown after saving; Remove provider, enabled or disabled, on a provider not yet saved.</span></dd>
   <dt id="D-SET-7">D-SET-7</dt>
   <dd>Remote is one section of at most 640px that shows only what its state can use. Signed out: Store URL, Share level (a choice of <i>summary</i> or <i>full</i>, drawn as the form's round options, D-REV-4) and Token fields in a labelled grid, then one row of buttons, Sign in to the store, the primary button, and Check status beside it; under them the status, one line in its tone: <i>Signed out</i> in <code>--ink-2</code>, or in <code>--red</code> the error of a sign-in or a check that failed, or, for a store this machine names but is not signed in to, its URL and <i>not signed in</i> or <i>unreachable</i> with the store's reason. Signed in: the store's URL and share level as facts of a key/value grid, with the status as its last fact, one line in its tone (<i>Signed in</i>, the reviewer with the token's scopes and what was pushed today, in <code>--green</code>); then one row of buttons, Check status, Push (dry run), Push results and, at the right, Sign out of the store. What takes the status line, and when, is J-SET-REMOTE-STATUS: a push's or a dry run's result in <code>--green</code>, an error in <code>--red</code>. While a sign-in, a sign-out, a push or a dry run runs, every button of the tab is drawn disabled, in place (J-SET-REMOTE). The fields, the token and Sign in to the store come back once signed out. <span class="avoid">the token shown; Sign in or a token field beside a store that is signed in; a signed-out tab without its status line; a status that repeats a fact above it; a result or an error on a second line beside the status; a missing dry-run option beside Push results.</span></dd>
   <dt id="D-SET-8">D-SET-8</dt>

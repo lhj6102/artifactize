@@ -11,7 +11,7 @@ use artifactize_core::{
     changes::{Change, Changed},
     monitor::{
         self, Node, Origin,
-        live::{self, Branch, Labels, Loader, Place, Query, Waiting},
+        live::{self, Branch, Loader, Place, Query, Waiting},
     },
     store::{RequestView, RunView, Unreadable},
     types::RunId,
@@ -73,7 +73,6 @@ struct Shown {
     initialized: bool,
     origin: Origin,
     branches: Vec<Branch>,
-    labels: Labels,
     launch: Option<Place>,
     waiting: Vec<Waiting>,
     /// The number of the request read that read `waiting` ([`crate::human::Reads`]).
@@ -83,6 +82,8 @@ struct Shown {
     query: Search,
     /// The Run the Main area shows.
     opened: Opened,
+    opened_branch: Option<Place>,
+    reference: bool,
     /// Chips shown of each branch whose row reached further back than [`CHIPS`].
     chips: BTreeMap<Place, usize>,
     /// The starred branches, once read from the state directory.
@@ -98,6 +99,20 @@ struct Shown {
     revision: u32,
     /// The last graph shape handed out.
     shapes: crate::ids::ShapeKey,
+}
+
+impl Shown {
+    fn chip_limit(&self, branch: &Branch) -> usize {
+        let selected = self
+            .opened
+            .id()
+            .and_then(|id| branch.timeline().position(|chip| &chip.id == id));
+        self.chips
+            .get(&branch.place)
+            .copied()
+            .unwrap_or(CHIPS)
+            .max(selected.map_or(0, |at| at + 1))
+    }
 }
 
 /// The pane's search: its text as typed, and the query it parses to or why it does not, parsed
@@ -120,6 +135,7 @@ pub struct Browse {
     launch: Option<PathBuf>,
     loader: tokio::sync::Mutex<Loader>,
     shown: Mutex<Shown>,
+    navigation: Mutex<()>,
     /// What the change hints since the last load named; the next load reads it again.
     changed: Mutex<Changed>,
 }
@@ -151,6 +167,8 @@ pub enum RunStep {
     Keep,
     /// Show this Run.
     Open { id: crate::ids::RunKey },
+    /// Follow a link, showing this Run's branch even outside the saved search.
+    Reference { id: crate::ids::RunKey },
     /// Show no Run: the Main area shows a Current, a review or Settings.
     Close,
 }
@@ -168,17 +186,19 @@ impl Browse {
         Self {
             launch,
             loader: tokio::sync::Mutex::new(Loader::default()),
+            navigation: Mutex::new(()),
             shown: Mutex::new(Shown {
                 initialized: false,
                 origin: Origin::default(),
                 branches: Vec::new(),
-                labels: Labels::new(),
                 launch: None,
                 waiting: Vec::new(),
                 waiting_read: 0,
                 unreadable: Vec::new(),
                 query: Search::new(live::DEFAULT.into()),
                 opened: Opened::None,
+                opened_branch: None,
+                reference: false,
                 chips: BTreeMap::new(),
                 starred: None,
                 unstarred: None,
@@ -216,14 +236,20 @@ impl Browse {
 
     /// Apply `step` to the shown selection; a star is kept in `state` at once.
     fn navigate(&self, state: &Path, step: &Navigate) {
+        let _navigation = self.navigation.lock().expect("navigation lock");
+        let reload = step.resync || self.shown().starred.is_none();
+        let loaded = reload.then(|| live::starred(Some(state)));
+        let starred = step
+            .star
+            .as_ref()
+            .map(|star| live::star(Some(state), &star.branch.to_place(), star.on));
         let mut shown = self.shown();
-        if shown.starred.is_none() {
-            let read = live::starred(Some(state));
+        if let Some(read) = loaded {
             shown.unstarred = read.as_ref().err().cloned();
             shown.starred = Some(read.unwrap_or_default());
         }
-        if let Some(star) = &step.star {
-            match live::star(Some(state), &star.branch.to_place(), star.on) {
+        if let Some(starred) = starred {
+            match starred {
                 Ok(kept) => {
                     shown.starred = Some(kept);
                     shown.unstarred = None;
@@ -233,25 +259,97 @@ impl Browse {
         }
         match &step.run {
             RunStep::Keep => {}
-            RunStep::Open { id } => {
+            RunStep::Open { id } | RunStep::Reference { id } => {
+                shown.reference = matches!(step.run, RunStep::Reference { .. });
                 let id: RunId = id.clone().into_inner();
                 if shown.opened.id() != Some(&id) {
                     shown.opened = Opened::Loading(id);
                 }
             }
-            RunStep::Close => shown.opened = Opened::None,
+            RunStep::Close => {
+                shown.reference = false;
+                shown.opened = Opened::None;
+            }
         }
         if let Some(query) = &step.query
             && *query != shown.query.text
         {
             shown.query = Search::new(query.clone());
+            // A reference in the same request takes precedence over the new filter.
+            if !matches!(step.run, RunStep::Reference { .. }) {
+                shown.reference = false;
+            }
         }
         if let Some(branch) = &step.older {
             let place = branch.to_place();
-            let more = shown.chips.get(&place).copied().unwrap_or(CHIPS) + CHIPS;
+            let visible = shown
+                .branches
+                .iter()
+                .find(|branch| branch.place == place)
+                .map_or(CHIPS, |branch| shown.chip_limit(branch));
+            let more = visible.saturating_add(CHIPS);
             shown.chips.insert(place, more);
         }
         shown.revision += 1;
+    }
+
+    /// Open the named Run without waiting for the Pane's next catalog or Review refresh.
+    async fn open_reference(&self, state: &Path, id: RunId) -> Result<Option<Origin>, Failure> {
+        let mut loader = self.loader.lock().await;
+        let worker = std::mem::take(&mut *loader);
+        let path = state.to_owned();
+        let wanted = id.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            let mut worker = worker;
+            let read = worker.open(&path, &wanted).map(|reference| {
+                let opened = reference.opened.map(|opened| {
+                    let (run, requests, tree, footprint) = *opened;
+                    let graph = monitor::graph(&tree);
+                    (run, requests, tree, graph, footprint)
+                });
+                (reference.origin, opened, reference.branch)
+            });
+            (worker, read)
+        });
+        let (worker, read) = crate::failure::joined(task.await)?;
+        *loader = worker;
+        let mut shown = self.shown();
+        if shown.opened.id() != Some(&id) {
+            return Ok(None);
+        }
+        let (origin, opened, branch) = match read {
+            Ok(read) => read,
+            Err(error) => {
+                shown.error = Some(format!("read failed: {error}"));
+                return Err(Failure::Read(error));
+            }
+        };
+        if origin.replaces(&shown.origin) {
+            shown.replaced = true;
+        }
+        shown.origin = origin.clone();
+        shown.opened_branch = branch;
+        shown.opened = if let Some((run, requests, tree, graph, footprint)) = opened {
+            let shape = shown
+                .opened
+                .loaded()
+                .filter(|kept| kept.graph.same_shape(&graph))
+                .map(|kept| kept.shape)
+                .unwrap_or_else(|| shown.shapes.next());
+            Opened::Loaded(Arc::new(Selected {
+                run,
+                requests,
+                tree,
+                graph,
+                shape,
+                _footprint: footprint,
+            }))
+        } else {
+            Opened::Missing(id)
+        };
+        shown.error = None;
+        shown.revision += 1;
+        Ok(Some(origin))
     }
 
     /// Read a snapshot for the shown selection on a blocking thread and accept it, unless the
@@ -276,7 +374,7 @@ impl Browse {
                 state: state.to_path_buf(),
                 launch: self.launch.clone(),
                 open: shown.opened.id().cloned(),
-                force: shown.opened.loaded().is_none(),
+                force: shown.opened.loaded().is_none() || shown.error.is_some(),
                 rescan: read.rescan || !shown.initialized,
                 changed: changed.clone(),
             };
@@ -319,13 +417,19 @@ impl Browse {
         };
         // The waiting reviews' requests are read in turn with the reviews' own reads, so the
         // views they freshen are ordered with them.
-        let waiting = if read.full || !self.shown().initialized {
+        let (waiting, waiting_error) = if read.full || !self.shown().initialized {
             let (number, waiting) = reads
                 .numbered(live::waiting(state, reviewer, &snapshot.labels))
                 .await;
-            Some((number, waiting.map_err(Failure::Read)?))
+            match waiting {
+                Ok(waiting) => (Some((number, waiting)), None),
+                Err(error) => (
+                    None,
+                    Some(format!("Waiting reviews could not be read: {error}")),
+                ),
+            }
         } else {
-            None
+            (None, None)
         };
         let mut shown = self.shown();
         if shown.opened.id() != open.as_ref() {
@@ -349,8 +453,14 @@ impl Browse {
         }
         let origin = snapshot.origin.clone();
         shown.origin = snapshot.origin;
+        shown.opened_branch = open.as_ref().and_then(|id| {
+            snapshot
+                .branches
+                .iter()
+                .find(|branch| branch.runs.iter().any(|chip| &chip.id == id))
+                .map(|branch| branch.place.clone())
+        });
         shown.branches = snapshot.branches;
-        shown.labels = snapshot.labels;
         shown.launch = snapshot.launch;
         shown.unreadable = snapshot.unreadable;
         if let Some((number, waiting)) = waiting {
@@ -370,11 +480,21 @@ impl Browse {
                     _footprint: footprint,
                 }));
             }
-            live::OpenRun::Absent => shown.opened = open.map_or(Opened::None, Opened::Missing),
+            live::OpenRun::Absent => {
+                let unreadable = open.as_ref().is_some_and(|id| {
+                    shown
+                        .unreadable
+                        .iter()
+                        .any(|record| record.kind == "run" && record.id == id.as_str())
+                });
+                if !unreadable || shown.opened.loaded().is_none() {
+                    shown.opened = open.map_or(Opened::None, Opened::Missing);
+                }
+            }
             live::OpenRun::Unchanged => {}
         }
         shown.initialized = true;
-        shown.error = None;
+        shown.error = waiting_error;
         shown.refreshed = true;
         if changed {
             shown.revision += 1;
@@ -425,7 +545,7 @@ impl Browse {
     /// The pane's completion of `query`'s last term, from what the snapshot lists.
     fn complete(&self, query: &str) -> artifactize_core::review::search::Completion {
         let shown = self.shown();
-        live::complete(query, &shown.branches, &shown.waiting)
+        live::complete(query, &shown.branches, &[])
     }
 }
 
@@ -441,6 +561,9 @@ struct Read {
 #[tauri::command]
 #[specta::specta]
 pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<BrowseView, Failure> {
+    if navigate.resync {
+        crate::watch::reconcile_runs(&app).await;
+    }
     app.browse.navigate(&app.launch.state, &navigate);
     let read = Read {
         full: navigate.full,
@@ -448,21 +571,58 @@ pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<Br
         // A refresh scans the branches again too.
         rescan: navigate.resync,
     };
-    let accepted = app
-        .browse
-        .load(
-            &app.launch.state,
-            &app.launch.reviewer,
-            &app.human.reads,
-            read,
-        )
-        .await?;
+    let accepted = match navigate.run {
+        RunStep::Open { id } | RunStep::Reference { id } if !read.full && !read.resync => {
+            let id = id.into_inner();
+            let origin = app
+                .browse
+                .open_reference(&app.launch.state, id.clone())
+                .await?;
+            let needs_catalog = {
+                let shown = app.browse.shown();
+                matches!(shown.opened, Opened::Missing(_))
+                    || shown.opened_branch.as_ref().is_none_or(|place| {
+                        !shown.branches.iter().any(|branch| {
+                            &branch.place == place && branch.runs.iter().any(|chip| chip.id == id)
+                        })
+                    })
+            };
+            if needs_catalog {
+                app.browse
+                    .load(
+                        &app.launch.state,
+                        &app.launch.reviewer,
+                        &app.human.reads,
+                        Read {
+                            rescan: true,
+                            ..Read::default()
+                        },
+                    )
+                    .await?
+                    .or(origin)
+            } else {
+                origin
+            }
+        }
+        _ => {
+            app.browse
+                .load(
+                    &app.launch.state,
+                    &app.launch.reviewer,
+                    &app.human.reads,
+                    read,
+                )
+                .await?
+        }
+    };
     if let Some(origin) = accepted {
-        app.observe(origin);
+        let generation = app.observe(origin);
         // A review opened from the Waiting stack shows the claims and states it lists, unless
-        // it read them since.
-        let (number, views) = app.browse.waiting_views();
-        app.human.remember(number, views);
+        // it read them since or a newer snapshot replaced this state.
+        app.generation.if_current(generation, || {
+            let (number, views) = app.browse.waiting_views();
+            app.human.remember(generation, number, views);
+        });
     }
     Ok(app.browse.view(OffsetDateTime::now_utc()))
 }
@@ -492,13 +652,17 @@ pub(crate) async fn rescan(app: &App) -> Result<bool, Failure> {
         rescan: true,
         ..Read::default()
     };
-    app.browse
+    if let Some(origin) = app
+        .browse
         .load(
             &app.launch.state,
             &app.launch.reviewer,
             &app.human.reads,
             read,
         )
-        .await?;
+        .await?
+    {
+        app.observe(origin);
+    }
     Ok(app.browse.shown().revision != before)
 }

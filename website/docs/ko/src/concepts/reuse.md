@@ -1,6 +1,6 @@
 # fingerprint와 재사용 {#fingerprints-and-reuse}
 
-`artifactize verify`는 현재 eval의 평가 기준과 입력 파일을 이전 `GREEN` 또는 `RED` 판정 때의 평가 기준 및 입력 파일과 비교합니다. 둘 다 같으면 eval을 다시 실행하지 않고 이전 결과를 재사용합니다.
+`artifactize verify`는 eval의 재사용 키가 저장된 `GREEN` 또는 `RED` 판정의 키와 일치하면 eval을 다시 실행하지 않고 그 판정을 재사용할 수 있습니다. 입력이 그대로인 것만으로는 부족합니다. 예를 들어 Live Artifact를 확인하는 runtime eval이나 fingerprint가 꺼진 eval에는 재사용 키가 없습니다.
 
 ## fingerprint (`artifactsum`, `script`, `false`) {#fingerprints-artifactsum-script-false}
 

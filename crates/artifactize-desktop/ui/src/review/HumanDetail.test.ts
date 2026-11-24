@@ -1,51 +1,45 @@
-// The shared Human Detail against a mocked command boundary: explicit claim, shortcuts that
-// leave input methods alone, verdict drafts and correctable schema errors.
+// A Human review as a conversation against a mocked command boundary: an explicit claim, the
+// reasons written one at a time as bubbles, the decision bar's claim, verdict and Submit with why
+// Submit waits, a verdict's own fields when the eval asks more, each tool run as its own line,
+// Points inserted into the reasons field, and keys that leave input methods alone.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
-import { tick } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
-import { greenForm, humanView, redForm } from "./fixtures";
-import type { FormView, ToolView } from "../ipc/client";
+import { draftLibrary, humanView, scoredRed, greenForm } from "./fixtures";
+import type { DraftChange, ReviewPoint } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
-// The review measures its own width to choose one column or two; jsdom has no layout.
 globalThis.ResizeObserver ??= class {
   observe() {}
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver;
 
-/** Answer commands like the backend would for one waiting request, recording every call. */
-function backend(stage: "claim" | "review", submit?: (args: Record<string, unknown>) => unknown) {
+/** Answer commands like the backend would for one waiting request, recording every call; its
+ * draft is `kept`'s. `submit` answers a submission of the saved draft. */
+function backend(stage: "claim" | "review", submit?: (args: Record<string, unknown>) => unknown, kept = draftLibrary(), more?: (cmd: string) => unknown) {
   const calls: Call[] = [];
   let current = stage;
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: args as Record<string, unknown> });
+    const drafted = kept.answer(cmd, args);
+    if (drafted) return drafted;
+    const other = more?.(cmd);
+    if (other !== undefined) return other;
     switch (cmd) {
       case "human_open":
         return humanView(current);
       case "human_claim":
         current = "review";
-        return { notice: { text: "Claimed. Fill GREEN or RED fields, then Submit.", error: false }, view: humanView("review") };
-      case "human_form": {
-        // The library hands a kept draft back when the schema still takes it.
-        const asked = args as { verdict: string; kept: object | null };
-        const form = asked.verdict === "RED" ? redForm : greenForm;
-        return asked.kept ? { ...form, draft: asked.kept } : form;
-      }
-      case "human_submit":
+        return { notice: { text: "Claimed.", error: false }, view: humanView("review") };
+      case "human_draft_submit":
         return submit?.(args as Record<string, unknown>);
-      case "human_edit_field": {
-        // The library's form takes the value as typed.
-        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-      }
       default:
         return null;
     }
@@ -53,21 +47,13 @@ function backend(stage: "claim" | "review", submit?: (args: Record<string, unkno
   return calls;
 }
 
-type Edited = { draft: { fields: [string, { kind: string; value: unknown[] }][] }; name: string; item?: number };
-
-/** The library's answer to adding or removing an item of a list: `empty` is the list's new
- * item, and one is always left to type in. */
-function listed(cmd: string, args: unknown, empty: unknown): unknown {
-  const edit = args as Edited;
-  const items = (value: unknown[]) => {
-    const next = cmd === "human_add_item" ? [...value, empty] : value.toSpliced(edit.item!, 1);
-    return next.length > 0 ? next : [empty];
-  };
-  return {
-    ...edit.draft,
-    fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? { ...value, value: items(value.value) } : value]),
-  };
-}
+const changes = (calls: Call[]) => calls.filter((call) => call.cmd === "human_draft_edit").map((call) => call.args.change as DraftChange);
+const bar = () => screen.getByRole("group", { name: "Decision" });
+const submitButton = () => within(bar()).getByRole("button", { name: /^Submit/ }) as HTMLButtonElement;
+const why = () => within(bar()).queryByRole("status")?.textContent ?? "";
+const reasons = () => within(screen.queryByRole("list", { name: "Reasons" }) ?? document.createElement("ol")).queryAllByRole("listitem").map((item) => item.querySelector("p")?.textContent);
+const field = () => screen.getByRole("textbox", { name: "Reason" }) as HTMLTextAreaElement;
+const submitted = { notice: { text: "Submitted", error: false }, view: humanView("completed", { claim: null, completed: [{ kind: "text", key: "verdict", text: "GREEN" }] }), settled: "published" };
 
 afterEach(() => {
   cleanup();
@@ -75,22 +61,140 @@ afterEach(() => {
 });
 
 describe("HumanDetail", () => {
-  it("claims only on an explicit c, never on a key that is part of a composition", async () => {
+  it("claims only on an explicit c, before which the bar holds Claim to review and one quiet line stands in the reasons box's place", async () => {
     const calls = backend("claim");
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
     await screen.findByRole("button", { name: "Claim to review (c)" });
+    expect(screen.getByText("Claim it to write reasons and a verdict")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Reason" })).toBeNull();
+    expect(within(bar()).getByText("Waiting")).toBeTruthy();
+    expect(within(bar()).getAllByRole("radio").every((tab) => (tab as HTMLButtonElement).disabled)).toBe(true);
+    expect(submitButton().disabled).toBe(true);
 
     await fireEvent.keyDown(region, { key: "c", isComposing: true });
     await fireEvent.keyDown(region, { key: "c", keyCode: 229 });
     expect(calls.some((call) => call.cmd === "human_claim")).toBe(false);
-
     await fireEvent.keyDown(region, { key: "c" });
     await waitFor(() => expect(calls.some((call) => call.cmd === "human_claim")).toBe(true));
-    await screen.findByText("REVIEW (yours)");
+    await within(bar()).findByText("Yours");
+    expect(within(bar()).getByRole("button", { name: "Release claim (u)" })).toBeTruthy();
+    expect(screen.queryByText("Claim it to write reasons and a verdict")).toBeNull();
+    await screen.findByRole("textbox", { name: "Reason" });
   });
 
-  it("says why a submission settled here was not published, under its completed result", async () => {
+  it("adds reasons one at a time as bubbles with Enter or Add reason, edits one in place and removes another", async () => {
+    const calls = backend("review");
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    const add = () => screen.getByRole("button", { name: "Add reason" }) as HTMLButtonElement;
+    expect(add().disabled).toBe(true);
+    await user.type(field(), "The notes name 0.21{Shift>}{Enter}{/Shift}twice");
+    expect(field().value).toBe("The notes name 0.21\ntwice");
+    expect(add().disabled).toBe(false);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(reasons()).toEqual(["The notes name 0.21\ntwice"]));
+    expect(field().value).toBe("");
+    await user.type(field(), "Windows steps are missing");
+    await user.click(add());
+    await waitFor(() => expect(reasons()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing"]));
+    // Edit turns the bubble into a field in its place: Esc leaves it as it was, Enter keeps.
+    await user.click(screen.getByRole("button", { name: "Edit reason 2" }));
+    const editing = screen.getByRole("textbox", { name: "Edit reason 2" }) as HTMLTextAreaElement;
+    expect(document.activeElement).toBe(editing);
+    await user.type(editing, " on Windows 11");
+    await user.keyboard("{Escape}");
+    expect(reasons()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing"]);
+    await user.click(screen.getByRole("button", { name: "Edit reason 2" }));
+    await user.type(screen.getByRole("textbox", { name: "Edit reason 2" }), " for uninstall{Enter}");
+    await waitFor(() => expect(reasons()).toEqual(["The notes name 0.21\ntwice", "Windows steps are missing for uninstall"]));
+    await user.click(screen.getByRole("button", { name: "Remove reason 1" }));
+    await waitFor(() => expect(reasons()).toEqual(["Windows steps are missing for uninstall"]));
+    expect(changes(calls)).toEqual([
+      { kind: "addReason", text: "The notes name 0.21\ntwice" },
+      { kind: "addReason", text: "Windows steps are missing" },
+      { kind: "editReason", index: 1, previous: "Windows steps are missing", text: "Windows steps are missing for uninstall" },
+      { kind: "removeReason", index: 0, previous: "The notes name 0.21\ntwice" },
+    ]);
+  });
+
+  it("says why Submit waits: no verdict, a typed reason not added, then the library's readiness; switching keeps the reasons", async () => {
+    const calls = backend("review", () => submitted);
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    expect(submitButton().textContent).toBe("Submit");
+    expect(submitButton().disabled).toBe(true);
+    expect(why()).toBe("Choose GREEN or RED");
+    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
+    await waitFor(() => expect(submitButton().textContent).toBe("Submit RED"));
+    expect(why()).toBe("RED needs a reason");
+    await user.type(field(), "The notes are wrong");
+    expect(why()).toBe("Add the typed reason first");
+    expect(submitButton().disabled).toBe(true);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(why()).toBe("");
+    await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
+    await waitFor(() => expect(submitButton().textContent).toBe("Submit GREEN"));
+    expect(reasons()).toEqual(["The notes are wrong"]);
+    expect(within(bar()).getByRole("radio", { name: "GREEN (g)" }).getAttribute("aria-checked")).toBe("true");
+    await user.click(submitButton());
+    const result = await screen.findByRole("group", { name: "Result" });
+    expect(result.textContent).toContain("GREEN");
+    expect(screen.queryByRole("group", { name: "Decision" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Reason" })).toBeNull();
+    expect(calls.filter((call) => call.cmd === "human_draft_submit")).toHaveLength(1);
+  });
+
+  it("shows a verdict's own fields only while that verdict is chosen and the eval asks more than reasons", async () => {
+    const kept = draftLibrary(greenForm, scoredRed);
+    backend("review", undefined, kept);
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
+    await waitFor(() => expect(submitButton().textContent).toBe("Submit GREEN"));
+    expect(screen.queryByText(/the eval also asks/)).toBeNull();
+    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
+    const fields = await screen.findByRole("group", { name: "RED's fields" });
+    expect(within(fields).getByText("With RED, the eval also asks")).toBeTruthy();
+    expect(within(fields).getByLabelText("note").getAttribute("placeholder")).toBe("Optional");
+    await user.type(field(), "Off by one{Enter}");
+    await waitFor(() => expect(why()).toBe("score is required"));
+    await user.type(within(fields).getByLabelText(/score/), "2");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "RED's fields" })).toBeNull());
+    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
+    expect((within(await screen.findByRole("group", { name: "RED's fields" })).getByLabelText(/score/) as HTMLInputElement).value).toBe("2");
+  });
+
+  it("says a library's refusal where why stands, the draft kept", async () => {
+    backend("review", () => { throw { kind: "invalid", message: "reason: too short" }; });
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
+    await user.type(field(), "no{Enter}");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    await user.click(submitButton());
+    await waitFor(() => expect(why()).toBe("reason: too short"));
+    expect(within(bar()).getByRole("status").classList.contains("failed")).toBe(true);
+    expect(reasons()).toEqual(["no"]);
+  });
+
+  it("shows a review another reviewer holds with only who holds it in the bar", async () => {
+    mockIPC((cmd) => (cmd === "human_open" ? humanView("claim", { claim: { reviewer: "bob", mine: false } }) : null), { shouldMockEvents: true });
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    await waitFor(() => expect(bar().textContent).toBe("Taken by bob"));
+    expect(within(bar()).queryAllByRole("button")).toEqual([]);
+    expect(screen.queryByRole("textbox", { name: "Reason" })).toBeNull();
+    expect(screen.queryByText("Claim it to write reasons and a verdict")).toBeNull();
+  });
+
+  it("says why a submission settled here was not published, under its result bubble", async () => {
     const failure = "Saved locally; publishing to the review store failed: connection refused. Push results from Settings.";
     backend("review", () => ({
       settled: "savedLocally",
@@ -99,356 +203,142 @@ describe("HumanDetail", () => {
     }));
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
     await fireEvent.keyDown(region, { key: "g" });
-    const comment = await screen.findByLabelText(/comment/);
-    await userEvent.setup().type(comment, "checked");
-    await fireEvent.keyDown(comment, { key: "s", ctrlKey: true });
-    const result = await screen.findByRole("region", { name: "Result" });
-    await waitFor(() => expect(within(result).getByRole("status").textContent).toBe(failure));
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    await fireEvent.keyDown(field(), { key: "s", ctrlKey: true });
+    await screen.findByRole("group", { name: "Result" });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe(failure));
   });
 
-  it("keeps GREEN and RED drafts apart and shows a schema error without losing the draft", async () => {
-    const calls = backend("review", () => {
-      throw { kind: "invalid", message: "Result does not match the fail schema: /reason: \"no\" is shorter than 3 characters" };
-    });
+  it("leaves composition keys alone: letters in the reasons field are text, a composing Enter adds nothing, Ctrl+S submits", async () => {
+    const calls = backend("review", () => submitted);
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
-
-    await fireEvent.keyDown(region, { key: "r" });
-    const reason = await screen.findByLabelText(/reason/);
-    await user.type(reason, "no");
-    // Letters typed into a field are text, not shortcuts.
-    expect(calls.filter((call) => call.cmd === "human_form").length).toBe(1);
-
-    await user.click(screen.getByRole("radio", { name: "GREEN" }));
-    const comment = await screen.findByLabelText(/comment/);
-    await user.type(comment, "확인");
-    await user.click(screen.getByRole("radio", { name: "RED" }));
-    expect(((await screen.findByLabelText(/reason/)) as HTMLTextAreaElement).value).toBe("no");
-
-    await fireEvent.keyDown(await screen.findByLabelText(/reason/), { key: "s", ctrlKey: true });
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("/reason");
-    const submitted = calls.find((call) => call.cmd === "human_submit");
-    expect(submitted?.args.draft).toEqual({ verdict: "RED", fields: [["reason", { kind: "text", value: "no" }]] });
-    expect(((await screen.findByLabelText(/reason/)) as HTMLTextAreaElement).value).toBe("no");
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    await user.click(field());
+    await user.keyboard("gru");
+    expect(field().value).toBe("gru");
+    expect(changes(calls)).toEqual([]);
+    await fireEvent.keyDown(field(), { key: "Enter", isComposing: true });
+    await fireEvent.keyDown(field(), { key: "Escape", isComposing: true });
+    expect(changes(calls)).toEqual([]);
+    expect(document.activeElement).toBe(field());
+    await user.clear(field());
+    await user.type(field(), "확인{Enter}");
+    await waitFor(() => expect(reasons()).toEqual(["확인"]));
+    await fireEvent.keyDown(screen.getByLabelText("Human review"), { key: "g" });
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    await fireEvent.keyDown(field(), { key: "s", ctrlKey: true });
+    await screen.findByRole("group", { name: "Result" });
   });
 
-  it("leaves an input method its Escape: a composing Escape neither stops editing nor leaves", async () => {
-    backend("review");
-    let left = 0;
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
-    const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
-    await fireEvent.keyDown(region, { key: "g" });
-    const comment = await screen.findByLabelText(/comment/);
-    await fireEvent.keyDown(comment, { key: "Escape", isComposing: true });
-    await fireEvent.keyDown(comment, { key: "Escape", keyCode: 229 });
-    await fireEvent.keyDown(region, { key: "Escape", keyCode: 229 });
-    expect(screen.queryByLabelText(/comment/)).not.toBeNull();
-    expect(left).toBe(0);
-  });
-
-  it("leaves composition letters and chords alone, then commits and submits Korean text", async () => {
-    const calls = backend("review", () => ({
-      notice: { text: "Submitted GREEN", error: false },
-      view: humanView("completed", { result: '{"verdict":"GREEN","approved":true,"comment":"안녕"}' }),
-      settled: "published",
-    }));
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
-    await fireEvent.keyDown(region, { key: "g" });
-    const comment = await screen.findByLabelText(/comment/);
-    const writes = new Set(["human_form", "human_claim", "human_release", "human_run", "human_submit", "human_cancel"]);
-    const before = calls.filter(({ cmd }) => writes.has(cmd)).length;
-    await fireEvent.compositionStart(comment);
-    for (const key of ["g", "r", "q", "u", "c", "Escape"]) {
-      await fireEvent.keyDown(comment, { key, isComposing: true });
-    }
-    for (const key of ["g", "r", "u", "s", "e"]) {
-      await fireEvent.keyDown(comment, { key, ctrlKey: true, isComposing: true });
-      await fireEvent.keyDown(comment, { key, metaKey: true, isComposing: true });
-    }
-    expect(calls.filter(({ cmd }) => writes.has(cmd))).toHaveLength(before);
-    expect(screen.queryByLabelText(/comment/)).not.toBeNull();
-    await fireEvent.input(comment, { target: { value: "안녕" }, inputType: "insertCompositionText", data: "안녕" });
-    await fireEvent.compositionEnd(comment, { data: "안녕" });
-    await waitFor(() => expect(calls.find(({ cmd }) => cmd === "human_edit_field")?.args.value).toEqual({ kind: "text", value: "안녕" }));
-    await fireEvent.keyDown(comment, { key: "s", ctrlKey: true });
-    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "human_submit")).toBe(true));
-    expect(calls.find(({ cmd }) => cmd === "human_submit")?.args.draft).toEqual({
-      verdict: "GREEN", fields: [["approved", { kind: "fixed" }], ["comment", { kind: "text", value: "안녕" }]],
-    });
-  });
-
-  it.each(["typed field", "Submit button"])("keeps the completed result keyboard-accessible after submitting from the %s", async (from) => {
-    backend("review", () => ({
-      notice: { text: "Submitted GREEN for release/signoff", error: false },
-      view: humanView("completed", { result: '{"verdict":"GREEN","approved":true,"comment":"checked"}' }),
-      settled: "published",
-    }));
-    const user = userEvent.setup();
-    let left = 0;
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
-    const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
-    await user.keyboard("g");
-    const comment = await screen.findByLabelText(/comment/);
-    await waitFor(() => expect(document.activeElement).toBe(comment));
-    await user.type(comment, "checked");
-    if (from === "Submit button") await user.click(screen.getByRole("button", { name: /Submit/ }));
-    else await user.keyboard("{Control>}s{/Control}");
-
-    await completedResult();
-    expect(region.isConnected).toBe(true);
-    expect(screen.queryByLabelText(/comment/)).toBeNull();
-    expect(left).toBe(0);
-    // Use the real focus target, not a key dispatched directly to the Detail.
-    await user.keyboard("{Escape}");
-    await waitFor(() => expect(left).toBe(1));
-  });
-
-  it("submits while a tool runs, cancelling that tool first", async () => {
-    const calls: Call[] = [];
+  it("Esc leaves the reasons field first, then cancels running work, then leaves the review", async () => {
     let stop!: () => void;
-    mockIPC((cmd, args) => {
-      calls.push({ cmd, args: args as Record<string, unknown> });
-      switch (cmd) {
-        case "human_open":
-          return humanView("review");
-        case "human_form":
-          return greenForm;
-        case "human_run":
-          // The tool runs until it is cancelled.
-          return new Promise((resolve) => (stop = () => resolve({ text: "■ error: cancelled", error: true })));
-        case "human_cancel":
-          stop();
-          return null;
-        case "human_submit":
-          return { notice: { text: "Submitted GREEN", error: false }, view: humanView("completed"), settled: "published" };
-        default:
-          return null;
-      }
-    }, { shouldMockEvents: true });
-    const user = userEvent.setup();
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
-    await screen.findByLabelText(/comment/);
-    await user.click(screen.getByRole("button", { name: "notes" }));
-    await screen.findByRole("img", { name: "Running notes" });
-    // Release waits for the running work; Submit does not.
-    expect((screen.getByRole("button", { name: "Release claim (u)" }) as HTMLButtonElement).disabled).toBe(true);
-    const submit = screen.getByRole("button", { name: "Submit GREEN (Ctrl+S)" }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(false);
-    await user.click(submit);
-    await completedResult();
-    expect(calls.map(({ cmd }) => cmd).filter((cmd) => ["human_run", "human_cancel", "human_submit"].includes(cmd))).toEqual([
-      "human_run", "human_cancel", "human_submit",
-    ]);
-  });
-
-  it("does not steal focus moved outside the Detail while submission is running", async () => {
-    let finish!: (value: unknown) => void;
-    backend("review", () => new Promise((resolve) => (finish = resolve)));
-    const user = userEvent.setup();
-    let submitted!: () => void;
-    const settled = new Promise<void>((resolve) => (submitted = resolve));
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {}, onsubmitted: () => submitted() });
-    await screen.findByText("REVIEW (yours)");
-    await user.keyboard("g");
-    await screen.findByLabelText(/comment/);
-    await user.keyboard("{Control>}s{/Control}");
-    await screen.findByRole("img", { name: /Submitting GREEN/ });
-    const elsewhere = document.createElement("button");
-    elsewhere.textContent = "Another screen";
-    document.body.append(elsewhere);
-    try {
-      await user.click(elsewhere);
-      finish({ notice: null, view: humanView("completed"), settled: "published" });
-      await completedResult();
-      // The submission's focus recovery runs on the tick after it settled; wait for that step.
-      await settled;
-      await tick();
-      expect(document.activeElement).toBe(elsewhere);
-    } finally {
-      elsewhere.remove();
-    }
-  });
-
-  it("Esc stops editing first, then leaves", async () => {
-    backend("review");
+    backend("review", undefined, draftLibrary(), (cmd) => {
+      if (cmd === "human_run") return new Promise((resolve) => (stop = () => resolve({ text: "■ error: cancelled", error: true })));
+      if (cmd === "human_cancel") { stop(); return null; }
+      return undefined;
+    });
     let left = 0;
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => (left += 1) });
-    const region = await screen.findByLabelText("Human review");
-    await screen.findByText("REVIEW (yours)");
-    await fireEvent.keyDown(region, { key: "g" });
-    const comment = await screen.findByLabelText(/comment/);
-    await fireEvent.keyDown(comment, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByLabelText(/comment/)).toBeNull());
+    const user = userEvent.setup();
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => left++ });
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    await user.click(screen.getByRole("button", { name: "notes" }));
+    await within(bar()).findByRole("button", { name: "Release claim (u)" });
+    await waitFor(() => expect((within(bar()).getByRole("button", { name: "Release claim (u)" }) as HTMLButtonElement).disabled).toBe(true));
+    await user.click(field());
+    await user.keyboard("{Escape}");
+    expect(document.activeElement).toBe(screen.getByLabelText("Human review"));
     expect(left).toBe(0);
-    // The removed field's focus returns to the Detail, where the next Esc lands.
-    await waitFor(() => expect(document.activeElement).toBe(region));
-    await fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect((within(bar()).getByRole("button", { name: "Release claim (u)" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(left).toBe(0);
+    await user.keyboard("{Escape}");
     expect(left).toBe(1);
   });
 
-  it("hides constants and enters a list one item at a time, added and removed", async () => {
-    const list: FormView = {
-      verdict: "RED",
-      fields: [
-        { name: "approved", required: true, hint: "", input: { kind: "fixed", value: "false" } },
-        { name: "change", required: true, hint: "array", input: { kind: "list" } },
-      ],
-      draft: { verdict: "RED", fields: [["approved", { kind: "fixed" }], ["change", { kind: "list", value: [""] }]] },
-    };
-    const calls = backend("review");
-    mockIPC((cmd, args) => {
-      calls.push({ cmd, args: args as Record<string, unknown> });
-      if (cmd === "human_open") return humanView("review");
-      if (cmd === "human_form") return list;
-      if (cmd === "human_add_item" || cmd === "human_remove_item") return listed(cmd, args, "");
-      if (cmd === "human_edit_field") {
-        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-      }
-      return null;
-    }, { shouldMockEvents: true });
+  it("submits while a tool runs, cancelling that tool first", async () => {
+    let stop!: () => void;
+    const calls = backend("review", () => submitted, draftLibrary(), (cmd) => {
+      if (cmd === "human_run") return new Promise((resolve) => (stop = () => resolve({ text: "■ error: cancelled", error: true })));
+      if (cmd === "human_cancel") { stop(); return null; }
+      return undefined;
+    });
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "RED (r)" }));
-    const first = await screen.findByLabelText("change 1");
-    // The constant is the form's own: nothing to enter, so nothing shown.
-    expect(screen.queryByText(/approved/)).toBeNull();
-    await user.type(first, "Shorter title");
-    await user.click(screen.getByRole("button", { name: "Add" }));
-    await user.type(await screen.findByLabelText("change 2"), "Fix the date");
-    await user.click(screen.getByRole("button", { name: "Remove change 1" }));
-    await waitFor(() => expect((screen.getByLabelText("change 1") as HTMLTextAreaElement).value).toBe("Fix the date"));
-    expect(screen.queryByLabelText("change 2")).toBeNull();
-    // The library adds and removes the items; the form asked it each time.
-    expect(calls.filter(({ cmd }) => cmd === "human_add_item" || cmd === "human_remove_item").map(({ cmd, args }) => [cmd, args.name, args.item])).toEqual([
-      ["human_add_item", "change", undefined],
-      ["human_remove_item", "change", 0],
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
+    await user.click(screen.getByRole("button", { name: "notes" }));
+    await waitFor(() => expect((within(bar()).getByRole("button", { name: "Release claim (u)" }) as HTMLButtonElement).disabled).toBe(true));
+    expect(submitButton().disabled).toBe(false);
+    await user.click(submitButton());
+    await screen.findByRole("group", { name: "Result" });
+    expect(calls.map(({ cmd }) => cmd).filter((cmd) => ["human_run", "human_cancel", "human_draft_submit"].includes(cmd))).toEqual([
+      "human_run", "human_cancel", "human_draft_submit",
     ]);
-    expect(screen.getByRole("button", { name: "Submit RED (Ctrl+S)" })).toBeTruthy();
   });
 
-  it("groups the tools by their Artifact, the reviewed one first, and logs each run's lines under it", async () => {
-    const tools: ToolView[] = [
-      { name: "preview_brand", artifact: "brand", operation: "preview", kind: "launch", description: "Show the icon.", action: "preview", error: null },
-      { name: "notes_release", artifact: "release", operation: "notes", kind: "output", description: "Print the notes.", action: "$ cat notes.md", error: null },
-    ];
-    const ran: string[] = [];
-    mockIPC((cmd, args) => {
-      if (cmd === "human_open") return humanView("review", { tools });
-      if (cmd === "human_run") {
-        ran.push((args as { tool: string }).tool);
-        return { text: "Ran", error: false };
-      }
-      return null;
-    }, { shouldMockEvents: true });
+  it("draws each tool run as its own line: running with its newest line and Cancel, ended with its stderr and its end, unfolded into its lines", async () => {
+    backend("review");
     const user = userEvent.setup();
     const review = new Review("run-a-2", new Jobs());
     renderHosted(HumanDetail, { review, onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
-    const groups = screen.getAllByRole("group", { name: /^Tools of / });
-    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Tools of release", "Tools of brand"]);
-    await user.click(screen.getByRole("button", { name: "preview" }));
-    await waitFor(() => expect(ran).toEqual(["preview_brand"]));
-    // The launched program keeps printing after its button returned, under its own entry.
-    review.logged([
-      { run: "1", at: 0, operation: "preview", artifact: "brand", end: null,
-        lines: [{ text: "clicked (412, 1)", error: false }, { text: "clicked (412, 2)", error: true }] },
-      { run: "2", at: 0, operation: "notes", artifact: "release", lines: [], end: { text: "■ exit 0", error: false } },
-    ]);
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    expect(screen.queryByRole("log", { name: "Tool log" })).toBeNull();
+    const first = { run: "1", at: 0, operation: "notes", artifact: "release", lines: [{ text: "# Notes", error: false }], end: { text: "■ exit 0", error: false } };
+    const second = { run: "2", at: Date.now(), operation: "scan", artifact: "release", lines: [
+      { text: "early", error: false }, { text: "warning: missing title", error: true }, { text: "still checking", error: false },
+    ] };
+    review.logged([first, { ...second, end: null }]);
+    const running = await screen.findByRole("button", { name: "Running scan · release" });
+    expect(running.textContent).toContain("still checking");
+    const ran = screen.getByRole("button", { name: "Ran notes · release" });
+    expect(ran.querySelector(".end")?.textContent).toBe("exit 0 · 1 line");
+    review.logged([first, { ...second, end: { text: "■ exit 1", error: true } }]);
+    const ended = await screen.findByRole("button", { name: "Ran scan · release" });
+    expect(ended.querySelector(".stderr")?.textContent).toBe("warning: missing title");
+    expect(ended.querySelector(".end")?.textContent).toBe("exit 1 · 3 lines");
+    expect(ended.querySelector(".end")?.classList.contains("failed")).toBe(true);
+    expect(ended.getAttribute("aria-expanded")).toBe("false");
+    await user.click(ended);
     const log = screen.getByRole("log", { name: "Tool log" });
-    await waitFor(() => expect(log.textContent).toContain("clicked (412, 2)"));
-    const rows = [...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"));
-    expect(rows).toEqual(["▶ HH:MM:SS · preview · brand", "clicked (412, 1)", "clicked (412, 2)", "▶ HH:MM:SS · notes · release", "■ exit 0"]);
-    expect(screen.getByText("clicked (412, 2)").classList.contains("error")).toBe(true);
+    expect([...log.querySelectorAll("p")].map((row) => row.textContent?.replace(/\d\d:\d\d:\d\d/, "HH:MM:SS"))).toEqual(
+      ["▶ HH:MM:SS · scan · release", "early", "warning: missing title", "still checking", "■ exit 1"]);
+    await user.click(ended);
+    expect(screen.queryByRole("log", { name: "Tool log" })).toBeNull();
   });
 
-  it("enters a list of flat objects as groups of fields, added and removed", async () => {
-    const findings: FormView = {
-      verdict: "RED",
-      fields: [
-        {
-          name: "findings",
-          required: true,
-          hint: "array",
-          input: {
-            kind: "groups",
-            fields: [
-              { name: "kind", required: false, hint: "", input: { kind: "fixed", value: '"review"' } },
-              { name: "problem", required: true, hint: "string", input: { kind: "text" } },
-              { name: "severity", required: false, hint: "", input: { kind: "choice", options: ['"low"', '"high"'] } },
-            ],
-          },
-        },
-      ],
-      draft: {
-        verdict: "RED",
-        fields: [["findings", { kind: "groups", value: [[["kind", { kind: "fixed" }], ["problem", { kind: "text", value: "" }], ["severity", { kind: "choice", value: null }]]] }]],
-      },
-    };
-    const submitted: unknown[] = [];
-    mockIPC((cmd, args) => {
-      if (cmd === "human_open") return humanView("review");
-      if (cmd === "human_form") return findings;
-      if (cmd === "human_add_item" || cmd === "human_remove_item") {
-        return listed(cmd, args, [["kind", { kind: "fixed" }], ["problem", { kind: "text", value: "" }], ["severity", { kind: "choice", value: null }]]);
-      }
-      if (cmd === "human_edit_field") {
-        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-      }
-      if (cmd === "human_submit") submitted.push((args as { draft: unknown }).draft);
-      return null;
-    }, { shouldMockEvents: true });
+  it("lists Points after the runs; Insert puts a point into the reasons field at its caret, else at its end; remove goes by point identity", async () => {
+    const old: ReviewPoint = { text: "L2:C9", at: "2026-11-23T00:01:00Z", source: "release · Markdown" };
+    const fresh: ReviewPoint = { text: "#checkout .total", at: "2026-11-23T00:02:00Z", source: "checkout · HTML Viewer" };
+    const kept = draftLibrary();
+    const calls = backend("review", undefined, kept);
     const user = userEvent.setup();
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "RED (r)" }));
-    const first = await screen.findByRole("group", { name: "findings 1" });
-    // The group's constant is filled in, not shown.
-    expect(within(first).queryByText(/kind/)).toBeNull();
-    await user.type(within(first).getByLabelText(/problem/), "typo");
-    await user.click(screen.getByRole("button", { name: "Add" }));
-    const second = await screen.findByRole("group", { name: "findings 2" });
-    await user.type(within(second).getByLabelText(/problem/), "date");
-    await user.selectOptions(within(second).getByLabelText(/severity/), '"high"');
-    await user.click(screen.getByRole("button", { name: "Remove findings 1" }));
-    await waitFor(() => expect(screen.queryByRole("group", { name: "findings 2" })).toBeNull());
-    await user.click(screen.getByRole("button", { name: "Submit RED (Ctrl+S)" }));
-    await waitFor(() =>
-      expect(submitted).toEqual([
-        {
-          verdict: "RED",
-          fields: [["findings", { kind: "groups", value: [[["kind", { kind: "fixed" }], ["problem", { kind: "text", value: "date" }], ["severity", { kind: "choice", value: 1 }]]] }]],
-        },
-      ]),
-    );
+    const review = new Review("run-a-2", new Jobs());
+    renderHosted(HumanDetail, { review, onback: () => {} });
+    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
+    expect(screen.queryByRole("list", { name: "Points" })).toBeNull();
+    kept.draft.points = [old, fresh];
+    await review.readDraft();
+    const points = await screen.findByRole("list", { name: "Points" });
+    const rows = within(points).getAllByRole("listitem");
+    expect(rows.map((row) => row.querySelector(".text")?.textContent)).toEqual(["L2:C9", "#checkout .total"]);
+    expect(rows[1].classList.contains("newest")).toBe(true);
+    // Never placed, the caret is the field's end.
+    await user.type(field(), "See ");
+    field().blur();
+    await user.click(within(rows[0]).getByRole("button", { name: "Insert" }));
+    await waitFor(() => expect(field().value).toBe("See L2:C9"));
+    field().setSelectionRange(4, 4);
+    await user.click(within(rows[1]).getByRole("button", { name: "Insert" }));
+    await waitFor(() => expect(field().value).toBe("See #checkout .totalL2:C9"));
+    expect(kept.draft.reasons).toEqual([]);
+    await user.click(within(points).getByRole("button", { name: "Remove point: L2:C9" }));
+    await waitFor(() => expect(within(points).getAllByRole("listitem")).toHaveLength(1));
+    expect(calls.find((call) => call.cmd === "human_draft_remove_point")?.args.point).toEqual(old);
   });
 
-  it("says in grey that an optional field may stay empty", async () => {
-    const optional: FormView = { ...greenForm, fields: greenForm.fields.map((field) => ({ ...field, required: field.name !== "comment" })) };
-    mockIPC((cmd) => (cmd === "human_open" ? humanView("review") : cmd === "human_form" ? optional : null), { shouldMockEvents: true });
-    const user = userEvent.setup();
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
-    const comment = await screen.findByLabelText(/comment/);
-    expect(comment.getAttribute("placeholder")).toBe("Optional");
-  });
-});
-
-describe("Tools focused", () => {
   it("gives a review opened with Tools focused the keyboard on its Tools", async () => {
     backend("review");
     const review = new Review("run-a-2", new Jobs());
@@ -458,8 +348,3 @@ describe("Tools focused", () => {
     await waitFor(() => expect(document.activeElement).toBe(tools));
   });
 });
-
-/** Wait for the submitted review's completed result in place of its form. */
-async function completedResult(): Promise<void> {
-  await waitFor(() => expect(screen.getByRole("region", { name: "Result" }).querySelector(".completed")).not.toBeNull());
-}

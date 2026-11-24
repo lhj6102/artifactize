@@ -1,35 +1,24 @@
 <script lang="ts">
-  // A Tool log: each run as `▶ HH:MM:SS · operation · Artifact`, the lines it printed (stderr
-  // in red behind a red rule) and its end line. It follows its newest line unless the reader
-  // scrolled up; its text selects and copies like any other. A review's and an Artifact's tools
-  // both log here: in a column, as a box inside its section; as a review's view, filling its
-  // panel without a box.
+  // The same rows for a review's evidence and for an Artifact's tools in the Detail.
   import type { Attachment } from "svelte/attachments";
-  import type { LogEntry } from "../ipc/client";
+  import type { LogEntry, LogText } from "../ipc/client";
   import { ToolsState, setToolsState } from "./tools-state.svelte";
 
-  let {
-    entries,
-    empty = null,
-    view = false,
-  }: {
+  let { entries, empty = null, folded = false }: {
     entries: LogEntry[];
-    /** What shows before the first run. */
     empty?: string | null;
-    /** The review's view: the log fills its panel, without a box. */
-    view?: boolean;
+    folded?: boolean;
   } = $props();
   const t = new ToolsState();
   setToolsState(t);
 
-  /** `HH:MM:SS` of `at` (milliseconds since the epoch), local time. */
-  const clock = (at: number | null) => (at === null ? "--:--:--" : new Date(at).toTimeString().slice(0, 8));
-
-  /** Rows from the bottom within which the log still counts as followed. */
+  const visible = $derived(folded ? entries.slice(-1) : entries);
+  const clock = (at: number | null) => at === null ? "--:--:--" : new Date(at).toTimeString().slice(0, 8);
+  const prefix = (line: string) => /^\s*(?:warning|error):/i.exec(line)?.[0] ?? "";
+  const lineCount = (count: number) => `${count} ${count === 1 ? "line" : "lines"}`;
   const FOLLOW_SLACK = 24;
 
-  /** The log follows its newest line unless the reader scrolled up; scrolled back to the
-   * bottom, it follows again. Only the DOM is touched, as lines are added. */
+  /** Follow the newest text unless the reader scrolled back. */
   const follow: Attachment<HTMLElement> = (log) => {
     const scrolled = () => {
       t.following = log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_SLACK;
@@ -46,70 +35,60 @@
   };
 </script>
 
+{#snippet printed(line: LogText)}
+  {@const mark = line.error ? prefix(line.text) : ""}
+  <p class:stderr={line.error}>{#if mark}<span class="red">{mark}</span>{/if}{line.text.slice(mark.length)}</p>
+{/snippet}
+
+{#snippet ended(end: LogText, count: number)}
+  <p class="end" class:failed={end.error && end.text.startsWith("■ error:")}>{#if end.error && end.text.startsWith("■ exit ")}<span class="red">■</span>{end.text.slice(1)}{:else}{end.text}{/if}{folded ? ` · ${lineCount(count)}` : ""}</p>
+{/snippet}
+
 <!-- Focusable so the keys scroll it; its text selects and copies like any other. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div class="log" class:view tabindex="0" role="log" aria-label="Tool log" {@attach follow}>
-  {#each entries as entry (entry.run)}
+<div class="log" tabindex="0" role="log" aria-label="Tool log" {@attach follow}>
+  {#each visible as entry (entry.run)}
     <p class="start">▶ {clock(entry.at)} · {entry.operation} · {entry.artifact}</p>
-    {#each entry.lines as line, at (at)}
-      <p class:error={line.error}>{line.text}</p>
-    {/each}
-    {#if entry.end}<p class="end" class:error={entry.end.error}>{entry.end.text}</p>{/if}
+    {#if folded}
+      {@const error = entry.lines.findLast((each) => each.error)}
+      {@const newest = entry.end ? undefined : entry.lines.at(-1)}
+      {#if error}{@render printed(error)}{/if}
+      {#if newest && newest !== error}{@render printed(newest)}{/if}
+    {:else}
+      {#each entry.lines as line, at (at)}{@render printed(line)}{/each}
+    {/if}
+    {#if entry.end}{@render ended(entry.end, entry.lines.length)}{/if}
   {:else}
     {#if empty}<p class="muted">{empty}</p>{/if}
   {/each}
 </div>
 
 <style>
-  /* In a column: a box one step below the panel, outlined by the faintest line. */
   .log {
     min-width: 0;
     max-height: 260px;
-    min-height: 56px;
     overflow: auto;
     padding: 6px 8px;
     border: 1px solid var(--line-input);
     border-radius: var(--radius-control);
     background: var(--surface-input);
+    color: var(--ink);
     font: var(--text-small) / 1.5 var(--mono);
     outline: none;
     user-select: text;
   }
-  /* As the review's view: the input surface from its head row to the area's bottom. */
-  .log.view {
-    height: 100%;
-    max-height: none;
-    padding: var(--pad);
-    border: 0;
-    border-radius: 0;
-  }
-  .log:focus-visible {
-    box-shadow: inset 0 0 0 2px var(--focus);
-  }
+  .log:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
   .log p {
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font: inherit;
   }
-  .start,
-  .end {
-    color: var(--ink-2);
-  }
-  .end {
-    margin-bottom: 6px !important;
-  }
-  .error {
-    color: var(--red) !important;
-  }
-  /* What a tool printed to stderr keeps its text and is told apart without colour too. */
-  .error:not(.end) {
+  .start, .end, .muted { color: var(--ink-2); }
+  .log .end:not(:last-child) { margin-bottom: 6px; }
+  .end.failed, .red { color: var(--red); }
+  .stderr {
     padding-left: 6px;
     box-shadow: inset 2px 0 0 var(--red);
-  }
-  .muted {
-    color: var(--ink-2);
-    margin: 0 0 6px;
-    font-family: inherit;
   }
 </style>

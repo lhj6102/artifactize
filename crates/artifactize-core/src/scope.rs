@@ -223,7 +223,8 @@ pub(crate) fn executable(
 ) -> Result<std::ffi::OsString, String> {
     let artifact = scope.artifacts[owner];
     let cwd = scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
-    let relative = crate::platform::program::folder_relative(command)?;
+    let command = crate::platform::program_path(command).map_err(|error| error.to_string())?;
+    let relative = crate::platform::program::folder_relative(&command)?;
     let program = if let Some(relative) = relative.as_deref() {
         let physical = if artifact.file_name().is_some()
             || artifact.kind() == crate::config::ArtifactKind::Live
@@ -254,7 +255,7 @@ pub(crate) fn executable(
         };
         crate::platform::program::resolve_scoped(Path::new(relative), resolve)?
     } else {
-        PathBuf::from(command)
+        command
     };
     Ok(program.into_os_string())
 }
@@ -346,7 +347,10 @@ impl ResolvedArgument {
         match self {
             Self::Literal(text) => text.clone(),
             Self::Path { prefix, path } => {
-                format!("{prefix}{}", path.to_str().expect("validated UTF-8 path"))
+                format!(
+                    "{prefix}{}",
+                    crate::platform::os_text(path.as_os_str()).expect("validated UTF-8 path")
+                )
             }
         }
     }
@@ -409,7 +413,7 @@ pub(crate) fn argument_value(
         }));
     }
     let resolved = scope.resolve_input(&config.root, id, path)?;
-    if resolved.to_str().is_none() {
+    if crate::platform::os_text(resolved.as_os_str()).is_none() {
         return Err(ScopeError("Artifact paths must be UTF-8.".into()));
     }
     Ok(ResolvedArgument::Path {
@@ -583,6 +587,53 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     human::validate_references(config)?;
     crate::graph::Graph::new(config).map_err(|error| ConfigError::new(&config.root, error))?;
     Ok(())
+}
+
+/// Tools are required only for what the instruction can inspect, not for implicit parts
+/// whose results affect reuse but are not present in the review's tool scope.
+pub(crate) fn missing_eval_tools(
+    config: &RepoConfig,
+) -> impl Iterator<Item = (&Eval, &Artifact, &'static str)> {
+    config.evals.iter().flat_map(move |eval| {
+        std::iter::once(&eval.target)
+            .chain(&eval.deps)
+            .filter_map(move |id| {
+                let artifact = &config.artifacts[id];
+                let kind = match eval.declaration.profile() {
+                    Profile::Agent { .. } if artifact.views.agent_tools.is_empty() => "Agent",
+                    Profile::Human {} if artifact.views.human_tools.is_empty() => "Human",
+                    _ => return None,
+                };
+                Some((eval, artifact, kind))
+            })
+    })
+}
+
+pub(crate) fn validate_eval_tools(config: &RepoConfig) -> Result<(), ConfigError> {
+    let Some((eval, artifact, kind)) = missing_eval_tools(config).next() else {
+        return Ok(());
+    };
+    let (article, table) = if kind == "Agent" {
+        ("an", "agent_tools")
+    } else {
+        ("a", "human_tools")
+    };
+    let type_fix = if artifact.kind() == crate::config::ArtifactKind::Live {
+        String::new()
+    } else {
+        r#"; for a local file or folder, type = "files" supplies both tool kinds"#.to_owned()
+    };
+    let path = config
+        .root
+        .join(config.artifacts[&eval.target].declaration_path());
+    Err(ConfigError::declaration(
+        path,
+        &["evals", eval.declaration.id.as_ref()],
+        format!(
+            "Eval {} includes Artifact {} without {article} {kind} Tool. Add one under [views.{table}] on {} or use an Artifact type that provides one{type_fix}.",
+            eval.id, artifact.name, artifact.name
+        ),
+    ))
 }
 
 /// Every Artifact of `config` as one tool scope, which nested paths are checked against.

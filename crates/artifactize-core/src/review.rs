@@ -1,13 +1,19 @@
 //! Human review: the facts and lifecycle jobs every interface shares.
 
 mod detail;
+mod draft;
 mod form;
+mod reasons;
 mod runs;
 pub mod search;
 
 /// The Tool log every review interface shows; see [`log::Sink`].
 pub use crate::{human::Submission, tools::human::log};
 pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
+pub use draft::{
+    Draft, DraftEdit, DraftFields, EMPTY_REASON, FieldValue, Point, REASON_CHANGED, Readiness,
+    append_point, edit_draft, read_draft, remove_point, values_of,
+};
 pub use form::{Field, Form, Input, Key, Row, Specification};
 pub use runs::Runs;
 
@@ -20,6 +26,22 @@ use crate::{
 };
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
+
+/// The exact Verify Run and eval node behind a review receipt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    pub run: crate::types::RunId,
+    pub node: crate::monitor::NodeId,
+}
+
+impl From<&Request> for Target {
+    fn from(request: &Request) -> Self {
+        Self {
+            run: request.run_id.clone(),
+            node: crate::monitor::NodeId::eval(request.eval_id.clone()),
+        }
+    }
+}
 
 /// The refusal for reviewing a request nobody claimed.
 pub const CLAIM_FIRST: &str = "Claim this request before reviewing it.";
@@ -73,6 +95,17 @@ pub fn release_refusal(
     }
 }
 
+/// The answer a review submits: explicit fields or the shared draft at submission time.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Answer {
+    Explicit(Submission),
+    /// Legacy input may settle only when no saved form would be discarded.
+    ExplicitWithoutDraft(Submission),
+    SavedDraft,
+    /// Captured after earlier edits reached storage; checked again atomically at settlement.
+    PreparedDraft(Draft),
+}
+
 /// Lifecycle work with owned inputs, so the screen keeps drawing while it runs.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Job {
@@ -87,7 +120,7 @@ pub enum Job {
     /// Claim first when `claim`, then submit and publish like `request submit`.
     Submit {
         id: RequestId,
-        result: Submission,
+        answer: Answer,
         claim: bool,
     },
     /// Release the reviewer's remaining claims; quit afterwards when `quit`.
@@ -97,7 +130,7 @@ pub enum Job {
 #[derive(Debug)]
 pub enum Outcome {
     Claimed {
-        result: Result<HumanClaim, String>,
+        result: Result<(HumanClaim, bool), String>,
     },
     /// Publishing failed after settlement; never offer to submit the verdict twice.
     SavedLocally {
@@ -223,8 +256,17 @@ impl Job {
         match self {
             Job::Claim { id } => {
                 let result = async {
-                    let (receipts, _) = human::open(&state, &id).await?;
-                    let result = human::claim(&receipts, &id, &reviewer).await;
+                    let cancelled = || "Review action cancelled.".to_owned();
+                    let (receipts, _) = tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => return Err(cancelled()),
+                        opened = human::open(&state, &id) => opened?,
+                    };
+                    let result = if cancel.is_cancelled() {
+                        Err(cancelled())
+                    } else {
+                        human::claim_acquisition(&receipts, &id, &reviewer).await
+                    };
                     let closed = receipts.close().await;
                     result.and_then(|claim| closed.map(|()| claim))
                 }
@@ -285,7 +327,7 @@ impl Job {
             }
             Job::Submit {
                 id,
-                result,
+                answer,
                 claim: first,
             } => {
                 let mut claimed = None;
@@ -296,9 +338,25 @@ impl Job {
                         let closed = receipts.close().await;
                         claimed = Some(result.and_then(|claim| closed.map(|()| claim))?);
                     }
-                    human::submit_and_publish(&state, &id, &reviewer, &result, cancel)
-                        .await
-                        .map(Box::new)
+                    match answer {
+                        Answer::Explicit(result) => {
+                            human::submit_and_publish(&state, &id, &reviewer, &result, cancel).await
+                        }
+                        Answer::ExplicitWithoutDraft(result) => {
+                            human::publish_explicit_without_draft(
+                                &state, &id, &reviewer, &result, cancel,
+                            )
+                            .await
+                        }
+                        Answer::SavedDraft => {
+                            human::publish_saved_draft(&state, &id, &reviewer, None, cancel).await
+                        }
+                        Answer::PreparedDraft(draft) => {
+                            human::publish_saved_draft(&state, &id, &reviewer, Some(draft), cancel)
+                                .await
+                        }
+                    }
+                    .map(Box::new)
                 }
                 .await;
                 if let Err(error) = &result
@@ -326,13 +384,25 @@ impl Job {
                 let mut failed = Vec::new();
                 for id in &ids {
                     let release = async {
+                        let check = || {
+                            if cancel.is_cancelled() {
+                                Err("Review action cancelled.".to_owned())
+                            } else {
+                                Ok(())
+                            }
+                        };
+                        check()?;
                         // Settled requests and claims released elsewhere leave nothing to release.
                         let view = store::read_request_id(&state, id).await?;
                         if view.claim.is_none_or(|claim| claim.reviewer != reviewer) {
                             return Ok(());
                         }
+                        check()?;
                         let (receipts, _) = human::open(&state, id).await?;
-                        let result = human::unclaim(&receipts, id, &reviewer).await.map(drop);
+                        let result = match check() {
+                            Ok(()) => human::unclaim(&receipts, id, &reviewer).await.map(drop),
+                            Err(error) => Err(error),
+                        };
                         let closed = receipts.close().await;
                         result.and(closed)
                     };
@@ -413,9 +483,11 @@ impl ArtifactDeclarations {
     }
 
     /// Run tool `tool` of the Artifact at once. Its output reaches `run`'s Tool log; a
-    /// launched program's keeps arriving until it exits. A refusal ends the run with it.
+    /// launched program's keeps arriving until it exits. Check the requested checkout after
+    /// resolving the tool. A refusal ends the run with it.
     pub async fn run_tool(
         &self,
+        checkout: &crate::monitor::live::Place,
         tool: &ToolName,
         cancel: CancellationToken,
         run: log::Run,
@@ -434,6 +506,10 @@ impl ArtifactDeclarations {
             .any(|entry| &entry.name == tool && &entry.artifact_id == artifact)
         {
             let error = format!("{artifact} declares no Human tool {tool}.");
+            run.end(log::End::Failed(error.clone()));
+            return Err(error);
+        }
+        if let Err(error) = checkout.checked_workspace(self.config.root.clone()).await {
             run.end(log::End::Failed(error.clone()));
             return Err(error);
         }
@@ -464,6 +540,7 @@ fn declared(
                     let (kind, description) = match tool {
                         HumanTool::Command(tool) => (tool.kind, &tool.description),
                         HumanTool::Builtin(tool) => (tool.kind, &tool.description),
+                        HumanTool::Viewer(tool) => (HumanToolKind::Viewer, &tool.description),
                     };
                     Some(Tool {
                         name: format!("{operation}_{}", id).parse().ok()?,
@@ -523,5 +600,48 @@ mod submission_tests {
         }
         assert!(Submission::try_from(json!({"approved":true})).is_err());
         assert!(Submission::try_from(json!({"verdict":"ERROR"})).is_err());
+    }
+}
+
+#[cfg(test)]
+mod artifact_tool_tests {
+    use super::*;
+    use crate::monitor::live::Place;
+
+    #[tokio::test]
+    async fn a_detail_tool_refuses_to_run_after_the_worktree_switches_branches() {
+        let workspace = crate::test_os::tempdir();
+        let root = crate::test_os::canonical(workspace.path());
+        std::fs::create_dir(root.join(".artifactize")).unwrap();
+        std::fs::write(
+            root.join(".artifactize/app.artf"),
+            r#"
+path = "notes.md"
+[views.human_tools]
+notes = { builtin = "read", args = ["{artifactPath}"] }
+"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("notes.md"), "# Notes").unwrap();
+        crate::test_os::git(&root, &["init", "--quiet", "--initial-branch=expected"]);
+        let checkout = Place::for_checkout(&root, &crate::repository::identify(&root));
+        let artifact = "app".parse().unwrap();
+        let sites = crate::config::read_sites(&root).unwrap();
+        let app = ArtifactDeclarations::read(&root, &artifact, &sites[&artifact]).unwrap();
+        let tool = "notes_app".parse().unwrap();
+        let run = || {
+            app.run_tool(
+                &checkout,
+                &tool,
+                CancellationToken::new(),
+                log::Run::unwatched(),
+            )
+        };
+        assert!(!run().await.unwrap().is_error());
+        crate::test_os::git(&root, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+        assert_eq!(
+            run().await.unwrap_err(),
+            "This branch is no longer checked out in the worktree."
+        );
     }
 }

@@ -1,0 +1,8 @@
+{
+  "extends": "../../crates/artifactize-desktop/ui/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "webdriverio"],
+    "typeRoots": ["../../crates/artifactize-desktop/ui/node_modules/@types", "../../crates/artifactize-desktop/ui/node_modules"]
+  },
+  "include": ["*.mts"]
+}

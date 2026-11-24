@@ -14,20 +14,24 @@
   <span>Artifactize desktop / design / current</span>
   <nav aria-label="Design pages">
     <a href="index.html">Overview</a>
-    <a href="monitor.html">Monitor</a>
+    <a href="chat.html">Chat</a>
+    <a href="monitor.html">Verify</a>
     <a href="current.html" aria-current="page">Current</a>
     <a href="detail.html">Detail</a>
     <a href="review.html">Review</a>
+    <a href="viewers.html">Viewers</a>
     <a href="settings.html">Settings</a>
     <a href="overlays.html">Overlays</a>
   </nav>
 </header>
 <main data-screen="current">
-<h1>Current: a branch's worktree as it is now</h1>
+<h1>Current: a branch's worktree as it is now, in Chat's Graph view</h1>
 <p class="lead">
-  The Main area when a branch's Current is chosen: the header row with the scan's state, the
-  tool strip and the Current graph lit by what <code>verify</code> would do. The bar and the Pane are
-  as on the Monitor page; the Pane's Current entry sits in its pill. A Current is also where the
+  A Chat session's Graph view: the stage header with the view tabs on Graph and the graph's
+  tools, the Current graph of the session's branch filling the area under it, lit by what
+  <code>verify</code> would do, the scan's state in the canvas's status line, and the chat
+  floating over the graph's bottom: the composer and a reply's card. The bar and the Pane are Chat's;
+  Verify shows Runs only. A Current is also where the
   branch's Artifacts are defined: the second figure shows an Artifact dragged into a whole's
   box, the third a drop that was refused, the fourth two refusals for the file an edit would write, and the last two a comment being written and, separately,
   another being moved.
@@ -38,54 +42,26 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
-    <span class="m-spacer"></span>
-    <span class="m-reviewer">alice</span>
-    <span class="m-button">Settings</span>
-    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+    <span class="m-bar-side"><span class="m-brand"><span class="m-mark"></span>Artifactize</span></span>
+    <span class="m-modes"><span class="m-mode on"><span class="m-icon i-chat"></span>Chat</span><span class="m-mode"><span class="m-icon i-verify"></span>Verify</span><span class="m-mode"><span class="m-mode-mark"><span class="m-icon i-review"></span><span class="m-count">2</span></span>Review</span></span>
+    <span class="m-bar-side end"><span class="m-mode m-bar-icon" aria-label="Settings" title="Settings"><span class="m-icon i-settings"></span></span></span>
   </header>
   <div class="m-screen">
     <section class="m-pane">
-      <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
-      <div class="m-branches">
-        <div class="m-branch open">
-          <div class="m-branch-head">
-            <span class="m-chevron"></span>
-            <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
-            <span class="m-star on m-icon i-star-on"></span>
-          </div>
-          <div class="m-timeline">
-            <div class="m-entry filled">
-              <span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span>
-              
-            </div>
-            <div class="m-entry">
-              <span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span>
-              <span class="m-sub">dogfood: desktop design pages and the restyle…</span>
-            </div>
-          </div>
-        </div>
-        <div class="m-branch">
-          <div class="m-branch-head">
-            <span class="m-chevron"></span>
-            <span class="m-branch-name"><span class="m-project">shop /</span> <b>main</b></span>
-            <span class="m-star m-icon i-star"></span>
-          </div>
-          <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
-        </div>
+      <div class="m-pane-top"><span class="m-new"><span class="m-icon i-new-chat"></span>New chat</span><span class="m-tool" aria-label="Search chats" title="Search chats"><span class="m-icon i-find"></span></span></div>
+      <div class="m-chatlist">
+        <p class="m-group-label">Projects</p>
+        <div class="m-chat-project"><span class="m-icon i-folder-open"></span><span class="m-item-name">artifactize</span></div>
+        <div class="m-session selected"><span class="m-item-name">Desktop design pages</span><span class="m-sbranch">dev</span><span class="m-spacer"></span><span class="m-state tone-running">running</span></div>
+        <div class="m-session"><span class="m-item-name">Release notes wording</span><span class="m-sbranch">dev</span><span class="m-spacer"></span><span class="m-age">1d</span></div>
+        <div class="m-chat-project"><span class="m-icon i-folder-closed"></span><span class="m-item-name">shop</span></div>
       </div>
-      <section class="m-waiting"><h2>(0)</h2></section>
     </section>
     <div class="m-divider"></div>
     <section class="m-main focused">
-      <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 1 left</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
-      <div class="m-strip">
-        <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
-        <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
-        <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-        <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
-      </div>
+      <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-add"></span>New Artifact</span><span class="m-tool">Refresh</span><span class="m-tool-sep"></span><span class="m-tool disabled" aria-label="Move to another checkout" title="Stop the running turn to move the chat"><span class="m-icon i-move"></span></span></span></div>
       <div class="m-canvas">
+        <div class="m-stage-status"><span><span class="m-icon i-checking tone-checking"></span>1 left</span></div>
         <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(-22deg)"></div>
         <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(22deg)"></div>
         <div class="m-edge light-run" style="left: 716px; top: 254px; width: 92px"></div>
@@ -93,21 +69,100 @@
         <div class="m-node in light-checking" style="left: 548px; top: 106px"><span class="m-light"></span><span class="m-name">release</span></div>
         <div class="m-node in out light-run" style="left: 548px; top: 234px"><span class="m-light"></span><span class="m-name">cli</span><span class="m-tally">1/3</span></div>
         <div class="m-node in light-run" style="left: 808px; top: 234px"><span class="m-light"></span><span class="m-name">docs</span><span class="m-tally">0/2</span></div>
+        <div class="m-float">
+          <div class="m-reply">
+            <div class="m-reply-head"><span class="m-icon i-unfold"></span><span class="m-said">Make release a part of desktop and check the scan</span><span class="m-icon i-running tone-running"></span></div>
+            <div class="m-reply-body">
+              <p>Moving <code>release</code> under <code>desktop</code>'s parts.</p>
+              <div class="m-call"><span class="m-icon i-edit"></span>Edited <span class="m-target">.artifactize/desktop/desktop.artf</span><span>+1 −0</span></div>
+              <div class="m-call"><span class="m-icon i-running tone-running"></span>Checking <span class="m-target">artifactize status</span></div>
+            </div>
+          </div>
+          <div class="m-composer">
+            <div class="m-composer-box editing">
+              <div class="m-composer-text">Then rename docs to docs-en<span class="m-caret"></span></div>
+              <div class="m-composer-row"><span class="m-picker">Opus 5.5 <span class="m-picker-effort">· high</span><span class="m-icon i-unfold"></span></span><span class="m-spacer"></span><span class="m-icon-button" aria-label="Stop"><span class="m-icon i-stop"></span></span></div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </div>
 </div>
-<span class="callout" style="left: 645px; top: 43px">1</span>
-<span class="callout" style="left: 560px; top: 240px">2</span>
-<span class="callout" style="left: 660px; top: 74px">3</span>
+<span class="callout" style="left: 350px; top: 40px">1</span>
+<span class="callout" style="left: 560px; top: 204px">2</span>
+<span class="callout" style="left: 1236px; top: 36px">3</span>
+<span class="callout" style="left: 470px; top: 36px">14</span>
+<span class="callout" style="left: 1130px; top: 668px">12</span>
+<span class="callout" style="left: 1130px; top: 545px">13</span>
 </div>
-<figcaption>Stage 1280 × 800. A Current's lights say what verify would do: reused, would run, waiting, blocked, checking.</figcaption>
+<figcaption>Stage 1280 × 800. A Chat session in its Graph view while a turn sent from it runs: the branch's Current fills the Main area under the stage header, its lights saying what verify would do (reused, would run, checking), and the chat floats at its bottom, the reply streaming in its card above the composer. The other figures are cut to the stage header and the graph.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>Scan state</b><span>In the Main area's header row, after the view's name: while the scan runs, the checking icon and how many Artifacts are still being checked, as a count that falls (<i>1 left</i>: here release, the one node still checking); once it ends, the time it was scanned at; only a failure is said in words. Refresh at the row's end.</span></div></li>
-  <li><span class="n">2</span><div><b>Current graph</b><span>Drawn at once from the definitions, every node first <i>checking</i>, then lit in place as the scan learns what verify would do.</span></div></li>
-  <li><span class="n">3</span><div><b>New Artifact</b><span>In the tool strip after Fit, only on a Current: a dialog asks for the name and the Path and writes the definition file.</span></div></li>
+  <li><span class="n">1</span><div><b>Scan state</b><span>The stage's status line, on the canvas at its top left: while the scan runs, the checking icon and how many Artifacts are still being checked, as a count that falls (<i>1 left</i>: here release, the one node still checking); once it ends, the time it was scanned at; only a failure in words, in red. Never in the stage header.</span></div></li>
+  <li><span class="n">2</span><div><b>Current graph</b><span>Drawn at once from the definitions, every node first <i>checking</i>, then lit in place as the scan learns what verify would do. It takes the Main area's whole height under the stage header.</span></div></li>
+  <li><span class="n">14</span><div><b>View tabs</b><span>The same stage header as Conversation's and Verify's: Graph shown, Conversation one click away.</span></div></li>
+  <li><span class="n">3</span><div><b>Tools</b><span>The graph's: Find, the zoom, Fit; then the Current's: New Artifact (a dialog asks for the name and the Path and writes the definition file), Reset layout while the top level is placed by hand, and Refresh. Borderless, by luminance alone.</span></div></li>
+  <li><span class="n">12</span><div><b>Floating composer</b><span>The session's composer, floating at the canvas's bottom centre at the conversation column's width: a dark face inside a thin edge, no shadow. Fit and the zoom keep the graph's nodes above it.</span></div></li>
+  <li><span class="n">13</span><div><b>Reply card</b><span>A reply to a message sent from the Graph view streams here, the newest at its end, folded to its head by a click on it; the whole conversation stays in Conversation.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 560">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
+  <div class="m-screen pane-hidden">
+    <section class="m-main focused">
+      <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-add"></span>New Artifact</span><span class="m-tool">Refresh</span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Move to another checkout" title="Move to another checkout"><span class="m-icon i-move"></span></span></span></div>
+      <div class="m-canvas" style="--float-right: 420px">
+        <div class="m-stage-status"><span><span class="m-icon i-checking tone-checking"></span>1 left</span></div>
+        <div class="m-node light-reused" style="left: 40px; top: 70px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
+        <div class="m-node light-run selected" style="left: 300px; top: 70px"><span class="m-light"></span><span class="m-name">cli</span><span class="m-tally">1/3</span></div>
+        <div class="m-node light-checking" style="left: 560px; top: 70px"><span class="m-light"></span><span class="m-name">release</span></div>
+        <div class="m-node light-run" style="left: 40px; top: 160px"><span class="m-light"></span><span class="m-name">docs-en</span><span class="m-tally">2/4</span></div>
+        <div class="m-node light-reused" style="left: 300px; top: 160px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">4/4</span></div>
+        <div class="m-node light-run" style="left: 560px; top: 160px"><span class="m-light"></span><span class="m-name">desktop-e2e</span><span class="m-tally">0/2</span></div>
+        <div class="m-node light-reused" style="left: 40px; top: 250px"><span class="m-light"></span><span class="m-name">media</span><span class="m-tally">2/2</span></div>
+        <div class="m-node light-reused" style="left: 300px; top: 250px"><span class="m-light"></span><span class="m-name">site</span><span class="m-tally">1/1</span></div>
+        <div class="m-navigator over-float" style="right: 428px; --float-inset: 172px"><svg viewBox="0 0 1100 340" aria-hidden="true"><rect class="view" x="0" y="0" width="760" height="300" /><rect class="light-reused" x="40" y="70" width="168" height="40" /><rect class="light-run" x="300" y="70" width="168" height="40" /><rect class="light-checking" x="560" y="70" width="168" height="40" /><rect class="light-run" x="40" y="160" width="168" height="40" /><rect class="light-reused" x="300" y="160" width="168" height="40" /><rect class="light-run" x="560" y="160" width="168" height="40" /><rect class="light-reused" x="40" y="250" width="168" height="40" /><rect class="light-reused" x="300" y="250" width="168" height="40" /><rect class="light-run" x="860" y="120" width="168" height="40" /><rect class="light-reused" x="860" y="220" width="168" height="40" /></svg></div>
+        <div class="m-float">
+          <div class="m-reply">
+            <div class="m-reply-head"><span class="m-icon i-fold"></span><span class="m-said">Why would cli run again?</span></div>
+          </div>
+          <div class="m-composer">
+            <div class="m-composer-box">
+              <div class="m-composer-text"><span style="color: var(--ink-2)">Ask the agent to work on this branch…</span></div>
+              <div class="m-composer-row"><span class="m-picker">Opus 5.5 <span class="m-picker-effort">· high</span><span class="m-icon i-unfold"></span></span><span class="m-spacer"></span><span class="m-icon-button primary" aria-label="Send"><span class="m-icon i-send"></span></span></div>
+            </div>
+          </div>
+        </div>
+        <aside class="m-dock" style="--detail-width: 420px">
+          <div class="m-main-head"><div class="m-dock-title"><h2>Artifact cli</h2><span class="m-star m-icon i-star"></span></div><span class="m-button small">Close</span></div>
+          <div class="m-body">
+            <div class="m-sec">
+              <div class="m-sec-head"><span class="m-icon i-unfold"></span>Evals</div>
+              <ul class="m-rows">
+                <li class="m-row"><span class="m-icon i-reused tone-reused"></span><span>lint</span><span class="tone-reused">reused</span><span class="m-right"></span></li>
+                <li class="m-row"><span class="m-icon i-run tone-running"></span><span>tests</span><span class="tone-running">would run</span><span class="m-right"></span></li>
+                <li class="m-row"><span class="m-icon i-run tone-running"></span><span>matches-docs</span><span class="tone-running">would run</span><span class="m-right"></span></li>
+              </ul>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+</div>
+<span class="callout" style="left: 420px; top: 400px">15</span>
+<span class="callout" style="left: 760px; top: 300px">16</span>
+</div>
+<figcaption>Stage 1280 × 560. The Graph view with the Pane hidden and cli's Detail docked at the right: the floating chat centres in the canvas left of the Detail, its reply card folded to its head; the Navigator stands above the band the chat keeps.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">15</span><div><b>Centred left of the Detail</b><span>With the Detail open, the floating chat centres in the canvas that stays left of it, at the conversation column's width or narrower; the reply card folded to its head by a click on it.</span></div></li>
+  <li><span class="n">16</span><div><b>Kept band</b><span>Fit and the camera's first view leave the band under the floating chat free of nodes; the Navigator stands at that band's right, above it, left of the Detail.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -115,25 +170,19 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:02:11</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
-    <div class="m-strip">
-      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
-      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
-      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
-      <span class="m-button small"><span class="m-icon i-reset"></span>Reset layout</span>
-    </div>
+    <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-add"></span>New Artifact</span><span class="m-tool"><span class="m-icon i-reset"></span>Reset layout</span><span class="m-tool">Refresh</span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Move to another checkout" title="Move to another checkout"><span class="m-icon i-move"></span></span></span></div>
     <div class="m-canvas">
-      <div class="m-edge light-reused" style="left: 208px; top: 80px; width: 145px; transform: rotate(32.6deg)"></div>
-      <div class="m-node out light-reused" style="left: 40px; top: 60px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
-      <div class="m-node light-run" style="left: 40px; top: 230px"><span class="m-light"></span><span class="m-name">docs-en</span><span class="m-tally">2/4</span></div>
-      <div class="m-whole in light-run target" style="left: 330px; top: 40px; width: 560px; height: 236px">
+      <div class="m-stage-status"><span>14:02:11</span></div>
+      <div class="m-edge light-reused" style="left: 208px; top: 108px; width: 145px; transform: rotate(32.6deg)"></div>
+      <div class="m-node out light-reused" style="left: 40px; top: 88px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
+      <div class="m-node light-run" style="left: 40px; top: 258px"><span class="m-light"></span><span class="m-name">docs-en</span><span class="m-tally">2/4</span></div>
+      <div class="m-whole in light-run target" style="left: 330px; top: 68px; width: 560px; height: 236px">
         <div class="m-whole-title"><span class="m-light"></span><span class="m-name">desktop</span><span class="m-tally">0/1</span><span class="m-toggle"><span class="m-icon i-reset"></span></span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
         <div class="m-node light-reused" style="left: 24px; top: 52px"><span class="m-light"></span><span class="m-name">desktop-backend</span><span class="m-tally">3/3</span></div>
         <div class="m-node light-run" style="left: 24px; top: 112px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">2/4</span></div>
         <div class="m-node light-reused" style="left: 232px; top: 82px"><span class="m-light"></span><span class="m-name">desktop-e2e</span><span class="m-tally">3/3</span></div>
       </div>
-      <div class="m-node lifted light-reused" style="left: 690px; top: 196px"><span class="m-light"></span><span class="m-name">desktop-design</span><span class="m-tally">4/4</span></div>
+      <div class="m-node lifted light-reused" style="left: 690px; top: 224px"><span class="m-light"></span><span class="m-name">desktop-design</span><span class="m-tally">4/4</span></div>
     </div>
   </section>
 </div>
@@ -146,9 +195,9 @@
 </figure>
 
 <ol class="notes">
-  <li><span class="n">4</span><div><b>Reset layout, top level</b><span>In the tool strip while the top level is placed by hand; a click lays the top level out automatically again, every top-level node's place leaving its file, while the boxes in it keep their own arrangements.</span></div></li>
+  <li><span class="n">4</span><div><b>Reset layout, top level</b><span>In the stage header's tools while the top level is placed by hand; a click lays the top level out automatically again, every top-level node's place leaving its file, while the boxes in it keep their own arrangements.</span></div></li>
   <li><span class="n">5</span><div><b>Dragged Artifact</b><span>Raised one step with the faint shadow, following the pointer with its edges; its face, icon, strip and tally as they were. The place it left stays empty.</span></div></li>
-  <li><span class="n">6</span><div><b>Drop target</b><span>The box a release would make its whole, outlined in the accent while the drop would be accepted. Released, desktop-design becomes a part of desktop, written in desktop's definition, and is drawn in desktop's box where it was dropped, below the box's parts when it would cover one; in the same edit it leaves the whole it was dragged out of, its place moving from that whole's file into desktop's. Released outside every box, it only leaves that whole and is drawn at the top level, its place written into its own file, its other wholes unchanged.</span></div></li>
+  <li><span class="n">6</span><div><b>Drop target</b><span>The box a release would make its whole, outlined in the light neutral accent while the drop would be accepted. Released, desktop-design becomes a part of desktop, written in desktop's definition, and is drawn in desktop's box where it was dropped, below the box's parts when it would cover one; in the same edit it leaves the whole it was dragged out of, its place moving from that whole's file into desktop's. Released outside every box, it only leaves that whole and is drawn at the top level, its place written into its own file, its other wholes unchanged.</span></div></li>
   <li><span class="n">7</span><div><b>Reset layout, a box</b><span>A box placed by hand has it in its title row before Minimize; a box laid out automatically has none. A click lays out that box alone automatically again, its places leaving the whole's file; the boxes nested inside it keep their own arrangements.</span></div></li>
 </ol>
 
@@ -157,29 +206,24 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:03:40</span></span><span class="m-notice">release cannot be a part of media-brand, which is a part of release</span><span class="m-button small">Refresh</span></div>
-    <div class="m-strip">
-      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
-      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
-      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
-    </div>
+    <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-add"></span>New Artifact</span><span class="m-tool">Refresh</span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Move to another checkout" title="Move to another checkout"><span class="m-icon i-move"></span></span></span></div>
     <div class="m-canvas">
-      <div class="m-node minimized light-reused" style="left: 40px; top: 40px"><span class="m-light"></span><span class="m-text"><span class="m-name">release</span><span class="m-count">3 parts</span></span><span class="m-tally">2/2</span><span class="m-toggle"><span class="m-icon i-add"></span></span></div>
-      <div class="m-whole light-reused" style="left: 330px; top: 20px; width: 360px; height: 100px">
+      <div class="m-stage-status"><span>14:03:40</span><span class="m-notice">release cannot be a part of media-brand, which is a part of release</span></div>
+      <div class="m-node minimized light-reused" style="left: 40px; top: 68px"><span class="m-light"></span><span class="m-text"><span class="m-name">release</span><span class="m-count">3 parts</span></span><span class="m-tally">2/2</span><span class="m-toggle"><span class="m-icon i-add"></span></span></div>
+      <div class="m-whole light-reused" style="left: 330px; top: 48px; width: 360px; height: 100px">
         <div class="m-whole-title"><span class="m-light"></span><span class="m-name">media</span><span class="m-tally">1/1</span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
         <div class="m-node light-reused" style="left: 24px; top: 46px"><span class="m-light"></span><span class="m-name">media-brand</span><span class="m-tally">1/1</span></div>
       </div>
     </div>
   </section>
 </div>
-<span class="callout" style="left: 470px; top: 6px">8</span>
+<span class="callout" style="left: 490px; top: 40px">8</span>
 </div>
-<figcaption>Stage 1000 × 200. release, minimized, dropped onto the copy in media of its own part media-brand: refused, release back where it was, the reason in the header.</figcaption>
+<figcaption>Stage 1000 × 200. release, minimized, dropped onto the copy in media of its own part media-brand: refused, release back where it was, the reason in the status line.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">8</span><div><b>Refusal</b><span>The Main area's notice in red says why in a few words; a click shows it in full. Nothing was written and the dragged Artifact is back where it was.</span></div></li>
+  <li><span class="n">8</span><div><b>Refusal</b><span>The status line's notice in red says why in a few words; a click shows it in full. Nothing was written and the dragged Artifact is back where it was.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -187,46 +231,34 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr) minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 4 left</span></span><span class="m-notice">.artifactize/desktop/desktop-design.artf changed on disk; nothing written</span><span class="m-button small">Refresh</span></div>
-    <div class="m-strip">
-      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
-      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
-      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
-      <span class="m-button small"><span class="m-icon i-reset"></span>Reset layout</span>
-    </div>
+    <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-add"></span>New Artifact</span><span class="m-tool"><span class="m-icon i-reset"></span>Reset layout</span><span class="m-tool">Refresh</span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Move to another checkout" title="Move to another checkout"><span class="m-icon i-move"></span></span></span></div>
     <div class="m-canvas">
-      <div class="m-node out light-checking" style="left: 40px; top: 24px"><span class="m-light"></span><span class="m-name">desktop-design</span></div>
-      <div class="m-whole in light-checking" style="left: 330px; top: 4px; width: 420px; height: 100px">
+      <div class="m-stage-status"><span><span class="m-icon i-checking tone-checking"></span>4 left</span><span class="m-notice">.artifactize/desktop/desktop-design.artf changed on disk; nothing written</span></div>
+      <div class="m-node out light-checking" style="left: 40px; top: 52px"><span class="m-light"></span><span class="m-name">desktop-design</span></div>
+      <div class="m-whole in light-checking" style="left: 330px; top: 32px; width: 420px; height: 100px">
         <div class="m-whole-title"><span class="m-light"></span><span class="m-name">desktop</span><span class="m-toggle"><span class="m-icon i-reset"></span></span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
         <div class="m-node light-checking" style="left: 16px; top: 46px"><span class="m-light"></span><span class="m-name">desktop-backend</span></div>
         <div class="m-node light-checking" style="left: 228px; top: 46px"><span class="m-light"></span><span class="m-name">desktop-ui</span></div>
       </div>
-      <div class="m-edge" style="left: 208px; top: 44px; width: 122px"></div>
+      <div class="m-edge" style="left: 208px; top: 72px; width: 122px"></div>
     </div>
   </section>
   <section class="m-main" style="border-top: 1px solid var(--line-panel)">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:06:30</span></span><span class="m-notice">.artifactize/desktop/desktop-design.artf has unsaved text in its Source; nothing written</span><span class="m-button small">Refresh</span></div>
-    <div class="m-strip">
-      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
-      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
-      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
-      <span class="m-button small"><span class="m-icon i-reset"></span>Reset layout</span>
-    </div>
+    <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-add"></span>New Artifact</span><span class="m-tool"><span class="m-icon i-reset"></span>Reset layout</span><span class="m-tool">Refresh</span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Move to another checkout" title="Move to another checkout"><span class="m-icon i-move"></span></span></span></div>
     <div class="m-canvas">
-      <div class="m-node out light-reused" style="left: 40px; top: 24px"><span class="m-light"></span><span class="m-name">desktop-design</span><span class="m-tally">4/4</span></div>
-      <div class="m-whole in light-run" style="left: 330px; top: 4px; width: 420px; height: 100px">
+      <div class="m-stage-status"><span>14:06:30</span><span class="m-notice">.artifactize/desktop/desktop-design.artf has unsaved text in its Source; nothing written</span></div>
+      <div class="m-node out light-reused" style="left: 40px; top: 52px"><span class="m-light"></span><span class="m-name">desktop-design</span><span class="m-tally">4/4</span></div>
+      <div class="m-whole in light-run" style="left: 330px; top: 32px; width: 420px; height: 100px">
         <div class="m-whole-title"><span class="m-light"></span><span class="m-name">desktop</span><span class="m-tally">0/1</span><span class="m-toggle"><span class="m-icon i-reset"></span></span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
         <div class="m-node light-reused" style="left: 16px; top: 46px"><span class="m-light"></span><span class="m-name">desktop-backend</span><span class="m-tally">3/3</span></div>
         <div class="m-node light-run" style="left: 228px; top: 46px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">2/4</span></div>
       </div>
-      <div class="m-edge" style="left: 208px; top: 44px; width: 122px"></div>
+      <div class="m-edge" style="left: 208px; top: 72px; width: 122px"></div>
     </div>
   </section>
 </div>
-<span class="callout" style="left: 900px; top: 52px">12</span>
-<span class="callout" style="left: 900px; top: 242px">13</span>
+<span class="callout" style="left: 520px; top: 40px">12</span>
+<span class="callout" style="left: 610px; top: 232px">13</span>
 </div>
 <figcaption>Stage 1000 × 380. Two edits on the graph refused for the file they would write, shown one above the other here: desktop-design dragged within the top level after its file changed on disk (top), the Current already scanning again; the same drag while desktop-design.artf has typed text in its Source in the Detail (bottom). In both, desktop-design is back where it was and the graph stays shown.</figcaption>
 </figure>
@@ -241,21 +273,16 @@
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:05:02</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
-    <div class="m-strip">
-      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
-      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
-      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
-    </div>
+    <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-add"></span>New Artifact</span><span class="m-tool">Refresh</span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Move to another checkout" title="Move to another checkout"><span class="m-icon i-move"></span></span></span></div>
     <div class="m-canvas">
-      <div class="m-node light-reused" style="left: 40px; top: 40px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
-      <div class="m-comment-field" style="left: 40px; top: 84px">Split the store out once
+      <div class="m-stage-status"><span>14:05:02</span></div>
+      <div class="m-node light-reused" style="left: 40px; top: 68px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
+      <div class="m-comment-field" style="left: 40px; top: 112px">Split the store out once
 the read path settles; an
 agent can turn this into
 a node with its own evals.</div>
-      <div class="m-node light-run" style="left: 340px; top: 40px"><span class="m-light"></span><span class="m-name">docs-en</span><span class="m-tally">2/4</span></div>
-      <p class="m-comment" style="left: 340px; top: 84px">The getting-started guide still shows the old declarations and needs the definition folder instead.</p>
+      <div class="m-node light-run" style="left: 340px; top: 68px"><span class="m-light"></span><span class="m-name">docs-en</span><span class="m-tally">2/4</span></div>
+      <p class="m-comment" style="left: 340px; top: 112px">The getting-started guide still shows the old declarations and needs the definition folder instead.</p>
     </div>
   </section>
 </div>
@@ -275,19 +302,14 @@ a node with its own evals.</div>
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
-    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:05:02</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
-    <div class="m-strip">
-      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
-      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
-      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
-    </div>
+    <div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"><span class="m-viewswitch"><span>Conversation</span><span class="on">Graph</span></span></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-add"></span>New Artifact</span><span class="m-tool">Refresh</span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Move to another checkout" title="Move to another checkout"><span class="m-icon i-move"></span></span></span></div>
     <div class="m-canvas">
-      <div class="m-node light-reused" style="left: 40px; top: 40px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
-      <p class="m-comment" style="left: 40px; top: 84px">Split the store out once the read path settles; an agent can turn this into a node with its own evals.</p>
-      <div class="m-node light-run target" style="left: 680px; top: 120px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">2/4</span></div>
-      <p class="m-comment lifted" style="left: 790px; top: 150px">Check Korean labels.</p>
-      <div class="m-node light-reused" style="left: 680px; top: 30px"><span class="m-light"></span><span class="m-name">media-brand</span><span class="m-tally">1/1</span></div>
+      <div class="m-stage-status"><span>14:05:02</span></div>
+      <div class="m-node light-reused" style="left: 40px; top: 68px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
+      <p class="m-comment" style="left: 40px; top: 112px">Split the store out once the read path settles; an agent can turn this into a node with its own evals.</p>
+      <div class="m-node light-run target" style="left: 680px; top: 148px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">2/4</span></div>
+      <p class="m-comment lifted" style="left: 790px; top: 178px">Check Korean labels.</p>
+      <div class="m-node light-reused" style="left: 680px; top: 58px"><span class="m-light"></span><span class="m-name">media-brand</span><span class="m-tally">1/1</span></div>
     </div>
   </section>
 </div>
@@ -303,11 +325,13 @@ a node with its own evals.</div>
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-CUR-1">D-CUR-1</dt>
-  <dd>The Current's scan state is the headline of the Main area's header row (D-MAIN-1), after <i>Current · {project} {branch}</i>: the scan's state in <code>--ink-2</code> with tabular figures, said without a sentence: while it runs, the checking icon in <code>--checking</code> and <i>n left</i>, how many Artifacts are still being checked, a count that falls to none and is read aloud as <i>Checking, n Artifacts left</i>; once it ends, the time it was scanned at, <i>HH:MM:SS</i>, read aloud as <i>Scanned at HH:MM:SS</i>; only a failure is said in words, why it failed in <code>--red</code>. A small Refresh button sits at the row's end; a refresh asked while a scan runs keeps that scan shown, the header still counting, and one more scan follows once it ends. <span class="avoid">a sentence for a scan that runs or ended well; a ratio that reads like a node's tally (<i>3/24</i>); a spinner without the count; the state in a banner; a second row for the scan's state; a key cap on Refresh.</span></dd>
+  <dd>The Current's scan state stands in the stage's status line (D-MAIN-2), on the canvas at its top left, never in the stage header: the scan's state in <code>--ink-2</code> with tabular figures, said without a sentence: while it runs, the checking icon in <code>--checking</code> and <i>n left</i>, how many Artifacts are still being checked, a count that falls to none and is read aloud as <i>Checking, n Artifacts left</i>; once it ends, the time it was scanned at, <i>HH:MM:SS</i>, read aloud as <i>Scanned at HH:MM:SS</i>; only a failure is said in words, why it failed in <code>--red</code>. <b>Refresh</b>, a word alone, is the last of the Current's tools in the stage header (D-CUR-3); a refresh asked while a scan runs keeps that scan shown, the status line still counting, and one more scan follows once it ends. <span class="avoid">the scan state in the stage header; a sentence for a scan that runs or ended well; a ratio that reads like a node's tally (<i>3/24</i>); a spinner without the count; the state in a banner; a face or box behind the status line; a key cap on Refresh.</span></dd>
+  <dt id="D-CUR-10">D-CUR-10</dt>
+  <dd>The Graph view of a Chat session (J-CHAT-GRAPH) gives the Main area under the stage header (D-MAIN-1) to the canvas (D-GRAPH-1), its whole height, with the Detail docked at its right as in Verify (D-INS-1); the stage header's middle shows Graph as the shown tab (D-CHAT-10) and its right the graph's tools and the Current's (D-GRAPH-4, D-CUR-3). The chat floats over the canvas's bottom, 12px above it, centred in the canvas left of the Detail when one is open, the conversation column's width (<code>--measure</code>, narrower when the canvas is): the composer as in Conversation (D-CHAT-6), its face <code>--surface-input</code> inside its 1px <code>--line-input</code> edge, no shadow, and, once a message is sent from this view, the reply card 8px above it: a <code>--surface-input</code> face inside a 1px <code>--line-group</code> edge of <code>--radius-chip</code>, no shadow; its head a <code>--row-head</code> row, the unfold icon (the fold icon while folded), the message sent in <code>--ink-2</code> at <code>--text-small</code> cut with an ellipsis, and at its right the in-progress icon in <code>--running</code> while the turn runs; under it the reply as the conversation draws a turn (D-CHAT-3 to D-CHAT-5), at most 120px high, following its newest line. A click on the head folds the card to its head and unfolds it again. The card holds the newest message sent from this view and its reply alone; the conversation keeps every turn, and the card is gone once Conversation is shown. The camera works in one protected view: the canvas less the status line's 32px at its top (D-MAIN-2) and less the floating band at its bottom, as tall as the floating chat is now plus 12px (about 126px with the card folded, about 210px unfolded), followed as the card folds, unfolds, grows with a streaming reply or the composer grows. Fit and the first view fit the graph into it; the zoom buttons zoom around its centre; an Artifact found, created or reached by the keyboard is brought into it, so no focused or selected node ends under the band; the wheel and panning stay the person's own. The Navigator (D-GRAPH-5) stands at the band's right, above it. For a session whose branch cannot be worked on now, the canvas holds one <code>--ink-2</code> line saying why, as the library says it (its worktree gone, its branch no longer checked out), with no graph tools, nothing live and the composer off (D-CHAT-9). <span class="avoid">a fixed inset that misses the card's folding; a focused or selected node left under the band; the Current in Verify; a second Current per session on one branch; the composer under the canvas instead of over it; a shadow, a raised face or a scrim behind the floating chat; the whole conversation over the graph; a node fitted under the floating chat; the floating chat centred on the window with the Detail open.</span></dd>
   <dt id="D-CUR-2">D-CUR-2</dt>
-  <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) under the same tool strip (D-GRAPH-4), with marks of its own (reused, would run, waiting, blocked, checking, each with its icon, named in Help, D-OVL-5); a node still being checked uses <code>--checking</code> and recolours in place. Read aloud, a node says its name and what verify would do with it (reused, would run, waiting or blocked), with how many of its evals would run, whatever it would do once it is checked (none, for a reused one), or that it is still being checked (J-MAIN-CURRENT). <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
+  <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) with the same tools (D-GRAPH-4), with marks of its own (reused, would run, waiting, blocked, checking, each with its icon, named in Help, D-OVL-5); a node still being checked uses <code>--checking</code> and recolours in place. Read aloud, a node says its name and what verify would do with it (reused, would run, waiting or blocked), with how many of its evals would run, whatever it would do once it is checked (none, for a reused one), or that it is still being checked (J-MAIN-CURRENT). <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
   <dt id="D-CUR-3">D-CUR-3</dt>
-  <dd>On a Current the tool strip (D-GRAPH-4) adds, after Fit, <b>New Artifact</b>, a small button with the add icon and its words, and, while the top level is placed by hand, <b>Reset layout</b>, a small button with the reset icon and its words; a Run's strip has neither. <span class="avoid">an edit control on a Run's graph; New Artifact as an icon alone; Reset layout shown, or disabled, for a top level laid out automatically; a key cap on either.</span></dd>
+  <dd>On a Current the stage header's tools (D-GRAPH-4) add, after Fit and a separator, <b>New Artifact</b>, a tool with the add icon and its words, and, while the top level is placed by hand, <b>Reset layout</b>, a tool with the reset icon and its words, then <b>Refresh</b> (D-CUR-1), and in Chat the session's Move last (D-CHAT-12); a Run's tools have none of them. <span class="avoid">an edit control on a Run's graph; New Artifact as an icon alone; Reset layout shown, or disabled, for a top level laid out automatically; a border around any of them; a key cap on any.</span></dd>
   <dt id="D-CUR-4">D-CUR-4</dt>
   <dd>A dragged Artifact (a node, a minimized whole, or a whole with its parts) floats: raised to <code>--surface-raised</code> with the faint shadow (D-SYS-2), its outline, icon, strip and tally as they were, its edges and its comment following it; the place it left stays empty. A press and release without moving is a click (it opens the Detail); a press followed by moving starts the drag; a whole is dragged by its title row. Released in the box it was in (or at the top level when it was in none), it lands where it was released, settled again at its own surface with no drop target highlighted; what that release writes is J-NODE-MOVE. <span class="avoid">a ghost left at the old place; a drag that starts on a press and release without moving; a node that turns into a block or a different shape while dragged; the camera moving while a node is dragged.</span></dd>
   <dt id="D-CUR-5">D-CUR-5</dt>
@@ -315,9 +339,9 @@ a node with its own evals.</div>
   <dt id="D-CUR-6">D-CUR-6</dt>
   <dd>A box placed by hand carries Reset layout in its title row, before Minimize: a button of Minimize's size and border (D-NODE-3) with the reset icon, named <i>Reset layout of {whole}</i> when read aloud; a box laid out automatically has none, so the button alone tells a box placed by hand. A click lays out that box alone automatically again, its places leaving the whole's file; the strip's Reset layout (D-CUR-3) does the same for the top level, every top-level node's place leaving its file. Either way the boxes nested inside keep their own arrangements, those placed by hand staying as placed (J-LAYOUT-RESET). <span class="avoid">a badge, a lock or a pin marking a placed box; a Reset layout that also resets the boxes nested inside; a tooltip on the button (D-SYS-7); Reset layout on a Run's graph.</span></dd>
   <dt id="D-CUR-7">D-CUR-7</dt>
-  <dd>An edit made on the graph (a placing release, a drop, Reset layout, Enter in a comment field or a comment's drop) that is refused writes nothing, puts the dragged Artifact or comment back where it was, or leaves the comment field as it was, and says why as the Main area's notice (D-MAIN-1): <code>--red</code>, a few words, its whole text a click away. What it names tells the refusals apart: a cycle or a definition the project would not accept names the Artifacts and why; a file changed on disk since the Current read it names that file, <i>{file} changed on disk; nothing written</i>, and the Current is scanned again; a file whose Source in the Detail holds typed text names that file, <i>{file} has unsaved text in its Source; nothing written</i>, the typed text kept, until that Source is saved or reverted. A graph's notice never carries a line and column, which only an error in a Source's text has (D-INS-11). <span class="avoid">a dialog or a toast for a refusal; a refusal said on the canvas; a refused drop left where it was dropped; a refusal that does not name the file it concerns; a graph edit that overwrites or clears a Source's typed text.</span></dd>
+  <dd>An edit made on the graph (a placing release, a drop, Reset layout, Enter in a comment field or a comment's drop) that is refused writes nothing, puts the dragged Artifact or comment back where it was, or leaves the comment field as it was, and says why as the Main area's notice in the stage's status line (D-MAIN-2): <code>--red</code>, a few words, its whole text a click away. What it names tells the refusals apart: a cycle or a definition the project would not accept names the Artifacts and why; a file changed on disk since the Current read it names that file, <i>{file} changed on disk; nothing written</i>, and the Current is scanned again; a file whose Source in the Detail holds typed text names that file, <i>{file} has unsaved text in its Source; nothing written</i>, the typed text kept, until that Source is saved or reverted. A graph's notice never carries a line and column, which only an error in a Source's text has (D-INS-11). <span class="avoid">a dialog or a toast for a refusal; a refusal said on the canvas; a refused drop left where it was dropped; a refusal that does not name the file it concerns; a graph edit that overwrites or clears a Source's typed text.</span></dd>
   <dt id="D-CUR-8">D-CUR-8</dt>
-  <dd>The comment field opens in place of the comment, or where it would be, under its node (D-NODE-6): a <code>--surface-input</code> field with a 1px <code>--line-input</code> border and the <code>--focus</code> ring, as wide as the comment, growing with its lines to show the comment whole, its text <code>--text-small</code> in <code>--ink</code> with its line breaks; the graph around it stays as it was. It has no buttons and no hint: what it writes or puts back, and where focus returns, is J-COMMENT-EDIT; a refusal is said as the Main area's notice (D-CUR-7) and the field stays with its text. <span class="avoid">a dialog, a popover or a Detail section for a comment; Save and Cancel buttons on the field; a line that explains its keys; a field that covers other nodes' names without growing the space under its own.</span></dd>
+  <dd>The comment field opens in place of the comment, or where it would be, under its node (D-NODE-6): a <code>--surface-input</code> field with a 1px <code>--line-input</code> border and, while typed in, the 1px <code>--current-mark</code> editing outline of every field (D-SYS-13), the <code>--focus</code> ring only for keyboard focus, as wide as the comment, growing with its lines to show the comment whole, its text <code>--text-small</code> in <code>--ink</code> with its line breaks; the graph around it stays as it was. It has no buttons and no hint: what it writes or puts back, and where focus returns, is J-COMMENT-EDIT; a refusal is said as the Main area's notice (D-CUR-7) and the field stays with its text. <span class="avoid">a dialog, a popover or a Detail section for a comment; Save and Cancel buttons on the field; a line that explains its keys; a field that covers other nodes' names without growing the space under its own.</span></dd>
   <dt id="D-CUR-9">D-CUR-9</dt>
   <dd>A comment is dragged by its text: while dragged its text alone follows the pointer, lifted by a faint <code>--scrim</code> shadow on its letters, in the same ink, width and lines as under its node, with no surface, outline, rounded corners or box around it; the Artifact a release would give it, one without a comment, is the drop target of D-CUR-5, and nothing else shows. Released elsewhere it returns under its node. <span class="avoid">a dragged comment on a card, a raised surface or a rounded box; a drop target on an Artifact that has a comment; a comment left on the canvas where it was dropped.</span></dd>
 </dl>

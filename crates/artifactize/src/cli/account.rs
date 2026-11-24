@@ -9,8 +9,10 @@ use super::{Context, cancellation_listener, print_json};
 
 pub(super) async fn login(context: Context, provider: Provider) -> Result<u8, String> {
     let (state, repo) = (context.state_dir.as_deref(), context.repo.as_deref());
-    if provider == Provider::ClaudeAgent {
-        return claude_agent_login(&context).await;
+    match provider {
+        Provider::ClaudeAgent => return claude_agent_login(&context).await,
+        Provider::Antigravity => return antigravity_login(&context).await,
+        _ => {}
     }
     if provider != Provider::Codex {
         let key = super::secret::read(&format!("{provider} API key"))?.parse()?;
@@ -59,7 +61,43 @@ async fn claude_agent_login(context: &Context) -> Result<u8, String> {
     Ok(0)
 }
 
+async fn antigravity_login(context: &Context) -> Result<u8, String> {
+    use artifactize_core::auth::antigravity;
+    let (cancellation, listener) = cancellation_listener()?;
+    let (paste, pasted) = tokio::sync::oneshot::channel();
+    let signed_in = tokio::select! {
+        signed_in = antigravity::login_with(pasted, |prompt| {
+            let _ = writeln!(io::stderr().lock(), "Open this Google sign-in URL and paste the code from Antigravity:\n{}", prompt.url);
+            // The prompt is known before we read; a blocked terminal read never delays exit.
+            let _ = std::thread::Builder::new().name("antigravity-login-input".into()).spawn(move || {
+                if let Ok(code) = super::secret::read("Antigravity sign-in code") {
+                    let _ = paste.send(code);
+                }
+            });
+        }) => signed_in,
+        () = cancellation.cancelled() => Err("Antigravity sign-in was cancelled.".into()),
+    };
+    listener.abort();
+    signed_in?;
+    if context.json {
+        print_json(&json!({ "provider": Provider::Antigravity, "signed_in": true }))?;
+    } else {
+        writeln!(io::stdout().lock(), "Signed in with Antigravity.").map_err(|e| e.to_string())?;
+    }
+    Ok(0)
+}
+
 pub(super) async fn logout(context: Context, provider: Provider) -> Result<u8, String> {
+    if provider == Provider::Antigravity {
+        artifactize_core::auth::antigravity::logout().await?;
+        if context.json {
+            print_json(&json!({ "provider": provider, "signed_in": false }))?;
+        } else {
+            writeln!(io::stdout().lock(), "Signed out of Antigravity.")
+                .map_err(|e| e.to_string())?;
+        }
+        return Ok(0);
+    }
     if provider == Provider::ClaudeAgent {
         artifactize_core::auth::claude_agent::logout().await?;
         if context.json {

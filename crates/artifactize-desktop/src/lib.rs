@@ -7,6 +7,7 @@
 //! tauri-specta; [`bindings`] is the single list of what the frontend may call.
 
 mod browse;
+mod chat;
 mod definitions;
 mod detail;
 #[cfg(feature = "e2e")]
@@ -25,6 +26,9 @@ mod tools;
 mod transcript;
 mod watch;
 
+mod viewer;
+mod windows;
+
 pub use failure::Failure;
 pub use ids::{JobId, SignInId, TranscriptHandle};
 pub use launch::{Launch, Mode};
@@ -42,13 +46,34 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
     Builder::new()
         .commands(collect_commands![
             launch::launch,
+            chat::chat_create,
+            chat::chat_set_model,
+            chat::chat_set_view,
+            chat::chat_set_worktree,
+            chat::chat_latest_for_branch,
+            chat::chat_default_model,
+            chat::chat_list,
+            chat::chat_branches,
+            chat::chat_mark_seen,
+            chat::chat_open,
+            chat::chat_send,
+            chat::chat_stop,
+            chat::chat_open_link,
             browse::browse,
             browse::redraw,
             browse::pane_complete,
             detail::detail,
             detail::detail_row,
             human::human_open,
+            human::search::human_open_reference,
+            human::search::human_search,
+            human::search::human_search_complete,
+            human::search::human_waiting_count,
             human::human_form,
+            human::draft::human_draft,
+            human::draft::human_draft_edit,
+            human::draft::human_draft_remove_point,
+            human::draft::human_draft_submit,
             human::human_edit_field,
             human::human_add_item,
             human::human_remove_item,
@@ -70,10 +95,23 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             definitions::definition_check,
             tools::artifact_tools,
             tools::artifact_tool_run,
+            viewer::viewer_context,
+            viewer::viewer_entry,
+            viewer::viewer_files,
+            viewer::viewer_read_text,
+            viewer::viewer_declarations,
+            viewer::viewer_close,
+            viewer::viewer_point,
+            viewer::active_review_set,
+            windows::viewer_window,
+            windows::pet_show,
+            windows::main_focus,
+            windows::main_close,
             request::request_detail,
             release::release_notice,
             release::release_open,
             human::human_taken,
+            human::human_release_taken,
             transcript::transcript_open,
             transcript::transcript_window,
             transcript::transcript_close,
@@ -84,12 +122,21 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             settings::provider_custom_remove,
             settings::codex_status,
             settings::codex_login_start,
+            settings::codex_login_prompt,
             settings::codex_login_wait,
             settings::codex_login_paste,
             settings::codex_login_cancel,
             settings::codex_logout,
+            settings::antigravity_status,
+            settings::antigravity_login_start,
+            settings::antigravity_login_prompt,
+            settings::antigravity_login_wait,
+            settings::antigravity_login_paste,
+            settings::antigravity_login_cancel,
+            settings::antigravity_logout,
             settings::claude_agent_status,
             settings::claude_agent_login_start,
+            settings::claude_agent_login_prompt,
             settings::claude_agent_login_wait,
             settings::claude_agent_login_paste,
             settings::claude_agent_login_cancel,
@@ -104,11 +151,18 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
         ])
         .events(collect_events![
             watch::StateChanged,
+            watch::RunFinished,
+            viewer::ActiveReviewChanged,
             watch::SessionChanged,
             human::log::HumanToolLog,
+            human::draft::HumanDraftChanged,
             graph::current::CurrentChanged
         ])
         .constant("PRECEDENCE", graph::precedence())
+        .constant(
+            "REVIEW_DEFAULT_QUERY",
+            artifactize_core::review::search::DEFAULT,
+        )
 }
 
 /// Write the TypeScript bindings to `path`.
@@ -124,6 +178,9 @@ pub fn export(path: &Path) -> Result<(), String> {
 /// The shared state behind every command, one per app.
 pub struct App {
     pub launch: Launch,
+    chat: artifactize_core::chat::Chat,
+    chat_stream: watch::ChatStream,
+    chat_worktrees: watch::ChatWorktrees,
     browse: browse::Browse,
     human: human::Reviews,
     currents: Arc<graph::current::Currents>,
@@ -131,12 +188,17 @@ pub struct App {
     settings: settings::Settings,
     generation: generation::Generation,
     sites: tools::Sites,
+    viewers: viewer::Sessions,
+    windows: windows::Windows,
 }
 
 impl App {
     pub fn new(launch: Launch) -> Self {
         Self {
             browse: browse::Browse::new(launch.repo.clone()),
+            chat: artifactize_core::chat::Chat::discover(launch.state.clone()),
+            chat_stream: watch::ChatStream::default(),
+            chat_worktrees: watch::ChatWorktrees::default(),
             launch,
             human: human::Reviews::default(),
             currents: Arc::default(),
@@ -144,7 +206,29 @@ impl App {
             settings: settings::Settings::default(),
             generation: generation::Generation::default(),
             sites: tools::Sites::default(),
+            viewers: viewer::Sessions::default(),
+            windows: windows::Windows::default(),
         }
+    }
+
+    /// Current belongs to a live checkout, not to the presence of a Run in Browse.
+    async fn current_workspace(
+        &self,
+        branch: &browse::BranchKey,
+    ) -> Result<std::path::PathBuf, Failure> {
+        let place = branch.to_place();
+        let listed_error = match self.browse.branch(&place) {
+            Ok(listed) => match place.checked_workspace(listed.workspace).await {
+                Ok(workspace) => return Ok(workspace),
+                Err(error) => Failure::Missing(error),
+            },
+            Err(error) => error,
+        };
+        self.chat
+            .current_worktree(&place)
+            .await
+            .map_err(Failure::Read)?
+            .ok_or(listed_error)
     }
 
     /// Note the state origin a read found and return the state's generation. A replaced state
@@ -153,24 +237,26 @@ impl App {
     ///
     /// [`Origin::replaces`]: artifactize_core::monitor::Origin::replaces
     fn observe(&self, origin: artifactize_core::monitor::Origin) -> u32 {
-        let (generation, replaced) = self.generation.observe(origin);
-        if replaced {
+        self.generation.observe(origin, || {
             self.human.reset();
             self.currents.reset();
-        }
-        generation
+            self.viewers.reset();
+            self.windows.close_viewers(self);
+            self.windows.hide_pet_if_inactive(self);
+        })
     }
 
     /// A closing window cancels running Human tools, Current scans and a Codex sign-in in
-    /// progress, as quitting the terminal UI does; the returned future ends once the scans and
-    /// the sign-ins have stopped.
+    /// progress, as quitting the terminal UI does; the returned future also waits for Chat
+    /// to record cancellation and release any active turn it owned.
     pub fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
         self.human.cancel_all();
+        let chat = self.chat.close();
+        self.viewers.reset();
         let scans = self.currents.stop();
         let sign_ins = self.settings.close();
         async move {
-            scans.await;
-            sign_ins.await;
+            tokio::join!(chat, scans, sign_ins);
         }
     }
 }
@@ -191,6 +277,8 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
         })
         .setup(move |app| {
             specta.mount_events(app);
+            app.state::<App>().viewers.forward(app.handle().clone());
+            app.state::<App>().windows.attach(app.handle().clone());
             let command_state = state.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 if let Err(error) =
@@ -209,10 +297,15 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
             }
             Ok(())
         })
-        .on_window_event(|window, event| {
-            // Nothing waits for the scans to stop: the app is closing.
-            if let tauri::WindowEvent::Destroyed = event {
-                drop(window.state::<App>().close());
-            }
-        })
+        .register_asynchronous_uri_scheme_protocol(
+            windows::SCHEME,
+            |context, request, responder| {
+                responder.respond(windows::page(
+                    context.app_handle(),
+                    context.webview_label(),
+                    &request,
+                ));
+            },
+        )
+        .on_window_event(windows::on_event)
 }

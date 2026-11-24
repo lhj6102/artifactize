@@ -15,10 +15,13 @@
 | `status [SELECTOR]` (기본 `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (기본값: 사용 가능한 CPU 수) | eval과 Artifact 상태, 예상 동작(`execute`, `reuse`, `wait`, `blocked`; [Run과 실행 흐름](../concepts/runs.md) 참고), 재사용할 결과가 없을 때 바뀐 입력([fingerprint와 재사용](../concepts/reuse.md#completed-result-reuse) 참고)을 보여 줍니다. | `0` 충족됨, `1` 아직 충족하지 못한 검증 요건이 있음, `2` 명령/상태 오류 |
 | `config check` | — | 프로젝트 코드를 실행하지 않고 `.artifactize/` 선언을 정적으로 검증합니다. | `0` 유효함, `2` 오류 |
 | `config graph [ARTIFACT]` | `--impact` | Artifact, eval, 순환 참조로 묶인 항목, 각 입력을 사용하는 eval을 출력합니다(`--impact`를 지정하면 해당 Artifact에 의존하는 하위 항목도 표시). | `0` |
-| `config migrate` | `--repo PATH` | 프로젝트 폴더 곳곳에 있는 `.artf` 파일들을 `.artifactize/<name>.artf`로 옮깁니다. | `0` |
+| `config migrate` | `--repo PATH` | 기존 선언을 `.artifactize/`로 옮기거나, 리뷰에 필요한 도구가 빠진 로컬 Artifact에 `type = "files"`를 추가합니다. | `0` |
+| `plugin add PATH` | `--repo PATH` | 폴더에서 [뷰어 플러그인](../guides/viewer-plugins.md)을 설치합니다. | `0` |
+| `plugin remove TYPE` | `--repo PATH` | 프로젝트에 설치한 플러그인을 유형 이름으로 제거합니다. | `0` |
+| `plugin list` | `--repo PATH` | 내장 유형과 프로젝트에 설치한 플러그인 유형을 나열합니다. | `0` |
 | `config rename OLD NEW` | — | 선언 파일, `parts`, `{OLD}` 참조에서 Artifact 이름을 `OLD`에서 `NEW`로 바꿉니다. | `0` |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | 기본 설정(`--repo-only`)에서는 현재 저장소의 Run을 보여 주며, `--repo`를 지정하면 해당 저장소의 Run을 보여 줍니다. `--all`을 쓰면 상태 디렉터리에 기록된 Run을 저장소 구분 없이 모두 보여 줍니다. 목록은 최신순으로 정렬하며 상태, 개수, 메모를 함께 표시합니다. | `0` |
-| `run show RUN_ID` | `--wait [--timeout-ms MS]` | 저장된 Run 전체 JSON(`evidence`, `requests`, `usage`, `validation`)을 출력합니다. `--wait`를 지정하면 Run이 끝날 때까지 명령이 종료되지 않습니다(기본 대기 제한 시간 10분, `--timeout-ms`는 `--wait`와 함께 사용). | `0` (`--wait` 시 Run 결과 코드; 대기 제한 시간이 지나면 Run은 계속 실행되고 CLI 명령만 `3`으로 종료) |
+| `run show RUN_ID` | `--wait [--timeout-ms MS]` | 저장된 Run 전체 JSON(`origin`, `evidence`, `requests`, `usage`, `validation`)을 출력합니다. `--wait`를 지정하면 Run이 끝날 때까지 명령이 종료되지 않습니다(기본 대기 제한 시간 10분, `--timeout-ms`는 `--wait`와 함께 사용). | `0` (`--wait` 시 Run 결과 코드; 대기 제한 시간이 지나면 Run은 계속 실행되고 CLI 명령만 `3`으로 종료) |
 | `run watch RUN_ID` | — | Run이 끝날 때까지 진행 상태(`update`, `eval_result`, `outcome`)를 이벤트마다 JSON 한 줄로 출력합니다. | Run 결과 코드 |
 | `run cancel RUN_ID` | — | 아직 끝나지 않은 Run(`RUNNING` 또는 `WAITING_HUMAN`)에 대한 취소 요청을 기록·확인하고 이미 저장된 결과는 유지합니다. | `0` |
 | `request list` | `--run RUN_ID` | 저장된 요청 목록과 상태, 각 요청을 맡은 리뷰어를 보여 줍니다(텍스트 출력 기준이며, JSON에는 `claim`과 `summary` 포함). | `0` |
@@ -26,7 +29,7 @@
 | `request logs ID` | `--stream stdout\|stderr\|both` (기본 `both`), `[--tail N \| --start N [--end N] \| --end N]` (기본 `--tail 50`), `--search TEXT` | 실행 중에 수집한 Runtime `stdout`/`stderr` 로그를 조회합니다(`complete`, `partial`, `saved_audit`, `missing`, 또는 Agent·Human 요청의 `not_runtime`; `--tail`과 `--start`/`--end` 범위 조회는 함께 쓸 수 없음). | `0` |
 | `request claim ID` | `--reviewer NAME` | 대기 중인 Human 승인 요청을 맡을 리뷰어를 지정합니다(기본 리뷰어: `$USER`, 없으면 Unix는 `$LOGNAME`, Windows는 `%USERNAME%`). | `0` |
 | `request unclaim ID` | `--reviewer NAME` | 맡고 있던 Human 승인 요청에서 리뷰어 지정을 해제하며, 판정은 제출하지 않습니다. | `0` |
-| `request tool ID TOOL` | `--reviewer NAME` | 맡은 요청에 선언된 Human 도구를 실행합니다. | `0` (`2` 도구 오류) |
+| `request tool ID TOOL` | `--reviewer NAME` | 맡은 요청에 선언된 Human `launch` 또는 `output` 도구를 실행합니다. `viewer` 도구는 데스크톱 앱에서 Artifact를 열도록 안내합니다. `--json`을 지정하면 뷰어 정보를 반환합니다. | `0` (`2` 도구 오류) |
 | `request submit ID` | `--verdict GREEN\|RED`, `[--fields JSON \| --fields-file PATH]`, `--reviewer NAME` | 결과 필드(`--fields`와 `--fields-file`은 함께 쓸 수 없으며 둘 다 생략하면 `{}` 제출)를 판정 스키마로 검증하고 Human 승인 요청에 대한 판정을 제출합니다. | `0` (`RED` 제출도 `0`) |
 | `session show REF` | `--summary` | 저장된 Agent 리뷰 대화 전문(또는 턴·토큰·도구 호출 요약)을 출력합니다. | `0` |
 | `session send REF MSG` | — | 저장된 Agent 리뷰 대화에 후속 질문을 보내되 기존 판정은 그대로 둡니다. | `0` |
@@ -35,7 +38,7 @@
 | `cache list` | `--history` | 각 재사용 키의 최신(또는 전체) 캐시 기록을 나열합니다. | `0` |
 | `cache show KEY` | `--history` | 64자리 16진수 `KEY`의 캐시 기록을 JSON으로 출력합니다. | `0` (`4` 기록 없음) |
 | `cache rm KEY` | — | 해당 `KEY`의 로컬 캐시 기록을 삭제합니다. | `0` |
-| `login` / `logout` | `openai\|anthropic\|gemini\|codex\|claude-agent` | 표준 입력으로 API 키를 저장/삭제하거나 Codex·Claude Code에 로그인/로그아웃합니다. | `0` |
+| `login` / `logout` | `openai\|anthropic\|gemini\|codex\|claude-agent\|antigravity` | 표준 입력으로 API 키를 저장/삭제하거나 Codex, Claude Code 또는 Antigravity에 로그인하거나 로그아웃합니다. | `0` |
 | `provider` | `list`, `add NAME (--alias P \| --api openai-responses\|openai-chat\|anthropic\|gemini --url URL [--key])`, `remove NAME` | `$STATE/auth/providers.json`의 사용자 지정 Agent 프로바이더를 관리합니다. | `0` |
 | `models PROVIDER` | 내장 또는 사용자 지정 프로바이더 이름 | 해당 프로바이더에서 사용할 수 있는 모델 ID와 표시 이름을 나열합니다. | `0` |
 | `remote` | `login URL [--share summary\|full]`, `status`, `push [--dry-run]`, `logout` | 팀 리뷰 저장소 연결을 설정하고 결과를 동기화합니다. `summary`는 최상위 `executionPaths`를 공유하고 `execution.provenance.repoPath` 및 `execution.provenance.executionPaths`가 포함된 전체 `execution` 객체는 제외합니다. `full`은 `execution` 객체를 포함합니다. | `0` (`status` 미로그인 시 `1`) |
@@ -43,12 +46,14 @@
 | `doctor` | `--repo PATH` | 상태 디렉터리, 스키마, 제한 설정, 자격 증명, 팀 리뷰 저장소, 데스크톱 앱, 새 릴리스를 점검합니다. | `0` 준비됨, `1` 심각한 오류 |
 | `limits` | `--signoff-idle-grace SECONDS` | 같은 상태 디렉터리를 쓰는 Run에 공통으로 적용할 한도를 `$STATE/limits.json`에서 조회하거나 설정합니다. | `0` |
 | `prune` | `[--older-than DURATION]`, `[--dry-run]` | 처리할 요청이 남아 있지 않은 Run(`GREEN`/`RED`/`ERROR`/`INCOMPLETE`)의 임시 출력 폴더를 삭제하고 Agent 세션을 정리합니다. `--older-than`을 생략하면 정리 대상인 Run은 완료된 시점과 관계없이 모두 정리하며, `YELLOW` 및 실행 중 Run은 건너뜁니다. | `0` |
-| `monitor [PATH \| --repo PATH \| --all]` | 시작 범위는 하나만 지정할 수 있습니다 | 데스크톱 앱을 열어 전체 프로젝트 목록을 보여 주거나 `PATH`에 해당하는 브랜치를 바로 표시합니다. | `0` |
-| `review [REQUEST_ID]` | `--repo PATH` \| `--all`, `--reviewer NAME` | 데스크톱 앱에서 대기 중인 Human 승인 요청을 엽니다. `REQUEST_ID`를 지정하면 그 ID에 해당하는 요청을 엽니다. | `0` |
+| `monitor [PATH \| --repo PATH \| --all]` | 시작 범위는 하나만 지정할 수 있습니다 | 데스크톱 앱의 **Verify**를 열어 전체 프로젝트 목록을 보여 주거나 `PATH`의 브랜치를 선택합니다. | `0` |
+| `review [REQUEST_ID]` | `--repo PATH` \| `--all`, `--reviewer NAME` | **Review**에서 대기 중인 가장 최근 Human 리뷰를 엽니다. `REQUEST_ID`를 지정하면 필터에 해당하지 않아도 그 요청을 바로 엽니다. | `0` |
+
+Run을 시작한 곳의 기록이 있으면 `run show`와 `run_show`가 `origin`을 반환합니다. 값은 `{"kind":"cli"}`, `{"kind":"mcp"}`, `{"kind":"chat","sessionId":"...","title":"..."}` 중 하나입니다. Run과 대화를 오가는 방법은 [Chat](../guides/interfaces.md#chat)을 참고하세요.
 
 ## 상태 디렉터리, 캐시, `limits.json` {#state-cache-and-limits}
 
-Artifactize는 로컬 Run 기록, 캐시, Agent 대화, 자격 증명(`codex`, API 키, 사용자 지정 프로바이더, 팀 리뷰 저장소 토큰)을 저장소 바깥의 상태 디렉터리 한 곳에 보관합니다. `claude-agent` 로그인 정보는 Claude Code에서 따로 보관합니다. 경로 우선순위는 `--state-dir PATH` → `$ARTIFACTIZE_STATE_HOME` → `$XDG_STATE_HOME/artifactize` → Windows의 `%LOCALAPPDATA%\artifactize` 또는 Linux·macOS의 `~/.local/state/artifactize`입니다. Microsoft Store 패키지는 별도 상태 디렉터리를 사용합니다. 상태 디렉터리가 Git 워크트리나 Artifactize 작업 공간 안에 있으면 `$STATE/auth/` 아래의 인증 파일 사용을 거부합니다.
+Artifactize는 로컬 Run 기록, 캐시, Agent 대화, 자격 증명(`codex`, API 키, 사용자 지정 프로바이더, 팀 리뷰 저장소 토큰)을 저장소 바깥의 상태 디렉터리 한 곳에 보관합니다. Claude Code와 Antigravity의 로그인 정보는 각 CLI에서 따로 보관합니다. 경로 우선순위는 `--state-dir PATH` → `$ARTIFACTIZE_STATE_HOME` → `$XDG_STATE_HOME/artifactize` → Windows의 `%LOCALAPPDATA%\artifactize` 또는 Linux·macOS의 `~/.local/state/artifactize`입니다. Microsoft Store 패키지는 별도 상태 디렉터리를 사용합니다. 상태 디렉터리가 Git 워크트리나 Artifactize 작업 공간 안에 있으면 `$STATE/auth/` 아래의 인증 파일 사용을 거부합니다.
 
 같은 상태 디렉터리를 사용하는 모든 Run에 공통으로 적용할 한도가 필요하면 `$STATE/limits.json`에서 설정하세요.
 
@@ -101,10 +106,13 @@ codex mcp add artifactize -- artifactize mcp                                    
 | `verify_cancel` | **`run`** | 아직 끝나지 않은 Run의 취소를 요청합니다. |
 | `status` | 선택적 `scope` (Selection 객체, 기본 `{"kind":"all"}`) | 현재 상태를 보여 주고, `verify`를 실행했을 때 각 eval을 새로 실행할지(`execute`), 이전 결과를 재사용할지(`reuse`), 선행 조건이 충족될 때까지 대기할지(`wait`), 실행이 막힐지(`blocked`) 알려 줍니다. |
 | `config_check` | 없음 | `.artifactize/` 선언을 정적으로 검증합니다. |
+| `plugin_list` | 없음 | 내장 유형과 프로젝트에 설치한 플러그인 유형을 CLI JSON 형식으로 페이지별로 반환합니다. |
+| `plugin_add` | `path` (폴더 절대 경로) | 플러그인을 설치합니다. `action: "added"`와 플러그인 유형 및 상세 정보를 반환합니다. |
+| `plugin_remove` | `type` | 프로젝트에 설치한 플러그인을 제거합니다. `action: "removed"`와 유형을 반환합니다. |
 | `config_graph` | 선택적 `scope` (Selection 객체), `impact` (불리언, 기본 `false`) | Artifact, eval, 순환 참조로 묶인 항목, 각 입력을 사용하는 eval을 조회합니다(`impact: true`를 지정하면 해당 Artifact에 의존하는 하위 항목도 표시). |
 | `request_logs` | **`id`**, 선택적 `stream` (`"stdout"\|"stderr"\|"both"`), `tail`, `start`, `end`, `search` | 요청 `id`의 Runtime 출력 줄을 조회합니다. |
 | `run_list` | 선택적 `limit` (기본 20), `offset` (기본 0) | 이 프로젝트에서 실행한 Run의 기록을 최신순으로 보여 줍니다. |
-| `run_show` | **`run`** | 저장된 Run의 전체 JSON을 조회합니다. |
+| `run_show` | **`run`** | Run을 시작한 곳을 포함해 저장된 Run의 전체 JSON을 조회합니다. |
 | `request_list` | 선택적 `run` | 이 프로젝트의 요청 목록을 조회하며, `run`을 지정하면 해당 Run의 요청만 보여 줍니다. |
 | `request_show` | **`id`** | 저장된 요청의 전체 JSON을 조회합니다. |
 | `session_show` | **`reference`**, 선택적 `summary` (불리언, 기본 `false`) | 저장된 Agent 리뷰 대화(또는 요약)를 조회합니다. |

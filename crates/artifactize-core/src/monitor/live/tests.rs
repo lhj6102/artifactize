@@ -166,6 +166,7 @@ fn a_branch_has_its_projects_runs_on_that_branch_from_whichever_folder_they_ran_
         listing.labels["run-1"],
         Label {
             project: "project".into(),
+            project_key: Some(Project::Git(common.clone())),
             branch: "feat/x".into()
         }
     );

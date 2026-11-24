@@ -488,6 +488,8 @@ fn models_lists_the_accounts_picker_models_in_server_order() {
                         "display_name":"GPT-6 Luna",
                         "visibility":"list",
                         "supported_in_api":true,
+                        "supported_reasoning_levels":[{"effort":"low"}, {"effort":"high"}],
+                        "default_reasoning_level":"low",
                     },
                     {"slug":"internal","display_name":"Internal","visibility":"hide"},
                     {"slug":"gpt-6.1-sol","display_name":"GPT-6.1 Sol","visibility":"list"},
@@ -505,8 +507,8 @@ fn models_lists_the_accounts_picker_models_in_server_order() {
     assert_eq!(
         listing,
         json!({"backend":"codex","models":[
-            {"slug":"gpt-6-luna","display_name":"GPT-6 Luna"},
-            {"slug":"gpt-6.1-sol","display_name":"GPT-6.1 Sol"},
+            {"slug":"gpt-6-luna","display_name":"GPT-6 Luna","efforts":["low","high"],"default_effort":"low"},
+            {"slug":"gpt-6.1-sol","display_name":"GPT-6.1 Sol","efforts":[],"default_effort":null},
         ]})
     );
     let call = &provider.requests()[0];

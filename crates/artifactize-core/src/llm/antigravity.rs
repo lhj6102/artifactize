@@ -1,0 +1,555 @@
+//! ACP transport to the user's installed Antigravity CLI. No Google HTTP or credential I/O.
+pub mod bridge;
+mod wire;
+
+use std::{
+    io,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    process::{ChildStdin, ChildStdout},
+    time::Instant,
+};
+use tokio_util::sync::CancellationToken;
+
+pub(crate) use wire::{Content, Event, StopReason};
+use wire::{Incoming, Initialized, Session};
+use wire::{McpEnv, McpServer, PromptResult, Update};
+
+use crate::{
+    agent::error::{Code, Failure},
+    config::{ModelId, Provider},
+    llm::{claude_agent::channel::Running, models::ListedModel},
+    platform::{self, PrivateTempDir},
+    process,
+};
+
+/// 1.5.1 opened Google account models to every ACP client.
+pub(crate) const MINIMUM: semver::Version = semver::Version::new(1, 5, 1);
+/// Metadata requests never send a prompt; a stalled installation or sign-in check ends quickly.
+pub(crate) const PROBE_TIMEOUT: Duration = super::models::LIST_TIMEOUT;
+/// One ACP line holds a single request or a streamed event, not an entire conversation.
+const LINE_BYTES: u64 = 32 * 1024 * 1024;
+/// Cancel is best effort, even if the child is no longer reading its input.
+const CANCEL_GRACE: Duration = Duration::from_millis(250);
+/// Some versions print this before returning an auth error. Never relay it from a probe.
+const AUTH_LINK: &str = "Open the following link to authenticate the ACP server:";
+/// Avoid selecting a key or enterprise credentials from env instead of the CLI's login.
+const ALTERNATE_AUTH: &[&str] = &[
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_GENAI_USE_VERTEXAI",
+];
+
+#[derive(Debug)]
+pub(crate) enum Problem {
+    Missing,
+    TooOld { version: semver::Version },
+    SignedOut,
+    Quota,
+    RateLimit,
+    Failed(String),
+}
+
+impl Problem {
+    pub(crate) fn reported(text: &str) -> Option<Self> {
+        let text = text.to_ascii_lowercase();
+        let contains = |markers: &[&str]| markers.iter().any(|marker| text.contains(marker));
+        if contains(&[
+            "authentication required",
+            "auth_required",
+            "unauthenticated",
+            "not authenticated",
+            "not logged in",
+            "not signed in",
+            "login required",
+            "select an authentication method",
+            "no auth method",
+            "credentials not found",
+            "no browser is available here",
+        ]) {
+            Some(Self::SignedOut)
+        } else if contains(&[
+            "quota_exhausted",
+            "quota exhausted",
+            "quota exceeded",
+            "usage limit reached",
+        ]) {
+            Some(Self::Quota)
+        } else if contains(&[
+            "resource_exhausted",
+            "rate_limit_exceeded",
+            "rate limit",
+            "error 429",
+            "code 429",
+        ]) || text.starts_with("429 ")
+        {
+            Some(Self::RateLimit)
+        } else {
+            None
+        }
+    }
+}
+
+impl From<Problem> for Failure {
+    fn from(problem: Problem) -> Self {
+        match problem {
+            Problem::Missing => Self::new(
+                Code::Authentication,
+                "Antigravity CLI (`agy`) is not on PATH. Install it, then run `artifactize login antigravity`.",
+            ),
+            Problem::TooOld { version } => Self::new(
+                Code::AgentError,
+                format!(
+                    "Antigravity CLI {version} is too old; update `agy` to {MINIMUM} or newer."
+                ),
+            ),
+            Problem::SignedOut => Self::new(
+                Code::Authentication,
+                "Antigravity needs your Google sign-in. Run `artifactize login antigravity` or use Settings → Providers.",
+            ),
+            Problem::Quota => Self::new(
+                Code::Quota,
+                "Your Antigravity account reached its usage quota. Try again when your quota resets.",
+            ),
+            Problem::RateLimit => Self::new(
+                Code::RateLimit,
+                "Antigravity is rate limiting this account. Try again later.",
+            ),
+            Problem::Failed(message) => Self::new(Code::ProviderError, message),
+        }
+    }
+}
+
+pub(crate) fn eval_refusal() -> Failure {
+    Failure::from(Provider::Antigravity.validate_eval().unwrap_err())
+}
+
+pub(crate) fn command(args: &[&str], cwd: &Path, deadline: Instant) -> process::Command {
+    let mut env = platform::environment::for_command();
+    for name in ALTERNATE_AUTH {
+        platform::environment::remove(&mut env, name);
+    }
+    platform::environment::set(&mut env, "AGY_CLI_DISABLE_AUTO_UPDATE", "1");
+    process::Command {
+        program: "agy".into(),
+        args: args.iter().map(Into::into).collect(),
+        cwd: cwd.to_owned(),
+        env,
+        timeout: deadline.saturating_duration_since(Instant::now()),
+    }
+}
+
+pub(crate) fn start_problem(error: process::Error) -> Problem {
+    if matches!(&error, process::Error::Spawn(e) if e.kind() == io::ErrorKind::NotFound) {
+        Problem::Missing
+    } else {
+        Problem::Failed(format!("Cannot start Antigravity: {error}."))
+    }
+}
+
+pub(crate) fn workspace() -> Result<PrivateTempDir, Problem> {
+    platform::private_tempdir_in("artifactize-acp-", &platform::temporary_directory()).map_err(
+        |error| {
+            Problem::Failed(format!(
+                "Cannot create the Antigravity turn directory: {error}."
+            ))
+        },
+    )
+}
+
+pub(crate) fn executable(cwd: &Path) -> Result<PathBuf, Problem> {
+    platform::program::resolve(Path::new("agy"), cwd)
+        .map_err(|error| start_problem(process::Error::Spawn(error)))
+}
+
+pub(crate) async fn version(
+    path: &Path,
+    cwd: &Path,
+    deadline: Instant,
+    cancellation: &CancellationToken,
+) -> Result<semver::Version, Problem> {
+    let mut check = command(&["--version"], cwd, deadline);
+    check.program = path.as_os_str().to_owned();
+    let output = process::run(check, cancellation.clone(), |_| async { Ok(()) })
+        .await
+        .map_err(start_problem)?;
+    output
+        .status
+        .success()
+        .then(|| platform::output_text(&output.stdout))
+        .and_then(|text| {
+            text.split_whitespace()
+                .find_map(|word| semver::Version::parse(word.trim_start_matches('v')).ok())
+        })
+        .ok_or_else(|| {
+            Problem::Failed("Cannot read the Antigravity CLI version (`agy --version`).".into())
+        })
+}
+
+pub(crate) fn supported(version: &semver::Version) -> Result<(), Problem> {
+    if *version < MINIMUM {
+        Err(Problem::TooOld {
+            version: version.clone(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) async fn check_version(
+    cwd: &Path,
+    deadline: Instant,
+    cancellation: &CancellationToken,
+) -> Result<PathBuf, Problem> {
+    let path = executable(cwd)?;
+    supported(&version(&path, cwd, deadline, cancellation).await?)?;
+    Ok(path)
+}
+
+pub(crate) struct Acp {
+    running: Running,
+    wire: Channel,
+    directory: PrivateTempDir,
+}
+
+struct Channel {
+    read: BufReader<ChildStdout>,
+    write: ChildStdin,
+    line: Vec<u8>,
+    request: u64,
+}
+
+impl Acp {
+    pub(crate) async fn start(
+        deadline: Instant,
+        cancel: &CancellationToken,
+    ) -> Result<Self, Problem> {
+        let directory = workspace()?;
+        let executable = check_version(directory.path(), deadline, cancel).await?;
+        Self::start_checked(directory, &executable, deadline, cancel).await
+    }
+
+    pub(crate) async fn start_checked(
+        directory: PrivateTempDir,
+        executable: &Path,
+        deadline: Instant,
+        cancel: &CancellationToken,
+    ) -> Result<Self, Problem> {
+        // Native login stays in its usual place. A fresh, empty cwd keeps repo settings and
+        // hooks out of ACP; callback denial and terminal sandboxing are not eval confinement.
+        let mut command = command(
+            &["acp", "--sandbox", "--include-default-customizations=false"],
+            directory.path(),
+            deadline,
+        );
+        command.program = executable.as_os_str().to_owned();
+        let (read, write, running) = Running::spawn(&command, deadline, cancel)
+            .await
+            .map_err(start_problem)?;
+        Ok(Self {
+            running,
+            wire: Channel {
+                read: BufReader::new(read),
+                write,
+                line: Vec::new(),
+                request: 0,
+            },
+            directory,
+        })
+    }
+
+    pub(crate) async fn inspect(&mut self) -> Result<Vec<ListedModel>, Problem> {
+        self.wire.initialize().await?;
+        let session = self.wire.session(self.directory.path(), &[], None).await?;
+        let mut config = session.config_options.unwrap_or_default();
+        let selected = wire::model_option(&config)?;
+        let model_id = selected.id.to_owned();
+        let current = selected.current.to_owned();
+        let mut models = selected.models();
+        // The thinking option can change with the model. Sample the initial model before
+        // switching, then use each set response without making a model call.
+        for model in models
+            .iter_mut()
+            .filter(|model| model.slug.as_str() == current)
+        {
+            *model = listed_with_thought(model, &config);
+        }
+        for model in models
+            .iter_mut()
+            .filter(|model| model.slug.as_str() != current)
+        {
+            config = self
+                .set(&session.session_id, &model_id, model.slug.as_str())
+                .await?;
+            *model = listed_with_thought(model, &config);
+        }
+        Ok(models)
+    }
+
+    async fn set(
+        &mut self,
+        session: &str,
+        id: &str,
+        value: &str,
+    ) -> Result<Vec<wire::ConfigOption>, Problem> {
+        let updated: SessionOptions = self
+            .wire
+            .request(
+                "session/set_config_option",
+                json!({"sessionId": session, "configId": id, "value": value}),
+            )
+            .await?;
+        if !wire::select(&updated.config_options, |selected, _| selected == id)
+            .is_some_and(|option| option.current == value)
+        {
+            return Err(Problem::Failed(format!(
+                "Antigravity did not confirm {id} = {value:?}."
+            )));
+        }
+        Ok(updated.config_options)
+    }
+
+    pub(crate) async fn logout(&mut self) -> Result<(), Problem> {
+        let initialized = self.wire.initialize().await?;
+        if initialized.agent_capabilities.auth.logout.is_none() {
+            return Err(Problem::Failed("This `agy` does not offer ACP sign-out. Open the Antigravity CLI and run `/logout` there.".into()));
+        }
+        let _: Value = self.wire.request("logout", json!({})).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn open(
+        &mut self,
+        model: &ModelId,
+        effort: Option<&str>,
+        server: &McpServer<'_>,
+        system: &str,
+    ) -> Result<(String, bool), Failure> {
+        let initialized = self.wire.initialize().await?;
+        let append = initialized
+            .agent_capabilities
+            .meta
+            .antigravity
+            .system_prompt
+            .append;
+        let session = self
+            .wire
+            .session(
+                self.directory.path(),
+                std::slice::from_ref(server),
+                append.then_some(system),
+            )
+            .await?;
+        let mut config = session.config_options.unwrap_or_default();
+        let model_option = wire::model_option(&config)?;
+        if !model_option
+            .models()
+            .iter()
+            .any(|listed| &listed.slug == model)
+        {
+            return Err(Problem::Failed(format!("Antigravity does not list model {model:?} for this account. Choose a model from `artifactize models antigravity`." )).into());
+        }
+        if model_option.current != model.as_str() {
+            config = self
+                .set(&session.session_id, model_option.id, model.as_str())
+                .await?;
+        }
+        if let Some(effort) = effort {
+            let option = wire::thought_option(&config).filter(|option| {
+                option.values().iter().any(|(value, _)| value == effort)
+            }).ok_or_else(|| Problem::Failed(format!("Antigravity model {model} no longer offers effort {effort:?}. Choose another effort.")))?;
+            if option.current != effort {
+                self.set(&session.session_id, option.id, effort).await?;
+            }
+        }
+        Ok((session.session_id, append))
+    }
+
+    pub(crate) async fn prompt(&mut self, session: &str, text: &str) -> Result<u64, Failure> {
+        Ok(self
+            .wire
+            .send_request(
+                "session/prompt",
+                json!({"sessionId":session,"prompt":[{"type":"text","text":text}]}),
+            )
+            .await?)
+    }
+
+    /// Polls the same read buffer across `select!`, so an interrupted read never loses bytes.
+    pub(crate) async fn next(&mut self, request: u64) -> Result<PromptEvent, Failure> {
+        Ok(match self.wire.poll(request, "session/prompt").await? {
+            Response::Update(update) => PromptEvent::Update(update),
+            Response::Result(result) => PromptEvent::Finished(decode(result)?),
+        })
+    }
+
+    pub(crate) async fn cancel(&mut self, session: &str) {
+        let _ = tokio::time::timeout(
+            CANCEL_GRACE,
+            self.wire.send(
+                &json!({"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":session}}),
+            ),
+        )
+        .await;
+    }
+
+    pub(crate) async fn stop(self) -> Option<Problem> {
+        let Self {
+            running,
+            wire,
+            directory,
+        } = self;
+        drop(wire);
+        let stderr = running.reap().await;
+        drop(directory);
+        let text = platform::output_text(&stderr);
+        if text.contains(AUTH_LINK) {
+            Some(Problem::SignedOut)
+        } else {
+            Problem::reported(&text)
+        }
+    }
+}
+
+fn listed_with_thought(model: &ListedModel, config: &[wire::ConfigOption]) -> ListedModel {
+    let base = ListedModel::new(model.slug.clone(), model.display_name.clone());
+    let Some(option) = wire::thought_option(config) else {
+        return base;
+    };
+    base.with_efforts(
+        option.values().into_iter().map(|(value, _)| value),
+        Some(option.current.into()),
+    )
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionOptions {
+    config_options: Vec<wire::ConfigOption>,
+}
+
+pub(crate) enum PromptEvent {
+    Update(Update),
+    Finished(PromptResult),
+}
+
+enum Response {
+    Update(Update),
+    Result(Value),
+}
+
+fn decode<T: DeserializeOwned>(value: Value) -> Result<T, Problem> {
+    serde_json::from_value(value)
+        .map_err(|_| Problem::Failed("Antigravity gave an invalid ACP response.".into()))
+}
+
+impl Channel {
+    async fn initialize(&mut self) -> Result<Initialized, Problem> {
+        let initialized: Initialized = self.request("initialize", wire::initialization()).await?;
+        if initialized.protocol_version != wire::PROTOCOL {
+            return Err(Problem::Failed(format!(
+                "Antigravity offered unsupported ACP version {}.",
+                initialized.protocol_version
+            )));
+        }
+        Ok(initialized)
+    }
+
+    async fn session(
+        &mut self,
+        cwd: &Path,
+        servers: &[McpServer<'_>],
+        system: Option<&str>,
+    ) -> Result<Session, Problem> {
+        let mut params = serde_json::to_value(wire::NewSession {
+            cwd,
+            mcp_servers: servers,
+        })
+        .map_err(|error| {
+            Problem::Failed(format!(
+                "Cannot send Antigravity its ACP session paths: {error}"
+            ))
+        })?;
+        if let Some(system) = system {
+            params["_meta"] = json!({"antigravity":{"systemPrompt":{"append":system}}});
+        }
+        self.request("session/new", params).await
+    }
+
+    async fn send_request(&mut self, method: &str, params: Value) -> Result<u64, Problem> {
+        self.request += 1;
+        self.send(&json!({"jsonrpc":"2.0","id":self.request,"method":method,"params":params}))
+            .await?;
+        Ok(self.request)
+    }
+
+    async fn request<T: DeserializeOwned>(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<T, Problem> {
+        let request = self.send_request(method, params).await?;
+        loop {
+            if let Response::Result(result) = self.poll(request, method).await? {
+                return decode(result);
+            }
+        }
+    }
+
+    async fn send(&mut self, value: &Value) -> Result<(), Problem> {
+        let mut line = value.to_string().into_bytes();
+        line.push(b'\n');
+        self.write
+            .write_all(&line)
+            .await
+            .map_err(|_| Problem::Failed("Antigravity stopped reading ACP input.".into()))
+    }
+
+    async fn poll(&mut self, request: u64, method: &str) -> Result<Response, Problem> {
+        loop {
+            let remaining = LINE_BYTES.saturating_sub(self.line.len() as u64);
+            let read = (&mut self.read)
+                .take(remaining + 1)
+                .read_until(b'\n', &mut self.line)
+                .await
+                .map_err(|_| Problem::Failed("Cannot read Antigravity ACP output.".into()))?;
+            if read == 0 {
+                return Err(Problem::Failed(format!(
+                    "Antigravity exited while handling ACP {method}."
+                )));
+            }
+            if self.line.len() as u64 > LINE_BYTES {
+                return Err(Problem::Failed(
+                    "Antigravity wrote an oversized ACP message.".into(),
+                ));
+            }
+            if self.line.starts_with(AUTH_LINK.as_bytes()) {
+                return Err(Problem::SignedOut);
+            }
+            let line = serde_json::from_slice(&self.line)
+                .map_err(|_| Problem::Failed("Antigravity wrote an invalid ACP message.".into()));
+            self.line.clear();
+            match line? {
+                Incoming::Request { id, method } => self.send(&wire::refusal(id, &method)).await?,
+                Incoming::Update {
+                    method: wire::SessionUpdate::Update,
+                    params,
+                } => return Ok(Response::Update(params)),
+                Incoming::Result { id, result } if id == request => {
+                    return Ok(Response::Result(result));
+                }
+                Incoming::Error { id, error } if id == request => {
+                    return Err(error.into_problem(method));
+                }
+                _ => {}
+            }
+        }
+    }
+}

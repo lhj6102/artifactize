@@ -39,6 +39,14 @@ fn git_path(path: &Path, arg: &str) -> Option<PathBuf> {
     crate::platform::canonicalize(&path).ok()
 }
 
+/// The named Git branch currently checked out, if any.
+pub fn checked_out_branch(path: &Path) -> Option<String> {
+    git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"]).map(|bytes| {
+        crate::platform::output_text(crate::platform::fingerprint_line_ending(&bytes).0)
+            .into_owned()
+    })
+}
+
 /// Missing paths and non-Git workspaces have no inferred Git identity.
 pub fn identify(path: &Path) -> Identity {
     let common_dir = git_path(path, "--git-common-dir");
@@ -46,10 +54,7 @@ pub fn identify(path: &Path) -> Identity {
     if common_dir.is_none() || worktree_path.is_none() {
         return Identity::default();
     }
-    let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"]).map(|bytes| {
-        crate::platform::output_text(crate::platform::fingerprint_line_ending(&bytes).0)
-            .into_owned()
-    });
+    let branch = checked_out_branch(path);
     Identity {
         common_dir,
         worktree_path,

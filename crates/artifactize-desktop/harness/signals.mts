@@ -1,21 +1,25 @@
 // Real registered-start signal seams. Invoke with an explicit prepared candidate and
 // DESKTOP_TEST_SIGNAL_OUTPUT under the caller's private scratch; never builds an app.
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { Socket } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { startTree, stopTree } from "../ui/e2e/platform.ts";
+import { environment } from "../ui/e2e/fixtures/repo.ts";
+import { asNativePath, nativePath, removeTree, runProgram, runProgramOk } from "../ui/e2e/portable.ts";
 import { readCandidate } from "../ui/e2e/build.ts";
 
 const COMPLETION_TIMEOUT = 120000; // A watchdog, never evidence that a state was reached.
+const RECOVERY_TIMEOUT = 15000;
 const CONNECTION_TIMEOUT = 2000; // A live but unresponsive listener must fail, not pass.
 
-async function bounded<T>(operation: Promise<T>, label: string): Promise<T> {
+async function bounded<T>(operation: Promise<T>, label: string, remaining = COMPLETION_TIMEOUT): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([operation, new Promise<never>((_done, fail) => {
-      timeout = setTimeout(() => fail(new Error(`${label} did not complete`)), COMPLETION_TIMEOUT);
+      timeout = setTimeout(() => fail(new Error(`${label} did not complete`)), remaining);
     })]);
   } finally { clearTimeout(timeout); }
 }
@@ -36,7 +40,7 @@ async function listenerClosed(port: number): Promise<void> {
 }
 
 export async function verifySignals(manifest: string, output: string): Promise<void> {
-  readCandidate(manifest);
+  const prepared = readCandidate(manifest);
   mkdirSync(output, { recursive: true });
   const harnessUrl = new URL("./harness.mts", import.meta.url);
   const harness = fileURLToPath(harnessUrl);
@@ -57,9 +61,9 @@ export async function verifySignals(manifest: string, output: string): Promise<v
   for (const phase of ["startup", "ready"] as const) {
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
       const directory = mkdtempSync(join(output, `${phase}-${signal}-`));
-      const env = { ...process.env, ARTIFACTIZE_SESSION_DIR: directory, DESKTOP_TEST_CANDIDATE: manifest };
+      const env = { ...process.env, ARTIFACTIZE_SESSION_DIR: directory, DESKTOP_TEST_CANDIDATE: manifest, DESKTOP_TEST_SIGNAL_OUTPUT: output };
       const args = phase === "startup" ? ["--input-type=module", "-e", heldStartup] : [harness, "start"];
-      const registered = spawn(process.execPath, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+      const registered = startTree(process.execPath, args, { env, cwd: asNativePath(directory), capture: true, captureDiagnostics: true });
       const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done, fail) => {
         registered.once("error", fail);
         registered.once("close", (code, signal) => done({ code, signal }));
@@ -75,12 +79,12 @@ export async function verifySignals(manifest: string, output: string): Promise<v
         let diagnostics = "";
         const ports = new Set<number>();
         const record = (file: string, text: string) => writeFileSync(join(directory, file), text);
-        registered.stdout.on("data", (chunk: Buffer) => {
+        registered.stdout!.on("data", (chunk: Buffer) => {
           stdout += chunk.toString();
           record("stdout.log", stdout);
           if (phase === "ready" && stdout.split("\n").includes("ready")) acquired();
         });
-        registered.stderr.on("data", (chunk: Buffer) => {
+        registered.stderr!.on("data", (chunk: Buffer) => {
           diagnostics += chunk.toString();
           record("stderr.log", diagnostics);
           for (const match of diagnostics.matchAll(/WebDriver server ready on port (\d+)/g)) ports.add(Number(match[1]));
@@ -98,14 +102,26 @@ export async function verifySignals(manifest: string, output: string): Promise<v
         });
         await bounded(Promise.race([boundary, beforeExit]), `${phase} acquisition`);
         assert.equal(existsSync(join(directory, "control.json")), phase === "ready");
+        let observed: string | undefined;
         if (phase === "ready") {
-          const launch = JSON.parse(await invoke("launch", { screen: "graph" })) as { isError?: boolean };
-          assert.equal(launch.isError, undefined);
+          const launch = JSON.parse(await invoke("launch", { screen: "graph" })) as { isError?: boolean; content: { text: string }[] };
+          assert.equal(launch.isError, undefined, launch.content[0].text);
+          assert.match(launch.content[0].text, /^New chat$/m, "the fresh graph launch returned the New chat dialog title");
+          assert.match(launch.content[0].text, /\bbutton "Create"/, "New chat offers Create");
           const submission = JSON.parse(await invoke("cli", { args: ["verify", "--all", "--json"] })) as {
             isError?: boolean; content: { text: string }[];
           };
           assert.equal(submission.isError, undefined);
-          assert.match(submission.content[0].text, /"run":\s*"run-/, "a real durable Run exists when termination arrives");
+          const { run } = cliOutput(submission.content[0].text) as { run: string };
+          assert.match(run, /^run-/);
+          const read = JSON.parse(await invoke("cli", { args: ["run", "show", run, "--json"] })) as typeof submission;
+          assert.equal(read.isError, undefined);
+          const snapshot = cliOutput(read.content[0].text) as { id: string; status: string };
+          assert.equal(snapshot.id, run);
+          assert.ok(["RUNNING", "WAITING_HUMAN"].includes(snapshot.status), `${run} was saved and open before the signal: ${snapshot.status}`);
+          observed = run;
+          record("observe-run", run);
+          record("run-open.json", JSON.stringify(snapshot));
         }
         assert.equal(registered.kill(signal), true, "signal targets only the registered start wrapper");
         // Receipt of cancellation is not cleanup completion. In startup this ACK
@@ -115,6 +131,11 @@ export async function verifySignals(manifest: string, output: string): Promise<v
         assert.deepEqual(status, { code: 0, signal: null }, diagnostics);
         assert.equal(stdout, phase === "startup" ? "" : "ready\n", "cancelled startup must never announce readiness");
         assert.equal(existsSync(join(directory, "control.json")), false);
+        if (observed) {
+          const settled = JSON.parse(readFileSync(join(directory, "run-settled.json"), "utf8")) as { id: string; status: string };
+          assert.equal(settled.id, observed);
+          assert.match(settled.status, /^(?:CANCELLED|GREEN|RED|YELLOW|ERROR|INCOMPLETE)$/);
+        }
         assert.deepEqual(readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory()), [],
           "service and public Run cleanup must finish before candidate/fixture removal");
         assert.ok(ports.size > 0, "the real service actually started its embedded listener");
@@ -122,12 +143,54 @@ export async function verifySignals(manifest: string, output: string): Promise<v
         record("result.json", JSON.stringify({ phase, signal, cancellationAcknowledged: true, status, ports: [...ports], inputsRemoved: true }, null, 2));
         console.log(`${phase} ${signal}: GREEN; cancellation acknowledged, standard owner joined, app listener refused connections, durable work and inputs released`);
       } finally {
-        // Failed acquisition/assertion uses the same registered-owner shutdown;
-        // native apps/drivers/displays and their inputs remain service-owned.
-        if (registered.exitCode === null && registered.signalCode === null) registered.kill("SIGTERM");
-        await closed;
+        // Do not ask the signal path under test to clean up a second time. Stop its private
+        // tree, then use the app birth receipts and public CLI to recover any retained inputs.
+        try {
+          stopTree(registered);
+          await bounded(closed, "forced process-tree recovery", RECOVERY_TIMEOUT);
+        } finally {
+          recoverInputs(prepared, directory);
+        }
       }
     }
+  }
+}
+
+function cliOutput(text: string): unknown {
+  const stdout = /^exit \d+\n--- stdout\n([\s\S]*?)\n--- stderr(?:\n|$)/.exec(text)?.[1];
+  if (!stdout) throw new Error(`harness returned no CLI JSON: ${text}`);
+  return JSON.parse(stdout);
+}
+
+function recoverInputs(candidate: ReturnType<typeof readCandidate>, directory: string): void {
+  // The disposable app's native identity guards against signalling a recycled PID.
+  const children = (root: string) => readdirSync(root, { withFileTypes: true });
+  for (const entry of children(directory)) {
+    if (!entry.isDirectory() || !entry.name.startsWith("artifactize-desktop-build-")) continue;
+    const root = join(directory, entry.name);
+    const isolated = { env: environment({ root: asNativePath(root) }), timeout: RECOVERY_TIMEOUT };
+    for (const owner of children(root).filter((item) => item.isDirectory() && item.name.startsWith("app-owner-"))) {
+      runProgramOk(candidate.app, ["--stop-e2e-owner", join(root, owner.name, "process.json")], isolated);
+    }
+    const fixtures = join(root, "fixtures");
+    if (existsSync(fixtures)) {
+      for (const fixture of children(fixtures).filter((item) => item.isDirectory())) {
+        const path = join(fixtures, fixture.name);
+        for (const state of children(path).filter((item) => item.isDirectory() && (item.name === "state" || item.name.startsWith("graph-state-")))) {
+          const stateDir = join(path, state.name);
+          if (!existsSync(join(stateDir, "state.sqlite"))) continue;
+          const args = ["--repo", join(path, "repo"), "--state-dir", stateDir];
+          const runs = JSON.parse(runProgramOk(candidate.cli, [...args, "run", "list", "--all", "--json"], isolated)) as { id: string; status: string }[];
+          for (const run of runs.filter((run) => ["RUNNING", "WAITING_HUMAN"].includes(run.status))) {
+            runProgramOk(candidate.cli, [...args, "run", "cancel", run.id], isolated);
+            const shown = runProgram(candidate.cli, [...args, "run", "show", run.id, "--wait", "--json"], isolated);
+            const { status } = JSON.parse(shown.stdout) as { status: string };
+            assert.ok(!["RUNNING", "WAITING_HUMAN"].includes(status), `Run ${run.id} did not settle during emergency recovery`);
+          }
+        }
+      }
+    }
+    removeTree(nativePath(root));
   }
 }
 

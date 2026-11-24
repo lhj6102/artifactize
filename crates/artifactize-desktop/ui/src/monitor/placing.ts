@@ -3,7 +3,6 @@
 // pointer as its part (a whole's box, or a node, which becomes a whole), or leaves its whole
 // for the top level. Places are saved as shown: a box's parts from its inner corner, in the
 // whole's file; the top level's in each node's own.
-import type { Shape } from "../ipc/client";
 import { roomOf, type Annotations } from "./annotations";
 import type { Point } from "./graph";
 import { BOX, header, type Copy, type Rect } from "./parts";
@@ -12,6 +11,23 @@ import { BOX, header, type Copy, type Rect } from "./parts";
  * the Artifact `to` (`join`, refused by the library when it would make a cycle), or out of its
  * whole to the top level (`leave`). */
 export type Drop = { kind: "place" } | { kind: "join"; to: string; key: string } | { kind: "leave" };
+
+/** Preview only from the loaded definitions. Release still asks the engine to validate the edit. */
+export function canJoin(parts: (name: string) => readonly string[] | undefined, part: string, to: string): boolean {
+  const destination = parts(to);
+  const children = parts(part);
+  if (!destination || !children || destination.includes(part)) return false;
+  const seen = new Set<string>();
+  const pending = [part];
+  while (pending.length) {
+    const name = pending.pop()!;
+    if (name === to) return false;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    for (const child of parts(name) ?? []) pending.push(child);
+  }
+  return true;
+}
 
 const contains = (rect: Rect, point: Point) => point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
 
@@ -27,16 +43,14 @@ export function under(drawn: Copy[], rects: Map<string, Rect>, point: Point, ski
   return found;
 }
 
-/** Where releasing the dragged copy `dragged` with the pointer at `point` puts it. A copy is a
- * drop target unless it is the dragged Artifact itself, already holds it as a part, or is the
- * box it is dragged in; one inside it would make a cycle and is still the target the library
- * then refuses. Over no box it leaves its whole; over its own box it is placed. */
-export function dropAt(graph: Shape, drawn: Copy[], rects: Map<string, Rect>, dragged: Copy, point: Point): Drop {
+/** Where releasing the dragged copy `dragged` with the pointer at `point` puts it: the drop the
+ * person made, never another edit in its place. Over the box it is dragged in it is placed;
+ * over no box it leaves its whole; over any other copy it joins that Artifact, which the library
+ * accepts or refuses (a cycle, or a whole that already holds it), saying why. */
+export function dropAt(drawn: Copy[], rects: Map<string, Rect>, dragged: Copy, point: Point): Drop {
   const target = under(drawn, rects, point, dragged.key);
   if (target === null) return dragged.parent === null ? { kind: "place" } : { kind: "leave" };
   if (target.key === dragged.parent) return { kind: "place" };
-  const parts = graph.nodes.find((node) => node.id === target.node.id)?.parts ?? [];
-  if (target.node.id === dragged.node.id || parts.includes(dragged.node.id)) return target.parent === dragged.parent ? { kind: "place" } : { kind: "leave" };
   return { kind: "join", to: target.node.name, key: target.key };
 }
 

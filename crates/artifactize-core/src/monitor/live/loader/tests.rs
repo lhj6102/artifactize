@@ -75,6 +75,33 @@ fn loaded(snapshot: Snapshot) -> Opened {
 }
 
 #[tokio::test]
+async fn a_cold_reference_opens_the_named_run_among_unrelated_history() {
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&repo).unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
+    std::fs::create_dir(repo.join(".artifactize")).unwrap();
+    std::fs::write(
+        repo.join(".artifactize/root.artf"),
+        "path = './'\nbasis = true\n",
+    )
+    .unwrap();
+    let (selected, requests) = run("run-selected", &repo, &state, 1);
+    receipts.create_run(&selected, &requests).await.unwrap();
+    for index in 0..40 {
+        let (old, requests) = run(&format!("run-other{index}"), &repo, &state, 10);
+        receipts.create_run(&old, &requests).await.unwrap();
+    }
+    let reference = Loader::default().open(&state, &selected.id).unwrap();
+    let (opened, found, _, _) = *reference.opened.unwrap();
+    assert_eq!(opened.run.id, selected.id);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].request.id, requests[0].id);
+    assert!(reference.branch.is_some());
+}
+
+#[tokio::test]
 async fn a_large_run_is_listed_opened_and_refreshed_with_its_saved_definitions() {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");

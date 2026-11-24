@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTML Viewer</title>
+  <style>
+    :root { color-scheme: light dark; font: 15px system-ui, sans-serif; }
+    body { margin: 0; height: 100vh; }
+    iframe { display: block; width: 100%; height: 100%; border: 0; background: white; }
+  </style>
+</head>
+<body>
+  <iframe id="page" title="Artifact page" sandbox="allow-scripts"></iframe>
+  <script>
+    const channel = 'artifactize-viewer/v1';
+    const pending = new Map();
+    let sequence = 0;
+    const page = document.querySelector('#page');
+    let armed = false;
+    let waitingForPage;
+
+    function bridge(method, args = {}) {
+      return new Promise((resolve, reject) => {
+        const id = ++sequence;
+        pending.set(id, { resolve, reject });
+        // The host identifies this sandbox by its WindowProxy, not by its opaque origin.
+        parent.postMessage({ channel, id, method, args }, '*');
+      });
+    }
+
+    function report(text) {
+      bridge('status', { text: text.replace(/\s+/g, ' ').trim() }).catch(() => {});
+    }
+
+    function finishPage(title) {
+      if (!waitingForPage) return;
+      const { label, timeout } = waitingForPage;
+      waitingForPage = undefined;
+      clearTimeout(timeout);
+      if (title === undefined) {
+        arm(false);
+        report(`${label} did not load.`);
+      } else {
+        // Point can have been armed before the inner page started listening.
+        if (armed) arm(true);
+        report(title.trim() ? `${label} · ${title.trim()}` : label);
+      }
+    }
+    page.addEventListener('error', () => finishPage());
+
+    function arm(next) {
+      armed = next;
+      page.contentWindow.postMessage({ type: 'point', armed }, '*');
+    }
+
+    function cancelPoint() {
+      arm(false);
+      bridge('cancelPoint').catch((error) => report(error.message));
+    }
+
+    window.addEventListener('keydown', (event) => {
+      if (armed && event.key === 'Escape') cancelPoint();
+    });
+
+    window.addEventListener('message', (event) => {
+      if (event.source === parent && event.data?.channel === channel) {
+        if (event.data.event === 'point') {
+          arm(event.data.armed === true);
+          return;
+        }
+        if (event.data.event === 'activeReviewChanged') {
+          if (armed) arm(false);
+          return;
+        }
+        const { id, result, error } = event.data;
+        const call = pending.get(id);
+        if (!call) return;
+        pending.delete(id);
+        if (typeof error === 'string') call.reject(new Error(error));
+        else call.resolve(result);
+      } else if (event.source === page.contentWindow && typeof event.data?.loadedTitle === 'string') {
+        finishPage(event.data.loadedTitle);
+      } else if (event.source === page.contentWindow && armed && event.data?.cancelPoint === true) {
+        cancelPoint();
+      } else if (event.source === page.contentWindow && armed && typeof event.data?.selector === 'string') {
+        armed = false;
+        bridge('pointing', { text: event.data.selector }).catch((error) => report(error.message));
+      }
+    });
+
+    // Run Point in the inner sandbox. The Artifact's scripts can still operate that page,
+    // but its origin is different even from the plugin, and it never receives the host bridge.
+    function inPage() {
+      let armed = false;
+      let target;
+      const handle = document.createElement('div');
+      handle.setAttribute('aria-hidden', 'true');
+      // The nested document cannot inherit the host's --handle and --handle-edge tokens.
+      handle.style.cssText = 'display:none;position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;'
+        + 'border:2px dashed #fff;box-shadow:inset 0 0 0 2px #1a1f22;outline:2px solid #1a1f22;outline-offset:-2px';
+      function showTarget() {
+        if (!armed || !target?.isConnected) {
+          handle.style.display = 'none';
+          return;
+        }
+        const { left, top, width, height } = target.getBoundingClientRect();
+        Object.assign(handle.style, { display: 'block', left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` });
+      }
+      function point(on) {
+        armed = on;
+        if (on) document.documentElement.append(handle);
+        else target = null;
+        document.documentElement.style.cursor = armed ? 'crosshair' : '';
+        showTarget();
+      }
+      document.addEventListener('pointermove', (event) => {
+        if (!armed) return;
+        target = event.target instanceof Element ? event.target : null;
+        showTarget();
+      }, true);
+      document.addEventListener('pointerleave', () => {
+        target = null;
+        showTarget();
+      });
+      window.addEventListener('scroll', showTarget, true);
+      window.addEventListener('resize', showTarget);
+      window.addEventListener('load', () => {
+        parent.postMessage({ loadedTitle: document.title }, '*');
+      }, { once: true });
+      window.addEventListener('message', (event) => {
+        if (event.source === parent && event.data?.type === 'point') {
+          point(event.data.armed === true);
+        }
+      });
+      function selector(element) {
+        const suffix = [];
+        let unique;
+        for (let current = element; current; current = current.parentElement) {
+          const id = current.id && `#${CSS.escape(current.id)}`;
+          if (id && document.querySelectorAll(id).length === 1) {
+            const name = suffix.length === 1 ? `${id} ${suffix[0]}` : [id, ...suffix].join(' > ');
+            if (document.querySelectorAll(name).length === 1) return name;
+            return [id, ...suffix].join(' > ');
+          }
+          const className = current.classList[0];
+          const candidate = className ? `.${CSS.escape(className)}` : CSS.escape(current.localName);
+          if (!unique && document.querySelectorAll(candidate).length === 1) unique = [candidate, ...suffix].join(' > ');
+          const siblings = Array.from(current.parentElement?.children ?? []);
+          const position = siblings.indexOf(current) + 1;
+          const withinParent = siblings.filter((child) => child.matches(candidate)).length === 1;
+          suffix.unshift(withinParent || position === 0 ? candidate : `${candidate}:nth-child(${position})`);
+        }
+        return unique ?? suffix.join(' > ');
+      }
+      document.addEventListener('keydown', (event) => {
+        if (armed && event.key === 'Escape') {
+          point(false);
+          parent.postMessage({ cancelPoint: true }, '*');
+        }
+      }, true);
+      document.addEventListener('click', (event) => {
+        if (!armed || !(event.target instanceof Element)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        point(false);
+        parent.postMessage({ selector: selector(event.target) }, '*');
+      }, true);
+    }
+
+    async function open() {
+      let label = 'The Artifact page';
+      try {
+        const context = await bridge('context');
+        const file = context.targetKind === 'file';
+        const path = file ? '' : 'index.html';
+        label = file ? context.target : `${context.target.replace(/\/+$/, '')}/${path}`;
+        const html = await bridge('readText', { path });
+        const policy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
+        const source = html.replace(/^\s*<!doctype[^>]*>/i, '');
+        // An iframe's outer load event can fire for a blank error document. Only the
+        // inner script confirms that the Artifact page loaded; a missing reply fails.
+        waitingForPage = { label, timeout: setTimeout(() => finishPage(), 10000) };
+        page.srcdoc = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}">`
+          + `<script>(${inPage})()<\/script>${source}`;
+      } catch (error) {
+        report(`${label} did not load: ${error.message}`);
+      }
+    }
+    open();
+  </script>
+</body>
+</html>

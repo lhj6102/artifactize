@@ -12,7 +12,7 @@
   import { composing } from "../shell/keys";
   import { tone } from "../shell/tone";
   import Icon from "../shell/Icon.svelte";
-  import { markIcon } from "../shell/icons";
+  import { markIcon, markLabel } from "../shell/icons";
 
   let {
     source,
@@ -79,10 +79,23 @@
 
   /** How an entry reads: an Artifact by its whole name, an eval after its Artifact's. */
   const named = (item: Found) => (item.eval === null ? item.artifact : `${item.artifact} / ${item.eval}`);
+  /** How wide the list may drop from the field's left edge: up to the work area's right edge
+   * less its padding, followed as the window resizes. */
+  const room: Attachment<HTMLElement> = (find) => {
+    const area = find.closest(".stage-area") ?? document.documentElement;
+    const read = () => {
+      const pad = Number.parseFloat(getComputedStyle(find).getPropertyValue("--pad")) || 12;
+      find.style.setProperty("--find-room", `${Math.max(0, area.getBoundingClientRect().right - find.getBoundingClientRect().left - pad)}px`);
+    };
+    const sized = new ResizeObserver(read);
+    sized.observe(area);
+    read();
+    return () => sized.disconnect();
+  };
 </script>
 
-<div class="find">
-  <input
+<div class="find" {@attach room}>
+  <span class="field"><Icon name="find" /><input
     class="query"
     type="search"
     spellcheck="false"
@@ -99,13 +112,15 @@
     oninput={find}
     onkeydown={keydown}
     onblur={onclose}
-  />
+  /></span>
+  {#if f.error || finding}<div class="drop">
   {#if f.error}
     <p class="note error">{f.error}</p>
   {:else if finding}
     {#if found.length > 0}
       <ul class="found" id="graph-found" role="listbox" aria-label={favorites ? "Favorites" : "Found"}>
         {#each found as item, at (`${item.node}\n${item.tab}`)}
+          {@const icon = markIcon(item.glyph, item.tone)}
           <!-- The keys belong to the field, which names the chosen entry as its active one. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <li
@@ -117,7 +132,7 @@
             onmousedown={(event) => event.preventDefault()}
             onclick={() => onchoose(item)}
           >
-            <span class="glyph {tone(item.tone)}">{#if markIcon(item.glyph, item.tone)}<Icon name={markIcon(item.glyph, item.tone)!} />{:else}{item.glyph}{/if}</span><span class="name">{named(item)}</span>
+            <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} label={markLabel(icon)} />{:else}{item.glyph}{/if}</span><span class="name">{named(item)}</span>
           </li>
         {/each}
       </ul>
@@ -126,39 +141,62 @@
       {#if favorites && found.length === 0}No favorites here yet: star an Artifact with the star beside its Detail's title.{:else if found.length === 0}No Artifact or eval matches.{:else if finding.more > 0}{finding.more} more match.{/if}
     </p>
   {/if}
+  </div>{/if}
 </div>
 
 <style>
-  /* Within the canvas left of an open Detail and above its bottom: the list scrolls inside,
-     and the line after it stays in view. */
+  /* Find, opened: the field in the find icon's place among the stage header's tools; what it
+     finds drops under it on its left edge, raised, never past the work area's right edge
+     (--find-room, measured) and scrolling inside itself (D-OVL-4). */
   .find {
+    position: relative;
+    flex: 0 1 240px;
+    min-width: 120px;
+  }
+  .field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--control);
+    padding: 0 8px;
+    box-sizing: border-box;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    outline: 1px solid var(--current-mark);
+    outline-offset: -1px;
+    color: var(--ink-2);
+  }
+  .query {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: none;
+    font: var(--text-small) var(--mono);
+    color: var(--ink);
+  }
+  .drop {
     position: absolute;
-    z-index: 10;
-    left: 8px;
-    top: 8px;
+    z-index: 40;
+    left: 0;
+    top: calc(100% + 8px);
     display: flex;
     flex-direction: column;
-    width: min(380px, calc(100% - 16px - var(--detail-cover, 0px)));
-    max-height: calc(100% - 16px);
+    box-sizing: border-box;
+    min-width: min(240px, var(--find-room, 380px));
+    width: max-content;
+    max-width: min(380px, var(--find-room, 380px));
+    max-height: 60vh;
     padding: 6px;
     background: var(--surface-raised);
     border: 1px solid var(--line-panel);
     border-radius: var(--radius-control);
     box-shadow: 0 2px 8px var(--scrim);
-  }
-  .query {
-    width: 100%;
-    height: var(--control);
-    font: var(--text-small) var(--mono);
-    padding: 0 8px;
-    border: 1px solid var(--line-input);
-    border-radius: var(--radius-control);
-    background: var(--surface-input);
-    color: var(--ink);
-  }
-  .query:focus {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
+    white-space: normal;
   }
   .found {
     flex: 0 1 auto;
@@ -169,6 +207,7 @@
     overflow: auto;
   }
   .found li {
+    color: var(--ink-2);
     display: flex;
     gap: 6px;
     min-height: var(--row-dense);
@@ -181,10 +220,11 @@
   .found li:not(.active):hover {
     background: var(--surface-group);
   }
-  /* The chosen result: the selection background and a 2px inset bar. */
   .found .active {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
     background: var(--selection);
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
   .glyph {
     display: inline-flex;
@@ -205,4 +245,5 @@
   .note.error {
     color: var(--red);
   }
+  input::placeholder { color: var(--ink-2); }
 </style>

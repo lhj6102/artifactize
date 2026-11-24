@@ -38,6 +38,36 @@ pub(super) const CALLBACK_PATH: &str = "/auth/callback";
 /// also uses; listener and OAuth redirect must agree for browser/pasted-URL interoperability.
 pub(super) const CALLBACK_PORT: u16 = 1455;
 
+/// The registered redirect, or a private loopback redirect for a test provider.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CallbackPort {
+    #[default]
+    Registered,
+    Ephemeral,
+}
+
+impl CallbackPort {
+    pub(super) fn bind(self) -> Result<Option<Callback>, String> {
+        let port = match self {
+            Self::Registered => CALLBACK_PORT,
+            Self::Ephemeral => 0,
+        };
+        Callback::bind(port).map_err(|error| format!("Cannot bind Codex sign-in callback: {error}"))
+    }
+
+    pub(super) fn redirect(self, listener: Option<&Callback>) -> Result<String, String> {
+        let port = match self {
+            Self::Registered => CALLBACK_PORT,
+            Self::Ephemeral => listener
+                .and_then(|listener| listener.ipv4.local_addr().ok())
+                .map(|address| address.port())
+                .filter(|port| *port != 0)
+                .ok_or("Cannot reserve a private Codex sign-in callback port.")?,
+        };
+        Ok(format!("http://localhost:{port}{CALLBACK_PATH}"))
+    }
+}
+
 pub(super) fn random(bytes: usize) -> Result<Vec<u8>, String> {
     let mut value = vec![0; bytes];
     getrandom::fill(&mut value).map_err(|_| "Cannot obtain secure randomness.".to_owned())?;
@@ -288,7 +318,7 @@ pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), Stri
     } else {
         None
     };
-    login_with(state, repo, pasted, true, |prompt| {
+    login_with(state, repo, pasted, true, CallbackPort::Registered, |prompt| {
         let mut err = std::io::stderr().lock();
         let _ = writeln!(err, "Open this URL to sign in with Codex:\n{}", prompt.url);
         if !prompt.callback {
@@ -316,14 +346,14 @@ pub async fn login_with(
     repo: Option<&Path>,
     pasted: Option<oneshot::Receiver<String>>,
     browser: bool,
+    callback_port: CallbackPort,
     show: impl FnOnce(&Prompt),
 ) -> Result<(), String> {
     // Check where the tokens will go before anyone signs in.
     let storage = Storage::new(state, repo, Tokens::Codex)?;
     let root = auth_root()?;
-    let listener = Callback::bind(CALLBACK_PORT)
-        .map_err(|error| format!("Cannot bind Codex sign-in callback: {error}"))?;
-    let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
+    let listener = callback_port.bind()?;
+    let redirect_uri = callback_port.redirect(listener.as_ref())?;
     sign_in(
         &storage,
         &root,

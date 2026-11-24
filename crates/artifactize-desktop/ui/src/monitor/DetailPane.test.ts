@@ -131,7 +131,7 @@ it("shows the Artifact tab first, without chips, with its evals' verdicts, and s
   expect(screen.getByRole("tablist").textContent?.replace(/\s+/g, " ").trim()).toBe("app / linttest");
   // The Artifact's chip shows the Artifact icon before its name and is read as "Artifact app".
   expect(tabs[0].getAttribute("aria-label")).toBe("Artifact app");
-  expect(tabs[0].querySelector("img")?.getAttribute("src")).toMatch(/artifactize-icon-mark/);
+  expect(tabs[0].querySelector('svg[data-icon="artifact"]')).not.toBeNull();
   // Each eval's chip carries its verdict's icon in its verdict's colour.
   expect(tabs[2].querySelector(".tone-red svg")).not.toBeNull();
   expect(tabs[1].querySelector(".tone-green svg")).not.toBeNull();
@@ -210,7 +210,7 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
     }
     if (command === "transcript_open") {
       opened.push((args as { id: string }).id);
-      return { kind: "unavailable", text: "No conversation was saved." };
+      return { kind: "local", handle: 1, session: "session-test" };
     }
     return null;
   }, { shouldMockEvents: true });
@@ -229,7 +229,57 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
   await fireEvent.click(views[1]);
   await screen.findByRole("log", { name: "Agent transcript" });
   expect(screen.queryByRole("button", { name: "Outcome" })).toBeNull();
-  await waitFor(() => expect(opened).toEqual(["run-a-7"]));
+  await waitFor(() => expect(opened).toEqual(["run-a-7", "run-a-7"]));
+});
+
+it("names the originating Chat in Provenance without another link", async () => {
+  mockIPC((command) => {
+    if (command === "detail_row") return row("run:run-a", "run", "run-a", "✓", "green");
+    if (command === "detail") return {
+      ...view("run:run-a", "run-a"), target: "run",
+      outcome: { failed: [], tally: [], took: "1s", finished: true, comment: null },
+    };
+    return null;
+  }, { shouldMockEvents: true });
+  renderHosted(DetailPane, {
+    source: RUN, revision: 1, branch: null, node: "run:run-a", tab: null, focused: false, active: true,
+    run: { id: "run-a", branch: null, chatBranch: { kind: "folder", path: "/repo" }, origin: { kind: "chat", sessionId: "chat-a", title: "The original chat" }, node: "run:run-a", mark: { status: "GREEN", glyph: "✓" }, needs: [] },
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
+  });
+  await fireEvent.click(await screen.findByRole("button", { name: "Provenance" }));
+  expect(await screen.findByText("Chat · The original chat")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Chat · The original chat" })).toBeNull();
+});
+
+it("shows the claim stage on the Human eval row and progress with its actions", async () => {
+  const human: TreeNode = { ...row("e:app/signoff", "eval", "signoff", "?", "human"), text: [{ text: "waiting Human", tone: "human" }] };
+  const artifact = { ...tree[1], children: [human] };
+  let rejectClaim: (error: unknown) => void = () => {};
+  const calls: string[] = [];
+  mockIPC((command, args) => {
+    calls.push(command);
+    if (command === "detail_row") return rowOf(args, [artifact]);
+    if (command === "detail") return (args as { node: string }).node === artifact.id
+      ? view(artifact.id, "Artifact app")
+      : { ...view(human.id, "app/signoff"), profile: "human", request: "run-a-2" };
+    if (command === "human_open") return humanView("claim");
+    if (command === "human_claim") return new Promise((_, reject) => (rejectClaim = reject));
+    return null;
+  }, { shouldMockEvents: true });
+  renderHosted(DetailPane, {
+    source: RUN, revision: 1, branch: null, node: artifact.id, tab: null, focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
+  });
+  await screen.findByRole("button", { name: /signoff.*waiting Human.*claimable/ });
+  const claim = screen.getByRole("button", { name: "Claim to review" });
+  const actions = claim.parentElement!;
+  await fireEvent.click(claim);
+  expect(claim.hasAttribute("disabled")).toBe(true);
+  expect(await within(actions).findByRole("img", { name: "Claiming the review" })).toBeTruthy();
+  await fireEvent.click(within(actions).getByRole("button", { name: /Cancel/ }));
+  expect(calls).toContain("human_cancel");
+  rejectClaim({ kind: "cancelled", message: "Claim cancelled." });
+  expect(await within(actions).findByText("Claim cancelled.")).toBeTruthy();
 });
 
 it("keeps Close alone in the header on a Human review's tab, the review showing none of its own", async () => {
@@ -244,7 +294,7 @@ it("keeps Close alone in the header on a Human review's tab, the review showing 
     source: RUN, revision: 1, branch: null, node: "a:app", tab: "e:app/test", focused: false, active: true,
     review: () => reviewing, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback, ongone: vi.fn(),
   });
-  await screen.findByText("REVIEW (yours)");
+  await screen.findByText("Yours");
   const header = screen.getByRole("heading", { name: "app/test · Sign-off" }).parentElement!;
   expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close"]);
   expect(screen.getAllByRole("button", { name: /Close/ })).toHaveLength(1);
@@ -252,20 +302,35 @@ it("keeps Close alone in the header on a Human review's tab, the review showing 
   expect(onback).toHaveBeenCalledOnce();
 });
 
+it("keeps the Open in Review reference on a submitted Human eval's tab", async () => {
+  mockIPC((command, args) => {
+    if (command === "detail_row") return rowOf(args);
+    if (command === "detail") return { ...view("e:app/test", "app/test · Sign-off"), profile: "human", request: "run-a-2" };
+    return command === "human_open" ? humanView("completed") : null;
+  }, { shouldMockEvents: true });
+  const reviewing = new Review("run-a-2", new Jobs());
+  renderHosted(DetailPane, {
+    source: RUN, revision: 1, branch: null, node: "a:app", tab: "e:app/test", focused: false, active: true,
+    review: () => reviewing, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
+  });
+  expect(await screen.findByRole("button", { name: "Open in Review" })).toBeTruthy();
+  await screen.findByRole("group", { name: "Result" });
+  expect(screen.getByRole("button", { name: "Open in Review" })).toBeTruthy();
+});
+
 it("shows an Artifact without evals or neighbours with no chips, no Evals and no Neighbours", async () => {
-  const neighbours = vi.fn();
+  let copies = 2;
   mockIPC((command, args) => {
     if (command === "detail_row") return rowOf(args, [row("a:lone", "artifact", "lone", "✓", "green")]);
     if (command === "neighbours") {
-      neighbours();
-      // Drawn once, using nothing and used by nothing.
-      return { moreUses: 0, moreUsedBy: 0, wholes: [], copies: 1, shape: {
+      // An otherwise isolated Artifact starts drawn twice, then only once.
+      return { moreUses: 0, moreUsedBy: 0, wholes: [], copies, shape: {
         nodes: [{ id: "a:lone", name: "lone", light: "green", tally: null, note: null, parts: [] }], edges: [],
       } };
     }
     return command === "detail" ? view("a:lone", "Artifact lone") : null;
   });
-  renderHosted(DetailPane, {
+  const { rerender } = renderHosted(DetailPane, {
     source: RUN, revision: 1, branch: null, node: "a:lone", tab: null, focused: false, active: true,
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
@@ -273,10 +338,10 @@ it("shows an Artifact without evals or neighbours with no chips, no Evals and no
   expect(screen.queryByRole("tablist")).toBeNull();
   expect(screen.queryByRole("list", { name: "Evals of lone" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Evals" })).toBeNull();
-  // A section with nothing to show is not shown, once its neighbours are read.
-  await waitFor(() => expect(neighbours).toHaveBeenCalled());
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(screen.queryByRole("button", { name: "Neighbours" })).toBeNull();
+  await screen.findByRole("button", { name: "Neighbours" });
+  copies = 1;
+  await rerender({ revision: 2 });
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Neighbours" })).toBeNull());
 });
 
 it("draws the Artifact between the Artifacts its evals use and those that use it once Neighbours is unfolded, and opens a neighbour on a click", async () => {

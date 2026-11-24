@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{HumanTool, HumanToolKind, Profile, RepoConfig},
-    process, runtime,
+    process,
     scope::{self, Scope},
 };
 
@@ -31,8 +31,15 @@ pub struct ToolDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Content {
-    Text { text: String },
-    Launch { launched: bool },
+    Text {
+        text: String,
+    },
+    Launch {
+        launched: bool,
+    },
+    Viewer {
+        artifact: crate::types::ArtifactName,
+    },
 }
 
 /// Human failures retain separate stdout and stderr blocks in saved results,
@@ -55,10 +62,20 @@ impl ErrorText {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum ToolResult {
     Success(artifactize_tools::result::ContentBlocks<Content>),
     Error(ErrorText),
+    Viewer {
+        content: artifactize_tools::result::ContentBlocks<Content>,
+        pending: Option<(Box<crate::viewer::Session>, Run)>,
+    },
+}
+
+impl PartialEq for ToolResult {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_error() == other.is_error() && self.content() == other.content()
+    }
 }
 
 impl ToolResult {
@@ -85,13 +102,21 @@ impl ToolResult {
         Self::Error(ErrorText::new(content).expect("Human failures contain nonblank text"))
     }
 
+    /// Transfer the unfinished Viewer log to the desktop that performs the actual launch.
+    pub fn take_viewer_launch(&mut self) -> Option<(Box<crate::viewer::Session>, Run)> {
+        match self {
+            Self::Viewer { pending, .. } => pending.take(),
+            _ => None,
+        }
+    }
+
     pub fn is_error(&self) -> bool {
         matches!(self, Self::Error(_))
     }
 
     pub fn content(&self) -> &[Content] {
         match self {
-            Self::Success(content) => content.as_slice(),
+            Self::Success(content) | Self::Viewer { content, .. } => content.as_slice(),
             Self::Error(content) => content.0.as_slice(),
         }
     }
@@ -226,6 +251,7 @@ impl<'a> Registry<'a> {
             .resolve_input(&self.config.root, owner, "")
             .map_err(|e| e.to_string())?;
         match tool.declaration {
+            HumanTool::Viewer(_) => {}
             HumanTool::Command(declaration) => {
                 super::preflight_executable(
                     &self.config.root,
@@ -302,6 +328,26 @@ impl<'a> Registry<'a> {
             return ToolResult::error("Human tool call was cancelled.");
         }
         let declaration = match tool.declaration {
+            HumanTool::Viewer(_) => {
+                let content =
+                    artifactize_tools::result::ContentBlocks::new(vec![Content::Viewer {
+                        artifact: tool.definition.artifact_id.clone(),
+                    }])
+                    .expect("a Viewer result always has one block");
+                let pending = if run.waits_for_viewer() {
+                    match crate::viewer::Session::from_config(
+                        self.config,
+                        &tool.definition.artifact_id,
+                    ) {
+                        Ok(viewer) => Some((Box::new(viewer), run)),
+                        Err(error) => return failed(run, error),
+                    }
+                } else {
+                    run.end(End::Done);
+                    None
+                };
+                return ToolResult::Viewer { content, pending };
+            }
             HumanTool::Builtin(declaration) => {
                 return self
                     .call_builtin(&tool.definition.artifact_id, declaration, cancellation, run)
@@ -320,6 +366,7 @@ impl<'a> Registry<'a> {
             return ToolResult::error("Human tool call was cancelled.");
         }
         match declaration.kind {
+            HumanToolKind::Viewer => unreachable!("command tool cannot be a viewer"),
             HumanToolKind::Launch => match process::launch_watched(&program, &args, &cwd, run) {
                 Ok(()) => ToolResult::success(Content::Launch { launched: true }),
                 Err((error, run)) => failed(
@@ -485,8 +532,7 @@ fn output_result(output: &process::Output) -> ToolResult {
 }
 
 fn text(bytes: &[u8], mut prefix: String, truncated: bool) -> String {
-    prefix
-        .push_str(&String::from_utf8(runtime::clean_output(bytes)).expect("clean output is UTF-8"));
+    prefix.push_str(&crate::platform::clean_program_text(bytes));
     if prefix.len() > TEXT_LIMIT || truncated {
         let suffix = "\n[output truncated]";
         let mut end = (TEXT_LIMIT - suffix.len()).min(prefix.len());

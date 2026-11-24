@@ -7,7 +7,7 @@ pub(crate) mod test_support;
 mod tests;
 mod transport;
 
-use crate::types::{RunId, SessionId};
+use crate::types::{RequestId, RunId, SessionId};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -38,8 +38,8 @@ const MAX_STATES: usize = 32;
 const MAX_CLIENTS: usize = 64;
 /// Absorb a burst of commits without unbounded buffering for a stalled subscriber.
 const MAX_BACKLOG: usize = 64;
-/// Above this many dirty transcripts, one resync is cheaper than tracking every hint.
-const MAX_DIRTY_SESSIONS: usize = 64;
+/// Above this many dirty transcripts and drafts, one resync is cheaper than tracking every hint.
+const MAX_DIRTY_TRANSCRIPTS: usize = 64;
 /// Above this many dirty Runs, reread the state rather than holding an unbounded set.
 const MAX_DIRTY_RUNS: usize = 64;
 /// Version 2 names the Run a write changed ([`Change::RunInvalidated`]). The wire format is
@@ -58,6 +58,7 @@ pub enum Change {
     /// holds.
     RunInvalidated(RunId),
     SessionInvalidated(SessionId),
+    DraftInvalidated(RequestId),
     /// Initial registration, reconnect, gap, overflow or database replacement: read afresh.
     Resync,
 }
@@ -79,7 +80,7 @@ impl Changed {
                 self.add_run(id.clone());
             }
             Change::RunInvalidated(_) => {}
-            Change::SessionInvalidated(_) => {}
+            Change::SessionInvalidated(_) | Change::DraftInvalidated(_) => {}
         }
     }
     fn add_run(&mut self, id: RunId) {
@@ -146,6 +147,7 @@ enum Dirty {
     Pending {
         state: Changed,
         sessions: BTreeSet<SessionId>,
+        drafts: BTreeSet<RequestId>,
     },
     Resync,
 }
@@ -154,24 +156,36 @@ impl Default for Dirty {
         Self::Pending {
             state: Changed::Nothing,
             sessions: BTreeSet::new(),
+            drafts: BTreeSet::new(),
         }
     }
 }
 impl Dirty {
     fn add(&mut self, change: Change) {
-        let Self::Pending { state, sessions } = self else {
+        let Self::Pending {
+            state,
+            sessions,
+            drafts,
+        } = self
+        else {
             return;
         };
         match change {
-            Change::Resync => *self = Self::Resync,
+            Change::Resync => {
+                *self = Self::Resync;
+                return;
+            }
             Change::StateInvalidated => *state = Changed::Everything,
             Change::RunInvalidated(id) => state.add_run(id),
             Change::SessionInvalidated(id) => {
                 sessions.insert(id);
-                if sessions.len() > MAX_DIRTY_SESSIONS {
-                    *self = Self::Resync;
-                }
             }
+            Change::DraftInvalidated(id) => {
+                drafts.insert(id);
+            }
+        }
+        if sessions.len() + drafts.len() > MAX_DIRTY_TRANSCRIPTS {
+            *self = Self::Resync;
         }
     }
     fn pop(&mut self) -> Option<Change> {
@@ -180,13 +194,18 @@ impl Dirty {
                 *self = Self::default();
                 Some(Change::Resync)
             }
-            Self::Pending { state, sessions } => state
+            Self::Pending {
+                state,
+                sessions,
+                drafts,
+            } => state
                 .pop()
-                .or_else(|| sessions.pop_first().map(Change::SessionInvalidated)),
+                .or_else(|| sessions.pop_first().map(Change::SessionInvalidated))
+                .or_else(|| drafts.pop_first().map(Change::DraftInvalidated)),
         }
     }
     fn is_empty(&self) -> bool {
-        matches!(self, Self::Pending { state: Changed::Nothing, sessions } if sessions.is_empty())
+        matches!(self, Self::Pending { state: Changed::Nothing, sessions, drafts } if sessions.is_empty() && drafts.is_empty())
     }
 }
 struct Inbox {

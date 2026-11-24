@@ -44,6 +44,33 @@ mod milliseconds {
             .ok_or_else(|| serde::de::Error::custom("Push timestamp is out of range."))
     }
 }
+/// One ledger read supplies the recent records and the local day's total.
+pub struct PushHistory {
+    pub recent: Vec<Pushed>,
+    pub pushed_today: usize,
+}
+
+pub fn history_at(state: Option<&Path>, now: Timestamp) -> PushHistory {
+    history_in(state, now, crate::platform::local_day)
+}
+
+fn history_in(
+    state: Option<&Path>,
+    now: Timestamp,
+    local_day: impl Fn(time::OffsetDateTime) -> time::Date,
+) -> PushHistory {
+    let recent = recent_at(state, now);
+    let day = local_day(now.time());
+    let pushed_today = recent
+        .iter()
+        .filter(|push| push.at <= now && local_day(push.at.time()) == day)
+        .fold(0usize, |total, push| total.saturating_add(push.count));
+    PushHistory {
+        recent,
+        pushed_today,
+    }
+}
+
 /// Recent pushes, oldest first; absent or unreadable state has no history to show.
 pub fn recent(state: Option<&Path>) -> Vec<Pushed> {
     recent_at(state, Timestamp::now())
@@ -73,7 +100,7 @@ pub(super) fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(),
         &state.join(LOCK),
     )
     .map_err(|error| error.to_string())?;
-    lock.lock().map_err(|error| error.to_string())?;
+    crate::platform::paths::lock(&lock).map_err(|error| error.to_string())?;
     let mut pushes = kept_at(state, at);
     pushes.push(Pushed { at, count });
     let mut file = tempfile::NamedTempFile::new_in(state).map_err(|error| error.to_string())?;
@@ -85,6 +112,28 @@ pub(super) fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ledger_today_uses_civil_days_at_each_push_not_the_current_offset() {
+        let state = crate::test_os::tempdir();
+        let stamp = |text: &str| text.parse::<Timestamp>().unwrap();
+        let before = stamp("2026-03-08T04:59:59Z");
+        let midnight = stamp("2026-03-08T05:00:00Z");
+        let daylight = stamp("2026-03-08T07:00:00Z");
+        let now = stamp("2026-03-08T16:00:00Z");
+        let future = stamp("2026-03-08T16:01:00Z");
+        for (at, count) in [(before, 9), (midnight, 3), (daylight, 2), (future, 11)] {
+            record_at(state.path(), count, at).unwrap();
+        }
+        let history = history_in(Some(state.path()), now, |instant| {
+            let hours = if instant < daylight.time() { -5 } else { -4 };
+            instant
+                .to_offset(time::UtcOffset::from_hms(hours, 0, 0).unwrap())
+                .date()
+        });
+        assert_eq!(history.recent.len(), 4);
+        assert_eq!(history.pushed_today, 5);
+    }
+
     #[test]
     fn concurrent_pushes_keep_all_counts() {
         let state = crate::test_os::tempdir();

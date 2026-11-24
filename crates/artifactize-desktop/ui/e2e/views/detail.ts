@@ -6,16 +6,18 @@ import { dispatchInput, visibleCenter } from "../input.ts";
 import { drawsEdge } from "./graph.ts";
 import { holds, until } from "./wait.ts";
 
-const DETAIL = 'aside[aria-label="Detail"]';
+const DETAIL = 'main:not([hidden]) aside[aria-label="Detail"]';
 const DIALOG = '[role="dialog"]';
 
 /** The Detail as read: its title, its chips (on an eval's tab), the evals its Artifact's tab
- * lists with their status, its sections' names with whether each is unfolded, and whether it
- * is docked at the graph's right edge from the graph's top to the main area's bottom. */
+ * lists with their status and, for a Human eval waiting for a person, its stage under it
+ * (`claimable`, `yours`, `taken by {reviewer}`), its sections' names with whether each is
+ * unfolded, and whether it is docked at the graph's right edge from the graph's top to the
+ * main area's bottom. */
 export type Shown = {
   title: string;
   tabs: { name: string; selected: boolean }[];
-  evals: { id: string; name: string; status: string }[];
+  evals: { id: string; name: string; status: string; stage: string }[];
   sections: { name: string; open: boolean }[];
   docked: boolean;
   starred: boolean;
@@ -26,6 +28,10 @@ export class Detail {
 
   constructor(browser: WebdriverIO.Browser) {
     this.browser = browser;
+  }
+
+  reviewAction(name: "Claim to review" | "Release claim" | "Open in Review"): Promise<void> {
+    return this.browser.$(DETAIL).$(`button=${name}`).click();
   }
 
   /** The open Detail, or null while none is open. */
@@ -44,7 +50,8 @@ export class Detail {
         evals: [...aside.querySelectorAll<HTMLElement>("button[data-eval]")].map((row) => ({
           id: row.dataset.eval ?? "",
           name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
-          status: row.querySelector(".status")?.textContent?.trim() ?? "",
+          status: row.querySelector(".verdict-status")?.textContent?.trim() ?? "",
+          stage: row.querySelector(".status .stage")?.textContent?.trim().replace(/^·\s*/, "") ?? "",
         })),
         sections: [...aside.querySelectorAll<HTMLElement>("section.section")].map((section) => ({
           name: section.getAttribute("aria-label") ?? "",
@@ -172,9 +179,10 @@ export class Detail {
   /** How wide the Detail is, and how far it lies from the main area's left and right edges. */
   placed(): Promise<{ width: number; left: number; right: number } | null> {
     return this.browser.execute((detail) => {
-      const dock = document.querySelector(detail)?.getBoundingClientRect();
-      const stage = document.querySelector(".stage")!.getBoundingClientRect();
-      return dock ? { width: Math.round(dock.width), left: Math.round(dock.left - stage.left), right: Math.round(stage.right - dock.right) } : null;
+      const aside = document.querySelector(detail);
+      const dock = aside?.getBoundingClientRect();
+      const stage = aside?.closest(".stage")?.getBoundingClientRect();
+      return dock && stage ? { width: Math.round(dock.width), left: Math.round(dock.left - stage.left), right: Math.round(stage.right - dock.right) } : null;
     }, DETAIL);
   }
 
@@ -223,7 +231,7 @@ export class Detail {
       return {
         file: root?.querySelector("section.section[aria-label=\"Definition\"] dd.file")?.textContent?.trim() ?? "",
         path: path?.value ?? "",
-        missing: path?.parentElement?.querySelector(".refusal:not([role])")?.textContent?.trim() ?? "",
+        missing: path?.parentElement?.querySelector(".missing")?.textContent?.trim() ?? "",
         parts: [...(root?.querySelectorAll(`ul[aria-label="Parts of ${artifact}"] .part`) ?? [])].map((part) => part.textContent?.trim() ?? ""),
         refusals: [...(root?.querySelectorAll('[role="alert"]') ?? [])].map((alert) => alert.textContent?.trim() ?? ""),
         source: root?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="Source of ${artifact}"]`)?.value ?? null,

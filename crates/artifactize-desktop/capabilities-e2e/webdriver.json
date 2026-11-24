@@ -2,7 +2,9 @@
   "identifier": "webdriver",
   "description": "WebDriver integration, native window focus and genuine window-close requests for the E2E test build only.",
   "windows": [
-    "main"
+    "main",
+    "viewer-*",
+    "pet"
   ],
   "permissions": [
     "wdio:default",

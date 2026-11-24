@@ -3,7 +3,10 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
+mod antigravity;
+mod chat;
 mod claude_agent;
+pub(crate) use chat::{Prompt as ChatPrompt, turn as chat_turn};
 pub mod error;
 pub mod session;
 pub mod verdict;
@@ -104,6 +107,7 @@ pub async fn execute(
     )
     .and_then(|route| match route {
         llm::Route::ClaudeAgent => Ok(None),
+        llm::Route::Antigravity => Err(llm::antigravity::eval_refusal()),
         llm::Route::Http(route) => Client::at(route, model, state, &config.root).map(Some),
     });
     match client {
@@ -155,11 +159,43 @@ async fn review(
     review
 }
 
+/// The review and Chat loops execute tools through one narrow provider-independent boundary.
+enum Toolset<'a, 'r> {
+    Review(&'a Registry<'r>),
+    Chat(&'a crate::chat::tools::Tools<'r>),
+}
+
+impl Toolset<'_, '_> {
+    fn durable_start(&self, name: &str) -> bool {
+        matches!(self, Self::Chat(_)) && name == "verify_start"
+    }
+
+    async fn invoke(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+        output: &Path,
+        cancel: CancellationToken,
+    ) -> crate::chat::tools::Called {
+        match self {
+            Self::Review(registry) => registry.call(name, arguments, output, cancel).await.into(),
+            Self::Chat(tools) => tools.call(name, arguments, cancel).await,
+        }
+    }
+}
+
+fn recorded_call(recorder: &mut Recorder, called: crate::chat::tools::Called) -> ToolResult {
+    if let Some(run) = called.run {
+        recorder.event(session::Kind::RunReference { run });
+    }
+    called.result
+}
+
 /// One conversation's turns: the deadline and budgets they share, their counters, and the
 /// record of every message.
 struct Turns<'a> {
     client: &'a Client,
-    registry: &'a Registry<'a>,
+    registry: Toolset<'a, 'a>,
     model: &'a ModelId,
     output: &'a Path,
     deadline: Instant,
@@ -242,9 +278,21 @@ impl Turns<'_> {
         let mut failed = Vec::new();
         let mut stopped = None;
         // Each call is awaited before the next starts: tool concurrency is exactly one.
+        let show_individual = matches!(self.registry, Toolset::Chat(_)) && calls.len() > 1;
         for call in calls {
             match self.call_tool(&call).await {
                 Ok((result, is_error)) => {
+                    if show_individual {
+                        self.recorder.event(session::Kind::ToolOutcome(
+                            session::MessageEvent::new(
+                                self.turn + 1,
+                                Message::tool_results(vec![result.clone()]),
+                                false,
+                                vec![is_error],
+                                None,
+                            ),
+                        ));
+                    }
                     results.push(result);
                     failed.push(is_error);
                 }
@@ -304,17 +352,26 @@ impl Turns<'_> {
                 "Provider repeated a tool-call ID; no further tools were executed.",
             ));
         }
-        let result = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => return Err(Failure::cancelled()),
-            _ = tokio::time::sleep_until(deadline) => return Err(Failure::timeout()),
-            result = self.registry.call(
-                call.function.name.as_str(),
-                call.function.arguments.clone(),
-                self.output,
-                cancellation.clone(),
-            ) => result,
+        let name = call.function.name.as_str();
+        let invoke = self.registry.invoke(
+            name,
+            call.function.arguments.clone(),
+            self.output,
+            cancellation.clone(),
+        );
+        let result = if self.registry.durable_start(name) {
+            // An accepted Verify is independent of this turn. Keep its reference even if
+            // Stop raced the admission, then honor Stop before the next model/tool call.
+            invoke.await
+        } else {
+            tokio::select! {
+                biased;
+                _ = cancellation.cancelled() => return Err(Failure::cancelled()),
+                _ = tokio::time::sleep_until(deadline) => return Err(Failure::timeout()),
+                result = invoke => result,
+            }
         };
+        let result = recorded_call(self.recorder, result);
         let failed = result.is_error();
         Ok((call.result(tool_content(result)), failed))
     }
@@ -397,7 +454,7 @@ async fn run(
     });
     let mut turns = Turns {
         client,
-        registry: &registry,
+        registry: Toolset::Review(&registry),
         model,
         output,
         deadline,
@@ -606,7 +663,7 @@ async fn continue_conversation(
     let tools = registry.sessions(continuation.state, None, cancellation.clone());
     let registry = registry.with_sessions(&tools);
     let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
-    request.tools = definitions(&registry);
+    request.tools = definitions(registry.list());
     recorder.event(session::Kind::Send(session::Send {
         text: Some(message.into()),
         framing: Some(framing),
@@ -628,7 +685,7 @@ async fn continue_conversation(
     )));
     let mut turns = Turns {
         client: &client,
-        registry: &registry,
+        registry: Toolset::Review(&registry),
         model,
         output: continuation.output,
         deadline,
@@ -679,9 +736,10 @@ async fn answer_follow_up(
 }
 
 /// The registry's tools as the provider sees them.
-fn definitions(registry: &Registry<'_>) -> Vec<ToolDefinition> {
-    registry
-        .list()
+fn definitions<'a>(
+    tools: impl Iterator<Item = &'a crate::tools::ToolDefinition>,
+) -> Vec<ToolDefinition> {
+    tools
         .map(|tool| ToolDefinition {
             name: tool.name.to_string(),
             description: tool.description.clone(),
@@ -713,7 +771,7 @@ fn tool_content(result: ToolResult) -> Vec<ToolResultContent> {
 fn prompt(eval: &Eval, registry: &Registry<'_>) -> CompletionRequest {
     let Prompt { system, text } = prompt_text(eval, registry);
     let mut request = CompletionRequest::new(text).preamble(system);
-    request.tools = definitions(registry);
+    request.tools = definitions(registry.list());
     request
 }
 

@@ -1,6 +1,6 @@
 //! The shown snapshot as the frontend draws it: plain data, every word and glyph from the
 //! library's model.
-use super::{CHIPS, Opened, Shown};
+use super::{Opened, Shown};
 use crate::status::{Mark, Tone, Weight};
 use artifactize_core::{
     monitor::{
@@ -101,7 +101,7 @@ impl BranchKey {
     }
 }
 
-/// One entry of a branch's timeline: a Run, or the branch's Current.
+/// One Run in a branch's timeline.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Chip {
@@ -116,8 +116,6 @@ pub enum Chip {
         /// What its requester said it is working on (`verify --comment`).
         comment: Option<String>,
     },
-    /// The worktree as it is now.
-    Current,
 }
 
 /// One live branch of the pane: `project / branch`, then its timeline, newest first.
@@ -130,12 +128,16 @@ pub struct BranchView {
     pub name: String,
     /// Where its Current is scanned and its tools run.
     pub workspace: PathKey,
-    /// Its timeline: its newest Runs, newest first, led by the one in progress or else the Current.
+    /// Its timeline: its newest Runs, newest first, led by the one in progress.
     pub chips: Vec<Chip>,
+    /// The newest Run by creation time, independently of the timeline page.
+    pub newest: Option<Chip>,
     /// Older Runs than the timeline holds exist: **Older runs** at its end shows them.
     pub older: bool,
     /// Starred: listed before the branches that are not.
     pub starred: bool,
+    /// A saved timeline entry pinned by a reference, not a live checkout.
+    pub historical: bool,
 }
 
 /// One Human review waiting for a person.
@@ -234,6 +236,35 @@ pub struct Attention {
     pub text: String,
 }
 
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum RunOrigin {
+    Cli,
+    Mcp,
+    Chat {
+        session_id: crate::ids::SessionKey,
+        title: String,
+    },
+}
+
+impl From<&artifactize_core::runs::Origin> for RunOrigin {
+    fn from(origin: &artifactize_core::runs::Origin) -> Self {
+        use artifactize_core::runs::Origin;
+        match origin {
+            Origin::Cli => Self::Cli,
+            Origin::Mcp => Self::Mcp,
+            Origin::Chat { session_id, title } => Self::Chat {
+                session_id: session_id.clone().into(),
+                title: title.clone(),
+            },
+        }
+    }
+}
+
 /// The shown Run: its headline, the verdict and what needs attention; its tally, time and
 /// comment are its Detail's. Its rows come one at a time, as a Detail asks for them ([`row`]):
 /// a Run can hold tens of thousands.
@@ -241,6 +272,13 @@ pub struct Attention {
 #[serde(rename_all = "camelCase")]
 pub struct RunPanel {
     pub id: crate::ids::RunKey,
+    /// The Run's timeline branch, including a historical branch pinned by its reference.
+    pub branch: Option<BranchKey>,
+    /// The branch for Open in Chat, even when it is no longer checked out.
+    pub chat_branch: BranchKey,
+    pub origin: Option<RunOrigin>,
+    /// The Run comment's first line. The full comment belongs in Detail.
+    pub headline: Option<String>,
     /// The Run's own row, whose Detail its headline opens.
     pub node: crate::ids::NodeKey,
     pub mark: Mark,
@@ -256,7 +294,7 @@ pub enum ShownRun {
     /// No Run is shown.
     None,
     /// The shown Run, read.
-    Read(RunPanel),
+    Read(Box<RunPanel>),
     /// The shown Run no longer exists or cannot be read.
     Missing,
 }
@@ -360,41 +398,36 @@ fn status_word(status: RunStatus) -> String {
     }
 }
 
-fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> BranchView {
-    let skipped = branch.runs.len().saturating_sub(limit);
-    let kept = &branch.runs[skipped..];
-    // The newest Run, when one is in progress, stands where the Current would.
-    let running = branch.running().is_some() && !kept.is_empty();
-    let mut chips: Vec<Chip> = kept
-        .iter()
-        .enumerate()
-        .map(|(at, chip)| {
-            let running = running && at + 1 == kept.len();
-            let age = monitor::duration(now - chip.created_at.time());
-            Chip::Run {
-                id: chip.id.clone().into(),
-                mark: monitor::Status::from(chip.status).into(),
-                status: status_word(chip.status),
-                // An ended Run reads as when it was; a running one as its time so far.
-                age: if running { age } else { format!("{age} ago") },
-                running,
-                comment: chip.comment.as_ref().map(ToString::to_string),
-            }
-        })
-        .collect();
-    if !running {
-        chips.push(Chip::Current);
+fn run_chip(chip: &live::Chip, now: OffsetDateTime) -> Chip {
+    let running = chip.status.is_open();
+    let age = monitor::duration(now - chip.created_at.time());
+    Chip::Run {
+        id: chip.id.clone().into(),
+        mark: monitor::Status::from(chip.status).into(),
+        status: status_word(chip.status),
+        age: if running { age } else { format!("{age} ago") },
+        running,
+        comment: chip.comment.as_ref().map(ToString::to_string),
     }
-    // What is happening now comes first, right under the branch's name.
-    chips.reverse();
+}
+
+fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> BranchView {
+    let older = branch.runs.len() > limit;
+    let chips = branch
+        .timeline()
+        .take(limit)
+        .map(|chip| run_chip(chip, now))
+        .collect();
     BranchView {
         key: BranchKey::new(&branch.place),
         project: branch.project.clone(),
         name: branch.name.clone(),
         workspace: PathKey::new(&branch.workspace),
         chips,
-        older: skipped > 0,
+        newest: branch.runs.last().map(|chip| run_chip(chip, now)),
+        older,
         starred,
+        historical: false,
     }
 }
 
@@ -422,11 +455,35 @@ fn waiting(waiting: &Waiting, now: OffsetDateTime) -> WaitingRow {
 }
 
 pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
+    let historical = (shown.reference && shown.opened_branch.is_none())
+        .then(|| {
+            shown
+                .opened
+                .loaded()
+                .map(|selected| Branch::historical(&selected.run.run))
+        })
+        .flatten();
+    let timeline_branch = shown
+        .opened_branch
+        .as_ref()
+        .or_else(|| historical.as_ref().map(|branch| &branch.place));
     let run = shown.opened.loaded().map(|selected| {
         let (run, requests) = (&selected.run, &selected.requests);
         let progress = monitor::progress(run, requests, now);
         RunPanel {
             id: run.run.id.clone().into(),
+            branch: timeline_branch.map(BranchKey::new),
+            chat_branch: shown.opened_branch.as_ref().map_or_else(
+                || BranchKey::new(&Place::recorded_run(&run.run)),
+                BranchKey::new,
+            ),
+            origin: run.run.origin.as_ref().map(Into::into),
+            headline: run
+                .run
+                .comment
+                .as_ref()
+                .and_then(|comment| comment.as_str().lines().next())
+                .map(str::to_owned),
             node: NodeId::run(&run.run.id).into(),
             mark: progress.status.into(),
             needs: progress
@@ -439,42 +496,54 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
                 .collect(),
         }
     });
-    let (branches, waiting_rows) = match &shown.query.parsed {
-        Ok(query) => {
-            let none = std::collections::BTreeSet::new();
-            let starred = shown.starred.as_ref().unwrap_or(&none);
-            let (branches, waiting_rows) =
-                live::show(query, &shown.branches, &shown.waiting, starred);
-            (
-                branches
-                    .into_iter()
-                    .map(|shown_branch| {
-                        let limit = shown
-                            .chips
-                            .get(&shown_branch.place)
-                            .copied()
-                            .unwrap_or(CHIPS);
-                        branch(
-                            shown_branch,
-                            limit,
-                            starred.contains(&shown_branch.place),
-                            now,
-                        )
-                    })
-                    .collect(),
-                waiting_rows
-                    .into_iter()
-                    .map(|row| waiting(row, now))
-                    .collect(),
-            )
-        }
-        Err(_) => (Vec::new(), Vec::new()),
-    };
+    let none = std::collections::BTreeSet::new();
+    let starred = shown.starred.as_ref().unwrap_or(&none);
+    let mut branches = shown.query.parsed.as_ref().map_or_else(
+        |_| Vec::new(),
+        |query| live::show(query, &shown.branches, &[], starred).0,
+    );
+    // A direct Run reference is visible without changing the saved Verify search.
+    if shown.reference
+        && let Some(place) = &shown.opened_branch
+        && !branches.iter().any(|branch| &branch.place == place)
+        && let Some(linked) = shown.branches.iter().find(|branch| &branch.place == place)
+    {
+        branches.insert(0, linked);
+    }
+    if let Some(branch) = &historical {
+        branches.insert(0, branch);
+    }
+    let branches = branches
+        .into_iter()
+        .map(|shown_branch| {
+            let limit = shown.chip_limit(shown_branch);
+            let mut row = branch(
+                shown_branch,
+                limit,
+                starred.contains(&shown_branch.place),
+                now,
+            );
+            row.historical = historical
+                .as_ref()
+                .is_some_and(|archived| archived.place == shown_branch.place);
+            row
+        })
+        .collect();
+    let waiting_rows = shown.waiting.iter().map(|row| waiting(row, now)).collect();
     let notice: Vec<String> = shown
         .error
         .iter()
         .cloned()
         .chain(shown.unreadable.iter().map(ToString::to_string))
+        .chain(
+            shown
+                .opened
+                .loaded()
+                .into_iter()
+                .flat_map(|selected| &selected.run.unreadable)
+                .filter(|record| !shown.unreadable.contains(record))
+                .map(ToString::to_string),
+        )
         .chain(
             shown
                 .unstarred
@@ -492,7 +561,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         waiting: waiting_rows,
         launch: shown.launch.as_ref().map(BranchKey::new),
         run: match (run, &shown.opened) {
-            (Some(panel), _) => ShownRun::Read(panel),
+            (Some(panel), _) => ShownRun::Read(Box::new(panel)),
             (None, Opened::Missing(_)) => ShownRun::Missing,
             (None, _) => ShownRun::None,
         },

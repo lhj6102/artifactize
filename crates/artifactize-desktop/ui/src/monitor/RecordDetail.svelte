@@ -8,7 +8,8 @@
   // Agent's live transcript, or a runtime's saved output. An Artifact's Detail is its Path and
   // Debug; a Run's leads with its Outcome and what it Waits for, then What, Provenance and
   // Technical.
-  import type { DetailView, Field } from "../ipc/client";
+  import type { Attachment } from "svelte/attachments";
+  import { call, useIpc, type DetailView, type Field, type RunPanel } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
   import { markIcon, statusIcon } from "../shell/icons";
@@ -18,11 +19,13 @@
 
   let {
     detail,
+    run = null,
     path = true,
     debugFacts = [],
     log = $bindable(),
   }: {
     detail: DetailView;
+    run?: RunPanel | null;
     /** Facts the caller knows of this Artifact, shown first under Debug. */
     debugFacts?: [string, string][];
     /** An Artifact's Path is shown: a Current shows its Definition instead. */
@@ -31,9 +34,26 @@
     log: boolean;
   } = $props();
 
+  const origin = $derived(run?.origin ?? null);
   const agent = $derived(detail.profile === "agent" && detail.request !== null);
   /** The name of the request's log, if it has one. */
-  const logName = $derived(agent ? "Agent log" : detail.evidence ? "Runtime log" : null);
+  class LogAvailability { request = $state<string | null>(null); }
+  const logs = new LogAvailability();
+  const ipc = useIpc();
+  const probe: Attachment = () => {
+    const id = agent ? detail.request : null;
+    if (!id) return;
+    // The resolver also handles reused transcripts and shares the same answer as the log.
+    let alive = true;
+    void call(ipc.transcriptOpen(id, null)).then((opened) => {
+      if (opened.kind === "local") {
+        void ipc.transcriptClose(opened.handle);
+        if (alive) logs.request = id;
+      } else if (alive) logs.request = null;
+    }, () => { if (alive) logs.request = null; });
+    return () => { alive = false; };
+  };
+  const logName = $derived(agent && logs.request === detail.request ? "Agent log" : detail.evidence ? "Runtime log" : null);
   const showLog = $derived(log && logName !== null);
   const card = $derived(detail.card);
 
@@ -73,14 +93,31 @@
   const metadata = $derived(pick(METADATA));
   const fingerprint = $derived(pick(["Fingerprint"]));
   /** A Run's sections after its outcome and what it waits for. */
-  const runSections = $derived(detail.sections.filter((section) => section.name !== "outcome" && section.name !== "waits" && section.fields.length > 0));
+  const runSections = $derived.by(() => {
+    const sections = detail.sections.filter((section) => section.name !== "outcome" && section.name !== "waits" && section.fields.length > 0);
+    if (origin && !sections.some((section) => section.name === "provenance")) {
+      const technical = sections.findIndex((section) => section.name === "technical");
+      sections.splice(technical < 0 ? sections.length : technical, 0, { name: "provenance", title: "Provenance", fields: [], waits: [] });
+    }
+    return sections;
+  });
   /** A Run's other outcome facts (its errors, what waits or runs), each said once. */
   const outcomeFields = $derived(detail.sections.find((section) => section.name === "outcome")?.fields ?? []);
   const words = (status: string) => status.replaceAll("_", " ");
 </script>
 
-{#snippet facts(list: Field[] | [string, string][])}
+{#snippet facts(list: Field[] | [string, string][], provenance = false)}
   <dl>
+    {#if provenance && origin}
+      <dt>Started by</dt>
+      <dd>
+        {#if origin.kind === "chat"}
+          Chat · {origin.title}
+        {:else}
+          {origin.kind === "mcp" ? "MCP client" : "CLI"}
+        {/if}
+      </dd>
+    {/if}
     <!-- A Detail can repeat a key: key by position. -->
     {#each list as fact, at (at)}
       {@const [key, value] = Array.isArray(fact) ? fact : [fact.key, fact.value]}
@@ -116,7 +153,7 @@
 
 <!-- Focusable so the arrows and PgUp/PgDn scroll the Summary. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div class="full" tabindex="0" role="document">
+<div class="full" {@attach probe} tabindex="0" role="document">
   {#if logName}
     <div class="views" role="tablist" aria-label="Views">
       <button class="view" role="tab" aria-selected={!showLog} onclick={() => (log = false)}>Summary</button>
@@ -183,7 +220,7 @@
       {/if}
       {#each runSections as section (section.name)}
         <Section name={section.title}>
-          {@render facts(section.fields)}
+          {@render facts(section.fields, section.name === "provenance")}
         </Section>
       {/each}
     </div>
@@ -248,7 +285,7 @@
       <div class="sections">
         {#each detail.sections as section (section.name)}
           {#if section.fields.length > 0}
-            <Section name={section.title}>{@render facts(section.fields)}</Section>
+            <Section name={section.title}>{@render facts(section.fields, section.name === "provenance")}</Section>
           {/if}
         {/each}
       </div>
@@ -257,8 +294,7 @@
 </div>
 
 <style>
-  /* A plain text switch, a level below the Detail's chips: the chosen view bold in the strong
-   * text colour, the other in the quieter one. Hover only highlights. */
+  /* A plain text switch: the chosen view is brighter and carries the current underline. */
   .views {
     display: flex;
     flex-wrap: wrap;
@@ -268,21 +304,20 @@
   }
   .view {
     margin: 0 -4px;
-    padding: 0 4px;
+    padding: 0 4px 2px;
     border: 0;
     background: none;
     font: inherit;
     color: var(--ink-2);
-    font-weight: 400;
     cursor: pointer;
   }
-  .view:hover {
+  .view:not([aria-selected="true"]):hover {
     color: var(--ink);
     background: var(--surface-group);
   }
   .view[aria-selected="true"] {
     color: var(--ink);
-    font-weight: 700;
+    box-shadow: inset 0 -2px 0 var(--current-mark);
   }
   .view:focus-visible {
     outline: 2px solid var(--focus);
@@ -310,7 +345,7 @@
     min-height: 0;
     overflow-wrap: anywhere;
   }
-  /* The status line: the verdict's icon and word bold in its colour, the rest in secondary ink. */
+  /* The status line: the verdict's icon and word in its colour, the rest in secondary ink. */
   .summary {
     margin: 0 0 8px;
     padding: 0 var(--pad);
@@ -320,7 +355,6 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-weight: 700;
     margin-right: 10px;
   }
   dd.status {

@@ -1,10 +1,10 @@
 // The app's own marks, as the design's icon sheet draws them: each on a 12 by 12 box with a
-// 1.5 stroke, round caps and joins, solid only where the shape is a solid. An icon takes the
-// colour of the text around it. The same shapes paint a large graph's canvas (scene.ts).
+// --icon-stroke, round caps and joins, and filled shapes where a mark is solid. An icon takes
+// the colour of the text around it. The same shapes paint a large graph's canvas (scene.ts).
 import type { Light, Status, Tone } from "../ipc/client";
 
-/** One shape of an icon: an SVG path, filled or stroked, a stroke dashed or thinner. */
-export type Shape = { d: string; fill?: boolean; dash?: [number, number]; width?: number };
+/** One shape of an icon: an SVG path, filled or stroked, with an optional dash pattern. */
+export type Shape = { d: string; fill?: boolean; dash?: [number, number] };
 
 /** A circle as a path, so a canvas can draw it from the same data. */
 const circle = (cx: number, cy: number, r: number) => `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
@@ -12,11 +12,13 @@ const circle = (cx: number, cy: number, r: number) => `M${cx - r} ${cy}a${r} ${r
 const STAR = "M6 1.5l1.35 2.9 3.15.4-2.3 2.2.6 3.2L6 8.65 3.2 10.2l.6-3.2-2.3-2.2 3.15-.4z";
 
 const DRAWN = {
+  artifact: [{ d: "M5.2 1.8a1.1 1.1 0 0 1 1.6 0l3.4 3.4a1.1 1.1 0 0 1 0 1.6l-3.4 3.4a1.1 1.1 0 0 1-1.6 0L1.8 6.8a1.1 1.1 0 0 1 0-1.6z" }],
   green: [{ d: "M2.5 6.5 5 9l4.5-6" }],
   red: [{ d: "M3 3l6 6M9 3l-6 6" }],
-  error: [{ d: "M6 2v5M6 9.75v.01" }],
+  error: [{ d: "M6 2v5" }, { d: circle(6, 9.75, 0.8), fill: true }],
   running: [{ d: circle(6, 6, 4.25) }, { d: "M6 1.75a4.25 4.25 0 0 0 0 8.5z", fill: true }],
   human: [{ d: circle(6, 3.75, 2) }, { d: "M2.25 10.5c.4-2 1.9-3 3.75-3s3.35 1 3.75 3" }],
+  yellow: [{ d: "M1.75 6.75 4 9l3.5-5" }, { d: circle(9.5, 3.5, 1.5), fill: true }],
   queued: [{ d: circle(6, 6, 2), fill: true }],
   waiting: [{ d: circle(2.25, 6, 1.1), fill: true }, { d: circle(6, 6, 1.1), fill: true }, { d: circle(9.75, 6, 1.1), fill: true }],
   blocked: [{ d: circle(6, 6, 4.25) }, { d: "M3 9l6-6" }],
@@ -25,8 +27,8 @@ const DRAWN = {
   reused: [{ d: "M9.75 6a3.75 3.75 0 1 1-1.2-2.75M9.75 2v2.25H7.5" }],
   checking: [{ d: circle(6, 6, 4.25), dash: [1.4, 2.05] }],
   play: [{ d: "M3.5 2.25v7.5L10 6z", fill: true }],
-  star: [{ d: STAR, width: 1.1 }],
-  "star-on": [{ d: STAR, width: 1.1, fill: true }],
+  star: [{ d: STAR }],
+  "star-on": [{ d: STAR, fill: true }],
   fold: [{ d: "M4.5 2.5 8 6 4.5 9.5" }],
   unfold: [{ d: "M2.5 4.5 6 8l3.5-3.5" }],
   remove: [{ d: "M3.5 3.5l5 5M8.5 3.5l-5 5" }],
@@ -36,6 +38,29 @@ const DRAWN = {
   reset: [{ d: "M2.75 4.25A3.75 3.75 0 1 1 2.25 6.5" }, { d: "M2.5 1.75v2.5H5" }],
   find: [{ d: circle(5.25, 5.25, 3.25) }, { d: "M7.75 7.75 10.5 10.5" }],
   pane: [{ d: "M2.75 2.25h6.5a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1h-6.5a1 1 0 0 1-1-1v-5.5a1 1 0 0 1 1-1zM4.75 2.25v7.5" }],
+  chat: [{ d: "M2.75 2.5h6.5a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5.5L3.25 10.25V8.5h-.5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z" }],
+  verify: [{ d: "M1.75 2.25h3.5v2.5h-3.5zM6.75 7.25h3.5v2.5h-3.5zM3.5 4.75V8.5h3.25" }],
+  review: [{ d: "M3 1.75h4.25L9.25 3.75v6.5H3zM4.75 6.75 5.9 7.9 7.75 5.5" }],
+  back: [{ d: "M4.5 2.25 2 4.75l2.5 2.5M2 4.75h5.25a2.75 2.75 0 0 1 0 5.5H6" }],
+  open: [{ d: "M7 1.75h3.25V5M10.25 1.75 5.75 6.25M8.75 7.5v2a.75.75 0 0 1-.75.75H2.5a.75.75 0 0 1-.75-.75V4a.75.75 0 0 1 .75-.75h2" }],
+  settings: [
+    { d: "M9.20 4.85 L10.50 5.07 L10.50 6.93 L9.20 7.15 L9.08 7.45 L9.84 8.53 L8.53 9.84 L7.45 9.08 L7.15 9.20 L6.93 10.50 L5.07 10.50 L4.85 9.20 L4.55 9.08 L3.47 9.84 L2.16 8.53 L2.92 7.45 L2.80 7.15 L1.50 6.93 L1.50 5.07 L2.80 4.85 L2.92 4.55 L2.16 3.47 L3.47 2.16 L4.55 2.92 L4.85 2.80 L5.07 1.50 L6.93 1.50 L7.15 2.80 L7.45 2.92 L8.53 2.16 L9.84 3.47 L9.08 4.55Z" },
+    { d: circle(6, 6, 1.5) },
+  ],
+  send: [{ d: "M6 10V2.5M2.75 5.75 6 2.5l3.25 3.25" }],
+  stop: [{ d: "M3 3h6v6H3z", fill: true }],
+  file: [{ d: "M3 1.75h4L9.25 4v6.25H3zM7 1.75V4h2.25" }],
+  folder: [{ d: "M1.75 3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75z" }],
+  "folder-closed": [
+    { d: "M1.75 3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-.75.75h-7a.75.75 0 0 1-.75-.75z" },
+    { d: "M1.75 5.25h8.5" },
+  ],
+  "folder-open": [{ d: "M1.75 9.25V3.25a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.25a.75.75 0 0 1 .75.75v1.25" }, { d: "M1.75 9.5l1.6-3.75h7.4l-1.6 3.75z" }],
+  "new-chat": [{ d: "M6 2.25H3a.75.75 0 0 0-.75.75v6a.75.75 0 0 0 .75.75h6a.75.75 0 0 0 .75-.75V6" }, { d: "M8.5 1.75l1.75 1.75L6.5 7.25H4.75V5.5z" }],
+  move: [{ d: "M4.5 9.5H2.5a.75.75 0 0 1-.75-.75v-5.5a.75.75 0 0 1 .75-.75h2.25l1 1.25h3.75a.75.75 0 0 1 .75.75v1.5" }, { d: "M6.25 8.25h4.25M8.75 6.5l1.75 1.75L8.75 10" }],
+  edit: [{ d: "M2.25 9.75l.5-2.25 5.5-5.5 1.75 1.75-5.5 5.5zM7 3.25 8.75 5" }],
+  command: [{ d: "M2.5 3.25 5 5.75 2.5 8.25M6.5 8.75h3" }],
+  point: [{ d: circle(6, 6, 3.25) }, { d: "M6 1v1.5M6 9.5V11M1 6h1.5M9.5 6H11" }, { d: circle(6, 6, 0.9), fill: true }],
 } satisfies Record<string, Shape[]>;
 
 export type IconName = keyof typeof DRAWN;
@@ -64,7 +89,7 @@ const STATUS: Record<Status, IconName> = {
   RUNNING: "running",
   WAITING_HUMAN: "human",
   DEFERRED: "human",
-  YELLOW: "human",
+  YELLOW: "yellow",
   QUEUED: "queued",
   WAIT: "waiting",
   WAIT_DEPENDENCY: "waiting",
@@ -102,4 +127,17 @@ export function markIcon(glyph: string, tone: Tone | null): IconName | null {
   if (tone === "checking") return "checking";
   if (glyph === "○" && tone === "running") return "run";
   return GLYPHS[glyph] ?? null;
+}
+
+/** Spoken meanings for status icons used without status words (chips and Find results). */
+export function markLabel(icon: IconName): string {
+  switch (icon) {
+    case "human": return "Waiting Human";
+    case "notrun": return "Not run";
+    case "run": return "Would run";
+    case "green": return "GREEN";
+    case "red": return "RED";
+    case "error": return "ERROR";
+    default: return icon;
+  }
 }

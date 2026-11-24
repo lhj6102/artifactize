@@ -118,6 +118,42 @@ impl Fixture {
 const DETACHED_SUBMITTER: &str = "ARTIFACTIZE_TEST_DETACHED_SUBMITTER";
 
 #[tokio::test]
+async fn run_show_reports_cli_and_explicit_chat_origins() {
+    let fixture = Fixture::new();
+    fs::write(fixture.repo.join("release"), "released").unwrap();
+    let cli = fixture.submit(None);
+    let session_id: artifactize_core::types::SessionId = "chat-fixture".parse().unwrap();
+    let chat = runs::start(
+        &fixture.context().with_origin(runs::Origin::Chat {
+            session_id,
+            title: "Fixture".into(),
+        }),
+        &artifactize_core::project::selection::Selection::All,
+        &Default::default(),
+        None,
+    )
+    .await
+    .unwrap()
+    .run;
+    for (run, origin) in [
+        (cli, json!({"kind":"cli"})),
+        (
+            chat,
+            json!({"kind":"chat","sessionId":"chat-fixture","title":"Fixture"}),
+        ),
+    ] {
+        let output = support::os::run(fixture.command().args(["run", "show", run.as_str()]));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["origin"], origin);
+    }
+}
+
+#[tokio::test]
 async fn detached_submitter() {
     let Some(root) = support::os::environment_variable(DETACHED_SUBMITTER) else {
         return;
@@ -447,6 +483,7 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         .unwrap();
     // Back to schema 8, which kept a Run's definitions in its record, then back to schema 6.
     let db = rusqlite::Connection::open(&database).unwrap();
+    db.execute_batch(support::schema::TEN).unwrap();
     db.execute_batch(support::schema::EIGHT).unwrap();
     assert!(
         read()
@@ -458,12 +495,13 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
             .unwrap()
             == "object"
     );
-    db.execute_batch("UPDATE runs SET data=json_remove(data,'$.control','$.requestKey'); DROP INDEX run_request_key; ALTER TABLE runs DROP COLUMN request_key; DROP INDEX active_key; ALTER TABLE executions DROP COLUMN profile_identity; CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN'); PRAGMA user_version=6;").unwrap();
+    db.execute_batch("UPDATE runs SET data=json_remove(data,'$.control','$.requestKey','$.origin'); DROP INDEX run_request_key; ALTER TABLE runs DROP COLUMN request_key; DROP INDEX active_key; ALTER TABLE executions DROP COLUMN profile_identity; CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN'); PRAGMA user_version=6;").unwrap();
     drop(db);
     // Existing-state read preflight upgrades too; no receipt/cache/approval is replaced.
     let migrated = store::read_run(&fixture.state, &started.run).await.unwrap();
     assert_eq!(migrated.run.id, before.run.id);
     assert!(migrated.run.control.is_none());
+    assert!(migrated.run.origin.is_none());
     // The definitions read back as they were saved.
     assert_eq!(
         serde_json::to_value(&migrated.run.definitions).unwrap(),

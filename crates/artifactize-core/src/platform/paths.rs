@@ -1,7 +1,8 @@
 //! Native path normalization and portable declaration-path checks.
 
 use std::{
-    ffi::OsStr,
+    collections::BTreeSet,
+    ffi::{OsStr, OsString},
     fs::File,
     io,
     path::{Component, Path, PathBuf},
@@ -175,13 +176,122 @@ pub(crate) fn portable_filename(name: &str) -> Result<(), String> {
             .strip_prefix("com")
             .or_else(|| lower.strip_prefix("lpt"))
             .is_some_and(|number| {
-                matches!(number, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+                matches!(
+                    number,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
             })
     {
         Err(format!("Artifact name {name:?} is a reserved device name."))
     } else {
         Ok(())
     }
+}
+
+fn case_key(name: &OsStr) -> String {
+    name.to_string_lossy().to_lowercase()
+}
+
+/// Reject a name already held by the destination even on case-sensitive volumes.
+pub(crate) fn conflicting_entry<'a>(
+    directory: &Path,
+    wanted: impl Iterator<Item = &'a OsStr>,
+) -> io::Result<Option<OsString>> {
+    let wanted: BTreeSet<_> = wanted.map(case_key).collect();
+    let opened = super::open_directory(directory)?;
+    for entry in super::read_dir(&opened)? {
+        let name = entry?.file_name();
+        if wanted.contains(&case_key(&name)) {
+            return Ok(Some(name));
+        }
+    }
+    Ok(None)
+}
+
+/// Open a regular file for replacement without letting native name aliases redirect the write.
+/// If the name is new, refuse a differently cased entry on every filesystem.
+pub(crate) fn open_portable_write(path: &Path) -> io::Result<File> {
+    use artifactize_tools::scope::{OpenError, open_child};
+
+    let parent = path.parent().ok_or(io::ErrorKind::InvalidInput)?;
+    let name = path.file_name().ok_or(io::ErrorKind::InvalidInput)?;
+    let directory = super::open_directory(parent)?;
+    let mut options = File::options();
+    options.write(true);
+    let original = match open_child(&directory, name) {
+        Ok(file) if file.metadata()?.is_file() => Some(file),
+        Ok(_) => return Err(io::Error::other("Only a regular file can be written.")),
+        Err(OpenError::NotFound) => {
+            if conflicting_entry(parent, std::iter::once(name))?.is_some() {
+                return Err(io::Error::other(
+                    "File path must use the exact directory entry name.",
+                ));
+            }
+            options.create_new(true);
+            None
+        }
+        Err(error) => return Err(io::Error::other(error)),
+    };
+    let opened = super::open_no_follow(&mut options, path)?;
+    if let Some(original) = original
+        && super::file_identity(&original)? != super::file_identity(&opened)?
+    {
+        return Err(io::Error::other(
+            "File changed before it could be opened for writing.",
+        ));
+    }
+    Ok(opened)
+}
+
+/// The checkout must be usable even on a volume with Windows filename restrictions.
+fn portable_component(name: &OsStr) -> io::Result<()> {
+    let invalid = |reason| io::Error::new(io::ErrorKind::InvalidInput, reason);
+    let text = name
+        .to_str()
+        .ok_or_else(|| invalid("Package filenames must be UTF-8."))?;
+    if text.ends_with([' ', '.'])
+        || text.chars().any(|ch| {
+            ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        })
+    {
+        return Err(invalid("Package filename is not portable."));
+    }
+    let stem = text.split_once('.').map_or(text, |(stem, _)| stem);
+    portable_filename(stem.trim_end_matches(' '))
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))
+}
+
+/// Stage a package with portable filenames. Pin each source directory; do not copy a link
+/// or a special entry, including one installed by a concurrent source edit.
+pub(crate) fn copy_portable_tree(source: &File, target: &Path) -> io::Result<()> {
+    std::fs::create_dir(target)?;
+    let mut names = BTreeSet::new();
+    for entry in super::read_dir(source)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        portable_component(&name)?;
+        if !names.insert(case_key(&name)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Package filenames collide ignoring case.",
+            ));
+        }
+        let path = target.join(&name);
+        match entry.file_type()? {
+            super::FileKind::Directory => copy_portable_tree(&open_named(source, &name)?, &path)?,
+            super::FileKind::File => {
+                let mut input = open_regular_entry(source, &name)?;
+                io::copy(&mut input, &mut File::create_new(path)?)?;
+            }
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Package folders cannot contain links or special files.",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Restore bytes through a regular-file handle, refusing links and reparse points.
@@ -225,6 +335,16 @@ pub(crate) fn lock_file(path: &Path) -> io::Result<File> {
     )?;
     file.lock()?;
     Ok(file)
+}
+
+/// Acquire an exclusive native lock through the filesystem boundary.
+pub(crate) fn lock(file: &std::fs::File) -> io::Result<()> {
+    file.lock()
+}
+
+/// Try to acquire the lock without waiting for another owner.
+pub(crate) fn try_lock(file: &std::fs::File) -> Result<(), std::fs::TryLockError> {
+    file.try_lock()
 }
 
 /// Unlink a file even while readers or a lease holder still have it open. Windows
@@ -358,4 +478,13 @@ pub(crate) fn relative_beneath(path: &Path, root: &Path) -> Option<PathBuf> {
         .ancestors()
         .find(|candidate| super::paths_equal(candidate, &root))?;
     path.strip_prefix(ancestor).ok().map(Path::to_owned)
+}
+
+#[cfg(test)]
+#[test]
+fn windows_superscript_device_names_are_not_portable() {
+    assert!(portable_filename("COM¹").is_err());
+    assert!(portable_filename("lPt²").is_err());
+    assert!(portable_filename("COM³").is_err());
+    assert!(portable_filename("COM⁴").is_ok());
 }

@@ -16,7 +16,9 @@
     noticeOpen = $bindable(),
     actions,
     beside,
+    lead,
     headline,
+    afterHeadline,
     children,
     label,
     attach,
@@ -30,8 +32,12 @@
     actions?: Snippet;
     /** Controls of what the title names, right after it. */
     beside?: Snippet;
+    /** A way back to where the shown view was opened from, first in the row (D-REF-1). */
+    lead?: Snippet;
     /** What the view shows, in the same row after the title, cut at the row's end. */
     headline?: Snippet;
+    /** Fixed controls after the headline, before the notice and trailing actions. */
+    afterHeadline?: Snippet;
     children: Snippet;
     label?: string;
     /** Follows the pane's element for as long as it exists (an `{@attach}`). */
@@ -47,6 +53,18 @@
         noticeOpen: boolean;
       }
   ) = $props();
+  /** Give the reason first; preserve the original text for the expanded notice. */
+  function shortNotice(text: string): string {
+    if (text.length <= 58) return text;
+    const problem = /changed on disk|has unsaved text|cannot be read/i.exec(text);
+    if (problem) {
+      const file = text.slice(0, problem.index).trim().split(/[\\/]/).at(-1);
+      return `${problem[0][0].toUpperCase()}${problem[0].slice(1)}${file && file.length <= 24 ? ` · ${file}` : ""}`;
+    }
+    const path = /^(?:[A-Za-z]:)?(?:[/\\]|[^ :]+[/\\])[^:]+:\s*(.+)/.exec(text);
+    const reason = path?.[1] || text;
+    return reason.length <= 58 ? reason : `${reason.slice(0, 57).replace(/\s+\S*$/, "")}…`;
+  }
 </script>
 
 <!-- Keys from the pane's focusable rows and controls bubble up to its handler. -->
@@ -62,12 +80,14 @@
   {onkeydown}
 >
   <header>
+    {#if lead}{@render lead()}{/if}
     <h2 class:whole={wholeTitle}>{title}</h2>
     {#if beside}{@render beside()}{/if}
     {#if headline}<div class="headline">{@render headline()}</div>{/if}
+    {#if afterHeadline}<div class="after-headline">{@render afterHeadline()}</div>{/if}
     {#if notice}
       <div class="notice" class:open={noticeOpen} role="status">
-        <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{notice}</button>
+        <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{noticeOpen ? notice : shortNotice(notice)}</button>
       </div>
     {/if}
     {#if actions}<div class="actions">{@render actions()}</div>{/if}
@@ -85,23 +105,24 @@
     background: var(--surface-panel);
     outline: none;
   }
-  /* A 32px header row; a focused panel shows a 2px accent line at its top. */
+  .panel:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  /* A 32px header row; the view name does not change with focus. */
   header {
     display: flex;
     align-items: center;
     gap: var(--gap);
     min-height: 32px;
     padding: 0 var(--pad);
-    border-top: 2px solid transparent;
   }
-  .focused header {
-    border-top-color: var(--accent);
-  }
+  header > :global(.reference.chip) { flex: 0 1 auto; }
   h2 {
     margin: 0;
     font-size: var(--text-small);
     font-weight: 600;
-    color: var(--ink-2);
+    color: var(--ink);
     flex: 0 1 auto;
     white-space: nowrap;
     overflow: hidden;
@@ -113,9 +134,6 @@
     text-overflow: clip;
     overflow-wrap: anywhere;
   }
-  .focused h2 {
-    color: var(--ink);
-  }
   /* The view's headline takes the room it needs, cut at the row's end when the row is short. */
   .headline {
     display: flex;
@@ -123,6 +141,13 @@
     flex: 0 1000 auto;
     min-width: 0;
     overflow: hidden;
+    font-size: var(--text-small);
+    white-space: nowrap;
+  }
+  .after-headline {
+    display: flex;
+    align-items: center;
+    min-width: 0;
     font-size: var(--text-small);
     white-space: nowrap;
   }
@@ -159,7 +184,7 @@
    * height, so the header keeps its height and nothing below it moves or is covered. */
   .notice.open {
     box-sizing: border-box;
-    height: 28px;
+    height: var(--row-head);
     overflow-x: hidden;
     overflow-y: auto;
     border: 1px solid var(--line-panel);

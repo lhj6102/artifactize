@@ -12,9 +12,12 @@
 //! | `request:` | a substring of the request ID |
 //! | `reviewer:` | a substring of the claimant; unclaimed requests never match |
 //! | `tag:` | a substring of a tag of the eval's Artifact |
-//! | `kind:` | the eval kind exactly: `runtime`, `agent` or `human` |
+//! | `kind:`, `type:` | the eval kind exactly: `runtime`, `agent` or `human` |
 //! | `status:` | the request status; `waiting_human` includes `deferred` sign-offs |
 //! | `is:` | `mine`, `claimed` or `unclaimed` (claims exist only on waiting Human requests) |
+//!
+//! The bare term `waiting` matches unclaimed waiting Human requests, including deferred
+//! sign-offs. It is the short spelling of `is:unclaimed`.
 //!
 //! Values with spaces are quoted: `repo:"/work/my repo"`. A quoted word is always free text, so
 //! `"type:style"` searches for that text rather than naming a key.
@@ -23,8 +26,9 @@ mod tests;
 
 use crate::{
     config::ProfileKind,
+    monitor::live::{Label, Labels},
     store::{self, RequestView},
-    types::{RequestStatus, ReviewerId},
+    types::{RequestId, RequestStatus, ReviewerId},
 };
 use clap::ValueEnum;
 use std::{
@@ -34,7 +38,8 @@ use std::{
 };
 
 /// The query the review list starts with: the waiting Human sign-offs.
-pub const DEFAULT: &str = "kind:human status:waiting_human";
+pub const DEFAULT: &str = "type:human waiting";
+const WAITING: &str = "waiting";
 
 /// Requests read from the state per batch while a page is filled.
 const BATCH: u32 = 400;
@@ -44,6 +49,7 @@ pub const PAGE: usize = 100;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TextField {
     Repo,
+    Branch,
     Eval,
     Request,
     Reviewer,
@@ -54,6 +60,7 @@ impl TextField {
     fn name(self) -> &'static str {
         match self {
             Self::Repo => "repo",
+            Self::Branch => "branch",
             Self::Eval => "eval",
             Self::Request => "request",
             Self::Reviewer => "reviewer",
@@ -66,18 +73,21 @@ impl TextField {
 enum Key {
     Text(TextField),
     Kind,
+    Type,
     Status,
     Is,
 }
 
 impl Key {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 10] = [
         Self::Text(TextField::Repo),
+        Self::Text(TextField::Branch),
         Self::Text(TextField::Eval),
         Self::Text(TextField::Request),
         Self::Text(TextField::Reviewer),
         Self::Text(TextField::Tag),
         Self::Kind,
+        Self::Type,
         Self::Status,
         Self::Is,
     ];
@@ -86,6 +96,7 @@ impl Key {
         match self {
             Self::Text(field) => field.name(),
             Self::Kind => "kind",
+            Self::Type => "type",
             Self::Status => "status",
             Self::Is => "is",
         }
@@ -133,6 +144,8 @@ enum Term {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Query {
     terms: Vec<Term>,
+    places: bool,
+    live: bool,
 }
 
 /// Who holds a request's claim, as the current reviewer sees it.
@@ -159,6 +172,7 @@ impl Claim {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub repository: PathBuf,
+    pub label: Option<Label>,
     pub eval: String,
     pub request: String,
     pub claim: Claim,
@@ -183,6 +197,7 @@ impl Entry {
             .unwrap_or_default();
         Self {
             repository: repo.to_owned(),
+            label: None,
             eval: request.eval_id.to_string(),
             request: request.id.to_string(),
             claim: match &view.claim {
@@ -258,6 +273,9 @@ impl std::str::FromStr for Query {
         let terms = words(text)
             .into_iter()
             .map(|(word, quoted)| {
+                if !quoted && word.eq_ignore_ascii_case(WAITING) {
+                    return Ok(Term::Is(Is::Unclaimed));
+                }
                 let Some((name, value)) = word.split_once(':').filter(|_| !quoted) else {
                     return Ok(Term::Text(word.to_lowercase()));
                 };
@@ -272,7 +290,7 @@ impl std::str::FromStr for Query {
                 }
                 let lower = value.to_lowercase();
                 match key {
-                    Key::Kind => ProfileKind::value_variants()
+                    Key::Kind | Key::Type => ProfileKind::value_variants()
                         .iter()
                         .copied()
                         .find(|kind| kind_name(*kind) == lower)
@@ -302,7 +320,11 @@ impl std::str::FromStr for Query {
                 }
             })
             .collect::<Result<_, String>>()?;
-        Ok(Self { terms })
+        Ok(Self {
+            terms,
+            places: false,
+            live: false,
+        })
     }
 }
 
@@ -333,6 +355,18 @@ fn contains(field: &str, text: &str) -> bool {
 }
 
 impl Query {
+    /// Search the displayed projects and branches, instead of raw checkout paths.
+    pub fn for_places(mut self) -> Self {
+        self.places = true;
+        self
+    }
+
+    /// Hide requests whose workspace is gone, without hiding the record from CLI history.
+    pub fn for_live_repositories(mut self) -> Self {
+        self.live = true;
+        self
+    }
+
     /// The query of `--repo PATH`: the default with that repository's term.
     pub fn text_for(repo: Option<&Path>) -> String {
         match repo {
@@ -347,15 +381,24 @@ impl Query {
     /// Whether only waiting Human reviews can match, as with the default query.
     pub fn waiting_human(&self) -> bool {
         self.terms.contains(&Term::Kind(ProfileKind::Human))
-            && self
-                .terms
-                .contains(&Term::Status(RequestStatus::WaitingHuman))
+            && self.terms.iter().any(|term| {
+                matches!(
+                    term,
+                    Term::Status(RequestStatus::WaitingHuman | RequestStatus::Deferred)
+                        | Term::Is(_)
+                )
+            })
     }
 
     pub fn matches(&self, entry: &Entry) -> bool {
+        let repository = entry.label.as_ref().map_or_else(
+            || crate::platform::path_text(&entry.repository),
+            |label| label.project.clone(),
+        );
         self.terms.iter().all(|term| match term {
             Term::Text(text) => [
-                Some(crate::platform::path_text(&entry.repository).as_str()),
+                Some(repository.as_str()),
+                entry.label.as_ref().map(|label| label.branch.as_str()),
                 Some(entry.eval.as_str()),
                 Some(entry.request.as_str()),
                 entry.claim.reviewer(),
@@ -363,9 +406,11 @@ impl Query {
             .into_iter()
             .flatten()
             .any(|field| contains(field, text)),
-            Term::Field(TextField::Repo, text) => {
-                contains(&crate::platform::path_text(&entry.repository), text)
-            }
+            Term::Field(TextField::Repo, text) => contains(&repository, text),
+            Term::Field(TextField::Branch, text) => entry
+                .label
+                .as_ref()
+                .is_some_and(|label| contains(&label.branch, text)),
             Term::Field(TextField::Eval, text) => contains(&entry.eval, text),
             Term::Field(TextField::Request, text) => contains(&entry.request, text),
             Term::Field(TextField::Reviewer, text) => entry
@@ -397,6 +442,14 @@ impl Query {
         } else {
             store::Shown::Requests
         }
+    }
+
+    fn wants_labels(&self) -> bool {
+        self.places
+            || self
+                .terms
+                .iter()
+                .any(|term| matches!(term, Term::Field(TextField::Branch, _)))
     }
 
     /// The statuses every match must have, for the state read to select up front.
@@ -472,6 +525,7 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
             Key::ALL
                 .iter()
                 .map(|key| format!("{}:", key.name()))
+                .chain(std::iter::once(WAITING.to_owned()))
                 .filter(|key| key.starts_with(&lower))
                 .collect()
         }
@@ -483,11 +537,20 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
                     Key::Text(TextField::Repo) => entries
                         .iter()
                         .map(|entry| {
+                            if let Some(label) = &entry.label {
+                                return label.project.clone();
+                            }
                             entry.repository.file_name().map_or_else(
                                 || crate::platform::path_text(&entry.repository),
-                                |name| name.to_string_lossy().into_owned(),
+                                crate::platform::display_name,
                             )
                         })
+                        .collect(),
+                    Key::Text(TextField::Branch) => entries
+                        .iter()
+                        .filter_map(|entry| entry.label.as_ref())
+                        .filter(|label| !label.branch.is_empty())
+                        .map(|label| label.branch.clone())
                         .collect(),
                     Key::Text(TextField::Eval) => {
                         entries.iter().map(|entry| entry.eval.clone()).collect()
@@ -503,7 +566,7 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
                         .iter()
                         .flat_map(|entry| entry.tags.iter().cloned())
                         .collect(),
-                    Key::Kind => kind_values().collect(),
+                    Key::Kind | Key::Type => kind_values().collect(),
                     Key::Status => status_values().collect(),
                     Key::Is => Is::ALL.iter().map(|is| is.name().to_owned()).collect(),
                 };
@@ -528,6 +591,23 @@ pub async fn suggest(
     text: &str,
     reviewer: &ReviewerId,
 ) -> Result<Completion, String> {
+    suggest_in(state, text, reviewer, false).await
+}
+
+pub async fn suggest_places(
+    state: &Path,
+    text: &str,
+    reviewer: &ReviewerId,
+) -> Result<Completion, String> {
+    suggest_in(state, text, reviewer, true).await
+}
+
+async fn suggest_in(
+    state: &Path,
+    text: &str,
+    reviewer: &ReviewerId,
+    places: bool,
+) -> Result<Completion, String> {
     let (keep, term) = last_term(text);
     let key = term
         .split_once(':')
@@ -542,12 +622,16 @@ pub async fn suggest(
     };
     let entries = match keep.parse::<Query>() {
         // Tags are completed from the definitions the matches' Runs saved.
-        Ok(query) if from_requests => page(state, &query, reviewer, 0, shown)
-            .await?
-            .requests
-            .into_iter()
-            .map(|(_, entry)| entry)
-            .collect(),
+        Ok(mut query) if from_requests => {
+            query.places = places || matches!(key, Some(Key::Text(TextField::Branch)));
+            query.live = places;
+            page(state, &query, reviewer, 0, shown)
+                .await?
+                .requests
+                .into_iter()
+                .map(|(_, entry)| entry)
+                .collect()
+        }
         _ => Vec::new(),
     };
     Ok(complete(text, &entries))
@@ -559,6 +643,61 @@ pub struct Found {
     pub requests: Vec<(RequestView, Entry)>,
     /// The position of the next page in the state's request order; `None` on the last page.
     pub next: Option<u64>,
+}
+
+/// The exact saved request and whether it appears in the current search, regardless of page.
+#[derive(Debug, Clone)]
+pub struct Opened {
+    pub view: RequestView,
+    pub outside_reason: Option<String>,
+}
+
+impl Opened {
+    pub fn outside_filter(&self) -> bool {
+        self.outside_reason.is_some()
+    }
+}
+
+/// Resolve a direct reference without changing its query or redirecting to an original request.
+pub async fn open(
+    state: &Path,
+    id: &RequestId,
+    query: &Query,
+    reviewer: &ReviewerId,
+) -> Result<Opened, String> {
+    let view = store::read_request_by_id(state, id, query.shown()).await?;
+    let repo = store::read_request_repo_by_id(state, id.clone()).await?;
+    let mut entry = Entry::new(&view, &repo, reviewer);
+    if query.wants_labels() {
+        entry.label = labels(state, vec![view.request.run_id.clone()])
+            .await?
+            .remove(&view.request.run_id);
+    }
+    let outside_reason = if query.live && !repo.is_dir() {
+        Some("This review's repository folder no longer exists.".into())
+    } else if Box::pin(follows_waiting(state, &view, query.live)).await {
+        Some("This review shares the original request's sign-off.".into())
+    } else if query.matches(&entry) {
+        None
+    } else {
+        Some(outside_reason(&entry))
+    };
+    Ok(Opened {
+        view,
+        outside_reason,
+    })
+}
+
+fn outside_reason(entry: &Entry) -> String {
+    if entry.kind != ProfileKind::Human {
+        return "This is not a Human review.".into();
+    }
+    match (&entry.claim, entry.status) {
+        (Claim::Mine(_), _) => "Claimed by you.".into(),
+        (Claim::Other(reviewer), _) => format!("Claimed by {reviewer}."),
+        (_, RequestStatus::Green | RequestStatus::Red) => "This review was submitted.".into(),
+        _ => "This review does not match the current filter.".into(),
+    }
 }
 
 /// Up to [`PAGE`] requests matching `query` from position `start` on, read in bounded batches.
@@ -633,14 +772,31 @@ async fn read_matching(
 ) -> Result<(), String> {
     let statuses = query.statuses();
     let mut position = start;
+    let mut exists = std::collections::BTreeMap::new();
     loop {
-        let batch = store::read_request_batch(state, &statuses, position, BATCH, shown).await?;
+        let batch = if query.live {
+            store::read_review_batch(state, &statuses, position, BATCH, shown).await?
+        } else {
+            store::read_request_batch(state, &statuses, position, BATCH, shown).await?
+        };
         let read = batch.len() as u64;
+        let labels = if query.wants_labels() {
+            let ids: BTreeSet<_> = batch
+                .iter()
+                .map(|(view, _)| view.request.run_id.clone())
+                .collect();
+            labels(state, ids.into_iter().collect()).await?
+        } else {
+            Labels::new()
+        };
         for (offset, (view, repo)) in batch.into_iter().enumerate() {
-            if Box::pin(follows_waiting(state, &view)).await {
+            if (query.live && !*exists.entry(repo.clone()).or_insert_with(|| repo.is_dir()))
+                || Box::pin(follows_waiting(state, &view, query.live)).await
+            {
                 continue;
             }
-            let entry = Entry::new(&view, &repo, reviewer);
+            let mut entry = Entry::new(&view, &repo, reviewer);
+            entry.label = labels.get(&view.request.run_id).cloned();
             if query.matches(&entry) && found(view, entry, position + offset as u64).is_break() {
                 return Ok(());
             }
@@ -652,8 +808,33 @@ async fn read_matching(
     }
 }
 
+async fn labels(state: &Path, ids: Vec<crate::types::RunId>) -> Result<Labels, String> {
+    let catalog = store::read_run_places(state, ids).await?;
+    crate::task::joined(
+        tokio::task::spawn_blocking(move || {
+            let mut legacy = std::collections::BTreeMap::new();
+            catalog
+                .into_iter()
+                .map(|(id, run)| {
+                    let label = if run.repository.common_dir.is_some() {
+                        Label::for_identity(&run.repo_path, &run.repository)
+                    } else {
+                        legacy
+                            .entry(run.repo_path.clone())
+                            .or_insert_with(|| Label::at(&run.repo_path))
+                            .clone()
+                    };
+                    (id, label)
+                })
+                .collect()
+        })
+        .await,
+    )
+    .map_err(|error| error.to_string())
+}
+
 /// A waiting follower whose original still waits: the original's own row lists it.
-async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
+async fn follows_waiting(state: &Path, view: &RequestView, live: bool) -> bool {
     if !view.request.status().is_human_wait() {
         return false;
     }
@@ -666,7 +847,14 @@ async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
         return false;
     };
     // Only the original's status matters, never what its Run's definitions hold.
-    store::read_request_by_id(state, source, store::Shown::Requests)
+    if !store::read_request_by_id(state, source, store::Shown::Requests)
         .await
         .is_ok_and(|original| original.request.status().is_human_wait())
+    {
+        return false;
+    }
+    !live
+        || store::read_request_repo_by_id(state, source.clone())
+            .await
+            .is_ok_and(|repo| repo.is_dir())
 }

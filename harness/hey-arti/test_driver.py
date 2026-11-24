@@ -74,11 +74,11 @@ payload.instruction = {json.dumps(instruction)}
         node("banner", "assets/banner.svg", runtime("banner", "Check {banner} against {license}."))
         node("site", "site/", runtime("site", "Check {content}, {theme} and {banner}.").replace('"site"]', '"all"]'))
     else:
-        node("api", "api/", runtime("api", "Check API against {contract}."))
-        node("contract", "contract/", runtime("contract"))
-        node("preview-driver", "preview/probe.py", "basis = true\n")
+        node("api", "api/", 'type = "files"\n' + runtime("api", "Check API against {contract}."))
+        node("contract", "contract/", 'type = "files"\n' + runtime("contract"))
+        node("preview-driver", "preview/probe.py", 'basis = true\ntype = "files"\n')
         ui = runtime("ui", "Check UI consumes {api} and {contract}.")
-        node("ui", "ui/", ui + f'''
+        node("ui", "ui/", 'type = "files"\n' + ui + f'''
 [views.agent_sessions.preview]
 start = {{ command = {json.dumps(sys.executable)}, args = ["-I", "{{preview-driver}}", "start"] }}
 stop = {{ command = {json.dumps(sys.executable)}, args = ["-I", "{{preview-driver}}", "stop"] }}
@@ -93,7 +93,8 @@ title = "UI and API contract review"
 profile = {{ kind = "agent", backend = "codex", model = "fake-host-model" }}
 payload.instruction = "Inspect {{ui}} against {{api}}, {{contract}} and {{preview-driver}}."
 ''')
-        node("integration", "integration/", '''[evals.signoff]
+        node("integration", "integration/", '''type = "files"
+[evals.signoff]
 title = "The person approves integrated publication"
 profile = { kind = "human" }
 payload.instruction = "A person judges {ui} with {api}; the builder must yield."
@@ -1689,6 +1690,7 @@ class HostLifecycleTests(OwnedTestCase):
         (area / "evidence").mkdir()
         (repo / ".artifactize").mkdir()
         (repo / ".artifactize/owned-harness-run.artf").write_text('''path = "./"
+type = "files"
 fingerprint = false
 [evals.handoff]
 title = "Owned fixture waits at its Human boundary"

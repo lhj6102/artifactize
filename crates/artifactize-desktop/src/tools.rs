@@ -121,7 +121,7 @@ pub async fn artifact_tools(
     artifact: String,
 ) -> Result<Vec<ToolView>, Failure> {
     let artifact = artifact_name(&artifact)?;
-    let workspace = app.browse.branch(&branch.to_place())?.workspace;
+    let workspace = app.current_workspace(&branch).await?;
     let listed = app
         .sites
         .declarations(&workspace, &artifact)
@@ -150,6 +150,7 @@ pub async fn artifact_tools(
 #[specta::specta]
 pub async fn artifact_tool_run(
     app: tauri::State<'_, App>,
+    caller: crate::human::Caller,
     branch: BranchKey,
     artifact: String,
     tool: String,
@@ -157,30 +158,41 @@ pub async fn artifact_tool_run(
 ) -> Result<Notice, Failure> {
     let artifact = artifact_name(&artifact)?;
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
-    let workspace = app.browse.branch(&branch.to_place())?.workspace;
+    let work = app.human.start_artifact(caller, job)?;
+    let workspace = work.prepare(app.current_workspace(&branch)).await?;
+    let place = branch.to_place();
     let operation = review::Tool::operation_of(&tool, &artifact).to_owned();
     let run = app.human.log().start(
         Key::Artifact {
             repo: workspace.clone(),
+            branch: place.clone(),
             artifact: artifact.clone(),
         },
         &operation,
         artifact.as_str(),
     );
-    let cancel = app.human.start(job);
     let result = match app.sites.declarations(&workspace, &artifact).await {
-        Ok(declarations) => declarations.run_tool(&tool, cancel, run).await,
+        Ok(declarations) => {
+            declarations
+                .run_tool(&place, &tool, work.cancel.clone(), run)
+                .await
+        }
         Err(error) => {
             run.end(review::log::End::Failed(error.to_string()));
             Err(error.to_string())
         }
     };
-    app.human.end(job);
-    Ok(Outcome::Ran {
+    let mut outcome = Outcome::Ran {
         tool,
         claimed: None,
         result,
-    }
-    .notice()
-    .into())
+    };
+    let mut notice: Notice = outcome.notice().into();
+    notice.viewer = crate::viewer::launch(
+        &app,
+        &mut outcome,
+        crate::viewer::Source::Artifact(place),
+        work,
+    )?;
+    Ok(notice)
 }
