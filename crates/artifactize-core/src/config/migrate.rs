@@ -247,7 +247,15 @@ fn type_missing(
             continue; // The final check names exactly the tool that still needs a declaration.
         }
         let source = sources.get_mut(&path).expect("declaration is in sources");
-        let mut doc = source
+        let original = source.clone();
+        let masked = artifactize_tools::artf::mask(&original).map_err(|error| {
+            ConfigError::new(
+                &path,
+                location::positioned_message(&original, error.offset, error.message),
+            )
+        })?;
+        let mut doc = masked
+            .toml
             .parse::<toml_edit::DocumentMut>()
             .map_err(|error| ConfigError::new(&path, error))?;
         let redundant = artifact.views.agent_tools.iter().filter_map(|(name, view)| {
@@ -273,7 +281,7 @@ fn type_missing(
             tools.remove(name);
         }
         doc.insert("type", toml_edit::value("files"));
-        *source = doc.to_string();
+        *source = masked.unmask(&doc.to_string(), &original);
     }
     discovery::read_sources(root.to_owned(), sources)?;
     Ok(missing.into_iter().cloned().collect())

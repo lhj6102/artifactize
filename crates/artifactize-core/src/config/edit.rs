@@ -437,18 +437,28 @@ fn node_file(config: &RepoConfig, name: &ArtifactName) -> Result<PathBuf, Refusa
         .map(|artifact| config.root.join(artifact.declaration_path()))
         .ok_or_else(|| forbidden(format!("Unknown Artifact {name}.")))
 }
+pub(super) fn parse_document(
+    source: &str,
+) -> (artifactize_tools::artf::Masked, toml_edit::DocumentMut) {
+    let masked = artifactize_tools::artf::mask(source).expect("validated source");
+    let doc = masked
+        .toml
+        .parse::<toml_edit::DocumentMut>()
+        .expect("validated source");
+    (masked, doc)
+}
+
 fn update(
     config: &RepoConfig,
     proposed: &mut BTreeMap<PathBuf, String>,
     name: &ArtifactName,
-    edit: impl FnOnce(&mut toml_edit::DocumentMut, &Path) -> Result<(), Refusal>,
+    edit: impl FnOnce(&mut toml_edit::DocumentMut, &Path, &str) -> Result<(), Refusal>,
 ) -> Result<(), Refusal> {
     let file = node_file(config, name)?;
-    let mut doc = proposed[&file]
-        .parse::<toml_edit::DocumentMut>()
-        .expect("validated source");
-    edit(&mut doc, &file)?;
-    proposed.insert(file, doc.to_string());
+    let original = proposed[&file].clone();
+    let (masked, mut doc) = parse_document(&original);
+    edit(&mut doc, &file, &original)?;
+    proposed.insert(file, masked.unmask(&doc.to_string(), &original));
     Ok(())
 }
 
@@ -457,8 +467,8 @@ fn check_style(
     proposed: &mut BTreeMap<PathBuf, String>,
     name: &ArtifactName,
 ) -> Result<(), Refusal> {
-    update(config, proposed, name, |doc, file| {
-        annotations::validate_style(doc, file, config, name)
+    update(config, proposed, name, |doc, file, source| {
+        annotations::validate_style(doc, file, source, config, name)
     })
 }
 

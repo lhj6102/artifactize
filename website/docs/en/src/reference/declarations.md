@@ -45,12 +45,42 @@ Each `[evals.<id>]` table defines `<artifact>/<id>`:
 | Field | Type & rules |
 |---|---|
 | `title` | **Required.** Nonblank summary of what passes. |
-| `profile` | **Required.** Reviewer profile table (`kind = "runtime"`, `"agent"`, or `"human"`):<br>• `runtime`: `{ kind = "runtime", command = "...", args = [...], timeout_ms? = N }`<br>• `agent`: `{ kind = "agent", backend = "...", model = "...", reasoning? = "...", timeout_ms? = N, max_tokens? = N, max_tool_calls? = N }`<br>• `human`: `{ kind = "human" }` |
-| `profile_variants` | Optional map of named alternative complete profiles of the same `kind` (selected via `verify --profile NAME` or `status --profile NAME`, which applies to every executable eval in the initial selection and recursion policy before applying variants; dependencies newly introduced only by a runtime variant's `args` keep their base profiles). |
+| `profile` | **Required.** Reviewer profile table (`kind = "runtime"`, `"agent"`, or `"human"`), or an Agent [profile alias](#project-settings) (`!name` or `!name(field = value, ...)`):<br>• `runtime`: `{ kind = "runtime", command = "...", args = [...], timeout_ms? = N }`<br>• `agent`: `{ kind = "agent", backend = "...", model = "...", reasoning? = "...", timeout_ms? = N, max_tokens? = N, max_tool_calls? = N }`<br>• `human`: `{ kind = "human" }` |
+| `profile_variants` | Optional map of named alternative complete profiles of the same `kind`, inline or via [profile aliases](#project-settings) on `agent` evals (selected via `verify --profile NAME` or `status --profile NAME`, which applies to every executable eval in the initial selection and recursion policy before applying variants; dependencies newly introduced only by a runtime variant's `args` keep their base profiles). |
 | `mutex` | Optional array of hierarchical lock tags on `runtime` or `agent` evals (`"use-computer"` or `"use-computer:<segment>..."`, such as `"use-computer:display"`). Two evals conflict if their tags are equal or one is an ancestor of the other (`use-computer` conflicts with all descendants); conflicting evals queue rather than running concurrently. |
 | `payload.instruction` | **Required.** Nonblank criteria string. `{name}` references to other Artifacts in `payload.instruction` or runtime `args` declare input Artifact dependencies (referencing the eval's own target Artifact adds no dependency). |
 | `red_at` | Optional priority threshold on `agent` evals only (`"P0"`, `"P1"`, `"P2"`, or `"P3"`, where `P0` is highest). Any finding at `red_at` or higher makes the eval `RED`; omitting `red_at` makes any finding count. Findings below `red_at` are kept even when the eval is `GREEN`. |
 | `pass_schema`, `fail_schema` | Optional JSON Schema for owner result fields on `human` evals (rejected on `agent` evals; accepted on `runtime` declarations too, where they participate in the Eval definition hash without changing the exit-code verdict). |
+
+## Project settings (`.artifactize/settings.toml`) {#project-settings}
+
+Define shared Agent evaluator profile aliases once in the optional `.artifactize/settings.toml` file so `.artf` declarations do not repeat full profiles inline:
+
+```toml
+# .artifactize/settings.toml
+[profiles.sol]
+kind = "agent"
+backend = "codex"
+model = "gpt-6.2-sol"
+reasoning = "high"
+timeout_ms = 1800000
+```
+
+```toml
+# .artifactize/app.artf
+[evals.review]
+title = "The implementation satisfies the spec"
+profile = !sol
+red_at = "P1"
+payload.instruction = "Review {app} against {spec}."
+
+[evals.review.profile_variants]
+fast = !sol(reasoning = "low", timeout_ms = 600000)
+```
+
+- **Alias definitions**: `[profiles.<name>]` accepts `agent` profiles (`kind = "agent"`) with the same fields as an inline Agent profile (`backend`, `model`, `reasoning`, `timeout_ms`, `max_tool_calls`, `max_tokens`).
+- **Using and overriding aliases**: In an eval's `profile` or `profile_variants`, write `!name` to use the alias as defined, or `!name(field = value, ...)` to override individual Agent fields (`kind` cannot be overridden). Alias expressions are valid only in `profile` and `profile_variants`.
+- **Reuse and fingerprints**: Profile aliases are execution options, so updating `.artifactize/settings.toml` does not change Eval definition hashes, reuse keys, or the graph fingerprint. When `artifactsum` hashes `.artf` files, alias overrides are normalized along with the rest of the declaration.
 
 ## Owner-result schemas (`pass_schema` and `fail_schema`) {#owner-result-schemas}
 

@@ -81,7 +81,47 @@ pub enum Profile {
     },
 }
 
+/// Fields that an `.artf` profile alias invocation (`!alias(field = value, ...)`) may override.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub(super) struct AgentProfileOverrides {
+    #[serde(default, deserialize_with = "present")]
+    pub backend: Option<Backend>,
+    #[serde(default, deserialize_with = "present")]
+    pub model: Option<ModelId>,
+    #[serde(default, deserialize_with = "present")]
+    pub reasoning: Option<Reasoning>,
+    #[serde(default, deserialize_with = "timeout")]
+    pub timeout_ms: Option<std::time::Duration>,
+    #[serde(default, deserialize_with = "positive_integer")]
+    pub max_tool_calls: Option<u64>,
+    #[serde(default, deserialize_with = "positive_integer")]
+    pub max_tokens: Option<u64>,
+}
+
 impl Profile {
+    pub(super) fn apply_overrides(&self, overrides: AgentProfileOverrides) -> Result<Self, String> {
+        let Self::Agent {
+            backend,
+            model,
+            reasoning,
+            timeout_ms,
+            max_tool_calls,
+            max_tokens,
+        } = self
+        else {
+            return Err("Profile aliases support only agent profiles (kind = \"agent\").".into());
+        };
+        Ok(Self::Agent {
+            backend: overrides.backend.unwrap_or_else(|| backend.clone()),
+            model: overrides.model.unwrap_or_else(|| model.clone()),
+            reasoning: overrides.reasoning.or(*reasoning),
+            timeout_ms: overrides.timeout_ms.or(*timeout_ms),
+            max_tool_calls: overrides.max_tool_calls.or(*max_tool_calls),
+            max_tokens: overrides.max_tokens.or(*max_tokens),
+        })
+    }
+
     pub(super) fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
         match self {
             Self::Agent {

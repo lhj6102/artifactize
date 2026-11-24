@@ -45,6 +45,7 @@ pub(super) fn declaration_of(kind: ArtifactKind, target: &Target) -> PathBuf {
 pub fn read_sites(repo: &Path) -> Result<BTreeMap<ArtifactName, Site>, ConfigError> {
     let root =
         crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
+    let settings = super::settings::read(&root)?;
     discovery::sources(&root)?
         .into_iter()
         .map(|(file, source)| {
@@ -54,9 +55,13 @@ pub fn read_sites(repo: &Path) -> Result<BTreeMap<ArtifactName, Site>, ConfigErr
                     .unwrap_or_default(),
             )
             .map_err(|error| ConfigError::new(&file, error))?;
-            let parsed =
-                discovery::parse_definition(&name, &source, &mut schemas::Schemas::default())
-                    .map_err(|error| ConfigError::new(&file, error))?;
+            let parsed = discovery::parse_definition(
+                &name,
+                &source,
+                &settings,
+                &mut schemas::Schemas::default(),
+            )
+            .map_err(|error| ConfigError::new(&file, error))?;
             let path = parsed
                 .path
                 .with_kind(parsed.kind, parsed.declaration.select.unwrap_or_default())
@@ -105,6 +110,7 @@ fn read_declared(
             path: site.declaration_path(),
         });
     }
+    let settings = super::settings::read(&root)?;
     let mut selected = BTreeMap::new();
     let mut pending = vec![name.clone()];
     while let Some(next) = pending.pop() {
@@ -129,8 +135,13 @@ fn read_declared(
                 ScopeReadError::Config(ConfigError::new(&file, error))
             }
         })?;
-        let parsed = discovery::parse_definition(&next, &source, &mut schemas::Schemas::default())
-            .map_err(|error| ConfigError::new(&file, error))?;
+        let parsed = discovery::parse_definition(
+            &next,
+            &source,
+            &settings,
+            &mut schemas::Schemas::default(),
+        )
+        .map_err(|error| ConfigError::new(&file, error))?;
         pending.extend(parsed.declaration.parts.into_iter().flatten());
         selected.insert(file, source);
     }

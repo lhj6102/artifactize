@@ -36,7 +36,7 @@ pub(super) fn propose(
                 doc.to_string(),
             );
         }
-        Operation::SetPath { name, path } => update(&config, &mut proposed, &name, |doc, _| {
+        Operation::SetPath { name, path } => update(&config, &mut proposed, &name, |doc, _, _| {
             if doc["path"].as_str() != Some(path.as_str()) {
                 let decor = doc["path"]
                     .as_value()
@@ -54,32 +54,33 @@ pub(super) fn propose(
             let at = at.or_else(|| placement(&config, &proposed, &part, None));
             check_style(&config, &mut proposed, &whole)?;
             check_style(&config, &mut proposed, &part)?;
-            update(&config, &mut proposed, &whole, |doc, _| {
+            update(&config, &mut proposed, &whole, |doc, _, _| {
                 change_part(doc, &part, true)
             })?;
             let next = discovery::read_sources(root.to_owned(), &proposed)?;
-            update(&config, &mut proposed, &whole, |doc, file| {
+            update(&config, &mut proposed, &whole, |doc, file, source| {
                 annotations::set_parts(
                     doc,
                     file,
+                    source,
                     &next,
                     &whole,
                     &at.map(|at| [(part.clone(), at)].into()).unwrap_or_default(),
                     false,
                 )
             })?;
-            update(&config, &mut proposed, &part, |doc, file| {
-                annotations::set_at(doc, file, &next, &part, None)
+            update(&config, &mut proposed, &part, |doc, file, source| {
+                annotations::set_at(doc, file, source, &next, &part, None)
             })?;
         }
         Operation::RemovePart { whole, part } => {
             check_style(&config, &mut proposed, &whole)?;
-            update(&config, &mut proposed, &whole, |doc, _| {
+            update(&config, &mut proposed, &whole, |doc, _, _| {
                 change_part(doc, &part, false)
             })?;
             let next = discovery::read_sources(root.to_owned(), &proposed)?;
-            update(&config, &mut proposed, &whole, |doc, file| {
-                annotations::set_parts(doc, file, &next, &whole, &BTreeMap::new(), false)
+            update(&config, &mut proposed, &whole, |doc, file, source| {
+                annotations::set_parts(doc, file, source, &next, &whole, &BTreeMap::new(), false)
             })?;
         }
         Operation::MovePart { part, from, to, at } => {
@@ -92,26 +93,27 @@ pub(super) fn propose(
                 return Err(forbidden("The source and destination whole are the same."));
             }
             if let Some(from) = &from {
-                update(&config, &mut proposed, from, |doc, _| {
+                update(&config, &mut proposed, from, |doc, _, _| {
                     change_part(doc, &part, false)
                 })?;
             }
             if let Some(to) = &to {
-                update(&config, &mut proposed, to, |doc, _| {
+                update(&config, &mut proposed, to, |doc, _, _| {
                     change_part(doc, &part, true)
                 })?;
             }
             let next = discovery::read_sources(root.to_owned(), &proposed)?;
             if let Some(from) = from {
-                update(&config, &mut proposed, &from, |doc, file| {
-                    annotations::set_parts(doc, file, &next, &from, &BTreeMap::new(), false)
+                update(&config, &mut proposed, &from, |doc, file, source| {
+                    annotations::set_parts(doc, file, source, &next, &from, &BTreeMap::new(), false)
                 })?;
             }
             if let Some(to) = &to {
-                update(&config, &mut proposed, to, |doc, file| {
+                update(&config, &mut proposed, to, |doc, file, source| {
                     annotations::set_parts(
                         doc,
                         file,
+                        source,
                         &next,
                         to,
                         &at.map(|at| [(part.clone(), at)].into()).unwrap_or_default(),
@@ -119,10 +121,11 @@ pub(super) fn propose(
                     )
                 })?;
             }
-            update(&config, &mut proposed, &part, |doc, file| {
+            update(&config, &mut proposed, &part, |doc, file, source| {
                 annotations::set_at(
                     doc,
                     file,
+                    source,
                     &next,
                     &part,
                     if to.is_none() { at } else { None },
@@ -141,14 +144,15 @@ pub(super) fn propose(
             let old_file = node_file(&config, &old)?;
             for (owner, artifact) in &config.artifacts {
                 let file = root.join(artifact.declaration_path());
-                let mut doc = proposed[&file]
-                    .parse::<toml_edit::DocumentMut>()
-                    .expect("validated source");
+                let original = proposed[&file].clone();
+                let (masked, mut doc) = parse_document(&original);
                 references::rename(&mut doc, artifact, &old, &new);
                 if artifact.parts.contains(&old) {
-                    annotations::rename_part(&mut doc, &file, &config, owner, &old, &new)?;
+                    annotations::rename_part(
+                        &mut doc, &file, &original, &config, owner, &old, &new,
+                    )?;
                 }
-                proposed.insert(file, doc.to_string());
+                proposed.insert(file, masked.unmask(&doc.to_string(), &original));
             }
             let source = proposed.remove(&old_file).expect("known node");
             proposed.insert(old_file.with_file_name(format!("{new}.artf")), source);
@@ -162,9 +166,8 @@ pub(super) fn propose(
                     if other == &name {
                         return None;
                     }
-                    let doc = sources[&root.join(artifact.declaration_path())]
-                        .parse::<toml_edit::DocumentMut>()
-                        .expect("validated source");
+                    let (_, doc) =
+                        parse_document(&sources[&root.join(artifact.declaration_path())]);
                     references::names(&doc, artifact, &name).then(|| other.to_string())
                 })
                 .collect::<Vec<_>>();
@@ -187,23 +190,31 @@ pub(super) fn propose(
                     }
                     PlacementKey::Node(name) => {
                         if config.artifacts.contains_key(&name) {
-                            update(&config, &mut proposed, &name, |doc, file| {
-                                annotations::set_at(doc, file, &config, &name, Some(at))
+                            update(&config, &mut proposed, &name, |doc, file, source| {
+                                annotations::set_at(doc, file, source, &config, &name, Some(at))
                             })?;
                         }
                     }
                 }
             }
             for (whole, places) in boxes {
-                update(&config, &mut proposed, &whole, |doc, file| {
-                    annotations::set_parts(doc, file, &config, &whole, &places, false)
+                update(&config, &mut proposed, &whole, |doc, file, source| {
+                    annotations::set_parts(doc, file, source, &config, &whole, &places, false)
                 })?;
             }
         }
         Operation::ResetPlaces { whole } => {
             if let Some(whole) = whole {
-                update(&config, &mut proposed, &whole, |doc, file| {
-                    annotations::set_parts(doc, file, &config, &whole, &BTreeMap::new(), true)
+                update(&config, &mut proposed, &whole, |doc, file, source| {
+                    annotations::set_parts(
+                        doc,
+                        file,
+                        source,
+                        &config,
+                        &whole,
+                        &BTreeMap::new(),
+                        true,
+                    )
                 })?;
             } else {
                 for name in config.artifacts.keys().filter(|name| {
@@ -212,15 +223,15 @@ pub(super) fn propose(
                         .values()
                         .any(|artifact| artifact.parts.contains(*name))
                 }) {
-                    update(&config, &mut proposed, name, |doc, file| {
-                        annotations::set_at(doc, file, &config, name, None)
+                    update(&config, &mut proposed, name, |doc, file, source| {
+                        annotations::set_at(doc, file, source, &config, name, None)
                     })?;
                 }
             }
         }
         Operation::SetComment { name, text } => {
-            update(&config, &mut proposed, &name, |doc, file| {
-                annotations::set_comment(doc, file, &text)
+            update(&config, &mut proposed, &name, |doc, file, source| {
+                annotations::set_comment(doc, file, source, &text)
             })?
         }
         Operation::MoveComment { from, to } => {
@@ -229,22 +240,20 @@ pub(super) fn propose(
             }
             let from_file = node_file(&config, &from)?;
             let to_file = node_file(&config, &to)?;
-            let source = proposed[&from_file]
-                .parse::<toml_edit::DocumentMut>()
-                .expect("validated source");
-            let target = proposed[&to_file]
-                .parse::<toml_edit::DocumentMut>()
-                .expect("validated source");
-            let text = annotations::take_comment(&source, &from_file)?
+            let from_source = proposed[&from_file].clone();
+            let to_source = proposed[&to_file].clone();
+            let (_, source) = parse_document(&from_source);
+            let (_, target) = parse_document(&to_source);
+            let text = annotations::take_comment(&source, &from_file, &from_source)?
                 .ok_or_else(|| forbidden(format!("{from} has no comment to move.")))?;
-            if annotations::take_comment(&target, &to_file)?.is_some() {
+            if annotations::take_comment(&target, &to_file, &to_source)?.is_some() {
                 return Err(forbidden(format!("{to} already has a comment.")));
             }
-            update(&config, &mut proposed, &from, |doc, file| {
-                annotations::set_comment(doc, file, "")
+            update(&config, &mut proposed, &from, |doc, file, source| {
+                annotations::set_comment(doc, file, source, "")
             })?;
-            update(&config, &mut proposed, &to, |doc, file| {
-                annotations::set_comment(doc, file, &text)
+            update(&config, &mut proposed, &to, |doc, file, source| {
+                annotations::set_comment(doc, file, source, &text)
             })?;
         }
     }

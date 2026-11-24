@@ -39,14 +39,23 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
         relations: Vec::new(),
     };
     let mut schemas = super::schemas::Schemas::default();
+    let settings = super::settings::Settings::default();
     walk(&root, &ignored, targets, |found, mut table| {
         drop_agent_schemas(table.get_mut());
+        let masked = artifactize_tools::artf::mask(found.source).map_err(|error| {
+            ConfigError::new(
+                found.file,
+                super::location::positioned_message(found.source, error.offset, error.message),
+            )
+        })?;
         let declaration = super::definition::parse_table(
             &super::definition::Input {
                 kind: found.kind,
                 path: &found.path,
                 file: found.file,
                 source: found.source,
+                masked: &masked,
+                settings: &settings,
                 name: None,
             },
             &mut schemas,

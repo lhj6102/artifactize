@@ -6,9 +6,10 @@ use super::{
     eval::declared_evals,
     identifier,
     location::{self, Location},
-    schemas,
+    schemas, settings,
     validation::{path, paths, present, script, tags, text, timeout},
 };
+use artifactize_tools::artf::{Masked, mask};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -445,12 +446,24 @@ impl ArtifactDeclaration {
 
 /// Validate an Artifact declaration without opening scripts or declared inputs.
 pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
-    let table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
-    parse_declaration_table(source, &mut schemas::Schemas::default(), None, table)
+    let masked = mask(source)
+        .map_err(|error| location::positioned_message(source, error.offset, error.message))?;
+    let table = toml::de::DeTable::parse(&masked.toml)
+        .map_err(|error| location::toml_error(source, &masked, error))?;
+    parse_declaration_table(
+        source,
+        &masked,
+        &settings::Settings::default(),
+        &mut schemas::Schemas::default(),
+        None,
+        table,
+    )
 }
 
 pub(super) fn parse_declaration_table(
     source: &str,
+    masked: &Masked,
+    settings: &settings::Settings,
     schemas: &mut schemas::Schemas,
     name: Option<&ArtifactName>,
     mut table: toml::Spanned<toml::de::DeTable<'_>>,
@@ -468,9 +481,11 @@ pub(super) fn parse_declaration_table(
     }
     let span = table.span();
     let document = toml::Spanned::new(span, toml::de::DeValue::Table(table.into_inner()));
-    let location = Location::root(source, &document);
+    let location = Location::root_masked(source, &document, Some(masked));
     for (key, value) in document.get_ref().as_table().unwrap() {
-        reject_non_json_values(value, key.get_ref().as_ref(), source)?;
+        reject_non_json_values(value, key.get_ref().as_ref(), source, |offset| {
+            masked.original_offset(offset)
+        })?;
     }
     if document.get_ref().get("family").is_some() {
         return Err(location
@@ -518,6 +533,33 @@ pub(super) fn parse_declaration_table(
     // Decode these fields directly from their spanned TOML nodes. Keep the original
     // document for validation diagnostics, but don't deserialize those fields again.
     let mut body = document.get_ref().as_table().unwrap().clone();
+    let mut consumed = vec![false; masked.invocations().len()];
+    let evals = if body.remove("evals").is_some() {
+        EvalDeclaration::parse_map(
+            &location.child("evals"),
+            source,
+            masked,
+            settings,
+            &mut consumed,
+        )?
+    } else {
+        Vec::new()
+    };
+    if let Some(invocation) = masked
+        .invocations()
+        .iter()
+        .zip(consumed)
+        .find_map(|(invocation, used)| (!used).then_some(invocation))
+    {
+        return Err(location::positioned_message(
+            source,
+            invocation.span.start,
+            format!(
+                "Profile alias `!{}` can be used only as an eval profile or profile variant.",
+                invocation.name
+            ),
+        ));
+    }
     let views = if body.remove("views").is_some() {
         Views::parse(&location.child("views"))?
     } else {
@@ -534,10 +576,8 @@ pub(super) fn parse_declaration_table(
     let mut declaration = ArtifactDeclaration::deserialize(toml::de::ValueDeserializer::from(
         toml::Spanned::new(document.span(), toml::de::DeValue::Table(body)),
     ))
-    .map_err(|mut error| {
-        error.set_input(Some(source));
-        error.to_string()
-    })?;
+    .map_err(|error| location::toml_error(source, masked, error))?;
+    declaration.evals = evals;
     declaration.views = views;
     declaration.fingerprint = fingerprint;
     declaration.share(schemas);
@@ -599,13 +639,15 @@ fn validate_identity_locations(
 }
 
 /// Reject TOML values that would become lossy or implementation-specific owner JSON.
-fn reject_non_json_values(
+pub(super) fn reject_non_json_values(
     value: &toml::Spanned<toml::de::DeValue<'_>>,
     path: &str,
     source: &str,
+    map_offset: impl Copy + Fn(usize) -> usize,
 ) -> Result<(), String> {
     use toml::de::DeValue;
-    let diagnostic = |message| location::positioned(source, value.span().start, path, message);
+    let diagnostic =
+        |message| location::positioned(source, map_offset(value.span().start), path, message);
     match value.get_ref() {
         DeValue::Datetime(_) => Err(diagnostic(
             "TOML date/time values have no JSON equivalent; use a quoted string.",
@@ -622,13 +664,18 @@ fn reject_non_json_values(
         }
         DeValue::Array(items) => {
             for (index, item) in items.iter().enumerate() {
-                reject_non_json_values(item, &format!("{path}[{index}]"), source)?;
+                reject_non_json_values(item, &format!("{path}[{index}]"), source, map_offset)?;
             }
             Ok(())
         }
         DeValue::Table(table) => {
             for (key, value) in table {
-                reject_non_json_values(value, &format!("{path}.{}", key.get_ref()), source)?;
+                reject_non_json_values(
+                    value,
+                    &format!("{path}.{}", key.get_ref()),
+                    source,
+                    map_offset,
+                )?;
             }
             Ok(())
         }
