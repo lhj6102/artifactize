@@ -37,14 +37,14 @@ values in scripts, command history or issue comments.
 | --- | --- | --- |
 | Homebrew | Stable only; a normal tap formula tracks stable, not prereleases | `HOMEBREW_TAP_TOKEN` |
 | Microsoft Store | Stable only; any pending submission is left untouched and logged/skipped | `STORE_TENANT_ID`, `STORE_CLIENT_ID`, `STORE_CLIENT_SECRET` |
-| macOS desktop signing | Every build, PRs included; without them the app is signed ad hoc, which macOS opens only with quarantine removed (as the smoke checks install it) | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
+| macOS desktop signing | Every build, `release/*` and rehearsal builds included; without them the app is signed ad hoc, which macOS opens only with quarantine removed (as the smoke checks install it) | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
 
 Homebrew deliberately does not promote prereleases into the ordinary formula.
 Prereleases still carry the unsigned MSIX/Store upload for
 manual rehearsal. Neither metadata generation nor installation smoke tests use
 channel credentials.
 
-The macOS signing secrets must be repository Actions secrets: PR and rehearsal
+The macOS signing secrets must be repository Actions secrets: `release/*` and rehearsal
 builds read them too, not only the release environment. They are Tauri's
 [macOS signing](https://v2.tauri.app/distribute/sign/macos/) variables: the base64
 Developer ID Application certificate (.p12) and its password, the identity name, and
@@ -152,12 +152,13 @@ Microsoft references used for the package and API:
 
 ## Packaging seams
 
-`binaries.yml` runs on packaging PRs and manual rehearsals. Its Linux policy job
+`binaries.yml` runs on `release/*` pushes and pull requests, manual rehearsals, and tag
+releases (via `release.yml`). Its Linux policy job
 runs `python3 -I .github/scripts/test-channels.py`: generated metadata, prerelease
 skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.
 
-The two informational macOS builds install from a native PR archive through a
+The two informational macOS builds install from the built native archive through a
 local tap, run `brew test`, and execute both commands. The universal desktop job
 builds both commands for both CPUs, bundles the app on Apple Silicon, and after the dmg
 smoke installs the app with `install.sh` and with a local-tap cask (`brew style`, then

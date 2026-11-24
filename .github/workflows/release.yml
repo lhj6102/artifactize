@@ -1,4 +1,4 @@
-# Version tags build and publish release artifacts after the dev-to-main PR gates.
+# Version tags build and publish release artifacts after the release/* branch gates.
 # Release verification belongs to CI and Binaries, not a duplicate tag-time test job.
 name: Release
 

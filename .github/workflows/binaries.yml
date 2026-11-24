@@ -1,10 +1,10 @@
-# Main PRs and manual rehearsals validate release packaging and installers.
+# Release branches (release/*) and manual rehearsals validate release packaging and installers.
 # Tag releases reuse these builds through workflow_call without publishing here.
 name: Binaries
 
 # release.yml calls each platform separately: Linux gates the release; Windows and
-# macOS run alongside and never delay it before v1. Main PRs and manual rehearsals
-# build every target, retain archives and exercise the installers.
+# macOS run alongside and never delay it before v1. Release branches (release/*) and
+# manual rehearsals build every target, retain archives and exercise the installers.
 # Each binaries-<target> artifact holds a tarball (Windows: zip, with the desktop app
 # too) with BOTH commands and its SHA-256. Each desktop-<target> artifact holds the
 # macOS dmg or the Linux AppImage and deb, each with its SHA-256; the Linux bundles
@@ -32,15 +32,17 @@ on:
         type: choice
         options: [all, linux, linux-desktop, windows, macos]
         default: all
+  push:
+    branches: ["release/*"]
   pull_request:
-    branches: [main]
+    branches: ["release/*"]
 
 permissions:
   contents: read
 
 concurrency:
   group: binaries-${{ github.event_name }}-${{ github.ref }}-${{ inputs.platform || 'all' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch') }}
 
 jobs:
   channel-policy:
@@ -182,10 +184,10 @@ jobs:
           path: channel-dist/**
           if-no-files-found: error
 
-      # Only PR/manual builds smoke-test installers, never the release tag path.
+      # Only release-branch/PR/manual builds smoke-test installers, never the release tag path.
       # The test URL reaches the archives built above, not a published release.
       - name: Install with install.sh in Debian and Alpine
-        if: contains(matrix.target, '-linux-musl') && github.event_name != 'push'
+        if: contains(matrix.target, '-linux-musl') && github.ref_type != 'tag'
         run: |
           sh -n website/landing/install.sh .github/scripts/smoke-install.sh
           if command -v shellcheck >/dev/null; then
@@ -207,7 +209,7 @@ jobs:
                 sh /src/smoke-install.sh /src/install.sh'
           done
       - name: Install with install.sh on macOS
-        if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
+        if: contains(matrix.target, '-apple-darwin') && github.ref_type != 'tag'
         run: |
           sh -n website/landing/install.sh .github/scripts/smoke-install.sh
           home=$(mktemp -d "$RUNNER_TEMP/artifactize-smoke.XXXXXXXX")
@@ -217,14 +219,14 @@ jobs:
           HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" \
             ARTIFACTIZE_VERSION="$VERSION" sh .github/scripts/smoke-install.sh website/landing/install.sh
       - name: Install with install.ps1 and preserve previous binaries on launch failure
-        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
+        if: matrix.target == 'x86_64-pc-windows-msvc' && github.ref_type != 'tag'
         shell: powershell
         run: .github/scripts/smoke-install.ps1 -Version $env:VERSION -Dist dist -Installer website/landing/install.ps1
       - name: Install and test the local Homebrew formula
-        if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
+        if: contains(matrix.target, '-apple-darwin') && github.ref_type != 'tag'
         run: sh .github/scripts/smoke-homebrew.sh "$VERSION" "$TARGET" dist
       - name: Install signed MSIX; check private state and child AppData virtualization
-        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
+        if: matrix.target == 'x86_64-pc-windows-msvc' && github.ref_type != 'tag'
         shell: powershell
         run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist
 
@@ -286,12 +288,12 @@ jobs:
           path: desktop-dist/*
           if-no-files-found: error
       - name: Install the dmg and open the app
-        if: github.event_name != 'push'
+        if: github.ref_type != 'tag'
         env:
           DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: sh .github/scripts/smoke-desktop.sh dmg "$VERSION" "desktop-dist/artifactize-desktop-v$VERSION-$TARGET.dmg"
       - name: Install the app with install.sh and the Homebrew cask and open it
-        if: github.event_name != 'push'
+        if: github.ref_type != 'tag'
         env:
           DESKTOP_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: |
@@ -308,7 +310,7 @@ jobs:
   desktop-macos-intel:
     name: Open desktop universal-apple-darwin on Intel
     needs: desktop-macos
-    if: github.event_name != 'push'
+    if: github.ref_type != 'tag'
     runs-on: macos-15-intel
     timeout-minutes: 30
     continue-on-error: true
@@ -334,8 +336,8 @@ jobs:
     if: inputs.platform != 'linux' && inputs.platform != 'windows' && inputs.platform != 'macos'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    # Best effort on a release tag (release.yml), a gate on main PRs and rehearsals.
-    continue-on-error: ${{ github.event_name == 'push' }}
+    # Best effort on a release tag (release.yml), a gate on release/* branches and rehearsals.
+    continue-on-error: ${{ github.ref_type == 'tag' }}
     strategy:
       fail-fast: false
       matrix:
@@ -387,17 +389,17 @@ jobs:
           path: dist/*
           if-no-files-found: error
       - name: Run the AppImage and open the app
-        if: github.event_name != 'push'
+        if: github.ref_type != 'tag'
         run: sh .github/scripts/smoke-desktop.sh appimage "$VERSION" "dist/artifactize-desktop-v$VERSION-$TARGET.AppImage"
       - name: Install the deb with its dependencies on Ubuntu 22.04 and open the app
-        if: github.event_name != 'push'
+        if: github.ref_type != 'tag'
         run: |
           docker run --rm -v "$PWD:/src:ro" -w /src -e DEBIAN_FRONTEND=noninteractive ubuntu:22.04 sh -euc '
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends xvfb xdotool >/dev/null
             sh .github/scripts/smoke-desktop.sh deb "$1" "dist/artifactize-desktop-v$1-$2.deb"' sh "$VERSION" "$TARGET"
       - name: Install the app with install.sh and open it from its launcher
-        if: github.event_name != 'push'
+        if: github.ref_type != 'tag'
         run: |
           home=$(mktemp -d "$RUNNER_TEMP/artifactize-install.XXXXXXXX")
           serve="$home/serve/v$VERSION"

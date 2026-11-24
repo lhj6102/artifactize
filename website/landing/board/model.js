@@ -15,10 +15,10 @@
  *   state: PrState, created: Date, ended: Date | null, mergeCommit: string | null,
  *   headSha: string, note: Note | null, ci: CiState, release: boolean
  * }} Pr
- * @typedef {{ tag: string, url: string, at: Date, fromDevMain: boolean }} Release
- * @typedef {{ sha: string, pr: Pr | null }} DevGreen
+ * @typedef {{ tag: string, url: string, at: Date, prerelease: boolean }} Release
+ * @typedef {{ sha: string, pr: Pr | null }} MainGreen
  * @typedef {{
- *   prs: Pr[], releases: Release[], devGreen: DevGreen | null, devHead: string | null,
+ *   prs: Pr[], releases: Release[], mainGreen: MainGreen | null, mainHead: string | null,
  *   greens: { pr: Pr, mark: GreenMark }[]
  * }} Model
  */
@@ -36,7 +36,7 @@
  * @typedef {{ checks: ApiCheck[], complete: boolean, suitePending?: boolean }} ApiCheckSet
  * @typedef {{
  *   pulls: ApiPull[], releases: ApiRelease[], tagRefs: ApiRef[], tagCommits: Record<string, { sha: string, at: string, kind?: 'tag' | 'commit' }>,
- *   devHead: string | null, checks: Record<string, ApiCheck[] | ApiCheckSet>, openTruncated?: boolean, historyTruncated?: boolean
+ *   mainHead: string | null, checks: Record<string, ApiCheck[] | ApiCheckSet>, openTruncated?: boolean, historyTruncated?: boolean
  * }} Raw
  * `checks` holds the latest check runs and commit statuses (CI jobs) of the open pull requests
  * whose CI was fetched, by number. `tagCommits` holds the commit, timestamp, and object kind of
@@ -143,8 +143,9 @@ export function sameCommit(a, b) {
 /**
  * One CI state from the jobs and check suites of a pull request's head: passed only when
  * every check suite has completed, the fetched check set is complete, and every blocking job
- * succeeded on its own conclusion. Desktop E2E is informational on pull requests into dev,
- * so it does not count there. Unexpectedly skipped blocking jobs prevent reporting passed
+ * succeeded on its own conclusion. Desktop E2E is informational on pull requests into main
+ * (it gates release/* pushes and pull requests into release/*), so it does not count on main
+ * pull requests. Unexpectedly skipped blocking jobs prevent reporting passed
  * (returning skipped only if every blocking job was skipped, otherwise unknown).
  * @param {ApiCheck[] | ApiCheckSet | undefined} input
  * @param {string} base
@@ -155,7 +156,7 @@ export function ciState(input, base) {
   const checks = Array.isArray(input) ? input : input.checks;
   const complete = Array.isArray(input) ? true : input.complete;
   const suitePending = Array.isArray(input) ? false : Boolean(input.suitePending);
-  const relevant = checks.filter((check) => !(base === 'dev' && check.name.startsWith('Desktop E2E')));
+  const relevant = checks.filter((check) => !(base === 'main' && check.name.startsWith('Desktop E2E')));
   const nonSkipped = relevant.filter((check) => check.conclusion !== 'skipped');
   if (nonSkipped.some((check) => check.status === 'completed' && check.conclusion !== 'success')) return 'failed';
   if (suitePending || nonSkipped.some((check) => check.status !== 'completed')) return 'running';
@@ -169,20 +170,17 @@ export function ciState(input, base) {
 
 /**
  * The v* tags that need their tag/commit object looked up: any annotated tag (whose ref points
- * to a tag object rather than a commit) and any lightweight tag lacking a published release and
- * matching merged pull request.
+ * to a tag object rather than a commit) and any lightweight tag lacking a published release.
  * @param {ApiRef[]} tagRefs
  * @param {ApiRelease[]} releases
- * @param {ApiPull[]} pulls
  * @returns {ApiRef[]}
  */
-export function undatedTags(tagRefs, releases, pulls) {
+export function undatedTags(tagRefs, releases) {
   return tagRefs.filter((ref) => {
     if (!ref.ref.startsWith('refs/tags/v')) return false;
     if (ref.object.type === 'tag') return true;
     const hasRelease = releases.some((release) => `refs/tags/${release.tag_name}` === ref.ref && !release.draft && release.published_at);
-    const hasMerge = pulls.some((pull) => pull.merged_at && sameCommit(pull.merge_commit_sha, ref.object.sha));
-    return !hasRelease && !hasMerge;
+    return !hasRelease;
   });
 }
 
@@ -192,7 +190,7 @@ export function undatedTags(tagRefs, releases, pulls) {
  */
 export function buildModel(raw) {
   const prs = raw.pulls
-    .filter((pull) => pull.base.ref === 'dev' || pull.base.ref === 'main')
+    .filter((pull) => pull.base.ref === 'main' || pull.base.ref.startsWith('release/'))
     .map((pull) => {
       const merged = pull.merged_at !== null;
       /** @type {PrState} */
@@ -212,59 +210,56 @@ export function buildModel(raw) {
         headSha: pull.head.sha,
         note: parseNote(pull.body),
         ci: ciState(raw.checks[String(pull.number)], pull.base.ref),
-        release: sameRepo && pull.head.ref === 'dev' && pull.base.ref === 'main',
+        release: sameRepo && (pull.base.ref.startsWith('release/') || (pull.head.ref.startsWith('release/') && pull.base.ref === 'main')),
       };
     })
     .sort((a, b) => a.created.getTime() - b.created.getTime() || a.number - b.number);
 
-  // A release is a v* tag on a verified same-repo dev -> main merge PR. Its date prefers the
-  // annotated tag's own creation time, then a published GitHub release time, then the merge
-  // time of the dev -> main release PR.
+  // A release is a v* tag (cut on release/* branches). Its date prefers the annotated tag's
+  // own creation time, then a published GitHub release time, then the tagged commit's time.
   const releases = raw.tagRefs
     .filter((ref) => ref.ref.startsWith('refs/tags/v'))
     .flatMap((ref) => {
       const tag = ref.ref.slice('refs/tags/'.length);
       const published = raw.releases.find((release) => release.tag_name === tag && !release.draft && release.published_at);
       const looked = raw.tagCommits[tag];
-      const commit = looked?.sha ?? (ref.object.type === 'commit' ? ref.object.sha : null);
-      const mergedPr = commit ? prs.find((pr) => pr.release && pr.state === 'merged' && sameCommit(pr.mergeCommit, commit)) ?? null : null;
-      if (!mergedPr) return [];
       const tagDate = looked?.kind === 'tag' && looked.at ? new Date(looked.at) : null;
+      const commitDate = looked?.kind === 'commit' && looked.at ? new Date(looked.at) : null;
       const at = (tagDate && !Number.isNaN(tagDate.getTime()) ? tagDate : null)
         ?? (published?.published_at ? new Date(published.published_at) : null)
-        ?? mergedPr.ended;
+        ?? (commitDate && !Number.isNaN(commitDate.getTime()) ? commitDate : null);
       const url = published?.html_url ?? `https://github.com/${REPO}/tree/${tag}`;
-      return at ? [{ tag, url, at, fromDevMain: true }] : [];
+      return at ? [{ tag, url, at, prerelease: tag.includes('-') }] : [];
     })
     .sort((a, b) => a.at.getTime() - b.at.getTime());
 
-  const greenRef = raw.tagRefs.find((ref) => ref.ref === 'refs/tags/dev-green');
-  const devGreen = greenRef
-    ? { sha: greenRef.object.sha, pr: prs.find((pr) => pr.base === 'dev' && pr.state === 'merged' && sameCommit(pr.mergeCommit, greenRef.object.sha)) ?? null }
+  const greenRef = raw.tagRefs.find((ref) => ref.ref === 'refs/tags/main-green');
+  const mainGreen = greenRef
+    ? { sha: greenRef.object.sha, pr: prs.find((pr) => pr.base === 'main' && pr.state === 'merged' && sameCommit(pr.mergeCommit, greenRef.object.sha)) ?? null }
     : null;
 
   const greens = prs
-    .filter((pr) => pr.state === 'merged' && pr.base === 'dev')
+    .filter((pr) => pr.state === 'merged' && pr.base === 'main')
     .flatMap((pr) => (pr.note?.green ?? []).map((mark) => ({ pr, mark })))
     .sort((a, b) => a.mark.at.getTime() - b.mark.at.getTime());
 
-  return { prs, releases, devGreen, devHead: raw.devHead, greens };
+  return { prs, releases, mainGreen, mainHead: raw.mainHead, greens };
 }
 
 /**
- * The state of dev: GREEN when dev-green marks its latest commit, ahead when dev has moved
- * past dev-green (dev-master may be checking, fixing, or waiting at YELLOW for sign-offs),
- * or unknown when dev-green or dev's head is unavailable. When the dev-green commit is not
+ * The state of main: GREEN when main-green marks its latest commit, ahead when main has moved
+ * past main-green (dev-master may be checking, fixing, or waiting at YELLOW for sign-offs),
+ * or unknown when main-green or main's head is unavailable. When the main-green commit is not
  * matched to a fetched pull request, `since` is null rather than an inferred count.
  * @param {Model} model
  * @returns {{ kind: 'green' | 'ahead' | 'unknown', since: Pr[] | null }}
  */
-export function devState(model) {
-  if (!model.devGreen || !model.devHead) return { kind: 'unknown', since: null };
-  if (sameCommit(model.devGreen.sha, model.devHead)) return { kind: 'green', since: [] };
-  const from = model.devGreen.pr?.ended ?? null;
+export function mainState(model) {
+  if (!model.mainGreen || !model.mainHead) return { kind: 'unknown', since: null };
+  if (sameCommit(model.mainGreen.sha, model.mainHead)) return { kind: 'green', since: [] };
+  const from = model.mainGreen.pr?.ended ?? null;
   if (!from) return { kind: 'ahead', since: null };
-  const since = model.prs.filter((pr) => pr.state === 'merged' && pr.base === 'dev' && pr.ended && pr.ended > from);
+  const since = model.prs.filter((pr) => pr.state === 'merged' && pr.base === 'main' && pr.ended && pr.ended > from);
   return { kind: 'ahead', since };
 }
 
@@ -281,9 +276,8 @@ export function events(model) {
   /** @type {Event[]} */
   const list = [];
   for (const pr of model.prs) {
-    if (!pr.release) list.push({ at: pr.created, kind: 'opened', pr, release: null, mark: null });
-    // A release pull request matters only once merged: it is the release itself.
-    if (pr.ended && (pr.state === 'merged' || (pr.state === 'closed' && !pr.release))) {
+    list.push({ at: pr.created, kind: 'opened', pr, release: null, mark: null });
+    if (pr.ended && (pr.state === 'merged' || pr.state === 'closed')) {
       list.push({ at: pr.ended, kind: pr.state === 'merged' ? 'merged' : 'closed', pr, release: null, mark: null });
     }
   }
@@ -294,18 +288,17 @@ export function events(model) {
 
 /**
  * @typedef {{ pr: Pr, lane: number, base: number, start: number, opened: number, end: number }} Segment
- * @typedef {{ columns: Date[], segments: Segment[], releases: { pr: Pr, column: number }[],
- *   tags: { release: Release, column: number }[], merges: Map<number, number>, lanes: number, devFrom: number }} Flow
+ * @typedef {{ columns: Date[], segments: Segment[],
+ *   tags: { release: Release, column: number }[], merges: Map<number, number>, lanes: number }} Flow
  */
 
-/** Lanes 0 and 1 are main and dev; development branches take the lanes below. */
+/** Lane 0 is main; development and release branches take the lanes below. */
 export const MAIN = 0;
-export const DEV = 1;
 
 /**
  * Lays the branch flow out on a grid, like GitHub's network graph: one column per
  * event in time order (the last column is now) and one lane per branch at a time.
- * A branch starts where its note's `from` commit was merged into dev, otherwise at
+ * A branch starts where its note's `from` commit was merged into main, otherwise at
  * its pull request.
  * @param {Model} model
  * @returns {Flow}
@@ -324,8 +317,7 @@ export function layout(model) {
     if (pr.state === 'merged') merges.set(pr.number, column.get(`merged:${pr.number}`) ?? now);
   }
 
-  const branches = model.prs.filter((pr) => !pr.release);
-  const segments = branches.map((pr) => {
+  const segments = model.prs.map((pr) => {
     const opened = column.get(`opened:${pr.number}`) ?? now;
     const fork = pr.note?.from
       ? model.prs.find((other) => other.base === pr.base && other.state === 'merged' && sameCommit(other.mergeCommit, pr.note?.from ?? null))
@@ -335,7 +327,7 @@ export function layout(model) {
     const end = pr.state === 'open' || pr.state === 'draft'
       ? now
       : column.get(`${pr.state}:${pr.number}`) ?? now;
-    return { pr, lane: 0, base: pr.base === 'dev' ? DEV : MAIN, start, opened, end: Math.max(end, start + 1) };
+    return { pr, lane: 0, base: MAIN, start, opened, end: Math.max(end, start + 1) };
   });
 
   // Greedy lanes: each branch takes the first lane that is free before its start column.
@@ -345,21 +337,15 @@ export function layout(model) {
     let lane = busy.findIndex((last) => last < segment.start);
     if (lane < 0) lane = busy.push(-1) - 1;
     busy[lane] = segment.end;
-    segment.lane = DEV + 1 + lane;
+    segment.lane = MAIN + 1 + lane;
   }
-
-  const devPrs = model.prs.filter((pr) => pr.base === 'dev' || pr.release);
-  const devFrom = Math.min(now, ...segments.filter((s) => s.base === DEV).map((s) => s.start),
-    ...devPrs.filter((pr) => pr.release).map((pr) => merges.get(pr.number) ?? now));
 
   return {
     columns,
     segments,
-    releases: model.prs.filter((pr) => pr.release && pr.state === 'merged').map((pr) => ({ pr, column: merges.get(pr.number) ?? now })),
     tags: model.releases.map((release) => ({ release, column: column.get(`release:${release.tag}`) ?? now })),
     merges,
-    lanes: DEV + 1 + busy.length,
-    devFrom,
+    lanes: MAIN + 1 + busy.length,
   };
 }
 

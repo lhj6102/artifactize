@@ -15,9 +15,10 @@ dev-worker/SKILL.md of {dev-skills}. Check that:
   marker, every field name, the value forms (Run IDs, outcomes, commit SHAs, times) and
   where dev-master adds `green:` lines; a note the skills describe is never dropped, and a
   malformed note never breaks the page;
-- what the board derives agrees with the skills' branch model: `main`, `dev`, the
-  `dev-green` tag, pull requests into `dev`, releases as `dev` into `main` plus `v*` tags,
-  the roles dev-master and dev-worker, verify outcomes and CI;
+- what the board derives agrees with the skills' branch model: `main`, the `main-green`
+  tag, pull requests into `main`, releases cut on `release/*` branches with `v*` tags
+  (and optional QA back-merge pull requests into `main`), the roles dev-master and
+  dev-worker, verify outcomes and CI;
 - the page's description of the flow and the roles says the same as the skills;
 - it uses only GitHub's public REST API without credentials, and stays usable when GitHub
   fails or its rate limit is used up."""
@@ -34,6 +35,6 @@ writes into it. Check the page's visible text against W-INTRO-FIRST-READER,
 W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING; the other W- items are for the landing
 page's introduction and do not apply here. Because the board is for first-time visitors
 observing the repository's live GitHub activity, its brief definitions of commit/branch/pull
-request, its `dev-green`/`GREEN`/`YELLOW` status labels, its `verify run-...` and `CI ...`
+request, its `main-green`/`GREEN`/`YELLOW` status labels, its `verify run-...` and `CI ...`
 shorthand in activity lines and tooltips, and its short note on GitHub's public API request
 limits are helpful visitor context and are not violations."""

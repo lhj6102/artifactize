@@ -6,7 +6,7 @@ deployed from this directory to Cloudflare Workers (static assets).
 
 | Path | Contents |
 |---|---|
-| `landing/` | The landing page, copied to `dist/` as is except `index.html`, which holds the English and Korean pages (see [Landing page languages](#landing-page-languages)): a short hero, who it is for, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. The development board at `/board/` (`landing/board/`, native ES modules with JSDoc types) reads the repository's branches, pull requests, `dev-green` tag and releases from GitHub's public API in the visitor's browser, so it stays live without a redeploy; the note it reads in pull request bodies is defined by the development skills in `.agents/skills/`. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the promo media (`landing/media/`), `404.html`, `_headers`, `_redirects` (the Korean docs' former `/docs/kr/` addresses), the install scripts `install.sh` and `install.ps1` (served at `/install.sh` and `/install.ps1`, tested by `.github/workflows/binaries.yml`) and `.assetsignore`, which keeps `jsconfig.json`, `story/README.md` and the `*.artf` declarations out of the deployed site. The brand images and favicons are copied from `../assets/brand/` at build time, and the hero's role animation and example graph images from `../assets/others/`. |
+| `landing/` | The landing page, copied to `dist/` as is except `index.html`, which holds the English and Korean pages (see [Landing page languages](#landing-page-languages)): a short hero, who it is for, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. The development board at `/board/` (`landing/board/`, native ES modules with JSDoc types) reads the repository's branches, pull requests, `main-green` tag and releases from GitHub's public API in the visitor's browser, so it stays live without a redeploy; the note it reads in pull request bodies is defined by the development skills in `.agents/skills/`. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the promo media (`landing/media/`), `404.html`, `_headers`, `_redirects` (the Korean docs' former `/docs/kr/` addresses), the install scripts `install.sh` and `install.ps1` (served at `/install.sh` and `/install.ps1`, tested by `.github/workflows/binaries.yml`) and `.assetsignore`, which keeps `jsconfig.json`, `story/README.md` and the `*.artf` declarations out of the deployed site. The brand images and favicons are copied from `../assets/brand/` at build time, and the hero's role animation and example graph images from `../assets/others/`. |
 | `docs/` | The user docs as two [mdBook](https://rust-lang.github.io/mdBook/) books sharing `theme/`: `en/` (built into `dist/docs/`) and its Korean translation `ko/` (built into `dist/docs/ko/`), each with `book.toml` and `src/` (`SUMMARY.md` and the chapters). |
 | `build.sh` | Builds everything into `dist/` (gitignored) and checks every internal link. |
 | `layout.py` | Copies the landing page, brand assets and demo GIFs into a destination shared by the build and preview, and writes the landing page in each language. |
@@ -168,13 +168,13 @@ with a progress bar along the bottom edge. It needs `ffmpeg`.
 ## Deploy
 
 `.github/workflows/website.yml` installs the pinned mdBook (checking the release
-checksum), runs `build.sh` on pull requests and pushes that touch `website/` or
-`assets/`, and
-on pushes to `main` deploys `website/dist` with
+checksum), runs `build.sh` on pull requests that touch `website/`, `assets/` or
+`.github/workflows/website.yml`, and
+on stable `v*` release tags (excluding prerelease `v*-*` tags) deploys `website/dist` with
 `wrangler deploy --config website/wrangler.toml`. The Worker serves the
 `artifactize.dev` custom domain; unknown paths get `dist/docs/ko/404.html` under
 `/docs/ko/`, `dist/docs/404.html` elsewhere under `/docs/` and `dist/404.html`
-elsewhere. `workflow_dispatch` redeploys `main` by
+elsewhere. `workflow_dispatch` deploys the selected branch by
 hand from the Actions tab. The Rust CI workflow skips changes that touch only
 `website/`.
 
@@ -188,7 +188,7 @@ These are done for the current deployment; repeat them for a new account or zone
       template, limited to this account and the `artifactize.dev` zone.
 - [ ] Add the repository secrets `CLOUDFLARE_API_TOKEN` (that token) and
       `CLOUDFLARE_ACCOUNT_ID` (the Cloudflare account ID).
-- [ ] Let the first deploy from `main` attach `artifactize.dev` as the Worker's
+- [ ] Let the first deploy attach `artifactize.dev` as the Worker's
       custom domain. To serve `www.artifactize.dev` as well, add
       `{ pattern = "www.artifactize.dev", custom_domain = true }` to `routes` in
       `wrangler.toml`.

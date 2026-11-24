@@ -1,5 +1,5 @@
 interface:
   display_name: "dev-worker"
-  short_description: "Implement a task from dev-green to a GREEN pull request into dev"
+  short_description: "Implement a task from main-green to a GREEN pull request into main"
 policy:
   allow_implicit_invocation: false

@@ -1,11 +1,14 @@
-# Build every OS on dev/main PRs; Windows/macOS also enforce native platform contracts.
-# Desktop E2E gates release PRs into main and only informs dev PRs, which may merge without
-# it; broader verification belongs outside CI.
+# Build every OS on main and release/* PRs and release/* pushes; Windows/macOS also enforce
+# native platform contracts. Desktop E2E gates release/* pushes and PRs and only informs
+# main PRs, which may merge without it; broader verification belongs outside CI.
 name: CI
 
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [main, "release/*"]
+    paths-ignore: ["website/**", ".github/workflows/website.yml"]
+  push:
+    branches: ["release/*"]
     paths-ignore: ["website/**", ".github/workflows/website.yml"]
   workflow_dispatch:
 
@@ -65,8 +68,8 @@ jobs:
 
   desktop-e2e:
     name: Desktop E2E (${{ matrix.os }})
-    # A failure blocks only a release PR into main.
-    continue-on-error: ${{ github.base_ref != 'main' }}
+    # A failure blocks only release/* pushes and PRs into release/*.
+    continue-on-error: ${{ !(startsWith(github.ref, 'refs/heads/release/') || startsWith(github.base_ref, 'release/')) }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
