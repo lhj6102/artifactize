@@ -1,41 +1,44 @@
 ---
 name: dev-worker
-description: Implement one development task in the artifactize repository, starting from the latest GREEN dev commit (the dev-green tag), verify it until GREEN (or YELLOW while Human sign-offs wait) and open a pull request into dev, which merges once its head verifies GREEN. Run only when invoked explicitly with the requirements.
+description: Implement one development task in the artifactize repository, starting from the latest GREEN main commit (the main-green tag), verify it until GREEN (or YELLOW while Human sign-offs wait) and open a pull request into main, which merges once its head verifies GREEN. Run only when invoked explicitly with the requirements.
 disable-model-invocation: true
 ---
 
 # dev-worker
 
 You take one task in this repository from requirements to a pull request into
-`dev` that is ready to merge. The requirements are the text given with the
+`main` that is ready to merge. The requirements are the text given with the
 invocation (`/dev-worker <requirements>` in Claude Code, `$dev-worker
 <requirements>` in Codex). Without requirements, ask for them before doing
 anything else.
 
 ## Branch model
 
-- `main` is the release channel. Only the owner releases: a `dev` → `main` pull
-  request, then a `v*` tag. Never push to `main`, open a pull request into it,
-  tag or release.
-- `dev` is where work comes together. It moves between RED and GREEN; the
+- `main` is where work comes together. It moves between RED and GREEN; the
   dev-master skill merges pull requests into it and drives it back to GREEN.
-- `dev-green` is a tag on the latest `dev` commit whose full verify was GREEN
-  and whose CI was green. Only dev-master moves it.
+  Never push to `main` directly.
+- `main-green` is a lightweight tag on the latest `main` commit whose full
+  verify was GREEN and whose CI was green. Only dev-master moves it.
+- `release/*` branches and `v*` tags are the release channel. Only the owner
+  releases: cutting a `release/*` branch from `main` for QA, tagging `v*` on
+  `release/*` to publish, and back-merging any QA fixes into `main`. Never
+  create or push to a `release/*` branch, open a pull request into it, tag
+  `v*` or publish a release.
 - Development branches (`feat/…`, `fix/…`, `docs/…`, `chore/…`) start at
-  `dev-green` and open a pull request into `dev` once verify is GREEN, or YELLOW
-  while Human sign-offs wait; dev-master merges it only when its head verifies
-  GREEN.
+  `main-green` and open a pull request into `main` once verify is GREEN, or
+  YELLOW while Human sign-offs wait; dev-master merges it only when its head
+  verifies GREEN.
 
-## 1. Start from dev-green
+## 1. Start from main-green
 
 ```sh
-git fetch origin --prune --tags --force   # dev-green moves; --force updates it
-git worktree add -b feat/<slug> .claude/worktrees/<slug> dev-green
-git rev-parse dev-green                   # the start commit, for the pull request note
+git fetch origin --prune --tags --force   # main-green moves; --force updates it
+git worktree add -b feat/<slug> .claude/worktrees/<slug> main-green
+git rev-parse main-green                  # the start commit, for the pull request note
 ```
 
 Work only in that worktree; never touch the main checkout or other worktrees.
-If `dev-green` does not exist, ask which commit to start from.
+If `main-green` does not exist, ask which commit to start from.
 
 Keep scratch files (the Cargo target directory, pull request drafts) in one
 private directory outside the work tree, for example
@@ -123,23 +126,21 @@ until the full verify is GREEN or YELLOW. Cached results whose reuse key still
 matches are reused; work without such a result, an operational error for one,
 runs again even when nothing changed.
 
-## 4. Open the pull request into dev
+## 4. Open the pull request into main
 
 ```sh
 git push -u origin feat/<slug>
-gh pr create --base dev --title "<type>(<area>): <summary>" --body-file "$scratch/pr.md"
+gh pr create --base main --title "<type>(<area>): <summary>" --body-file "$scratch/pr.md"
 ```
 
-Always pass `--base dev`: `main` is the default branch. The body says what
-changed and why, lists your decisions, names the issues it closes (`Closes #N`;
-they close when the change reaches `main`), and gives the verify Run ID and
-outcome. It ends with this note, which dev-master and the development board on
-artifactize.dev read:
+The body says what changed and why, lists your decisions, names the issues it
+closes (`Closes #N`), and gives the verify Run ID and outcome. It ends with
+this note, which dev-master and the development board on artifactize.dev read:
 
 ```text
 <!-- artifactize-board
 role: dev-worker
-from: <full SHA of the dev-green commit you started from>
+from: <full SHA of the main-green commit you started from>
 verify: <Run ID> <GREEN or YELLOW> <full SHA of the commit you verified>
 -->
 ```
@@ -154,7 +155,8 @@ gh pr checks N --watch
 ```
 
 Every CI job must pass. Desktop E2E is informational on pull requests into
-`dev`: report its result, but its failure is not yours to fix here. On a
+`main` (it blocks only `release/*` pushes and pull requests into `release/*`):
+report its result, but its failure is not yours to fix here. On a
 failure, read the log (`gh run view RUN --log-failed`), fix, verify again,
 push and watch again.
 
@@ -163,7 +165,7 @@ push and watch again.
 When the pull request is open, CI is green and only sign-offs may remain,
 report once: the pull request URL, the Run ID and outcome, CI, the sign-offs
 still needed, and the structural choices you made. Do not merge: dev-master
-merges into `dev`. Then wait. On review feedback, fix, verify, push and update
+merges into `main`. Then wait. On review feedback, fix, verify, push and update
 the note.
 
 Report only when done, blocked, or with a question the code and docs cannot

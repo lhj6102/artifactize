@@ -88,31 +88,32 @@ export async function observe(action, supplied) {
       ({ stdout } = await execute("git", ["ls-remote", "--tags", inputs.origin, "refs/tags/*"],
         { signal, maxBuffer: BODY_BYTES, encoding: "utf8" }));
     } catch (error) { throw failure(`git ls-remote ${inputs.origin}`, "origin refs", error.message); }
-    const rows = stdout.trim().split(/\r?\n/).map((line) => line.split(/\s+/));
-    const tags = rows.map(([, ref]) => /^refs\/tags\/v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/.exec(ref)?.[1]).filter(Boolean);
-    const newest = tags.sort(compare).at(-1);
+    const rows = stdout.trim().split(/\r?\n/).filter(Boolean).map((line) => line.split(/\s+/));
+    const shas = new Map();
+    for (const [sha, ref] of rows) {
+      const match = /^refs\/tags\/v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(\^\{\})?$/.exec(ref ?? "");
+      if (!match) continue;
+      // Prefer the dereferenced commit SHA (^{}) for annotated tags; fall back to the tag ref SHA for lightweight tags.
+      if (match[2] || !shas.has(match[1])) shas.set(match[1], sha);
+    }
+    const newest = [...shas.keys()].sort(compare).at(-1);
     if (!newest) throw failure(inputs.origin, "at least one stable vMAJOR.MINOR.PATCH release tag", "none found");
-    return { newest };
+    return { newest, sha: shas.get(newest) };
   }
   if (action === "website-behavior") {
     for (const page of PAGES) await response(address(inputs.target, page), false);
     return `${inputs.target}: all six website routes answer HTTP 200`;
   }
   if (action === "website-config") {
-    let stdout;
-    try {
-      ({ stdout } = await execute("git", ["ls-remote", inputs.origin, "refs/heads/main"], { signal, maxBuffer: BODY_BYTES, encoding: "utf8" }));
-    } catch (error) { throw failure(inputs.origin, "origin/main", error.message); }
-    const sha = /^([a-f0-9]{40}|[a-f0-9]{64})\s+refs\/heads\/main\s*$/.exec(stdout.trim())?.[1];
-    if (!sha) throw failure(inputs.origin, "origin/main's commit", "no matching ref");
+    const { newest, sha } = await origin();
     for (const name of ["install.sh", "install.ps1"]) {
       const served = address(inputs.target, name);
       const expected = address(inputs.source, `${sha}/website/landing/${name}`);
       const live = await response(served);
       const source = await response(expected);
-      if (!live.bytes.equals(source.bytes)) throw failure(served, `the exact bytes of ${expected}`, "served installer differs from origin/main");
+      if (!live.bytes.equals(source.bytes)) throw failure(served, `the exact bytes of ${expected}`, `served installer differs from origin v${newest}`);
     }
-    return `${inputs.target}: both served installers equal origin/main ${sha}`;
+    return `${inputs.target}: both served installers equal origin v${newest} (${sha})`;
   }
   const newest = action.endsWith("-config") ? (await origin()).newest : undefined;
   if (action.startsWith("crates-")) {
@@ -169,7 +170,7 @@ async function selftest() {
     await writeFile(join(repo, "input.txt"), "fixture origin\n");
     await git("add", "input.txt");
     await git("commit", "-qm", "Fixture origin");
-    await git("tag", "v1.2.3");
+    await git("tag", "-a", "v1.2.3", "-m", "Release v1.2.3");
     await git("tag", "v9.0.0-preview");
     const sha = (await git("rev-parse", "HEAD")).trim();
     let fault;

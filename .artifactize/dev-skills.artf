@@ -15,7 +15,7 @@ Check that:
   state matches {engine-cli};
 - every CI job, informational job and workflow trigger they mention matches the workflows
   of {release-automation};
-- the two skills agree with each other on the branch model, the dev-green tag, the verify
+- the two skills agree with each other on the branch model, the main-green tag, the verify
   command and the pull request note format;
 - each SKILL.md has the frontmatter fields name, description and
   disable-model-invocation: true, and each openai.yaml sets policy.allow_implicit_invocation

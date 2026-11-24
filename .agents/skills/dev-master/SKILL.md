@@ -1,33 +1,34 @@
 ---
 name: dev-master
-description: Run the dev convergence cycle of the artifactize repository - merge the pull requests waiting for dev, verify dev, fix what is RED until verify is GREEN, move the dev-green tag to that commit, and schedule the next run 58 minutes later. Run only when invoked explicitly.
+description: Run the main convergence cycle of the artifactize repository - merge the pull requests waiting for main, verify main, fix what is RED until verify is GREEN, move the main-green tag to that commit, and schedule the next run 58 minutes later. Run only when invoked explicitly.
 disable-model-invocation: true
 ---
 
 # dev-master
 
-You keep `dev` converging. One run merges the pull requests waiting for `dev`,
-then verifies `dev` and fixes what is RED until verify is GREEN, records that
-commit as `dev-green`, and schedules the next run. When a scheduled prompt asks
+You keep `main` converging. One run merges the pull requests waiting for `main`,
+then verifies `main` and fixes what is RED until verify is GREEN, records that
+commit as `main-green`, and schedules the next run. When a scheduled prompt asks
 you to continue the dev-master cycle, start the next run from step 1.
 
 ## Branch model
 
-- `main` is the release channel. Releases are the owner's decision: never push
-  to `main`, merge into it, open a `dev` → `main` pull request, create a `v*` tag
-  or publish a release.
-- `dev` is where work comes together. Merging a ready pull request may turn it
+- `main` is where work comes together. Merging a ready pull request may turn it
   RED; that is expected, and this cycle brings it back to GREEN. Its states:
   RED (an eval fails), YELLOW (only Human sign-offs remain) and GREEN
-  (verify GREEN and CI green). Changes reach `dev` only as merged pull requests
+  (verify GREEN and CI green). Changes reach `main` only as merged pull requests
   whose blocking checks passed (CI skips pull requests that change only the
-  website, and pushes to `dev` start none); never push to `dev` directly.
-- `dev-green` is a lightweight tag on the latest GREEN `dev` commit. Only you
+  website, and pushes to `main` start none); never push to `main` directly.
+- `main-green` is a lightweight tag on the latest GREEN `main` commit. Only you
   move it. dev-worker branches start from it.
+- `release/*` branches and `v*` tags are the release channel. Releases are the
+  owner's decision: never create, push to, or merge a `release/*` branch, never
+  merge a `release/*` → `main` pull request, never create a `v*` tag or publish
+  a release.
 - dev-worker branches (`feat/…`, `fix/…`, `docs/…`, `chore/…`) start at
-  `dev-green` and open a pull request into `dev` once verify is GREEN, or YELLOW
+  `main-green` and open a pull request into `main` once verify is GREEN, or YELLOW
   while sign-offs wait; you merge one only when its head verifies GREEN (step 2).
-  Your own fix branches start at `origin/dev` instead (step 3).
+  Your own fix branches start at `origin/main` instead (step 3).
 
 ## Verify
 
@@ -79,8 +80,8 @@ Read a Run and its failing evals with
 
 ```sh
 git fetch origin --prune --tags --force
-git worktree add --detach .claude/worktrees/dev-master origin/dev   # first run only
-git -C .claude/worktrees/dev-master checkout --detach origin/dev
+git worktree add --detach .claude/worktrees/dev-master origin/main   # first run only
+git -C .claude/worktrees/dev-master checkout --detach origin/main
 ```
 
 Work only in worktrees under `.claude/worktrees/`; never touch the main
@@ -89,15 +90,18 @@ checkout or other sessions' worktrees.
 ### 2. Merge the waiting pull requests
 
 ```sh
-gh pr list --base dev --state open --json number,title,headRefName,headRefOid,isDraft,mergeable,body
+gh pr list --base main --state open --json number,title,headRefName,headRefOid,isDraft,mergeable,body
 ```
 
-Take the non-draft ones in number order. Each pull request ends with a note:
+Take the non-draft ones in number order, skipping any pull request whose
+`headRefName` starts with `release/` (those are owner-managed release
+back-merge pull requests; leave them for the owner). Each pull request ends
+with a note:
 
 ```text
 <!-- artifactize-board
 role: dev-worker
-from: <dev-green SHA the branch started from>
+from: <main-green SHA the branch started from>
 verify: <Run ID> <GREEN or YELLOW> <SHA of the verified commit>
 -->
 ```
@@ -112,7 +116,8 @@ Merge one when all of these hold:
    the note's `verify` line. When only sign-offs remain, list them for the owner and leave the pull
    request waiting; when it is RED, leave it for its worker.
 2. **CI green.** `gh pr checks N`: every job passed, judged by each job's own
-   conclusion. Desktop E2E is informational on pull requests into `dev`; record
+   conclusion. Desktop E2E is informational on pull requests into `main` (it
+   blocks only `release/*` pushes and pull requests into `release/*`); record
    its failures for the release phase instead of blocking the merge.
 3. **No conflict.** A conflicting pull request stays open; say so in a pull
    request comment, once.
@@ -121,28 +126,28 @@ Merge one when all of these hold:
 gh pr merge N --merge
 ```
 
-### 3. Verify dev until GREEN
+### 3. Verify main until GREEN
 
-Check out the new `origin/dev` in `.claude/worktrees/dev-master` and verify.
+Check out the new `origin/main` in `.claude/worktrees/dev-master` and verify.
 
-- **RED, ERROR or INCOMPLETE:** fix it on a branch from `dev`'s head:
-  `git worktree add -b fix/dev-<yyyymmdd-hhmm> .claude/worktrees/dev-fix origin/dev`.
-  Verify there until GREEN, open a pull request with `--base dev` whose note
+- **RED, ERROR or INCOMPLETE:** fix it on a branch from `main`'s head:
+  `git worktree add -b fix/main-<yyyymmdd-hhmm> .claude/worktrees/dev-fix origin/main`.
+  Verify there until GREEN, open a pull request with `--base main` whose note
   says `role: dev-master` and `from:` that head, wait for CI
   (`gh pr checks N --watch`) and merge it under the rules of step 2.
 - **Newly waiting pull requests:** before verifying again, run step 2 again.
 - **YELLOW:** list the pending sign-offs for the owner and go to
-  step 5 without moving `dev-green`. The next run verifies again and reuses the
+  step 5 without moving `main-green`. The next run verifies again and reuses the
   signed-off results.
-- **GREEN:** go to step 4 if the verified commit is still `origin/dev`'s head
+- **GREEN:** go to step 4 if the verified commit is still `origin/main`'s head
   after a fresh fetch; otherwise step 2 again.
 
-### 4. Record dev-green
+### 4. Record main-green
 
 ```sh
-sha=$(git rev-parse origin/dev)
-git tag -f dev-green "$sha"
-git push -f origin refs/tags/dev-green
+sha=$(git rev-parse origin/main)
+git tag -f main-green "$sha"
+git push -f origin refs/tags/main-green
 gh api "repos/{owner}/{repo}/commits/$sha/pulls" --jq '.[0].number'
 ```
 
@@ -152,12 +157,12 @@ its note (`gh pr edit N --body-file …`), the time as
 `date -u +%Y-%m-%dT%H:%M:%SZ` prints it. A pull request without a note gets one
 at the end of its body holding only that line between `<!-- artifactize-board`
 and `-->`. The development board on artifactize.dev reads these lines as the
-history of GREEN `dev` commits.
+history of GREEN `main` commits.
 
 ### 5. Report and schedule
 
 Report once: the pull requests merged, the fixes made, the Run ID and outcome,
-`dev-green`'s commit, sign-offs or E2E failures waiting for the owner, and
+`main-green`'s commit, sign-offs or E2E failures waiting for the owner, and
 anything left blocked. Then schedule the next run (Host below). No progress
 messages between runs; decide workflow questions yourself and list them in the
 report.

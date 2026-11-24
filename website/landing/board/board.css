@@ -42,7 +42,7 @@
 /* ---------- Roles and lanes ---------- */
 
 .lane-main { --c: var(--ice); }
-.lane-dev { --c: var(--blue); }
+.lane-release { --c: var(--blue); }
 .role-worker { --c: var(--violet); }
 .role-master { --c: var(--cyan); }
 .role-other { --c: var(--faint); }
@@ -271,7 +271,7 @@
   stroke-width: 2;
 }
 
-.flow-merge.on-dev { fill: var(--blue); }
+.flow-merge.on-release { fill: var(--blue); }
 .flow-merge.on-main { fill: var(--ice); }
 
 .flow-closed {

@@ -1,5 +1,5 @@
 interface:
   display_name: "dev-master"
-  short_description: "Merge waiting pull requests into dev and drive dev to GREEN"
+  short_description: "Merge waiting pull requests into main and drive main to GREEN"
 policy:
   allow_implicit_invocation: false

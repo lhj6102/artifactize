@@ -1,9 +1,9 @@
 // The development board: reads the repository from GitHub's public REST API in the
-// visitor's browser, then draws dev's state, the branch flow, the pull requests and
+// visitor's browser, then draws main's state, the branch flow, the pull requests and
 // the recent work. Without a token GitHub allows 60 requests an hour per network
 // address, so a fresh snapshot is kept in localStorage and reused for a few minutes.
 
-import { DEV, MAIN, REPO, buildModel, devState, events, lastNote, layout, sameCommit, undatedTags } from './model.js';
+import { MAIN, REPO, buildModel, events, lastNote, layout, mainState, sameCommit, undatedTags } from './model.js';
 
 /** @typedef {import('./model.js').Raw} Raw */
 /** @typedef {import('./model.js').Model} Model */
@@ -11,7 +11,7 @@ import { DEV, MAIN, REPO, buildModel, devState, events, lastNote, layout, sameCo
 /** @typedef {import('./model.js').Event} Event */
 
 const API = `https://api.github.com/repos/${REPO}`;
-const CACHE_KEY = 'artifactize-board-9';
+const CACHE_KEY = 'artifactize-board-10';
 /** Reusing a recent snapshot avoids asking GitHub again on every reload; it still counts toward the 60/hour unauthenticated limit. */
 const FRESH_MS = 10 * 60 * 1000;
 /** Timeout per GitHub API request (covering headers and response body) so a stalled connection never leaves Refresh stuck disabled. */
@@ -217,8 +217,8 @@ async function fetchChecks(sha, signal = undefined) {
 /**
  * Fetches everything the board shows and keeps only the fields it reads.
  * Core pull-request and tag-ref endpoints must succeed so a partial outage never turns
- * missing PRs or `dev-green` into empty lists. Supplemental lookups (releases, dev head,
- * closed main PRs, CI checks, tag objects, dev-green PR lookup) run concurrently under a
+ * missing PRs or `main-green` into empty lists. Supplemental lookups (releases, main head,
+ * closed main PRs, CI checks, tag objects, main-green PR lookup) run concurrently under a
  * shared time budget and abort immediately if GitHub reports rate limiting.
  * @returns {Promise<{ raw: Raw, warning: string | null }>}
  */
@@ -228,7 +228,7 @@ async function fetchRaw() {
     // Recently merged or edited ones too: a long-lived branch merges late, and dev-master
     // edits a merged pull request when it adds a green: line.
     get('/pulls?state=closed&per_page=100&sort=updated&direction=desc'),
-    // Open pull requests (both dev and main) separately, so old waiting PRs and open release PRs are included.
+    // Open pull requests (both main and release/*) separately, so old waiting PRs are included.
     getAll('/pulls?state=open&per_page=100', OPEN_PAGES),
     get('/git/matching-refs/tags'),
   ]);
@@ -247,7 +247,7 @@ async function fetchRaw() {
   /** @type {import('./model.js').ApiRelease[]} */
   let releases = [];
   /** @type {any} */
-  let dev = null;
+  let mainBranch = null;
   /** @type {Map<number, import('./model.js').ApiPull>} */
   const pulls = new Map();
   for (const pull of [...recent, ...updated, ...open]) pulls.set(pull.number, pull);
@@ -258,29 +258,29 @@ async function fetchRaw() {
   const tagCommits = {};
 
   try {
-    const [releasesRes, devRes, mainPullsRes] = await Promise.allSettled([
+    const [releasesRes, mainRes, mainPullsRes] = await Promise.allSettled([
       get('/releases?per_page=100', false, supplemental.signal),
-      get('/branches/dev', true, supplemental.signal),
+      get('/branches/main', true, supplemental.signal),
       getAll('/pulls?state=closed&base=main&per_page=100&sort=updated&direction=desc', 2, supplemental.signal),
     ]);
     if (releasesRes.status === 'fulfilled') releases = releasesRes.value;
     else onSupplementalError(releasesRes.reason);
-    if (devRes.status === 'fulfilled') dev = devRes.value;
-    else onSupplementalError(devRes.reason);
+    if (mainRes.status === 'fulfilled') mainBranch = mainRes.value;
+    else onSupplementalError(mainRes.reason);
     if (mainPullsRes.status === 'fulfilled') {
       for (const pull of mainPullsRes.value.items) pulls.set(pull.number, pull);
     } else {
       onSupplementalError(mainPullsRes.reason);
     }
 
-    const green = tagRefs.find((/** @type {import('./model.js').ApiRef} */ ref) => ref.ref === 'refs/tags/dev-green');
+    const green = tagRefs.find((/** @type {import('./model.js').ApiRef} */ ref) => ref.ref === 'refs/tags/main-green');
     const needGreenPr = !supplemental.signal.aborted && green
-      && ![...pulls.values()].some((pull) => pull.base.ref === 'dev' && pull.merged_at && sameCommit(pull.merge_commit_sha, green.object.sha));
+      && ![...pulls.values()].some((pull) => pull.base.ref === 'main' && pull.merged_at && sameCommit(pull.merge_commit_sha, green.object.sha));
     const waiting = [...open]
-      .filter((pull) => pull.base.ref === 'dev' || pull.base.ref === 'main')
+      .filter((pull) => pull.base.ref === 'main' || pull.base.ref.startsWith('release/'))
       .sort((a, b) => b.number - a.number)
       .slice(0, CHECKED_PRS);
-    const lookups = undatedTags(tagRefs, releases, [...pulls.values()])
+    const lookups = undatedTags(tagRefs, releases)
       .sort((a, b) => b.ref.localeCompare(a.ref, 'en', { numeric: true }))
       .slice(0, TAG_LOOKUPS);
 
@@ -339,7 +339,7 @@ async function fetchRaw() {
       })),
       tagRefs: tagRefs.map((/** @type {import('./model.js').ApiRef} */ ref) => ({ ref: ref.ref, object: { sha: ref.object.sha, type: ref.object.type } })),
       tagCommits,
-      devHead: dev ? dev.commit.sha : null,
+      mainHead: mainBranch ? mainBranch.commit.sha : null,
       checks,
       openTruncated,
       historyTruncated,
@@ -442,30 +442,30 @@ function roleOf(pr) {
  * @param {boolean} historyTruncated
  */
 function renderStatus(model, openTruncated, historyTruncated) {
-  const dev = devState(model);
-  const green = model.devGreen;
+  const main = mainState(model);
+  const green = model.mainGreen;
   /** @type {(Node | string | null)[]} */
-  let devBody;
-  if (dev.kind === 'green' && green) {
-    devBody = [badge('good', 'GREEN'), h('p', {}, ['Its latest commit ', commitLink(green.sha), ' verified GREEN with blocking CI passed and is marked ', h('code', {}, ['dev-green']), '.'])];
-  } else if (dev.kind === 'ahead' && green) {
-    const count = dev.since ? dev.since.length : null;
+  let mainBody;
+  if (main.kind === 'green' && green) {
+    mainBody = [badge('good', 'GREEN'), h('p', {}, ['Its latest commit ', commitLink(green.sha), ' verified GREEN with blocking CI passed and is marked ', h('code', {}, ['main-green']), '.'])];
+  } else if (main.kind === 'ahead' && green) {
+    const count = main.since ? main.since.length : null;
     const lead = count === null
       ? 'Differs from the last GREEN commit '
       : historyTruncated
         ? `At least ${count === 1 ? 'one recent change' : `${count} recent changes`} joined since the last GREEN commit `
         : `${count === 1 ? 'One change' : `${count} changes`} joined since the last GREEN commit `;
-    devBody = [badge('wait', 'Differs from dev-green'), h('p', {}, [
+    mainBody = [badge('wait', 'Differs from main-green'), h('p', {}, [
       lead, commitLink(green.sha),
-      green.pr?.ended ? ` (${ago(green.pr.ended)})` : '', '. dev-master checks dev, fixes failures, or pauses at YELLOW for owner sign-offs.',
+      green.pr?.ended ? ` (${ago(green.pr.ended)})` : '', '. dev-master checks main, fixes failures, or pauses at YELLOW for owner sign-offs.',
     ])];
   } else if (green) {
-    devBody = [badge('none', 'Head unavailable'), h('p', {}, ['The last commit marked ', h('code', {}, ['dev-green']), ' is ', commitLink(green.sha), '; ', h('code', {}, ['dev']), ' could not be read.'])];
+    mainBody = [badge('none', 'Head unavailable'), h('p', {}, ['The last commit marked ', h('code', {}, ['main-green']), ' is ', commitLink(green.sha), '; ', h('code', {}, ['main']), ' could not be read.'])];
   } else {
-    devBody = [badge('none', 'Not marked yet'), h('p', {}, ['No commit is marked ', h('code', {}, ['dev-green']), ' yet.'])];
+    mainBody = [badge('none', 'Not marked yet'), h('p', {}, ['No commit is marked ', h('code', {}, ['main-green']), ' yet.'])];
   }
 
-  const waiting = model.prs.filter((pr) => pr.base === 'dev' && (pr.state === 'open' || pr.state === 'draft'));
+  const waiting = model.prs.filter((pr) => pr.base === 'main' && (pr.state === 'open' || pr.state === 'draft'));
   const count = (/** @type {string} */ ci) => waiting.filter((pr) => pr.ci === ci).length;
   const ciParts = [
     count('passed') ? `${count('passed')} passing CI` : '',
@@ -473,14 +473,14 @@ function renderStatus(model, openTruncated, historyTruncated) {
     count('running') ? `${count('running')} running CI` : '',
   ].filter(Boolean);
 
-  const latest = model.releases.at(-1);
+  const latest = model.releases.filter((r) => !r.prerelease).at(-1) ?? model.releases.at(-1);
 
   const cards = document.getElementById('board-status');
   if (!cards) return;
   cards.replaceChildren(
-    h('div', { class: 'card' }, [h('h3', {}, [h('code', {}, ['dev'])]), ...devBody]),
+    h('div', { class: 'card' }, [h('h3', {}, [h('code', {}, ['main'])]), ...mainBody]),
     h('div', { class: 'card' }, [
-      h('h3', {}, ['Waiting to join dev']),
+      h('h3', {}, ['Waiting to join main']),
       h('p', { class: 'card-figure' }, [`${waiting.length}${openTruncated ? '+' : ''}`]),
       h('p', {}, [waiting.length
         ? `pull request${waiting.length === 1 ? '' : 's'}${openTruncated ? ' (first pages shown)' : ''}${ciParts.length ? `: ${ciParts.join(', ')}` : ''}.`
@@ -490,9 +490,9 @@ function renderStatus(model, openTruncated, historyTruncated) {
       h('h3', {}, ['Latest release']),
       latest ? h('p', { class: 'card-figure' }, [h('a', { href: latest.url }, [latest.tag])]) : h('p', { class: 'card-figure' }, ['–']),
       latest
-        ? h('p', {}, latest.fromDevMain
-          ? ['Released ', time(latest.at), ' from ', h('code', {}, ['dev']), ' through ', h('code', {}, ['main']), '.']
-          : ['Tagged ', time(latest.at), '.'])
+        ? h('p', {}, latest.prerelease
+          ? ['Prerelease tagged ', time(latest.at), '.']
+          : ['Released ', time(latest.at), ' from a ', h('code', {}, ['v*']), ' tag.'])
         : null,
     ]),
   );
@@ -529,7 +529,7 @@ const y = (lane) => TOP + lane * LANE + LANE / 2;
 /** @param {Pr} pr */
 function laneClass(pr) {
   const role = roleOf(pr);
-  return role === 'dev-worker' ? 'role-worker' : role === 'dev-master' ? 'role-master' : 'role-other';
+  return role === 'release' ? 'lane-release' : role === 'dev-worker' ? 'role-worker' : role === 'dev-master' ? 'role-master' : 'role-other';
 }
 
 /** @param {Pr} pr */
@@ -556,7 +556,7 @@ function renderFlow(model) {
   root.setAttribute('height', String(height));
   root.setAttribute('class', 'flow-svg');
   root.setAttribute('role', 'img');
-  root.setAttribute('aria-label', 'Branch flow over time: main, dev and the development branches. The table below lists the same pull requests.');
+  root.setAttribute('aria-label', 'Branch flow over time: main and the development and release branches. The table below lists the same pull requests.');
 
   // Day gridlines and labels; a label is skipped when it would touch the previous one.
   const grid = svg('g', { class: 'flow-grid' }, root);
@@ -573,7 +573,6 @@ function renderFlow(model) {
 
   const now = flow.columns.length - 1;
   svg('line', { class: 'lane-main', x1: x(0), x2: x(now), y1: y(MAIN), y2: y(MAIN) }, root);
-  if (flow.devFrom < now) svg('line', { class: 'lane-dev', x1: x(flow.devFrom), x2: x(now), y1: y(DEV), y2: y(DEV) }, root);
 
   // Release tags in two staggered rows above main.
   const tags = svg('g', { class: 'flow-tags' }, root);
@@ -601,8 +600,9 @@ function renderFlow(model) {
     const xe = x(end);
     const ys = y(base);
     const yl = y(lane);
+    const returnsToMain = pr.state === 'merged' && pr.base === 'main';
     let d = `M${xs} ${ys} C${xs + half / 2} ${ys} ${xs + half / 2} ${yl} ${xs + half} ${yl}`;
-    if (pr.state === 'merged') {
+    if (returnsToMain) {
       d += ` H${xe - half} C${xe - half / 2} ${yl} ${xe - half / 2} ${ys} ${xe} ${ys}`;
     } else {
       d += ` H${xe}`;
@@ -611,8 +611,10 @@ function renderFlow(model) {
     const mark = opened === start ? xs + half : x(opened);
     svg('circle', { cx: mark, cy: yl, r: 3.5, class: 'flow-open' }, link);
     svg('text', { x: mark + 6, y: yl - 6, class: 'flow-label' }, link, `#${pr.number}`);
-    if (pr.state === 'merged') {
-      svg('circle', { cx: xe, cy: ys, r: 4, class: `flow-merge ${base === DEV ? 'on-dev' : 'on-main'}` }, link);
+    if (returnsToMain) {
+      svg('circle', { cx: xe, cy: ys, r: 4, class: 'flow-merge on-main' }, link);
+    } else if (pr.state === 'merged') {
+      svg('circle', { cx: xe, cy: yl, r: 4, class: 'flow-merge on-release' }, link);
     } else if (pr.state === 'closed') {
       svg('path', { d: `M${xe - 4} ${yl - 4}l8 8m0-8l-8 8`, class: 'flow-closed' }, link);
     } else {
@@ -620,32 +622,23 @@ function renderFlow(model) {
     }
   }
 
-  for (const { pr, column } of flow.releases) {
-    const link = svg('a', { href: pr.url, class: 'flow-release', 'aria-label': describePr(pr) }, root);
-    svg('title', {}, link, describePr(pr));
-    const xe = x(column);
-    svg('path', { d: `M${xe - COL} ${y(DEV)} C${xe - half} ${y(DEV)} ${xe - half} ${y(MAIN)} ${xe} ${y(MAIN)}`, class: 'flow-path' }, link);
-    svg('circle', { cx: xe, cy: y(MAIN), r: 4, class: 'flow-merge on-main' }, link);
-  }
-
-  // GREEN dev commits: a ring around the merge that made them; the current one is labeled.
+  // GREEN main commits: a ring around the merge that made them; the current one is labeled.
   for (const { pr, mark } of model.greens) {
     const column = flow.merges.get(pr.number);
     if (column === undefined) continue;
-    const ring = svg('circle', { cx: x(column), cy: y(DEV), r: 7.5, class: 'flow-green' }, root);
+    const ring = svg('circle', { cx: x(column), cy: y(MAIN), r: 7.5, class: 'flow-green' }, root);
     svg('title', {}, ring, `GREEN at ${pr.mergeCommit ? short(pr.mergeCommit) : `#${pr.number}`}, verify ${mark.run}, ${timeFormat.format(mark.at)}`);
   }
-  const current = model.devGreen?.pr;
+  const current = model.mainGreen?.pr;
   const currentColumn = current ? flow.merges.get(current.number) : undefined;
   if (currentColumn !== undefined) {
-    svg('circle', { cx: x(currentColumn), cy: y(DEV), r: 7.5, class: 'flow-green' }, root);
-    svg('text', { x: x(currentColumn) + 10, y: (y(MAIN) + y(DEV)) / 2 + 4, class: 'flow-green-label' }, root, 'dev-green');
+    svg('circle', { cx: x(currentColumn), cy: y(MAIN), r: 7.5, class: 'flow-green' }, root);
+    svg('text', { x: x(currentColumn) + 10, y: y(MAIN) + 14, class: 'flow-green-label' }, root, 'main-green');
   }
 
   const scroller = h('div', { class: 'flow-scroll', tabindex: '0', 'aria-label': 'Branch flow, scrolls sideways' }, [root]);
   const labels = h('div', { class: 'flow-lanes', 'aria-hidden': 'true' }, [
     h('span', { class: 'lane-label lane-label-main', style: `top:${y(MAIN)}px` }, ['main']),
-    flow.devFrom < now ? h('span', { class: 'lane-label lane-label-dev', style: `top:${y(DEV)}px` }, ['dev']) : null,
   ]);
   host.replaceChildren(labels, scroller);
   scroller.scrollLeft = scroller.scrollWidth;
@@ -727,7 +720,9 @@ function describe(event) {
     return [who ? `${who} opened ` : 'Opened ', prLink(pr), ` for ${pr.base}: ${pr.title}`];
   }
   if (event.kind === 'merged') {
-    return pr.release ? [prLink(pr), ' brought dev into main for a release.'] : [prLink(pr), ` joined ${pr.base}: ${pr.title}`];
+    return pr.release && pr.base === 'main'
+      ? [prLink(pr), ` back-merged release fixes into main: ${pr.title}`]
+      : [prLink(pr), ` joined ${pr.base}: ${pr.title}`];
   }
   return [prLink(pr), ' was closed without joining.'];
 }
@@ -777,8 +772,8 @@ function renderUnavailable() {
   const cards = document.getElementById('board-status');
   if (cards) {
     cards.replaceChildren(
-      h('div', { class: 'card' }, [h('h3', {}, [h('code', {}, ['dev'])]), h('p', {}, ['Unavailable right now.'])]),
-      h('div', { class: 'card' }, [h('h3', {}, ['Waiting to join dev']), h('p', {}, ['Unavailable right now.'])]),
+      h('div', { class: 'card' }, [h('h3', {}, [h('code', {}, ['main'])]), h('p', {}, ['Unavailable right now.'])]),
+      h('div', { class: 'card' }, [h('h3', {}, ['Waiting to join main']), h('p', {}, ['Unavailable right now.'])]),
       h('div', { class: 'card' }, [h('h3', {}, ['Latest release']), h('p', {}, ['Unavailable right now.'])]),
     );
   }
