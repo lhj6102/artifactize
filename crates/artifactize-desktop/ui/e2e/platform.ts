@@ -197,13 +197,14 @@ export function packageCommand(args: string[]): { program: string; args: string[
 // repeated PowerShell and C# compiler startup, and so the wrapper remains the batch Node
 // process's direct parent (batchJobPids / checkForeground).
 //
-// After a build root exits, Cargo intentionally allows long-lived toolchain daemons (such as
-// mspdbsrv.exe) to outlive the build; waiting blindly on ActiveProcesses > 1 stalls for their
-// 15-minute idle timeout. Instead, inspect the job's PID list via JobObjectBasicProcessIdList
-// (class 3) and stop waiting once every remaining descendant is on the build-daemon allowlist,
-// relying on the per-build private _MSPDBSRV_ENDPOINT_ so kill-on-close never disrupts
-// concurrent builds. Any other descendant (such as a stdout holder in runner.test.ts) keeps
-// the wrapper waiting, and a wait past 10s logs the remaining image names to stderr.
+// After a build root exits, Cargo intentionally allows long-lived MSVC toolchain daemons
+// (`vctip.exe`, `mspdbsrv.exe`) to outlive the build; waiting blindly on ActiveProcesses > 1
+// stalls for their 15-minute idle timeout. Instead, inspect the job's PID list via
+// JobObjectBasicProcessIdList (class 3) and stop waiting once every remaining descendant is
+// on the build-daemon allowlist, relying on the per-build private _MSPDBSRV_ENDPOINT_ so
+// kill-on-close never disrupts concurrent builds. Any other descendant (such as a stdout
+// holder in runner.test.ts) keeps the wrapper waiting, and a wait past 10s logs the remaining
+// image names to stderr.
 const WINDOWS_JOB_SOURCE = String.raw`
 using System;
 using System.Collections.Generic;
@@ -315,7 +316,8 @@ public static class E2eBuildJob {
   }
 
   private static bool IsAllowedDaemon(string imageName) {
-    return string.Equals(imageName, "mspdbsrv.exe", StringComparison.OrdinalIgnoreCase);
+    return string.Equals(imageName, "mspdbsrv.exe", StringComparison.OrdinalIgnoreCase)
+      || string.Equals(imageName, "vctip.exe", StringComparison.OrdinalIgnoreCase);
   }
 
   public static int Main() {
@@ -370,7 +372,7 @@ public static class E2eBuildJob {
 
       // A batch owns service teardown; if it exits leaving apps behind, close the job as a
       // fail-safe instead of waiting forever. Build commands drain their descendants except
-      // isolated toolchain daemons (mspdbsrv.exe) on the allowlist.
+      // isolated toolchain daemons (mspdbsrv.exe, vctip.exe) on the allowlist.
       if (!completesWithRoot) {
         Stopwatch wait = Stopwatch.StartNew();
         bool loggedSlowWait = false;
