@@ -2,7 +2,7 @@
 // eval, finding and starring, wholes and their parts, a graph too large to draw at once, the
 // camera, and an Artifact's own tools.
 import assert from "node:assert/strict";
-import { CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, GRAPH_ANSWER, GRAPH_GATE, GRAPH_PROMPT, installChatProvider } from "../fixtures/chat.ts";
+import { CHAT_MODEL, CONTINUE_ANSWER, CONTINUE_PROMPT, GRAPH_ANSWER, GRAPH_GATE, GRAPH_PROMPT, MOVE_ANSWER, MOVE_FILE, MOVE_MARKER, MOVE_PROMPT, installChatProvider } from "../fixtures/chat.ts";
 import { declareArtifact } from "../fixtures/declarations.ts";
 import { REVIEW_FINDING, REVIEW_MODEL, addWorktree, createChecking, createCheckedOnce, createLarge, createParts, createRelease, createReviewed, createStates, git, request, savedRuns } from "../fixtures/repo.ts";
 import { nativePath, removeTree, writeText } from "../portable.ts";
@@ -341,6 +341,8 @@ export const scenarios: Scenario[] = [
       const other = nativePath(fixture.root, "elsewhere");
       removeTree(nativePath(other, ".artifactize"));
       declareArtifact(other, ["elsewhere-only"], "elsewhere-only", "basis = true\n");
+      writeText(nativePath(other, "elsewhere-only", "marker.txt"), `${MOVE_MARKER}\n`);
+      await installChatProvider(own, fixture);
       return { fixture, data: null };
     },
     run: async (app) => {
@@ -348,6 +350,10 @@ export const scenarios: Scenario[] = [
       await app.mode("Chat");
       await app.chat.create();
       assert.equal(await app.chat.shownBranch(), "master");
+      await app.chat.model(CHAT_MODEL);
+      await app.chat.send(CONTINUE_PROMPT);
+      await app.chat.says(CONTINUE_ANSWER);
+      await app.chat.finished();
       await app.chat.show("Graph");
       await app.graph.node("a:slow");
       await app.chat.move("repo / elsewhere", "elsewhere");
@@ -355,6 +361,13 @@ export const scenarios: Scenario[] = [
       await app.chat.viewShown("Graph");
       await app.graph.node("a:elsewhere-only");
       await app.graph.until(async () => (await app.graph.nodes()).every(({ id }) => id === "a:elsewhere-only"), "only elsewhere's declarations in the moved session's Current");
+      // The earlier conversation is kept, and subsequent turns work in the moved checkout.
+      await app.chat.show("Conversation");
+      await app.chat.says(CONTINUE_ANSWER);
+      await app.chat.send(MOVE_PROMPT);
+      await app.chat.says(MOVE_FILE);
+      await app.chat.says(MOVE_ANSWER);
+      await app.chat.finished();
       // From the project's row, New chat starts on that project's newest session's branch.
       await app.chat.newChatIn("repo");
       await app.until(async () => await app.chat.newChatBranch() === "repo / elsewhere", "New chat starts on the project's newest session's branch");
