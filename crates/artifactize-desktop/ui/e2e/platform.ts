@@ -487,6 +487,12 @@ function windowsArg(arg: string): string {
   return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/\\+$/, '$&$&')}"`;
 }
 
+/** Whether a child spawned by a build step needs `detached: true` to outlive its launcher
+ * while still remaining owned by `startTree`: on Windows libuv assigns non-detached children
+ * to a launcher-scoped kill-on-close job (whereas detached children stay in our outer Job
+ * Object); on Unix non-detached children stay in `startTree`'s process group. */
+export const survivingChildDetached = WINDOWS;
+
 /** Start a program with an owned process group, or a Windows Job Object. */
 export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean; captureDiagnostics?: boolean; completesWithRoot?: boolean }): ChildProcess {
   const stdio = ["ignore", options.capture ? "pipe" : "inherit", options.captureDiagnostics ? "pipe" : "inherit"] as const;

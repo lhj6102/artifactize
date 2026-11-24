@@ -8,7 +8,7 @@ import { BatchLifecycle } from "./batch-lifecycle.ts";
 import { buildFolder, checkE2eApp, cleanup, runStep, stageCandidateBinaries, workspace } from "./build.ts";
 import { own } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { checkForeground, nodeProgram, prepareProcessTrees, processRunning, processState, quarantineForeground, releaseForeground, samePath, waitForProcessExit, xwdPng } from "./platform.ts";
+import { checkForeground, nodeProgram, prepareProcessTrees, processRunning, processState, quarantineForeground, releaseForeground, samePath, survivingChildDetached, waitForProcessExit, xwdPng } from "./platform.ts";
 import { exists, nativePath, newDirectory, readTextIfExists, removeTree, scratchDirectory, suitePath, withMachineLock, writeText } from "./portable.ts";
 import { batches } from "./run.ts";
 
@@ -157,7 +157,7 @@ it("fails a build interrupted after its root exits but while a descendant holds 
   const holder = `require('node:fs').writeFileSync(process.argv[1], String(process.pid));
     setTimeout(() => {}, 5000);`;
   const launcher = `const { spawn } = require('node:child_process');
-    const child = spawn(process.execPath, ['-e', process.argv[3], process.argv[2]], { stdio: 'inherit' });
+    const child = spawn(process.execPath, ['-e', process.argv[3], process.argv[2]], { stdio: 'inherit', detached: ${String(survivingChildDetached)}, windowsHide: true });
     child.once('spawn', () => require('node:fs').writeFileSync(process.argv[1], String(process.pid)));
     child.unref();`;
   let finished = false;
