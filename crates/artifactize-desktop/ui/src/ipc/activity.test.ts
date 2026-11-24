@@ -57,7 +57,27 @@ describe("command activity", () => {
     expect(activity.snapshot().pending).toBe(0);
     const failed = activity.run("browse", () => Promise.reject(new Error("search failed")), "invalid:");
     await expect(failed).rejects.toThrow("search failed");
-    expect(activity.snapshot().search).toEqual({ query: "invalid:", sequence: 4, completed: true });
+    expect(activity.snapshot().search).toEqual({ query: "invalid:", sequence: 4, completed: true, failed: true });
+  });
+
+  it("keeps Review filter completions separate from Verify searches and older Review reads", async () => {
+    const activity = new Activity();
+    const background = deferred<string>();
+    const typed = deferred<string>();
+    const commands = observeCommands({
+      browse: async (_navigation: { query: string }) => "Verify branches",
+      humanSearch: (query: string, _cursor: null) => query === "waiting" ? background.promise : typed.promise,
+    }, activity);
+    const older = commands.humanSearch("waiting", null);
+    const latest = commands.humanSearch("is:mine", null);
+    await commands.browse({ query: "repo:repo" });
+    background.resolve("waiting rows");
+    await older;
+    expect(activity.snapshot().reviewSearch).toEqual({ query: "is:mine", sequence: 2, completed: false });
+    typed.resolve("claimed rows");
+    await latest;
+    expect(activity.snapshot().reviewSearch).toEqual({ query: "is:mine", sequence: 2, completed: true });
+    expect(activity.snapshot().search).toEqual({ query: "repo:repo", sequence: 1, completed: true });
   });
 
   it("settles synchronous dispatch failures and overlapping command names exactly once", async () => {
@@ -125,6 +145,6 @@ describe("command activity", () => {
     expect(import.meta.env.MODE).not.toBe("e2e");
     const activity = new Activity();
     refreshed(activity, { branches: [] });
-    expect(Object.keys(activity.snapshot())).toEqual(["revision", "pending", "commands", "search"]);
+    expect(Object.keys(activity.snapshot())).toEqual(["revision", "pending", "commands", "search", "reviewSearch"]);
   });
 });

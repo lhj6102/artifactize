@@ -184,56 +184,72 @@ pub async fn start(
         env: command::environment(environment::for_command()),
         timeout: deadline.saturating_duration_since(Instant::now()),
     };
-    let mut child = process::spawn_owned(
-        &command,
-        true,
-        cancellation.clone(),
-        deadline,
-        None::<process::Unregistered>,
-    )
-    .await
-    .map_err(|error| match error {
-        process::Error::Spawn(error) if error.kind() == io::ErrorKind::NotFound => Failure::new(
-            Code::Authentication,
-            "Claude Code (`claude`) is not on PATH; install it and sign in with `claude auth login`.",
-        ),
-        error => Failure::new(
-            Code::AgentError,
-            format!("Cannot start Claude Code: {error}."),
-        ),
-    })?;
-    let stdout = child.stdout().take().expect("stdout is piped");
-    let stdin = child.stdin().take().expect("stdin is piped");
-    let mut stderr = child.stderr().take().expect("stderr is piped");
-    let stderr = tokio::spawn(async move {
-        let mut kept = Vec::new();
-        let mut buffer = [0; STDERR_READ];
-        while let Ok(count) = stderr.read(&mut buffer).await {
-            if count == 0 {
-                break;
-            }
-            kept.extend_from_slice(&buffer[..count]);
-            if kept.len() > STDERR_LIMIT {
-                kept.drain(..kept.len() - STDERR_LIMIT);
-            }
-        }
-        kept
-    });
-    Ok((Channel::new(stdout, stdin), Running { child, stderr }))
+    let (stdout, stdin, running) = Running::spawn(&command, deadline, cancellation)
+        .await
+        .map_err(|error| match error {
+            process::Error::Spawn(error) if error.kind() == io::ErrorKind::NotFound => Failure::new(
+                Code::Authentication,
+                "Claude Code (`claude`) is not on PATH; install it and sign in with `claude auth login`.",
+            ),
+            error => Failure::new(Code::AgentError, format!("Cannot start Claude Code: {error}.")),
+        })?;
+    Ok((Channel::new(stdout, stdin), running))
 }
 
 impl Running {
+    pub(crate) async fn spawn(
+        command: &process::Command,
+        deadline: Instant,
+        cancellation: &CancellationToken,
+    ) -> Result<
+        (
+            tokio::process::ChildStdout,
+            tokio::process::ChildStdin,
+            Self,
+        ),
+        process::Error,
+    > {
+        let mut child = process::spawn_owned(
+            command,
+            true,
+            cancellation.clone(),
+            deadline,
+            None::<process::Unregistered>,
+        )
+        .await?;
+        let stdout = child.stdout().take().expect("stdout is piped");
+        let stdin = child.stdin().take().expect("stdin is piped");
+        let mut stderr = child.stderr().take().expect("stderr is piped");
+        let stderr = tokio::spawn(async move {
+            let mut kept = Vec::new();
+            let mut buffer = [0; STDERR_READ];
+            while let Ok(count) = stderr.read(&mut buffer).await {
+                if count == 0 {
+                    break;
+                }
+                kept.extend_from_slice(&buffer[..count]);
+                if kept.len() > STDERR_LIMIT {
+                    kept.drain(..kept.len() - STDERR_LIMIT);
+                }
+            }
+            kept
+        });
+        Ok((stdout, stdin, Self { child, stderr }))
+    }
     /// Let Claude Code exit after its input closed, stop it past a grace, and return the end
     /// of what it wrote on stderr.
-    pub async fn stop(mut self, mut channel: ProcessChannel) -> String {
+    pub async fn stop(self, mut channel: ProcessChannel) -> String {
         channel.close();
         drop(channel);
+        super::shown(&crate::platform::output_text(&self.reap().await))
+    }
+
+    pub(crate) async fn reap(mut self) -> Vec<u8> {
         let exited = tokio::time::timeout(STOP_GRACE, self.child.wait()).await;
         if !matches!(exited, Ok(Ok(_))) {
             let _ = process::terminate(&mut self.child).await;
         }
         let _ = self.child.cleanup().await;
-        let stderr = crate::task::joined(self.stderr.await).unwrap_or_default();
-        super::shown(&crate::platform::output_text(&stderr))
+        crate::task::joined(self.stderr.await).unwrap_or_default()
     }
 }

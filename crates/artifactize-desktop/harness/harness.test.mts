@@ -2,23 +2,23 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type ServerResponse } from "node:http";
 import { createServer, type Socket } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { it, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { commandStream, forwardReadiness } from "./harness.mts";
-import { embeddedPorts } from "../ui/e2e/portable.ts";
+import { commandStream, forwardReadiness, releaseFixture, releaseOwnedSession, superviseSession } from "./harness.mts";
+import { own } from "../ui/e2e/fixtures/owned.ts";
+import { embeddedPorts, nativePath, newDirectory, removeTree, scratchDirectory } from "../ui/e2e/portable.ts";
 
 const harness = fileURLToPath(new URL("./harness.mts", import.meta.url));
 
 type Envelope = { token: string; request: Record<string, unknown> };
 async function peer(test: TestContext, reply: Record<string, unknown> | null) {
-  const directory = mkdtempSync(join(tmpdir(), "artifactize-harness-protocol-"));
+  const directory = mkdtempSync(join(scratchDirectory(), "artifactize-harness-protocol-"));
   const received: Envelope[] = [];
   const sockets = new Set<Socket>();
   const children = new Map<ReturnType<typeof execFile>, Promise<void>>();
@@ -67,26 +67,28 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       let ownerStopping!: () => void;
       const stopping = new Promise<void>((done) => { ownerStopping = done; });
       const responses = new Set<ServerResponse>();
-      let released = false;
-      const release = () => {
-        released = true;
-        for (const response of responses) response.end("released");
-      };
-      // The fixture owns this release gate before spawning anything. Teardown can
-      // open it even when owner readiness was never received or an assertion fails.
-      const server = createHttpServer((_request, response) => {
+      const release = () => { for (const response of responses) response.end("released"); };
+      // The fake owner opens /lifetime before announcing readiness. Closing that connection
+      // exits it even if the supervisor never forwards EOF and /release is never reached.
+      const server = createHttpServer((request, response) => {
+        if (request.url === "/lifetime") {
+          response.writeHead(200).flushHeaders();
+          return;
+        }
         responses.add(response);
         response.once("close", () => responses.delete(response));
         ownerStopping();
-        if (released) response.end("released");
       });
       let joinSupervisor = async () => {};
       test.after(async () => {
-        release();
-        try { await joinSupervisor(); }
-        finally {
-          if (server.listening) await new Promise<void>((done, fail) => server.close((error) => error ? fail(error) : done()));
-        }
+        try {
+          if (server.listening) {
+            await new Promise<void>((done, fail) => {
+              server.close((error) => error ? fail(error) : done());
+              server.closeAllConnections();
+            });
+          }
+        } finally { await joinSupervisor(); }
       });
       await new Promise<void>((done, fail) => {
         server.once("error", fail);
@@ -96,14 +98,20 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       assert.ok(address && typeof address !== "string");
       const owner = `
         import {get} from 'node:http';
-        process.stdin.once('end', () => {
-          get('http://127.0.0.1:${address.port}/release', (response) => {
-            response.resume();
-            response.once('end', () => process.exit(${exitCode}));
-          }).once('error', (error) => { console.error(error); process.exit(1); });
-        });
-        process.stdin.resume();
-        console.log('ready');
+        const endpoint = 'http://127.0.0.1:${address.port}';
+        get(endpoint + '/lifetime', (lifetime) => {
+          lifetime.resume();
+          lifetime.once('close', () => process.exit(1));
+          lifetime.once('error', () => process.exit(1));
+          process.stdin.once('end', () => {
+            get(endpoint + '/release', (response) => {
+              response.resume();
+              response.once('end', () => process.exit(${exitCode}));
+            }).once('error', () => process.exit(1));
+          });
+          process.stdin.resume();
+          console.log('ready');
+        }).once('error', () => process.exit(1));
       `;
       const script = `import {superviseOwner} from ${JSON.stringify(new URL("./harness.mts", import.meta.url).href)};
         await superviseOwner({program: process.execPath, args: ['--input-type=module', '-e', ${JSON.stringify(owner)}], env: process.env});`;
@@ -112,10 +120,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         supervisor.once("error", fail);
         supervisor.once("close", (code, signal) => done({ code, signal }));
       });
-      // Installed synchronously after spawn, before any acquisition can fail.
+      // The test owns this specific child separately from the signal protocol under test.
       joinSupervisor = async () => {
         try {
-          if (supervisor.exitCode === null && supervisor.signalCode === null) supervisor.kill("SIGTERM");
+          if (supervisor.exitCode === null && supervisor.signalCode === null) supervisor.kill("SIGKILL");
           await closed;
         } finally { lines.close(); output.close(); }
       };
@@ -126,21 +134,23 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       const prematureExit = closed.then((status) => {
         throw new Error(`supervisor exited before owner release: ${JSON.stringify(status)}\n${diagnostics}`);
       });
-      assert.deepEqual(await Promise.race([once(output, "line"), prematureExit]), ["ready"]);
+      const watchdog = once(test.signal, "abort").then(() => { throw test.signal.reason; });
+      assert.deepEqual(await Promise.race([once(output, "line"), prematureExit, watchdog]), ["ready"]);
       assert.equal(supervisor.kill(signal), true);
-      await Promise.race([stopping, prematureExit]);
+      await Promise.race([stopping, prematureExit, watchdog]);
       assert.equal(supervisor.exitCode, null, "registered supervisor must remain until owner teardown finishes");
       assert.equal(supervisor.kill(signal), true, "repeated termination joins the same owner shutdown");
       release();
-      const result = await closed;
+      const result = await Promise.race([closed, watchdog]);
       assert.deepEqual(result, { code: exitCode === 0 ? 0 : 1, signal: null });
       if (exitCode) assert.match(diagnostics, /desktop owner supervision failed/);
     });
   }
 }
 
-it("embedded endpoint configuration selects distinct loopback ports and releases them for the service", async () => {
-  const ports = await embeddedPorts(3);
+it("embedded endpoint configuration selects distinct loopback ports and releases them for the service", async (test) => {
+  const { ports, close } = await embeddedPorts(3);
+  test.after(close);
   assert.equal(new Set(ports).size, 3);
   for (const port of ports) {
     assert.ok(Number.isInteger(port) && port > 0 && port < 65536);
@@ -226,45 +236,123 @@ it("a dropped control connection never looks like a successful tool response", a
   await assert.rejects(call("snapshot"), /ended without answering/);
 });
 
+/** Real on-disk setup for both levels of input the harness is responsible for. */
+function fixtureInputs(test: TestContext) {
+  const candidate = newDirectory(scratchDirectory(), "artifactize-harness-candidate-");
+  test.after(() => removeTree(candidate));
+  const scope = own(candidate);
+  const input = nativePath(scope.root, "declarations.txt");
+  writeFileSync(input, "a Run still reads this");
+  return { candidate, scope, input };
+}
+
 for (const fails of [false, true]) {
-  it(`shutdown drains a ${fails ? "failed" : "successful"} relaunch and releases only its final session`, async () => {
+  it(`shutdown drains a ${fails ? "failed" : "successful"} relaunch and releases only its final session`, async (test) => {
+    const { candidate, scope, input } = fixtureInputs(test);
     let resume!: () => void;
     const waiting = new Promise<void>((done) => { resume = done; });
     let started!: () => void;
     const active = new Promise<void>((done) => { started = done; });
     const events: string[] = [];
-    let owner = "original";
-    const commands = commandStream(() => { events.push("admission closed"); }, async () => {
-      events.push(`service cleanup ${owner}`, "settle Runs", "remove inputs");
+    const old = superviseSession(() => { events.push("original exited"); }, async () => {});
+    const next = superviseSession(() => { events.push("replacement exited"); }, async () => {});
+    let owner = old;
+    scope.defer(() => {
+      assert.equal(next.stopped, true, "the replacement app exited before the Run was settled");
+      assert.equal(readFileSync(input, "utf8"), "a Run still reads this");
+      events.push("Run settled");
     });
+    const commands = commandStream(() => { events.push("admission closed"); }, () => releaseFixture(owner, scope, candidate));
     const launch = commands.run(async () => {
+      await old.stop();
       started();
       await waiting;
-      owner = "replacement";
+      owner = next;
       if (fails) throw new Error("render failed");
     });
     await active;
     const queued = assert.rejects(commands.run(async () => { events.push("unexpected queued work"); }), /session is stopping/);
     const ending = commands.end();
     assert.equal(commands.end(), ending);
-    assert.deepEqual(events, ["admission closed"]);
+    assert.deepEqual(events, ["original exited", "admission closed"]);
     await assert.rejects(commands.run(async () => {}), /session is stopping/);
     const completed = fails ? assert.rejects(launch, /render failed/) : launch;
     resume();
     await Promise.all([completed, queued, ending]);
-    assert.deepEqual(events, ["admission closed", "service cleanup replacement", "settle Runs", "remove inputs"]);
+    assert.deepEqual(events, ["original exited", "admission closed", "replacement exited", "Run settled"]);
+    assert.equal(existsSync(candidate), false, "the harness removed the app and fixture inputs after settlement");
   });
 }
 
-it("a failed service release cannot proceed to fixture deletion or retry ownership", async () => {
-  const events: string[] = [];
-  const commands = commandStream(() => {}, async () => {
-    events.push("service cleanup");
-    throw new Error("cleanup failed");
+it("keeps real fixture and candidate inputs when Run settlement fails", async (test) => {
+  const { candidate, scope, input } = fixtureInputs(test);
+  const owner = superviseSession(() => {}, async () => {});
+  const unfinished = new Error("Run did not end");
+  let runEnded = false;
+  scope.defer(() => {
+    if (!runEnded) throw unfinished;
   });
+  const directory = newDirectory(scratchDirectory(), "artifactize-harness-control-");
+  test.after(() => removeTree(directory));
+  const control = join(directory, "control.json");
+  const receipt = join(directory, "cleanup-pending.json");
+  writeFileSync(control, "{}");
+  let retries = 0;
+  const commands = commandStream(() => {}, () => releaseOwnedSession(directory, owner, scope, candidate, async () => {
+    retries++;
+    assert.equal(existsSync(control), true);
+  }));
   const ending = commands.end();
-  await assert.rejects(ending, /cleanup failed/);
+  await assert.rejects(ending, (error: Error) => error.message.includes(candidate) && error.message.includes(scope.root));
   assert.equal(commands.end(), ending);
-  await assert.rejects(commands.run(async () => { events.push("remove inputs"); }), /session is stopping/);
-  assert.deepEqual(events, ["service cleanup"]);
+  assert.equal(owner.stopped, true);
+  assert.equal(retries, 2);
+  assert.equal(existsSync(control), true);
+  assert.deepEqual(JSON.parse(readFileSync(receipt, "utf8")), { paths: [scope.root, candidate] });
+  assert.equal(readFileSync(input, "utf8"), "a Run still reads this");
+  runEnded = true;
+  await releaseOwnedSession(directory, owner, scope, candidate);
+  for (const file of [candidate, control, receipt]) assert.equal(existsSync(file), false);
 });
+
+it("keeps ownership through two native stop failures and settles before removing the fixture", async (test) => {
+  const { candidate, scope, input } = fixtureInputs(test);
+  let attempts = 0;
+  let settled = false;
+  const owner = superviseSession(() => {
+    attempts += 1;
+    if (attempts < 3) throw new Error("native exit not confirmed yet");
+  }, async () => {});
+  scope.defer(() => {
+    assert.equal(owner.stopped, true);
+    assert.equal(existsSync(input), true);
+    settled = true;
+  });
+  await assert.rejects(releaseFixture(owner, scope, candidate, async () => {
+    assert.equal(settled, false);
+    assert.equal(existsSync(input), true);
+  }), /native exit not confirmed yet/);
+  assert.equal(attempts, 3);
+  assert.equal(settled, true);
+  assert.equal(existsSync(candidate), false);
+});
+
+for (const gotBrowser of [false, true]) {
+  it(`keeps an app owner ${gotBrowser ? "after service shutdown fails" : "before a browser is available"}`, async () => {
+    let canReap = false;
+    let released = false;
+    const recovery = superviseSession(() => {
+      if (!canReap) throw new Error("native stop failed");
+    }, async () => { released = true; });
+    const stop = () => recovery.stop(gotBrowser ? async () => { throw new Error("service stop failed"); } : undefined);
+    await assert.rejects(stop());
+    assert.equal(recovery.stopped, false);
+    assert.equal(released, false);
+    canReap = true;
+    if (gotBrowser) await assert.rejects(stop(), /service stop failed/);
+    else await stop();
+    assert.equal(recovery.stopped, true);
+    assert.equal(released, true);
+    await stop();
+  });
+}

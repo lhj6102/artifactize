@@ -13,8 +13,8 @@ pub struct Generation {
 
 impl Generation {
     /// Note `origin`; the generation advances when it replaces the last one seen.
-    /// Returns the generation and whether this observation replaced an earlier state.
-    pub fn observe(&self, origin: Origin) -> (u32, bool) {
+    /// Invalidate dependants before allowing new-generation work to publish.
+    pub fn observe(&self, origin: Origin, invalidate: impl FnOnce()) -> u32 {
         let mut seen = self.seen.lock().expect("generation lock");
         match &mut *seen {
             Some((known, generation)) => {
@@ -22,14 +22,22 @@ impl Generation {
                 *known = origin;
                 if replaced {
                     *generation += 1;
+                    invalidate();
                 }
-                (*generation, replaced)
+                *generation
             }
             None => {
                 *seen = Some((origin, 0));
-                (0, false)
+                0
             }
         }
+    }
+
+    /// Commit a short, synchronous update only in the generation its read captured.
+    pub fn if_current<T>(&self, expected: u32, apply: impl FnOnce() -> T) -> Option<T> {
+        let seen = self.seen.lock().expect("generation lock");
+        let current = seen.as_ref().map_or(0, |(_, generation)| *generation);
+        (current == expected).then(apply)
     }
 
     /// The generation last observed.

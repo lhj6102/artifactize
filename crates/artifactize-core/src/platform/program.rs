@@ -17,15 +17,14 @@ pub(crate) fn reject_link_ancestors(path: &Path) -> Result<(), String> {
 
 /// The folder-relative path a declared command names, with native separators converted
 /// for scope validation. A bare PATH name or an absolute command stays literal (`None`).
-pub(crate) fn folder_relative(command: &str) -> Result<Option<String>, String> {
-    let path = Path::new(command);
+pub(crate) fn folder_relative(path: &Path) -> Result<Option<String>, String> {
     if path.is_absolute() {
         return Ok(None);
     }
     if path.has_root() || matches!(path.components().next(), Some(Component::Prefix(_))) {
         return Err("A program path must be absolute or relative to its Artifact.".into());
     }
-    let command = super::program_text(command);
+    let command = super::path_text(path);
     if !command.contains('/') {
         return Ok(None);
     }
@@ -143,12 +142,12 @@ mod tests {
 
     #[test]
     fn relative_program_paths_are_kept_inside_the_scope() {
-        assert_eq!(folder_relative("tool").unwrap(), None);
+        assert_eq!(folder_relative(Path::new("tool")).unwrap(), None);
         assert_eq!(
-            folder_relative("./bin/tool").unwrap().as_deref(),
+            folder_relative(Path::new("./bin/tool")).unwrap().as_deref(),
             Some("bin/tool")
         );
-        assert!(folder_relative("../bin/tool").is_err());
+        assert!(folder_relative(Path::new("../bin/tool")).is_err());
     }
 
     // Windows alone recognizes native backslash separators and drive-relative paths.
@@ -156,12 +155,14 @@ mod tests {
     #[test]
     fn windows_relative_program_paths_cannot_bypass_scope_validation() {
         assert_eq!(
-            folder_relative(r".\bin\tool").unwrap().as_deref(),
+            folder_relative(Path::new(r".\bin\tool"))
+                .unwrap()
+                .as_deref(),
             Some("bin/tool")
         );
-        assert!(folder_relative(r"..\bin\tool").is_err());
-        assert!(folder_relative(r"C:bin\tool").is_err());
-        assert!(folder_relative(r"\bin\tool").is_err());
+        assert!(folder_relative(Path::new(r"..\bin\tool")).is_err());
+        assert!(folder_relative(Path::new(r"C:bin\tool")).is_err());
+        assert!(folder_relative(Path::new(r"\bin\tool")).is_err());
     }
 
     #[test]

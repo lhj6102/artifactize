@@ -189,7 +189,7 @@ fn a_custom_endpoint_reviews_by_name_with_its_saved_key() {
     );
     assert_eq!(
         listing,
-        json!({"backend":"local","models":[{"slug":"local-model","display_name":"local-model"}]})
+        json!({"backend":"local","models":[{"slug":"local-model","display_name":"local-model","efforts":[],"default_effort":null}]})
     );
 
     // Saved again without --key, the endpoint has none.

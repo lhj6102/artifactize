@@ -58,6 +58,7 @@ pub(crate) async fn reserve(
     selection: &Selection,
     options: &VerifyOptions,
     request_key: Option<&crate::types::RequestKey>,
+    origin: &crate::runs::Origin,
 ) -> Result<(crate::types::RunId, bool), String> {
     if options.jobs == Some(0) {
         return Err("jobs must be at least 1.".into());
@@ -97,6 +98,7 @@ pub(crate) async fn reserve(
             modes: options.modes.clone(),
             control: Some(crate::runs::Control::starting()?),
             request_key: request_key.cloned(),
+            origin: Some(origin.clone()),
             comment: options.comment.clone(),
             id: id.parse()?,
             repo_path: config.root.clone(),
@@ -153,6 +155,7 @@ pub(crate) async fn reserve(
                 origin: None,
                 session_id: None,
                 session: None,
+                review_notes: None,
                 human_definition: None,
                 payload: eval.declaration.payload().into(),
                 references: eval.references.clone(),

@@ -26,14 +26,9 @@ export class GraphViewState {
   comment = $state.raw<{ key: string; x: number; y: number; shape: Lifted } | null>(null);
   /** The node being dragged, and whether Esc put it back. */
   dragging = $state.raw<{ key: string; cancelled: boolean } | null>(null);
-  /** How far the dragged node has moved so far, in graph units: a large graph's painted edges
-   * and outline move with it until what was written is laid out. */
-  moved = $state.raw<{ key: string; x: number; y: number } | null>(null);
   /** Where the pointer last went down on the graph: a dropped node moved as far as the pointer
    * did from there, whatever frames its drawing skipped. */
   pressed = $state.raw<Point | null>(null);
-  /** The copy the pointer is over while something is dragged, which the library is asked about. */
-  aim: string | null = null;
   /** The drawn copy focus is on, by key. */
   focused = $state<string | null>(null);
   /** A whole's face was just dragged to pan: the click that ends it opens nothing. */

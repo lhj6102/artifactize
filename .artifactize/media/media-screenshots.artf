@@ -24,7 +24,7 @@ additionalProperties = false
 
 [evals.matches-capture]
 title = "The saved screenshots show what the script captures from the current app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.matches-capture.payload]

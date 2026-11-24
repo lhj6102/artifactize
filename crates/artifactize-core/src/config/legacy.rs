@@ -129,9 +129,12 @@ fn walk(
     mut visit: impl FnMut(Found<'_>, DeclarationTable<'_>) -> Result<ArtifactName, ConfigError>,
 ) -> Result<(), ConfigError> {
     // Each folder with the folder Artifact it is nested in, and that Artifact's path.
-    let mut pending = vec![(PathBuf::new(), None::<(ArtifactName, PathBuf)>)];
-    while let Some((relative, mut owner)) = pending.pop() {
-        let directory = root.join(&relative);
+    let mut pending = vec![(
+        root.to_owned(),
+        PathBuf::new(),
+        None::<(ArtifactName, PathBuf)>,
+    )];
+    while let Some((directory, relative, mut owner)) = pending.pop() {
         let opened = crate::platform::open_directory(&directory)
             .map_err(|error| ConfigError::new(&directory, error))?;
         let entries = crate::platform::read_dir(&opened)
@@ -354,7 +357,11 @@ fn walk(
                 && entry.file_name() != "node_modules"
                 && !ignored.matched(entry.path(), true).is_ignore()
             {
-                pending.push((logical_join(&relative, &entry.file_name()), owner.clone()));
+                pending.push((
+                    entry.path(),
+                    logical_join(&relative, &entry.file_name()),
+                    owner.clone(),
+                ));
             }
         }
     }
@@ -394,7 +401,7 @@ fn declare(
 /// discovery, such as test fixtures or example projects with their own `index.artf`.
 pub(super) fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
     let legacy = root.join(".artifactizeignore");
-    if crate::platform::marker_metadata(&legacy).is_ok() {
+    if crate::platform::paths::has_exact_entry(root, ".artifactizeignore").unwrap_or(false) {
         return Err(ConfigError::new(
             legacy,
             ".artifactizeignore was renamed to .artfignore.",

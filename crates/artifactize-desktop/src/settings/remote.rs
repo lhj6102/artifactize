@@ -56,7 +56,9 @@ pub enum RemoteStatus {
         share: Share,
         token_source: TokenSource,
         connection: Connection,
-        /// What this machine pushed in the last two days, for what was pushed today.
+        /// Number of records this machine pushed during the local civil day.
+        pushed_today: u32,
+        /// Recent pushes, oldest first.
         pushes: Vec<Push>,
     },
 }
@@ -89,7 +91,7 @@ pub enum Connection {
 
 impl RemoteStatus {
     /// The status `remote status` reports, with the pushes made lately.
-    fn of(status: Option<remote::Status>, pushes: &[artifactize_core::remote::Pushed]) -> Self {
+    fn of(status: Option<remote::Status>, history: artifactize_core::remote::PushHistory) -> Self {
         let Some(status) = status else {
             return Self::Unconfigured;
         };
@@ -110,8 +112,10 @@ impl RemoteStatus {
                 remote::TokenSource::None => TokenSource::None,
             },
             connection,
-            pushes: pushes
-                .iter()
+            pushed_today: u32::try_from(history.pushed_today).unwrap_or(u32::MAX),
+            pushes: history
+                .recent
+                .into_iter()
                 .map(|pushed| Push {
                     #[expect(
                         clippy::cast_precision_loss,
@@ -141,19 +145,16 @@ fn fixed_time() -> Result<Option<artifactize_core::types::Timestamp>, Failure> {
 
 async fn remote_status_of(app: &App) -> Result<RemoteStatus, Failure> {
     let state = Some(app.launch.state.as_path());
-    let status = remote::status(state, app.launch.repo.as_deref())
+    let status = remote::status(state, app.launch.settings_repo())
         .await
         .map_err(Failure::Account)?;
     #[cfg(feature = "e2e")]
-    if let Some(now) = fixed_time()? {
-        return Ok(RemoteStatus::of(
-            status,
-            &artifactize_core::remote::recent_pushes_at(state, now),
-        ));
-    }
+    let now = fixed_time()?.unwrap_or_else(artifactize_core::types::Timestamp::now);
+    #[cfg(not(feature = "e2e"))]
+    let now = artifactize_core::types::Timestamp::now();
     Ok(RemoteStatus::of(
         status,
-        &artifactize_core::remote::recent_pushes(state),
+        artifactize_core::remote::push_history_at(state, now),
     ))
 }
 
@@ -177,7 +178,7 @@ pub async fn remote_login(
     let url = remote::parse_url(&url).map_err(Failure::Invalid)?;
     remote::login(
         Some(&app.launch.state),
-        app.launch.repo.as_deref(),
+        app.launch.settings_repo(),
         url,
         share.into(),
         token
@@ -196,7 +197,7 @@ pub async fn remote_login(
 #[tauri::command]
 #[specta::specta]
 pub async fn remote_logout(app: tauri::State<'_, App>) -> Result<RemoteStatus, Failure> {
-    remote::logout(Some(&app.launch.state), app.launch.repo.as_deref())
+    remote::logout(Some(&app.launch.state), app.launch.settings_repo())
         .map_err(Failure::Account)?;
     remote_status_of(&app).await
 }
@@ -215,7 +216,7 @@ pub struct Pushed {
 #[specta::specta]
 pub async fn remote_push(app: tauri::State<'_, App>, dry_run: bool) -> Result<Pushed, Failure> {
     let state = Some(app.launch.state.as_path());
-    let repo = app.launch.repo.as_deref();
+    let repo = app.launch.settings_repo();
     #[cfg(not(feature = "e2e"))]
     let report = artifactize_core::remote::push(state, repo, dry_run).await;
     #[cfg(feature = "e2e")]

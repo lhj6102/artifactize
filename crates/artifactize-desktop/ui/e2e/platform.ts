@@ -13,10 +13,12 @@
 //   build's opener seam on Windows). The stand-in it runs is the same on every OS.
 import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { release } from "node:os";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { PNG } from "pngjs";
+import { homedir, release } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { basename, delimiter, isAbsolute, join, relative, sep, toNamespacedPath } from "node:path";
-import { callWindow, makeDirectory, nativePath, writeText, type NativePath } from "./portable.ts";
+import { callWindow, makeDirectory, nativePath, newDirectory, readTextIfExists, removeTree, replaceText, writeText, type NativePath } from "./portable.ts";
 
 const WINDOWS = process.platform === "win32";
 const MACOS = process.platform === "darwin";
@@ -172,38 +174,206 @@ export function packageCommand(args: string[]): { program: string; args: string[
   return { program: "pnpm", args };
 }
 
-/** Start a program as the root of a process tree that `stopTree` can end whole: a process
- * group of its own on Unix; Windows ends a tree by its root's ID. */
-export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean }): ChildProcess {
-  return spawn(program, args, {
-    cwd: options.cwd, env: options.env, detached: !WINDOWS, windowsHide: true,
-    stdio: ["ignore", options.capture ? "pipe" : "inherit", "inherit"],
-  });
+// Keep a native Job Object handle in the wrapper, not in the command that might finish
+// before its children. The wrapper joins before starting any command, so no child can race
+// assignment. Killing the wrapper closes the last handle and kills the whole job, even when
+// the command's own PID has already gone away. No shell interprets the command's arguments.
+const WINDOWS_JOB = String.raw`
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class E2eBuildJob {
+  [StructLayout(LayoutKind.Sequential)] public struct Limits {
+    public long ProcessTime, JobTime;
+    public uint Flags;
+    public UIntPtr MinSet, MaxSet;
+    public uint ProcessLimit;
+    public UIntPtr Affinity;
+    public uint Priority, Scheduling;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct Extended {
+    public Limits Basic;
+    public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes;
+    public UIntPtr ProcessLimit, JobLimit, PeakProcess, PeakJob;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct Accounting {
+    public long User, Kernel, PeriodUser, PeriodKernel;
+    public uint Faults, Total, Active, Terminated;
+  }
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr CreateJobObject(IntPtr attributes, IntPtr name);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetInformationJobObject(IntPtr job, int type, ref Extended info, uint size);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool QueryInformationJobObject(IntPtr job, int type, out Accounting info, uint size, IntPtr returned);
+  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
+}
+'@
+$job = [E2eBuildJob]::CreateJobObject([IntPtr]::Zero, [IntPtr]::Zero)
+if ($job -eq [IntPtr]::Zero) { throw 'cannot create E2E build Job Object' }
+$limits = New-Object E2eBuildJob+Extended
+$basic = $limits.Basic
+$basic.Flags = 0x2000
+$limits.Basic = $basic
+$limitSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf($limits)
+if (-not [E2eBuildJob]::SetInformationJobObject($job, 9, [ref]$limits, $limitSize)) { throw 'cannot set kill-on-close for the E2E build Job Object' }
+$self = [Diagnostics.Process]::GetCurrentProcess()
+if (-not [E2eBuildJob]::AssignProcessToJobObject($job, $self.Handle)) { throw 'cannot enter the E2E build Job Object' }
+$info = New-Object Diagnostics.ProcessStartInfo
+$info.FileName = $env:DESKTOP_BUILD_PROGRAM
+$info.Arguments = $env:DESKTOP_BUILD_ARGS
+$info.UseShellExecute = $false
+$info.EnvironmentVariables.Remove('DESKTOP_BUILD_PROGRAM')
+$info.EnvironmentVariables.Remove('DESKTOP_BUILD_ARGS')
+if ($env:DESKTOP_TREE_COMPLETES_WITH_ROOT -eq '1') {
+  $info.EnvironmentVariables['DESKTOP_TEST_BATCH_JOB_PID'] = [string]$PID
+}
+$child = [Diagnostics.Process]::Start($info)
+$child.WaitForExit()
+$code = $child.ExitCode
+# A batch owns service teardown; if it exits leaving apps behind, close the job as a
+# fail-safe instead of waiting forever. Build commands normally drain their descendants.
+if ($env:DESKTOP_TREE_COMPLETES_WITH_ROOT -ne '1') {
+  $counts = New-Object E2eBuildJob+Accounting
+  $accountSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf($counts)
+  do {
+    if (-not [E2eBuildJob]::QueryInformationJobObject($job, 1, [ref]$counts, $accountSize, [IntPtr]::Zero)) { throw 'cannot observe E2E build Job Object' }
+    if ($counts.Active -gt 1) { Start-Sleep -Milliseconds 20 }
+  } while ($counts.Active -gt 1)
+}
+# The wrapper itself is in the job. The OS closes the handle on its way out.
+exit $code
+`;
+
+/** Windows' argv quoting for CreateProcess (including trailing backslashes). */
+function windowsArg(arg: string): string {
+  return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/\\+$/, '$&$&')}"`;
 }
 
-/** End the process tree `startTree` started, its root and every descendant. */
-export function stopTree(child: ChildProcess): void {
-  if (child.pid === undefined || child.exitCode !== null) return;
-  const pid = child.pid;
+/** Start a program with an owned process group, or a Windows Job Object. */
+export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean; captureDiagnostics?: boolean; completesWithRoot?: boolean }): ChildProcess {
+  const stdio = ["ignore", options.capture ? "pipe" : "inherit", options.captureDiagnostics ? "pipe" : "inherit"] as const;
   if (WINDOWS) {
-    // taskkill from the system's own folder, whatever PATH holds; 128: no such process.
-    const taskkill = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "taskkill.exe");
-    const ended = spawnSync(taskkill, ["/T", "/F", "/PID", String(pid)], { windowsHide: true, encoding: "utf8" });
-    if (ended.error || (ended.status !== 0 && ended.status !== 128)) throw new Error(`taskkill could not end process ${pid}: ${ended.error ?? ended.stderr}`);
-  } else {
-    try { process.kill(-pid, "SIGKILL"); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const script = Buffer.from(WINDOWS_JOB, "utf16le").toString("base64");
+    const env = { ...options.env, DESKTOP_BUILD_PROGRAM: program, DESKTOP_BUILD_ARGS: args.map(windowsArg).join(" "),
+      DESKTOP_TREE_COMPLETES_WITH_ROOT: options.completesWithRoot ? "1" : "0" };
+    return spawn(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", script], { cwd: options.cwd, env, windowsHide: true, stdio: [...stdio] });
+  }
+  return spawn(program, args, { cwd: options.cwd, env: options.env, detached: true, windowsHide: true, stdio: [...stdio] });
+}
+
+/** A batch needs the same Windows kill-on-close ownership as the build tree. On Unix the
+ * terminal's signal reaches the batch and WDIO runs its teardown hooks. */
+export function startBatch(program: string, args: readonly string[], env: Environment, cwd: NativePath): ChildProcess {
+  return WINDOWS ? startTree(program, args, { cwd, env, capture: false, completesWithRoot: true }) : spawn(program, args, { env, cwd, stdio: "inherit" });
+}
+
+/** End the owned tree, not just the command whose exit status the wrapper reports. */
+export function stopTree(child: ChildProcess): void {
+  if (child.pid === undefined) return;
+  if (WINDOWS) {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    return;
+  }
+  try { process.kill(-child.pid, "SIGKILL"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+}
+
+export type ProcessState = "running" | "exited" | "unknown";
+export const isPid = (pid: unknown): pid is number => typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 && pid <= 0xffffffff;
+
+/** Observe this native PID without signalling it. On Windows the zero-signal libuv probe
+ * opens a process handle; on Unix it checks the PID. Permission or read errors aren't exits. */
+export function processState(pid: number): ProcessState {
+  if (!isPid(pid)) return "unknown";
+  try { process.kill(pid, 0); }
+  catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ESRCH" ? "exited" : "unknown";
+  }
+  if (!LINUX) return "running";
+  try {
+    // A dead orphan may retain its PID when the container's init does not reap it.
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    const state = close < 0 ? "" : stat.slice(close + 2, close + 3);
+    return !state ? "unknown" : "ZXx".includes(state) ? "exited" : "running";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "exited" : "unknown";
   }
 }
 
-/** Whether process `pid` still runs. Signal 0 only checks it, on every OS; a process that
- * exists but belongs to someone else (EPERM) runs too. */
+/** For cleanup gates, an inconclusive observation must be treated as still owned. */
 export function processRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+  return processState(pid) !== "exited";
+}
+
+/** Only positive native exit evidence can complete a Quit or restart. */
+export async function waitForProcessExit(pid: number, options: { timeout?: number; observe?: (pid: number) => ProcessState } = {}): Promise<void> {
+  if (!isPid(pid)) throw new Error("the app did not provide an owned native process ID");
+  const { timeout = 30000, observe = processState } = options;
+  const deadline = performance.now() + timeout;
+  for (;;) {
+    const state = observe(pid);
+    if (state === "exited") return;
+    const left = deadline - performance.now();
+    if (left <= 0) throw new Error(`the app's exit was not confirmed for PID ${pid}: ${state}`);
+    await delay(Math.min(100, left));
+  }
+}
+
+/** Wait until any Linux child process that inherited this fixture's isolated HOME (such as
+ * WebKitGTK's WebKitNetworkProcess or WebKitWebProcess flushing storage after the app stops)
+ * has exited, so it cannot recreate directories inside `root` after teardown deletes them.
+ * Orphans that hang after the app has already stopped are escalated with SIGTERM then SIGKILL. */
+export async function waitForFixtureProcesses(root: NativePath, timeout = 10000): Promise<void> {
+  if (!LINUX) return;
+  const home = `HOME=${nativePath(root, "home")}\0`;
+  const startMarker = Buffer.from(home);
+  const midMarker = Buffer.from(`\0${home}`);
+  const alive = (): { pid: number; label: string }[] => {
+    const found: { pid: number; label: string }[] = [];
+    for (const entry of readdirSync("/proc")) {
+      if (!/^\d+$/.test(entry)) continue;
+      const pid = Number(entry);
+      if (pid === process.pid || processState(pid) === "exited") continue;
+      try {
+        const env = readFileSync(`/proc/${pid}/environ`);
+        if (!env.subarray(0, startMarker.length).equals(startMarker) && !env.includes(midMarker)) continue;
+      } catch { continue; }
+      let name = "";
+      try { name = readFileSync(`/proc/${pid}/comm`, "utf8").trim(); } catch { /* exited while reading */ }
+      found.push({ pid, label: name ? `${pid} (${name})` : String(pid) });
+    }
+    return found;
+  };
+  const wait = async (ms: number): Promise<{ pid: number; label: string }[]> => {
+    const end = performance.now() + ms;
+    for (;;) {
+      const remaining = alive();
+      if (!remaining.length) return [];
+      const left = end - performance.now();
+      if (left <= 0) return remaining;
+      await delay(Math.min(50, left));
+    }
+  };
+  const signal = (processes: { pid: number }[], sig: NodeJS.Signals) => {
+    for (const { pid } of processes) {
+      try { process.kill(pid, sig); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    }
+  };
+  const deadline = performance.now() + timeout;
+  let remaining = await wait(Math.min(2000, timeout));
+  if (remaining.length) {
+    signal(remaining, "SIGTERM");
+    remaining = await wait(Math.min(2000, Math.max(0, deadline - performance.now())));
+  }
+  if (remaining.length) {
+    signal(remaining, "SIGKILL");
+    remaining = await wait(Math.max(0, deadline - performance.now()));
+  }
+  if (remaining.length) {
+    throw new Error(`fixture processes still running for ${root}: ${remaining.map((each) => each.label).join(", ")}`);
   }
 }
 
@@ -224,15 +394,180 @@ export function runnerCommand(args: string[], env: Environment = process.env): {
   const outer = { DESKTOP_TEST_OUTER_DISPLAY: env.DISPLAY ?? "", DESKTOP_TEST_OUTER_BUS: env.DBUS_SESSION_BUS_ADDRESS ?? "" };
   const headless: Environment = { ...env, ...outer, GDK_BACKEND: "x11" };
   delete headless.WAYLAND_DISPLAY;
-  return { program: "dbus-run-session", args: ["--", "xvfb-run", "-a", process.execPath, ...args], env: headless };
+  const framebuffer = env.DESKTOP_TEST_BATCH_OUTPUT ? ["-s", "-screen 0 1280x1024x24 -fbdir ."] : [];
+  return { program: "dbus-run-session", args: ["--", "xvfb-run", "-a", ...framebuffer, process.execPath, ...args], env: headless };
+}
+
+/** Use a native capture tool only for failure evidence, never for test input or assertions. */
+function capture(program: string, args: string[]): string {
+  const result = spawnSync(program, args, { encoding: "utf8", windowsHide: true, timeout: 20000 });
+  if (result.error || result.status !== 0) throw new Error(`${program} could not capture the owned window: ${result.error ?? (result.stderr.trim() || result.status)}`);
+  return result.stdout.trim();
+}
+
+const MAC_WINDOW = `
+ObjC.import('CoreGraphics');
+function run(args) {
+  const pid = Number(args[0]);
+  const windows = ObjC.deepUnwrap($.CGWindowListCopyWindowInfo(17, 0));
+  const window = windows.find(w => w.kCGWindowOwnerPID === pid && w.kCGWindowLayer === 0 && w.kCGWindowBounds.Width > 0 && w.kCGWindowBounds.Height > 0);
+  if (!window) throw new Error('no visible window for the owned app');
+  return String(window.kCGWindowNumber);
+}`;
+
+const WINDOWS_WINDOW = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class E2eWindowCapture {
+  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect bounds);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+}
+'@
+[void][E2eWindowCapture]::SetProcessDPIAware()
+$owner = Get-Process -Id $env:DESKTOP_EVIDENCE_PID
+$window = $owner.MainWindowHandle
+$bounds = New-Object E2eWindowCapture+Rect
+$windowOwner = [uint32]0
+if ($window -eq 0 -or -not [E2eWindowCapture]::GetWindowRect($window, [ref]$bounds)) { throw 'no visible window for the owned app' }
+[void][E2eWindowCapture]::GetWindowThreadProcessId($window, [ref]$windowOwner)
+if ($windowOwner -ne $owner.Id -or $owner.HasExited) { throw 'the owned app no longer holds the window' }
+$width = $bounds.Right - $bounds.Left
+$height = $bounds.Bottom - $bounds.Top
+$image = New-Object System.Drawing.Bitmap -ArgumentList $width, $height
+try {
+  $graphics = [System.Drawing.Graphics]::FromImage($image)
+  try {
+    $dc = $graphics.GetHdc()
+    try { if (-not [E2eWindowCapture]::PrintWindow($window, $dc, 2)) { throw 'PrintWindow failed' } }
+    finally { $graphics.ReleaseHdc($dc) }
+  } finally { $graphics.Dispose() }
+  $image.Save($env:DESKTOP_EVIDENCE_IMAGE, [System.Drawing.Imaging.ImageFormat]::Png)
+} finally { $image.Dispose() }
+`;
+
+/** New Session can fail after the window opens but before WebDriver can capture it. The private
+ * Xvfb screen is available directly; other systems capture only the service-owned app window. */
+export function displayScreenshot(output: NativePath, pid?: number): Uint8Array {
+  if (LINUX) return xwdPng(readFileSync(nativePath(output, "Xvfb_screen0")));
+  if (!pid) throw new Error("there is no live service-owned app to capture");
+  const scratch = newDirectory(output, "window-evidence-");
+  const image = nativePath(scratch, "window.png");
+  try {
+    if (MACOS) {
+      const id = capture("/usr/bin/osascript", ["-l", "JavaScript", "-e", MAC_WINDOW, String(pid)]);
+      if (!/^\d+$/.test(id)) throw new Error("the owned window ID was not returned");
+      capture("/usr/sbin/screencapture", ["-x", `-l${id}`, image]);
+    } else {
+      // An encoded, fixed script and environment values avoid shell parsing of the path.
+      const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+      const script = Buffer.from(WINDOWS_WINDOW, "utf16le").toString("base64");
+      const env = { ...process.env, DESKTOP_EVIDENCE_PID: String(pid), DESKTOP_EVIDENCE_IMAGE: image };
+      const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", script], { env, windowsHide: true, timeout: 20000, encoding: "utf8" });
+      if (result.error || result.status !== 0) throw new Error(`could not capture the owned window: ${result.error ?? (result.stderr.trim() || result.status)}`);
+    }
+    return readFileSync(image);
+  } finally { removeTree(scratch); }
+}
+
+/** The app's own WebKit image is independent of OS screen-capture permission. */
+export function fallbackImageEnvironment(path: NativePath): Environment {
+  return MACOS ? { ARTIFACTIZE_E2E_WINDOW_IMAGE: path } : {};
+}
+
+export function fallbackImage(path?: NativePath): Uint8Array | undefined {
+  if (!path || !MACOS) return undefined;
+  try { return readFileSync(path); } catch { return undefined; }
+}
+
+/** The service spawns the app directly under the batch. Before the driver is ready, the
+ * configured state path distinguishes this fixture from all other children and apps. This
+ * lookup is for read-only screenshots, never for signalling a process. */
+function startupPid(state: NativePath): number | undefined {
+  if (MACOS) {
+    const listed = spawnSync("/bin/ps", ["-ww", "-axo", "pid=,ppid=,command="], { encoding: "utf8", timeout: 1000 });
+    for (const line of listed.stdout?.split("\n") ?? []) {
+      const parsed = /^\s*(\d+)\s+(\d+)\s+(.*)/.exec(line);
+      if (parsed && Number(parsed[2]) === process.pid && parsed[3].includes(`--state-dir ${state} --reviewer`)) return Number(parsed[1]);
+    }
+    return undefined;
+  }
+  const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const query = `Get-CimInstance Win32_Process -Filter ('ParentProcessId=' + $env:DESKTOP_STARTUP_PARENT) | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:DESKTOP_STARTUP_STATE) } | Select-Object -First 1 -ExpandProperty ProcessId`;
+  const listed = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(query, "utf16le").toString("base64")], {
+    env: { ...process.env, DESKTOP_STARTUP_PARENT: String(process.pid), DESKTOP_STARTUP_STATE: state },
+    encoding: "utf8", windowsHide: true, timeout: 3000,
+  });
+  const text = listed.stdout?.trim() ?? "";
+  return /^\d+$/.test(text) ? Number(text) : undefined;
+}
+
+/** Retain the last startup frame before the service kills its timed-out process. */
+export function startupImage(output: NativePath, state: NativePath): (encode?: boolean) => Uint8Array | undefined {
+  if (!LINUX) {
+    let last: Uint8Array | undefined;
+    const timer = setInterval(() => {
+      const pid = startupPid(state);
+      if (!pid) return;
+      try { last = displayScreenshot(output, pid); } catch { /* no native window yet */ }
+    }, 5000);
+    timer.unref();
+    return (encode = true) => { clearInterval(timer); return encode ? last : undefined; };
+  }
+  const frame = nativePath(output, "Xvfb_screen0");
+  const baseline = readFileSync(frame);
+  let last: Buffer | undefined;
+  const sample = () => {
+    try {
+      const pixels = readFileSync(frame);
+      if (!pixels.equals(baseline)) last = pixels;
+    } catch { /* the framebuffer may disappear as the display ends */ }
+  };
+  const timer = setInterval(sample, 250);
+  timer.unref();
+  return (encode = true) => {
+    clearInterval(timer);
+    return encode && last ? xwdPng(last) : undefined;
+  };
+}
+
+/** Decode the Xvfb screen's ZPixmap into a portable evidence PNG. */
+export function xwdPng(frame: Buffer): Uint8Array {
+  if (frame.length < 100 || frame.readUInt32BE(4) !== 7 || frame.readUInt32BE(8) !== 2 || frame.readUInt32BE(44) !== 32) {
+    throw new Error("the isolated display did not write a 32-bit ZPixmap XWD frame");
+  }
+  const width = frame.readUInt32BE(16), height = frame.readUInt32BE(20);
+  const stride = frame.readUInt32BE(48);
+  const start = frame.readUInt32BE(0) + frame.readUInt32BE(76) * 12;
+  if (!width || !height || width * 4 > stride || start + stride * height > frame.length) throw new Error("the isolated display's XWD frame is truncated");
+  const littleEndian = frame.readUInt32BE(28) === 0;
+  const masks = [56, 60, 64].map((offset) => frame.readUInt32BE(offset));
+  const shifts = masks.map((mask) => 31 - Math.clz32(mask & -mask));
+  const image = new PNG({ width, height });
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const offset = start + y * stride + x * 4;
+    const pixel = littleEndian ? frame.readUInt32LE(offset) : frame.readUInt32BE(offset);
+    const dest = (y * width + x) * 4;
+    for (let c = 0; c < 3; c++) image.data[dest + c] = Math.round(255 * ((pixel & masks[c]) >>> shifts[c]) / (masks[c] >>> shifts[c]));
+    image.data[dest + 3] = 255;
+  }
+  return PNG.sync.write(image);
 }
 
 /** Fail unless this process runs where `runnerCommand` puts it: on Linux, a display and a
  * session bus of its own, never the ones it was started from nor a Wayland desktop. */
-export function assertHeadless(): void {
+export function assertHeadless(batchOutput?: NativePath): void {
   const { DISPLAY: display, DBUS_SESSION_BUS_ADDRESS: bus, DESKTOP_TEST_OUTER_DISPLAY: outerDisplay, DESKTOP_TEST_OUTER_BUS: outerBus } = process.env;
   if (LINUX && (!display || !bus || outerDisplay === undefined || outerBus === undefined || display === outerDisplay || bus === outerBus || process.env.WAYLAND_DISPLAY)) {
-    throw new Error("Linux desktop E2E runs inside dbus-run-session -- xvfb-run -a: start it with `pnpm e2e`");
+    throw new Error("Linux desktop E2E needs its own D-Bus session and Xvfb display: start it with `pnpm e2e`");
+  }
+  if (LINUX && batchOutput !== undefined && !existsSync(nativePath(batchOutput, "Xvfb_screen0"))) {
+    throw new Error(`Linux desktop E2E batch needs a private framebuffer at ${nativePath(batchOutput, "Xvfb_screen0")}. Run pnpm e2e, or give the batch's Xvfb -screen 0 1280x1024x24 -fbdir with its output directory.`);
   }
 }
 
@@ -250,16 +585,63 @@ export function testWindowOptions(windows: readonly Record<string, unknown>[]): 
   return MACOS ? { windows: windows.map((window) => ({ ...window, backgroundThrottling: "disabled" })) } : {};
 }
 
-/** How many test apps run at once. WebView2 gives focus events only to the page of the
- * desktop's one foreground window, so Windows runs one app at a time. */
-export const appsAtOnce = WINDOWS ? 1 : 2;
+/** WebView2 gives focus events only to the foreground window. A private Xvfb screen belongs
+ * to one scenario, so its failure evidence cannot capture another scenario's window. */
+export const appsAtOnce = WINDOWS || LINUX ? 1 : 2;
 
 /** This machine's OS as a failure names it. */
 export const systemName = `${process.platform} ${release()} (${process.arch})`;
 
-/** The machine-wide resources a batch holds while its apps run: on Windows the desktop's
- * foreground window, which another suite run's app would take away. */
-export const desktopResources: readonly string[] = WINDOWS ? ["foreground"] : [];
+/** Every batch on a shared desktop takes the same lock, including ordinary batches that
+ * could otherwise interfere with another suite's exclusive scenario. Isolated Xvfb displays
+ * need no desktop lock; the runner still locks a scenario's other shared resources. */
+export const desktopResources: readonly string[] = WINDOWS || MACOS ? ["foreground"] : [];
+
+/** The foreground lock's fail-closed marker survives a batch process that must exit without
+ * having confirmed it stopped its app. The path is shared by suite runs in this desktop's
+ * user account, independent of the per-run scratch, state and sanitized environment. */
+export function foregroundQuarantine(): NativePath | null {
+  return WINDOWS || MACOS ? nativePath(homedir(), ".artifactize-desktop-e2e", "foreground-unreleased") : null;
+}
+
+type ForegroundRecord = { description: string; pids: number[]; jobOwned: boolean };
+
+/** Until the service has published its child handles, the Windows job wrapper itself owns
+ * all of its descendants. A direct invocation must not claim this recovery guarantee. */
+export function batchJobPids(): number[] {
+  const wrapper = Number(variable("DESKTOP_TEST_BATCH_JOB_PID"));
+  return WINDOWS && isPid(wrapper) && wrapper === process.ppid ? [process.pid, wrapper] : [];
+}
+
+/** Check under the foreground lock. A stale Windows record is recoverable only when the
+ * job's owning wrapper, batch and every recorded app PID are all confirmed gone. */
+export function checkForeground(path: NativePath | null, observe = processState): void {
+  if (!path) return;
+  const saved = readTextIfExists(path);
+  if (saved === null) return;
+  let record: Partial<ForegroundRecord> | null = null;
+  try { record = JSON.parse(saved) as Partial<ForegroundRecord> | null; } catch { /* legacy marker; fail closed */ }
+  const pids = Array.isArray(record?.pids) && record.pids.every(isPid) ? record.pids : [];
+  if (record?.jobOwned === true && new Set(pids).size >= 2 && pids.every((pid) => observe(pid) === "exited")) {
+    releaseForeground(path);
+    return;
+  }
+  const owners = pids.length ? ` Owned PIDs: ${pids.join(", ")}.` : "";
+  throw new Error(`the desktop foreground is quarantined: ${record?.description ?? saved.trim()}${owners} Confirm the orphaned fixture app has exited before removing ${path}.`);
+}
+
+/** Keep the marker replaceable as the launcher publishes additional app PIDs. A killed
+ * writer leaves the last complete record, which already contains the Windows job owner. */
+export function quarantineForeground(path: NativePath | null, description: string, pids: readonly number[] = [], jobOwned = false): void {
+  if (!path) return;
+  makeDirectory(nativePath(path, ".."), { private: true });
+  replaceText(path, JSON.stringify({ description, pids: [...new Set(pids)], jobOwned } satisfies ForegroundRecord));
+}
+
+/** Only once every app is stopped, clear the persistent half of the foreground lock. */
+export function releaseForeground(path: NativePath | null): void {
+  if (path) rmSync(path, { force: true });
+}
 
 /** On Windows, give the scenario's window the desktop's focus before it starts (see
  * appsAtOnce); other systems deliver focus events to a page in any window. */

@@ -174,7 +174,7 @@ fn an_agent_reuses_a_live_snapshot_until_it_changes_while_a_runtime_reference_al
     });
     let mut project = Project::new();
     project.provider = Some(provider.openai_base());
-    project.node("service", json!({"path":"service:opaque","fingerprint":project.snapshot(),"evals":{"review":{"title":"Review the snapshot","profile":{"kind":"agent","backend":"openai","model":"fixture-model"},"payload":{"instruction":"Review {service}."}}}}));
+    project.node("service", json!({"path":"service:opaque","fingerprint":project.snapshot(),"views":{"agent_tools":{"observe":{"builtin":"help","args":["artifactize"]}}},"evals":{"review":{"title":"Review the snapshot","profile":{"kind":"agent","backend":"openai","model":"fixture-model"},"payload":{"instruction":"Review {service}."}}}}));
     fs::create_dir(project.repo.join("consumer")).unwrap();
     fs::write(project.repo.join("consumer/input.txt"), "consumer").unwrap();
     project.node("consumer", json!({"path":"consumer/","evals":{"observe":runtime(support::os::echo_program(),json!(["{service}/health"]),"Observe {service}.")}}));
@@ -216,7 +216,7 @@ fn an_agent_snapshot_changing_before_its_verdict_is_input_changed() {
         passing(request)
     });
     project.provider = Some(provider.openai_base());
-    project.node("service", json!({"path":"service:opaque","fingerprint":snapshot,"evals":{"review":{"title":"Review","profile":{"kind":"agent","backend":"openai","model":"fixture-model"},"payload":{"instruction":"Review {service}."}}}}));
+    project.node("service", json!({"path":"service:opaque","fingerprint":snapshot,"views":{"agent_tools":{"observe":{"builtin":"help","args":["artifactize"]}}},"evals":{"review":{"title":"Review","profile":{"kind":"agent","backend":"openai","model":"fixture-model"},"payload":{"instruction":"Review {service}."}}}}));
     let run = project.json(&["verify", "--all", "--wait"], 2);
     assert_eq!(
         request(&run, "service/review")["errorCode"],
@@ -233,7 +233,7 @@ async fn human_live_snapshots_reuse_and_recheck_through_saved_requests() {
     };
     use tokio_util::sync::CancellationToken;
     let project = Project::new();
-    project.node("service", json!({"path":"service:opaque","fingerprint":project.snapshot(),"evals":{"review":{"title":"Fixture snapshot sign-off","profile":{"kind":"human"},"payload":{"instruction":"Review {service}."}}}}));
+    project.node("service", json!({"path":"service:opaque","fingerprint":project.snapshot(),"views":{"human_tools":{"open":{"builtin":"open","args":["https://example.invalid/"]}}},"evals":{"review":{"title":"Fixture snapshot sign-off","profile":{"kind":"human"},"payload":{"instruction":"Review {service}."}}}}));
     let verify = async || {
         support::runs::record(
             &project.repo,

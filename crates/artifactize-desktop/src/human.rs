@@ -4,10 +4,17 @@
 //! Only these jobs write. Drafts live in the frontend; a submission sends their values and
 //! the review's own [`Form`] turns them into the result, so typed fields, coercion and local
 //! errors are the terminal's.
+pub(crate) mod draft;
+mod draft_queue;
 mod form;
+mod jobs;
 pub(crate) mod log;
+pub(crate) mod search;
+mod searches;
 
 pub use form::{Draft, FormView, Verdict};
+use jobs::{Action, Jobs};
+pub(crate) use jobs::{Caller, Lease};
 
 use crate::ids::{JobId, RequestKey};
 use crate::{
@@ -54,39 +61,63 @@ impl Reads {
     }
 }
 
+/// Keep the referenced request for the header and Back link, and its owner for review actions.
+#[derive(Clone)]
+struct ReadReview {
+    generation: u32,
+    exact: RequestView,
+    owner: RequestView,
+}
+
 /// Per-app review state: what is cached for drawing, running jobs, claims taken here, and
 /// the Tool log every run logs to.
 pub struct Reviews {
     /// The newest read view of each opened request and its read's number, for redraws
     /// without a read.
-    views: Mutex<BTreeMap<RequestId, (u32, RequestView)>>,
+    views: Mutex<BTreeMap<RequestId, (u32, ReadReview)>>,
     /// Numbers every read of requests.
     pub(crate) reads: Reads,
+    searches: searches::Searches,
     /// Resolved tool command lines, resolved once per request and again after each run.
     commands: Mutex<BTreeMap<RequestId, Resolved>>,
-    /// Running jobs by the frontend's job number.
-    jobs: Mutex<BTreeMap<JobId, CancellationToken>>,
+    jobs: Jobs,
+    drafts: draft_queue::DraftQueue,
+    /// A shutdown snapshot must not race the database claim or its local ownership record.
+    pub(crate) claim_gate: tokio::sync::Mutex<()>,
     /// Claims this app took and has neither submitted nor released.
-    taken: Mutex<BTreeSet<RequestId>>,
+    taken: Mutex<BTreeMap<RequestId, store::HumanClaim>>,
     log: review::log::Sink,
     /// The Tool log of each review a run logged to, until it is submitted, and of each
     /// Artifact whose tool ran without a review, while the app runs.
-    logs: Mutex<BTreeMap<review::log::Key, review::log::ToolLog>>,
+    logs: Mutex<Logs>,
+    log_settlement: tokio::sync::Notify,
     /// The Tool log's receiving end, until the app starts forwarding it.
     events: Mutex<Option<review::log::Events>>,
+}
+
+#[derive(Default)]
+struct Logs {
+    open: BTreeMap<review::log::Key, review::log::ToolLog>,
+    /// A queued Start can still arrive after the submission's invalidation.
+    settled: BTreeSet<RequestId>,
 }
 
 impl Default for Reviews {
     fn default() -> Self {
         let (log, events) = review::log::channel();
+        let log = log.with_viewer_launch();
         Self {
             views: Mutex::default(),
             reads: Reads::default(),
+            searches: searches::Searches::default(),
             commands: Mutex::default(),
-            jobs: Mutex::default(),
+            jobs: Jobs::default(),
+            drafts: draft_queue::DraftQueue::default(),
+            claim_gate: tokio::sync::Mutex::default(),
             taken: Mutex::default(),
             log,
             logs: Mutex::default(),
+            log_settlement: tokio::sync::Notify::new(),
             events: Mutex::new(Some(events)),
         }
     }
@@ -108,70 +139,137 @@ impl Reviews {
         let mut logs = self.logs.lock().expect("logs lock");
         let mut changed = BTreeSet::new();
         for event in events {
-            changed.insert(event.key.clone());
-            logs.entry(event.key.clone()).or_default().apply(event);
+            if matches!(&event.key, review::log::Key::Review(id) if logs.settled.contains(id)) {
+                continue;
+            }
+            let log = logs.open.entry(event.key.clone()).or_default();
+            if !log.entries().is_empty() || matches!(event.kind, review::log::Kind::Start { .. }) {
+                changed.insert(event.key.clone());
+            }
+            log.apply(event);
         }
         changed
             .into_iter()
-            .map(|key| log::keyed_log(&key, &logs[&key]))
+            .map(|key| log::keyed_log(&key, &logs.open[&key]))
             .collect()
+    }
+
+    fn clear_log(&self, id: &RequestId) -> Option<log::KeyedLog> {
+        let mut logs = self.logs.lock().expect("logs lock");
+        logs.settled.insert(id.clone());
+        let key = review::log::Key::from(id);
+        logs.open
+            .remove(&key)
+            .map(|_| log::keyed_log(&key, &review::log::ToolLog::default()))
+    }
+
+    pub(crate) fn review_status_changed(&self) {
+        self.log_settlement.notify_one();
+    }
+
+    pub(crate) async fn wait_for_review_status(&self) {
+        self.log_settlement.notified().await;
+    }
+
+    /// Read the authoritative review after a commit in any process, not just this window.
+    pub(crate) async fn clear_settled_logs(&self, state: &std::path::Path) -> Vec<log::KeyedLog> {
+        let ids: Vec<_> = self
+            .logs
+            .lock()
+            .expect("logs lock")
+            .open
+            .keys()
+            .filter_map(|key| match key {
+                review::log::Key::Review(id) => Some(id.clone()),
+                review::log::Key::Artifact { .. } => None,
+            })
+            .collect();
+        let mut cleared = Vec::new();
+        for id in ids {
+            if store::read_request_by_id(state, &id, store::Shown::Requests)
+                .await
+                .is_ok_and(|view| {
+                    matches!(
+                        view.request.status(),
+                        artifactize_core::types::RequestStatus::Green
+                            | artifactize_core::types::RequestStatus::Red
+                    )
+                })
+                && let Some(log) = self.clear_log(&id)
+            {
+                cleared.push(log);
+            }
+        }
+        cleared
     }
 
     /// Forget everything read from a replaced state and cancel its jobs.
     pub fn reset(&self) {
         self.cancel_all();
-        self.logs.lock().expect("logs lock").clear();
+        *self.logs.lock().expect("logs lock") = Logs::default();
         self.views.lock().expect("views lock").clear();
         self.commands.lock().expect("commands lock").clear();
         self.taken.lock().expect("taken lock").clear();
     }
 
+    pub(crate) async fn drain_drafts(&self) -> draft_queue::Drained<'_> {
+        self.drafts.drain().await
+    }
+
+    pub(crate) fn invalidate_searches(&self) {
+        self.searches.invalidate();
+    }
+
+    pub(crate) fn review_worktrees_changed(&self) -> bool {
+        self.searches.rescan()
+    }
+
     pub fn cancel_all(&self) {
-        for token in self.jobs.lock().expect("jobs lock").values() {
-            token.cancel();
-        }
+        self.jobs.cancel_all();
     }
 
-    pub(crate) fn start(&self, job: JobId) -> CancellationToken {
-        let token = CancellationToken::new();
-        self.jobs
-            .lock()
-            .expect("jobs lock")
-            .insert(job, token.clone());
-        token
-    }
-
-    pub(crate) fn end(&self, job: JobId) {
-        self.jobs.lock().expect("jobs lock").remove(&job);
+    pub(crate) fn start_artifact(&self, caller: Caller, job: JobId) -> Result<Lease, Failure> {
+        self.jobs.register(caller, job, Action::Tool)
     }
 
     /// Freshen the cached views of requests the waiting stack read as read number `read`, so
     /// a review opened from it shows the claims and states the stack shows.
-    pub(crate) fn remember(&self, read: u32, views: impl IntoIterator<Item = RequestView>) {
+    pub(crate) fn remember(
+        &self,
+        generation: u32,
+        read: u32,
+        views: impl IntoIterator<Item = RequestView>,
+    ) {
         for view in views {
             let id = view.request.id.clone();
-            self.keep(read, &[&id], view);
+            self.keep(
+                read,
+                id,
+                ReadReview {
+                    generation,
+                    exact: view.clone(),
+                    owner: view,
+                },
+            );
         }
     }
 
-    /// Cache `view`, read as read number `read`, under each of `ids`, unless a newer read is
-    /// cached there: a stack read before a claim never brings back the unclaimed request.
-    fn keep(&self, read: u32, ids: &[&RequestId], view: RequestView) {
+    fn keep(&self, read: u32, id: RequestId, view: ReadReview) {
         let mut cached = self.views.lock().expect("views lock");
-        for id in ids {
-            if cached.get(*id).is_none_or(|(newest, _)| *newest < read) {
-                cached.insert((*id).clone(), (read, view.clone()));
-            }
+        if cached.get(&id).is_none_or(|(newest, _)| *newest < read) {
+            cached.insert(id, (read, view));
         }
     }
 
-    fn took(&self, id: &RequestId, taken: bool) {
-        let mut set = self.taken.lock().expect("taken lock");
-        if taken {
-            set.insert(id.clone());
-        } else {
-            set.remove(id);
-        }
+    fn took(&self, claim: store::HumanClaim) {
+        self.taken
+            .lock()
+            .expect("taken lock")
+            .insert(claim.request_id.clone(), claim);
+    }
+
+    fn forget_claim(&self, id: &RequestId) {
+        self.taken.lock().expect("taken lock").remove(id);
     }
 }
 
@@ -192,6 +290,8 @@ pub enum ToolKind {
     Launch,
     /// Waits and captures the output.
     Output,
+    /// Opens the Artifact Viewer.
+    Viewer,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -220,8 +320,11 @@ pub struct Claimant {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanView {
-    /// The request every action goes to: a waiting follower's original.
     pub id: RequestKey,
+    /// Draft and Tool log events use this original request ID, including for followers.
+    pub owner: RequestKey,
+    pub target: search::ReviewTarget,
+    pub notes: Option<String>,
     pub title: String,
     /// The Artifact the reviewed eval belongs to: its tools come first.
     pub artifact: String,
@@ -255,11 +358,17 @@ pub struct HumanView {
 pub struct Notice {
     pub text: String,
     pub error: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viewer: Option<crate::viewer::ViewerLaunch>,
 }
 
 impl From<(String, bool)> for Notice {
     fn from((text, error): (String, bool)) -> Self {
-        Self { text, error }
+        Self {
+            text,
+            error,
+            viewer: None,
+        }
     }
 }
 
@@ -275,6 +384,7 @@ pub(crate) fn kind(kind: HumanToolKind) -> ToolKind {
     match kind {
         HumanToolKind::Launch => ToolKind::Launch,
         HumanToolKind::Output => ToolKind::Output,
+        HumanToolKind::Viewer => ToolKind::Viewer,
     }
 }
 
@@ -317,6 +427,9 @@ fn view(
     });
     HumanView {
         id: request.id.clone().into(),
+        owner: request.id.clone().into(),
+        target: review::Target::from(request.as_ref()).into(),
+        notes: request.review_notes.clone(),
         title: format!("{} · {}", request.eval_id, request.title),
         artifact: request.target.to_string(),
         meta: review::meta(view, reviewer, now),
@@ -366,64 +479,141 @@ fn view(
     }
 }
 
-/// Read `id` afresh, with the read's number: a waiting follower resolves to its original,
-/// which records the Human definition and receives every action. The request records all the
-/// review shows, so its Run's definitions, which can hold a large Run's whole graph, are not
-/// read.
-async fn read(app: &App, id: &RequestId) -> Result<(u32, RequestView), Failure> {
+/// Reserve the original review's write order before reading form data or taking action.
+pub(crate) async fn draft_turns(
+    app: &App,
+    ids: &[RequestId],
+) -> Result<draft_queue::Turns, Failure> {
+    app.human
+        .drafts
+        .enter(async {
+            let state = &app.launch.state;
+            let mut owners = Vec::with_capacity(ids.len());
+            for id in ids {
+                let exact = store::read_request_by_id(state, id, store::Shown::Requests)
+                    .await
+                    .map_err(Failure::Read)?;
+                let owner = store::read_review_owner(state, &exact)
+                    .await
+                    .map_err(Failure::Read)?;
+                owners.push(owner.request.id.clone());
+            }
+            Ok(owners)
+        })
+        .await
+}
+
+/// Read the exact request and its actionable owner under the same read sequence number.
+async fn read(app: &App, id: &RequestId) -> Result<(u32, ReadReview), Failure> {
+    read_review(app, id, false).await
+}
+
+async fn read_review(
+    app: &App,
+    id: &RequestId,
+    refresh: bool,
+) -> Result<(u32, ReadReview), Failure> {
     let state = &app.launch.state;
-    let (number, view) = app
+    let generation = app.generation.current();
+    let (number, views) = app
         .human
         .reads
         .numbered(async {
-            let view = store::read_request_as(state, id, store::Shown::Requests).await?;
-            if view.request.status().is_human_wait() {
-                store::read_original_as(state, &view, store::Shown::Requests).await
-            } else {
-                Ok(view)
-            }
+            let exact = store::read_request_by_id(state, id, store::Shown::Requests).await?;
+            resolve(app, generation, exact).await
         })
         .await;
-    let view = view.map_err(Failure::Read)?;
+    Ok((
+        number,
+        loaded(app, number, views.map_err(Failure::Read)?, refresh).await?,
+    ))
+}
+
+async fn resolve(app: &App, generation: u32, exact: RequestView) -> Result<ReadReview, String> {
+    let owner = store::read_review_owner(&app.launch.state, &exact).await?;
+    Ok(ReadReview {
+        generation,
+        exact,
+        owner,
+    })
+}
+
+async fn loaded(
+    app: &App,
+    number: u32,
+    read: ReadReview,
+    refresh: bool,
+) -> Result<ReadReview, Failure> {
+    let view = &read.owner;
     // Resolve what each tool runs once per request, so the Tools pane shows what runs.
     let resolve = view.request.status().is_human_wait()
         && view.request.human_definition.is_some()
-        && !app
-            .human
-            .commands
-            .lock()
-            .expect("commands lock")
-            .contains_key(&view.request.id);
-    if resolve {
-        let commands = async {
-            let (receipts, _) = artifactize_core::human::open(state, &view.request.id).await?;
-            let result = artifactize_core::human::tool_commands(&receipts, &view.request.id).await;
-            let closed = receipts.close().await;
-            result.and_then(|commands| closed.map(|()| commands))
-        }
-        .await;
-        app.human
-            .commands
-            .lock()
-            .expect("commands lock")
-            .insert(view.request.id.clone(), commands);
-    }
-    app.human
-        .keep(number, &[id, &view.request.id], view.clone());
-    Ok((number, view))
+        && (refresh
+            || !app
+                .human
+                .commands
+                .lock()
+                .expect("commands lock")
+                .contains_key(&view.request.id));
+    let commands = if resolve {
+        Some(artifactize_core::human::preview_tool_commands(view.request.clone()).await)
+    } else {
+        None
+    };
+    app.generation
+        .if_current(read.generation, || {
+            if let Some(commands) = commands {
+                app.human
+                    .commands
+                    .lock()
+                    .expect("commands lock")
+                    .insert(view.request.id.clone(), commands);
+            }
+            app.human
+                .keep(number, read.exact.request.id.clone(), read.clone());
+        })
+        .ok_or_else(|| {
+            Failure::Read("The state was replaced while reading the review; reopen it.".into())
+        })?;
+    Ok(read)
 }
 
 /// The review of `request`, read as read number `read`.
-fn show(app: &App, read: u32, request: &RequestView) -> HumanView {
-    let commands = app.human.commands.lock().expect("commands lock");
-    view(
-        request,
+fn show(app: &App, read: u32, request: &ReadReview) -> HumanView {
+    let commands = app
+        .generation
+        .if_current(request.generation, || {
+            app.human
+                .commands
+                .lock()
+                .expect("commands lock")
+                .get(&request.owner.request.id)
+                .cloned()
+        })
+        .flatten();
+    let mut shown = view(
+        &request.owner,
         app.launch.reviewer.as_str(),
-        commands.get(&request.request.id),
-        app.generation.current(),
+        commands.as_ref(),
+        request.generation,
         read,
         OffsetDateTime::now_utc(),
-    )
+    );
+    shown.id = request.exact.request.id.clone().into();
+    shown.title = format!(
+        "{} · {}",
+        request.exact.request.eval_id, request.exact.request.title
+    );
+    shown.technical = review::technical(&request.exact, app.launch.reviewer.as_str())
+        .into_iter()
+        .map(|(key, value)| Field {
+            key: key.into(),
+            value,
+        })
+        .collect();
+    shown.target = review::Target::from(request.exact.request.as_ref()).into();
+    shown.shared = review::shared(&request.exact);
+    shown
 }
 
 /// Open request `id` in the shared Human Detail. `reload: false` redraws the last read view
@@ -448,7 +638,7 @@ pub async fn human_open(
         .flatten();
     let (number, request) = match cached {
         Some(cached) => cached,
-        None => read(&app, &id).await?,
+        None => read_review(&app, &id, reload).await?,
     };
     Ok(show(&app, number, &request))
 }
@@ -468,18 +658,14 @@ pub async fn human_form(
     form::template(&opened(&app, &id)?.request, verdict, kept)
 }
 
-async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {
-    let cancel = app.human.start(job);
-    let outcome = work
-        .run(
-            app.launch.state.clone(),
-            app.launch.reviewer.clone(),
-            cancel,
-            app.human.log.clone(),
-        )
-        .await;
-    app.human.end(job);
-    outcome
+async fn run_job(app: &App, work: Job, cancel: CancellationToken) -> Outcome {
+    work.run(
+        app.launch.state.clone(),
+        app.launch.reviewer.clone(),
+        cancel,
+        app.human.log.clone(),
+    )
+    .await
 }
 
 /// Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
@@ -488,17 +674,37 @@ async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {
 #[specta::specta]
 pub async fn human_claim(
     app: tauri::State<'_, App>,
+    caller: Caller,
     id: RequestKey,
     job: JobId,
 ) -> Result<Acted, Failure> {
     let id = id.into_inner();
+    let mut work = app.human.jobs.register(caller, job, Action::Ordinary)?;
     // Someone else's claim, or a settled request, is refused in the library's words.
-    let (_, view) = read(&app, &id).await?;
+    let (_, views) = work.prepare(read(&app, &id)).await?;
+    let view = views.owner;
     review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
-    let outcome = run_job(&app, job, Job::Claim { id: id.clone() }).await;
-    if let Outcome::Claimed { result: Ok(_) } = &outcome {
-        app.human.took(&id, true);
-    }
+    let owner = view.request.id.clone();
+    work.admit(vec![owner.clone()])?;
+    let outcome = {
+        let _settling = tokio::select! {
+            biased;
+            () = work.cancel.cancelled() => return Err(Failure::Action("Review action cancelled.".into())),
+            gate = app.human.claim_gate.lock() => gate,
+        };
+        if app.windows.is_closing() {
+            return Err(Failure::Action("This window is closing.".into()));
+        }
+        work.ready().await?;
+        let outcome = run_job(&app, Job::Claim { id: owner }, work.cancel.clone()).await;
+        if let Outcome::Claimed {
+            result: Ok((claim, true)),
+        } = &outcome
+        {
+            app.human.took(claim.clone());
+        }
+        outcome
+    };
     acted(&app, &id, outcome).await
 }
 
@@ -521,21 +727,28 @@ async fn acted(app: &App, id: &RequestId, outcome: Outcome) -> Result<Acted, Fai
 #[specta::specta]
 pub async fn human_run(
     app: tauri::State<'_, App>,
+    caller: Caller,
     id: RequestKey,
     tool: String,
     job: JobId,
 ) -> Result<Notice, Failure> {
     let id = id.into_inner();
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
-    guard(&app, &id, review::review_refusal).await?;
-    let outcome = run_job(
+    let mut work = app.human.jobs.register(caller, job, Action::Tool)?;
+    let request = work
+        .prepare(guard(&app, &id, review::review_refusal))
+        .await?;
+    let owner = request.request.id.clone();
+    work.admit(vec![owner.clone()])?;
+    work.ready().await?;
+    let mut outcome = run_job(
         &app,
-        job,
         Job::Run {
-            id: id.clone(),
+            id: owner.clone(),
             tool,
             claim: false,
         },
+        work.cancel.clone(),
     )
     .await;
     // Declarations may have changed; resolve the commands again for the next run.
@@ -543,17 +756,23 @@ pub async fn human_run(
         .commands
         .lock()
         .expect("commands lock")
-        .remove(&id);
-    Ok(outcome.notice().into())
+        .remove(&owner);
+    let mut notice: Notice = outcome.notice().into();
+    notice.viewer = crate::viewer::launch(
+        &app,
+        &mut outcome,
+        crate::viewer::Source::Review(owner),
+        work,
+    )?;
+    Ok(notice)
 }
 
 /// Cancel running job `job`: a tool, or a submission's fingerprint recheck.
 #[tauri::command]
 #[specta::specta]
-pub fn human_cancel(app: tauri::State<'_, App>, job: JobId) {
-    if let Some(token) = app.human.jobs.lock().expect("jobs lock").get(&job) {
-        token.cancel();
-    }
+pub fn human_cancel(app: tauri::State<'_, App>, caller: Caller, job: JobId) {
+    app.human.jobs.cancel(caller.clone(), job);
+    app.viewers.cancel_job(&caller, job);
 }
 
 /// Where a submission's settled result stands.
@@ -583,11 +802,12 @@ async fn guard(
     app: &App,
     id: &RequestId,
     rule: fn(Option<&RequestView>, &artifactize_core::types::ReviewerId) -> Option<String>,
-) -> Result<(), Failure> {
-    let (_, view) = read(app, id).await?;
+) -> Result<RequestView, Failure> {
+    let (_, views) = read(app, id).await?;
+    let view = views.owner;
     match rule(Some(&view), &app.launch.reviewer) {
         Some(refusal) => Err(Failure::Action(refusal)),
-        None => Ok(()),
+        None => Ok(view),
     }
 }
 
@@ -597,7 +817,7 @@ fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
         .lock()
         .expect("views lock")
         .get(id)
-        .map(|(_, view)| view.clone())
+        .map(|(_, view)| view.owner.clone())
         .ok_or_else(|| Failure::Missing("Open the request first.".into()))
 }
 
@@ -650,24 +870,62 @@ pub async fn human_remove_item(
 #[specta::specta]
 pub async fn human_submit(
     app: tauri::State<'_, App>,
+    caller: Caller,
     id: RequestKey,
     draft: Draft,
     job: JobId,
 ) -> Result<Submitted, Failure> {
     let id = id.into_inner();
-    guard(&app, &id, review::review_refusal).await?;
-    let request = opened(&app, &id)?;
-    let result = form::result(&request.request, draft)?
-        .try_into()
-        .map_err(Failure::Invalid)?;
-    let outcome = run_job(
+    let work = app.human.jobs.register(caller, job, Action::Finish)?;
+    let turn = work
+        .prepare(draft_turns(&app, std::slice::from_ref(&id)))
+        .await?;
+    let owner = &turn.owners[0];
+    let request = guard(&app, owner, review::review_refusal).await?;
+    let result = form::submission(&request.request, draft)?;
+    submit(
         &app,
-        job,
+        work,
+        id,
+        request.request.id.clone(),
+        review::Answer::ExplicitWithoutDraft(result),
+        turn,
+    )
+    .await
+}
+
+async fn submit(
+    app: &App,
+    mut work: Lease,
+    id: RequestId,
+    owner: RequestId,
+    answer: review::Answer,
+    turn: draft_queue::Turns,
+) -> Result<Submitted, Failure> {
+    work.admit(vec![owner.clone()])?;
+    app.viewers.cancel_review(&owner);
+    work.ready().await?;
+    let answer = match answer {
+        review::Answer::SavedDraft => {
+            let draft = review::read_draft(&app.launch.state, &owner, &app.launch.reviewer)
+                .await
+                .map_err(Failure::Read)?
+                .unwrap_or_default();
+            review::Answer::PreparedDraft(draft)
+        }
+        answer => answer,
+    };
+    // Keep the queue only until Submit takes its answer. Edits during the fingerprint check
+    // may still change it; the library compares the submitted snapshot at settlement.
+    drop(turn);
+    let outcome = run_job(
+        app,
         Job::Submit {
-            id: id.clone(),
-            result,
+            id: owner.clone(),
+            answer,
             claim: false,
         },
+        work.cancel.clone(),
     )
     .await;
     let settled = match &outcome {
@@ -678,14 +936,14 @@ pub async fn human_submit(
         Outcome::Submitted { result: Ok(_), .. } => Settled::Published,
         other => unreachable!("a submit job ends in Submitted or SavedLocally, not {other:?}"),
     };
-    app.human.took(&id, false);
+    app.human.forget_claim(&owner);
+    crate::viewer::settled(app, &owner);
+    if id != owner {
+        crate::viewer::settled(app, &id);
+    }
     // A submitted review's log ends here; what a launched program still prints is dropped.
-    app.human
-        .logs
-        .lock()
-        .expect("logs lock")
-        .remove(&review::log::Key::from(&id));
-    let Acted { notice, view } = acted(&app, &id, outcome).await?;
+    app.human.review_status_changed();
+    let Acted { notice, view } = acted(app, &id, outcome).await?;
     Ok(Submitted {
         settled,
         notice,
@@ -698,31 +956,49 @@ pub async fn human_submit(
 #[specta::specta]
 pub async fn human_release(
     app: tauri::State<'_, App>,
+    caller: Caller,
     ids: Vec<RequestKey>,
     job: JobId,
 ) -> Result<Acted, Failure> {
     let ids: Vec<RequestId> = ids.into_iter().map(RequestKey::into_inner).collect();
-    if let [id] = ids.as_slice() {
-        guard(&app, id, review::release_refusal).await?;
+    let mut work = app.human.jobs.register(caller, job, Action::Ordinary)?;
+    let _turn = work.prepare(draft_turns(&app, &ids)).await?;
+    let _claim = work
+        .prepare(async { Ok(app.human.claim_gate.lock().await) })
+        .await?;
+    let mut owners = BTreeSet::new();
+    for id in &ids {
+        let view = if ids.len() == 1 {
+            guard(&app, id, review::release_refusal).await?
+        } else {
+            read(&app, id).await?.1.owner
+        };
+        owners.insert(view.request.id.clone());
+    }
+    let owners: Vec<_> = owners.into_iter().collect();
+    work.admit(owners.clone())?;
+    for owner in &owners {
+        app.viewers.cancel_review(owner);
     }
     let outcome = run_job(
         &app,
-        job,
         Job::Release {
-            ids: ids.clone(),
+            ids: owners.clone(),
             quit: false,
         },
+        work.cancel.clone(),
     )
     .await;
     let Outcome::Released { failed, .. } = &outcome else {
         unreachable!("a release job ends in Released");
     };
     // A release that failed keeps its claim on the list.
-    for id in ids
+    for id in owners
         .iter()
         .filter(|id| !failed.iter().any(|(failed, _)| failed == *id))
     {
-        app.human.took(id, false);
+        app.human.forget_claim(id);
+        crate::viewer::settled(&app, id);
     }
     let notice = outcome.notice().into();
     let view = match ids.as_slice() {
@@ -738,13 +1014,86 @@ pub async fn human_release(
 /// Claims this window took and has neither submitted nor released, for the quit prompt.
 #[tauri::command]
 #[specta::specta]
-pub fn human_taken(app: tauri::State<'_, App>) -> Vec<RequestKey> {
-    app.human
-        .taken
-        .lock()
-        .expect("taken lock")
+pub async fn human_taken(app: tauri::State<'_, App>) -> Result<Vec<RequestKey>, Failure> {
+    let _settling = app.human.claim_gate.lock().await;
+    live_claims(&app).await
+}
+
+/// The caller holds `claim_gate`, so a pending acquisition cannot change this snapshot.
+pub(crate) async fn live_claims(app: &App) -> Result<Vec<RequestKey>, Failure> {
+    let claims = app.human.taken.lock().expect("taken lock").clone();
+    let mut live = Vec::new();
+    for (id, claim) in claims {
+        if store::read_optional_request(&app.launch.state, &id, store::Shown::Requests)
+            .await
+            .map_err(Failure::Read)?
+            .is_some_and(|view| view.claim.as_ref() == Some(&claim))
+        {
+            live.push(id.into());
+        }
+    }
+    Ok(live)
+}
+
+/// Release and quit only releases claims this app took and still owns.
+#[tauri::command]
+#[specta::specta]
+pub async fn human_release_taken(
+    app: tauri::State<'_, App>,
+    caller: Caller,
+    ids: Vec<RequestKey>,
+    job: JobId,
+) -> Result<Acted, Failure> {
+    let claims: Vec<_> = {
+        let taken = app.human.taken.lock().expect("taken lock");
+        ids.into_iter()
+            .filter_map(|id| taken.get(&id.into_inner()).cloned())
+            .collect()
+    };
+    let ids: Vec<_> = claims
         .iter()
-        .cloned()
-        .map(RequestKey::from)
-        .collect()
+        .map(|claim| claim.request_id.clone())
+        .collect();
+    let work = app
+        .human
+        .jobs
+        .begin(caller, job, ids.clone(), Action::Quit)?;
+    for id in &ids {
+        app.viewers.cancel_review(id);
+    }
+    work.ready().await?;
+    let _turn = work
+        .prepare(app.human.drafts.enter(async { Ok(ids.clone()) }))
+        .await?;
+    let _claim = work
+        .prepare(async { Ok(app.human.claim_gate.lock().await) })
+        .await?;
+    let mut failed = Vec::new();
+    for claim in claims {
+        let id = claim.request_id.clone();
+        match artifactize_core::human::release_exact_claim(&app.launch.state, &claim).await {
+            Ok(released) => {
+                {
+                    let mut taken = app.human.taken.lock().expect("taken lock");
+                    if taken.get(&id) == Some(&claim) {
+                        taken.remove(&id);
+                    }
+                }
+                if released {
+                    crate::viewer::settled(&app, &id);
+                }
+            }
+            Err(error) => failed.push((id, error)),
+        }
+    }
+    drop(work);
+    let outcome = Outcome::Released {
+        ids,
+        quit: true,
+        failed,
+    };
+    Ok(Acted {
+        notice: outcome.notice().into(),
+        view: None,
+    })
 }

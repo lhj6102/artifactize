@@ -70,7 +70,7 @@
 </script>
 
 <div
-  class="whole ported light-{data.light}"
+  class="whole graph-face ported light-{data.light}"
   class:inward={data.inward}
   class:outward={data.outward}
   class:minimized
@@ -93,7 +93,7 @@
     {#if data.reset && !minimized}
       <button class="toggle nodrag nopan" type="button" aria-label="Reset layout of {data.name}" onclick={reset}><Icon name="reset" /></button>
     {/if}
-    <button class="toggle nodrag nopan" type="button" title="{action} (m)" aria-label="{action} {data.name} (m)" aria-keyshortcuts="m" onclick={toggle}>
+    <button class="toggle nodrag nopan" type="button" title={action} aria-label="{action} {data.name} (m)" aria-keyshortcuts="m" onclick={toggle}>
       <Icon name={minimized ? "add" : "minus"} />
     </button>
   </div>
@@ -117,46 +117,14 @@
     background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
     color: var(--ink);
   }
-  /* Minimized, it is a node's neutral face with its strip, and a second outline behind it for
-     the parts it holds. */
+  /* Minimized, it has a strip and a second outline behind it for the parts it holds. */
   .minimized {
+    --ring-gap: 6px;
+    --node-decoration: 3px 3px 0 -1px var(--surface-app), 3px 3px 0 0 var(--line-node), inset 0 calc(-1 * var(--strip)) 0 var(--light);
     background: var(--surface-panel);
-    box-shadow:
-      3px 3px 0 -1px var(--surface-app),
-      3px 3px 0 0 var(--line-node),
-      inset 0 calc(-1 * var(--strip)) 0 var(--light);
   }
-  /* The pointer only steps the outline up. */
-  .whole:hover {
+  .whole:hover:not(.selected, .open, .target) {
     border-color: var(--ink-3);
-  }
-  /* The opened whole: its own outline turned neutral-bright and 2px, with no gap. */
-  .whole.selected,
-  .whole.open {
-    border-color: var(--outline-selected);
-    box-shadow: 0 0 0 1px var(--outline-selected);
-  }
-  /* Opened, it keeps the second outline behind it for the parts it holds. */
-  .minimized.selected,
-  .minimized.open {
-    box-shadow:
-      0 0 0 1px var(--outline-selected),
-      3px 3px 0 -1px var(--surface-app),
-      3px 3px 0 0 var(--line-node),
-      inset 0 calc(-1 * var(--strip)) 0 var(--light);
-  }
-  /* The Artifact a release would make the dragged one's whole. */
-  .whole.target {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
-  }
-  /* Minimized, it keeps its second outline and its strip under the accent outline. */
-  .minimized.target {
-    box-shadow:
-      0 0 0 1px var(--accent),
-      3px 3px 0 -1px var(--surface-app),
-      3px 3px 0 0 var(--line-node),
-      inset 0 calc(-1 * var(--strip)) 0 var(--light);
   }
   /* The strip in its status's colour runs along the box's top edge, the title row right under
      it, not closed below by a strip. */

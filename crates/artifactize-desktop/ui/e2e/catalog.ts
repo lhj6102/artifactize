@@ -5,9 +5,12 @@ import { scenarios as graph } from "./cases/graph.ts";
 import { scenarios as pane } from "./cases/pane.ts";
 import { scenarios as review } from "./cases/review.ts";
 import { scenarios as settings } from "./cases/settings.ts";
+import { scenarios as viewers } from "./cases/viewers.ts";
 import { scenarios as window } from "./cases/window.ts";
 
-export const scenarios: Scenario[] = [...window, ...pane, ...graph, ...editing, ...review, ...settings];
+import { scenarios as modes } from "./cases/modes.ts";
+
+export const scenarios: Scenario[] = [...window, ...pane, ...graph, ...editing, ...review, ...settings, ...modes, ...viewers];
 
 const ids = new Set<string>();
 for (const item of scenarios) {

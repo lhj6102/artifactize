@@ -85,7 +85,7 @@ pub async fn transcript_open(
     id: crate::ids::RequestKey,
     handle: Option<TranscriptHandle>,
 ) -> Result<Opened, Failure> {
-    let view = store::read_request(&app.launch.state, &id.into_inner())
+    let view = store::read_request_id(&app.launch.state, &id.into_inner())
         .await
         .map_err(Failure::Read)?;
     let stamp = EvidenceStamp::new(&view);

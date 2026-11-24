@@ -1,15 +1,20 @@
-// The main area as a person reads it: its header, and the graph of a Run or a Current with its
-// tool strip, its find field and its navigator; each action waits for what it shows.
+// The main area as a person reads it: its stage header of tools, its status line, and the graph
+// of a Run or a Current with its find field and its navigator; what is shown is named by the
+// Pane's selected row. Each action waits for what it shows.
 import { PNG } from "pngjs";
 import { clickAt, dispatchInput, visibleCenter } from "../input.ts";
 import { afterRender, press, typeText } from "../keys.ts";
 import { holds, until } from "./wait.ts";
 
-const MAIN = 'section.panel[aria-label="Main area"]';
+const REVIEW_MAIN = `section.stage-area[aria-label="Review's main area"]`;
+const VERIFY_MAIN = 'main[aria-label="Verify"]:not([hidden]) section.stage-area[aria-label="Main area"]';
+const CHAT_MAIN = `main[aria-label="Chat"]:not([hidden]) section.stage-area[aria-label="Chat's main area"]`;
+const MAIN = `:is(${VERIFY_MAIN}, ${CHAT_MAIN})`;
+const DETAIL = 'main:not([hidden]) aside[aria-label="Detail"]';
 /** The main area's graph, never the one a Detail draws of an Artifact's neighbours. */
 const GRAPH = `${MAIN} .graph`;
-const TOOLS = '[aria-label="Graph tools"]';
-const FIND = 'input[aria-label="Find in the graph"]';
+const TOOLS = `${MAIN} > header [aria-label="Graph tools"]`;
+const FIND = `${MAIN} input[aria-label="Find in the graph"]`;
 
 /** A drawn Artifact: its id (`a:name`, a part `a:whole/a:part`), what it reads aloud (its name
  * and verdict), its verdict's icon, its comment and whether a whole is minimized. */
@@ -43,37 +48,66 @@ export class Graph {
   }
 
   // -------------------------------------------------------------------------------
-  // The main area's header
+  // The stage header, its status line, and the Pane's row that names what is shown
 
-  /** The header's title: the Run's ID, `Current · {branch}`, `Review`, or `Nothing chosen`. */
-  title(): Promise<string> {
-    return this.browser.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? "", MAIN);
+  async expandNotice(summary: string, full: string): Promise<void> {
+    const notice = this.browser.$(`${MAIN} .status-line .notice button`);
+    await holds(this.browser, async () => await notice.isDisplayed() && (await notice.getText()).includes(summary), `the status line summarizes: ${summary}`);
+    await notice.click();
+    await holds(this.browser, async () => await notice.getAttribute("aria-expanded") === "true" && (await notice.getText()).includes(full), `the expanded notice explains: ${full}`);
   }
 
-  /** Wait until the header's title is `title`. */
+  async openOrigin(session: string): Promise<void> {
+    const origin = this.browser.$(`${MAIN} > header`).$(`button=Chat · ${session}`);
+    await origin.waitForDisplayed();
+    await origin.click();
+  }
+
+  /** Open in Chat from a Run's header or an empty branch. */
+  async openInChat(): Promise<void> {
+    const link = this.browser.$(VERIFY_MAIN).$("button=Open in Chat");
+    await link.waitForDisplayed();
+    await link.click();
+  }
+
+  /** What names the shown view, as the Pane's selected row says it (J-STAGE): in Verify the
+   * shown Run's entry (its ID) or the selected branch without Runs; in Chat the selected
+   * session's title; `Nothing chosen` when nothing is. */
+  title(): Promise<string> {
+    return this.browser.execute(() => {
+      const chat = document.querySelector('main[aria-label="Chat"]:not([hidden])');
+      if (chat) return chat.querySelector('[aria-label="Chats"] button.session[aria-current="true"] .title')?.textContent?.trim() ?? "Nothing chosen";
+      const verify = document.querySelector('main[aria-label="Verify"]:not([hidden])');
+      const entry = verify?.querySelector('[aria-label="Pane entries"] button[data-chip][aria-pressed="true"]');
+      if (entry) return entry.getAttribute("data-chip") ?? "";
+      const branch = verify?.querySelector('[aria-label="Branches"] > [role="treeitem"][aria-selected="true"] .label');
+      return branch?.textContent?.replace(/\s+/g, " ").trim() ?? "Nothing chosen";
+    });
+  }
+
+  /** Wait until the Pane's selected row names `title`. */
   async titled(title: string): Promise<void> {
     await until(this.browser, () => this.title(), (shown) => shown === title, `the main area shows ${title}`);
   }
 
-  /** The Run's headline as it reads aloud: its verdict and what needs attention. */
-  headline(): Promise<string> {
-    return this.browser.execute((main) => document.querySelector(`${main} > header button.headline`)?.getAttribute("aria-label") ?? "", MAIN);
-  }
-
-  /** What the header's row says beside the title, as text. */
+  /** The stage header's words and tools' names, as text: it names and rates nothing. */
   header(): Promise<string> {
-    return this.browser.execute((main) => (document.querySelector<HTMLElement>(`${main} > header`)?.innerText ?? "").replace(/\s+/g, " ").trim(), MAIN);
+    return this.browser.execute((main) => {
+      const header = document.querySelector<HTMLElement>(`${main} > header`);
+      const tools = [...(header?.querySelectorAll("button") ?? [])].map((tool) => tool.getAttribute("aria-label") ?? tool.textContent?.trim() ?? "");
+      return [header?.innerText ?? "", ...tools].join(" ").replace(/\s+/g, " ").trim();
+    }, MAIN);
   }
 
-  /** A Current's scan as its header says it: `Scanned at …` once a scan ended, `N left` while
-   * one runs, then a failure's words if any. */
+  /** A Current's scan as its status line says it: `Scanned at …` once a scan ended, `N left`
+   * while one runs, then a failure's words if any. */
   scan(): Promise<string> {
     return this.browser.execute((main) => {
-      const scan = document.querySelector(`${main} > header .scan`);
+      const scan = document.querySelector(`${main} .status-line .scan`);
       const said = scan?.querySelector("time")?.getAttribute("aria-label") ?? scan?.querySelector(".checking")?.getAttribute("aria-label") ?? "";
       const failure = scan?.querySelector(".failure")?.textContent?.trim();
       return failure ? `${said} ${failure}` : said;
-    }, MAIN);
+    }, CHAT_MAIN);
   }
 
   /** What the main area says where its view would be (nothing chosen, a Run it cannot read). */
@@ -87,28 +121,41 @@ export class Graph {
   }
 
   /** A request the main area shows read-only: its status line and instruction. */
-  record(): Promise<{ status: string; instruction: string }> {
+  record(): Promise<{ status: string; instruction: string; result: string; editable: boolean }> {
     return this.browser.execute((main) => {
       const root = document.querySelector(`${main} [role="document"]`);
       const words = (selector: string) => (root?.querySelector<HTMLElement>(selector)?.innerText ?? "").replace(/\s+/g, " ").trim();
-      return { status: words(".summary .status"), instruction: words(".instruction") };
-    }, MAIN);
+      const region = document.querySelector(main);
+      return {
+        status: words(".summary .status"), instruction: words(".instruction"), result: words('section[aria-label="Result"] .result'),
+        editable: !!region?.querySelector('input:not([readonly]), textarea:not([readonly]), select, [contenteditable="true"], [aria-label="Human review"]'),
+      };
+    }, REVIEW_MAIN);
   }
 
   /** The facts under Debug of a request the main area shows read-only, by name, unfolding Debug
    * with a click on its header row when it is folded. */
   async recordDebug(): Promise<Record<string, string>> {
-    const head = this.browser.$(`${MAIN} [role="document"] section.section[aria-label="Debug"] > button.head`);
+    const head = this.browser.$(`${REVIEW_MAIN} [role="document"] section.section[aria-label="Debug"] > button.head`);
     await head.waitForExist({ timeout: 15000, timeoutMsg: "the request's Debug section" });
     if ((await head.getAttribute("aria-expanded")) === "false") await head.click();
     return until(this.browser, () => this.browser.execute((main) => Object.fromEntries([...document.querySelectorAll(`${main} [role="document"] section.section[aria-label="Debug"] dt`)]
-      .map((term) => [term.textContent?.trim() ?? "", term.nextElementSibling?.textContent?.trim() ?? ""])), MAIN), (facts) => Object.keys(facts).length > 0, "Debug unfolded");
+      .map((term) => [term.textContent?.trim() ?? "", term.nextElementSibling?.textContent?.trim() ?? ""])), REVIEW_MAIN), (facts) => Object.keys(facts).length > 0, "Debug unfolded");
   }
 
-  /** Click the Run's headline: the Run's own Detail opens. */
+  /** Click Run details among the stage header's tools: the Run's own Detail opens. */
   async openRunDetail(): Promise<void> {
-    await this.browser.$(`${MAIN} > header button.headline`).click();
-    await holds(this.browser, async () => (await this.browser.$('aside[aria-label="Detail"] h2').isExisting()), "the Run's Detail opened");
+    const tool = this.browser.$(`${VERIFY_MAIN} > header`).$("button=Run details");
+    await tool.waitForEnabled({ timeoutMsg: "timed out: the Run is read and Run details is enabled" });
+    if (await tool.getAttribute("aria-pressed") !== "true") await tool.click();
+    await holds(this.browser, async () => await tool.getAttribute("aria-pressed") === "true" && await this.browser.$(`${DETAIL} h2`).isExisting(), "the Run's Detail opened");
+  }
+
+  /** Click Run details again: the Run's Detail closes. */
+  async closeRunDetail(): Promise<void> {
+    const tool = this.browser.$(`${VERIFY_MAIN} > header`).$("button=Run details");
+    if (await tool.getAttribute("aria-pressed") === "true") await tool.click();
+    await holds(this.browser, async () => await tool.getAttribute("aria-pressed") === "false" && !(await this.browser.$(DETAIL).isExisting()), "the Run's Detail closed");
   }
 
   /** Whether the main area has the keyboard. */
@@ -171,16 +218,16 @@ export class Graph {
   async open(id: string, title: string): Promise<void> {
     await this.node(id);
     await this.browser.$(`${nodeAt(id)} .name`).click();
-    await until(this.browser, () => this.browser.execute(() => document.querySelector('aside[aria-label="Detail"] h2')?.textContent?.trim() ?? ""),
+    await until(this.browser, () => this.browser.execute((selector) => document.querySelector(`${selector} h2`)?.textContent?.trim() ?? "", DETAIL),
       (shown) => shown === title, `${id}'s Detail opened`);
   }
 
   /** Click the graph's background, once some of it shows (a dialog closing may still cover
    * it): an open Detail closes. */
   async clickBackground(): Promise<void> {
-    const point = await until(this.browser, () => this.browser.execute((graph) => {
+    const point = await until(this.browser, () => this.browser.execute((graph, dock) => {
       const canvas = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
-      const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const detail = document.querySelector(dock)?.getBoundingClientRect();
       const right = detail && detail.left > canvas.left ? detail.left : canvas.right;
       // The first empty point along the canvas's bottom edge, left of a Detail.
       for (let x = canvas.left + 12; x < right - 12; x += 16) {
@@ -190,7 +237,7 @@ export class Graph {
         }
       }
       return null;
-    }, GRAPH), (found) => found !== null, "the graph shows background to click");
+    }, GRAPH, DETAIL), (found) => found !== null, "the graph shows background to click");
     if (!point) throw new Error("the graph shows no background to click");
     await clickAt(this.browser, point);
   }
@@ -248,14 +295,21 @@ export class Graph {
     await this.node(id, (node) => /, minimized,/.test(node.label) === minimized, `${name} ${minimized ? "minimized" : "expanded"}`);
   }
 
-  /** Whether the tool strip shows `name` (Find, Fit, New Artifact, Reset layout…). */
-  async hasTool(name: string): Promise<boolean> {
-    return this.browser.$(TOOLS).$(`button*=${name}`).isExisting();
+  /** The graph's tool `name` in the stage header: by its words, or by its accessible name when
+   * it is an icon alone (Find). */
+  private async toolButton(name: string) {
+    const named = this.browser.$(TOOLS).$(`button[aria-label^="${name}"]`);
+    return (await named.isExisting()) ? named : this.browser.$(TOOLS).$(`button*=${name}`);
   }
 
-  /** Click the tool strip's `name`. */
+  /** Whether the stage header shows the graph's tool `name` (Find, Fit, New Artifact, Reset layout…). */
+  async hasTool(name: string): Promise<boolean> {
+    return (await this.toolButton(name)).isExisting();
+  }
+
+  /** Click the graph's tool `name` in the stage header. */
   async tool(name: string): Promise<void> {
-    await this.browser.$(TOOLS).$(`button*=${name}`).click();
+    await (await this.toolButton(name)).click();
   }
 
   // -------------------------------------------------------------------------------
@@ -362,14 +416,15 @@ export class Graph {
     return (x, y) => at(x, y).some((value, channel) => Math.abs(value - ground[channel]) > 40);
   }
 
-  /** Click the graph `dx`, `dy` pixels from the middle of its view (as `offCentre` measures). */
+  /** Click the graph `dx`, `dy` pixels from the middle of its protected view (as `offCentre` measures). */
   async clickFromMiddle(dx: number, dy: number): Promise<void> {
-    const middle = await this.browser.execute((graph) => {
+    const middle = await this.browser.execute((graph, dock) => {
       const canvas = document.querySelector(`${graph} .canvas`)!.getBoundingClientRect();
-      const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const detail = document.querySelector(dock)?.getBoundingClientRect();
       const right = detail && detail.left > canvas.left && detail.left < canvas.right ? detail.left : canvas.right;
-      return { x: (canvas.left + right) / 2, y: canvas.top + canvas.height / 2 };
-    }, GRAPH);
+      const band = Number.parseFloat(getComputedStyle(document.querySelector(`${graph} .canvas`)!).getPropertyValue("--float-inset")) || 0;
+      return { x: (canvas.left + right) / 2, y: canvas.top + (canvas.height + 32 - band) / 2 };
+    }, GRAPH, DETAIL);
     await clickAt(this.browser, { x: Math.round(middle.x + dx), y: Math.round(middle.y + dy) });
   }
 
@@ -436,7 +491,7 @@ export class Graph {
     for (const option of options) {
       if ((await option.$(".name").getText()).trim() === name) {
         await option.click();
-        await until(this.browser, () => this.browser.execute(() => document.querySelector('aside[aria-label="Detail"] h2')?.textContent?.trim() ?? ""),
+        await until(this.browser, () => this.browser.execute((selector) => document.querySelector(`${selector} h2`)?.textContent?.trim() ?? "", DETAIL),
           (shown) => shown === title, `${name} found and its Detail opened`);
         await until(this.browser, () => this.found(), (shown) => shown === null, `the find field closed once ${name} was chosen`);
         return;
@@ -445,7 +500,8 @@ export class Graph {
     throw new Error(`the find field does not list ${name}`);
   }
 
-  /** How far the node `id` is drawn from the middle of the graph left of an open Detail. */
+  /** How far the node `id` is drawn from the middle of the graph's protected view left of an
+   * open Detail (D-CUR-10). */
   offCentre(id: string): Promise<{ x: number; y: number } | null> {
     return this.browser.execute((selector, graph) => {
       const node = document.querySelector(selector)?.getBoundingClientRect();
@@ -453,7 +509,10 @@ export class Graph {
       if (!node || !canvas) return null;
       const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
       const right = detail && detail.left > canvas.left && detail.left < canvas.right ? detail.left : canvas.right;
-      return { x: Math.round(node.left + node.width / 2 - (canvas.left + right) / 2), y: Math.round(node.top + node.height / 2 - (canvas.top + canvas.height / 2)) };
+      // The protected view's middle: below the status line's 32px, above a floating chat's band.
+      const band = Number.parseFloat(getComputedStyle(document.querySelector(`${graph} .canvas`)!).getPropertyValue("--float-inset")) || 0;
+      const middle = canvas.top + (canvas.height + 32 - band) / 2;
+      return { x: Math.round(node.left + node.width / 2 - (canvas.left + right) / 2), y: Math.round(node.top + node.height / 2 - middle) };
     }, nodeAt(id), GRAPH);
   }
 }

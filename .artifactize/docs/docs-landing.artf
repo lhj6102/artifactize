@@ -1,23 +1,18 @@
 path = "website/landing/"
+type = "files"
 parts = ["docs-landing-board"]
 
 [views.human_tools]
 preview = { description = "Open this tree's landing page in your browser with shared assets, without docs, and clean up after 30 minutes without requests.", kind = "launch", command = "python3", args = ["../preview.py"] }
 
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
-
 [evals.follows-rules]
 title = "The landing page follows the introduction rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-rules.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "max", timeout_ms = 1800000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.follows-rules.payload]
@@ -30,7 +25,7 @@ installer implementation scripts are not page content."""
 
 [evals.translates-ko]
 title = "The Korean landing page conveys the same content and links as the English one"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.translates-ko.payload]
@@ -53,7 +48,7 @@ fingerprint, artifactsum, GREEN, RED, YELLOW) also stay in English in the Korean
   clauses within a paragraph for natural Korean flow is ENCOURAGED and is NEVER a violation.
 - K-SAME-TARGETS: Every Korean link reaches the same target as its English counterpart, except that
   documentation links (/docs/...) reach the same page of the Korean documentation (/docs/ko/...),
-  links to the landing page reach /ko/, the example graph image is /media/graph-example.ko.png on the Korean page (copied from assets/others/ by layout.py at build time, just like /media/graph-example.en.png and /media/review-loop.gif),
+  links to the landing page reach /ko/, the example graph image is /media/graph-example.ko.png on the Korean page (copied from assets/others/ by layout.py at build time, just like /media/graph-example.en.png, /media/review-loop.gif, /media/monitor.png, /media/detail.png and /media/review.png),
   the Open Graph image is https://artifactize.dev/media/og.ko.jpg, and the canonical and Open Graph URLs are https://artifactize.dev/ko/. The development board (/board/)
   and the privacy page (/privacy/) are English only, and their Korean links say so. Commands, copy
   targets and code are unchanged; only comments in code may be translated. Both pages link to
@@ -62,13 +57,12 @@ Use the list, glob, grep and read tools of {docs-landing}. Tool paths are Artifa
 
 [evals.follows-write-in-korean]
 title = "The Korean landing page follows the Korean writing rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-write-in-korean.payload]
 instruction = """
 Read {rules-write-in-korean}. Read index.html and site.js of {docs-landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale="ko" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text; the project sentence "Artifactize: Evaluation-driven development for people and AI agents." stays in English by design, and "Artifact Graph" is the product's name for the graph.
-The How it works section says "evaluations" in English, so its Korean says 평가 there by the owner's choice, not 검사.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs-landing}; tool paths are Artifact-relative.

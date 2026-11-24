@@ -9,11 +9,12 @@ graph = { builtin = "graph", args = [] }
 
 [evals.connects]
 title = "The engine definitions give every crate the same checks and name inputs in one direction"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read every definition in {graph-engine}; use the graph tool for relations that leave the
-folder. The folder defines the workspace crates (engine-core, engine-tools, engine-cli,
+folder. The graph's relations run from an input to the Artifact whose eval names it: in
+`a -> b [instruction eval=b/x name=a]`, eval b/x names a, and a does not name b. The folder defines the workspace crates (engine-core, engine-tools, engine-cli,
 engine-mcp) and the workspace manifest and lockfile. Check that:
 - Same checks: every crate carries the same checks (code checklist, platform checklist,
   formatting, clippy, tests) with the same criteria apart from the crate's name; a

@@ -61,7 +61,7 @@ impl Endpoint {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
         // Stable inode: never unlink this pathname, even after a hub dies.
-        match file.try_lock() {
+        match crate::platform::paths::try_lock(&file) {
             Ok(()) => Ok(Some(file)),
             Err(std::fs::TryLockError::WouldBlock) => Ok(None),
             Err(std::fs::TryLockError::Error(error)) => Err(error),

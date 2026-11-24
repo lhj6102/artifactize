@@ -2,7 +2,7 @@
 // ID, a newer release, refreshing and quitting.
 import assert from "node:assert/strict";
 import { standInBrowser, browserHandoffs } from "../fixtures/browser.ts";
-import { addRepository, addWorktree, addWorktrees, createEmpty, createRelease, declareRelease, environment, newFixture, orderRuns, removeWorktree, request, requests, verifyWorktree } from "../fixtures/repo.ts";
+import { REVIEW_FINDING, addRepository, addWorktree, addWorktrees, createEmpty, createRelease, createReviewed, declareRelease, environment, newFixture, orderRuns, removeWorktree, request, verifyWorktree } from "../fixtures/repo.ts";
 import { shortcutLabel } from "../platform.ts";
 import { nativePath, readText, writeText, serveLoopbackHttp } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -29,9 +29,9 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(names, ["other  master", "repo  master", "repo  scope-one"]);
       assert.equal(await app.windowTitle(), "Artifactize");
       assert.equal(await app.graph.title(), "Nothing chosen");
-      assert.equal(await app.graph.empty(), "Choose a branch or a waiting review in the Pane.");
-      assert.deepEqual(await app.pane.layout(), { parts: ["Search branches and reviews", "Branches", "Waiting"], query: "sort:recent", divider: true, scope: false });
-      assert.equal(await app.pane.stacked(), true, "search, branches and waiting reviews in one column");
+      assert.equal(await app.graph.empty(), "Choose a branch in the Pane.");
+      assert.deepEqual(await app.pane.layout(), { parts: ["Search the branches", "Branches"], query: "sort:recent", divider: true, scope: false });
+      assert.equal(await app.pane.stacked(), true, "search and branches in one column");
       // Folded, a branch reads as project and branch over its newest Run's status.
       const folded = await app.pane.branch("repo  scope-one");
       assert.equal(folded.label, "repo / scope-one");
@@ -43,12 +43,16 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(expanded.entries.map((entry) => [entry.id, entry.shown]), [[run, true]], "its Run in progress is its newest entry");
       assert.match(expanded.entries[0].text, /^Waiting for sign-off \d+[smh]/);
       await app.graph.titled(run);
-      // The title shows at once; the headline once the Run, drawn here, has loaded.
+      // Its entry names it at once; the graph once the Run, drawn here, has loaded.
       await app.graph.node("a:release", (node) => node.label === "release: in progress, 0 of 1 evals GREEN", "release waits for its sign-off");
       await app.graph.node("a:docs", (node) => node.label === "docs: GREEN, 1 of 1 evals GREEN", "docs passed");
       // ship's eval reads release: an edge leads from release to ship.
       await app.graph.edge("a:release", "a:ship");
-      assert.match(await app.graph.headline(), /^WAITING_HUMAN: release\/signoff /);
+      // The stage header names nothing: what the Run waits for is its Detail's, from Run details.
+      assert.doesNotMatch(await app.graph.header(), /WAITING|release\/signoff|run-/);
+      await app.graph.openRunDetail();
+      assert.match(await app.detail.section("Waits for"), /release\/signoff/);
+      await app.graph.closeRunDetail();
       // Another branch's timeline lists its Runs newest first; a click on the older shows it.
       if (!(await app.pane.branch("repo  scope-one")).expanded) await app.pane.toggle("repo  scope-one");
       const timeline = await app.pane.branch("repo  scope-one", (branch) => branch.entries.length === 2, "scope-one's two Runs listed");
@@ -67,7 +71,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "palette-help",
-    title: "the Commands button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
+    title: "the brand button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
     journeys: ["J-PALETTE", "J-HELP"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -95,9 +99,9 @@ export const scenarios: Scenario[] = [
       await app.graph.focus();
       await app.command("Keyboard shortcuts");
       const help = (await app.help())!;
-      assert.ok(help.keys.some((key) => key.action === "Command palette" && key.keys === shortcutLabel("Ctrl+K")), `Help lists the palette's key: ${JSON.stringify(help.keys)}`);
-      assert.deepEqual(help.marks.map((mark) => mark.word), ["GREEN", "in progress", "waiting", "RED", "ERROR", "blocked by upstream"], "a Run's marks, each with its word");
-      assert.ok(help.marks.every((mark) => mark.icon !== ""), "each mark beside its word");
+      assert.equal(help.keys.find((key) => key.action === "Command palette")?.keys, shortcutLabel("Ctrl+K / F1"), "Help lists both ways to open the command palette");
+      assert.deepEqual(help.marks.map((mark) => mark.icon), ["green", "running", "waiting", "red", "error", "blocked", "human"], "a Run's marks, including the Human waiting glyph");
+      assert.equal(help.marks.find((mark) => mark.icon === "running")?.word, "running or waiting for a Human");
       await app.closeHelp("Close");
       await app.command("Keyboard shortcuts");
       await app.closeHelp("outside");
@@ -107,34 +111,33 @@ export const scenarios: Scenario[] = [
   scenario({
     id: "open-review-by-id",
     title: "started with review ID it opens that waiting review in the main area, named once in its header; the palette's Open a request by ID opens another request read-only, and choosing a branch leaves the review",
-    journeys: ["J-LAUNCH", "J-MAIN-REVIEW", "J-OPEN-ID", "J-HUMAN-LAYOUT"],
+    journeys: ["J-LAUNCH", "J-REVIEW-REF", "J-OPEN-ID", "J-HUMAN-LAYOUT"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       const first = request(fixture).id;
       await addRepository(fixture, "other");
-      const docs = requests(fixture).find((saved) => saved.evalId === "docs/lint")!.id;
-      return { fixture, args: ["review", first], data: { first, docs } };
+      await createReviewed(own, { ...fixture, repo: nativePath(fixture.root, "completed-record") });
+      const completed = request(fixture, "report/agent").id;
+      return { fixture, args: ["review", first], data: { first, completed } };
     },
-    run: async (app, { data: { first, docs } }) => {
-      await app.graph.titled("Review");
-      assert.match(await app.graph.header(), /release\/signoff/, "the review's eval named in the header");
+    run: async (app, { data: { first, completed } }) => {
+      await app.review.titleContains("release/signoff");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${first} · DEFERRED · unclaimed`), "the named review, not the newest one");
-      await app.review.until((shown) => shown.stage === "CLAIM" && shown.tools.length > 0, "the review is actionable: it can be claimed");
-      // In the wide main area, the Tool log is the view on the left, the rest a column at the right.
-      await app.until(async () => {
-        const panels = await app.review.panels();
-        return !!panels && panels.log.right <= panels.column.left + 1 && panels.log.bottom > panels.column.top;
-      }, "the Tool log on the left of the column, side by side");
+      await app.review.until((shown) => shown.stage === "Waiting" && shown.tools.length > 0, "the review is actionable: it can be claimed");
+      await app.review.until((shown) => ["Instruction", "Tools", "Claim line", "Decision"].every((section) => shown.sections.includes(section)), "the review shows the instruction, its tools, the claim line and the decision bar");
       // Another request by its ID opens read-only.
       await app.openPalette();
       await app.runCommand("Open a request by ID");
-      await app.openById(docs);
-      await app.graph.titled("docs/lint · Check docs · read-only");
-      assert.equal((await app.graph.recordDebug()).Request, docs, "the request of the ID entered, not the other repository's");
+      await app.openById(completed);
+      await app.review.titleContains("report/agent");
+      assert.equal((await app.graph.recordDebug()).Request, completed, "the request of the ID entered, not the other repository's");
       const record = await app.graph.record();
-      assert.match(record.status, /^GREEN/, "its saved result");
-      assert.equal(record.instruction, "Check docs.", "for its instruction");
+      assert.match(record.status, /^GREEN/, "its saved verdict");
+      assert.ok(record.result.includes(REVIEW_FINDING), `the read-only record displays its saved finding: ${record.result}`);
+      assert.equal(record.editable, false, "a completed request does not show an editable review form");
+      assert.equal(record.instruction, "Review the receipt.", "for its instruction");
       // Choosing a branch leaves what the main area showed.
+      await app.mode("Verify");
       const branch = await app.pane.selectBranch("repo  master");
       await app.graph.titled(branch.entries.find((entry) => entry.shown)!.id);
     },
@@ -142,14 +145,14 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "quit-with-claims",
-    title: "the palette's Quit asks first while this window holds a claim, naming it: Stay keeps the window and the claim, Release and quit releases it and the app exits",
+    title: "Quit and the window's close request both ask while a claim is held; Stay keeps it, Release and quit releases it and exits",
     journeys: ["J-QUIT"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       return { fixture, args: ["review"], data: { id: request(fixture).id } };
     },
-    run: async (app, { fixture, data: { id }, port }) => {
-      await app.graph.titled("Review");
+    run: async (app, { fixture, data: { id } }) => {
+      await app.review.titleContains("release/signoff");
       await app.review.claim();
       await app.command("Quit");
       const asked = await app.dialogTitled("Leave the review?");
@@ -157,10 +160,10 @@ export const scenarios: Scenario[] = [
       await app.dialogButton("Stay");
       await app.dialogClosed();
       assert.equal(request(fixture).claim?.reviewer, "alice", "Stay keeps the claim");
-      await app.review.until((shown) => shown.stage === "REVIEW (yours)", "the window and its review stay");
-      await app.command("Quit");
+      await app.review.until((shown) => shown.stage === "Yours", "the window and its review stay");
+      await app.closeWindow();
       await app.dialogTitled("Leave the review?");
-      await app.exitsBy(() => app.dialogButton("Release and quit"), port);
+      await app.exitsBy(() => app.dialogButton("Release and quit"));
       assert.equal(request(fixture).claim, null, "Release and quit released the claim");
     },
   }),
@@ -173,15 +176,15 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], data: null };
     },
-    run: async (app, { port }) => {
+    run: async (app) => {
       await app.graph.node("a:release");
-      await app.exitsBy(() => app.closeWindow(), port);
+      await app.exitsBy(() => app.closeWindow());
     },
   }),
 
   scenario({
     id: "update-notice",
-    title: "a newer stable release shows as `{version} available` before Settings; its dialog names both versions and links the release page, which opens in the browser",
+    title: "a newer stable release shows as `{version} available` in Settings; its dialog names both versions and links the release page, which opens in the browser",
     journeys: ["J-UPDATE"],
     prepare: async (own) => {
       const fixture = createEmpty(own);
@@ -199,18 +202,17 @@ export const scenarios: Scenario[] = [
       return { fixture, env, data: { site: site.url, visits } };
     },
     run: async (app, { fixture, data: { site, visits } }) => {
-      const header = await app.headerUntil((shown) => shown.items.includes("9.9.9 available"), "the newer release shows in the header");
-      assert.ok(header.items.indexOf("9.9.9 available") < header.items.findIndex((item) => item.startsWith("Settings")), "before Settings");
-      await app.headerButton("9.9.9 available");
+      await app.settings.open();
+      await app.settings.openUpdate("9.9.9");
       await app.dialogTitled("Update artifactize");
       const dialog = (await app.releaseDialog())!;
       assert.match(dialog.versions, / → 9\.9\.9$/, "the running and the new version");
-      assert.equal(dialog.link, `${site}/releases/latest`, "how to update: the release page");
+      assert.equal(dialog.link, `${site}/releases/tag/v9.9.9`, "how to update: the release page");
       await app.followReleaseLink();
       await app.eventually(async () => browserHandoffs(fixture).includes(dialog.link), "the release page opened in the browser");
-      await app.eventually(async () => readText(visits).split("\n").includes("/releases/latest"), "the browser fetched the release page");
-      await app.dialogButton("Close");
-      await app.dialogClosed();
+      await app.eventually(async () => readText(visits).split("\n").includes("/releases/tag/v9.9.9"), "the browser fetched the release page");
+      await app.closeRelease();
+      await app.settings.close("Close");
     },
   }),
 
@@ -224,6 +226,8 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["graph", "--repo", fixture.repo], data: { definition: nativePath(fixture.repo, ".artifactize", "docs.artf") } };
     },
     run: async (app, { data: { definition } }) => {
+      await app.chat.createFromDialog("repo / master");
+      await app.chat.show("Graph");
       await app.graph.node("a:docs");
       await app.graph.open("a:docs", "Artifact docs");
       await app.detail.openEval("docs/lint");

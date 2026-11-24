@@ -143,10 +143,14 @@ impl Drop for Window {
 }
 
 fn window(fixture: &Fixture, mode: Mode) -> Window {
+    launched_window(fixture, mode, Some(fixture.repo.clone()))
+}
+
+fn launched_window(fixture: &Fixture, mode: Mode, repo: Option<std::path::PathBuf>) -> Window {
     let launch = Launch {
         mode,
         state: fixture.state.clone(),
-        repo: Some(fixture.repo.clone()),
+        repo,
         reviewer: "alice".parse().unwrap(),
         request: None,
     };
@@ -177,6 +181,21 @@ fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Re
         },
     )
     .map(|body| body.deserialize::<Value>().unwrap())
+}
+
+fn invoke_viewer(
+    window: &WebviewWindow<MockRuntime>,
+    command: &str,
+    args: Value,
+) -> Result<Value, Value> {
+    let label = format!("viewer-{}", args["session"].as_u64().unwrap());
+    let handle = window.app_handle();
+    let caller = handle.get_webview_window(&label).unwrap_or_else(|| {
+        tauri::WebviewWindowBuilder::new(handle, label, Default::default())
+            .build()
+            .unwrap()
+    });
+    invoke(&caller, command, args)
 }
 
 const STILL: fn() -> Value = || json!({"run": {"kind": "keep"}, "query": null, "older": null, "full": true, "resync": false});
@@ -323,7 +342,19 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     assert_eq!(view["waiting"][0]["branch"], branch["name"]);
 
     let run = chip["id"].as_str().unwrap().to_owned();
+    let key = branch["key"].clone();
+    invoke(
+        &window,
+        "browse",
+        json!({"navigate": search("repo:not-listed")}),
+    )
+    .unwrap();
     let view = invoke(&window, "browse", json!({"navigate": open_run(&run)})).unwrap();
+    assert_eq!(view["branches"], json!([]), "the branch is filtered out");
+    assert_eq!(
+        view["run"]["branch"], key,
+        "the Run still names its live branch"
+    );
     assert_eq!(
         tree_names(&window, &view),
         ["Run", "release", "signoff", "ship", "check"]
@@ -402,7 +433,76 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
-fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes() {
+fn quit_never_releases_a_replacement_claim_of_the_same_reviewer() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let offered = invoke(&window, "human_taken", json!({})).unwrap();
+    assert_eq!(offered, json!([id]));
+    let replacement = tauri::async_runtime::block_on(async {
+        let request = id.parse().unwrap();
+        let reviewer = "alice".parse().unwrap();
+        let (receipts, _) = artifactize_core::human::open(&fixture.state, &request)
+            .await
+            .unwrap();
+        let old = artifactize_core::human::unclaim(&receipts, &request, &reviewer)
+            .await
+            .unwrap();
+        let current = artifactize_core::human::claim(&receipts, &request, &reviewer)
+            .await
+            .unwrap();
+        assert_ne!(old, current);
+        receipts.close().await.unwrap();
+        current
+    });
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([])
+    );
+    invoke(
+        &window,
+        "human_release_taken",
+        json!({"ids": offered, "job": 2}),
+    )
+    .unwrap();
+    assert_eq!(saved(&fixture, "release/signoff").claim, Some(replacement));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn quit_cannot_leave_a_claim_acquired_after_the_confirmation_snapshot() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([])
+    );
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let refused = invoke(&window, "main_close", json!({})).unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("Release the review claims")
+    );
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([id])
+    );
+    invoke(
+        &window,
+        "human_release_taken",
+        json!({"ids": [id], "job": 2}),
+    )
+    .unwrap();
+    assert!(saved(&fixture, "release/signoff").claim.is_none());
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn verify_browse_and_review_search_are_independent() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
     let shown = |query: &str| {
@@ -420,13 +520,40 @@ fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes(
         json!({"text": "sort:recent", "error": null, "start": "sort:recent"})
     );
     assert_eq!(shown("repo:rep").0, 1);
-    // Free text also finds a waiting review by its eval; the branch stays only by its own name.
+    let branch = artifactize_core::repository::identify(&fixture.repo)
+        .branch
+        .unwrap();
+    let reviews = |query: &str| {
+        invoke(
+            &window,
+            "human_search",
+            json!({"query": query, "start": null}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        reviews(&format!("type:human repo:repo branch:{branch}"))["reviews"][0]["branch"],
+        branch
+    );
+    assert_eq!(
+        reviews("type:human branch:no-such-branch")["reviews"],
+        json!([])
+    );
+    let complete = invoke(
+        &window,
+        "human_search_complete",
+        json!({"query": "type:human branch:"}),
+    )
+    .unwrap();
+    assert_eq!(complete["candidates"], json!([format!("branch:{branch}")]));
+    // Neither a free-text branch query nor a scoped one changes the waiting review count.
     let (branches, waiting, _) = shown("signoff");
     assert_eq!((branches, waiting), (0, 1));
-    assert_eq!(shown("repo:elsewhere").0 + shown("repo:elsewhere").1, 0);
-    // An invalid search lists nothing and says why.
+    let (branches, waiting, _) = shown("repo:elsewhere");
+    assert_eq!((branches, waiting), (0, 1));
+    // An invalid Verify search lists no branches and says why, but does not filter Review.
     let (branches, waiting, query) = shown("sort:size");
-    assert_eq!((branches, waiting), (0, 0));
+    assert_eq!((branches, waiting), (0, 1));
     assert!(
         query["error"].as_str().unwrap().contains("sort:size"),
         "{query}"
@@ -441,6 +568,35 @@ fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes(
         completion,
         json!({"keep": "sort:recent ", "candidates": ["repo:repo"]})
     );
+    assert_eq!(
+        invoke(&window, "human_waiting_count", json!({})).unwrap(),
+        1
+    );
+    let page = invoke(
+        &window,
+        "human_search",
+        json!({"query": "type:human waiting", "start": null}),
+    )
+    .unwrap();
+    let review = &page["reviews"][0];
+    assert_eq!(page["reviews"].as_array().unwrap().len(), 1);
+    assert_eq!(review["eval"], "release/signoff");
+    let id = review["id"].as_str().unwrap();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    assert_eq!(
+        invoke(&window, "human_waiting_count", json!({})).unwrap(),
+        0
+    );
+    let exact = invoke(
+        &window,
+        "human_open_reference",
+        json!({"id": id, "query": "type:human waiting"}),
+    )
+    .unwrap();
+    assert_eq!(exact["view"]["id"], id);
+    assert_eq!(exact["view"]["target"], review["target"]);
+    assert_eq!(exact["outsideFilter"], true);
+    assert_eq!(exact["outsideReason"], "Claimed by you.");
 }
 
 #[test]
@@ -563,6 +719,971 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     );
     // The submitted review stops waiting: the stack is empty.
     assert_eq!(waiting(&window), json!([]));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_review_cancels_its_tool_before_a_submission_from_another_window() {
+    finish_a_review_with_a_running_tool(true);
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn release_and_quit_cancels_a_claimed_reviews_tool_before_releasing_it() {
+    finish_a_review_with_a_running_tool(false);
+}
+
+fn finish_a_review_with_a_running_tool(submit: bool) {
+    let inputs = os::tempdir();
+    let started = inputs.path().join("started");
+    let release = inputs.path().join("finish");
+    let arguments = json!(["touch", started, "wait", release]);
+    let tool = json!(os::steps_program(inputs.path()));
+    let declaration = format!(
+        r#"name = "busy"
+fingerprint = false
+
+[views.human_tools]
+wait = {{ description = "Wait for the test gate.", command = {tool}, args = {arguments}, kind = "output" }}
+
+[evals.approve]
+title = "Approve the fixture"
+profile = {{ kind = "human" }}
+payload.instruction = "Review the fixture."
+"#
+    );
+    let fixture = fixture_with(&[("busy", &declaration)]);
+    let window = window(&fixture, Mode::Review);
+    let other = tauri::WebviewWindowBuilder::new(&window.app, "other", Default::default())
+        .build()
+        .unwrap();
+    let id = saved(&fixture, "busy/approve").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let fresh = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert!(fresh["verdict"].is_null());
+    let no_verdict =
+        invoke(&window, "human_draft_submit", json!({"id": id, "job": 2})).unwrap_err();
+    assert_eq!(no_verdict["kind"], "invalid");
+    invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+    )
+    .unwrap();
+    let saved_draft = invoke(&other, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(saved_draft["verdict"], "GREEN");
+
+    struct FinishOnDrop<'a>(&'a Path);
+    impl Drop for FinishOnDrop<'_> {
+        fn drop(&mut self) {
+            let _ = fs::write(self.0, "");
+        }
+    }
+    std::thread::scope(|scope| {
+        let first = &window.window;
+        let id = id.as_str();
+        let running = scope.spawn(move || {
+            invoke(
+                first,
+                "human_run",
+                json!({"id": id, "tool": "wait_busy", "job": 2}),
+            )
+        });
+        let gate = FinishOnDrop(&release);
+        os::wait_until(std::time::Duration::from_secs(15), || started.is_file());
+        let rejected = invoke(&other, "human_release", json!({"ids": [id], "job": 2})).unwrap_err();
+        assert_eq!(rejected["kind"], "action");
+        assert!(
+            rejected["message"]
+                .as_str()
+                .unwrap()
+                .contains("work in progress")
+        );
+        let rejected = invoke(
+            &other,
+            "human_run",
+            json!({"id": id, "tool": "wait_busy", "job": 2}),
+        )
+        .unwrap_err();
+        assert_eq!(rejected["kind"], "action");
+        if submit {
+            let submitted =
+                invoke(&other, "human_draft_submit", json!({"id": id, "job": 2})).unwrap();
+            assert_eq!(submitted["settled"], "published");
+        } else {
+            let released = invoke(
+                &other,
+                "human_release_taken",
+                json!({"ids": [id], "job": 2}),
+            )
+            .unwrap();
+            assert_eq!(released["notice"]["error"], false);
+        }
+        let ran = running.join().unwrap().unwrap();
+        assert_eq!(
+            ran["error"], true,
+            "the unfinished tool was cancelled: {ran}"
+        );
+        assert!(
+            !release.exists(),
+            "the tool was never told to finish on its own"
+        );
+        drop(gate);
+    });
+    let saved = saved(&fixture, "busy/approve");
+    assert!(saved.claim.is_none());
+    if submit {
+        assert_eq!(
+            saved.request.status(),
+            artifactize_core::types::RequestStatus::Green
+        );
+    } else {
+        assert!(saved.request.status().is_human_wait());
+        let draft = invoke(&other, "human_draft", json!({"id": id})).unwrap();
+        assert_eq!(draft["verdict"], "GREEN");
+    }
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn two_windows_save_different_fields_in_one_repeated_group() {
+    // Build the additional schema without TOML table nesting changing the existing fields.
+    let declaration = RELEASE.replace(
+        "properties.comment = { type = \"string\" }",
+        r#"properties.comment = { type = "string" }
+properties.groups = { type = "array", items = { type = "object", properties = { left = { type = "string" }, right = { type = "string" } } } }"#,
+    );
+    let declaration = declaration
+        .lines()
+        .filter(|line| !line.starts_with("[views.human_tools]") && !line.starts_with("notes ="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let fixture = fixture_with(&[(
+        "repeated",
+        &declaration.replace(
+            "name = \"release\"",
+            "name = \"repeated\"\ntype = \"files\"",
+        ),
+    )]);
+    let first = window(&fixture, Mode::Review);
+    let second = tauri::WebviewWindowBuilder::new(&first.app, "second", Default::default())
+        .build()
+        .unwrap();
+    let id = saved(&fixture, "repeated/signoff").request.id.to_string();
+    invoke(&first, "human_claim", json!({"id":id,"job":1})).unwrap();
+    invoke(
+        &first,
+        "human_draft_edit",
+        json!({"id":id,"change":{"kind":"addItem","verdict":"GREEN","name":"groups"}}),
+    )
+    .unwrap();
+    for (window, field, text) in [
+        (&*first, "left", "saved in Review"),
+        (&second, "right", "saved in the pet"),
+    ] {
+        invoke(
+            window,
+            "human_draft_edit",
+            json!({"id":id,"change":{
+                "kind":"groupField","verdict":"GREEN","name":"groups","item":0,"field":field,
+                "value":{"kind":"text","value":text},
+            }}),
+        )
+        .unwrap();
+    }
+    let draft = invoke(&first, "human_draft", json!({"id":id})).unwrap();
+    let text = draft["green"].to_string();
+    assert!(
+        text.contains("saved in Review") && text.contains("saved in the pet"),
+        "{draft}"
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn an_edit_during_submission_is_saved_without_settling_the_older_answer() {
+    let inputs = os::tempdir();
+    let steps = inputs.path().join("fingerprint-steps");
+    let started = inputs.path().join("started");
+    let release = inputs.path().join("finish");
+    fs::write(&steps, "print\nstable-fingerprint\n").unwrap();
+    let command = json!(os::steps_program(inputs.path()));
+    let args = json!(["from", steps]);
+    let declaration = format!(
+        r#"name = "editable"
+type = "files"
+fingerprint = {{ script = {{ command = {command}, args = {args}, timeout_ms = 45000 }} }}
+
+[evals.approve]
+title = "Approve the fixture"
+profile = {{ kind = "human" }}
+payload.instruction = "Review the fixture."
+
+[evals.approve.pass_schema]
+type = "object"
+properties.comment = {{ type = "string", minLength = 1 }}
+required = ["comment"]
+additionalProperties = false
+"#
+    );
+    let fixture = fixture_with(&[("editable", &declaration)]);
+    let window = window(&fixture, Mode::Review);
+    let other = tauri::WebviewWindowBuilder::new(&window.app, "other", Default::default())
+        .build()
+        .unwrap();
+    let id = saved(&fixture, "editable/approve").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+    )
+    .unwrap();
+    // The reasons fill GREEN's only text field.
+    invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "addReason", "text": "Before Submit"}}),
+    )
+    .unwrap();
+    let edit = |comment: &str| json!({"id": id, "change": {"kind": "editReason", "index": 0, "previous": "Before Submit", "text": comment}});
+    let stale = invoke(
+        &other,
+        "human_submit",
+        json!({
+            "id": id, "job": 5,
+            "draft": { "verdict":"GREEN", "fields":[["comment", {"kind":"text", "value":"Stale copy"}]] },
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        stale["message"]
+            .as_str()
+            .unwrap()
+            .contains("verdict or fields changed"),
+        "{stale}"
+    );
+
+    fs::write(
+        &steps,
+        format!(
+            "touch\n{}\nwait\n{}\nprint\nstable-fingerprint\n",
+            started.to_str().unwrap(),
+            release.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+
+    struct OpenGate<'a>(&'a Path);
+    impl Drop for OpenGate<'_> {
+        fn drop(&mut self) {
+            let _ = fs::write(self.0, "");
+        }
+    }
+    std::thread::scope(|scope| {
+        let first = &window.window;
+        let id = &id;
+        let submitted =
+            scope.spawn(move || invoke(first, "human_draft_submit", json!({"id": id, "job": 2})));
+        let gate = OpenGate(&release);
+        os::wait_until(std::time::Duration::from_secs(15), || started.is_file());
+        invoke(&other, "human_draft_edit", edit("Saved during Submit")).unwrap();
+        drop(gate);
+        let rejected = submitted.join().unwrap().unwrap_err();
+        assert_eq!(rejected["kind"], "invalid");
+        assert!(
+            rejected["message"]
+                .as_str()
+                .unwrap()
+                .contains("changed while submitting")
+        );
+    });
+    assert!(
+        saved(&fixture, "editable/approve")
+            .request
+            .status()
+            .is_human_wait()
+    );
+    let submitted = invoke(&other, "human_draft_submit", json!({"id": id, "job": 3})).unwrap();
+    assert_eq!(submitted["settled"], "published");
+    assert_eq!(
+        saved(&fixture, "editable/approve")
+            .request
+            .result()
+            .unwrap()
+            .owner_fields()["comment"],
+        "Saved during Submit"
+    );
+}
+
+/// An eval whose RED takes its reasons as a list and needs a severity.
+const REASONS: &str = r#"name = "reasons"
+fingerprint = false
+
+[evals.approve]
+title = "Approve the fixture"
+profile = { kind = "human" }
+payload.instruction = "Review the fixture."
+
+[evals.approve.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved", "comment"]
+additionalProperties = false
+
+[evals.approve.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string" }, minItems = 1 }
+properties.severity = { enum = ["minor", "major"] }
+required = ["change", "severity"]
+additionalProperties = false
+"#;
+
+/// The field names a FormView shows.
+fn field_names(form: &Value) -> Vec<String> {
+    form["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|field| field["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn blocked(reason: &str) -> Value {
+    json!({"kind": "blocked", "reason": reason})
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn reasons_are_edited_in_order_survive_a_restart_and_a_release_and_submit_as_red_items() {
+    let fixture = fixture_with(&[("reasons", REASONS)]);
+    let window = window(&fixture, Mode::Review);
+    let other = tauri::WebviewWindowBuilder::new(&window.app, "other", Default::default())
+        .build()
+        .unwrap();
+    let id = saved(&fixture, "reasons/approve").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let change = |change: Value| json!({"id": id, "change": change});
+
+    let fresh = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(fresh["reasons"], json!([]));
+    // The reasons' fields are left out; constants and the other owner fields stay.
+    assert_eq!(field_names(&fresh["green"]), ["approved"]);
+    assert_eq!(field_names(&fresh["red"]), ["severity"]);
+    assert_eq!(fresh["readiness"]["green"], json!({"kind": "ready"}));
+    assert_eq!(fresh["readiness"]["red"], blocked("RED needs a reason."));
+
+    let empty = invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "addReason", "text": "  \n"})),
+    )
+    .unwrap_err();
+    assert_eq!(empty["kind"], "invalid");
+    let first = invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "addReason", "text": "Totals are wrong"})),
+    )
+    .unwrap();
+    assert_eq!(first["readiness"]["red"], blocked("Fill in severity."));
+    invoke(
+        &other,
+        "human_draft_edit",
+        change(json!({"kind": "addReason", "text": "The footer overlaps"})),
+    )
+    .unwrap();
+
+    // An edit or removal names the reason it saw; a reason changed meanwhile is refused.
+    for stale in [
+        json!({"kind": "editReason", "index": 0, "previous": "Totals look wrong", "text": "x"}),
+        json!({"kind": "removeReason", "index": 1, "previous": "Totals are wrong"}),
+        json!({"kind": "removeReason", "index": 2, "previous": "The footer overlaps"}),
+    ] {
+        let refused = invoke(&window, "human_draft_edit", change(stale)).unwrap_err();
+        assert_eq!(refused["kind"], "action", "{refused}");
+    }
+    let cleared = invoke(
+        &window,
+        "human_draft_edit",
+        change(
+            json!({"kind": "editReason", "index": 0, "previous": "Totals are wrong", "text": " "}),
+        ),
+    )
+    .unwrap_err();
+    assert_eq!(cleared["kind"], "invalid");
+    invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "editReason", "index": 0, "previous": "Totals are wrong", "text": "Totals are off by one"})),
+    )
+    .unwrap();
+    invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "addReason", "text": "A typo"})),
+    )
+    .unwrap();
+    let removed = invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "removeReason", "index": 2, "previous": "A typo"})),
+    )
+    .unwrap();
+    let reasons = json!(["Totals are off by one", "The footer overlaps"]);
+    assert_eq!(removed["reasons"], reasons);
+    let rated = invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "field", "verdict": "RED", "name": "severity", "value": {"kind": "choice", "value": 1}})),
+    )
+    .unwrap();
+    assert_eq!(rated["readiness"]["red"], json!({"kind": "ready"}));
+    assert_eq!(rated["readiness"]["green"], json!({"kind": "ready"}));
+    // The field the reasons fill is not edited as a field.
+    assert!(
+        invoke(
+            &window,
+            "human_draft_edit",
+            change(json!({"kind": "field", "verdict": "RED", "name": "change", "value": {"kind": "list", "value": ["x"]}})),
+        )
+        .is_err()
+    );
+
+    // The draft outlives the app and a release.
+    drop(other);
+    drop(window);
+    let window = self::window(&fixture, Mode::Review);
+    let restarted = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(restarted["reasons"], reasons);
+    invoke(&window, "human_release", json!({"ids": [id], "job": 1})).unwrap();
+    let released = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(released["reasons"], reasons);
+    invoke(&window, "human_claim", json!({"id": id, "job": 2})).unwrap();
+
+    invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "verdict", "verdict": "RED"})),
+    )
+    .unwrap();
+    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 3})).unwrap();
+    assert_eq!(submitted["settled"], "published");
+    assert_eq!(
+        saved(&fixture, "reasons/approve")
+            .request
+            .result()
+            .map(|result| result.to_json()),
+        Some(json!({
+            "verdict": "RED",
+            "change": ["Totals are off by one", "The footer overlaps"],
+            "severity": "major",
+        }))
+    );
+    let after = invoke(&window, "human_draft", json!({"id": id})).unwrap();
+    assert_eq!(after["reasons"], json!([]));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn green_joins_its_reasons_into_its_text_field_and_red_names_its_missing_owner_field() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    for text in ["Read the notes", "The version matches"] {
+        invoke(
+            &window,
+            "human_draft_edit",
+            json!({"id": id, "change": {"kind": "addReason", "text": text}}),
+        )
+        .unwrap();
+    }
+    let draft = invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+    )
+    .unwrap();
+    // RED's one list takes the reasons; its required text stays an owner field.
+    assert_eq!(field_names(&draft["red"]), ["reason"]);
+    assert_eq!(draft["readiness"]["red"], blocked("Fill in reason."));
+    assert_eq!(draft["readiness"]["green"], json!({"kind": "ready"}));
+    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 2})).unwrap();
+    assert_eq!(submitted["settled"], "published");
+    assert_eq!(
+        saved(&fixture, "release/signoff")
+            .request
+            .result()
+            .map(|result| result.to_json()),
+        Some(json!({
+            "verdict": "GREEN",
+            "approved": true,
+            "comment": "Read the notes\n\nThe version matches",
+        }))
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_verdict_without_a_field_for_reasons_is_blocked_while_reasons_exist() {
+    let declaration = r#"name = "plain"
+fingerprint = false
+
+[evals.approve]
+title = "Approve the fixture"
+profile = { kind = "human" }
+payload.instruction = "Review the fixture."
+"#;
+    let fixture = fixture_with(&[("plain", declaration)]);
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "plain/approve").request.id.to_string();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    let draft = invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "addReason", "text": "Why"}}),
+    )
+    .unwrap();
+    assert_eq!(
+        draft["readiness"]["green"],
+        blocked("GREEN takes no reasons; remove them.")
+    );
+    assert_eq!(
+        draft["readiness"]["red"],
+        blocked("RED takes no reasons; remove them.")
+    );
+    invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+    )
+    .unwrap();
+    let refused = invoke(&window, "human_draft_submit", json!({"id": id, "job": 2})).unwrap_err();
+    assert_eq!(refused["kind"], "invalid");
+    assert_eq!(refused["message"], "GREEN takes no reasons; remove them.");
+    let removed = invoke(
+        &window,
+        "human_draft_edit",
+        json!({"id": id, "change": {"kind": "removeReason", "index": 0, "previous": "Why"}}),
+    )
+    .unwrap();
+    assert_eq!(removed["readiness"]["green"], json!({"kind": "ready"}));
+    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 3})).unwrap();
+    assert_eq!(submitted["settled"], "published");
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_delayed_pet_show_cannot_redisplay_a_released_review() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.clone();
+    invoke(&window, "human_claim", json!({"id":id,"job":1})).unwrap();
+    invoke(&window, "active_review_set", json!({"request":id})).unwrap();
+    let shown = invoke(&window, "pet_show", json!({"request":id})).unwrap_err();
+    assert_eq!(shown["message"], "The app has no windows yet.");
+    invoke(&window, "human_release", json!({"ids":[id],"job":2})).unwrap();
+    assert_eq!(
+        invoke(&window, "pet_show", json!({"request":id})).unwrap(),
+        Value::Null
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_shared_review_opens_the_original_artifact_viewer_not_the_followers() {
+    const PAGE: &str = r#"name = "page"
+type = "files"
+fingerprint = { files = ["content.txt"] }
+
+[evals.approve]
+title = "Review the page"
+profile = { kind = "human" }
+payload.instruction = "Read the page."
+
+[evals.another]
+title = "Review the page separately"
+profile = { kind = "human" }
+payload.instruction = "Read the page separately."
+"#;
+    let prepare = |repo: &Path| {
+        fs::create_dir_all(repo.join("page")).unwrap();
+        support::declaration::write(repo, repo.join("page/index.artf"), PAGE).unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("page/content.txt")),
+            "original",
+        )
+        .unwrap();
+    };
+    let root = os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    prepare(&repo);
+    let fixture = Fixture {
+        _root: run_fixture::RepoLease::new(root, &state, &repo),
+        repo,
+        state,
+    };
+    verify(&fixture.repo, &fixture.state);
+    let original = saved(&fixture, "page/approve").request.id.to_string();
+    let root = os::tempdir();
+    let follower_repo = root.path().join("follower");
+    prepare(&follower_repo);
+    support::declaration::write(
+        &follower_repo,
+        follower_repo.join("page/index.artf"),
+        PAGE.replace(
+            "title = \"Review the page\"",
+            "title = \"Review the follower page\"",
+        ),
+    )
+    .unwrap();
+    let _lease = run_fixture::RepoLease::new(root, &fixture.state, &follower_repo);
+    verify(&follower_repo, &fixture.state);
+    fs::write(
+        support::declaration::source_path(follower_repo.join("page/content.txt")),
+        "follower",
+    )
+    .unwrap();
+    let follower = saved(&fixture, "page/approve");
+    let id = follower.request.id.to_string();
+    assert_ne!(id, original);
+    let follower_run = follower.request.run_id.to_string();
+    assert_eq!(
+        follower.execution.unwrap().provenance.request_id.as_str(),
+        original
+    );
+
+    let window = window(&fixture, Mode::Review);
+    let claim = invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
+    assert_eq!(claim["view"]["stage"], "review");
+    assert_eq!(claim["view"]["id"], id);
+    assert_eq!(claim["view"]["target"]["run"], follower_run);
+    assert_eq!(claim["view"]["owner"], original);
+    let reopened = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
+    assert_eq!(reopened["target"], claim["view"]["target"]);
+    assert_eq!(reopened["id"], id);
+    assert_eq!(reopened["title"], "page/approve · Review the follower page");
+    let launched = invoke(
+        &window,
+        "human_run",
+        json!({"id": id, "tool": "view_page", "job": 2}),
+    )
+    .unwrap();
+    let denied = invoke(
+        &window,
+        "viewer_read_text",
+        json!({"session": launched["viewer"]["session"], "path":"content.txt"}),
+    )
+    .unwrap_err();
+    assert_eq!(
+        denied["message"],
+        "This window does not own that Artifact Viewer session."
+    );
+    let contents = invoke_viewer(
+        &window,
+        "viewer_read_text",
+        json!({"session": launched["viewer"]["session"], "path": "content.txt"}),
+    )
+    .unwrap();
+    assert_eq!(contents, "original");
+
+    let refused = invoke(
+        &window,
+        "human_run",
+        json!({"id":id,"tool":"view_page","job":20}),
+    )
+    .unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("work in progress")
+    );
+    let session = &launched["viewer"]["session"];
+    let pane = invoke(&window, "browse", json!({"navigate": STILL()})).unwrap();
+    let follower_branch = pane["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["project"] == "follower")
+        .unwrap();
+    let same_name = invoke(
+        &window,
+        "artifact_tool_run",
+        json!({"branch": follower_branch["key"], "artifact": "page", "tool": "view_page", "job": 3}),
+    )
+    .unwrap();
+    let same_name_session = &same_name["viewer"]["session"];
+    let context = |session: &Value| {
+        invoke_viewer(&window, "viewer_context", json!({"session": session})).unwrap()
+    };
+    assert_eq!(context(session)["petMatch"], false);
+    // The follower is what the pet shows; only the original worktree can receive its Point.
+    invoke(&window, "active_review_set", json!({"request": id})).unwrap();
+    let active = context(session);
+    let wrong_worktree = context(same_name_session);
+    assert_eq!(active["review"], id);
+    assert_eq!(wrong_worktree["review"], id);
+    assert_eq!(wrong_worktree["artifact"], active["artifact"]);
+    assert_eq!(active["petMatch"], true);
+    assert_eq!(
+        wrong_worktree["petMatch"], true,
+        "the shown follower's viewer can point at the shared draft"
+    );
+
+    let result = invoke_viewer(
+        &window,
+        "viewer_point",
+        json!({"session": session, "review": id, "text": "Original worktree"}),
+    )
+    .unwrap();
+    assert!(result.is_null());
+    let other = saved(&fixture, "page/another").request.id.to_string();
+    invoke(&window, "active_review_set", json!({"request": other})).unwrap();
+    assert!(context(session)["review"].is_null());
+    let refused = invoke_viewer(
+        &window,
+        "viewer_point",
+        json!({"session": session, "review": id, "text": "Do not append to the earlier review"}),
+    )
+    .unwrap_err();
+    assert_eq!(refused["kind"], "action");
+    // Another app writes a claim; the first window still knows which Review was shown.
+    let external = launched_window(&fixture, Mode::Review, None);
+    invoke(&external, "human_claim", json!({"id": other, "job": 4})).unwrap();
+    assert_eq!(context(session)["review"], other);
+    let refused = invoke_viewer(
+        &window,
+        "viewer_point",
+        json!({"session": session, "review": active["review"], "text": "Delayed Point"}),
+    )
+    .unwrap_err();
+    assert_eq!(refused["kind"], "action");
+    for (review, expected) in [
+        (&original, Some("Original worktree")),
+        (&id, Some("Original worktree")),
+        (&other, None),
+    ] {
+        let draft = invoke(&window, "human_draft", json!({"id": review})).unwrap();
+        assert_eq!(draft["points"][0]["text"].as_str(), expected);
+    }
+    let result = invoke_viewer(
+        &window,
+        "viewer_point",
+        json!({"session": session, "review": other, "text": "content.txt L1:C1"}),
+    )
+    .unwrap();
+    assert!(result.is_null());
+    let draft = invoke(&window, "human_draft", json!({"id": other})).unwrap();
+    let point = &draft["points"][0];
+    assert_eq!(point["text"], "content.txt L1:C1");
+    let edited = invoke(
+        &window,
+        "human_draft_remove_point",
+        json!({"id": other, "point": point}),
+    )
+    .unwrap();
+    assert_eq!(edited["points"], json!([]));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_legacy_git_run_can_prepare_and_open_its_scoped_viewer() {
+    let fixture = fixture_with(&[(
+        "page",
+        r#"name = "page"
+type = "files"
+[evals.approve]
+title = "Review the page"
+profile = { kind = "human" }
+payload.instruction = "Read the page."
+"#,
+    )]);
+    let request = saved(&fixture, "page/approve").request;
+    tauri::async_runtime::block_on(async {
+        let mut run = artifactize_core::store::read_run(&fixture.state, &request.run_id)
+            .await
+            .unwrap()
+            .run;
+        assert!(run.repository.common_dir.is_some());
+        run.repository = Default::default();
+        let store = artifactize_core::store::OwnedReceipts::open(&fixture.state, &fixture.repo)
+            .await
+            .unwrap();
+        store.save_run(&run).await.unwrap();
+    });
+    let window = window(&fixture, Mode::Review);
+    let id = &request.id;
+    invoke(&window, "human_claim", json!({"id":id,"job":1})).unwrap();
+    invoke(&window, "active_review_set", json!({"request":id})).unwrap();
+    let launch = invoke(
+        &window,
+        "human_run",
+        json!({"id":id,"tool":"view_page","job":2}),
+    )
+    .unwrap();
+    let viewer = &launch["viewer"];
+    let context = invoke_viewer(
+        &window,
+        "viewer_context",
+        json!({"session":viewer["session"]}),
+    )
+    .unwrap();
+    assert_eq!(context["petMatch"], true);
+    // These command fixtures have no window actions attached. This error is after the real
+    // checkout and scope checks: older Git records reach the same native opener as new ones.
+    let native = invoke(
+        &window,
+        "viewer_window",
+        json!({"session":viewer["session"],"title":viewer["title"]}),
+    )
+    .unwrap_err();
+    assert_eq!(
+        native,
+        json!({"kind":"action","message":"The app has no windows yet."})
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_new_branch_target_matches_the_pet_instead_of_the_old_viewer() {
+    let root = os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir_all(repo.join(".artifactize")).unwrap();
+    os::git(&repo, &["init", "-q", "-b", "primary"]);
+    let declare = |target: &str| {
+        fs::create_dir_all(repo.join(target)).unwrap();
+        fs::write(repo.join(target).join("content.txt"), target).unwrap();
+        fs::write(
+            repo.join(".artifactize/page.artf"),
+            format!(
+                r#"path = "{target}/"
+type = "files"
+fingerprint = {{ files = ["content.txt"] }}
+
+[evals.approve]
+title = "Review the page"
+profile = {{ kind = "human" }}
+payload.instruction = "Read the page."
+"#,
+            ),
+        )
+        .unwrap();
+        os::git(&repo, &["add", ".artifactize/page.artf", target]);
+        os::git(
+            &repo,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                target,
+            ],
+        );
+    };
+    declare("primary");
+    let fixture = Fixture {
+        _root: run_fixture::RepoLease::new(root, &state, &repo),
+        repo: repo.clone(),
+        state,
+    };
+    let window = window(&fixture, Mode::Review);
+    let open_review_viewer = |job: u32| {
+        verify(&fixture.repo, &fixture.state);
+        let id = saved(&fixture, "page/approve").request.id.to_string();
+        invoke(&window, "human_claim", json!({"id": id, "job": job})).unwrap();
+        invoke(&window, "active_review_set", json!({"request": id})).unwrap();
+        let ran = invoke(
+            &window,
+            "human_run",
+            json!({"id": id, "tool": "view_page", "job": job + 1}),
+        )
+        .unwrap();
+        ran["viewer"]["session"].clone()
+    };
+    let context = |session: &Value| {
+        invoke_viewer(&window, "viewer_context", json!({"session": session})).unwrap()
+    };
+    let old = open_review_viewer(1);
+    assert_eq!(context(&old)["petMatch"], true);
+
+    os::git(&repo, &["switch", "-qc", "alternate"]);
+    assert_eq!(context(&old)["petMatch"], false);
+    let refused = invoke_viewer(
+        &window,
+        "viewer_read_text",
+        json!({"session":old,"path":"content.txt"}),
+    )
+    .unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("checkout changed")
+    );
+    invoke(&window, "browse", json!({"navigate":STILL()})).unwrap();
+    let other = invoke(&window, "browse", json!({"navigate":STILL()})).unwrap()["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["name"] == "alternate")
+        .unwrap()["key"]
+        .clone();
+    let elsewhere = invoke(
+        &window,
+        "artifact_tool_run",
+        json!({
+            "branch": other, "artifact": "page", "tool": "view_page", "job": 8,
+        }),
+    )
+    .unwrap()["viewer"]["session"]
+        .clone();
+    assert_eq!(context(&elsewhere)["target"], "primary");
+    assert_eq!(
+        context(&elsewhere)["petMatch"],
+        false,
+        "the name and path did not change, only the branch"
+    );
+    declare("alternate");
+    let new_session = open_review_viewer(3);
+    let old = context(&old);
+    let new = context(&new_session);
+    assert_eq!(old["review"], Value::Null);
+    assert!(new["review"].is_string());
+    assert_eq!(old["artifact"], new["artifact"]);
+    assert_eq!(old["type"], new["type"]);
+    assert_eq!(old["target"], "primary");
+    assert_eq!(new["target"], "alternate");
+    assert_eq!(old["petMatch"], false);
+    assert_eq!(new["petMatch"], true);
+    // This Viewer was opened from Current, not through the review whose pending tool launch
+    // Release will cancel. Its bridge can still be queried after the claim is gone.
+    let current = invoke(
+        &window,
+        "artifact_tool_run",
+        json!({"branch":other,"artifact":"page","tool":"view_page","job":9}),
+    )
+    .unwrap()["viewer"]["session"]
+        .clone();
+    assert_eq!(context(&current)["review"], new["review"]);
+    let release = invoke(
+        &window,
+        "human_release_taken",
+        json!({"ids":[new["review"]],"job":11}),
+    )
+    .unwrap();
+    assert_eq!(release["notice"]["error"], false);
+    assert_eq!(
+        context(&current)["review"],
+        Value::Null,
+        "releasing the taken claim immediately takes Point away"
+    );
 }
 
 #[test]
@@ -1201,13 +2322,12 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
         );
     });
     let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
-    // The Run ended: the timeline starts with the Current, then the Run with its final status.
+    // The Run ended: the timeline shows the Run with its final status.
     let chips = &view["branches"][0]["chips"];
-    assert_eq!(chips[0], json!({"kind": "current"}));
-    assert_eq!(chips[1]["running"], json!(false));
-    assert_eq!(chips[1]["status"], "GREEN", "{view}");
+    assert_eq!(chips[0]["running"], json!(false));
+    assert_eq!(chips[0]["status"], "GREEN", "{view}");
     assert!(
-        chips[1]["age"].as_str().unwrap().ends_with(" ago"),
+        chips[0]["age"].as_str().unwrap().ends_with(" ago"),
         "{view}"
     );
     // The shape the caller holds comes back as its lights alone, in its order.
@@ -1319,6 +2439,517 @@ fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, 
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn opening_a_review_does_not_retire_its_claim_when_declarations_change() {
+    let fixture = fixture();
+    let owner = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.clone();
+    invoke(&owner, "human_claim", json!({"id":id,"job":1})).unwrap();
+    let changed = RELEASE.replace(
+        "Read the release notes and approve them.",
+        "Read again and approve.",
+    );
+    support::declaration::write(
+        &fixture.repo,
+        fixture.repo.join("release/index.artf"),
+        &changed,
+    )
+    .unwrap();
+    let viewer = launched_window(&fixture, Mode::Review, None);
+    let opened = invoke(
+        &viewer,
+        "human_open_reference",
+        json!({"id":id,"query":"type:human waiting"}),
+    )
+    .unwrap();
+    assert_eq!(opened["view"]["stage"], "review");
+    let retained = saved(&fixture, "release/signoff");
+    assert!(retained.request.status().is_human_wait());
+    assert_eq!(retained.claim.unwrap().reviewer.as_str(), "alice");
+    assert!(opened["view"]["tools"][0]["error"].is_string());
+    support::declaration::write(
+        &fixture.repo,
+        fixture.repo.join("release/index.artf"),
+        RELEASE,
+    )
+    .unwrap();
+    let restored = invoke(&viewer, "human_open", json!({"id":id,"reload":true})).unwrap();
+    assert!(restored["tools"][0]["error"].is_null());
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_run_reference_keeps_its_chat_branch_and_discovers_a_new_checkout() {
+    let fixture = fixture();
+    let original = launched_window(&fixture, Mode::Monitor, None);
+    let first = invoke(&original, "browse", json!({"navigate":STILL()})).unwrap();
+    let branch = first["branches"][0]["key"].clone();
+    let name = branch["branch"].as_str().unwrap();
+    let provider = FakeProvider::start(|_| support::openai::models(&["fixture-chat"]));
+    invoke(&original, "provider_custom_save", json!({
+        "name": "scripted", "target": {"kind": "endpoint", "api": "openaiResponses", "url": provider.openai_base()},
+        "key": {"kind": "none"},
+    })).unwrap();
+    let chat = invoke(
+        &original,
+        "chat_create",
+        json!({"worktree":os::path_text(&fixture.repo), "branch":branch,
+            "selection":{"backend":"scripted","model":"fixture-chat","effort":null}}),
+    )
+    .unwrap();
+    let run = saved(&fixture, "release/signoff")
+        .request
+        .run_id
+        .to_string();
+    os::git(
+        &fixture.repo,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "first",
+        ],
+    );
+    os::git(&fixture.repo, &["switch", "--quiet", "-c", "parked"]);
+
+    let restarted = launched_window(&fixture, Mode::Monitor, None);
+    let open = || {
+        invoke(
+            &restarted,
+            "browse",
+            json!({
+                "navigate":{"run":{"kind":"reference","id":run},"full":false,"resync":false},
+            }),
+        )
+        .unwrap()
+    };
+    let retired = open();
+    assert_eq!(retired["run"]["id"], run);
+    assert_eq!(retired["run"]["branch"], branch);
+    assert_eq!(retired["run"]["chatBranch"], branch);
+    let archived_chat = invoke(
+        &restarted,
+        "chat_latest_for_branch",
+        json!({"branch":retired["run"]["chatBranch"]}),
+    )
+    .unwrap();
+    assert_eq!(archived_chat["id"], chat["id"]);
+    assert!(archived_chat["unavailable"].is_string());
+    let historical = retired["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["key"] == branch)
+        .unwrap();
+    assert_eq!(historical["chips"][0]["id"], run);
+    assert_eq!(historical["historical"], true);
+    let moved = fixture.repo.with_file_name("new-worktree");
+    os::git(
+        &fixture.repo,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            os::native_path_text(&moved),
+            name,
+        ],
+    );
+
+    // No periodic watcher runs in the mock. Linking again must discover the worktree.
+    let shown = open();
+    assert_eq!(shown["run"]["branch"], branch);
+    let live = shown["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["key"] == branch)
+        .unwrap();
+    assert_eq!(live["chips"][0]["id"], run);
+    assert_eq!(live["historical"], false);
+    assert_eq!(
+        Path::new(live["workspace"].as_str().unwrap()),
+        Path::new(&os::path_text(&os::canonical(&moved)))
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_direct_run_reference_reveals_its_branch_without_resetting_verify_search() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Monitor);
+    let run = saved(&fixture, "release/signoff")
+        .request
+        .run_id
+        .to_string();
+    for query in ["repo:other-project", "repo:"] {
+        let filtered = invoke(&window, "browse", json!({"navigate": search(query)})).unwrap();
+        assert_eq!(filtered["branches"], json!([]));
+        let choices = invoke(&window, "chat_branches", json!({})).unwrap();
+        assert_eq!(choices[0]["project"], "repo");
+        assert_eq!(
+            invoke(&window, "redraw", json!({})).unwrap()["query"]["text"],
+            query
+        );
+
+        let shown = invoke(
+            &window,
+            "browse",
+            json!({"navigate":{"run":{"kind":"reference","id":run},"query":format!("{query} other"),"full":false,"resync":false}}),
+        )
+        .unwrap();
+        assert_eq!(shown["query"]["text"], format!("{query} other"));
+        assert_eq!(shown["branches"][0]["chips"][0]["id"], run);
+    }
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
+    let root = os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir_all(repo.join("nested")).unwrap();
+    os::git(&repo, &["init", "--quiet", "--initial-branch=main"]);
+    support::declaration::write(
+        &repo,
+        repo.join("index.artf"),
+        "name = 'app'\nbasis = true\n",
+    )
+    .unwrap();
+    let fixture = Fixture {
+        _root: run_fixture::RepoLease::new(root, &state, &repo),
+        repo,
+        state,
+    };
+    let provider =
+        FakeProvider::start(|_| support::openai::models(&["another-model", "fixture-chat"]));
+    let first = window(&fixture, Mode::Monitor);
+    invoke(&first, "provider_custom_save", json!({
+        "name": "scripted", "target": {"kind": "endpoint", "api": "openaiResponses", "url": provider.openai_base()},
+        "key": {"kind": "none"},
+    })).unwrap();
+    let make = || {
+        invoke(
+            &first,
+            "chat_create",
+            json!({
+                "worktree": os::path_text(&fixture.repo),
+                "selection": {"backend": "scripted", "model": "fixture-chat", "effort": null},
+            }),
+        )
+        .unwrap()
+    };
+    let session = make();
+    assert_eq!(session["view"], "conversation");
+    let branch = session["branchKey"].clone();
+    let id = session["id"].clone();
+    invoke(&first, "chat_set_view", json!({"id":id,"view":"graph"})).unwrap();
+    let from_nested = invoke(
+        &first,
+        "chat_default_model",
+        json!({
+            "worktree": os::path_text(&fixture.repo.join("nested")),
+        }),
+    )
+    .unwrap();
+    assert_eq!(from_nested, session["model"]);
+    let away = fixture.repo.with_file_name("moved-away");
+    fs::rename(&fixture.repo, &away).unwrap();
+    let old_launch = window(&fixture, Mode::Graph);
+    let started = invoke(&old_launch, "launch", json!({})).unwrap();
+    assert_eq!(started["graphBranch"], branch);
+    let history = invoke(
+        &old_launch,
+        "chat_latest_for_branch",
+        json!({"branch":started["graphBranch"]}),
+    )
+    .unwrap();
+    assert_eq!(history["id"], id);
+    assert_eq!(
+        history["unavailable"],
+        "This Chat's worktree no longer exists."
+    );
+    drop(old_launch);
+    fs::rename(away, &fixture.repo).unwrap();
+    let metadata = fixture.repo.join(".git");
+    let parked_metadata = fixture.repo.with_file_name("parked-metadata");
+    fs::rename(&metadata, &parked_metadata).unwrap();
+    let unregistered = window(&fixture, Mode::Graph);
+    let launch = invoke(&unregistered, "launch", json!({})).unwrap();
+    assert_eq!(launch["graphBranch"], branch);
+    let history = invoke(
+        &unregistered,
+        "chat_latest_for_branch",
+        json!({"branch":launch["graphBranch"]}),
+    )
+    .unwrap();
+    assert_eq!(history["id"], id);
+    assert!(history["unavailable"].is_string());
+    drop(unregistered);
+    fs::rename(parked_metadata, metadata).unwrap();
+
+    os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+    let refused = invoke(
+        &first,
+        "chat_create",
+        json!({
+            "worktree": os::path_text(&fixture.repo), "branch": branch, "selection": null,
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("no longer checked out")
+    );
+    let other = make();
+    assert_ne!(other["branchKey"], branch);
+    assert_eq!(
+        invoke(&first, "chat_latest_for_branch", json!({"branch": branch})).unwrap()["unavailable"],
+        "Check out main in this worktree to continue this Chat."
+    );
+    os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+    drop(first);
+
+    let restarted = launched_window(&fixture, Mode::Monitor, None);
+    assert_eq!(
+        invoke(&restarted, "browse", json!({"navigate":STILL()})).unwrap()["branches"],
+        json!([])
+    );
+    let latest = invoke(
+        &restarted,
+        "chat_latest_for_branch",
+        json!({"branch":branch}),
+    )
+    .unwrap();
+    assert_eq!(latest["id"], id);
+    assert_eq!(latest["view"], "graph");
+    let restored = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
+    assert_eq!(restored["session"]["view"], "graph");
+    assert_eq!(restored["session"]["unavailable"], Value::Null);
+    let (_, current) = scan_current(&restarted, &branch);
+    assert_eq!(current["artifacts"], 1);
+    let definitions = invoke(&restarted, "definitions", json!({"branch":branch})).unwrap();
+    assert!(definitions.to_string().contains("app"));
+    let changed = invoke(
+        &restarted,
+        "definition_check",
+        json!({
+            "branch":branch,
+            "operation":{"kind":"setComment","name":"app","text":"Chat can edit Current"},
+        }),
+    )
+    .unwrap();
+    assert_eq!(changed["kind"], "checked");
+    assert_eq!(changed["files"].as_array().unwrap().len(), 1);
+
+    os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
+    let stale = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
+    assert_eq!(
+        stale["session"]["unavailable"],
+        "Check out main in this worktree to continue this Chat."
+    );
+    assert!(
+        invoke(
+            &restarted,
+            "current_scan",
+            json!({"branch":branch,"refresh":true})
+        )
+        .is_err()
+    );
+    assert!(invoke(&restarted, "definitions", json!({"branch":branch})).is_err());
+    assert_eq!(
+        invoke(
+            &restarted,
+            "chat_latest_for_branch",
+            json!({"branch":other["branchKey"]})
+        )
+        .unwrap()["id"],
+        other["id"]
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn chat_set_worktree_moves_the_session_to_a_listed_project_and_survives_restart() {
+    let root = os::tempdir();
+    let origin = root.path().join("origin");
+    let destination = root.path().join("destination");
+    let invalid = root.path().join("not-listed");
+    let state = root.path().join("state");
+    for (repo, branch) in [
+        (&origin, "old-branch"),
+        (&destination, "new-branch"),
+        (&invalid, "other"),
+    ] {
+        fs::create_dir(repo).unwrap();
+        os::git(repo, &["init", "--quiet", "--initial-branch", branch]);
+        support::declaration::write(
+            repo,
+            repo.join("index.artf"),
+            "name = 'app'\nbasis = true\n",
+        )
+        .unwrap();
+    }
+    let fixture = Fixture {
+        repo: os::canonical(&origin),
+        state: state.clone(),
+        _root: run_fixture::RepoLease::new(root, &state, &origin),
+    };
+    let first = window(&fixture, Mode::Monitor);
+    let other = launched_window(&fixture, Mode::Monitor, Some(os::canonical(&destination)));
+    let create = |window: &Window| {
+        let choices = invoke(window, "chat_branches", json!({})).unwrap();
+        let workspace = &choices[0]["workspace"];
+        invoke(
+            window,
+            "chat_create",
+            json!({"worktree": workspace, "selection":null}),
+        )
+        .unwrap()
+    };
+    let original = create(&first);
+    let saved_destination = create(&other);
+    let id = &original["id"];
+    invoke(&first, "chat_set_view", json!({"id":id,"view":"graph"})).unwrap();
+    let listed = invoke(&first, "chat_branches", json!({})).unwrap();
+    let target = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|branch| branch["key"] == saved_destination["branchKey"])
+        .unwrap();
+    let move_to = |worktree: &Value| {
+        invoke(
+            &first,
+            "chat_set_worktree",
+            json!({"id":id,"worktree":worktree}),
+        )
+    };
+    let invalid_path = os::path_text(&os::canonical(&invalid));
+    let failure = move_to(&json!(invalid_path)).unwrap_err();
+    assert_eq!(failure["kind"], "invalid");
+    assert!(failure["message"].as_str().unwrap().contains(&invalid_path));
+    let moved = move_to(&target["workspace"]).unwrap();
+    for field in ["id", "title", "model", "createdAt"] {
+        assert_eq!(moved[field], original[field]);
+    }
+    assert_eq!(moved["worktree"], target["workspace"]);
+    assert_eq!(moved["branchKey"], target["key"]);
+    assert_eq!(moved["branch"], "new-branch");
+    assert_eq!(moved["project"], "destination");
+    assert_eq!(moved["view"], "graph");
+    assert_eq!(moved["unavailable"], Value::Null);
+    assert_eq!(move_to(&target["workspace"]).unwrap(), moved);
+    let old_list = invoke(
+        &first,
+        "chat_list",
+        json!({"worktree":original["worktree"],"query":null}),
+    )
+    .unwrap();
+    assert_eq!(old_list, json!([]));
+    let listing = invoke(
+        &first,
+        "chat_list",
+        json!({"worktree":target["workspace"],"query":"destination new-branch"}),
+    )
+    .unwrap();
+    assert!(listing.as_array().unwrap().contains(&moved));
+    let latest = |window: &Window, branch: &Value| {
+        invoke(window, "chat_latest_for_branch", json!({"branch":branch})).unwrap()
+    };
+    assert_eq!(latest(&first, &original["branchKey"]), Value::Null);
+    assert_eq!(latest(&first, &moved["branchKey"]), moved);
+    drop(other);
+    drop(first);
+
+    let restarted = window(&fixture, Mode::Monitor);
+    let restored = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
+    assert_eq!(restored["session"], moved);
+    assert_eq!(restored["turns"], json!([]));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn review_search_omits_a_deleted_repository_even_with_no_waiting_filter() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Review);
+    let search = || {
+        invoke(
+            &monitor,
+            "human_search",
+            json!({"query":"type:human","start":null}),
+        )
+        .unwrap()
+    };
+    assert_eq!(search()["reviews"].as_array().unwrap().len(), 1);
+    fixture._root.release().unwrap();
+    fs::remove_dir_all(&fixture.repo).unwrap();
+    assert_eq!(search()["reviews"], json!([]));
+    let completion = invoke(
+        &monitor,
+        "human_search_complete",
+        json!({"query":"type:human repo:r"}),
+    )
+    .unwrap();
+    assert_eq!(completion["candidates"], json!([]));
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn a_cancelled_release_does_not_mutate_the_saved_claim() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.clone();
+    let cancelled = tokio_util::sync::CancellationToken::new();
+    cancelled.cancel();
+    let (log, _events) = artifactize_core::review::log::channel();
+    let claimed = tauri::async_runtime::block_on(
+        artifactize_core::review::Job::Claim { id: id.clone() }.run(
+            fixture.state.clone(),
+            "alice".parse().unwrap(),
+            cancelled,
+            log,
+        ),
+    );
+    assert!(
+        matches!(claimed, artifactize_core::review::Outcome::Claimed { result: Err(error) } if error == "Review action cancelled.")
+    );
+    assert!(saved(&fixture, "release/signoff").claim.is_none());
+    invoke(&monitor, "human_claim", json!({"id":id,"job":1})).unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel();
+    let (log, _events) = artifactize_core::review::log::channel();
+    let released = tauri::async_runtime::block_on(
+        artifactize_core::review::Job::Release {
+            ids: vec![id.clone()],
+            quit: false,
+        }
+        .run(fixture.state.clone(), "alice".parse().unwrap(), cancel, log),
+    );
+    assert!(
+        matches!(released, artifactize_core::review::Outcome::Released { failed, .. }
+        if failed == [(id.clone(), "Review action cancelled.".into())])
+    );
+    assert_eq!(
+        saved(&fixture, "release/signoff")
+            .claim
+            .unwrap()
+            .reviewer
+            .as_str(),
+        "alice"
+    );
+    invoke(&monitor, "human_release", json!({"ids":[id],"job":2})).unwrap();
+    assert!(saved(&fixture, "release/signoff").claim.is_none());
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     let root = os::tempdir();
     let repo = root.path().join("repo");
@@ -1347,11 +2978,11 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
         state,
     };
     let viewer = window(&fixture, Mode::Graph);
-    // The folder the app was started for is listed before its first Run, ending with Current.
+    // The folder the app was started for is listed before its first Run.
     let view = invoke(&viewer, "browse", json!({"navigate": STILL()})).unwrap();
     let branch = view["launch"].clone();
     assert_eq!(view["branches"][0]["key"], branch);
-    assert_eq!(view["branches"][0]["chips"], json!([{"kind": "current"}]));
+    assert_eq!(view["branches"][0]["chips"], json!([]));
 
     let structure = artifactize_core::graph_structure::read(&fixture.repo).unwrap();
     // The first step is the graph, its evals still being checked, the rest come as they are

@@ -17,6 +17,7 @@ mod interactive;
 mod maintenance;
 #[cfg(test)]
 mod monitor_tests;
+mod plugin;
 mod provider;
 mod remote;
 mod render;
@@ -128,12 +129,14 @@ fn removed_defer_human(_: &str) -> Result<Removed, String> {
 pub enum Command {
     /// Serve bounded verification and inspection tools over MCP stdio.
     Mcp,
+    #[command(name = "__chat-mcp", hide = true)]
+    ChatMcp,
     #[command(name = "__verify", hide = true)]
     VerifyWorker { run_id: RunId },
     #[command(name = "__execute", hide = true)]
     VerifyExecution { run_id: RunId },
     /// Sign in with Codex (ChatGPT) in the system browser, or save an API key read from stdin.
-    /// Claude Agent runs Claude Code's own `claude auth login`, which keeps its own login.
+    /// Claude Agent and Antigravity run their own CLI sign-in and keep their own login.
     Login {
         #[arg(value_enum)]
         provider: artifactize_core::config::Provider,
@@ -148,6 +151,11 @@ pub enum Command {
     Provider {
         #[command(subcommand)]
         command: provider::ProviderCommand,
+    },
+    /// Add, remove, or list Artifact type plugins for this project.
+    Plugin {
+        #[command(subcommand)]
+        command: plugin::PluginCommand,
     },
     /// Sign in to, sign out of, or check a shared remote review store.
     Remote {

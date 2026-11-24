@@ -236,10 +236,10 @@ fn runtime_result(
                 verdict: result.verdict(),
                 exit_code: crate::store::ResultField::Value(result.exit_code),
                 stdout: crate::store::ResultField::Value(
-                    String::from_utf8_lossy(&result.output.stdout).into_owned(),
+                    crate::platform::output_text(&result.output.stdout).into_owned(),
                 ),
                 stderr: crate::store::ResultField::Value(
-                    String::from_utf8_lossy(&result.output.stderr).into_owned(),
+                    crate::platform::output_text(&result.output.stderr).into_owned(),
                 ),
                 duration: crate::store::ResultField::Value(result.output.duration),
                 truncated: crate::store::ResultField::Value(result.output.truncated),
@@ -316,7 +316,7 @@ pub(super) fn prepare(
     prepared.cwd = cwd;
     request.run_dir = Some(prepared.directory().to_path_buf());
     // Stored as text, so with `/` on every system.
-    let program_text = crate::platform::path_text(std::path::Path::new(command));
+    let program_text = crate::platform::program_text(command);
     request.argv = Some(
         std::iter::once(program_text)
             .chain(args.iter().map(|arg| arg.shown()))

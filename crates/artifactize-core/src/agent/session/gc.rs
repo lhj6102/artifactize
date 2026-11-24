@@ -53,7 +53,8 @@ fn entries(state: &Path) -> Result<Vec<Entry>, String> {
     for entry in listing {
         let entry = entry.map_err(|e| e.to_string())?;
         let name = entry.file_name();
-        let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".jsonl")) else {
+        let Some(id) = crate::platform::os_text(&name).and_then(|name| name.strip_suffix(".jsonl"))
+        else {
             continue;
         };
         let Ok(id) = id.parse::<SessionId>() else {
@@ -163,7 +164,7 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
                 File::options().read(true).write(true),
                 &lock,
             ) {
-                Ok(file) => match file.try_lock() {
+                Ok(file) => match crate::platform::paths::try_lock(&file) {
                     Ok(()) => Some(file),
                     Err(std::fs::TryLockError::WouldBlock) => continue,
                     Err(std::fs::TryLockError::Error(error)) => return Err(error.to_string()),

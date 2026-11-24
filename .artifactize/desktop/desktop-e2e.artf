@@ -1,15 +1,10 @@
 path = "crates/artifactize-desktop/ui/e2e/"
+type = "files"
 parts = ["desktop-e2e-input", "desktop-e2e-integrity", "desktop-e2e-infra", "desktop-e2e-cases"]
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.covers-journeys]
 title = "The scenarios cover every journey of the UX"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.covers-journeys.payload]

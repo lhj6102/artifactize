@@ -32,8 +32,9 @@ export class Registry {
   }
 }
 
-/** Register the commands `get` returns while the calling component is mounted. */
-export function useCommands(get: () => Command[]): void {
+/** Register the commands `get` returns while the calling component is mounted, offered only
+ * while `shown` holds: a workspace kept mounted while another mode is on screen offers nothing. */
+export function useCommands(get: () => Command[], shown: () => boolean = () => true): void {
   const { commands } = getAppState();
-  onMount(() => commands.add(get));
+  onMount(() => commands.add(() => (shown() ? get() : [])));
 }

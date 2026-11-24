@@ -38,6 +38,12 @@ pub enum Kind {
     End(End),
     Send(Send),
     Answer(Answer),
+    /// Typed navigation, not model text or part of replay history.
+    RunReference {
+        run: RunId,
+    },
+    /// Display-only single outcome while other tool calls from the same turn still run.
+    ToolOutcome(MessageEvent),
     /// Display-only provider delivery; never part of replay history or usage calculations.
     Delivery(Delivery),
 }
@@ -189,6 +195,15 @@ impl MessageEvent {
         &self.message
     }
 
+    pub(crate) fn builtin_target_parts(
+        &self,
+        index: usize,
+    ) -> (Option<&std::path::Path>, Option<&str>) {
+        self.builtin_target(index).map_or((None, None), |target| {
+            (target.path.as_deref(), target.pattern.as_deref())
+        })
+    }
+
     pub(super) fn builtin_target(&self, index: usize) -> Option<&BuiltinTarget> {
         self.targets.get(&index)
     }
@@ -214,7 +229,8 @@ impl BuiltinTarget {
         builtin.then(|| {
             let text = |field| call.function.arguments.get(field).and_then(Value::as_str);
             Self {
-                path: text("path").map(PathBuf::from),
+                path: text("path")
+                    .and_then(|path| artifactize_tools::files::path_from_text(path).ok()),
                 pattern: text("pattern").map(str::to_owned),
             }
         })

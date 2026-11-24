@@ -1,9 +1,6 @@
 tags = ["type:harness"]
 path = "harness/hey-arti/"
-
-[views.agent_tools]
-list = { builtin = "list" }
-read = { builtin = "read" }
+type = "files"
 
 [evals.deterministic]
 title = "The fixture driver checks pass without a live builder"
@@ -12,7 +9,7 @@ payload.instruction = "Run deterministic fixture, private materialization, live-
 
 [evals.follows-test-rules]
 title = "The Python driver tests and harness lifecycle follow the test rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-test-rules.payload]

@@ -1,26 +1,18 @@
-// What the window's one screen holds of its own: where focus is, the Pane's selected entry,
-// what the Main area shows, the open Detail with its tab and width, whether the notice shows in
-// full, and the wholes minimized on each branch's graphs. One owner, kept in the AppState; the snapshot it shows is the Browse.
+// What Verify holds of its own: where focus is, the Pane's selected entry, what the Main area
+// shows, the open Detail with its tab and width, whether the notice shows in full, and the
+// wholes minimized on each branch's graphs. One owner, kept in the AppState; the snapshot it
+// shows is the Browse.
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { BranchKey, Chip, DetailView, Source } from "../ipc/client";
-import { loadWidth } from "./detail-width";
+import type { BranchKey, Chip, Source } from "../ipc/client";
+import { GraphWorkspace } from "./graph-workspace.svelte";
+export type { Focus } from "./graph-workspace.svelte";
 
-export type Focus = "pane" | "main" | "detail";
-
-/** The Pane's selected entry: a branch, one entry of an expanded branch's timeline (a Run by
- * its ID, the Current as `current`), or a waiting review. */
-export type Entry =
-  | { kind: "branch"; branch: BranchKey }
-  | { kind: "chip"; branch: BranchKey; chip: string }
-  | { kind: "waiting"; id: string };
+/** The Pane's selected entry: a branch, or one entry of an expanded branch's timeline (a Run by
+ * its ID). */
+export type Entry = { kind: "branch"; branch: BranchKey } | { kind: "chip"; branch: BranchKey; chip: string };
 
 /** What the Main area shows. */
-export type Shown =
-  | { kind: "none" }
-  | { kind: "run"; branch: BranchKey; run: string }
-  | { kind: "current"; branch: BranchKey }
-  | { kind: "review"; id: string }
-  | { kind: "request"; detail: DetailView };
+export type Shown = { kind: "none" } | { kind: "run"; branch: BranchKey; run: string } | { kind: "branch"; branch: BranchKey };
 
 /** An open Detail: an Artifact (or the Run itself) of a Run or a Current, its shown tab, an
  * eval of that Artifact or `null` for the Artifact's own, and the Human request whose review
@@ -30,53 +22,33 @@ export type Opened = { source: Source; node: string; tab: string | null; request
 /** One text for a value the backend sends: branches and sources compare by it. */
 export const keyOf = (value: BranchKey | Source): string => JSON.stringify(value);
 
-/** A timeline entry's name among its branch's: a Run's ID, or `current`. */
-export const chipKey = (chip: Chip): string => (chip.kind === "run" ? chip.id : "current");
+/** A timeline entry's name among its branch's: a Run's ID. */
+export const chipKey = (chip: Chip): string => chip.id;
 
 /** One text for an entry: the selection compares by it. */
 export function entryKey(entry: Entry | null): string | null {
   if (entry === null) return null;
-  if (entry.kind === "waiting") return entry.id;
   return entry.kind === "branch" ? keyOf(entry.branch) : `${keyOf(entry.branch)} ${entry.chip}`;
 }
 
-/** The graph source a shown Run or Current reads from. */
+/** The graph source a shown Run reads from. */
 export function sourceOf(shown: Shown): Source | null {
   if (shown.kind === "run") return { kind: "run", run: shown.run };
-  if (shown.kind === "current") return { kind: "current", branch: shown.branch };
   return null;
 }
 
-export class MonitorState {
-  focus = $state<Focus>("pane");
-  /** The Pane is shown; the bar's Pane switch and Ctrl+B hide it and show it again. */
-  paneShown = $state(true);
+export class MonitorState extends GraphWorkspace {
   selected = $state.raw<Entry | null>(null);
   /** The branches expanded to their timelines, by key; any number, for this window. */
   readonly expanded = new SvelteSet<string>();
   shown = $state.raw<Shown>({ kind: "none" });
   /** Settings show in the Main area over what it showed before. */
   settings = $state(false);
-  /** The graph's find field is open over the shown Run's or Current's graph. */
-  finding = $state(false);
-  /** The Detail docked over the graph. */
-  opened = $state.raw<Opened | null>(null);
-  /** The Detail's dragged width in pixels, or `null` for its default. */
-  detailWidth = $state<number | null>(loadWidth());
+  runRead = $state.raw<{ id: string; phase: "loading" | "unreadable" } | null>(null);
   /** The notice shows in full rather than cut to one line. */
   noticeOpen = $state(false);
-  /** The read-only request shows its log rather than its Summary. */
-  folds = $state({ log: false });
-  /** The ID typed into the Open by ID dialog. */
-  wanted = $state("");
-  /** The snapshot revision a request shown by ID was last read for; never drawn. */
-  followed = $state(0);
-  /** The Runs each branch had in progress by its key, to notice one ending; never drawn. */
-  running = $state<Record<string, string[]>>({});
   /** What the launch asked for was opened: only the first snapshot opens it. */
   started = $state(false);
-  /** The parts focus moves into. */
-  readonly panes: { pane?: HTMLElement; main?: HTMLElement; detail?: HTMLElement; search?: HTMLInputElement } = $state({});
   /** The wholes minimized on each branch's graphs, its Runs' and its Current, by the branch's
    * key: their tree ids, kept while the app runs. */
   readonly minimized = new SvelteMap<string, readonly string[]>();

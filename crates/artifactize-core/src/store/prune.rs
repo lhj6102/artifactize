@@ -254,7 +254,9 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
         let name = entry.file_name();
-        let Some(name) = name.to_str() else { continue };
+        let Some(name) = crate::platform::os_text(&name) else {
+            continue;
+        };
         let path = parent.join(entry.file_name());
         if matches!(name, "output" | "tmp" | "home" | "cache" | "human-tools")
             || ["tool-output-", "tool-"]

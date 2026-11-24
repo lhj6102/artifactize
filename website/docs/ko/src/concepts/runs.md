@@ -37,7 +37,7 @@ Artifactize는 Run을 시작한 터미널이나 MCP 세션과 독립적으로 �
 - 실행 조건을 충족한 일반 작업부터 처리합니다. `--jobs`나 백엔드별 동시 실행 한도에 걸려 일반 작업을 시작할 수 없으면, 미리 시작한 리뷰를 중단하고 대기열에 다시 넣습니다(시작할 때마다 `--max-executions` 횟수 차감).
 - 선행 eval이 나중에 `GREEN`으로 끝나면 미리 실행한 결과를 그대로 써서 전체 검증 시간을 줄입니다.
 - 하위 eval의 대상 Artifact나 순환 참조 밖의 선행 항목에서 `RED`나 `ERROR`가 나올 수 있습니다. 이때 그 입력에 의존하는 하위 eval 가운데 미리 실행 중인 작업은 즉시 취소하고, 이미 완료된 결과는 무효화해 재사용 기록에서 뺍니다. 이어서 영향받는 하위 요청(Human 승인 포함)을 `BLOCKED`로 표시합니다.
-- 반복 수정([Focus then sweep](../agent-plugin/plugin.md#focus-then-sweep-iterate-on-red-evals)) 중에는 `verify --eval ID --speculate --wait`를 쓸 수 있습니다. 입력 Artifact를 아직 다시 검증하지 않았어도 수정 중인 eval만 바로 실행해 볼 수 있습니다.
+- 반복 수정([Focus then sweep](../agent-plugin/plugin.md#focus-then-sweep-iterate-on-red-evals)) 중에는 `verify --eval ID --speculate`를 쓸 수 있습니다. 입력 Artifact를 아직 다시 검증하지 않았어도 수정 중인 eval만 바로 실행해 볼 수 있습니다.
 
 ## 승인과 Run의 종료 {#sign-offs-and-the-end-of-a-run}
 
@@ -45,14 +45,14 @@ Human eval은 `{name}`으로 참조한 입력의 선행 조건을 모두 충족�
 
 조건이 충족되면 선택한 Human eval의 승인 요청을 **`DEFERRED` 요청**으로 기록하며, 이 요청이 다른 eval의 실행을 막지는 않습니다. 아직 끝나지 않은 Run은 **`WAITING_HUMAN`** 상태로 바뀝니다. 해당 승인에 의존하는 하위 eval은 나머지 선행 조건을 충족하고 실행 한도에 여유가 있으면 시작합니다. 이때 통과한(`GREEN`) 하위 eval 결과는 리뷰어가 승인 요청에 대한 판정을 제출할 때까지 **`PROVISIONAL`**로 표시됩니다(`RED`나 `ERROR`는 그대로 표시). 같은 상태 디렉터리에서 `--force` 없이 다른 Run을 시작할 수 있습니다. 이때 재사용 키가 같은 승인 요청이 이미 있으면 새 요청을 만들지 않고 기존 요청의 결과를 공유합니다.
 
-모든 자동 검사가 끝나면 리뷰어가 아직 판정을 내리지 않은 Human 승인 요청만 남습니다. 이때 리뷰어가 요청을 맡고 있으면 Run을 종료하지 않습니다. 맡은 사람이 없을 때는 기본 2분 동안 기다리며, 이 유예 시간은 `limits.json`의 `signoffIdleGraceSeconds`나 `artifactize limits --signoff-idle-grace SECONDS`로 바꿀 수 있습니다. 유예 시간 안에 요청을 맡은 사람이 없으면 Run을 종료합니다. 판정이 나오지 않은 승인 요청만 남았다면 **`YELLOW`**로 끝납니다. 필수 검사에서 실패했거나 Run 통과에 필요한 결과가 없다면 `RED`·`ERROR`·`INCOMPLETE`로 끝납니다.
+모든 자동 평가가 끝나면 리뷰어가 아직 판정을 내리지 않은 Human 승인 요청만 남습니다. 이때 리뷰어가 요청을 맡고 있으면 Run을 종료하지 않습니다. 맡은 사람이 없을 때는 기본 2분 동안 기다리며, 이 유예 시간은 `limits.json`의 `signoffIdleGraceSeconds`나 `artifactize limits --signoff-idle-grace SECONDS`로 바꿀 수 있습니다. 유예 시간 안에 요청을 맡은 사람이 없으면 Run을 종료합니다. 판정이 나오지 않은 승인 요청만 남았다면 **`YELLOW`**로 끝납니다. 필수 평가에서 실패했거나 Run 통과에 필요한 결과가 없다면 `RED`·`ERROR`·`INCOMPLETE`로 끝납니다.
 
 | Run 결과 | 종료 코드 | 의미 |
 |---|---|---|
 | `GREEN` | `0` | Human 승인을 포함한 모든 필수 eval이 `GREEN`으로 통과했습니다. |
 | `RED` | `1` | eval이나 그 밖의 필수 항목에서 하나라도 `RED`가 나오면 Run은 `RED`로 끝납니다. 다만 취소, `ERROR`, 실행 횟수 한도나 `--reuse-only`로 인한 `INCOMPLETE`가 있으면 그 결과가 우선합니다. |
 | `ERROR` | `2` | Run을 직접 취소하면 `ERROR/CANCELLED`로 끝나며, 이 결과가 최우선으로 적용됩니다. 준비 단계에서 오류(fingerprint 스크립트 실패, 준비 중 선언 변경 `INPUT_CHANGED` 등)가 나도 `ERROR`가 됩니다. 취소되지 않은 Run에서 eval 실행 오류가 발생했을 때도 `ERROR`로 끝납니다. 다만 실행 횟수 한도나 `--reuse-only` 때문에 `INCOMPLETE`가 적용되는 경우에는 그쪽이 개별 eval 오류보다 우선합니다. |
-| `INCOMPLETE` | `4` | 취소되지 않은 Run에 적용합니다. `--max-executions` 한도에 걸려 실행을 시작하지 못했거나(`BUDGET_EXHAUSTED`), [`--reuse-only`에서 재사용할 캐시 결과가 없으면](../guides/team-and-ci.md#ci) `INCOMPLETE`로 끝납니다. 이 두 경우는 `ERROR`나 `RED`보다 먼저 적용됩니다. 그 외에는 `ERROR`나 `RED`가 없어도 충족하지 못한 요건이 남으면 `INCOMPLETE`가 됩니다. 선택하지 않은 필수 항목에 유효한 판정 근거가 없을 때가 이에 해당합니다. 선택한 Artifact에 eval과 `parts`가 없고 `basis = true`도 설정하지 않았을 때도 `INCOMPLETE`로 끝납니다. |
-| `YELLOW` | `5` | 모든 자동 검사는 통과(`GREEN` 또는 `PROVISIONAL`)했고 **아직 판정이 나오지 않은 Human 승인 요청만 남아 있습니다**(최종 승인 아님). |
+| `INCOMPLETE` | `4` | 취소되지 않은 Run에 적용합니다. `--max-executions` 한도에 걸려 실행을 시작하지 못했거나(`BUDGET_EXHAUSTED`), [`--reuse-only`에서 재사용할 캐시 결과가 없으면](../guides/team-and-ci.md#ci) `INCOMPLETE`로 끝납니다. 이 두 경우는 개별 eval의 `ERROR`나 `RED`보다 먼저 적용됩니다. 그 외에는 `ERROR`나 `RED`인 eval이 없더라도 충족하지 못한 요건이 남으면 `INCOMPLETE`가 됩니다. 선택하지 않은 필수 항목에 유효한 판정 근거가 없을 때가 이에 해당합니다. 선택한 Artifact에 eval과 `parts`가 없고 `basis = true`도 설정하지 않았을 때도 `INCOMPLETE`로 끝납니다. |
+| `YELLOW` | `5` | 모든 자동 평가는 통과(`GREEN` 또는 `PROVISIONAL`)했고 **아직 판정이 나오지 않은 Human 승인 요청만 남아 있습니다**(최종 승인 아님). |
 
 Run이 `YELLOW`로 끝난 뒤에도 `artifactize review`와 데스크톱 앱에서 대기 중인 승인 요청을 처리할 수 있습니다. 리뷰어가 `GREEN` 판정을 제출하면 해당 승인 요청과 여기에 연결된 다른 요청이 모두 완료됩니다. [재사용 키](reuse.md#the-reuse-key)가 바뀌지 않는 동안에는 다음 `artifactize verify`에서 이 승인을 재사용합니다. 다만 `fingerprint = false`로 설정했다면 다음 Run에서 새 승인을 요청합니다. 같은 워크트리에서 새 Run이 다른 재사용 키로 같은 Human eval을 요청하면 이전 대기 요청은 `ERROR/SUPERSEDED`로 종료됩니다.

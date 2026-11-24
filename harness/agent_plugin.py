@@ -7,21 +7,25 @@ configuration and compare what the host loaded with the plugin folder.
 The host is the installed `claude` or `codex` program found on PATH. Only the
 host's own commands and answers are observed: its validator, install, plugin and
 MCP listings, and Codex's skill inventory. No MCP server is started. It runs on
-Linux and macOS, where each host command's processes are owned through its process group.
+Linux uses a subreaper to own the command's descendants. macOS keeps the
+command's process group anchored until teardown.
 """
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
-import queue
+import selectors
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 
 sys.dont_write_bytecode = True
+OWNERS = Path(__file__).resolve().parent / "hey-arti"
+sys.path.insert(0, str(OWNERS))
+import driver as ownership
 
 # Where each host documents its marketplace file, relative to the marketplace root.
 CATALOGS = {"claude": Path(".claude-plugin", "marketplace.json"), "codex": Path(".agents", "plugins", "marketplace.json")}
@@ -43,47 +47,111 @@ EXIT_SECONDS = 30
 SESSION_VARIABLES = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID")
 
 
-def started(argv, env, cwd, **pipes):
-    """Start a host command as the leader of its own process group, so that `ended` can end
-    every process it starts."""
+class MacHost(subprocess.Popen):
+    """The broker remains the unreaped group leader, even after its command exits."""
+
+    def __init__(self, argv, **options):
+        self.command_result = None
+        read, write = os.pipe()
+        self.status = os.fdopen(read, "rb")
+        try:
+            try:
+                super().__init__([sys.executable, "-I", str(Path(__file__).resolve()),
+                                  "--keep-group", str(write), *argv],
+                                 pass_fds=(write,), start_new_session=True, **options)
+            finally:
+                os.close(write)
+        except BaseException:
+            self.status.close()
+            raise
+
+    def _wait(self, timeout):
+        # Popen.communicate observes the command status without reaping the group anchor.
+        if self.command_result is None:
+            with selectors.DefaultSelector() as ready:
+                ready.register(self.status, selectors.EVENT_READ)
+                if not ready.select(timeout):
+                    raise subprocess.TimeoutExpired(self.args, timeout)
+            self.command_result = int(os.read(self.status.fileno(), 64))
+        return self.command_result
+
+    def close(self):
+        try:
+            # Never signal or probe this numerical group after reaping its leader.
+            try:
+                os.killpg(self.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            super()._wait(EXIT_SECONDS)
+            # Failure to close the pipes can mean another process is using the fixture.
+            with selectors.DefaultSelector() as ready:
+                for stream in (self.stdout, self.stderr):
+                    if stream is not None and not stream.closed:
+                        ready.register(stream, selectors.EVENT_READ)
+                deadline = time.monotonic() + EXIT_SECONDS
+                while ready.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not (events := ready.select(remaining)):
+                        raise RuntimeError("Host output is still open after stopping the owned group")
+                    for key, _ in events:
+                        if not os.read(key.fd, 32768):
+                            ready.unregister(key.fileobj)
+        except BaseException as error:
+            raise ownership.ProcessExitError("Mac host cleanup was not confirmed", process=self) from error
+        finally:
+            self.status.close()
+            for stream in (self.stdin, self.stdout, self.stderr):
+                if stream is not None:
+                    stream.close()
+
+
+def keep_group(status, command):
+    """Report the actual command's status and retain the group's numeric identity."""
+    # The command must not inherit the control pipe or keep the group's leader alive itself.
+    os.set_inheritable(status, False)
+    try:
+        process = subprocess.Popen(command)
+    except OSError as error:
+        print(error, file=sys.stderr)
+        code = 127
+    else:
+        for descriptor in (0, 1, 2):
+            os.close(descriptor)
+        code = process.wait()
+    os.write(status, str(code).encode("ascii"))
+    os.close(status)
+    while True:
+        signal.pause()
+
+
+@contextmanager
+def host_command(argv, env, cwd, **pipes):
     program = shutil.which(argv[0], path=env.get("PATH"))
     if program is None:
         sys.exit(f"{argv[0]} is not on PATH; install the host to check its plugin")
-    return subprocess.Popen([program, *argv[1:]], cwd=cwd, env=env, text=True, start_new_session=True, **pipes)
-
-
-def ended(process):
-    """End every process still in the host command's group, reap its leader, and return only
-    once no member of the group is left, so none outlives the scratch configuration."""
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    process.wait()
-    deadline = time.monotonic() + EXIT_SECONDS
-    while True:
+    argv = [program, *argv[1:]]
+    options = {"cwd": cwd, "env": env, "text": True, **pipes}
+    if sys.platform == "linux":
+        with ownership.owned_child(argv, **options) as process:
+            yield process
+    else:
+        process = None
         try:
-            os.killpg(process.pid, 0)
-        except ProcessLookupError:
-            return
-        if time.monotonic() > deadline:
-            # Keep the scratch configuration the survivors may still use: os._exit skips the
-            # enclosing TemporaryDirectory's removal, which sys.exit would run.
-            sys.stdout.flush()
-            sys.stderr.write(f"host command {process.pid}'s processes did not exit after being killed; its scratch configuration is kept\n")
-            sys.stderr.flush()
-            os._exit(1)
-        time.sleep(0.01)
+            with ownership.defer_interrupts():
+                process = MacHost(argv, **options)
+            yield process
+        finally:
+            if process is not None:
+                with ownership.defer_interrupts():
+                    process.close()
 
 
 def run(argv, env, cwd):
-    process = started(argv, env, cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    try:
+    with host_command(argv, env, cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
         stdout, stderr = process.communicate(timeout=COMMAND_SECONDS)
-    finally:
-        ended(process)
-    if process.returncode != 0:
-        sys.exit(f"{' '.join(argv)} exited {process.returncode}:\n{stdout}{stderr}")
+        code = process.wait(timeout=0)
+    if code:
+        sys.exit(f"{' '.join(argv)} exited {code}:\n{stdout}{stderr}")
     return stdout
 
 
@@ -122,49 +190,44 @@ def codex(market, project, env, plugin_id):
     return skills, server is not None and server["enabled"], server and server["transport"]
 
 
+class AppServer:
+    def __init__(self, process):
+        self.process = process
+        self.buffer = bytearray()
+
+    def send(self, message):
+        self.process.stdin.write(json.dumps(message) + "\n")
+        self.process.stdin.flush()
+
+    def ask(self, identifier, method, params):
+        self.send({"id": identifier, "method": method, "params": params})
+        deadline = time.monotonic() + ANSWER_SECONDS
+        with selectors.DefaultSelector() as ready:
+            ready.register(self.process.stdout, selectors.EVENT_READ)
+            while True:
+                while (newline := self.buffer.find(b"\n")) >= 0:
+                    message = json.loads(self.buffer[:newline])
+                    del self.buffer[:newline + 1]
+                    if message.get("id") == identifier:
+                        if "error" in message:
+                            sys.exit(f"codex app-server {method}: {message['error']}")
+                        return message["result"]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not ready.select(remaining):
+                    sys.exit(f"codex app-server did not answer {method}")
+                if not (data := os.read(self.process.stdout.fileno(), 32768)):
+                    sys.exit("codex app-server closed before answering")
+                self.buffer.extend(data)
+
+
 def codex_skills(project, env):
     """Codex's skill inventory for the project, from its app-server; it starts no MCP server."""
-    process = started(["codex", "app-server", "--stdio"], env, project, stdin=subprocess.PIPE,
-                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    lines = queue.Queue()
-
-    def read():
-        for line in process.stdout:
-            lines.put(line)
-        lines.put(None)
-
-    reader = threading.Thread(target=read, daemon=True)
-    reader.start()
-
-    def ask(identifier, method, params):
-        process.stdin.write(json.dumps({"id": identifier, "method": method, "params": params}) + "\n")
-        process.stdin.flush()
-        while True:
-            line = lines.get(timeout=ANSWER_SECONDS)
-            if line is None:
-                sys.exit("codex app-server closed before answering")
-            message = json.loads(line)
-            if message.get("id") == identifier:
-                if "error" in message:
-                    sys.exit(f"codex app-server {method}: {message['error']}")
-                return message["result"]
-
-    try:
-        ask(1, "initialize", {"clientInfo": {"name": "artifactize-plugin-check", "version": "1"}})
-        process.stdin.write(json.dumps({"method": "initialized"}) + "\n")
-        process.stdin.flush()
-        return ask(2, "skills/list", {"cwds": [str(project)]})["data"]
-    finally:
-        try:
-            # The app-server leaves when its input closes; whatever it started is ended with it.
-            process.stdin.close()
-            try:
-                process.wait(timeout=ANSWER_SECONDS)
-            except subprocess.TimeoutExpired:
-                pass
-        finally:
-            ended(process)
-            reader.join()
+    with host_command(["codex", "app-server", "--stdio"], env, project, stdin=subprocess.PIPE,
+                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as process:
+        server = AppServer(process)
+        server.ask(1, "initialize", {"clientInfo": {"name": "artifactize-plugin-check", "version": "1"}})
+        server.send({"method": "initialized"})
+        return server.ask(2, "skills/list", {"cwds": [str(project)]})["data"]
 
 
 def main(host, plugin, catalog_path):
@@ -174,8 +237,9 @@ def main(host, plugin, catalog_path):
     plugin_id = listed_plugin(host, json.loads(catalog_path.read_text(encoding="utf-8")), root, plugin)
     # Agent Plugins finds skills only in skills/<name>/SKILL.md, one level down.
     expected = {path.parent.name for path in plugin.glob("skills/*/SKILL.md")}
-    with tempfile.TemporaryDirectory(prefix="agent-plugin-") as scratch:
-        scratch = Path(scratch)
+    scratch = Path(tempfile.mkdtemp(prefix="agent-plugin-"))
+    cleanup = True
+    try:
         # Copy only the catalog and the plugin folder: like a host's plugin cache,
         # the installed plugin must need nothing else from the repository.
         market = scratch / "marketplace"
@@ -189,6 +253,12 @@ def main(host, plugin, catalog_path):
         env = {key: value for key, value in os.environ.items() if key not in SESSION_VARIABLES}
         env["CLAUDE_CONFIG_DIR" if host == "claude" else "CODEX_HOME"] = str(config)
         skills, enabled, server = (claude if host == "claude" else codex)(market, project, env, plugin_id)
+    except ownership.ProcessExitError as error:
+        cleanup = False
+        raise RuntimeError(f"Host could still be using its scratch configuration at {scratch}") from error
+    finally:
+        if cleanup:
+            shutil.rmtree(scratch)
     launch = {key: (server or {}).get(key) for key in LAUNCH[host]}
     problems = [message for failed, message in (
         (skills != expected, f"skills: loaded {sorted(skills)}, the plugin folder has {sorted(expected)}"),
@@ -201,13 +271,16 @@ def main(host, plugin, catalog_path):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 3 and sys.argv[1] == "--keep-group":
+        keep_group(int(sys.argv[2]), sys.argv[3:])
     if len(sys.argv) != 4 or sys.argv[1] not in CATALOGS:
         sys.exit(__doc__)
     # A host command's descendants are owned through its process group, which Windows lacks:
     # there they could outlive the check and keep its scratch configuration in use.
     if os.name != "posix":
         sys.exit("The agent plugin check runs on Linux and macOS only.")
-    # A termination unwinds like an interrupt: each host command's group is ended and the
-    # scratch configuration removed on the way out, by the same finally blocks.
-    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
-    main(sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]))
+    try:
+        with ownership.term_as_interrupt():
+            main(sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]))
+    except ownership.Terminated as error:
+        sys.exit(error.exit_code)

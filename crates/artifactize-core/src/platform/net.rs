@@ -4,6 +4,17 @@ use std::{io, net::SocketAddr};
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
+/// Open a timed connection to an IPC peer on the local machine.
+pub(crate) fn connect_loopback(
+    port: u16,
+    timeout: std::time::Duration,
+) -> io::Result<std::net::TcpStream> {
+    std::net::TcpStream::connect_timeout(
+        &SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
+        timeout,
+    )
+}
+
 /// Bind without Unix's SO_REUSEADDR, and with Windows's SO_EXCLUSIVEADDRUSE.
 /// IPv6 is v6-only so the two loopback addresses can be reserved independently.
 pub(crate) fn exclusive_listener(address: SocketAddr) -> io::Result<TcpListener> {

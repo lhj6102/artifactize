@@ -15,7 +15,6 @@ impl Flow for Codex {
     const NOT_WAITING: &'static str = "No Codex sign-in is waiting for a URL.";
     const ENDED: &'static str = "The Codex sign-in already ended.";
     const WAITED: &'static str = "The Codex sign-in is already being waited for.";
-    const UNASKED: &'static str = "Codex sign-in ended without asking anything.";
 }
 
 /// A moment as the library counts it: whole seconds since 1970, as decimal text so no value of
@@ -71,7 +70,7 @@ pub enum CodexStatus {
 }
 
 fn read_codex(app: &App) -> Result<CodexStatus, Failure> {
-    let status = codex::status(Some(&app.launch.state), app.launch.repo.as_deref())
+    let status = codex::status(Some(&app.launch.state), app.launch.settings_repo())
         .map_err(Failure::Account)?;
     Ok(match status {
         codex::Status::Absent => CodexStatus::Absent,
@@ -116,34 +115,78 @@ pub struct CodexPrompt {
     pub sign_in: SignInId,
 }
 
-/// Start `login codex`: the sign-in URL to show (the system browser gets it too when
-/// `browser`), and whether the browser can return here. Finish with [`codex_login_wait`].
+/// Start sign-in and return its ID immediately, so it can be cancelled before any prompt.
 #[tauri::command]
 #[specta::specta]
 pub async fn codex_login_start(
     app: tauri::State<'_, App>,
     browser: bool,
-) -> Result<CodexPrompt, Failure> {
+) -> Result<SignInId, Failure> {
     let state = app.launch.state.clone();
-    let repo = app.launch.repo.clone();
-    let (sign_in, prompt) = app
+    let repo = app.launch.settings_repo().map(std::path::Path::to_owned);
+    Ok(app.settings.codex_sign_ins.start(|pasted, shown| {
+        tokio::spawn(async move {
+            codex::login_with(
+                Some(&state),
+                repo.as_deref(),
+                Some(pasted),
+                browser,
+                callback_port(),
+                |prompt| {
+                    let _ = shown.send(prompt.clone());
+                },
+            )
+            .await
+        })
+    }))
+}
+
+fn callback_port() -> codex::CallbackPort {
+    #[cfg(feature = "e2e")]
+    if codex::auth_root().is_ok_and(|root| isolated_callback(&root)) {
+        return codex::CallbackPort::Ephemeral;
+    }
+    codex::CallbackPort::Registered
+}
+
+#[cfg(feature = "e2e")]
+fn isolated_callback(root: &tauri::Url) -> bool {
+    root.scheme() == "http" && root.host_str() == Some("127.0.0.1")
+}
+
+#[cfg(all(test, not(feature = "e2e")))]
+#[test]
+fn the_release_build_uses_the_registered_callback() {
+    assert_eq!(callback_port(), codex::CallbackPort::Registered);
+}
+
+#[cfg(all(test, feature = "e2e"))]
+#[test]
+fn only_an_ipv4_loopback_http_provider_uses_the_isolated_callback() {
+    for (url, isolated) in [
+        ("http://127.0.0.1:44003", true),
+        ("http://localhost:44003", false),
+        ("http://[::1]:44003", false),
+        ("https://127.0.0.1:44003", false),
+        ("https://auth.openai.com", false),
+    ] {
+        assert_eq!(isolated_callback(&url.parse().unwrap()), isolated, "{url}");
+    }
+}
+
+/// Read the attempt's prompt or the updated status if it already signed in.
+#[tauri::command]
+#[specta::specta]
+pub async fn codex_login_prompt(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+) -> Result<CodexPrompt, Failure> {
+    let prompt = app
         .settings
         .codex_sign_ins
-        .start(|pasted, shown| {
-            tokio::spawn(async move {
-                codex::login_with(
-                    Some(&state),
-                    repo.as_deref(),
-                    Some(pasted),
-                    browser,
-                    |prompt| {
-                        let _ = shown.send(prompt.clone());
-                    },
-                )
-                .await
-            })
-        })
-        .await?;
+        .prompt(sign_in)
+        .await?
+        .expect("Codex always shows its authorization prompt before success");
     Ok(CodexPrompt {
         url: prompt.url,
         callback: prompt.callback,
@@ -167,15 +210,19 @@ pub async fn codex_login_wait(
 /// Finish the sign-in with the URL the browser was sent to, as the CLI accepts on stdin.
 #[tauri::command]
 #[specta::specta]
-pub fn codex_login_paste(app: tauri::State<'_, App>, redirect: String) -> Result<(), Failure> {
-    app.settings.codex_sign_ins.paste(redirect)
+pub fn codex_login_paste(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+    redirect: String,
+) -> Result<(), Failure> {
+    app.settings.codex_sign_ins.paste(sign_in, redirect)
 }
 
 /// Stop the sign-in in progress; nothing is saved, even if the browser returns later.
 #[tauri::command]
 #[specta::specta]
-pub fn codex_login_cancel(app: tauri::State<'_, App>) {
-    app.settings.codex_sign_ins.cancel();
+pub fn codex_login_cancel(app: tauri::State<'_, App>, sign_in: SignInId) {
+    app.settings.codex_sign_ins.cancel(sign_in);
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -190,7 +237,7 @@ pub struct SignedOut {
 #[tauri::command]
 #[specta::specta]
 pub async fn codex_logout(app: tauri::State<'_, App>) -> Result<SignedOut, Failure> {
-    let revoked = codex::logout(Some(&app.launch.state), app.launch.repo.as_deref())
+    let revoked = codex::logout(Some(&app.launch.state), app.launch.settings_repo())
         .await
         .map_err(Failure::Account)?;
     Ok(SignedOut {

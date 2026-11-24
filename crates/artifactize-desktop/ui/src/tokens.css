@@ -8,13 +8,19 @@
    its panel, a node from the canvas. A graph is drawn in neutral lines (a node's outline, an
    edge); a status shows on it as an icon and a strip, not as the colour of its lines. Colour carries meaning only on the element that has the meaning (a status dot or
    word, a node's light, a verdict button), and a meaning has one colour wherever the app shows
-   it, in a list, a chip or a graph; the accent is for what is interactive.
+   it, in a list, a chip or a graph; the accent is for what is interactive, a light neutral as a
+   video editor's controls are, the focus ring a light neutral too. States follow a video
+   editor's emphasis grammar: a chosen item is brighter text, never bolder; a selected row is a
+   darker row with white text; a primary action differs by its outline alone; and the one warm
+   colour, --current-mark, marks the single current or edited item as a thin line or a small
+   mark (a chosen tab's underline, a selected node's outline, the field being edited, a radio's
+   dot), never a fill or text.
 
    The app is dark only, whatever the system's appearance. The values are our
    own: the handoff's sampled HEX values were a comparison point, not a source. */
 :root {
   /* Surfaces */
-  --surface-bar: #1b1c20;
+  --surface-bar: #16171a;
   --surface-app: #202127;
   --surface-panel: #26272e;
   --surface-group: #2e3038;
@@ -24,28 +30,45 @@
   /* Lines, strongest first */
   --line-panel: #101114;
   --line-node: #101114;
-  --line-group: #363840;
-  --line-input: #40434c;
+  --line-group: #4c4d52;
+  --line-section: #1c1d21;
+  --line-input: #757985;
   --edge: #7f8490;
 
   /* Ink */
   --ink: #e8e9ec;
   --ink-2: #a4a8b2;
+  --label: #c3c3c5;
+  --ink-bright: #ffffff;
+  --ink-off: #8e9198;
   --ink-3: #6f7480;
-  --ink-on-accent: #ffffff;
+  --ink-on-accent: #16171a;
 
   /* Interaction */
-  --accent: #8b8cf0;
-  --accent-soft: #2c2d4b;
-  --selection: #33354a;
-  --focus: #a2a3f6;
+  --accent: #d4d6dc;
+  --accent-soft: #3b3d45;
+  --selection: #1c1d21;
+  --focus: #e6e7eb;
+  --current-mark: #ee4e3f;
+  --line-primary: #d4d6dc;
+  --handle: #ffffff;
+  --handle-edge: #1a1f22;
   --outline-selected: #dcdee5;
   --scrim: rgb(0 0 0 / 45%);
+
+  /* The bottom bar, a page bar: its items' muted ink, the shown mode's black cell and the mark
+     along that cell's bottom, which is the bar's alone and no status */
+  --bar-ink: #909296;
+  --bar-ink-on: #ffffff;
+  --bar-active: #0b0b0d;
+  --bar-mark: #e0443c;
+  --bar-count-fill: #26384f;
+  --bar-count-ink: #a8b9d1;
 
   /* Statuses, one colour each wherever they show (a list, a chip, a graph's node), read with
      their glyph or word; the last two are what verify would do, on a Current */
   --green: #4ac26b;
-  --red: #f2675d;
+  --red: #ff887f;
   --error: #f0883e;
   --running: #6cb6ff;
   --human: #4c8ff0;
@@ -62,14 +85,18 @@
   --row: 24px;
   --row-dense: 22px;
   --row-head: 28px;
+  --row-pane: 36px;
   --control: 24px;
-  --bar-height: 36px;
+  --bar-height: 44px;
   --pad: 12px;
   --gap: 8px;
   --measure: 720px;
   --port: 7px;
   --grid: 24px;
   --icon: 12px;
+  --icon-stroke: 1.0; /* In the 12 × 12 drawing box, before scaling. */
+  --icon-bar: 16px;
+  --bar-count-size: 18px;
   --strip: 2px;
 
   /* Type */
@@ -79,6 +106,8 @@
   --text-small: 12px;
   --text-label: 11px;
   --text-title: 14px;
+  --text-lead: 16px;
+  --text-heading: 18px;
 
   color-scheme: dark;
 }

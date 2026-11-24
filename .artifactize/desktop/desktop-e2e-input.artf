@@ -1,18 +1,13 @@
 path = "crates/artifactize-desktop/src/"
+type = "files"
 select = ["e2e_input.rs", "e2e_input"]
 # The test-only native text-input device the end-to-end suite drives the WebView engines
 # through (E2E-INPUT). Compiled into the backend only for the E2E test build; a part of
 # desktop-e2e.
 
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
-
 [evals.engine-apis]
 title = "The text-input device follows E2E-INPUT"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read E2E-INPUT of the end-to-end rules {desktop-e2e-rules} and the engine contract in the module comment of \

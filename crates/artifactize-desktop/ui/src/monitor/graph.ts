@@ -3,6 +3,9 @@
 // states as the Run's tree of Artifacts and evals, or from what verify would do on a Current.
 import type { Light, Shape, Tally, Update } from "../ipc/client";
 
+/** One user-requested camera zoom step, on the strip and in the palette. */
+export const ZOOM_STEP = 1.2;
+
 /** Words for each light, for labels and Help; colours are `light-<name>` classes and icons
  * are icons.ts's. */
 export const WORDS: Record<Light, string> = {
@@ -27,10 +30,13 @@ export const CURRENT_LEGEND: Light[] = ["reused", "run", "waiting", "blocked", "
  * edge is neutral. */
 export const BLOCKING: ReadonlySet<Light> = new Set<Light>(["red", "error", "blocked"]);
 
-/** A node's tally read aloud: `, 2 of 3 evals GREEN`; nothing without one. */
+/** A Run's passing evals; a Current uses the library's own plan note, not this tally. */
 export function tallyWords(tally: Tally | null): string {
   return tally === null ? "" : `, ${tally.passed} of ${tally.of} evals GREEN`;
 }
+
+/** A Current with no plan note can still name its observed mark. */
+export function currentWords(light: Light): string { return WORDS[light]; }
 
 export type Point = { x: number; y: number };
 

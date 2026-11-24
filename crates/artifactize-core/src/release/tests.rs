@@ -92,6 +92,24 @@ fn at(seconds: u64) -> SystemTime {
 
 const DAY: u64 = 24 * 60 * 60;
 
+#[test]
+fn update_links_are_tied_to_the_version_the_person_chose() {
+    let old = version("0.16.0");
+    let next = version("0.17.0");
+    let old_page = Channel::Unknown.update(&old).unwrap();
+    assert_eq!(
+        old_page,
+        Update::Page {
+            url: format!("{SITE}/releases/tag/v0.16.0")
+        }
+    );
+    assert_ne!(Channel::Unknown.update(&next).unwrap(), old_page);
+    assert!(
+        matches!(Channel::Deb.update(&old).unwrap(), Update::Download { url, .. }
+        if url == format!("{SITE}/releases/download/v0.16.0/Artifactize-amd64.deb"))
+    );
+}
+
 #[tokio::test]
 async fn a_newer_release_comes_with_the_channels_update_and_is_asked_once_a_day() {
     Releases::answering(
@@ -103,7 +121,7 @@ async fn a_newer_release_comes_with_the_channels_update_and_is_asked_once_a_day(
             let newer = Outcome::Newer {
                 latest: version("0.16.0"),
                 update: Update::Page {
-                    url: "https://github.com/lhj6102/artifactize/releases/latest".into(),
+                    url: "https://github.com/lhj6102/artifactize/releases/tag/v0.16.0".into(),
                 },
             };
             let source = releases.source(SITE);

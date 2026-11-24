@@ -15,10 +15,13 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `status [SELECTOR]` (default `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (default: available CPUs) | Reports eval and Artifact states, predicted actions (`execute`, `reuse`, `wait`, `blocked`; see [Runs and Workflows](../concepts/runs.md)), and changed inputs when no reusable result matches (see [Fingerprints and Reuse](../concepts/reuse.md#completed-result-reuse)). | `0` satisfied, `1` obligations remain, `2` command/state error |
 | `config check` | — | Validates `.artifactize/` definitions statically without running project code. | `0` valid, `2` invalid |
 | `config graph [ARTIFACT]` | `--impact` | Prints Artifacts, evals, cycle components, and input-to-consumer relations (`--impact` adds downstream consumers). | `0` |
-| `config migrate` | `--repo PATH` | Migrates in-tree `.artf` files into `.artifactize/<name>.artf`. | `0` |
+| `config migrate` | `--repo PATH` | Moves legacy declarations into `.artifactize/` or adds `type = "files"` where a local Artifact is missing a required review tool. | `0` |
+| `plugin add PATH` | `--repo PATH` | Installs a [viewer plugin](../guides/viewer-plugins.md) from a folder. | `0` |
+| `plugin remove TYPE` | `--repo PATH` | Removes a project-installed plugin by type. | `0` |
+| `plugin list` | `--repo PATH` | Lists the built-in and project-installed plugin types. | `0` |
 | `config rename OLD NEW` | — | Renames Artifact `OLD` to `NEW` across definitions, `parts`, and `{OLD}` references. | `0` |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | Lists saved Runs newest first for the current/`--repo` repository (`--repo-only`, the default) or across all repositories in the state (`--all`), with status, counts, and comment. | `0` |
-| `run show RUN_ID` | `--wait [--timeout-ms MS]` | Prints full saved Run JSON (`evidence`, `requests`, `usage`, `validation`). `--wait` waits for an open Run (default 10-minute observation timeout; `--timeout-ms` requires `--wait`). | `0` (or Run outcome with `--wait`; `3` when `--wait` times out, leaving the Run running) |
+| `run show RUN_ID` | `--wait [--timeout-ms MS]` | Prints full saved Run JSON (`origin`, `evidence`, `requests`, `usage`, `validation`). `--wait` waits for an open Run (default 10-minute observation timeout; `--timeout-ms` requires `--wait`). | `0` (or Run outcome with `--wait`; `3` when `--wait` times out, leaving the Run running) |
 | `run watch RUN_ID` | — | Streams JSON-line progress (`update`, `eval_result`, `outcome`) until settlement. | Run outcome |
 | `run cancel RUN_ID` | — | Records and acknowledges a cancellation request for an open Run (`RUNNING` or `WAITING_HUMAN`), keeping results already saved. | `0` |
 | `request list` | `--run RUN_ID` | Lists saved requests with status and current claimant (in text output; JSON includes `claim` and `summary`). | `0` |
@@ -26,7 +29,7 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `request logs ID` | `--stream stdout\|stderr\|both` (default `both`), `[--tail N \| --start N [--end N] \| --end N]` (default `--tail 50`), `--search TEXT` | Reads bounded runtime `stdout`/`stderr` capture (`complete`, `partial`, `saved_audit`, `missing`, or `not_runtime` for Agent/Human requests; `--tail` and `--start`/`--end` range queries are mutually exclusive). | `0` |
 | `request claim ID` | `--reviewer NAME` | Claims a waiting Human request (default reviewer: `$USER`, then `$LOGNAME` on Unix or `%USERNAME%` on Windows). | `0` |
 | `request unclaim ID` | `--reviewer NAME` | Releases a Human claim without submitting a verdict. | `0` |
-| `request tool ID TOOL` | `--reviewer NAME` | Runs a declared Human tool on a claimed request. | `0` (`2` tool error) |
+| `request tool ID TOOL` | `--reviewer NAME` | Runs a declared Human `launch` or `output` tool on a claimed request. A `viewer` tool instead tells you to open the Artifact in the desktop app (or returns a viewer descriptor with `--json`). | `0` (`2` tool error) |
 | `request submit ID` | `--verdict GREEN\|RED`, `[--fields JSON \| --fields-file PATH]`, `--reviewer NAME` | Validates owner fields (mutually exclusive `--fields` or `--fields-file`; omitting both submits `{}`) against the verdict's schema and settles the Human request. | `0` (also for `RED`) |
 | `session show REF` | `--summary` | Prints saved Agent review transcript (or token/turn/tool-call summary). | `0` |
 | `session send REF MSG` | — | Continues a saved Agent conversation with a follow-up question (verdict unchanged). | `0` |
@@ -35,7 +38,7 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `cache list` | `--history` | Lists latest (or all) cached reuse-key records. | `0` |
 | `cache show KEY` | `--history` | Prints cached record JSON for 64-hex `KEY`. | `0` (`4` missing) |
 | `cache rm KEY` | — | Deletes local cache records for `KEY`. | `0` |
-| `login` / `logout` | `openai\|anthropic\|gemini\|codex\|claude-agent` | Saves/removes API keys (stdin) or signs in/out of Codex or Claude Code. | `0` |
+| `login` / `logout` | `openai\|anthropic\|gemini\|codex\|claude-agent\|antigravity` | Saves/removes API keys (stdin) or signs in/out of Codex, Claude Code or Antigravity. | `0` |
 | `provider` | `list`, `add NAME (--alias P \| --api openai-responses\|openai-chat\|anthropic\|gemini --url URL [--key])`, `remove NAME` | Manages custom Agent providers in `$STATE/auth/providers.json`. | `0` |
 | `models PROVIDER` | built-in or custom provider name | Lists available model IDs and display names from the provider. | `0` |
 | `remote` | `login URL [--share summary\|full]`, `status`, `push [--dry-run]`, `logout` | Configures and syncs with a team review store (`summary` shares top-level `executionPaths` and omits the full `execution` object including `execution.provenance.repoPath` and `execution.provenance.executionPaths`; `full` includes `execution`). | `0` (`1` not signed in on `status`) |
@@ -43,12 +46,14 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 | `doctor` | `--repo PATH` | Checks state directory, schema, limits, credentials, remote store, desktop app, and latest release. | `0` ready, `1` hard error |
 | `limits` | `--signoff-idle-grace SECONDS` | Shows or sets limits in `$STATE/limits.json` (shared by Runs using that state directory). | `0` |
 | `prune` | `[--older-than DURATION]`, `[--dry-run]` | Removes scratch output folders of finished `GREEN`/`RED`/`ERROR`/`INCOMPLETE` Runs that have no unsettled requests (omitting `--older-than` prunes all eligible finished Runs regardless of age; `YELLOW` and open Runs are skipped) and trims Agent sessions. | `0` |
-| `monitor [PATH \| --repo PATH \| --all]` | mutually exclusive initial scope selector | Opens the desktop app on all projects or preselects `PATH`'s branch. | `0` |
-| `review [REQUEST_ID]` | `--repo PATH` \| `--all`, `--reviewer NAME` | Opens the desktop app on waiting Human reviews (or `REQUEST_ID` directly). | `0` |
+| `monitor [PATH \| --repo PATH \| --all]` | mutually exclusive initial scope selector | Opens the desktop app in **Verify**, with all projects listed or `PATH`'s branch selected. | `0` |
+| `review [REQUEST_ID]` | `--repo PATH` \| `--all`, `--reviewer NAME` | Opens **Review** on the newest waiting Human review or on `REQUEST_ID` directly, even outside the filter. | `0` |
+
+`run show` and `run_show` include `origin` for a Run whose source is recorded: `{"kind":"cli"}`, `{"kind":"mcp"}`, or `{"kind":"chat","sessionId":"...","title":"..."}`. See [Chat](../guides/interfaces.md#chat) for navigating between a Run and its conversation.
 
 ## State, cache, and `limits.json` {#state-cache-and-limits}
 
-All local Runs, cache entries, saved Agent conversations, and Artifactize-saved credentials (`codex`, API keys, custom providers, and remote store tokens; `claude-agent` keeps its login in Claude Code itself) live in one state directory outside any repository: `--state-dir PATH`, else `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else `%LOCALAPPDATA%\artifactize` on Windows or `~/.local/state/artifactize` on Linux and macOS (the Microsoft Store package keeps an isolated package-private state). Auth files under `$STATE/auth/` are refused if the state directory lies inside a Git worktree or Artifactize workspace.
+All local Runs, cache entries, saved Agent conversations, and Artifactize-saved credentials (`codex`, API keys, custom providers, and remote store tokens; Claude Code and Antigravity keep their own sign-ins) live in one state directory outside any repository: `--state-dir PATH`, else `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else `%LOCALAPPDATA%\artifactize` on Windows or `~/.local/state/artifactize` on Linux and macOS (the Microsoft Store package keeps an isolated package-private state). Auth files under `$STATE/auth/` are refused if the state directory lies inside a Git worktree or Artifactize workspace.
 
 Optional `$STATE/limits.json` configures bounds across all Runs sharing that state directory:
 
@@ -94,10 +99,13 @@ Every MCP tool accepts an optional `project` argument (absolute project path); i
 | `verify_cancel` | **`run`** | Requests cancellation of an open Run. |
 | `status` | optional `scope` (Selection object, default `{"kind":"all"}`) | Predicts current states and `execute`/`reuse`/`wait`/`blocked` actions. |
 | `config_check` | none | Static validation of `.artifactize/` definitions. |
+| `plugin_list` | none | Lists the built-in and project-installed plugin types in the paged CLI JSON format. |
+| `plugin_add` | `path` (absolute folder) | Installs a plugin. Returns its type and details with `action: "added"`. |
+| `plugin_remove` | `type` | Removes a project-installed plugin. Returns its type with `action: "removed"`. |
 | `config_graph` | optional `scope` (Selection object), `impact` (boolean, default `false`) | Static graph of Artifacts, evals, cycles, and relations (`impact: true` includes downstream consumers). |
 | `request_logs` | **`id`**, optional `stream` (`"stdout"\|"stderr"\|"both"`), `tail`, `start`, `end`, `search` | Reads bounded runtime output lines for request `id`. |
 | `run_list` | optional `limit` (default 20), `offset` (default 0) | Lists saved Runs for this project, newest first. |
-| `run_show` | **`run`** | Full saved Run JSON. |
+| `run_show` | **`run`** | Full saved Run JSON, including the Run origin. |
 | `request_list` | optional `run` | Lists saved requests for this project (or for `run`). |
 | `request_show` | **`id`** | Full saved request JSON. |
 | `session_show` | **`reference`**, optional `summary` (boolean, default `false`) | Reads a saved Agent review conversation (or summary). |

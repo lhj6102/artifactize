@@ -1,7 +1,7 @@
 //! Claude Code's own sign-in for the `claude-agent` backend: its state as Claude Code reports
 //! it, and `claude auth login`/`logout` run as `artifactize login|logout claude-agent` run
 //! them. Claude Code keeps its login; nothing of it reaches artifactize.
-use super::sign_in::Flow;
+use super::sign_in::{Flow, NativeStart};
 use crate::ids::SignInId;
 use crate::{App, Failure};
 use artifactize_core::auth::claude_agent;
@@ -17,7 +17,6 @@ impl Flow for ClaudeCode {
     const NOT_WAITING: &'static str = "No Claude Code sign-in is waiting for a code.";
     const ENDED: &'static str = "The Claude Code sign-in already ended.";
     const WAITED: &'static str = "The Claude Code sign-in is already being waited for.";
-    const UNASKED: &'static str = "Claude Code signed in without asking anything.";
 }
 
 /// Claude Code's sign-in, as Claude Code reports it.
@@ -74,28 +73,34 @@ pub struct ClaudeAgentPrompt {
     pub sign_in: SignInId,
 }
 
-/// Start `login claude-agent`: `claude auth login` runs and opens the browser. Returns the URL
-/// it printed; finish with [`claude_agent_login_wait`].
+/// Start sign-in and return its ID immediately, so it can be cancelled before any prompt.
 #[tauri::command]
 #[specta::specta]
-pub async fn claude_agent_login_start(
-    app: tauri::State<'_, App>,
-) -> Result<ClaudeAgentPrompt, Failure> {
-    let (sign_in, prompt) = app
-        .settings
-        .claude_sign_ins
-        .start(|pasted, shown| {
-            tokio::spawn(async move {
-                claude_agent::login_with(Some(pasted), |prompt| {
-                    let _ = shown.send(prompt.clone());
-                })
-                .await
+pub async fn claude_agent_login_start(app: tauri::State<'_, App>) -> Result<SignInId, Failure> {
+    Ok(app.settings.claude_sign_ins.start(|pasted, shown| {
+        tokio::spawn(async move {
+            claude_agent::login_with(Some(pasted), |prompt| {
+                let _ = shown.send(prompt.clone());
             })
+            .await
         })
-        .await?;
-    Ok(ClaudeAgentPrompt {
-        url: prompt.url.to_string(),
-        sign_in,
+    }))
+}
+
+/// Read the attempt's prompt or the updated status if it already signed in.
+#[tauri::command]
+#[specta::specta]
+pub async fn claude_agent_login_prompt(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+) -> Result<NativeStart<ClaudeAgentPrompt, ClaudeAgentStatus>, Failure> {
+    let prompt = app.settings.claude_sign_ins.prompt(sign_in).await?;
+    Ok(match prompt {
+        Some(prompt) => NativeStart::Prompt(ClaudeAgentPrompt {
+            url: prompt.url.to_string(),
+            sign_in,
+        }),
+        None => NativeStart::Complete(read_status().await),
     })
 }
 
@@ -114,15 +119,19 @@ pub async fn claude_agent_login_wait(
 /// Give the sign-in the code Claude Code's sign-in page shows, as the CLI accepts on stdin.
 #[tauri::command]
 #[specta::specta]
-pub fn claude_agent_login_paste(app: tauri::State<'_, App>, code: String) -> Result<(), Failure> {
-    app.settings.claude_sign_ins.paste(code)
+pub fn claude_agent_login_paste(
+    app: tauri::State<'_, App>,
+    sign_in: SignInId,
+    code: String,
+) -> Result<(), Failure> {
+    app.settings.claude_sign_ins.paste(sign_in, code)
 }
 
 /// Stop the sign-in in progress: Claude Code is stopped before it saves a login.
 #[tauri::command]
 #[specta::specta]
-pub fn claude_agent_login_cancel(app: tauri::State<'_, App>) {
-    app.settings.claude_sign_ins.cancel();
+pub fn claude_agent_login_cancel(app: tauri::State<'_, App>, sign_in: SignInId) {
+    app.settings.claude_sign_ins.cancel(sign_in);
 }
 
 /// `logout claude-agent`: run `claude auth logout`; returns the sign-in as Claude Code then

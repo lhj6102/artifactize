@@ -2,7 +2,7 @@
 
 use super::{
     Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, account, cache, config,
-    maintenance, provider, remote, request, run, server, session, status, workflow,
+    maintenance, plugin, provider, remote, request, run, server, session, status, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -50,6 +50,10 @@ pub(super) async fn execute(cli: Parsed) -> Result<u8, String> {
 async fn execute_general(command: Option<Command>, context: Context) -> Result<u8, String> {
     let executor = matches!(command, Some(Command::VerifyExecution { .. }));
     match command {
+        Some(Command::ChatMcp) => {
+            artifactize_core::llm::antigravity::bridge::stdio()?;
+            Ok(0)
+        }
         Some(Command::Mcp) => {
             let executable =
                 artifactize_core::platform::current_executable().map_err(|e| e.to_string())?;
@@ -111,6 +115,7 @@ async fn execute_general(command: Option<Command>, context: Context) -> Result<u
             )
             .await
         }
+        Some(Command::Plugin { command }) => plugin::execute(context, command),
         Some(Command::Doctor) => maintenance::doctor(context).await,
         Some(Command::Prune {
             older_than,

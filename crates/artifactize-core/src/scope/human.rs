@@ -49,6 +49,7 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
         for (name, tool) in &artifact.views.human_tools {
             let validate = || {
                 match tool {
+                    crate::config::HumanTool::Viewer(_) => {}
                     crate::config::HumanTool::Command(command) => {
                         for argument in &command.args {
                             validate_human_argument(argument)?;

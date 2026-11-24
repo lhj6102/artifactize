@@ -1,12 +1,10 @@
 tags = ["type:skill"]
 path = "agent-plugin/skills/focus-then-sweep/SKILL.md"
-
-[views.agent_tools]
-read = { builtin = "read" }
+type = "files"
 
 [evals.correct]
 title = "What the skill recommends exists in today's artifactize"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read the skill {agent-focus-then-sweep} using read_agent-focus-then-sweep. Check that every selector, command, flag, tool,
@@ -16,7 +14,7 @@ finding. Each statement that is wrong or outdated is a finding."""
 
 [evals.guides]
 title = "The skill guides a builder through focus, sweep and the three plans"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read the skill {agent-focus-then-sweep} using read_agent-focus-then-sweep, as a builder, a coding agent fixing RED evals in a

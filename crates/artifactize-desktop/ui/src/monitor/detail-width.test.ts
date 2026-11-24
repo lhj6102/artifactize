@@ -8,8 +8,8 @@ it("fits a dragged width between a readable column and keeping some graph visibl
   expect(clampWidth(500, 1200)).toBe(500);
   expect(clampWidth(100, 1200)).toBe(MIN);
   expect(clampWidth(5000, 1200)).toBe(1200 - KEEP);
-  // An area too narrow for both keeps the Detail inside it.
-  expect(clampWidth(500, 300)).toBe(300);
+  // Below the space needed for both minima, preserve the graph allowance.
+  expect(clampWidth(500, 300)).toBe(300 - KEEP);
 });
 
 it("keeps the width for the next launch", () => {

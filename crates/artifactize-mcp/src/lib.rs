@@ -1,30 +1,21 @@
 //! MCP is a bounded transport over the same core operations as the CLI.
-mod catalog;
-mod error;
-mod input;
-mod page;
-mod read;
 mod resolver;
 mod response;
-mod tool;
 
 pub use resolver::Launch;
 
-use artifactize_core::{project::VerifyOptions, runs, types::RunId};
-use error::Error;
-use input::{Call, Command, DEFAULT_WAIT_SECONDS, Verify};
+use artifactize_core::{
+    runs,
+    verify_tools::{self, Call, Error, Output},
+};
 use resolver::Resolver;
-use response::{Output, encode};
+use response::encode;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
     model::*,
     service::{NotificationContext, RequestContext, ServerInitializeError},
 };
-use std::time::Duration;
-use tokio_util::sync::CancellationToken;
 
-/// Includes a zero-bound initial read and failure recovery; no call reaches 45 s.
-const WAIT_CALL_LIMIT: Duration = Duration::from_secs(44);
 #[derive(Clone)]
 pub struct Server {
     resolver: Resolver,
@@ -42,92 +33,48 @@ impl Server {
         call: Call,
         transport: RequestContext<RoleServer>,
     ) -> Result<Output, Error> {
-        let context = &self
+        let context = self
             .resolver
             .context(&transport, call.project.as_deref())
             .await
-            .map_err(Error::Project)?;
-        let command = match call.command {
-            Command::Verify(command) => command,
-            Command::Inspect(inspection) => {
-                return Ok(Output::Inspection(
-                    read::inspect(context, inspection).await?,
-                ));
+            .map_err(|error| Error::Operation(error.to_string()))?
+            .with_origin(runs::Origin::Mcp);
+        let token = transport.meta.get_progress_token();
+        let mut sequence = 0_u32;
+        call.execute(&context, transport.ct, |event| {
+            sequence += 1;
+            let notification = token.clone().map(|token| {
+                ProgressNotificationParam::new(token, f64::from(sequence))
+                    .with_message(serde_json::to_string(&event).expect("Run event serializes"))
+            });
+            let peer = transport.peer.clone();
+            async move {
+                if let Some(notification) = notification {
+                    peer.notify_progress(notification)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                }
+                Ok(())
             }
-        };
-        Ok(match command {
-            Verify::Start(args) => {
-                let options = VerifyOptions {
-                    jobs: args.jobs.map(|limit| limit.get() as usize),
-                    modes: runs::RunModes {
-                        speculate: args.speculate,
-                    },
-                    comment: args.comment,
-                    ..Default::default()
-                };
-                Output::Observation(
-                    runs::start(context, args.scope.selection(), &options, args.request_key)
-                        .await?,
-                )
-            }
-            Verify::Status(run) => Output::Observation(runs::status(context, &run).await?),
-            Verify::Wait(args) => Output::Observation(
-                tokio::time::timeout(
-                    WAIT_CALL_LIMIT,
-                    runs::wait(
-                        context,
-                        &args.run,
-                        Some(args.duration()),
-                        CancellationToken::new(),
-                    ),
-                )
-                .await
-                .map_err(|_| Error::Timeout)??,
-            ),
-            Verify::Watch(run) => Output::Observation(watch(context, &run, transport).await?),
-            Verify::Result(args) => Output::Result(Box::new(
-                runs::result(context, &args.run, args.cursor).await?,
-            )),
-            Verify::Cancel(run) => Output::Cancellation(runs::cancel(context, &run).await?),
         })
+        .await
     }
 }
 
-async fn watch(
-    context: &runs::Context,
-    run: &RunId,
-    transport: RequestContext<RoleServer>,
-) -> Result<runs::RunObservation, Error> {
-    let token = transport.meta.get_progress_token();
-    let mut sequence = 0_u32;
-    let observed = tokio::time::timeout(
-        WAIT_CALL_LIMIT,
-        runs::watch(
-            context,
-            run,
-            Some(Duration::from_secs(DEFAULT_WAIT_SECONDS)),
-            transport.ct,
-            |event| {
-                sequence += 1;
-                let notification = token.clone().map(|token| {
-                    ProgressNotificationParam::new(token, f64::from(sequence))
-                        .with_message(serde_json::to_string(&event).expect("Run event serializes"))
-                });
-                let peer = transport.peer.clone();
-                async move {
-                    if let Some(notification) = notification {
-                        peer.notify_progress(notification)
-                            .await
-                            .map_err(|error| error.to_string())?;
-                    }
-                    Ok(())
-                }
-            },
-        ),
-    )
-    .await
-    .map_err(|_| Error::Timeout)??;
-    Ok(observed)
+fn tools() -> Vec<Tool> {
+    verify_tools::tools()
+        .into_iter()
+        .map(|tool| {
+            let hints = tool.hints;
+            Tool::new(tool.name, tool.description, tool.schema).with_annotations(
+                ToolAnnotations::new()
+                    .open_world(hints.open_world)
+                    .read_only(hints.read_only)
+                    .destructive(hints.destructive)
+                    .idempotent(hints.idempotent),
+            )
+        })
+        .collect()
 }
 
 impl ServerHandler for Server {
@@ -143,13 +90,13 @@ impl ServerHandler for Server {
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
-            tools: catalog::tools(),
+            tools: tools(),
             ..Default::default()
         })
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {
-        catalog::tools().into_iter().find(|tool| tool.name == name)
+        tools().into_iter().find(|tool| tool.name == name)
     }
 
     async fn on_roots_list_changed(&self, _: NotificationContext<RoleServer>) {

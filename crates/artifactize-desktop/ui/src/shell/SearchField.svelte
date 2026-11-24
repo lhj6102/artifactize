@@ -2,6 +2,7 @@
   // A search: the query as text, with completion of its last term in a dropdown. ↑/↓ choose a
   // suggestion, Tab or Enter take it, Esc closes the dropdown, then puts the starting query
   // back, then leaves for the list. Keys mid-composition belong to the input method.
+  import { raisedRoom } from "./raised-room";
   import type { Completion } from "../ipc/client";
   import { SearchFieldState, setSearchFieldState } from "./search-field-state.svelte";
   import { composing } from "./keys";
@@ -32,6 +33,7 @@
 
   /** Each request supersedes the ones before it, so a slow answer never reopens the dropdown. */
 
+  const room = raisedRoom("below");
   const open = $derived(q.completion !== null && q.completion.candidates.length > 0);
 
   /**
@@ -105,7 +107,7 @@
     onblur={close}
   />
   {#if open && q.completion}
-    <ul class="suggestions" id="search-suggestions" role="listbox" aria-label="Suggestions">
+    <ul class="suggestions" {@attach room} id="search-suggestions" role="listbox" aria-label="Suggestions">
       {#each q.completion.candidates as candidate, at (candidate)}
         <li
           id="search-suggestion-{at}"
@@ -142,10 +144,6 @@
     background: var(--surface-input);
     color: var(--ink);
   }
-  .query:focus {
-    outline: 2px solid var(--focus);
-    outline-offset: -1px;
-  }
   .suggestions {
     position: absolute;
     z-index: 10;
@@ -154,7 +152,7 @@
     margin: 2px 0 0;
     padding: 4px 0;
     list-style: none;
-    max-height: 240px;
+    max-height: min(240px, var(--raised-height, 240px));
     overflow: auto;
     background: var(--surface-raised);
     border: 1px solid var(--line-panel);
@@ -163,6 +161,7 @@
   }
   /* A long name is cut with an ellipsis inside its row. */
   .suggestions li {
+    color: var(--ink-2);
     min-height: var(--row-dense);
     padding: 2px 8px;
     font: var(--text-small) var(--mono);
@@ -175,7 +174,9 @@
     background: var(--surface-group);
   }
   .suggestions .active {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
     background: var(--selection);
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
 </style>

@@ -204,6 +204,61 @@ function centre(browser: WebdriverIO.Browser, element: WebdriverIO.Element): Pro
   }, element as unknown as HTMLElement);
 }
 
+/** Supply the omitted wheel default for a nested viewport (upstream scrolls only window). */
+export async function scrollViewport(browser: WebdriverIO.Browser, viewport: WebdriverIO.Element, dy: number): Promise<void> {
+  const point = await visibleCenter(browser, viewport);
+  await browser.execute((target, { x, y }, dy) => {
+    const hit = document.elementFromPoint(x, y);
+    if (!hit || !target.contains(hit)) throw new Error("the viewport is obscured");
+    if (hit.dispatchEvent(new WheelEvent("wheel", { clientX: x, clientY: y, deltaY: dy, bubbles: true, cancelable: true }))) {
+      target.scrollBy(0, dy);
+    }
+  }, viewport as unknown as HTMLElement, point, dy);
+}
+
+/** Click an unlabeled part of the row's trailing gutter, not its text or another control.
+ * Waits until the gutter takes the pointer, as a closed modal's overlay or body lock may still
+ * be clearing on its next frame or timer. */
+export async function clickRowGutter(browser: WebdriverIO.Browser, row: WebdriverIO.Element, paneSelector: string, ms = 15000): Promise<void> {
+  await row.waitForDisplayed();
+  let point: { x: number; y: number } | null = null;
+  await browser.waitUntil(async () => {
+    point = await browser.execute((target: HTMLElement, selector) => {
+      const box = target.getBoundingClientRect();
+      const pane = target.closest<HTMLElement>(selector);
+      const frame = pane?.getBoundingClientRect();
+      const scroller = [".branches", ".sessions", '[role="listbox"]'].map((part) => target.closest<HTMLElement>(part)).find(Boolean);
+      // Exclude the scroll gutter, not the rest of the Pane's clickable width.
+      const scrollbar = scroller ? scroller.offsetWidth - scroller.clientWidth : 0;
+      if (!frame || box.left > frame.left + 2 || box.right < frame.right - scrollbar - 2) {
+        throw new Error(`the row does not span its Pane: row ${box.left}–${box.right}, pane ${frame?.left}–${frame?.right}, scroll gutter ${scrollbar}`);
+      }
+      const right = frame.right - scrollbar;
+      const text = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+      const bounds: DOMRect[] = [];
+      for (let node = text.nextNode(); node; node = text.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        bounds.push(...range.getClientRects());
+      }
+      for (const offset of [4, 8, 12, 24, 40, 56]) {
+        for (const portion of [0.5, 0.75, 0.25, 0.9, 0.1]) {
+          const x = Math.floor(right - offset), y = Math.floor(box.top + box.height * portion);
+          const hit = document.elementFromPoint(x, y);
+          const control = hit?.closest("button, a, input");
+          if (!hit || !target.contains(hit) || (control && control !== target && target.contains(control))) continue;
+          if (!bounds.some((rect) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom)) return { x, y };
+        }
+      }
+      return null;
+    }, row as unknown as HTMLElement, paneSelector);
+    return point !== null;
+  }, { timeout: ms, interval: 50, timeoutMsg: "no unlabeled point in the row's trailing gutter is visible" });
+  if (!point) throw new Error("no unlabeled point in the row's trailing gutter is visible");
+  await clickAt(browser, point);
+}
+
 /** Use the provider's ordinary WebDriver mouse action at a viewport point. */
 export async function clickAt(browser: WebdriverIO.Browser, point: { x: number; y: number }): Promise<void> {
   await browser.action("pointer").move({ ...point, origin: "viewport" }).down().up().perform();

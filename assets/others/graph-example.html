@@ -36,7 +36,7 @@
   .figure {
     display: grid;
     grid-template-columns: 410px 1fr;
-    grid-template-rows: 1fr 100px;
+    grid-template-rows: minmax(0, 1fr) 100px;
     width: 1600px;
     height: 900px;
     background: var(--bg);
@@ -67,7 +67,7 @@
     padding: 0;
     list-style: none;
   }
-  .tree > ul { margin-top: 20px; padding-left: 26px; }
+  .tree > ul { margin-top: 10px; padding-left: 26px; }
   .tree ul ul {
     margin-left: 12px;
     padding-left: 16px;
@@ -82,7 +82,7 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    height: 34px;
+    height: 30px;
     font: 500 19px/1 var(--mono);
   }
   .tree li > ul { flex-basis: 100%; }
@@ -94,7 +94,7 @@
   .tree .artf svg { width: 24px; height: 24px; }
   .tree .definition { margin-bottom: 2px; }
   /* Each file's declarations, its checks included: every line is TOML as the file holds it. */
-  .tree .definition code { flex-basis: 100%; margin-left: 22px; color: var(--dim); font: 500 13px/15px var(--mono); white-space: pre; }
+  .tree .definition code { flex-basis: 100%; margin-left: 22px; color: var(--dim); font: 500 13px/14px var(--mono); white-space: pre; }
   .tree svg { width: 30px; height: 30px; flex: none; }
   /* What the listings leave out, under the tree. */
   .tree .excerpt { margin: 2px 16px 0 26px; color: var(--dim); font: 400 14px/18px var(--sans); }
@@ -111,6 +111,7 @@
     background-image: radial-gradient(var(--dot) 1px, transparent 1.2px);
     background-size: 22px 22px;
   }
+  .graph .key { margin: 12px 32px 0 0; color: var(--dim); font: 500 18px/1.4 var(--sans); }
   .graph svg.edges {
     position: absolute;
     inset: 0;
@@ -167,6 +168,7 @@
     flex-direction: column;
     align-items: center;
     gap: 10px;
+    width: 56px;
     color: var(--human);
     font: 600 18px var(--sans);
   }
@@ -180,15 +182,16 @@
     background: var(--person-bg);
   }
   .person svg { width: 30px; height: 30px; }
-  .person span { color: var(--text); }
+  .person span { color: var(--text); white-space: nowrap; }
 
   /* ---------- The legend ---------- */
 
   .legend {
     grid-column: 1 / -1;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: center;
-    gap: 52px;
+    gap: 20px;
     padding: 0 48px;
     border-top: 1px solid var(--line);
     background: var(--panel);
@@ -221,10 +224,10 @@
           <li><span><svg class="folder"><use href="#i-folder"/></svg>.artifactize/</span>
             <ul>
               <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>app.artf</span><code>path=&quot;./&quot;</code><code>parts=[&quot;code&quot;,&quot;docs&quot;]</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>problem.artf</span><code>path=&quot;PROBLEM.md&quot;</code><code>[evals.review]</code><code>profile.kind=&quot;human&quot;</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>path=&quot;SPEC.md&quot;</code><code>[evals.solves]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{problem}&quot;</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>path=&quot;code/&quot;</code><code>[evals.covers]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{design}&quot;</code><code>[evals.tests]</code><code>profile.kind=&quot;runtime&quot;</code><code>profile.command=&quot;npm&quot;</code><code>profile.args=[&quot;test&quot;]</code><code>[evals.rules]</code><code>profile.kind=&quot;agent&quot;</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>docs.artf</span><code>path=&quot;docs/&quot;</code><code>[evals.usage]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{code}&quot;</code><code>[evals.readable]</code><code>profile.kind=&quot;agent&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>problem.artf</span><code>path=&quot;PROBLEM.md&quot;</code><code>type=&quot;markdown&quot;</code><code>[evals.review]</code><code>profile.kind=&quot;human&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>path=&quot;SPEC.md&quot;</code><code>type=&quot;markdown&quot;</code><code>[evals.solves]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{problem}&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>path=&quot;code/&quot;</code><code>type=&quot;files&quot;</code><code>[evals.covers]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{design}&quot;</code><code>[evals.tests]</code><code>profile.kind=&quot;runtime&quot;</code><code>profile.command=&quot;npm&quot;</code><code>profile.args=[&quot;test&quot;]</code><code>[evals.rules]</code><code>profile.kind=&quot;agent&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>docs.artf</span><code>path=&quot;docs/&quot;</code><code>type=&quot;files&quot;</code><code>[evals.usage]</code><code>profile.kind=&quot;agent&quot;</code><code>payload.instruction=&quot;…{code}&quot;</code><code>[evals.readable]</code><code>profile.kind=&quot;agent&quot;</code></li>
             </ul>
           </li>
           <li class="source"><span><svg class="file"><use href="#i-file"/></svg>PROBLEM.md</span></li><li class="source"><span><svg class="file"><use href="#i-file"/></svg>SPEC.md</span></li>
@@ -237,6 +240,7 @@
 
   <section class="graph">
     <h2 data-t="title"></h2>
+    <p class="key" data-t="key"></p>
 
     <!-- Each check sits on a line from the Artifact it reads to the Artifact it belongs to,
          and the arrow points at the latter; a check that reads only its own Artifact loops
@@ -307,7 +311,8 @@
     en: {
       repository: "Project files",
       title: "Example Artifact Graph",
-      person: "Person",
+      key: "Artifacts are project pieces you can check. Each arrow runs from what a check reads to what it checks.",
+      person: "Reviewer",
       problem: "problem",
       spec: "design",
       code: "code",
@@ -323,12 +328,13 @@
       legendAgent: "AI agent review",
       legendHuman: "Person's review",
       legendSelf: "Reads only its own Artifact",
-      excerpt: "Excerpts: each eval's title, full instruction and AI model are left out.",
+      excerpt: "Titles and full instructions omitted. AI checks also omit backend and model.",
     },
     ko: {
       repository: "프로젝트 파일",
       title: "Artifact Graph 예시",
-      person: "사람",
+      key: "Artifact는 평가할 수 있는 프로젝트의 구성 요소입니다. 화살표는 평가가 읽는 곳에서 평가 대상으로 향합니다.",
+      person: "검토자",
       problem: "problem",
       spec: "design",
       code: "code",
@@ -340,23 +346,24 @@
       readable: "문서의 가독성",
       codingRules: "코드 작성 기준을 지키는가?",
       runsTests: "테스트 명령 실행",
-      legendRuntime: "명령 검사",
+      legendRuntime: "명령으로 확인",
       legendAgent: "AI 에이전트 검토",
-      legendHuman: "사람 검토",
+      legendHuman: "사람이 검토",
       legendSelf: "자기 Artifact만 읽는 평가",
-      excerpt: "발췌: 평가마다 title, instruction 전문, AI 모델은 생략했습니다.",
+      excerpt: "발췌에서 평가 제목과 지시 전문을 뺐습니다. AI 평가에서는 백엔드와 모델도 뺐습니다.",
     },
     zh: {
       repository: "项目文件",
       title: "Artifact Graph 示例",
-      person: "人",
+      key: "Artifact 是项目中可检查的部分。箭头从检查读取的内容指向检查的对象。",
+      person: "审查者",
       problem: "problem",
       spec: "design",
       code: "code",
       docs: "docs",
       reviewProblem: "审查问题定义",
       solvesProblem: "设计是否解决了问题？",
-      testsRequirements: "测试是否验证了需求？",
+      testsRequirements: "测试是否验证了\n需求？",
       explainsUsage: "是否准确说明了\n功能和用法？",
       readable: "文档的可读性",
       codingRules: "是否遵守编码规范？",
@@ -365,7 +372,7 @@
       legendAgent: "AI 智能体审查",
       legendHuman: "人工审查",
       legendSelf: "只读取自身 Artifact 的评估",
-      excerpt: "节选：省略了每个评估的 title、完整 instruction 和 AI 模型。",
+      excerpt: "节选省略了每项检查的标题和完整指令。AI 检查也省略了后端和模型。",
     },
   };
 

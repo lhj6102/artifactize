@@ -23,6 +23,392 @@ use tokio_util::sync::CancellationToken;
 mod support;
 use support::runs::RecordOutput;
 
+const DRAFT_FIXTURE: &str = "ARTIFACTIZE_HUMAN_DRAFT_FIXTURE";
+const DRAFT_REQUEST: &str = "ARTIFACTIZE_HUMAN_DRAFT_REQUEST";
+
+#[tokio::test]
+async fn draft_fixture_writer() {
+    let Some(state) = std::env::var_os(DRAFT_FIXTURE).map(PathBuf::from) else {
+        return;
+    };
+    let id = std::env::var(DRAFT_REQUEST).unwrap().parse().unwrap();
+    let reviewer = "alice".parse().unwrap();
+    artifactize_core::review::append_point(&state, &id, &reviewer, "L42:C9", "Second process")
+        .await
+        .unwrap();
+    artifactize_core::changes::drain().await;
+}
+
+#[tokio::test]
+async fn draft_is_shared_across_processes_and_cleared_on_submission() {
+    use artifactize_core::review::{
+        self, Answer, DraftEdit, Job, append_point, edit_draft, read_draft, remove_point,
+    };
+
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(returning()).await;
+    let id = &run.requests[0].id;
+    let receipts = fixture.receipts().await;
+    let alice = "alice".parse().unwrap();
+    let bob = "bob".parse().unwrap();
+    let state = &fixture.state;
+    human::claim(&receipts, id, &alice).await.unwrap();
+
+    use artifactize_core::changes::{Change, Subscription};
+    let mut changes = Subscription::new(state).await;
+    let notification = async {
+        // A reconciliation can supersede an exact notification, but it still tells every
+        // subscribed window to reload the draft. Don't treat the registration's baseline as
+        // proof that the other process has written anything.
+        assert_eq!(changes.next().await, Change::Resync);
+        loop {
+            match changes.next().await {
+                Change::DraftInvalidated(changed) if &changed == id => break,
+                Change::StateInvalidated | Change::Resync
+                    if read_draft(state, id, &alice).await.unwrap().is_some() =>
+                {
+                    break;
+                }
+                _ => {}
+            }
+        }
+    };
+    let mut writer = tokio::process::Command::new(std::env::current_exe().unwrap());
+    writer
+        .args(["--exact", "draft_fixture_writer"])
+        .env(DRAFT_FIXTURE, state)
+        .env(DRAFT_REQUEST, id.as_str())
+        .kill_on_drop(true);
+    let (output, noticed) = tokio::join!(
+        writer.output(),
+        tokio::time::timeout(support::os::patience(Duration::from_secs(30)), notification),
+    );
+    let output = output.unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    noticed.expect("a subscribed window is told to reload the separate writer's draft");
+    changes.close().await.unwrap();
+    let initial = read_draft(state, id, &alice).await.unwrap().unwrap();
+    assert_eq!(initial.points[0].text, "L42:C9");
+    assert_eq!(read_draft(state, id, &bob).await.unwrap(), None);
+    assert!(
+        append_point(state, id, &bob, "#unauthorized", "fixture")
+            .await
+            .is_err()
+    );
+
+    human::unclaim(&receipts, id, &alice).await.unwrap();
+    assert_eq!(
+        read_draft(state, id, &alice).await.unwrap(),
+        Some(initial.clone())
+    );
+    assert!(
+        append_point(state, id, &alice, "#released", "fixture")
+            .await
+            .is_err()
+    );
+    human::claim(&receipts, id, &alice).await.unwrap();
+    fs::write(fixture.repo.join("preview.md"), "# Preview").unwrap();
+    fs::write(
+        fixture.repo.join(".artifactize/preview.artf"),
+        "path = 'preview.md'\ntype = 'markdown'\nbasis = true\n",
+    )
+    .unwrap();
+    let viewer =
+        artifactize_core::viewer::Session::open(&fixture.repo, &"preview".parse().unwrap())
+            .unwrap();
+    let active = artifactize_core::viewer::Review {
+        id: id.clone(),
+        reviewer: alice.clone(),
+    };
+    let form = edit_draft(
+        state,
+        id,
+        &alice,
+        DraftEdit::Verdict {
+            verdict: artifactize_core::runtime::Verdict::Green,
+        },
+    )
+    .await
+    .unwrap();
+    let pointed = viewer
+        .pointing(state, &active, "#checkout .total")
+        .await
+        .unwrap();
+    assert_eq!(pointed.green, form.green);
+    assert_eq!(pointed.red, form.red);
+    assert_eq!(pointed.verdict, form.verdict);
+    assert_eq!(pointed.points.len(), 2);
+    assert_eq!(pointed.points[1].text, "#checkout .total");
+    assert!(pointed.points[1].source.starts_with("preview · "));
+    assert!(
+        store::read_request(state, id.as_str())
+            .await
+            .unwrap()
+            .request
+            .status()
+            .is_human_wait()
+    );
+    let removed = remove_point(state, id, &alice, initial.points[0].clone())
+        .await
+        .unwrap();
+    assert_eq!(removed.points, pointed.points[1..]);
+    drop(receipts);
+    assert_eq!(
+        read_draft(state, id, &alice).await.unwrap(),
+        Some(removed.clone())
+    );
+
+    let submitted = Job::Submit {
+        id: id.clone(),
+        answer: Answer::SavedDraft,
+        claim: false,
+    }
+    .run(
+        state.clone(),
+        alice.clone(),
+        CancellationToken::new(),
+        review::log::channel().0,
+    )
+    .await;
+    assert!(
+        matches!(submitted, review::Outcome::Submitted { result: Ok(_), .. }),
+        "{:?}",
+        submitted.notice()
+    );
+    assert_eq!(read_draft(state, id, &alice).await.unwrap(), None);
+    let saved = store::read_request(state, id.as_str()).await.unwrap();
+    assert_eq!(saved.request.review_notes, None);
+    assert_eq!(
+        serde_json::to_value(saved.request.result().unwrap()).unwrap(),
+        json!({"verdict":"GREEN","approved":true})
+    );
+    assert!(
+        append_point(state, id, &alice, "#settled", "fixture")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn schema_ten_reviews_keep_their_receipts_and_gain_drafts() {
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(returning()).await;
+    let id = &run.requests[0].id;
+    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    db.execute_batch(&format!("{} PRAGMA user_version=10;", support::schema::TEN))
+        .unwrap();
+    drop(db);
+    let alice = "alice".parse().unwrap();
+    let receipts = fixture.receipts().await;
+    assert_eq!(store::state_schema(&fixture.state).unwrap(), Some(11));
+    human::claim(&receipts, id, &alice).await.unwrap();
+    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    db.execute(
+        "INSERT INTO review_drafts(request_id, reviewer, data) VALUES (?, 'alice', ?)",
+        rusqlite::params![
+            id,
+            json!({"verdict":null,"green":[],"red":[],"notes":"A note\nwith a second line"})
+                .to_string()
+        ],
+    )
+    .unwrap();
+    drop(db);
+    let draft = artifactize_core::review::read_draft(&fixture.state, id, &alice)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.points.len(), 1);
+    assert_eq!(draft.points[0].text, "A note\nwith a second line");
+    assert_eq!(draft.points[0].source, "Earlier notes");
+    let updated =
+        artifactize_core::review::append_point(&fixture.state, id, &alice, "L3:C4", "fixture")
+            .await
+            .unwrap();
+    assert_eq!(updated.points[0], draft.points[0]);
+    assert_eq!(updated.points[1].text, "L3:C4");
+    assert_eq!(
+        artifactize_core::review::read_draft(&fixture.state, id, &alice)
+            .await
+            .unwrap(),
+        Some(updated)
+    );
+}
+
+#[tokio::test]
+async fn a_draft_saved_before_reasons_turns_its_red_text_into_a_reason_and_submits_it() {
+    use artifactize_core::review::{self, Answer, DraftEdit, Job, Readiness, read_draft};
+
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(returning()).await;
+    let id = &run.requests[0].id;
+    let alice = "alice".parse().unwrap();
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, id, &alice).await.unwrap();
+    drop(receipts);
+    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    db.execute(
+        "INSERT INTO review_drafts(request_id, reviewer, data) VALUES (?, 'alice', ?)",
+        rusqlite::params![
+            id,
+            json!({
+                "verdict": "RED",
+                "green": [["approved", {"kind": "fixed"}]],
+                "red": [["reason", {"kind": "text", "value": "The totals are wrong"}]],
+                "points": [],
+            })
+            .to_string()
+        ],
+    )
+    .unwrap();
+    drop(db);
+
+    let draft = read_draft(&fixture.state, id, &alice)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.reasons, ["The totals are wrong"]);
+    let request = store::read_request(&fixture.state, id.as_str())
+        .await
+        .unwrap()
+        .request;
+    assert_eq!(
+        draft.readiness(&request, artifactize_core::runtime::Verdict::Red),
+        Readiness::Ready
+    );
+    // The first save keeps the adopted reasons as reasons.
+    let saved = review::edit_draft(
+        &fixture.state,
+        id,
+        &alice,
+        DraftEdit::AddReason {
+            text: "The footer overlaps".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_draft(&fixture.state, id, &alice).await.unwrap(),
+        Some(saved)
+    );
+
+    let submitted = Job::Submit {
+        id: id.clone(),
+        answer: Answer::SavedDraft,
+        claim: false,
+    }
+    .run(
+        fixture.state.clone(),
+        alice.clone(),
+        CancellationToken::new(),
+        review::log::channel().0,
+    )
+    .await;
+    assert!(
+        matches!(submitted, review::Outcome::Submitted { result: Ok(_), .. }),
+        "{:?}",
+        submitted.notice()
+    );
+    let settled = store::read_request(&fixture.state, id.as_str())
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(settled.request.result().unwrap()).unwrap(),
+        json!({"verdict": "RED", "reason": "The totals are wrong\n\nThe footer overlaps"})
+    );
+    assert_eq!(read_draft(&fixture.state, id, &alice).await.unwrap(), None);
+}
+
+#[test]
+fn a_long_open_viewer_cannot_read_a_new_folder_parts_files() {
+    let root = support::os::tempdir();
+    let repo = root.path();
+    fs::create_dir(repo.join(".artifactize")).unwrap();
+    fs::create_dir_all(repo.join("parent/child")).unwrap();
+    fs::write(repo.join("parent/child/report.txt"), "report contents").unwrap();
+    fs::write(repo.join("parent/home.txt"), "parent contents").unwrap();
+    fs::write(
+        repo.join(".artifactize/parent.artf"),
+        "path = 'parent/'\ntype = 'files'\nbasis = true\n",
+    )
+    .unwrap();
+    let artifact = "parent".parse().unwrap();
+    let child = "child/report.txt".parse().unwrap();
+    let original = artifactize_core::viewer::Session::open(repo, &artifact).unwrap();
+    assert_eq!(original.read_text(&child).unwrap(), "report contents");
+
+    fs::write(
+        repo.join(".artifactize/child.artf"),
+        "path = 'parent/child/'\ntype = 'files'\nbasis = true\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join(".artifactize/parent.artf"),
+        "path = 'parent/'\ntype = 'files'\nparts = ['child']\n",
+    )
+    .unwrap();
+    assert!(
+        original
+            .read_text(&child)
+            .unwrap_err()
+            .contains("Reopen the viewer")
+    );
+    let reopened = artifactize_core::viewer::Session::open(repo, &artifact).unwrap();
+    assert_ne!(original.scope(), reopened.scope());
+    assert!(reopened.read_text(&child).is_err());
+    assert_eq!(
+        reopened.read_text(&"home.txt".parse().unwrap()).unwrap(),
+        "parent contents"
+    );
+}
+
+#[tokio::test]
+async fn a_claimed_review_opens_by_its_exact_reference_outside_the_default_search() {
+    use artifactize_core::review::{Target, search};
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(returning()).await;
+    let id = &run.requests[0].id;
+    let alice = "alice".parse().unwrap();
+    let query = "type:human waiting".parse().unwrap();
+    let page = search::search(&fixture.state, &query, &alice, 0)
+        .await
+        .unwrap();
+    assert_eq!(page.requests.len(), 1);
+    assert_eq!(&page.requests[0].0.request.id, id);
+    let before = search::open(&fixture.state, id, &query, &alice)
+        .await
+        .unwrap();
+    assert!(!before.outside_filter());
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, id, &alice).await.unwrap();
+    assert!(
+        search::search(&fixture.state, &query, &alice, 0)
+            .await
+            .unwrap()
+            .requests
+            .is_empty()
+    );
+    let opened = search::open(&fixture.state, id, &query, &alice)
+        .await
+        .unwrap();
+    assert!(opened.outside_filter());
+    assert_eq!(opened.outside_reason.as_deref(), Some("Claimed by you."));
+    assert_eq!(&opened.view.request.id, id);
+    let target = Target::from(opened.view.request.as_ref());
+    assert_eq!(target.run, run.run.id);
+    assert_eq!(target.node.as_str(), "e:review/check");
+    let existing = "kind:human status:waiting_human is:mine".parse().unwrap();
+    assert!(
+        !search::open(&fixture.state, id, &existing, &alice)
+            .await
+            .unwrap()
+            .outside_filter()
+    );
+}
+
 struct Fixture {
     _root: owned_run::Root,
     repo: PathBuf,
@@ -173,9 +559,9 @@ impl Fixture {
     }
 }
 
-/// The sign-offs the review list starts with, by request.
+/// Every waiting sign-off by request, including one held by a reviewer.
 async fn listed(state: &Path) -> Vec<String> {
-    let query = artifactize_core::review::search::DEFAULT.parse().unwrap();
+    let query = "kind:human status:waiting_human".parse().unwrap();
     artifactize_core::review::search::search(state, &query, &"reviewer".parse().unwrap(), 0)
         .await
         .unwrap()

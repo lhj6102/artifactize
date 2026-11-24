@@ -39,7 +39,8 @@
     // Filtering and selection publish across microtasks. Activate at the next render
     // boundary, when a just-typed query's public selection has reached the options.
     requestAnimationFrame(() => {
-      if (open && palette.input === input && input?.value === query && palette.selected) run(palette.selected);
+      const selected = palette.selected;
+      if (open && palette.input === input && input?.value === query && groups.some((group) => group.commands.some((command) => command.id === selected))) run(selected);
     });
   }
 </script>
@@ -58,8 +59,8 @@
       onCloseAutoFocus={() => (palette.selected = "")}
     >
       <Dialog.Title class="sr-only">Command palette</Dialog.Title>
-      <Command.Root loop shouldFilter={false} bind:value={palette.selected}>
-        <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={palette.input} bind:value={palette.search} onkeydown={keydown} />
+      <Command.Root class="dialog-layout" loop shouldFilter={false} bind:value={palette.selected}>
+        <Command.Input class="field-input palette-input" placeholder="Type a command…" bind:ref={palette.input} bind:value={palette.search} onkeydown={keydown} />
         <Command.List class="palette-list">
           <Command.Viewport>
             <Command.Empty class="palette-empty">No matching command.</Command.Empty>

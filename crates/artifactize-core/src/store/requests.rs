@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use serde::Serialize;
 
@@ -90,6 +94,7 @@ struct Filter<'a> {
     /// A bounded slice of the ordered requests: offset and count.
     slice: Option<(u64, u32)>,
     shown: Shown,
+    newest_waiting: bool,
 }
 
 /// What the views of a read show besides their requests.
@@ -136,7 +141,7 @@ pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String>
     read_request_id(state, &id.parse()?).await
 }
 
-pub(crate) async fn read_request_id(
+pub async fn read_request_id(
     state: &Path,
     id: &crate::types::RequestId,
 ) -> Result<RequestView, String> {
@@ -148,12 +153,24 @@ pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<Req
     read_request_by_id(state, &id.parse()?, shown).await
 }
 
-pub(crate) async fn read_request_by_id(
+/// Read an already validated request ID, with what `shown` names besides it.
+pub async fn read_request_by_id(
     state: &Path,
     id: &crate::types::RequestId,
     shown: Shown,
 ) -> Result<RequestView, String> {
-    read(
+    read_optional_request(state, id, shown)
+        .await?
+        .ok_or_else(|| "Review request not found.".into())
+}
+
+/// Read an exact request if it still exists, distinguishing absence from a store error.
+pub async fn read_optional_request(
+    state: &Path,
+    id: &crate::types::RequestId,
+    shown: Shown,
+) -> Result<Option<RequestView>, String> {
+    Ok(read(
         state,
         Filter {
             id: Some(id.clone()),
@@ -162,8 +179,7 @@ pub(crate) async fn read_request_by_id(
         },
     )
     .await?
-    .pop()
-    .ok_or_else(|| "Review request not found.".into())
+    .pop())
 }
 
 /// The request whose Agent review ran as session `id`, if this state has it.
@@ -199,8 +215,32 @@ pub async fn read_original_as(
     view: &RequestView,
     shown: Shown,
 ) -> Result<RequestView, String> {
-    let original = view
-        .execution
+    match original_id(view) {
+        Some(id) => read_request_by_id(state, id, shown).await,
+        None => Ok(view.clone()),
+    }
+}
+
+/// The recorded owner of a live review, or its exact receipt if that owner is gone.
+/// An operational read failure still propagates.
+pub async fn read_review_owner(state: &Path, view: &RequestView) -> Result<RequestView, String> {
+    let Some(id) = original_id(view).filter(|_| view.request.status().is_human_wait()) else {
+        return Ok(view.clone());
+    };
+    let found = read(
+        state,
+        Filter {
+            id: Some(id.clone()),
+            shown: Shown::Requests,
+            ..Filter::default()
+        },
+    )
+    .await?;
+    Ok(found.into_iter().next().unwrap_or_else(|| view.clone()))
+}
+
+fn original_id(view: &RequestView) -> Option<&crate::types::RequestId> {
+    view.execution
         .as_ref()
         .map(|execution| &execution.provenance.request_id)
         .or_else(|| {
@@ -208,11 +248,8 @@ pub async fn read_original_as(
                 .provenance
                 .as_ref()
                 .map(|source| &source.request_id)
-        });
-    match original.filter(|id| *id != &view.request.id) {
-        Some(id) => read_request_by_id(state, id, shown).await,
-        None => Ok(view.clone()),
-    }
+        })
+        .filter(|id| *id != &view.request.id)
 }
 
 /// One entry per waiting Human sign-off: followers collapse onto the original request that
@@ -269,6 +306,27 @@ pub async fn read_request_batch(
             statuses,
             slice: Some((offset, limit)),
             shown,
+            ..Filter::default()
+        },
+    )
+    .await
+}
+
+/// Desktop review pages start with the requests that began waiting most recently.
+pub(crate) async fn read_review_batch(
+    state: &Path,
+    statuses: &[crate::types::RequestStatus],
+    offset: u64,
+    limit: u32,
+    shown: Shown,
+) -> Result<Vec<(RequestView, PathBuf)>, String> {
+    read_with_repo(
+        state,
+        Filter {
+            statuses,
+            slice: Some((offset, limit)),
+            shown,
+            newest_waiting: true,
             ..Filter::default()
         },
     )
@@ -382,6 +440,7 @@ async fn read_with_repo(
         statuses,
         slice,
         session,
+        newest_waiting,
         ..
     } = filter;
     let statuses = statuses.to_vec();
@@ -405,6 +464,7 @@ async fn read_with_repo(
                 statuses,
                 slice,
                 ids: None,
+                newest_waiting,
             };
             let rows = rows(&transaction, &filter)?;
             let ids: std::collections::BTreeSet<_> = rows.iter().map(|row| &row.run).collect();
@@ -471,6 +531,7 @@ pub(super) struct Query {
     pub session: Option<crate::types::SessionId>,
     pub statuses: Vec<crate::types::RequestStatus>,
     pub slice: Option<(u64, u32)>,
+    pub newest_waiting: bool,
     /// Only these requests.
     pub ids: Option<Vec<crate::types::RequestId>>,
 }
@@ -539,6 +600,10 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
     };
     let order = if filter.run.is_some() {
         "q.ordinal"
+    } else if filter.newest_waiting {
+        // Saved timestamps are UTC RFC3339. Remove the trailing Z so a whole second sorts
+        // before a fractional value in that second. Invalid records still reach decoding.
+        "CASE WHEN json_valid(q.data) THEN rtrim(coalesce(json_extract(q.data,'$.startedAt'),json_extract(q.data,'$.createdAt')),'Z') END DESC,r.rowid DESC,q.ordinal"
     } else {
         "r.rowid DESC,q.ordinal"
     };
@@ -699,8 +764,16 @@ pub async fn read_run_requests(
     state: &Path,
     id: &str,
 ) -> Result<(super::RunView, Vec<RequestView>), String> {
+    read_run_requests_by_id(state, &id.parse()?).await
+}
+
+/// Both selected-Run view shapes for an already validated Run ID.
+pub async fn read_run_requests_by_id(
+    state: &Path,
+    id: &crate::types::RunId,
+) -> Result<(super::RunView, Vec<RequestView>), String> {
     let state = state.to_path_buf();
-    let id: crate::types::RunId = id.parse()?;
+    let id = id.clone();
     crate::task::joined(
         tokio::task::spawn_blocking(move || {
             let mut reader = super::reader::Reader::default();

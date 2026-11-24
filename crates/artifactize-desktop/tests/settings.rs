@@ -199,7 +199,14 @@ fn settings_command_probe() {
 
     // API keys: where each comes from, never its value.
     // Every built-in provider, in the library's order, with the name `backend` takes.
-    let builtin = json!(["codex", "claude-agent", "openai", "anthropic", "gemini"]);
+    let builtin = json!([
+        "codex",
+        "claude-agent",
+        "antigravity",
+        "openai",
+        "anthropic",
+        "gemini"
+    ]);
     let keys = |gemini: &str| {
         json!([
             {"provider": "openai", "variable": "OPENAI_API_KEY", "source": "environment", "saved": false},
@@ -210,7 +217,7 @@ fn settings_command_probe() {
     let providers = call("providers_list", json!({})).unwrap();
     assert_eq!(
         providers,
-        json!({"builtin": builtin, "keys": keys("absent"), "custom": []})
+        json!({"builtin": builtin, "aliasTargets": ["codex", "openai", "anthropic", "gemini"], "keys": keys("absent"), "custom": []})
     );
     call(
         "provider_key_save",
@@ -258,8 +265,8 @@ fn settings_command_probe() {
     for name in ["local", "work"] {
         let models = call("models_list", json!({"provider": name})).unwrap();
         assert_eq!(
-            models,
-            json!([{"slug": "gpt-fake", "displayName": "gpt-fake"}])
+            models["models"],
+            json!([{"slug": "gpt-fake", "displayName": "gpt-fake", "efforts": [], "defaultEffort": null}])
         );
     }
     call("provider_custom_remove", json!({"name": "local"})).unwrap();
@@ -270,9 +277,10 @@ fn settings_command_probe() {
         providers["custom"],
         json!([{"name": "work", "target": {"kind": "alias", "provider": "openai"}}])
     );
-    let gone = call("models_list", json!({"provider": "local"})).unwrap_err();
+    let gone = call("models_list", json!({"provider": "local"})).unwrap();
+    assert_eq!(gone["kind"], "notSetUp");
     assert!(
-        gone["message"]
+        gone["reason"]
             .as_str()
             .unwrap()
             .contains("No provider named local"),
@@ -282,22 +290,36 @@ fn settings_command_probe() {
     // Models, with the CLI's error for a missing key.
     let models = call("models_list", json!({"provider": "openai"})).unwrap();
     assert_eq!(
-        models,
-        json!([{"slug": "gpt-fake", "displayName": "gpt-fake"}])
+        models["models"],
+        json!([{"slug": "gpt-fake", "displayName": "gpt-fake", "efforts": [], "defaultEffort": null}])
     );
-    let missing = call("models_list", json!({"provider": "anthropic"})).unwrap_err();
+    let missing = call("models_list", json!({"provider": "anthropic"})).unwrap();
     assert_eq!(
         missing,
-        json!({"kind": "account", "message": "ANTHROPIC_API_KEY or a saved anthropic key is required to list models."})
+        json!({"kind": "notSetUp", "reason": "ANTHROPIC_API_KEY or a saved anthropic key is required to list models."})
     );
-    let signed_out = call("models_list", json!({"provider": "codex"})).unwrap_err();
-    assert!(
-        signed_out["message"]
-            .as_str()
-            .unwrap()
-            .contains("artifactize login codex"),
-        "{signed_out}"
+    let signed_out = call("models_list", json!({"provider": "codex"})).unwrap();
+    assert_eq!(
+        signed_out,
+        json!({"kind":"notSetUp","reason":"Sign in to Codex."})
     );
+    for provider in ["antigravity", "claude-agent"] {
+        let refused = call("provider_custom_save", json!({
+            "name":"native", "target":{"kind":"alias","provider":provider}, "key":{"kind":"none"},
+        })).unwrap_err();
+        assert!(
+            refused["message"]
+                .as_str()
+                .unwrap()
+                .contains("cannot be aliased")
+        );
+    }
+    call("provider_custom_save", json!({
+        "name":"broken", "target":{"kind":"endpoint","api":"openaiChat","url":format!("{provider_url}/unknown")}, "key":{"kind":"none"},
+    })).unwrap();
+    let failed = call("models_list", json!({"provider":"broken"})).unwrap();
+    assert_eq!(failed["kind"], "failed");
+    assert!(failed["error"].is_string());
 
     // Codex, in the frontend's order: start, then wait, and while the wait is pending a paste
     // of the redirect URL (as the CLI accepts it on stdin) or a cancel must still reach the
@@ -306,7 +328,11 @@ fn settings_command_probe() {
         call("codex_status", json!({})).unwrap(),
         json!({"state": "absent"})
     );
-    let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
+    let start = |args| {
+        let id = call("codex_login_start", args).unwrap();
+        call("codex_login_prompt", json!({"signIn": id})).unwrap()
+    };
+    let prompt = start(json!({"browser": false}));
     let url = prompt["url"].as_str().unwrap().to_owned();
     assert!(
         url.starts_with(&format!("{provider_url}/oauth/authorize?")),
@@ -320,7 +346,11 @@ fn settings_command_probe() {
     let wait = |prompt: &Value| json!({"signIn": prompt["signIn"]});
     let status = std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("codex_login_wait", wait(&prompt)));
-        call("codex_login_paste", json!({"redirect": redirect})).unwrap();
+        call(
+            "codex_login_paste",
+            json!({"signIn": prompt["signIn"], "redirect": redirect}),
+        )
+        .unwrap();
         waiting.join().unwrap()
     })
     .unwrap();
@@ -330,30 +360,33 @@ fn settings_command_probe() {
     assert!(!status.to_string().contains("refresh-1"));
     let models = call("models_list", json!({"provider": "codex"})).unwrap();
     assert_eq!(
-        models,
-        json!([{"slug": "gpt-6-luna", "displayName": "GPT-6 Luna"}])
+        models["models"],
+        json!([{"slug": "gpt-6-luna", "displayName": "GPT-6 Luna", "efforts": [], "defaultEffort": null}])
     );
     // A finished sign-in takes no more pastes.
-    let late = call("codex_login_paste", json!({"redirect": redirect}));
+    let late = call(
+        "codex_login_paste",
+        json!({"signIn": prompt["signIn"], "redirect": redirect}),
+    );
     assert_eq!(late.unwrap_err()["kind"], "missing");
 
     // Signing in again while signed in is the CLI's re-login; cancelling it keeps the old one.
-    let cancel_while_waiting = |then: &dyn Fn(&str)| {
-        let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
+    let cancel_while_waiting = |then: &dyn Fn(&str, &Value)| {
+        let prompt = start(json!({"browser": false}));
         let url = prompt["url"].as_str().unwrap().to_owned();
         // The cancel reaches the sign-in whether or not its waiter has taken it yet.
         let cancelled = std::thread::scope(|scope| {
             let waiting = scope.spawn(|| call("codex_login_wait", wait(&prompt)));
-            call("codex_login_cancel", json!({})).unwrap();
+            call("codex_login_cancel", wait(&prompt)).unwrap();
             waiting.join().unwrap()
         });
         assert_eq!(
             cancelled.unwrap_err(),
             json!({"kind": "account", "message": "Codex sign-in was cancelled."})
         );
-        then(&url);
+        then(&url, &prompt);
     };
-    cancel_while_waiting(&|_| {});
+    cancel_while_waiting(&|_, _| {});
     assert_eq!(call("codex_status", json!({})).unwrap()["state"], "stored");
 
     // Sign out: revoked at the fake, removed locally.
@@ -363,11 +396,11 @@ fn settings_command_probe() {
 
     // A cancelled sign-in stores nothing and a late redirect paste finds no sign-in.
     // Do not probe the released callback port: another fixture or app could own it now.
-    cancel_while_waiting(&|url| {
+    cancel_while_waiting(&|url, prompt| {
         let callback = format!("/auth/callback?code=late-code&state={}", oauth_state(url));
         let late = call(
             "codex_login_paste",
-            json!({"redirect": format!("http://localhost:1455{callback}")}),
+            json!({"signIn": prompt["signIn"], "redirect": format!("http://localhost:1455{callback}")}),
         );
         assert_eq!(late.unwrap_err()["kind"], "missing");
     });
@@ -381,8 +414,8 @@ fn settings_command_probe() {
     // Overlapping starts, in order and without waiting on time: B's start stops A and
     // registers B; only then does A's waiter run, so A ends after B is registered. A reads as
     // cancelled, B is untouched, and nothing of A is exchanged or saved.
-    let older = call("codex_login_start", json!({"browser": false})).unwrap();
-    let newer = call("codex_login_start", json!({"browser": false})).unwrap();
+    let older = start(json!({"browser": false}));
+    let newer = start(json!({"browser": false}));
     assert_ne!(older["signIn"], newer["signIn"]);
     assert_eq!(
         call("codex_login_wait", wait(&older)).unwrap_err(),
@@ -396,7 +429,20 @@ fn settings_command_probe() {
         "http://localhost:1455/auth/callback?code=newer-code&state={}",
         oauth_state(newer["url"].as_str().unwrap())
     );
-    call("codex_login_paste", json!({"redirect": redirect})).unwrap();
+    call("codex_login_cancel", wait(&older)).unwrap();
+    assert_eq!(
+        call(
+            "codex_login_paste",
+            json!({"signIn": older["signIn"], "redirect": redirect})
+        )
+        .unwrap_err()["kind"],
+        "missing"
+    );
+    call(
+        "codex_login_paste",
+        json!({"signIn": newer["signIn"], "redirect": redirect}),
+    )
+    .unwrap();
     let status = call("codex_login_wait", wait(&newer)).unwrap();
     assert_eq!(status["state"], "stored");
     call("codex_logout", json!({})).unwrap();
@@ -450,6 +496,7 @@ fn settings_command_probe() {
                 "principal": "alice-laptop",
                 "scopes": ["read", "publish"],
             },
+            "pushedToday": 0,
             "pushes": [],
         })
     );
@@ -541,14 +588,18 @@ fn claude_agent_command_probe() {
     assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_out);
 
     // A cancelled sign-in stops Claude Code before it signs in.
-    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    let start = |args| {
+        let id = call("claude_agent_login_start", args).unwrap();
+        call("claude_agent_login_prompt", json!({"signIn": id})).unwrap()
+    };
+    let prompt = start(json!({}));
     assert_eq!(
         prompt["url"],
         "https://claude.example/oauth/authorize?code=true"
     );
     std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
-        call("claude_agent_login_cancel", json!({})).unwrap();
+        call("claude_agent_login_cancel", wait(&prompt)).unwrap();
         assert_eq!(
             waiting.join().unwrap().unwrap_err(),
             json!({"kind": "account", "message": "Claude Code sign-in was cancelled."})
@@ -556,15 +607,23 @@ fn claude_agent_command_probe() {
     });
     assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_out);
     assert_eq!(
-        call("claude_agent_login_paste", json!({"code": "good-code"})).unwrap_err(),
+        call(
+            "claude_agent_login_paste",
+            json!({"signIn": prompt["signIn"], "code": "good-code"})
+        )
+        .unwrap_err(),
         json!({"kind": "missing", "message": "No Claude Code sign-in is waiting for a code."})
     );
 
     // The pasted code reaches Claude Code; the status is Claude Code's, without the account.
-    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    let prompt = start(json!({}));
     let status = std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
-        call("claude_agent_login_paste", json!({"code": " good-code\n"})).unwrap();
+        call(
+            "claude_agent_login_paste",
+            json!({"signIn": prompt["signIn"], "code": " good-code\n"}),
+        )
+        .unwrap();
         waiting.join().unwrap().unwrap()
     });
     let signed_in = json!({"state": "signedIn", "method": "claude.ai", "plan": "max"});
@@ -572,10 +631,14 @@ fn claude_agent_command_probe() {
     assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_in);
 
     // A refused code ends the sign-in with Claude Code's own error.
-    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    let prompt = start(json!({}));
     let refused = std::thread::scope(|scope| {
         let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
-        call("claude_agent_login_paste", json!({"code": "bad-code"})).unwrap();
+        call(
+            "claude_agent_login_paste",
+            json!({"signIn": prompt["signIn"], "code": "bad-code"}),
+        )
+        .unwrap();
         waiting.join().unwrap().unwrap_err()
     });
     assert_eq!(

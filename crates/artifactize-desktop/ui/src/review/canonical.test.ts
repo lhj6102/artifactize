@@ -3,22 +3,16 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, expect, it } from "vitest";
 import { waitFor } from "@testing-library/svelte";
 import { AppState } from "../shell/app.svelte";
-import { greenForm, humanView, redForm } from "./fixtures";
+import { draftLibrary, greenForm, humanView, scoredRed } from "./fixtures";
 
 afterEach(() => clearMocks());
 
 function backend() {
+  const library = draftLibrary(greenForm, scoredRed);
   mockIPC(async (command, args) => {
-    const payload = args as Record<string, unknown>;
     if (command === "human_open") return humanView("review");
-    if (command === "human_form") {
-      const form = payload.verdict === "RED" ? redForm : greenForm;
-      return payload.kept ? { ...form, draft: payload.kept } : form;
-    }
-    if (command === "human_edit_field") {
-      const edit = payload as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
-      return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
-    }
+    const drafted = library.answer(command, args);
+    if (drafted) return drafted;
     throw new Error(`Unexpected command: ${command}`);
   });
 }
@@ -29,8 +23,9 @@ for (const [first, second] of [["run-a-2", "run-follower-2"], ["run-follower-2",
     const app = new AppState();
     const opened = app.review(first);
     await opened.load();
-    await opened.choose("GREEN");
-    await opened.form!.set("comment", { kind: "text", value: "first draft" });
+    await opened.choose("RED");
+    await opened.form!.set("note", { kind: "text", value: "first draft" });
+    await opened.addReason("first reason");
     const originalForm = opened.form;
 
     // The screen may already hold this handle when its read discovers the alias.
@@ -39,20 +34,23 @@ for (const [first, second] of [["run-a-2", "run-follower-2"], ["run-follower-2",
     expect(app.reviews["run-a-2"]).toBe(opened);
     expect(app.reviews["run-follower-2"]).toBe(opened);
     expect(held.form).toBe(originalForm);
-    await held.form!.set("comment", { kind: "text", value: "through the alias" });
-    expect(opened.form!.values.comment).toEqual({ kind: "text", value: "through the alias" });
-    await held.choose("RED");
+    await held.form!.set("note", { kind: "text", value: "through the alias" });
+    expect(opened.form!.values.note).toEqual({ kind: "text", value: "through the alias" });
+    await held.addReason("second reason");
+    expect(opened.reasons).toEqual(["first reason", "second reason"]);
+    await held.choose("GREEN");
     expect(opened.form).toBe(held.form);
-    await opened.choose("GREEN");
-    expect(held.form!.values.comment).toEqual({ kind: "text", value: "through the alias" });
-    held.stopEditing();
-    expect(opened.form).toBeNull();
+    await opened.choose("RED");
+    expect(held.form!.values.note).toEqual({ kind: "text", value: "through the alias" });
+    expect(held.verdict).toBe("RED");
   });
 }
 
 it("converges when original and follower handles both exist before either read finishes", async () => {
   const answers: Record<string, () => void> = {};
+  const library = draftLibrary();
   mockIPC(async (command, args) => {
+    if (command === "human_draft") return library.answer(command, args);
     if (command !== "human_open") throw new Error(`Unexpected command: ${command}`);
     const id = (args as { id: string }).id;
     await new Promise<void>((answer) => (answers[id] = answer));
@@ -70,6 +68,10 @@ it("converges when original and follower handles both exist before either read f
   await originalRead;
   original.area = "tools";
   expect(follower.area).toBe("tools");
+  const point = { text: "install.md L2:C1", source: "release · File Explorer", at: "2026-11-23T00:00:00Z" };
+  library.draft.points.push(point);
+  await original.readDraft();
+  expect(follower.draft?.points).toEqual([point]);
   expect(app.reviews["run-a-2"]).toBe(original);
   expect(app.reviews["run-follower-2"]).toBe(original);
 });

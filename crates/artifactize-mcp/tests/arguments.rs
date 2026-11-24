@@ -65,6 +65,11 @@ async fn invalid_calls_are_rejected_without_asking_for_client_roots() {
             json!({"cursor":format!("{}:0:0", "0".repeat(64))}),
             "Invalid detail cursor offset.",
         ),
+        (
+            "plugin_add",
+            json!({"path":"relative/package"}),
+            "plugin_add path must be absolute.",
+        ),
         ("not_a_tool", json!({}), "Unknown tool:"),
     ];
     for (id, (name, arguments, expected)) in invalid.into_iter().enumerate() {

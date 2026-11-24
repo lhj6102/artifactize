@@ -1,45 +1,70 @@
 # Desktop App
 
-The desktop app (`artifactize-desktop`) operates on the same local state as the CLI, updating live as Runs progress, worktrees appear or leave, or teammates' results arrive. `artifactize monitor` and `artifactize review` are CLI shortcuts that open the desktop app directly.
+The desktop app (`artifactize-desktop`) uses the same local state as the CLI and MCP server. Runs, review changes, and worktrees update without a reload. The bottom bar stays in place: the brand opens the command palette, **Chat**, **Verify**, and **Review** switch workspaces, and **Settings** opens settings. Switching modes preserves each workspace's selection, scroll position, open panes, and text. **Review** shows how many Human reviews are waiting, regardless of the current filter.
 
 ## Opening the app {#open-the-app}
 
 ```sh
-artifactize-desktop                                       # open with all projects listed
-artifactize-desktop monitor --repo PATH                   # select and expand PATH's branch on its newest entry
-artifactize-desktop review [REQUEST_ID] [--reviewer NAME] # open newest waiting Human review (or REQUEST_ID)
-artifactize-desktop graph --repo PATH                     # open PATH's Current declaration graph
-artifactize monitor [PATH | --repo PATH | --all]          # CLI shortcut to open the desktop app
+artifactize-desktop                                       # open Verify with all projects listed
+artifactize-desktop monitor --repo PATH                   # open Verify on PATH's branch
+artifactize-desktop review [REQUEST_ID] [--reviewer NAME] # open Review on the newest waiting Human review or the given request
+artifactize-desktop graph --repo PATH                     # open PATH's Current in Chat's Graph view
+artifactize monitor [PATH | --repo PATH | --all]          # CLI shortcut for Verify
 artifactize review [REQUEST_ID] [--repo PATH | --all] [--reviewer NAME]  # CLI shortcut for Review
 ```
 
 `artifactize-desktop` also accepts `--state-dir PATH`, `--all`, `--repo PATH` (mutually exclusive with `--all`), and `--reviewer NAME`.
 
-The header gives access to the app's global controls:
+`graph --repo PATH` opens Chat on the newest session of PATH's branch that can still be worked on, in its **Graph** view. If none can, it opens the newest saved session, which says why. If the branch has no session yet, it opens **New chat** on that branch.
 
-- **Pane** switch: shows or hides the left pane while keeping the Main area in place.
-- **Commands** button: opens a searchable command palette listing every command available in the current view (**Keyboard shortcuts**, **Show Settings**, **Show or hide the Pane**, **Search the branches**, **Open a request by ID**, **Refresh**, **Quit**, plus commands for the active graph, Human review, or Settings).
-- **Settings** button: opens the **Settings** modal (**Providers**, **Remote**, **Limits**).
-- **Update notice** (`{version} available`): appears before **Settings** when a newer stable release is out (prereleases are ignored, and Microsoft Store installs do not show it). Clicking it opens update instructions for how the app was installed; the app never downloads or installs updates itself.
+Click the brand or press `Ctrl+K` to open the command palette. Use **Show or hide the Pane** (`Ctrl+B`) to toggle the Pane, or **Open a request by ID** to jump directly to a request. **Keyboard shortcuts** lists the available keys. The palette offers Verify commands only while Verify is open. You can drag the divider to resize a Pane and drag the left edge of **Detail** to adjust its width. If you quit while still holding claims this app took, choose **Stay** or **Release and quit**. The app releases only those claims. If you release a claim and take it again from the CLI, quitting the app leaves the new claim in place. Releasing a claim doesn't discard your draft. Quitting also stops a running Chat turn.
 
-Keyboard shortcuts are optional; any shortcut the app offers is shown next to its command in **Commands** and in **Help** (**Commands → Keyboard shortcuts**, which also shows the graph legend). Closing the window or choosing **Quit** while this window holds unsubmitted Human claims prompts to **Stay** or **Release and quit**.
+## Chat: work with an agent {#chat}
 
-## Left Pane: Search, Branches, and Waiting reviews {#pane}
+Artifactize owns the Chat session, tools and transcript. To use your Google account in Chat, [connect Antigravity](../getting-started/install.md#antigravity-for-chat-only). A session belongs to the branch you started it on and uses the environment you'd get in a terminal in that worktree. If you check out another branch there, Chat tells you why you can't send messages or use tools. Check out the original branch in that worktree to resume. Every model uses the same tools: read, list, find, search, edit and write files, run commands, and use Verify tools to start, observe, or cancel Runs and inspect declarations and saved results. Chat doesn't ask you to approve each tool call.
 
-- **Search**: click the search field at the top of the Pane (or run **Search the branches** from **Commands**). Free-text, `repo:`, and `branch:` terms filter both branches and waiting reviews; `sort:recent` (default) and `sort:name` order the branch list, while waiting reviews are always listed newest first. Typing shows clickable completions for keys and values.
-- **Branches**: lists each active Git worktree (`project / branch`) or non-Git project folder with Runs on this machine, plus the project the app was started for with `--repo` or `graph --repo` even before its first Run. Click the star beside a branch to pin it to the top. Click a branch name to expand its timeline and open its newest entry, or click its chevron to expand or fold without changing the Main area: the first timeline row is **Current** (replaced by an active Run while one is in progress), followed by saved Runs newest first. Click **Current** or any saved Run to show it in the Main area, or click **Older runs** at the bottom of the timeline to load more entries.
-- **Waiting reviews**: stacked at the bottom of the Pane across all repositories (`(0)` when empty). Clicking an entry opens the Human review in the Main area.
-- **Resizing**: drag the divider between the Pane and the Main area, or drag the Detail panel's left edge, to resize them; both widths persist across views and restarts.
+1. Click **New chat** and choose a live branch. **Model** preselects the last model used on that branch if it is still available, or the first model a connected provider lists. You can click **Create** without a model and open the **Graph** view to work with Current. To send a message, first choose a model in the composer. In the Pane, **New chat** sits above the sessions, which are grouped by project and branch, newest first. The first message gives a session its title. The session and its transcript stay available after you restart the app.
+2. The selector at the bottom left of the composer shows the current model. Open it to choose a model from the providers listed there. If needed, choose **Connect provider** to open **Settings → Providers**. You can change the session's model for later turns without changing how Chat works.
+3. Once a model is selected, write a message and click **Send** or press Enter; Shift+Enter starts a new line. The response appears as the turn runs. Each tool call gets one line describing the action and target, or why it failed. **Stop** or Esc in the composer interrupts the turn and its running tool without deleting the conversation or cancelling a Run that Verify has already accepted. Text typed during a turn stays in the composer; use **Send** when the turn ends. A stopped or failed turn also leaves the composer usable.
+4. Switch the session to **Graph** to see its branch's Current: the worktree's current declarations and what would happen on the next verify, much like `artifactize status`. **Refresh** scans again, and Current is where you [edit definitions](#edit-definitions-in-current). The composer floats over the graph, so you can write to the agent while you look at it.
+5. Ask the agent to verify its work. Each accepted Run appears separately in the conversation with its Run ID, current status, and what failed or needs a person. Click **Open in Verify** on the Run you want. In Verify, the first item in the Run header is **Chat · {session title}**. Click it to open the session at that Run card.
 
-## Main area: Run, Current, Graphs, and Detail {#current}
+### Edit definitions in Current {#edit-definitions-in-current}
 
-- **Run view**: shows the Run's ID and status headline (click the headline or run **Open the Run's Detail** from **Commands** for the Run's Detail: **Outcome**, **Waits for**, **What**, **Provenance**, and **Technical**) above the graph tool strip and interactive Artifact Graph.
-- **Current view and editing**: scans the worktree like `artifactize status` and colors each Artifact as its scan finishes (`reused`, `would run`, `waiting`, `blocked`), with a **Refresh** button at the end of the header.
-  - **Creating and editing definitions**: click **New Artifact** in the tool strip, enter a **Name** and **Path**, and click **Create** to write `.artifactize/<name>.artf`. In an Artifact's Detail tab, **Definition** edits `Path` (press `Enter` to write), `Parts` (click `+ Add`, pick a suggestion or press `Enter` to add; click `✕` to remove), `Comment` (opens the inline comment field under the node), **Rename**, and **Delete**; **Source** edits the full `.artf` file with **Save** and **Revert** buttons. If a file changed on disk since Current scanned it, the edit is refused without overwriting and Current rescans.
-  - **Placing nodes, parts, and comments**: drag a node, a minimized whole, or a whole's **title row** to position it in `[annotations.style]` (dragging a node never auto-pans the camera; dragging a whole's inner face or the background pans the graph). Dropping a node on empty space inside its own whole's box repositions it; dropping it inside a different whole's box or onto another node makes that target its new whole in `parts` (removing it from its previous whole); dropping it outside every box removes its part membership. Use **Reset layout** in a box's title row or the tool strip to return to automatic layout. Click a node's comment to edit `[annotations.comment]` (`Enter` saves, `Shift+Enter` adds a line), or drag the comment onto another Artifact without a comment to move it between files.
-- **Graph navigation**: use the tool strip above the graph for **Find** (jumps to any Artifact, eval, or starred favorite), **Zoom out**, **Zoom in**, and **Fit View**; drag the background to pan and scroll to zoom. Click a node to open its **Detail** docked on the right; click a whole's **Minimize**/**Expand** button (or **Minimize or expand the whole** in **Commands**) to collapse or reopen its box; use the bottom-right **Navigator** minimap when part of the graph is off-screen. On large graphs, zooming out until names are too small to read draws status-colored blocks that still open **Detail** when clicked.
-- **Detail tabs**:
-  - **Artifact tab**: shows collapsible sections for **Evals**, **Neighbours** (inputs on left, consumers on right), declared Human **Tools** (runnable immediately in the worktree with a live **Tool log**), **Path** (or **Definition** and **Source** on Current), and **Debug**. Click the star beside the title to favorite the Artifact across all branches of the project.
-  - **Eval tab**: click an eval row or chip (`[icon] {name} / [eval]`) to open that eval's tab. A Human eval with a recorded request in the Run opens its **Human review** directly in the tab; other evals show **Summary** first and, when a log exists, a plain-text toggle to **Agent log** (live or saved transcript) or **Runtime log** (saved `stdout`/`stderr`).
-- **Human review view**: click **Claim to review**, run any declared **Tools** and inspect the live **Tool log**, then click **GREEN** or **RED**, fill the schema-backed form, and click **Submit**. Click **Release claim** to release a claim without submitting.
-- **Settings**: click **Settings** in the header to manage **Providers** (sign in/out of `codex` or `claude-agent`, save/remove API keys for `openai`/`anthropic`/`gemini`, add custom alias or endpoint providers, and click **List models**), **Remote** (sign in/out of the review store, **Check status**, dry-run or push results), and **Limits** (`signoffIdleGraceSeconds`).
+In a Chat session's **Graph** view, click **New Artifact**, enter **Name** and **Path**, and click **Create**. In the Artifact's Detail, **Definition** lets you edit **Path** and **Parts**, add a comment, rename the Artifact, or delete it. For a direct `.artf` edit, open **Source** and use **Save** or **Revert**. If the file changed elsewhere after you opened it, Artifactize refuses to overwrite it and refreshes Current.
+
+Drag a node or a whole's title row to place it. Drop a node into another whole to add it to that whole's `parts`, or outside every whole to remove it from its current one. See [composition](../concepts/artifacts.md#composition) for what `parts` mean. **Reset layout** restores automatic placement. Click a node's comment to edit it or drag the comment onto an Artifact without a comment to move it.
+
+## Verify: branches and timelines {#pane}
+
+- **Search**: text matches projects and branches. Use `repo:` or `branch:` to match just one of those fields, and `sort:recent` (the default) or `sort:name` to order the list. The field suggests keys and values as you type.
+- **Branches**: Verify lists live branches and non-Git folders for projects with saved Runs, plus the project you open with `--repo`. Click a branch to expand it and show its newest Run. Its chevron expands or folds the timeline without opening a Run. The timeline lists Runs only: the active Run first, followed by saved Runs newest first; **Older runs** loads more. A branch without Runs says so and offers **Open in Chat**, which opens its Current in Chat. Star a branch to pin it above unstarred branches.
+
+## Verify: Run and Detail {#current}
+
+- **Run**: see the selected Run's graph of its Artifacts and their verdicts. **Run details** shows its outcome, the evals that failed or are waiting, and what started it: the CLI, an MCP client, or a Chat session. **Open in Chat** opens the branch's Current in Chat.
+- **Graph and Detail**: use **Find** to jump to an Artifact, eval, or starred favorite. Drag the background to pan, scroll to zoom, and use **Fit View** to bring the graph into view. The **Navigator** appears when part of the graph is off-screen. Click a node to open **Detail** on the right. Click an eval to see its summary and any Agent transcript or Runtime log. The Artifact's own tab shows its evals, neighbors, and Human tools. You can run those tools in the current worktree without claiming a review.
+- **Human review links**: from a Run's Artifact Detail, use **Claim to review** or **Release claim** for its waiting Human eval, or **Open in Review** for the full review. It's the same claim and draft in both places.
+
+## Review: find and complete a Human review {#review}
+
+The default filter in **Review** is `type:human waiting`. Change the plain-text query to look for another request. All terms must match: use `type:human` or `type:agent` for the evaluation kind, `waiting` for requests waiting for a result, `repo:` or `branch:` to match the displayed project or branch name, and free text for the eval, project, or branch. The filter suggests keys and values as you type. Reviews are grouped by project, newest first, with one line per request.
+
+A reference opens the exact request, even if your filter doesn't list it. For example, **Open in Review** can show a review you already claimed without changing the filter. Review tells you when the open request is outside the filter. Click **Verify · {Run} › {Artifact}**, the first item in the review header, to return to that Run and eval. If the request shares another request's sign-off, both its ID and that link stay the same when you claim or reload it.
+
+1. Click **Claim to review**. Read the instruction, then use the **Tools** under **Evidence** to inspect the Artifacts. Once a tool has run, the **Tool log** shows its last run on one line; click that line to see every run's output. Viewer tools open an [Artifact Viewer](viewer-plugins.md) window, where **Point** adds a place to the review's **Points**.
+2. Under **Verdict**, choose **GREEN** or **RED**. Fill in the fields the eval asks for; **Insert** on a point puts its text into the field you last typed in. Click **Submit**. If a field is invalid, correct it and try again; the draft stays open. Click **Release claim** to give up the claim without submitting.
+
+A review is one column: the instruction, **Evidence**, **Verdict**, and a folded **Debug**. The draft belongs to the review and reviewer. It keeps the points and the values you enter in both verdict forms. No verdict is selected until you choose one. Reopen a claimed review to see the chosen form with its saved values, even after restarting the app. Releasing the claim keeps the draft. Submitting saves only the form's values and clears the draft, points included.
+
+### Review while using a viewer {#review-while-using-a-viewer}
+
+While you hold the active review, a small pet overlay appears at the bottom right when another mode is shown or the main window loses focus. The overlay has the same draft: its points, the verdict, the form, **Point**, and **Submit**. Click its header link to reopen that review in the main window. The overlay hides when you return to the evaluation space, release the claim, or submit.
+
+Use [**Point**](viewer-plugins.md#point-into-the-active-review) in a supported viewer to add a location to the active review's **Points**, with where and when you pointed. Review and the pet overlay show the same points; remove one you no longer need. The overlay's **Point** is available when a viewer that supports it is open for the review's Artifact. Point never submits.
+
+## Settings {#settings}
+
+- **Providers** connects built-in or custom providers and lists their available models. Chat uses the selected provider and model; Agent evals declare theirs in their profile.
+- **Remote** signs in to the [team review store](team-and-ci.md), checks status, previews a push, or pushes results.
+- **Limits** sets the sign-off idle grace for future Runs. The Settings header shows your reviewer name and, when a newer stable release is available, a notice that opens update instructions. Artifactize doesn't download or install it for you; Microsoft Store installations update through the Store.

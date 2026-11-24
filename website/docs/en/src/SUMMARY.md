@@ -17,6 +17,7 @@
 
 - [Working with Coding Agents](agent-plugin/plugin.md)
 - [Tools and Harness Sessions](guides/tools.md)
+- [Artifact Types and Viewer Plugins](guides/viewer-plugins.md)
 - [Desktop App](guides/interfaces.md)
 - [Team Review Store and CI](guides/team-and-ci.md)
 

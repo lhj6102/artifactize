@@ -15,16 +15,18 @@
       {#if release.notice}
         {@const { running, latest, update } = release.notice}
         <Dialog.Title class="dialog-title">Update artifactize</Dialog.Title>
-        <p class="versions" aria-label="Running {running}, available {latest}">{running} → {latest}</p>
-        {#if update.kind === "command"}
-          <pre class="command">{update.command}</pre>
-        {:else if update.kind === "download"}
-          <button class="link" onclick={() => void release.follow()}>{update.url}</button>
-          {#if update.command}<pre class="command">{update.command}</pre>{/if}
-        {:else}
-          <button class="link" onclick={() => void release.follow()}>{update.url}</button>
-        {/if}
-        {#if release.failure}<p class="failure">{release.failure}</p>{/if}
+        <div class="dialog-body">
+          <p class="versions" aria-label="Running {running}, available {latest}">{running} → {latest}</p>
+          {#if update.kind === "command"}
+            <pre class="command">{update.command}</pre>
+          {:else if update.kind === "download"}
+            <button class="link" onclick={() => void release.follow(latest)}>{update.url}</button>
+            {#if update.command}<pre class="command">{update.command}</pre>{/if}
+          {:else}
+            <button class="link" onclick={() => void release.follow(latest)}>{update.url}</button>
+          {/if}
+          {#if release.failure}<p class="failure">{release.failure}</p>{/if}
+        </div>
       {/if}
       <div class="dialog-actions">
         <Dialog.Close class="button" aria-keyshortcuts="Escape">Close</Dialog.Close>

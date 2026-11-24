@@ -7,12 +7,19 @@ export const MIN = 320;
 /** What of the graph stays visible left of the widest Detail. */
 export const KEEP = 240;
 
+export const PANE_MIN = 12;
+
+/** The graph and its Detail need their two minimum widths when the window has room. */
+export function mainSplitMinimum(windowWidth: number): number {
+  return Math.min(100 - PANE_MIN, Math.max(30, ((MIN + KEEP + 1) / windowWidth) * 100));
+}
+
 const KEY = "monitor-detail-width";
 
 /** `want` pixels, fitted to a graph area `room` pixels wide. */
 export function clampWidth(want: number, room: number): number {
-  const widest = room - KEEP;
-  const narrowest = Math.min(MIN, room);
+  const widest = Math.max(0, room - KEEP);
+  const narrowest = Math.min(MIN, widest);
   return Math.round(Math.max(narrowest, Math.min(want, widest)));
 }
 

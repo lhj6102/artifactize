@@ -81,7 +81,9 @@ beforeEach(() => {
   });
 });
 
+const fixtureElements: HTMLElement[] = [];
 afterEach(() => {
+  for (const element of fixtureElements.splice(0)) element.remove();
   cleanup();
   clearMocks();
   vi.resetAllMocks();
@@ -222,6 +224,7 @@ it("finds Artifacts and evals by name and brings the opened one to the middle of
   const detail = document.createElement("div");
   detail.tabIndex = -1;
   detail.getBoundingClientRect = () => DETAIL;
+  fixtureElements.push(detail);
   document.body.append(detail);
   app.monitor.panes.detail = detail;
   // The person zoomed far out: names are too small to read.
@@ -248,7 +251,8 @@ it("finds Artifacts and evals by name and brings the opened one to the middle of
   expect(viewport.zoom).toBe(0.75);
   const at = onScreen("publish");
   expect((at.left + at.right) / 2).toBeCloseTo((CANVAS.left + DETAIL.left) / 2);
-  expect((at.top + at.bottom) / 2).toBeCloseTo(CANVAS.top + CANVAS.height / 2);
+  // Vertically in the middle of the protected view, below the status line's 32px.
+  expect((at.top + at.bottom) / 2).toBeCloseTo(CANVAS.top + 32 + (CANVAS.height - 32) / 2);
   expect(document.activeElement).toBe(detail);
   detail.remove();
 });
@@ -282,8 +286,7 @@ it("lists the branch's favorites with nothing typed, opens one as found, and say
     return null;
   });
   const onopen = vi.fn();
-  const { app } = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen, onclose: vi.fn() });
-  app.monitor.shown = { kind: "run", branch, run: "run-a" };
+  const { app } = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, branch, revision: 1, onopen, onclose: vi.fn() });
   await screen.findByLabelText("publish: GREEN");
   // The keys are Help's: nothing on the graph teaches them.
   expect(document.querySelector(".graph kbd")).toBeNull();
@@ -309,6 +312,7 @@ it("lists the branch's favorites with nothing typed, opens one as found, and say
 it("says when nothing matches, and Esc closes the field leaving the graph and focus as they were", async () => {
   const { app, onopen } = await drawn();
   const before = document.createElement("button");
+  fixtureElements.push(before);
   document.body.append(before);
   before.focus();
   const kept = viewport;
@@ -324,4 +328,39 @@ it("says when nothing matches, and Esc closes the field leaving the graph and fo
   expect(camera.setViewport).not.toHaveBeenCalled();
   expect(viewport).toEqual(kept);
   before.remove();
+});
+
+it("keeps fitted, zoomed and found Artifacts out of the status line's room and a floating chat's band", async () => {
+  // Chat's composer and reply card float over the canvas's bottom: 210px with the card unfolded.
+  const BAND = 210;
+  const [top, bottom] = [CANVAS.top + 32, CANVAS.bottom - BAND];
+  const { app, rerender } = await drawn(() => PUBLISH);
+  await rerender({ bottom: BAND });
+  // Fit View fits every Artifact into the protected view.
+  viewport = { x: 0, y: 600, zoom: 1 };
+  screen.getByRole("button", { name: "Fit" }).click();
+  for (const name of Object.keys(PLACED)) {
+    const at = onScreen(name);
+    expect(at.top).toBeGreaterThanOrEqual(top - 0.5);
+    expect(at.bottom).toBeLessThanOrEqual(bottom + 0.5);
+  }
+  // Zoom in keeps the point at the protected view's centre where it was.
+  const centre = { x: CANVAS.width / 2, y: 32 + (CANVAS.height - 32 - BAND) / 2 };
+  const before = viewport;
+  const under = { x: (centre.x - before.x) / before.zoom, y: (centre.y - before.y) / before.zoom };
+  screen.getByRole("button", { name: "Zoom in" }).click();
+  expect(viewport.zoom).toBeGreaterThan(before.zoom);
+  expect(under.x * viewport.zoom + viewport.x).toBeCloseTo(centre.x);
+  expect(under.y * viewport.zoom + viewport.y).toBeCloseTo(centre.y);
+  // A found Artifact comes to the middle of the protected view, never under the band.
+  viewport = { x: 0, y: -400, zoom: 0.2 };
+  camera.setViewport.mockClear();
+  const field = await typeFind(app, "pub");
+  await screen.findAllByRole("option");
+  await fireEvent.keyDown(field, { key: "ArrowDown" });
+  await fireEvent.keyDown(field, { key: "Enter" });
+  await vi.waitFor(() => expect(camera.setViewport).toHaveBeenCalledOnce());
+  const at = onScreen("publish");
+  expect((at.top + at.bottom) / 2).toBeCloseTo((top + bottom) / 2);
+  expect(at.bottom).toBeLessThanOrEqual(bottom);
 });

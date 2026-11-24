@@ -135,7 +135,7 @@ fn walk(
     for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let name = entry.file_name();
-        let text = name.to_str().ok_or("execution paths must be UTF-8.")?;
+        let text = platform::os_text(&name).ok_or("execution paths must be UTF-8.")?;
         let label = if relative.is_empty() {
             text.to_owned()
         } else {
@@ -157,7 +157,7 @@ fn walk(
             }
             platform::FileKind::Symlink => {
                 let target = platform::link_target(&path.join(&name)).map_err(|e| e.to_string())?;
-                target.to_str().ok_or("execution paths must be UTF-8.")?;
+                platform::os_text(target.as_os_str()).ok_or("execution paths must be UTF-8.")?;
                 let target = platform::path_text(&target);
                 entries.push((
                     label,

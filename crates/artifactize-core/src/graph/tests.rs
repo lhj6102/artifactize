@@ -65,6 +65,8 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 nested: BTreeMap::new(),
                 parts: Default::default(),
                 views: declaration.views,
+                type_name: None,
+                plugin: None,
                 fingerprint: declaration.fingerprint,
             },
         );

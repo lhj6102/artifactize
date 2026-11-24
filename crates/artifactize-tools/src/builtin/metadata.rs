@@ -9,6 +9,9 @@ use super::{
 
 pub fn description(builtin: Builtin) -> &'static str {
     match builtin {
+        Builtin::Declarations => {
+            "Show the Artifacts, eval criteria and references defined under {artifactName}."
+        }
         Builtin::Graph => {
             "Show the current project Artifact graph, including evals and input-to-consumer relations."
         }
@@ -63,7 +66,7 @@ pub fn input_schema(builtin: Builtin) -> Value {
             }),
             vec![],
         ),
-        Builtin::Graph => (json!({}), vec![]),
+        Builtin::Graph | Builtin::Declarations => (json!({}), vec![]),
         Builtin::Glob => (json!({"pattern":pattern,"path":path}), vec!["pattern"]),
         Builtin::Grep => (
             json!({

@@ -7,6 +7,31 @@ const USAGE_ERROR: u8 = 2;
 mod e2e_metadata;
 
 fn main() -> std::process::ExitCode {
+    #[cfg(feature = "e2e")]
+    let mut context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+    #[cfg(feature = "e2e")]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--check-e2e-build")
+    {
+        return e2e_metadata::check_build(&mut context);
+    }
+    #[cfg(feature = "e2e")]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--stop-e2e-owner")
+    {
+        let Some(path) = std::env::args_os().nth(2) else {
+            return std::process::ExitCode::from(USAGE_ERROR);
+        };
+        return match e2e_metadata::stop_owner(std::path::Path::new(&path)) {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("cannot stop the E2E fixture app: {error}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
     let launch = match artifactize_desktop::Launch::parse(std::env::args_os()) {
         Ok(launch) => launch,
         Err(error) => {
@@ -37,7 +62,7 @@ fn main() -> std::process::ExitCode {
     #[cfg(not(feature = "e2e"))]
     let result = app.run(tauri::generate_context!());
     #[cfg(feature = "e2e")]
-    let result = app.build(tauri::generate_context!()).map(|app| {
+    let result = app.build(context).map(|app| {
         use std::sync::{
             Arc,
             atomic::{AtomicBool, Ordering},
@@ -45,8 +70,11 @@ fn main() -> std::process::ExitCode {
         let abandoned = Arc::new(AtomicBool::new(false));
         let watchdog = abandoned.clone();
         let code = app.run_return(move |app, event| {
-            if companion.is_some() && matches!(event, tauri::RunEvent::Ready) {
-                e2e_metadata::arm_companion_close(app, watchdog.clone());
+            if matches!(event, tauri::RunEvent::Ready) {
+                e2e_metadata::arm_window_image(app);
+                if companion.is_some() {
+                    e2e_metadata::arm_companion_close(app, watchdog.clone());
+                }
             }
         });
         if abandoned.load(Ordering::Acquire) {

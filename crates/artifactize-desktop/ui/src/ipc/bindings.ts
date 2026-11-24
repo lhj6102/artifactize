@@ -8,6 +8,84 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	launch: () => typedError<LaunchView, Failure>(__TAURI_INVOKE("launch")),
+	/**  Create an empty Chat session for the chosen worktree; `null` leaves its model unset. */
+	chatCreate: (worktree: PathKey, branch: 
+/**  A Git repository's branch, by the repository's common directory. */
+{ kind: "branch"; common: PathKey; 
+/**  Refused at the boundary unless a branch name. */
+branch: string } | 
+/**  A detached Git worktree, by its folder. */
+{ kind: "detached"; common: PathKey; path: PathKey } | 
+/**  A folder outside Git. */
+{ kind: "folder"; path: PathKey } | null, selection: {
+	backend: string,
+	model: string,
+	effort: string | null,
+} | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, branch, selection })),
+	/**  Save the selected model and effort for the next turn without sending a message. */
+	chatSetModel: (id: string, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_model", { id, selection })),
+	/**  Keep the chosen view for this session without sending a message or reordering Chat. */
+	chatSetView: (id: string, view: ChatSessionView) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_view", { id, view })),
+	/**  Move a saved Chat to one of the live choices without adding a message. */
+	chatSetWorktree: (id: string, worktree: string) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_worktree", { id, worktree })),
+	/**  Navigate to the newest usable Chat of a branch, or its newest saved Chat if none can work. */
+	chatLatestForBranch: (branch: BranchKey) => typedError<{
+	id: string,
+	title: string,
+	worktree: PathKey,
+	project: string,
+	branch: string,
+	branchKey: BranchKey,
+	view: ChatSessionView,
+	unavailable: string | null,
+	model: ChatModel | null,
+	createdAt: string,
+	updatedAt: string,
+	running: boolean,
+	outcome: ChatOutcome | null,
+	unseen: boolean,
+} | null, Failure>(__TAURI_INVOKE("chat_latest_for_branch", { branch })),
+	/**
+	 *  Read the starting model for a new session. The pending call is the loading state;
+	 *  `null` means no provider lists a model and the worktree has no previous session.
+	 */
+	chatDefaultModel: (worktree: PathKey, branch: 
+/**  A Git repository's branch, by the repository's common directory. */
+{ kind: "branch"; common: PathKey; 
+/**  Refused at the boundary unless a branch name. */
+branch: string } | 
+/**  A detached Git worktree, by its folder. */
+{ kind: "detached"; common: PathKey; path: PathKey } | 
+/**  A folder outside Git. */
+{ kind: "folder"; path: PathKey } | null) => typedError<{
+	backend: string,
+	model: string,
+	effort: string | null,
+} | null, Failure>(__TAURI_INVOKE("chat_default_model", { worktree, branch })),
+	/**  List saved sessions newest first. `null` applies no worktree or query filter. */
+	chatList: (worktree: string | null, query: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree, query })),
+	/**  Live branches known through Runs, launch, or saved Chat sessions; ignores Verify search. */
+	chatBranches: () => typedError<ChatBranch[], Failure>(__TAURI_INVOKE("chat_branches")),
+	/**  Acknowledge the latest settled outcome for this machine user. */
+	chatMarkSeen: (id: string) => typedError<null, Failure>(__TAURI_INVOKE("chat_mark_seen", { id })),
+	/**
+	 *  Read a session and its live transcript. `sessionChanged` names sessions to refresh; Run
+	 *  cards can change separately on `stateChanged`, after their originating turn has ended.
+	 */
+	chatOpen: (id: string) => typedError<ChatView, Failure>(__TAURI_INVOKE("chat_open", { id })),
+	/**
+	 *  Accept a user message and start its streaming turn. A supplied model selection is saved
+	 *  for later turns; `null` keeps the current model.
+	 */
+	chatSend: (id: string, text: string, selection: {
+	backend: string,
+	model: string,
+	effort: string | null,
+} | null) => typedError<null, Failure>(__TAURI_INVOKE("chat_send", { id, text, selection })),
+	/**  Ask the library to stop the turn, regardless of which process owns it. */
+	chatStop: (id: string) => typedError<boolean, Failure>(__TAURI_INVOKE("chat_stop", { id })),
+	/**  Open an HTTP(S) link from a conversation in the system browser. */
+	chatOpenLink: (url: string) => typedError<null, Failure>(__TAURI_INVOKE("chat_open_link", { url })),
 	/**  Navigate, read the state and return what to show. */
 	browse: (navigate: Navigate) => typedError<BrowseView, Failure>(__TAURI_INVOKE("browse", { navigate })),
 	/**  Redraw ages and running times from the shown snapshot, without reading the state. */
@@ -54,6 +132,14 @@ export const commands = {
 	 *  (its waiting time) without reading the state.
 	 */
 	humanOpen: (id: string, reload: boolean) => typedError<HumanView, Failure>(__TAURI_INVOKE("human_open", { id, reload })),
+	/**  Open the exact review ID even when the saved filter would not list it. */
+	humanOpenReference: (id: string, query: string) => typedError<OpenReview, Failure>(__TAURI_INVOKE("human_open_reference", { id, query })),
+	/**  A page of Review results; `start` is the `next` cursor of the previous page of this query. */
+	humanSearch: (query: string, start: number | null) => typedError<ReviewPage, Failure>(__TAURI_INVOKE("human_search", { query, start })),
+	/**  Complete the current Review query term using the library's grammar and suggestions. */
+	humanSearchComplete: (query: string) => typedError<Completion, Failure>(__TAURI_INVOKE("human_search_complete", { query })),
+	/**  Number of reviews still waiting to be claimed, independent of the Pane filter. */
+	humanWaitingCount: () => typedError<number, Failure>(__TAURI_INVOKE("human_waiting_count")),
 	/**
 	 *  The form for `verdict`, from the owner schema recorded with request `id`, holding the values
 	 *  of `kept` (the earlier draft of this verdict) when the schema still takes them.
@@ -62,6 +148,17 @@ export const commands = {
 	verdict: Verdict,
 	fields: ([string, FieldValue])[],
 } | null) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict, kept })),
+	/**  Read the saved response and both verdict forms. A released review retains its draft. */
+	humanDraft: (id: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft", { id })),
+	/**
+	 *  Change one field, reason or the verdict of the current reviewer's saved draft. Empty
+	 *  reason text is `invalid`; a reason another surface changed first is refused.
+	 */
+	humanDraftEdit: (id: string, change: DraftChange) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_edit", { id, change })),
+	/**  Remove a Point from the current reviewer's draft without submitting it. */
+	humanDraftRemovePoint: (id: string, point: ReviewPoint) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_remove_point", { id, point })),
+	/**  Submit the current reviewer's saved form fields. */
+	humanDraftSubmit: (id: string, job: JobId) => typedError<Submitted_Serialize, Failure>(__TAURI_INVOKE("human_draft_submit", { id, job })),
 	/**  `draft` of request `id` with field `name` set to `value`, as the library's form takes it. */
 	humanEditField: (id: string, draft: Draft, name: string, value: FieldValue) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_field", { id, draft, name, value })),
 	/**
@@ -78,23 +175,23 @@ export const commands = {
 	 *  Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
 	 *  for release on quit, whichever screen took it.
 	 */
-	humanClaim: (id: string, job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_claim", { id, job })),
+	humanClaim: (id: string, job: JobId) => typedError<Acted_Serialize, Failure>(__TAURI_INVOKE("human_claim", { id, job })),
 	/**
 	 *  Run tool `tool` of request `id`; job number `job` cancels it. The run needs this
 	 *  reviewer's claim on a request that still waits and unchanged declarations. What it prints
 	 *  arrives as [`log::HumanToolLog`] events while it runs; a launch tool answers at once and its
 	 *  program's output keeps arriving until it exits.
 	 */
-	humanRun: (id: string, tool: string, job: JobId) => typedError<Notice, Failure>(__TAURI_INVOKE("human_run", { id, tool, job })),
+	humanRun: (id: string, tool: string, job: JobId) => typedError<Notice_Serialize, Failure>(__TAURI_INVOKE("human_run", { id, tool, job })),
 	/**  Cancel running job `job`: a tool, or a submission's fingerprint recheck. */
 	humanCancel: (job: JobId) => __TAURI_INVOKE<void>("human_cancel", { job }),
 	/**
 	 *  Submit `draft` for request `id` and publish it like `request submit`. A result the
 	 *  schema rejects keeps the request waiting and fails as `invalid`.
 	 */
-	humanSubmit: (id: string, draft: Draft, job: JobId) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
+	humanSubmit: (id: string, draft: Draft, job: JobId) => typedError<Submitted_Serialize, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
 	/**  Release this reviewer's claims on `ids` without a verdict. */
-	humanRelease: (ids: string[], job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
+	humanRelease: (ids: string[], job: JobId) => typedError<Acted_Serialize, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**
 	 *  The graph of `source`: the shown Run's, from the shown snapshot, only its lights while it
 	 *  keeps the shape `known` the caller holds; or a branch's Current as its last scan found it.
@@ -150,7 +247,28 @@ export const commands = {
 	 *  the Artifact; a launch tool answers at once and its program's output keeps arriving until
 	 *  it exits.
 	 */
-	artifactToolRun: (branch: BranchKey, artifact: string, tool: string, job: JobId) => typedError<Notice, Failure>(__TAURI_INVOKE("artifact_tool_run", { branch, artifact, tool, job })),
+	artifactToolRun: (branch: BranchKey, artifact: string, tool: string, job: JobId) => typedError<Notice_Serialize, Failure>(__TAURI_INVOKE("artifact_tool_run", { branch, artifact, tool, job })),
+	viewerContext: (session: number) => typedError<ViewerContext, Failure>(__TAURI_INVOKE("viewer_context", { session })),
+	viewerEntry: (session: number) => typedError<ViewerEntry, Failure>(__TAURI_INVOKE("viewer_entry", { session })),
+	viewerFiles: (session: number, path: string) => typedError<ViewerFile[], Failure>(__TAURI_INVOKE("viewer_files", { session, path })),
+	viewerReadText: (session: number, path: string) => typedError<string, Failure>(__TAURI_INVOKE("viewer_read_text", { session, path })),
+	/**  The exact scoped graph wire shape used by the library. Serialize at the IPC edge. */
+	viewerDeclarations: (session: number) => typedError<string, Failure>(__TAURI_INVOKE("viewer_declarations", { session })),
+	viewerClose: (session: number) => typedError<null, Failure>(__TAURI_INVOKE("viewer_close", { session })),
+	/**  Append to the review that was active when Point began, never to its replacement. */
+	viewerPoint: (session: number, review: string, text: string) => typedError<null, Failure>(__TAURI_INVOKE("viewer_point", { session, review, text })),
+	activeReviewSet: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("active_review_set", { request })),
+	/**
+	 *  Open the Artifact Viewer of viewer session `session`, titled `title`; one already showing the
+	 *  same Artifact in the same viewer comes to the front instead.
+	 */
+	viewerWindow: (session: number, title: string) => typedError<null, Failure>(__TAURI_INVOKE("viewer_window", { session, title })),
+	/**  Show the pet overlay for the active review `request`, or hide it for `None`. */
+	petShow: (request: string | null) => typedError<null, Failure>(__TAURI_INVOKE("pet_show", { request })),
+	/**  Bring the main window to the front: the pet overlay leads back to its review there. */
+	mainFocus: () => typedError<null, Failure>(__TAURI_INVOKE("main_focus")),
+	/**  Close only after the accepted quit has settled this app's owned Chat turns. */
+	mainClose: () => typedError<null, Failure>(__TAURI_INVOKE("main_close")),
 	/**  The read-only Detail of request `id` in its Run. */
 	requestDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("request_detail", { id })),
 	/**
@@ -159,9 +277,11 @@ export const commands = {
 	 */
 	releaseNotice: () => typedError<ReleaseView, Failure>(__TAURI_INVOKE("release_notice")),
 	/**  Open the newer release's download or page in the browser. */
-	releaseOpen: () => typedError<null, Failure>(__TAURI_INVOKE("release_open")),
+	releaseOpen: (latest: string) => typedError<null, Failure>(__TAURI_INVOKE("release_open", { latest })),
 	/**  Claims this window took and has neither submitted nor released, for the quit prompt. */
-	humanTaken: () => __TAURI_INVOKE<string[]>("human_taken"),
+	humanTaken: () => typedError<string[], Failure>(__TAURI_INVOKE("human_taken")),
+	/**  Release and quit only releases claims this app took and still owns. */
+	humanReleaseTaken: (ids: string[], job: JobId) => typedError<Acted_Serialize, Failure>(__TAURI_INVOKE("human_release_taken", { ids, job })),
 	/**
 	 *  Resolve request `id`'s session and open a reader for it. With the `handle` already open
 	 *  for it, resolve again only when the request's session facts changed, as the terminal
@@ -192,11 +312,10 @@ export const commands = {
 	providerCustomRemove: (name: string) => typedError<null, Failure>(__TAURI_INVOKE("provider_custom_remove", { name })),
 	/**  The Codex sign-in state, offline. */
 	codexStatus: () => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_status")),
-	/**
-	 *  Start `login codex`: the sign-in URL to show (the system browser gets it too when
-	 *  `browser`), and whether the browser can return here. Finish with [`codex_login_wait`].
-	 */
-	codexLoginStart: (browser: boolean) => typedError<CodexPrompt, Failure>(__TAURI_INVOKE("codex_login_start", { browser })),
+	/**  Start sign-in and return its ID immediately, so it can be cancelled before any prompt. */
+	codexLoginStart: (browser: boolean) => typedError<SignInId, Failure>(__TAURI_INVOKE("codex_login_start", { browser })),
+	/**  Read the attempt's prompt or the updated status if it already signed in. */
+	codexLoginPrompt: (signIn: SignInId) => typedError<CodexPrompt, Failure>(__TAURI_INVOKE("codex_login_prompt", { signIn })),
 	/**
 	 *  Wait for sign-in `sign_in` (from [`codex_login_start`]) to finish; returns the new state.
 	 *  The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it; one that a
@@ -204,34 +323,53 @@ export const commands = {
 	 */
 	codexLoginWait: (signIn: SignInId) => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_login_wait", { signIn })),
 	/**  Finish the sign-in with the URL the browser was sent to, as the CLI accepts on stdin. */
-	codexLoginPaste: (redirect: string) => typedError<null, Failure>(__TAURI_INVOKE("codex_login_paste", { redirect })),
+	codexLoginPaste: (signIn: SignInId, redirect: string) => typedError<null, Failure>(__TAURI_INVOKE("codex_login_paste", { signIn, redirect })),
 	/**  Stop the sign-in in progress; nothing is saved, even if the browser returns later. */
-	codexLoginCancel: () => __TAURI_INVOKE<void>("codex_login_cancel"),
+	codexLoginCancel: (signIn: SignInId) => __TAURI_INVOKE<void>("codex_login_cancel", { signIn }),
 	/**  `logout codex`: revoke and remove artifactize's own tokens. */
 	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),
+	/**  Ask Antigravity whether it is signed in (an ACP probe without a prompt). */
+	antigravityStatus: () => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_status")),
+	/**  Start sign-in and return its ID immediately, so it can be cancelled before any prompt. */
+	antigravityLoginStart: () => typedError<SignInId, Failure>(__TAURI_INVOKE("antigravity_login_start")),
+	/**  Read the attempt's prompt or the updated status if it already signed in. */
+	antigravityLoginPrompt: (signIn: SignInId) => typedError<NativeStart<AntigravityPrompt, AntigravityStatus>, Failure>(__TAURI_INVOKE("antigravity_login_prompt", { signIn })),
+	/**
+	 *  Wait for sign-in `sign_in` (from [`antigravity_login_start`]) to end; returns Antigravity's
+	 *  sign-in as it then reports it.
+	 */
+	antigravityLoginWait: (signIn: SignInId) => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_login_wait", { signIn })),
+	/**  Give the sign-in the code Antigravity's sign-in page shows, as the CLI accepts on stdin. */
+	antigravityLoginPaste: (signIn: SignInId, code: string) => typedError<null, Failure>(__TAURI_INVOKE("antigravity_login_paste", { signIn, code })),
+	/**  Stop the sign-in in progress: Antigravity is stopped before it saves a login. */
+	antigravityLoginCancel: (signIn: SignInId) => __TAURI_INVOKE<void>("antigravity_login_cancel", { signIn }),
+	/**
+	 *  `logout antigravity`: run ACP `logout`; returns the sign-in as Antigravity then
+	 *  reports it.
+	 */
+	antigravityLogout: () => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_logout")),
 	/**  Ask Claude Code whether it is signed in (`claude auth status`). */
 	claudeAgentStatus: () => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_status")),
-	/**
-	 *  Start `login claude-agent`: `claude auth login` runs and opens the browser. Returns the URL
-	 *  it printed; finish with [`claude_agent_login_wait`].
-	 */
-	claudeAgentLoginStart: () => typedError<ClaudeAgentPrompt, Failure>(__TAURI_INVOKE("claude_agent_login_start")),
+	/**  Start sign-in and return its ID immediately, so it can be cancelled before any prompt. */
+	claudeAgentLoginStart: () => typedError<SignInId, Failure>(__TAURI_INVOKE("claude_agent_login_start")),
+	/**  Read the attempt's prompt or the updated status if it already signed in. */
+	claudeAgentLoginPrompt: (signIn: SignInId) => typedError<NativeStart<ClaudeAgentPrompt, ClaudeAgentStatus>, Failure>(__TAURI_INVOKE("claude_agent_login_prompt", { signIn })),
 	/**
 	 *  Wait for sign-in `sign_in` (from [`claude_agent_login_start`]) to end; returns Claude Code's
 	 *  sign-in as it then reports it.
 	 */
 	claudeAgentLoginWait: (signIn: SignInId) => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_login_wait", { signIn })),
 	/**  Give the sign-in the code Claude Code's sign-in page shows, as the CLI accepts on stdin. */
-	claudeAgentLoginPaste: (code: string) => typedError<null, Failure>(__TAURI_INVOKE("claude_agent_login_paste", { code })),
+	claudeAgentLoginPaste: (signIn: SignInId, code: string) => typedError<null, Failure>(__TAURI_INVOKE("claude_agent_login_paste", { signIn, code })),
 	/**  Stop the sign-in in progress: Claude Code is stopped before it saves a login. */
-	claudeAgentLoginCancel: () => __TAURI_INVOKE<void>("claude_agent_login_cancel"),
+	claudeAgentLoginCancel: (signIn: SignInId) => __TAURI_INVOKE<void>("claude_agent_login_cancel", { signIn }),
 	/**
 	 *  `logout claude-agent`: run `claude auth logout`; returns the sign-in as Claude Code then
 	 *  reports it.
 	 */
 	claudeAgentLogout: () => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_logout")),
-	/**  `models <provider>`: what a built-in or custom provider offers to this key or account. */
-	modelsList: (provider: string) => typedError<Model[], Failure>(__TAURI_INVOKE("models_list", { provider })),
+	/**  `models <provider>`: this provider's models or why it could not list them. */
+	modelsList: (provider: string) => typedError<ModelsResult, Failure>(__TAURI_INVOKE("models_list", { provider })),
 	/**  `remote status`: URL, share level, token source, reachability, principal and scopes. */
 	remoteStatus: () => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_status")),
 	/**
@@ -254,8 +392,11 @@ export const commands = {
 
 /** Events */
 export const events = {
+	activeReviewChanged: makeEvent<ActiveReviewChanged>("active-review-changed"),
 	currentChanged: makeEvent<CurrentChanged>("current-changed"),
+	humanDraftChanged: makeEvent<HumanDraftChanged>("human-draft-changed"),
 	humanToolLog: makeEvent<HumanToolLog>("human-tool-log"),
+	runFinished: makeEvent<RunFinished>("run-finished"),
 	sessionChanged: makeEvent<SessionChanged>("session-changed"),
 	stateChanged: makeEvent<StateChanged>("state-changed"),
 };
@@ -263,12 +404,44 @@ export const events = {
 /* Constants */
 export const PRECEDENCE = {"current":["run","checking","blocked","waiting","reused"],"run":["red","error","active","blocked","waiting","green"]} as const;
 
+export const REVIEW_DEFAULT_QUERY = "type:human waiting" as const;
+
 /* Types */
 /**  What a Human action left: its notice and the request as it now stands. */
-export type Acted = {
-	notice: Notice,
+export type Acted = Acted_Serialize | Acted_Deserialize;
+
+/**  What a Human action left: its notice and the request as it now stands. */
+export type Acted_Deserialize = {
+	notice: Notice_Deserialize,
 	view: HumanView | null,
 };
+
+/**  What a Human action left: its notice and the request as it now stands. */
+export type Acted_Serialize = {
+	notice: Notice_Serialize,
+	view: HumanView | null,
+};
+
+/**  The last shown claimed review changed; open viewers read their context again. */
+export type ActiveReviewChanged = {
+	request: string | null,
+};
+
+/**  The Google authorization URL. Its Antigravity callback page gives a code to paste. */
+export type AntigravityPrompt = {
+	url: string,
+	/**  The sign-in to wait for with [`antigravity_login_wait`]. */
+	signIn: SignInId,
+};
+
+export type AntigravityState = { state: "missing" } | { state: "tooOld"; error: string } | { state: "signedOut" } | { state: "signedIn"; account: string | null } | { state: "quota"; error: string } | { state: "rateLimited"; error: string } | { state: "failed"; error: string };
+
+/**  Antigravity's installation and sign-in, as the CLI reports them. */
+export type AntigravityStatus = {
+	path: PathKey | null,
+	version: string | null,
+	requiredVersion: string,
+} & AntigravityState;
 
 export type Attention = {
 	mark: Mark,
@@ -297,12 +470,16 @@ export type BranchView = {
 	name: string,
 	/**  Where its Current is scanned and its tools run. */
 	workspace: PathKey,
-	/**  Its timeline: its newest Runs, newest first, led by the one in progress or else the Current. */
+	/**  Its timeline: its newest Runs, newest first, led by the one in progress. */
 	chips: Chip[],
+	/**  The newest Run by creation time, independently of the timeline page. */
+	newest: Chip | null,
 	/**  Older Runs than the timeline holds exist: **Older runs** at its end shows them. */
 	older: boolean,
 	/**  Starred: listed before the branches that are not. */
 	starred: boolean,
+	/**  A saved timeline entry pinned by a reference, not a live checkout. */
+	historical: boolean,
 };
 
 export type BrowseView = {
@@ -329,6 +506,8 @@ export type BrowseView = {
 	revision: number,
 };
 
+export type BuiltinViewer = "files" | "markdown" | "artifactize";
+
 /**  An eval at a glance, from the library's [`monitor::Card`]. */
 export type CardView = {
 	instruction: string,
@@ -344,16 +523,76 @@ export type CardView = {
 	model: string | null,
 };
 
-/**  One entry of a branch's timeline: a Run, or the branch's Current. */
+export type ChatBlock = { kind: "text"; text: string } | { kind: "tool"; name: string; arguments: string; output: string | null; failed: boolean | null; toolKind: ChatToolKind; summary: string; exitCode: number | null; omittedLines: number; outputTruncated: boolean } | { kind: "run"; card: ChatRun };
+
+/**  A live branch and the checkout a new Chat on it can use. */
+export type ChatBranch = {
+	key: BranchKey,
+	project: string,
+	name: string,
+	workspace: PathKey,
+};
+
+export type ChatModel = {
+	backend: string,
+	model: string,
+	effort: string | null,
+};
+
+export type ChatOutcome = "running" | "completed" | "failed" | "stopped" | "interrupted";
+
+export type ChatRun = {
+	id: string,
+	state: ChatRunState | null,
+	failed: string[],
+	waiting: string[],
+};
+
+export type ChatRunState = "preparing" | "running" | "waiting" | "waiting_human" | "cancelling" | "green" | "red" | "incomplete" | "yellow" | "error" | "cancelled";
+
+export type ChatSession = {
+	id: string,
+	title: string,
+	worktree: PathKey,
+	project: string,
+	branch: string,
+	branchKey: BranchKey,
+	view: ChatSessionView,
+	unavailable: string | null,
+	model: ChatModel | null,
+	createdAt: string,
+	updatedAt: string,
+	running: boolean,
+	outcome: ChatOutcome | null,
+	unseen: boolean,
+};
+
+export type ChatSessionView = "conversation" | "graph";
+
+export type ChatToolKind = "read" | "edit" | "command" | "verify" | "other";
+
+export type ChatTurn = {
+	user: string,
+	blocks: ChatBlock[],
+	state: ChatTurnState,
+};
+
+export type ChatTurnState = { kind: "running" } | { kind: "completed" } | { kind: "stopped" } | { kind: "interrupted" } | { kind: "failed"; message: string };
+
+export type ChatView = {
+	session: ChatSession,
+	running: boolean,
+	turns: ChatTurn[],
+};
+
+/**  One Run in a branch's timeline. */
 export type Chip = { kind: "run"; id: string; mark: Mark; 
 /**  Its status in words: `GREEN`, `RED`, `Running`, `Waiting for sign-off`. */
 status: string; 
 /**  How long ago it started, `25m ago`; an open one's time so far, `2m 22s`. */
 age: string; running: boolean; 
 /**  What its requester said it is working on (`verify --comment`). */
-comment: string | null } | 
-/**  The worktree as it is now. */
-{ kind: "current" };
+comment: string | null };
 
 export type Claimant = {
 	reviewer: string,
@@ -520,6 +759,19 @@ export type Draft = {
 	fields: ([string, FieldValue])[],
 };
 
+export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "groupField"; verdict: Verdict; name: string; item: number; field: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number } | 
+/**  Append one reason; empty text is refused. */
+{ kind: "addReason"; text: string } | 
+/**  Replace reason `index`, refused if it no longer reads `previous`. */
+{ kind: "editReason"; index: number; previous: string; text: string } | 
+/**  Remove reason `index`, refused if it no longer reads `previous`. */
+{ kind: "removeReason"; index: number; previous: string };
+
+export type DraftReadiness = {
+	green: Readiness,
+	red: Readiness,
+};
+
 /**
  *  What the library says of an edit before it is made: the definition files it would write, by
  *  their paths relative to the project, or why it would refuse it.
@@ -573,7 +825,9 @@ export type Failure =
 /**  A sign-in, sign-out, listing or store call failed, with the CLI's own message. */
 { kind: "account"; message: string } | 
 /**  Reading or saving a machine-wide setting failed, with the CLI's own message. */
-{ kind: "setting"; message: string };
+{ kind: "setting"; message: string } | { kind: "noModel"; message: string } | 
+/**  An active Chat turn must settle before the session can move. */
+{ kind: "busy"; message: string };
 
 export type Field = {
 	key: string,
@@ -664,6 +918,14 @@ export type GraphNode = {
 	parts: string[],
 };
 
+/**
+ *  A draft changed in this app, including in another window or through the viewer bridge.
+ *  Treat this as invalidation: re-read instead of applying possibly out-of-order snapshots.
+ */
+export type HumanDraftChanged = {
+	id: string,
+};
+
 /**  The Tool logs that changed, each whole. */
 export type HumanToolLog = {
 	logs: KeyedLog[],
@@ -671,8 +933,11 @@ export type HumanToolLog = {
 
 /**  One request in the shared Human Detail. */
 export type HumanView = {
-	/**  The request every action goes to: a waiting follower's original. */
 	id: string,
+	/**  Draft and Tool log events use this original request ID, including for followers. */
+	owner: string,
+	target: ReviewTarget,
+	notes: string | null,
 	title: string,
 	/**  The Artifact the reviewed eval belongs to: its tools come first. */
 	artifact: string,
@@ -743,6 +1008,8 @@ export type LaunchView = {
 	state: string,
 	reviewer: string,
 	request: string | null,
+	/**  The recorded branch for a Graph launch on a checkout that no longer exists. */
+	graphBranch: BranchKey | null,
 };
 
 /**  How a node or edge is lit; each source's library type determines precedence. */
@@ -783,7 +1050,7 @@ export type LogEntry = {
 };
 
 /**  Whose Tool log it is: a review's, or an Artifact's in a worktree. */
-export type LogKey = { kind: "review"; request: string } | { kind: "artifact"; workspace: PathKey; artifact: string };
+export type LogKey = { kind: "review"; request: string } | { kind: "artifact"; workspace: PathKey; branch: BranchKey; artifact: string };
 
 /**  One line of a run: what it printed, red when it went to stderr or the run failed. */
 export type LogText = {
@@ -809,9 +1076,17 @@ export type Mode =
 export type Model = {
 	slug: string,
 	displayName: string,
+	efforts: string[],
+	defaultEffort: string | null,
 };
 
+/**  Model discovery reports unavailable setup separately from a failed listing. */
+export type ModelsResult = { kind: "models"; models: Model[] } | { kind: "notSetUp"; reason: string } | { kind: "failed"; error: string } | { kind: "cliMissing"; reason: string } | { kind: "cliTooOld"; version: string; requiredVersion: string; error: string };
+
 export type Movement = { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" };
+
+/**  A native sign-in either needs a prompt or has already ended with the new status. */
+export type NativeStart<Prompt, Status> = Prompt | Status;
 
 /**  A step of the pane and how to read the state for it. */
 export type Navigate = {
@@ -848,9 +1123,24 @@ export type Neighbours = {
 
 export type NodeKind = "run" | "artifact" | "eval";
 
-export type Notice = {
+export type Notice = Notice_Serialize | Notice_Deserialize;
+
+export type Notice_Deserialize = {
 	text: string,
 	error: boolean,
+	viewer: ViewerLaunch | null,
+};
+
+export type Notice_Serialize = {
+	text: string,
+	error: boolean,
+	viewer?: ViewerLaunch | null,
+};
+
+export type OpenReview = {
+	view: HumanView,
+	outsideFilter: boolean,
+	outsideReason: string | null,
 };
 
 /**  The session behind a request, or why there is none to read. */
@@ -878,12 +1168,13 @@ export type PlanLine = {
 export type Profile = "runtime" | "agent" | "human";
 
 /**  A built-in provider, by the name the CLI and an eval's `backend` give it. */
-export type Provider = "codex" | "claude-agent" | "openai" | "anthropic" | "gemini";
+export type Provider = "codex" | "claude-agent" | "antigravity" | "openai" | "anthropic" | "gemini";
 
 /**  The providers of this machine. */
 export type Providers = {
 	/**  The built-in providers, in the order Settings lists them. */
 	builtin: Provider[],
+	aliasTargets: Provider[],
 	keys: KeyStatus[],
 	custom: CustomProvider[],
 };
@@ -908,6 +1199,9 @@ export type QueryView = {
 	/**  The query the search starts with, which Esc puts back. */
 	start: string,
 };
+
+/**  Whether a verdict's answer can be submitted; `reason` is the library's sentence. */
+export type Readiness = { kind: "ready" } | { kind: "blocked"; reason: string };
 
 /**  A newer release and how to update to it. */
 export type ReleaseNotice = {
@@ -936,7 +1230,9 @@ export type ReleaseView = {
 export type RemoteStatus = 
 /**  No remote review store is configured. */
 { state: "unconfigured" } | { state: "configured"; url: string; share: Share; tokenSource: TokenSource; connection: Connection; 
-/**  What this machine pushed in the last two days, for what was pushed today. */
+/**  Number of records this machine pushed during the local civil day. */
+pushedToday: number; 
+/**  Recent pushes, oldest first. */
 pushes: Push[] };
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
@@ -951,6 +1247,48 @@ export type ResultItem = {
 	fields: Field[],
 };
 
+export type ReviewDraft = {
+	verdict: Verdict | null,
+	/**  Why, oldest first, independent of the verdict. */
+	reasons: string[],
+	/**  Whether each verdict can be submitted now, whichever is chosen. */
+	readiness: DraftReadiness,
+	points: ReviewPoint[],
+	green: FormView,
+	red: FormView,
+};
+
+export type ReviewMatch = {
+	id: string,
+	target: ReviewTarget,
+	title: string,
+	eval: string,
+	worktree: PathKey,
+	project: string,
+	projectKey: PathKey,
+	branch: string,
+	age: string,
+	mark: Mark,
+	claimant: string | null,
+	mine: boolean,
+};
+
+export type ReviewPage = {
+	reviews: ReviewMatch[],
+	next: number | null,
+};
+
+export type ReviewPoint = {
+	text: string,
+	source: string,
+	at: string,
+};
+
+export type ReviewTarget = {
+	run: string,
+	node: string,
+};
+
 export type Row = {
 	text: string,
 	/**  A collapsed tool activity line; toggling it shows names, targets and states. */
@@ -958,6 +1296,14 @@ export type Row = {
 	/**  Under the subdued Thinking label. */
 	thinking: boolean,
 };
+
+/**  A saved Run finished, even if Verify is not showing its branch. */
+export type RunFinished = {
+	run: string,
+	branch: BranchKey,
+};
+
+export type RunOrigin = { kind: "cli" } | { kind: "mcp" } | { kind: "chat"; sessionId: string; title: string };
 
 /**  A Run's outcome as its Detail leads with it: what its header row leaves out. */
 export type RunOutcome = {
@@ -979,6 +1325,13 @@ export type RunOutcome = {
  */
 export type RunPanel = {
 	id: string,
+	/**  The Run's timeline branch, including a historical branch pinned by its reference. */
+	branch: BranchKey | null,
+	/**  The branch for Open in Chat, even when it is no longer checked out. */
+	chatBranch: BranchKey,
+	origin: RunOrigin | null,
+	/**  The Run comment's first line. The full comment belongs in Detail. */
+	headline: string | null,
 	/**  The Run's own row, whose Detail its headline opens. */
 	node: string,
 	mark: Mark,
@@ -995,6 +1348,8 @@ export type RunStep =
 { kind: "keep" } | 
 /**  Show this Run. */
 { kind: "open"; id: string } | 
+/**  Follow a link, showing this Run's branch even outside the saved search. */
+{ kind: "reference"; id: string } | 
 /**  Show no Run: the Main area shows a Current, a review or Settings. */
 { kind: "close" };
 
@@ -1103,9 +1458,19 @@ export type StateChanged = {
 export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "DEFERRED" | "PROVISIONAL" | "YELLOW" | "GREEN" | "BASIS";
 
 /**  A settled submission: how it stands, its notice and the completed request. */
-export type Submitted = {
+export type Submitted = Submitted_Serialize | Submitted_Deserialize;
+
+/**  A settled submission: how it stands, its notice and the completed request. */
+export type Submitted_Deserialize = {
 	settled: Settled,
-	notice: Notice,
+	notice: Notice_Deserialize,
+	view: HumanView | null,
+};
+
+/**  A settled submission: how it stands, its notice and the completed request. */
+export type Submitted_Serialize = {
+	settled: Settled,
+	notice: Notice_Serialize,
 	view: HumanView | null,
 };
 
@@ -1137,7 +1502,9 @@ export type ToolKind =
 /**  Starts a program and returns at once. */
 "launch" | 
 /**  Waits and captures the output. */
-"output";
+"output" | 
+/**  Opens the Artifact Viewer. */
+"viewer";
 
 export type ToolView = {
 	name: string,
@@ -1221,6 +1588,32 @@ export type UpstreamMark = {
 };
 
 export type Verdict = "GREEN" | "RED";
+
+export type ViewerContext = {
+	artifact: string,
+	type: string,
+	title: string,
+	target: string,
+	targetKind: DefinitionKind,
+	review: string | null,
+	/**  This session shows the Artifact target recorded by the active review in its original worktree. */
+	petMatch: boolean,
+};
+
+export type ViewerEntry = { kind: "builtin"; viewer: BuiltinViewer } | { kind: "web"; html: string };
+
+export type ViewerFile = {
+	name: string,
+	path: string,
+	kind: ViewerFileKind,
+};
+
+export type ViewerFileKind = "file" | "directory";
+
+export type ViewerLaunch = {
+	session: number,
+	title: string,
+};
 
 /**  One `Waits for` line: an upstream Artifact, or (`pending`) one of its unfinished evals. */
 export type WaitLine = {

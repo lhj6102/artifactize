@@ -16,8 +16,8 @@ pub struct Waiting {
     pub label: Label,
 }
 
-/// Every waiting Human review, newest first, as the review search's starting query finds them
-/// (a follower listed once, as its original), each named by `labels`, the project and branch
+/// Every waiting Human review, including claimed ones, newest first (a follower listed once,
+/// as its original), each named by `labels`, the project and branch
 /// of its Run. A review whose Run has no label (its record cannot be read) is named by its
 /// repository's folder.
 pub async fn waiting(
@@ -25,9 +25,9 @@ pub async fn waiting(
     reviewer: &ReviewerId,
     labels: &Labels,
 ) -> Result<Vec<Waiting>, String> {
-    let query: Query = search::DEFAULT
+    let query: Query = "kind:human status:waiting_human"
         .parse()
-        .expect("the review search's starting query parses");
+        .expect("the monitor waiting query parses");
     let mut found = Vec::new();
     let mut start = 0;
     loop {
@@ -50,9 +50,9 @@ pub async fn waiting(
                 .unwrap_or_else(|| Label {
                     project: entry.repository.file_name().map_or_else(
                         || crate::platform::path_text(&entry.repository),
-                        |name| name.to_string_lossy().into_owned(),
+                        crate::platform::display_name,
                     ),
-                    branch: String::new(),
+                    ..Label::default()
                 });
             Waiting { view, entry, label }
         })

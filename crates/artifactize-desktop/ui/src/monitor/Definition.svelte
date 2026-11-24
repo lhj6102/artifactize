@@ -6,15 +6,19 @@
   // Delete (their dialogs). Source follows, folded until unfolded: the file's text, typed over
   // in place, written by Save or Ctrl+S and put back by Revert. Every edit names the text it was
   // shown; a refusal is said under what it concerns, and what was typed stays.
+  import { untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import type { BranchKey } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
+  import { useCommands } from "../shell/commands.svelte";
   import { composing } from "../shell/keys";
   import type { Place } from "./definitions.svelte";
 
-  let { branch, name }: { branch: BranchKey; name: string } = $props();
-  const { definitions: defs } = getAppState();
+  let { branch, name, active = true }: { branch: BranchKey; name: string; active?: boolean } = $props();
+  const app = getAppState();
+  const defs = $derived(app.definitionsFor(branch));
 
   const node = $derived(defs.node(name));
   const file = $derived(node ? (defs.view?.files[node.definition] ?? "") : "");
@@ -30,16 +34,30 @@
   /** The line a refused Source names, marked in its margin. */
   const marked = $derived(refused?.at === "source" ? Number(/line (\d+)/.exec(refused.text)?.[1] ?? 0) : 0);
 
-  /** The project's Artifacts the Parts field suggests: not this one, not its parts, those whose
-   * names hold what is typed. */
-  const suggested = $derived.by(() => {
-    if (adding === null || !defs.view || !node) return [];
-    const typed = adding.trim().toLowerCase();
-    return defs.view.nodes
-      .map((other) => other.name)
-      .filter((other) => other !== name && !node.parts.includes(other) && other.toLowerCase().includes(typed))
-      .slice(0, 8);
-  });
+  const suggested = $derived(adding !== null && form.options?.input === adding ? form.options.parts : []);
+
+  /** Text matching is presentation; only the engine admits a candidate as a new part. */
+  const readParts: Attachment = () => {
+    const [text, owner, whole, at] = [adding, defs, name, branch];
+    const definitions = owner.view;
+    if (text === null || !definitions) return;
+    const typed = text.trim().toLowerCase();
+    const options = definitions.nodes.map((candidate) => candidate.name).filter((candidate) => candidate.toLowerCase().includes(typed));
+    let live = true;
+    const target = untrack(() => owner.form(whole));
+    void (async () => {
+      const parts: string[] = [];
+      for (let index = 0; live && parts.length < 8 && index < options.length; index += 8) {
+        const admitted = await Promise.all(options.slice(index, index + 8).map(async (part) => {
+          try { return (await owner.check(at, { kind: "addPart", whole, part, at: null })).kind === "checked" ? [part] : []; }
+          catch { return []; }
+        }));
+        parts.push(...admitted.flat());
+      }
+      if (live) target.options = { input: text, parts: parts.slice(0, 8) };
+    })();
+    return () => { live = false; };
+  };
 
   async function edit(at: Place, operation: Parameters<typeof defs.edit>[1]): Promise<boolean> {
     const typing = defs.form(name);
@@ -104,6 +122,9 @@
     if (refused?.at === "source") defs.form(name).refused = null;
   }
 
+  useCommands(() => [{ id: "graph.save-source", group: "Graph", label: "Save Source", keys: "Ctrl+S", run: () => void save(), enabled: () => !!draft && !defs.busy }],
+    () => active && node !== undefined);
+
   function sourceKey(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
       event.preventDefault();
@@ -125,16 +146,18 @@
       <dd class="file">{node.definition}</dd>
       <dt>Path</dt>
       <dd>
-        <input
-          class="field-input"
-          aria-label="Path of {name}"
-          spellcheck="false"
-          autocomplete="off"
-          value={path ?? node.target}
-          oninput={(event) => (defs.form(name).path = event.currentTarget.value)}
-          onkeydown={pathKey}
-        />
-        {#if node.targetMissing}<p class="refusal">{node.target} does not exist.</p>{/if}
+        <div class="path">
+          <input
+            class="field-input"
+            aria-label="Path of {name}"
+            spellcheck="false"
+            autocomplete="off"
+            value={path ?? node.target}
+            oninput={(event) => (defs.form(name).path = event.currentTarget.value)}
+            onkeydown={pathKey}
+          />
+          {#if node.targetMissing}<span class="missing">{node.target} does not exist.</span>{/if}
+        </div>
         {#if refused?.at === "path"}<p class="refusal" role="alert">{refused.text}</p>{/if}
       </dd>
       <dt>Parts</dt>
@@ -153,6 +176,7 @@
           <input
             class="field-input"
             aria-label="Add a part to {name}"
+            {@attach readParts}
             role="combobox"
             aria-expanded={suggested.length > 0}
             aria-controls="parts-of-{name}"
@@ -177,7 +201,7 @@
       </dd>
     </dl>
     <div class="actions">
-      <button class="button small quiet" data-comment-button onclick={() => defs.openField(name, "button")}>Comment</button>
+      <button class="button small quiet" data-comment-button onclick={(event) => defs.openField(name, "button", event.detail === 0)}>Comment</button>
       <button class="button small quiet" onclick={() => (defs.dialog = { kind: "rename", name })}>Rename</button>
       <button class="button small quiet" onclick={() => (defs.dialog = { kind: "delete", name })}>Delete</button>
     </div>
@@ -189,7 +213,7 @@
         {#each { length: lines } as _, at (at)}<li class:marked={at + 1 === marked}>{at + 1}</li>{/each}
       </ol>
       <textarea
-        class="text"
+        class="text bare-field"
         aria-label="Source of {name}"
         spellcheck="false"
         autocomplete="off"
@@ -249,8 +273,8 @@
   .remove {
     display: grid;
     place-items: center;
-    width: 18px;
-    height: 18px;
+    width: var(--control);
+    height: var(--control);
     padding: 0;
     border: 0;
     border-radius: var(--radius-control);
@@ -275,6 +299,7 @@
     font: var(--text-small) var(--mono);
   }
   .suggested li {
+    color: var(--ink-2);
     padding: 2px 8px;
     min-height: var(--row-dense);
     cursor: pointer;
@@ -285,17 +310,30 @@
   .suggested li:not([aria-selected="true"]):hover {
     background: var(--surface-group);
   }
-  /* The chosen suggestion, with the inset bar while the keyboard is in the field. */
   .suggested li[aria-selected="true"] {
     background: var(--selection);
-  }
-  dd:focus-within .suggested li[aria-selected="true"] {
-    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--ink);
   }
   .actions {
     display: flex;
     gap: var(--gap);
     padding: 6px 0 0;
+  }
+  .path {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
+  }
+  .path input {
+    min-width: 0;
+    flex: 1 1 50%;
+  }
+  .missing {
+    min-width: 0;
+    flex: 0 1 50%;
+    overflow-wrap: anywhere;
+    color: var(--red);
+    font-size: var(--text-small);
   }
   .refusal {
     margin: 4px 0 0;
@@ -320,13 +358,10 @@
     margin: 0;
     padding: 6px 8px 6px 0;
     list-style: none;
-    color: var(--ink-3);
+    color: var(--ink-2);
     text-align: right;
     min-width: 28px;
     user-select: none;
-  }
-  .margin li.marked {
-    color: var(--ink);
   }
   /* A refused line: the selection's background across its number and its text. */
   .mark {
@@ -359,8 +394,11 @@
   .text:focus-visible {
     outline: none;
   }
-  .source:focus-within {
+  .source:has(.text:focus) {
+    box-shadow: inset 0 0 0 1px var(--current-mark);
+  }
+  .source:has(.text:focus-visible) {
     outline: 2px solid var(--focus);
-    outline-offset: -1px;
+    outline-offset: 2px;
   }
 </style>

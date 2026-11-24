@@ -254,7 +254,10 @@ impl Transcript {
         let mut dirty = BTreeSet::new();
         match &event.kind {
             Kind::Delivery(delivery) => return self.delivery(event.send, delivery),
-            Kind::Review(_) | Kind::Attempt(_) => {}
+            Kind::Review(_)
+            | Kind::Attempt(_)
+            | Kind::RunReference { .. }
+            | Kind::ToolOutcome(_) => {}
             Kind::Send(send) => {
                 self.active = None;
                 self.assistant = None;

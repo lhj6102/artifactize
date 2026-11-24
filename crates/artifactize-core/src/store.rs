@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::{platform, workspace::canonical_target};
 
 mod blocked;
+pub(crate) mod chat;
 pub mod definitions;
 mod executions;
 pub(crate) mod history;
@@ -36,7 +37,11 @@ pub use snapshots::{
     ValidationSnapshot,
 };
 mod wait_timeout;
-pub use catalog::{CatalogRun, Signoff, read_catalog};
+pub(crate) use catalog::places as read_run_places;
+pub use catalog::{
+    CatalogRun, Signoff, read_catalog, read_catalog_run, read_open_run_ids, run_checkout,
+    viewer_checkout,
+};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
 pub(crate) mod reader;
 mod removed;
@@ -56,13 +61,13 @@ pub use receipts::{
 };
 pub use requests::read_request_repo;
 pub use requests::{
-    RequestView, Shown, read_original, read_original_as, read_request, read_request_as,
-    read_request_batch, read_requests, read_requests_in, read_run_requests, read_session_request,
-    read_waiting, read_waiting_originals,
+    RequestView, Shown, read_optional_request, read_original, read_original_as, read_request,
+    read_request_as, read_request_batch, read_request_by_id, read_request_id, read_requests,
+    read_requests_in, read_review_owner, read_run_requests, read_run_requests_by_id,
+    read_session_request, read_waiting, read_waiting_originals,
 };
 pub(crate) use requests::{
-    read_request_by_id, read_request_by_session, read_request_id, read_request_repo_by_id,
-    read_requests_for_run,
+    read_request_by_session, read_request_repo_by_id, read_requests_for_run, read_review_batch,
 };
 
 /// How long one database operation waits for the state other processes are writing before it
@@ -194,7 +199,7 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
 /// and numbers every change of a Run, request or execution row; schema 10 adds the open
 /// WAITING_HUMAN Run and names a Run that ended with only sign-offs left YELLOW. Versions from
 /// schema 6 upgrade additively.
-pub const STATE_SCHEMA_VERSION: u32 = 10;
+pub const STATE_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set {}", state_home_variables())]

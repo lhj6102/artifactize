@@ -1,15 +1,10 @@
 path = ".github/"
+type = "files"
 parts = ["release-observer"]
-
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
 
 [evals.coherent]
 title = "The release packaging, its smoke checks and its notes agree"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.coherent.payload]

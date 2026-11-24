@@ -9,6 +9,7 @@ pub mod auth;
 pub mod broker;
 pub mod cache;
 pub mod changes;
+pub mod chat;
 pub mod config;
 pub mod diagnostics;
 pub mod graph;
@@ -36,6 +37,7 @@ pub mod store;
 pub mod task;
 pub mod tools;
 pub mod types;
+pub mod viewer;
 pub mod workspace;
 
 /// Links, permissions, processes and the Windows stand-ins for Unix utilities, shared with
@@ -56,3 +58,5 @@ mod test_request;
 #[cfg(test)]
 #[path = "../tests/support/session_files.rs"]
 mod test_session_files;
+
+pub mod verify_tools;

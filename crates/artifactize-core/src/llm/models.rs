@@ -14,12 +14,168 @@ pub(super) const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct ListedModel {
     pub slug: crate::config::ModelId,
     pub display_name: String,
+    pub efforts: Vec<String>,
+    pub default_effort: Option<String>,
+}
+
+impl ListedModel {
+    pub(super) fn new(slug: crate::config::ModelId, display_name: String) -> Self {
+        Self {
+            slug,
+            display_name,
+            efforts: Vec::new(),
+            default_effort: None,
+        }
+    }
+
+    pub(super) fn with_efforts(
+        mut self,
+        efforts: impl IntoIterator<Item = String>,
+        default: Option<String>,
+    ) -> Self {
+        for effort in efforts {
+            if !effort.is_empty() && !self.efforts.contains(&effort) {
+                self.efforts.push(effort);
+            }
+        }
+        // The picker and new sessions share one order: a provider's declared default
+        // first, otherwise the first advertised level is the starting choice.
+        if let Some(index) =
+            default.and_then(|default| self.efforts.iter().position(|effort| *effort == default))
+        {
+            let default = self.efforts.remove(index);
+            self.efforts.insert(0, default);
+        }
+        self.default_effort = self.efforts.first().cloned();
+        self
+    }
 }
 
 #[derive(Serialize)]
 pub struct Listing {
     pub backend: Backend,
     pub models: Vec<ListedModel>,
+}
+
+/// The result a model menu renders. Absence of setup is not a failed listing.
+pub enum Availability {
+    Models(Vec<ListedModel>),
+    NotSetUp {
+        reason: String,
+    },
+    Failed {
+        error: String,
+    },
+    CliMissing {
+        reason: String,
+    },
+    CliTooOld {
+        version: semver::Version,
+        required_version: semver::Version,
+        error: String,
+    },
+}
+
+impl Availability {
+    fn listed(listing: Result<Vec<ListedModel>, String>) -> Self {
+        match listing {
+            Ok(models) => Self::Models(models),
+            Err(error) => Self::Failed { error },
+        }
+    }
+}
+
+/// Discover models and classify setup failures at the native provider boundary.
+pub async fn availability(
+    backend: Backend,
+    state: Option<&Path>,
+    repo: Option<&Path>,
+) -> Availability {
+    use super::Route;
+    use crate::auth::{antigravity, claude_agent, codex};
+    use Availability::*;
+    let route = match super::route(&backend, state, repo, "to list models") {
+        Ok(route) => route,
+        Err(failure) if failure.code == crate::agent::error::Code::Authentication => {
+            return NotSetUp {
+                reason: failure.message,
+            };
+        }
+        Err(failure) => {
+            return Failed {
+                error: failure.message,
+            };
+        }
+    };
+    match route {
+        Route::Antigravity => {
+            use super::antigravity::{MINIMUM, Problem};
+            match antigravity::models_checked().await {
+                Ok(models) => Models(models),
+                Err(Problem::Missing) => CliMissing {
+                    reason: "Install the Antigravity CLI (agy).".into(),
+                },
+                Err(Problem::SignedOut) => NotSetUp {
+                    reason: "Sign in to Antigravity with Google.".into(),
+                },
+                Err(Problem::TooOld { version }) => CliTooOld {
+                    error: format!("Update Antigravity to {MINIMUM} or newer."),
+                    version,
+                    required_version: MINIMUM,
+                },
+                Err(problem) => Failed {
+                    error: crate::agent::error::Failure::from(problem).message,
+                },
+            }
+        }
+        Route::ClaudeAgent => {
+            let minimum = super::claude_agent::MINIMUM_VERSION;
+            match claude_agent::cli_version().await {
+                Ok(None) => {
+                    return CliMissing {
+                        reason: "Install Claude Code (claude).".into(),
+                    };
+                }
+                Ok(Some(version)) if version < minimum => {
+                    return CliTooOld {
+                        error: format!("Update Claude Code to {minimum} or newer."),
+                        version,
+                        required_version: minimum,
+                    };
+                }
+                Err(error) => return Failed { error },
+                Ok(Some(_)) => {}
+            }
+            match claude_agent::status().await {
+                claude_agent::Status::Missing => CliMissing {
+                    reason: "Install Claude Code (claude).".into(),
+                },
+                claude_agent::Status::SignedOut => NotSetUp {
+                    reason: "Sign in to Claude Code.".into(),
+                },
+                claude_agent::Status::Failed { error } => Failed { error },
+                claude_agent::Status::SignedIn { .. } => {
+                    Availability::listed(super::claude_agent::models().await)
+                }
+            }
+        }
+        Route::Http(super::HttpRoute {
+            api: Api::Codex,
+            base,
+            ..
+        }) => match codex::status(state, repo) {
+            Ok(codex::Status::Absent) => NotSetUp {
+                reason: "Sign in to Codex.".into(),
+            },
+            Ok(codex::Status::Refused { reason }) => Failed { error: reason },
+            Err(error) => Failed { error },
+            Ok(_) => Availability::listed(super::codex::models(&base, state, repo).await),
+        },
+        Route::Http(super::HttpRoute { api, base, key }) => {
+            let key = key.as_ref().map_or("", |key| key.expose());
+            Availability::listed(list_at(api, key, super::adapter_base(&base)).await)
+        }
+    }
 }
 
 /// `state` holds saved keys, custom providers and Codex credentials; `repo` keeps them
@@ -32,6 +188,7 @@ pub async fn list(
     let route =
         super::route(&backend, state, repo, "to list models").map_err(|failure| failure.message)?;
     let models = match route {
+        super::Route::Antigravity => crate::auth::antigravity::models().await?,
         super::Route::ClaudeAgent => super::claude_agent::models().await?,
         super::Route::Http(super::HttpRoute {
             api: Api::Codex,
@@ -71,7 +228,9 @@ async fn list_at(api: Api, key: &str, base: &str) -> Result<Vec<ListedModel>, St
                     .list_models()
                     .await
             }
-            Api::Codex | Api::ClaudeAgent => unreachable!("they list their own models"),
+            Api::Codex | Api::ClaudeAgent | Api::Antigravity => {
+                unreachable!("they list their own models")
+            }
         }
     };
     let models = tokio::time::timeout(LIST_TIMEOUT, request)
@@ -93,10 +252,14 @@ async fn list_at(api: Api, key: &str, base: &str) -> Result<Vec<ListedModel>, St
     Ok(models
         .into_iter()
         .filter_map(|model| {
-            Some(ListedModel {
-                slug: model.id.parse().ok()?,
-                display_name: model.name.unwrap_or(model.id),
-            })
+            let slug = model.id.parse().ok()?;
+            let (efforts, default) = super::api::model_efforts(api, &model.id);
+            Some(
+                ListedModel::new(slug, model.name.unwrap_or(model.id)).with_efforts(
+                    efforts.iter().map(|effort| (*effort).to_owned()),
+                    default.map(str::to_owned),
+                ),
+            )
         })
         .collect())
 }
@@ -125,8 +288,8 @@ mod tests {
                 assert_eq!(
                     serde_json::to_value(models).unwrap(),
                     json!([
-                        {"slug":"z-model","display_name":"z-model"},
-                        {"slug":"a-model","display_name":"A model"}
+                        {"slug":"z-model","display_name":"z-model","efforts":[],"default_effort":null},
+                        {"slug":"a-model","display_name":"A model","efforts":[],"default_effort":null}
                     ])
                 );
                 let requests = openai.requests();
@@ -142,14 +305,14 @@ mod tests {
             vec![
                 MockHttpResponse::success(
                     json!({
-                        "data":[{"id":"first", "display_name":"First"}],
+                        "data":[{"id":"first", "display_name":"First","efforts":[],"default_effort":null}],
                         "has_more":true,
                         "last_id":"first",
                     })
                     .to_string(),
                 ),
                 MockHttpResponse::success(
-                    json!({"data":[{"id":"second", "display_name":"Second"}],"has_more":false})
+                    json!({"data":[{"id":"second", "display_name":"Second","efforts":[],"default_effort":null}],"has_more":false})
                         .to_string(),
                 ),
             ],
@@ -160,8 +323,8 @@ mod tests {
                 assert_eq!(
                     serde_json::to_value(models).unwrap(),
                     json!([
-                        {"slug":"first","display_name":"First"},
-                        {"slug":"second","display_name":"Second"}
+                        {"slug":"first","display_name":"First","efforts":[],"default_effort":null},
+                        {"slug":"second","display_name":"Second","efforts":[],"default_effort":null}
                     ])
                 );
                 let requests = anthropic.requests();

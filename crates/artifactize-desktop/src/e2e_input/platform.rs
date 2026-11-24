@@ -27,6 +27,17 @@ pub(super) async fn apply<R: Runtime>(
     window
         .with_webview(move |view| {
             #[cfg(target_os = "linux")]
+            if let Some(command) = match &input {
+                Input::Copy => Some("Copy"),
+                Input::Paste => Some("Paste"),
+                _ => None,
+            } {
+                use webkit2gtk::WebViewExt;
+                view.inner().execute_editing_command(command);
+                let _ = sender.send(Ok(()));
+                return;
+            }
+            #[cfg(target_os = "linux")]
             let pointer = {
                 use gtk::glib::translate::ToGlibPtr;
                 let pointer: *mut webkit2gtk::ffi::WebKitWebView = view.inner().to_glib_none().0;
@@ -69,7 +80,9 @@ unsafe fn native(view: *mut std::ffi::c_void, input: Input) -> Result<(), String
         fn arti_ime_set(view: *mut c_void, text: *const c_char) -> *const c_char;
         fn arti_ime_commit(view: *mut c_void, text: *const c_char) -> *const c_char;
         fn arti_ime_cancel(view: *mut c_void) -> *const c_char;
+        #[cfg(target_os = "macos")]
         fn arti_edit_copy(view: *mut c_void) -> *const c_char;
+        #[cfg(target_os = "macos")]
         fn arti_edit_paste(view: *mut c_void) -> *const c_char;
     }
     let text =
@@ -81,8 +94,14 @@ unsafe fn native(view: *mut std::ffi::c_void, input: Input) -> Result<(), String
             Input::Set { text: value } => arti_ime_set(view, text(value)?.as_ptr()),
             Input::Commit { text: value } => arti_ime_commit(view, text(value)?.as_ptr()),
             Input::Cancel => arti_ime_cancel(view),
+            #[cfg(target_os = "macos")]
             Input::Copy => arti_edit_copy(view),
+            #[cfg(target_os = "macos")]
             Input::Paste => arti_edit_paste(view),
+            #[cfg(target_os = "linux")]
+            Input::Copy | Input::Paste => {
+                unreachable!("the safe WebKitGTK command path handled Copy and Paste")
+            }
         }
     };
     if error.is_null() {

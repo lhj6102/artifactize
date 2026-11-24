@@ -17,6 +17,7 @@
 
 - [코딩 에이전트와 함께 쓰기](agent-plugin/plugin.md)
 - [도구와 하네스 세션](guides/tools.md)
+- [Artifact 유형과 뷰어 플러그인](guides/viewer-plugins.md)
 - [데스크톱 앱](guides/interfaces.md)
 - [팀 리뷰 저장소와 CI](guides/team-and-ci.md)
 

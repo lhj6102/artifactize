@@ -217,6 +217,7 @@ pub fn select_profiles(
     }
     // Runtime variants can introduce or remove argv references and dependency gates.
     crate::scope::resolve_config(&mut config).map_err(|error| error.to_string())?;
+    crate::scope::validate_eval_tools(&config).map_err(|error| error.to_string())?;
     Ok(config)
 }
 

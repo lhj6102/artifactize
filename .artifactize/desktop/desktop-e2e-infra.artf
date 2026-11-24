@@ -1,24 +1,21 @@
 path = "crates/artifactize-desktop/ui/e2e/"
-select = ["platform.ts", "portable.ts", "build.ts", "run.ts", "wdio.conf.ts", "journey.spec.ts", "restarted.spec.ts", "scenario.ts", "catalog.ts", "fixtures", "input.ts", "keys.ts", "check-integrity.ts", "package.json", "tsconfig.json", "provider-upstream.json", "input.test.ts", "keys.test.ts", "runner.test.ts"]
+type = "files"
+select = ["platform.ts", "portable.ts", "build.ts", "run.ts", "batch-lifecycle.ts", "wdio.conf.ts", "journey.spec.ts", "restarted.spec.ts", "scenario.ts", "catalog.ts", "fixtures", "input.ts", "keys.ts", "check-integrity.ts", "package.json", "tsconfig.json", "provider-upstream.json", "input.test.ts", "keys.test.ts", "runner.test.ts"]
 # The E2E suite's infrastructure: the platform layer, the runner and build, the fixtures and
 # the input helpers the views use; a part of desktop-e2e.
 
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
-
 [evals.follows-rules]
 title = "The suite's infrastructure runs every scenario isolated and portably and fails explicitly"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 
 [evals.follows-rules.payload]
 instruction = """
-Read E2E-INPUT, E2E-PLATFORM, E2E-ISOLATED, E2E-EXPLICIT-FAILURE and E2E-FAILURE-EVIDENCE of the end-to-end rules {desktop-e2e-rules} and \
+Read E2E-INPUT, E2E-PLATFORM, E2E-ISOLATED, E2E-EXPLICIT-FAILURE, E2E-FAILURE-EVIDENCE and E2E-TEST-BUILD-ONLY of the end-to-end rules {desktop-e2e-rules} and \
 the platform checklist {rules-platform}. Review the infrastructure of the suite {desktop-e2e-infra} (the platform \
-layer, the runner and build, the fixtures and the input helpers) against them. Report only a defect you can show: \
+layer, the runner and build, the fixtures and the input helpers) against them. Follow their imports into {desktop-e2e-cases} and {desktop-e2e-integrity} as needed. For E2E-TEST-BUILD-ONLY, check that the \
+runner selects the test-only build with its matching frontend and capabilities, including when given an existing test \
+candidate. Judge the runner's selection, not what the release build contains. Report only a defect you can show: \
 name the OS, the order of scenarios or the timing under which it happens and the concrete failure or false pass it \
 causes, such as a scenario that breaks on one OS, a result that depends on order, state that reaches the user's or \
 another scenario's, or a failure that passes. Hardening, theoretical edge cases, further checks and style are not \
@@ -29,4 +26,4 @@ title = "The infrastructure's unit tests pass"
 profile = { kind = "runtime", command = "node", args = ["run.ts", "unit"], timeout_ms = 600000 }
 
 [evals.unit.payload]
-instruction = "Run the unit tests of the suite's infrastructure {desktop-e2e-infra}: its input helpers, its key retries and its runner's pure functions."
+instruction = "Run the unit tests of the suite's infrastructure {desktop-e2e-infra}: its input helpers, its key retries and its runner’s pure functions. The runner imports {desktop-e2e-cases} and {desktop-e2e-integrity}."

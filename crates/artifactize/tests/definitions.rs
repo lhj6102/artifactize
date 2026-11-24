@@ -366,6 +366,36 @@ fn migration_keeps_comments_makes_parts_explicit_and_leaves_nested_project() {
 }
 
 #[test]
+fn migrated_program_text_is_decoded_for_native_lookup_and_execution() {
+    let project = Project::new();
+    fs::remove_dir(project.repo.join(".artifactize")).unwrap();
+    let (directory, executable) = support::os::program_with_special_path(project.root.path());
+    let portable = artifactize_core::platform::path_text(&executable);
+    let command = serde_json::to_string(executable.to_str().unwrap_or(&portable)).unwrap();
+    project.write(
+        "index.artf",
+        &format!(
+            r#"name = "root"
+[evals.check]
+title = "Run the native executable"
+profile = {{ kind = "runtime", command = {command}, args = [] }}
+payload.instruction = "Check the executable."
+"#
+        ),
+    );
+    project.json(&["config", "migrate", "--json"], 0);
+    let migrated = fs::read_to_string(project.repo.join(".artifactize/root.artf")).unwrap();
+    let doc: toml::Value = toml::from_str(&migrated).unwrap();
+    assert_eq!(
+        doc["evals"]["check"]["profile"]["command"].as_str(),
+        Some(portable.as_str())
+    );
+    project.json(&["verify", "--all", "--wait", "--json"], 0);
+    // Keep tempdir cleanup independent of the legacy Win32 alias for this directory name.
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
 fn migration_drops_agent_result_schemas_and_keeps_human_ones() {
     let project = Project::new();
     fs::remove_dir(project.repo.join(".artifactize")).unwrap();
@@ -455,7 +485,7 @@ async fn file_builtin_shares_the_definition_view_without_stripping_user_schema_k
         "definitions",
         "path = \".artifactize/\"\nbasis = true\n[views.agent_tools.read]\nbuiltin = \"read\"\n",
     );
-    project.node("source", "path = \"src/\"\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload.instruction = 'Review.'\npass_schema = { type = 'object', properties.comment = { type = 'string' } }\n[annotations.comment]\ntext = 'hidden-note'\n");
+    project.node("source", "path = \"src/\"\ntype = \"files\"\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload.instruction = 'Review.'\npass_schema = { type = 'object', properties.comment = { type = 'string' } }\n[annotations.comment]\ntext = 'hidden-note'\n");
     let config = read_workspace_config(&project.repo).unwrap();
     let registry = Registry::for_artifact(&config, &"definitions".parse().unwrap()).unwrap();
     let result = registry
@@ -854,4 +884,87 @@ fn status_reports_unavailable_targets_per_eval_without_losing_other_forecasts() 
         !project.root.path().join("state").exists(),
         "status remains read-only"
     );
+}
+
+#[test]
+fn verify_and_config_check_require_tools_for_the_actual_eval_scope() {
+    let project = Project::new();
+    project.write("notes.md", "Hello\n");
+    project.node("notes", "path = \"notes.md\"\nbasis = true\n");
+    project.node(
+        "app",
+        r#"path = "app/"
+[evals.inspect]
+title = "Inspect notes"
+profile = { kind = "agent", backend = "openai", model = "fixture" }
+payload.instruction = "Inspect {notes}."
+"#,
+    );
+    project.write("app/data.txt", "app\n");
+    let error = project.cli(&["config", "check"]);
+    let error = String::from_utf8(error.stderr).unwrap();
+    assert!(
+        error.contains("app/inspect")
+            && error.contains("Artifact app")
+            && error.contains("[views.agent_tools]"),
+        "{error}"
+    );
+    project.node(
+        "app",
+        r#"path = "app/"
+type = "files"
+[evals.signoff]
+title = "Inspect notes"
+profile = { kind = "human" }
+payload.instruction = "Inspect {notes}."
+"#,
+    );
+    for args in [&["config", "check"][..], &["verify", "--all", "--wait"][..]] {
+        let output = project.cli(args);
+        let error = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(
+            error.contains("app/signoff")
+                && error.contains("notes")
+                && error.contains("[views.human_tools]"),
+            "{error}"
+        );
+    }
+    let report = project.json(&["config", "migrate", "--json"], 0);
+    assert_eq!(report["typed"], serde_json::json!(["notes"]));
+    assert!(project.cli(&["config", "check"]).status.success());
+}
+
+#[test]
+fn installed_html_plugin_supplies_type_and_removed_plugin_does_not() {
+    let project = Project::new();
+    project.write("page.html", "<h1>Hello</h1>");
+    project.node(
+        "page",
+        "path = \"page.html\"\ntype = \"html\"\nbasis = true\n",
+    );
+    assert_eq!(project.cli(&["config", "check"]).status.code(), Some(2));
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins/html");
+    let added = project.json(&["plugin", "add", example.to_str().unwrap(), "--json"], 0);
+    assert_eq!(
+        added,
+        serde_json::json!({"type":"html","title":"HTML Viewer","viewer":true,"builtin":false})
+    );
+    assert!(project.cli(&["config", "check"]).status.success());
+    let types = project.json(&["plugin", "list", "--json"], 0);
+    assert!(
+        types
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["type"] == "html")
+    );
+    let viewer = artifactize_core::viewer::Session::open(&project.repo, &name("page")).unwrap();
+    assert_eq!(
+        viewer.read_text(&"".parse().unwrap()).unwrap(),
+        "<h1>Hello</h1>"
+    );
+    assert!(viewer.read_text(&"other.html".parse().unwrap()).is_err());
+    project.json(&["plugin", "remove", "html", "--json"], 0);
+    assert_eq!(project.cli(&["config", "check"]).status.code(), Some(2));
 }

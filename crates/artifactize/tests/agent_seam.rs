@@ -243,7 +243,7 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
         );
         assert_eq!(
             listing,
-            json!({"backend":backend,"models":[{"slug":model,"display_name":model}]})
+            json!({"backend":backend,"models":[{"slug":model,"display_name":model,"efforts":[],"default_effort":null}]})
         );
     }
     let paths: Vec<_> = provider.requests().iter().map(|r| r.path.clone()).collect();

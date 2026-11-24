@@ -29,6 +29,7 @@ pub enum Key {
     /// review.
     Artifact {
         repo: PathBuf,
+        branch: crate::monitor::live::Place,
         artifact: ArtifactName,
     },
 }
@@ -151,17 +152,32 @@ pub struct Event {
 
 /// Where runs send their events; cloned into each job a review starts.
 #[derive(Debug, Clone)]
-pub struct Sink(mpsc::UnboundedSender<Event>);
+pub struct Sink {
+    sender: mpsc::UnboundedSender<Event>,
+    wait_for_viewer: bool,
+}
 
 /// The review's end of the log. Every run bounds its output, so the channel is unbounded.
 pub type Events = mpsc::UnboundedReceiver<Event>;
 
 pub fn channel() -> (Sink, Events) {
     let (sender, receiver) = mpsc::unbounded_channel();
-    (Sink(sender), receiver)
+    (
+        Sink {
+            sender,
+            wait_for_viewer: false,
+        },
+        receiver,
+    )
 }
 
 impl Sink {
+    /// The desktop will complete a Viewer run after opening its native window.
+    pub fn with_viewer_launch(mut self) -> Self {
+        self.wait_for_viewer = true;
+        self
+    }
+
     /// Start a run of `operation` of `artifact` in the log of `key`: its start line is logged
     /// now.
     pub fn start(&self, key: impl Into<Key>, operation: &str, artifact: &str) -> Run {
@@ -188,7 +204,7 @@ impl Shared {
     fn send(&self, kind: Kind) {
         if let Some((sink, key)) = &self.watch {
             // A closed review discards what its runs still print.
-            let _ = sink.0.send(Event {
+            let _ = sink.sender.send(Event {
                 key: key.clone(),
                 run: self.run,
                 kind,
@@ -200,8 +216,7 @@ impl Shared {
         if !self.watched() {
             return;
         }
-        let text =
-            String::from_utf8(crate::runtime::clean_output(bytes)).expect("clean output is UTF-8");
+        let text = crate::platform::clean_program_text(bytes);
         let size = text.len().max(1);
         // A compare-and-swap loop rather than `fetch_update`, which newer toolchains
         // deprecate under another name.
@@ -280,6 +295,13 @@ impl Run {
         {
             observe(identity);
         }
+    }
+
+    pub(crate) fn waits_for_viewer(&self) -> bool {
+        self.shared
+            .watch
+            .as_ref()
+            .is_some_and(|(sink, _)| sink.wait_for_viewer)
     }
 
     pub(crate) fn watched(&self) -> bool {

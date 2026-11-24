@@ -18,9 +18,13 @@ export type Draft = { base: string; text: string };
 export type Where = "detail" | "graph" | "dialog";
 
 /** A refusal in words, a sentence a person can read. */
-export function refusalText(refusal: EditRefusal): string {
+export function refusalText(refusal: EditRefusal, location = true): string {
   switch (refusal.kind) {
     case "invalid":
+      if (!location) {
+        const detail = refusal.message.replace(/^line \d+(?:, column \d+)?:\s*/, "");
+        return `${refusal.file}: ${detail}`;
+      }
       return refusal.line !== null && !refusal.message.includes(`line ${refusal.line}`)
         ? `line ${refusal.line}${refusal.column !== null ? `, column ${refusal.column}` : ""}: ${refusal.message}`
         : refusal.message;
@@ -43,6 +47,7 @@ export class DefinitionForm {
   path = $state<string | null>(null);
   /** The Parts field's text while a part is being added. */
   adding = $state<string | null>(null);
+  options = $state.raw<{ input: string; parts: string[] } | null>(null);
   chosen = $state(0);
   refused = $state<{ at: Place; text: string } | null>(null);
 }
@@ -67,6 +72,7 @@ export class Definitions {
 
   /** The definitions of the branch last read. */
   view = $state.raw<DefinitionsView | null>(null);
+  readonly #nodes = $derived(new SvelteMap(this.view?.nodes.map((node) => [node.name, node])));
   /** Why the definitions cannot be read now; the graph is drawn without places or comments. */
   error = $state<string | null>(null);
   /** Why the last edit made on the graph wrote nothing, for the Main area's notice. */
@@ -75,7 +81,7 @@ export class Definitions {
   busy = $state(false);
   /** The comment field open under an Artifact's node, and where it was opened from: the
    * Definition's Comment button, or a click on the comment. */
-  field = $state.raw<{ name: string; from: "button" | "graph" } | null>(null);
+  field = $state.raw<{ name: string; from: "button" | "graph"; keyboard: boolean } | null>(null);
   /** What the open comment field holds, from the comment as it opened. */
   fieldText = $state("");
   /** What each Artifact's Definition has typed, by name, while the app runs. */
@@ -122,13 +128,13 @@ export class Definitions {
 
   /** Open the comment field of `name`, from the Definition's button or the graph, holding its
    * comment as it is now. */
-  openField(name: string, from: "button" | "graph") {
+  openField(name: string, from: "button" | "graph", keyboard = false) {
     this.fieldText = this.node(name)?.comment ?? "";
-    this.field = { name, from };
+    this.field = { name, from, keyboard };
   }
 
   node(name: string): DefinitionNode | undefined {
-    return this.view?.nodes.find((node) => node.name === name);
+    return this.#nodes.get(name);
   }
 
   /** The read of the branch last asked for, while it has not answered. */
@@ -188,16 +194,6 @@ export class Definitions {
     return this.#checks[key];
   }
 
-  /** Whether the library says it would accept `operation`, for a drop target's highlight; a
-   * check that could not be made highlights nothing. */
-  async accepts(branch: BranchKey, operation: EditOperation): Promise<boolean> {
-    try {
-      return (await this.check(branch, operation)).kind === "checked";
-    } catch {
-      return false;
-    }
-  }
-
   /** The text each file was shown with: the definitions' files, a Source's saved text being
    * the text it was typed over. The library says which of them an edit writes. */
   shown(operation: EditOperation): Record<string, string> {
@@ -237,7 +233,7 @@ export class Definitions {
         this.rescan(branch);
         return null;
       }
-      const why = refusalText(outcome.refusal);
+      const why = refusalText(outcome.refusal, where !== "graph");
       if (where === "graph") this.notice = why;
       await this.load(branch);
       // A file changed on disk: the Current shows what is there now, and so do the Definition's

@@ -132,7 +132,7 @@
   .navigator {
     position: absolute;
     right: calc(var(--detail-cover, 0px) + 8px);
-    bottom: 8px;
+    bottom: var(--float-inset, 8px);
     z-index: 6;
     padding: 3px;
     background: var(--surface-raised);

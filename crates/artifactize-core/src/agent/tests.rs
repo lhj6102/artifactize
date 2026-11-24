@@ -168,7 +168,7 @@ impl Fixture {
                 ),
                 "fake-anthropic-key".into(),
             ),
-            Provider::Codex | Provider::Gemini | Provider::ClaudeAgent => {
+            Provider::Codex | Provider::Gemini | Provider::ClaudeAgent | Provider::Antigravity => {
                 unreachable!("Codex, Gemini and Claude Code reviews are tested on their own")
             }
         };

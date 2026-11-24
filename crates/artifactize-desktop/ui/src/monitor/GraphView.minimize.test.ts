@@ -16,15 +16,12 @@ vi.mock("@xyflow/svelte", async (original) => {
   const flow = await original<typeof import("@xyflow/svelte")>();
   return { ...flow, useSvelteFlow: () => ({ ...flow.useSvelteFlow(), ...camera }) };
 });
-/** Each copy drawn as a node placed in a row, in drawing order, 240 apart, and the wholes each
- * layout was asked to minimize. */
-const laid = vi.hoisted(() => ({ minimized: [] as string[][] }));
+/** Place each copy in a fixed row so only the resulting drawing is under test. */
 vi.mock("./layout", async () => {
   const { copies } = await import("./parts");
   return {
     NODE: { width: 168, height: 44 },
     layout: async (graph: Shape, minimized: readonly string[] = []) => {
-      laid.minimized.push([...minimized]);
       const nodes = copies(graph, minimized).filter((copy) => copy.parts.length === 0);
       return new Map(nodes.map((copy, at) => [copy.key, { x: at * 240, y: 0 }]));
     },
@@ -50,7 +47,6 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  laid.minimized = [];
   viewport = { x: 30, y: 20, zoom: 0.5 };
   camera.getViewport.mockImplementation(() => viewport);
   camera.setViewport.mockImplementation(async (next: Viewport) => {
@@ -59,7 +55,9 @@ beforeEach(() => {
   });
 });
 
+const fixtureElements: HTMLElement[] = [];
 afterEach(() => {
+  for (const element of fixtureElements.splice(0)) element.remove();
   cleanup();
   clearMocks();
   vi.resetAllMocks();
@@ -115,7 +113,6 @@ it("minimizes a whole to a node that says how many parts it has and expands it a
   await fireEvent.click(button("Minimize suite")!);
   await waitFor(() => expect(node("a:suite")?.classList.contains("svelte-flow__node-minimized")).toBe(true));
   expect(onopen).not.toHaveBeenCalled();
-  expect(laid.minimized.at(-1)).toEqual(["a:suite"]);
   expect(node("a:suite/a:app")).toBeNull();
   expect(node("a:suite")?.textContent).toContain("2 parts");
   expect(node("a:suite")?.getAttribute("aria-label")).toBe("suite: RED, minimized, 2 parts");
@@ -151,20 +148,18 @@ it("keeps a whole minimized on every graph of its branch, and only there", async
   expect(app.monitor.minimizedOn(BRANCH)).toEqual(["a:suite"]);
 
   // Another Run of the branch, and its Current, draw suite minimized.
-  const before = laid.minimized.length;
+  const prior = node("a:suite");
   await rerender({ source: { kind: "run", run: "run-b" }, revision: 2 });
-  // The new Run's own layout, not the one already drawn.
-  await waitFor(() => expect(laid.minimized.length).toBe(before + 1));
-  expect(laid.minimized.at(-1)).toEqual(["a:suite"]);
-  await waitFor(() => expect(node("a:suite")?.classList.contains("svelte-flow__node-minimized")).toBe(true));
+  await waitFor(() => expect(node("a:suite")).not.toBe(prior));
+  expect(node("a:suite")?.classList.contains("svelte-flow__node-minimized")).toBe(true);
+  const fromRun = node("a:suite");
   await rerender({ source: { kind: "current", branch: BRANCH }, revision: 3 });
-  await waitFor(() => expect(laid.minimized.length).toBe(3));
-  expect(laid.minimized.at(-1)).toEqual(["a:suite"]);
+  await waitFor(() => expect(node("a:suite")).not.toBe(fromRun));
+  expect(node("a:suite")?.classList.contains("svelte-flow__node-minimized")).toBe(true);
 
   // Another branch's graph draws its box.
   const other: BranchKey = { kind: "branch", common: "/work/app/.git", branch: "feature" };
   await rerender({ source: { kind: "current", branch: other }, branch: other, revision: 4 });
-  await waitFor(() => expect(laid.minimized.at(-1)).toEqual([]));
   await waitFor(() => expect(node("a:suite/a:app")).not.toBeNull());
 });
 
@@ -208,6 +203,7 @@ it("ignores m typed in a field, during a composition, with a modifier or with fo
   await fireEvent.keyDown(document.body, { key: "m" });
   app.monitor.focus = "detail";
   const field = document.createElement("input");
+  fixtureElements.push(field);
   document.body.append(field);
   await fireEvent.keyDown(field, { key: "m" });
   // The real Detail's non-editable focus cannot host native preedit; exercise
@@ -217,12 +213,11 @@ it("ignores m typed in a field, during a composition, with a modifier or with fo
   await fireEvent.keyDown(document.body, { key: "m", ctrlKey: true });
   field.remove();
   expect(app.monitor.minimizedOn(BRANCH)).toEqual([]);
-  expect(laid.minimized).toEqual([[]]);
 });
 
-it("names m in the button's name and its tooltip, and nowhere else on the graph", async () => {
+it("names the whole action in the tooltip, without a visible shortcut", async () => {
   await drawn();
-  expect(button("Minimize suite")?.title).toBe("Minimize (m)");
+  expect(button("Minimize suite")?.title).toBe("Minimize");
   expect(button("Minimize suite")?.getAttribute("aria-keyshortcuts")).toBe("m");
   expect(document.querySelector(".svelte-flow")?.closest(".graph")?.querySelector("kbd")).toBeNull();
 });

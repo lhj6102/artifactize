@@ -21,17 +21,34 @@ commands below; when a page and this skill disagree, the page wins. Use the MCP 
 when they answer, and the CLI otherwise. If a tool answers that the host names no
 project, pass `project`, the session's absolute project folder, with every call.
 
+## Observe a Run without waiting on a person
+
+**CLI:** Start `artifactize verify SELECTOR` without `--wait` or `--watch`. It prints the
+Run ID and returns on acceptance, not on a verdict. Follow `artifactize run watch RUN_ID`
+for progress. In another terminal, or after Ctrl+C stops the watch without cancelling
+verification, run `artifactize run show RUN_ID --json` to inspect the saved Run and its
+individual requests. The watch is optional: `run show` can inspect an open Run directly.
+
+**MCP:** Keep the Run ID from `verify_start` and pass it as `run` to `verify_wait` and
+`run_show`. For paged inspection results, concatenate `entries[].text`, passing
+`next_cursor` back as `cursor` on the same call until it is `null`.
+
+On either surface, if the Run ends ERROR without a failed request (for example failed
+preparation or cancellation), read the Run's `error`, remedy the cause, and repeat the
+same selection. A saved GREEN request on a cancelled Run does not mean the selection
+finished. If you cannot remedy the cause, stop and report the blocker.
+
 ## Plan A: focus first, sweep last (the default)
 
 **Focus.** Take one RED eval and read its findings: `verify_result` names the failing
 requests of the Run and their request IDs, `request_show` returns the reviewer's reported
 result and `request_logs` a runtime eval's output (CLI: `artifactize run show RUN_ID --json`
-and `artifactize request logs REQUEST_ID` for runtime `stdout`/`stderr`; if a partial Run
-ended RED because an unselected obligation had a cached RED without a request in this Run,
-check `evidence` in `run_show`—not `status`, which does not use speculative gating—and read
-its saved record in `cache_show`, or select that eval in a Run so its cached result is
-attached to a request you can inspect with `request_show`; use `--force` only when you want
-to rerun the reviewer rather than read the cached RED).
+for the request ID, `artifactize request show REQUEST_ID --json` for the saved result,
+and `artifactize request logs REQUEST_ID` for runtime `stdout`/`stderr`). If an unselected
+obligation has a cached RED but no request, find its eval ID in the settled Run's
+`evidence` (not `status`, which does not use speculative gating). Select that eval without
+`--force` to attach the cached result to an inspectable request. If you already know the
+64-hex reuse key, pass it to `cache_show` as `key` (CLI: `artifactize cache show KEY`).
 Fix the Artifact the eval evaluates, then rerun only that eval:
 
 - MCP: `verify_start` with `scope` `{"kind": "eval", "evalId": "app/review"}` and
@@ -42,14 +59,9 @@ Fix the Artifact the eval evaluates, then rerun only that eval:
   still returns `ready: false` because a selected sign-off is `DEFERRED`, inspect all
   selected requests in `run_show` / `request_list` and `evidence` in `run_show`), and once
   settled read `verify_result` (`ready: true`) / `run_show` / `request_show`.
-- CLI: `artifactize verify --eval app/review --speculate --wait` (if a widened focus Run
-  also selected a Human sign-off and `--wait` stays open in `WAITING_HUMAN` after all
-  focused machine checks have finished, check `artifactize run show RUN_ID` or press Ctrl-C
-  on `--wait` to stop watching without cancelling the Run, inspect all selected requests—including
-  any selected sign-off that is `RED` or a non-superseded `ERROR`—and `evidence` in
-  `run show RUN_ID`, confirm the focused machine verdicts passed, and address any other
-  `RED` or non-superseded `ERROR` in focus before sweeping, without waiting for any
-  `DEFERRED` sign-off).
+- CLI: `artifactize verify --eval app/review --speculate`. Use the printed ID to observe
+  the Run as above. Inspect the machine verdicts and evidence even if a widened focus
+  also selected a sign-off and remains `WAITING_HUMAN`.
 
 Read that focused eval's own verdict (in MCP, find the focused eval's request in `run_show`
 or `request_list` with `run` and check its `status` or `request_show`; in the CLI, read the
@@ -73,28 +85,27 @@ through your fix; without `--speculate`, an eval waits for stale upstream gates 
 own Artifact reference cycle that the focus did not select.
 
 Repeat until the focused eval passes (`GREEN` or `PROVISIONAL`), then take the next RED eval.
-RED evals whose fixes do not touch each other can share one focus Run
-(`--evals app/review,docs/matches-app`, MCP `{"kind": "evals", "evalIds": [...]}`). A BLOCKED
-eval names what blocks it, a RED eval (`Dependency verdict RED: core/tests`) or one that
-ended ERROR: fix that eval and focus on it first. An ERROR means no valid verdict was
-recorded (such as a missing tool, timeout, or `INPUT_CHANGED` when files changed during
-execution); repair its cause, never the verdict.
+A BLOCKED eval names what blocks it, a RED eval (`Dependency verdict RED: core/tests`)
+or one that ended ERROR: fix that eval and focus on it first. An ERROR means no valid
+verdict was recorded (such as a missing tool, timeout, or `INPUT_CHANGED` when files
+changed during execution); repair its cause, never the verdict.
 
 A RED sign-off is a person's verdict: make the changes they asked for, then focus on its
 Artifact rather than the eval. When the sign-off's upstream dependency gates are already
 satisfied, select the Artifact (`artifactize verify app`, or MCP `verify_start` with
 `scope: {"kind": "artifact", "artifactId": "app"}`); when stale upstream prerequisites outside
 `app` also need to run before the sign-off can be requested, use the recursive CLI command
-`artifactize verify app --recursive --wait` (or include those upstream prerequisites in the
-MCP `scope` selection, since the MCP Artifact selector does not add `--recursive`). Note
+`artifactize verify app --recursive`. In MCP, trace upstream inputs in `config_graph`
+(the inputs of `app`'s evals and its parts, then their own inputs), use `status` to see
+which still need evidence, and select the target and those prerequisites together, e.g.
+`scope: {"kind": "artifacts", "artifactIds": ["app", "spec"]}`. The MCP selector is not
+recursive. Note
 that `--speculate` can start selected machine evals early, but a Human sign-off never starts
 speculatively and is asked for only once its Artifact's machine evals pass (`GREEN` or
 `PROVISIONAL`) and its upstream dependency gates are satisfied (`GREEN`, `PROVISIONAL`, or a
 selected `DEFERRED` sign-off). Once `app`'s machine evals pass and the replacement sign-off
 is recorded as `DEFERRED` (check `run_show` / `request_list` in MCP, or `artifactize run show
-RUN_ID` in the CLI; if `verify app --recursive --wait` is still waiting on the open sign-off,
-press Ctrl-C to stop watching without cancelling the Run), move on to the next RED eval or
-the sweep without waiting for the person.
+RUN_ID` in the CLI), move on to the next RED eval or the sweep without waiting for the person.
 
 **Sweep.** Once the RED evals you focused on are passing (or waiting on a replacement sign-off),
 run everything once:
@@ -118,21 +129,15 @@ run everything once:
      `config_graph` or `status` to confirm no Artifact is bare with no evals, `parts`, or
      `basis = true`, since a bare Artifact has no request or `evidence` entry and populates
      `validation.obligations` only at settlement). If any non-sign-off obligation is unmet
-     (`INCOMPLETE`), resolve or report that unmet obligation and sweep again; only when all
+     (`INCOMPLETE`), resolve it and sweep again, or stop and report it if you cannot resolve it;
+     only when all
      machine checks passed (`GREEN` or `PROVISIONAL`), no Human request is `RED` or
      non-superseded `ERROR`, no other obligation is unmet, and only unsubmitted sign-offs
      remain, hand off the pending sign-offs.
-- CLI: `artifactize verify --all --wait` (once no runnable machine work remains—whether
-  because all machine checks have finished and only sign-offs remain, or because an open
-  sign-off keeps the Run in `WAITING_HUMAN` while a `RED` or non-superseded `ERROR` has
-  already occurred, including when a downstream machine check stays in `WAIT_DEPENDENCY` or
-  `BLOCKED` behind an upstream `ERROR`—check `artifactize run show RUN_ID` or press Ctrl-C on
-  `--wait` to stop watching without cancelling the Run; if any machine request or
-  non-superseded Human request is `RED` or `ERROR`, return to focus immediately without
-  waiting for the person; if any non-sign-off obligation is unmet—including a bare Artifact
-  with no evals, `parts`, or `basis = true`, checked via `status` or `config graph` while the
-  Run is still open—so the Run is or would end `INCOMPLETE`, resolve or report that unmet
-  obligation and sweep again; otherwise hand off the waiting sign-offs).
+- CLI: `artifactize verify --all`. Observe the printed Run ID as above and apply the same
+  three decisions in order, using `artifactize run show RUN_ID --json` for requests and
+  obligations, and `artifactize status` or `artifactize config graph` for bare Artifacts
+  while the Run is open. Stop the watch when returning to focus or handing off.
 
 Results with a reuse key whose inputs did not change are reused, the focus Runs' GREEN
 results included (evals without a reuse key, such as Live runtime evals and `fingerprint = false`
@@ -150,9 +155,10 @@ before sweeping again. The loop ends when the sweep ends GREEN or YELLOW (or is
 When a fix may affect other evals, for example because you changed a shared input such
 as a specification, a rule document or a library, focus on those evals too:
 
-1. Find them. `config_graph` with your Artifact as `scope` and `impact: true` (CLI:
-   `artifactize config graph app --impact`) lists the evals downstream of it; `status`
-   shows which evals your change left needing review.
+1. For each Artifact the fix changed, call `config_graph` with that Artifact as `scope`
+   and `impact: true` (CLI: `artifactize config graph spec --impact`) to list the evals
+   that read it. If `app/review` failed but the fix changed `spec`, query `spec` rather
+   than only `app`. Use `status` to see which evals still need review.
 2. Focus on the RED eval and the evals that matter for your fix together, as in Plan A.
 3. References between peers in a reference cycle do not gate on the peer itself, though a
    Human eval still waits for its own Artifact's machine evals (`config_graph` components
@@ -161,7 +167,7 @@ as a specification, a rule document or a library, focus on those evals too:
    Plan B touches an Artifact in a reference cycle, keep the full set of evals from step 2
    and add every eval on every Artifact in that reference cycle (including the remaining
    evals on the Artifact already in focus) to the same focus Run with speculation (for
-   example, `artifactize verify --evals app/review,docs/matches-app,docs/style,docs-ko/matches-en --speculate --wait`,
+   example, `artifactize verify --evals app/review,docs/matches-app,docs/style,docs-ko/matches-en --speculate`,
    or MCP `verify_start` with `scope: {"kind": "evals", "evalIds": [...]}` and `speculate: true`
    for up to 64 eval IDs; if the combined set exceeds MCP's 64-ID `evalIds` limit, select the
    covering Artifacts with `scope: {"kind": "artifacts", "artifactIds": [...]}` or use CLI
@@ -171,7 +177,7 @@ Then sweep as in Plan A.
 
 ## Plan C: always sweep
 
-Run a full sweep after every fix (`artifactize verify --all --wait`, or MCP `verify_start`
+Run a full sweep after every fix (`artifactize verify --all`, or MCP `verify_start`
 with `scope: {"kind": "all"}` followed by the same observation, unmet-obligation check, and
 sign-off handoff steps as the Sweep in Plan A, except that if an open `"waiting_human"` or
 settled sweep exposes a `RED`, non-superseded `ERROR`, or non-sign-off `INCOMPLETE`

@@ -41,6 +41,30 @@ body {
   outline-offset: -2px;
 }
 
+/* Editing and keyboard focus are independent: the mark is inside the field's edge,
+   the focus ring outside. Controls that draw a shared field (the composer) can opt out. */
+:is(input:not([type="radio"], [type="checkbox"]), textarea, select):not(.bare-field):focus {
+  box-shadow: inset 0 0 0 1px var(--current-mark);
+}
+:is(input, textarea, select):focus-visible {
+  outline-offset: 2px;
+}
+input[type="radio"] {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  margin: 0;
+  flex: none;
+  border: 1px solid var(--line-input);
+  border-radius: 50%;
+  background: var(--surface-input);
+  vertical-align: middle;
+}
+input[type="radio"]:checked {
+  background: radial-gradient(circle, var(--current-mark) 0 2.5px, var(--surface-input) 3px);
+}
+
 /* The one key cap: a key wherever a key does the same as a control. */
 kbd {
   font: var(--text-label) var(--mono);
@@ -59,7 +83,7 @@ kbd {
   clip: rect(0 0 0 0);
 }
 
-/* A quiet button, one step above its panel; the one primary button takes the accent. */
+/* Secondary and primary buttons share a face; the primary label and edge are brighter. */
 .button {
   font: inherit;
   color: var(--ink);
@@ -75,35 +99,27 @@ kbd {
   white-space: nowrap;
 }
 /* Hover only highlights: a button keeps its face, and its edge steps up to a field's line. */
-.button:hover:not(:disabled) {
+.button:not(.primary):hover:not(:disabled) {
   border-color: var(--line-input);
 }
-/* Unavailable, the primary button's text steps down to --ink-3 too. */
-.button.primary:disabled {
-  color: var(--ink-3);
-}
-.button.primary:hover:not(:disabled) {
-  border-color: var(--ink-on-accent);
+.button.primary {
+  border-color: var(--line-primary);
+  color: var(--ink-bright);
 }
 /* Unavailable, a button keeps its place and face; its text steps down to --ink-3. */
 .button:disabled {
   color: var(--ink-3);
   cursor: default;
 }
+/* A quiet button: no face and no edge until the pointer is on it. */
+.button.quiet {
+  background: transparent;
+  border-color: transparent;
+}
 .button.small {
-  height: 22px;
+  height: var(--row-dense);
   padding: 0 8px;
   font-size: var(--text-small);
-}
-.button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--ink-on-accent);
-}
-.button.primary kbd {
-  color: var(--ink-on-accent);
-  background: transparent;
-  border-color: color-mix(in srgb, var(--ink-on-accent) 40%, transparent);
 }
 
 /* Status tones, shared by every list and tree: only on the element that has the meaning. */
@@ -122,18 +138,21 @@ kbd {
 /* Dialogs and menus render in a portal: raised one step, set apart by a panel line. */
 .overlay {
   position: fixed;
-  inset: 0;
+  inset: 0 0 var(--bar-height);
   background: var(--scrim);
   z-index: 50;
 }
 .dialog {
   position: fixed;
   left: 50%;
-  top: 14%;
+  --dialog-top: min(14vh, 96px);
+  top: var(--dialog-top);
   transform: translateX(-50%);
   width: min(640px, 92vw);
-  max-height: 72vh;
-  overflow: auto;
+  max-height: calc(100dvh - var(--bar-height) - var(--dialog-top) - var(--pad));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--surface-raised);
   color: var(--ink);
   border: 1px solid var(--line-panel);
@@ -159,13 +178,41 @@ kbd {
 .field-input.text {
   font: var(--text-body) var(--font);
 }
+.dialog-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.dialog-body,
+.palette-list {
+  min-height: 0;
+  overflow: auto;
+}
+.dialog-body {
+  /* Room around a field for its outer keyboard ring, without shifting the content. */
+  padding: 4px;
+  margin: -4px;
+}
+.dialog-body::-webkit-scrollbar,
+.palette-list::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.dialog-body::-webkit-scrollbar-thumb,
+.palette-list::-webkit-scrollbar-thumb {
+  background: var(--line-input);
+  border-radius: 2px;
+}
 .dialog-title {
+  flex: none;
   margin: 0 0 10px;
   font-size: var(--text-title);
   font-weight: 600;
 }
 .dialog-actions {
   display: flex;
+  flex: none;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--gap);
   margin-top: 12px;
@@ -174,24 +221,14 @@ kbd {
   padding: 0;
 }
 .palette-input {
-  width: 100%;
-  height: 36px;
-  border: 0;
-  border-bottom: 1px solid var(--line-group);
-  padding: 0 12px;
+  flex: none;
+  margin: 8px 8px 2px;
+  width: calc(100% - 16px);
+  height: var(--control);
+  padding: 0 10px;
   font: inherit;
-  font-size: var(--text-body);
-  background: transparent;
-  color: var(--ink);
-  outline: none;
-}
-.palette-input:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: -2px;
 }
 .palette-list {
-  max-height: 50vh;
-  overflow: auto;
   padding: 6px;
 }
 .palette-heading {
@@ -208,16 +245,16 @@ kbd {
   min-height: var(--row);
   padding: 0 8px;
   border-radius: var(--radius-control);
+  color: var(--ink-2);
   cursor: pointer;
 }
 /* Hover only highlights; the selected command keeps its own background under the pointer. */
 .palette-item:hover:not([data-selected]) {
   background: var(--surface-group);
 }
-/* The selected command: the selection background and a 2px inset bar. */
 .palette-item[data-selected] {
   background: var(--selection);
-  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--ink);
 }
 .palette-empty {
   padding: 12px;
@@ -301,8 +338,7 @@ kbd {
   background: var(--accent);
 }
 
-/* A chip choice: one of a few rounded choices, the chosen one filled. Hover only highlights.
-   Chips that do not fit on one line wrap onto the next; they never widen their pane. */
+/* A chip choice uses the same underline as a current tab. Chips that do not fit on one line wrap onto the next; they never widen their pane. */
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -330,23 +366,22 @@ kbd {
   text-overflow: ellipsis;
   cursor: pointer;
 }
-.chip:hover {
+.chip:not([aria-selected="true"]):hover {
   color: var(--ink);
   background: var(--surface-group);
 }
 .chip[aria-selected="true"] {
   color: var(--ink);
-  font-weight: 600;
-  background: var(--surface-group);
+  box-shadow: inset 0 -2px 0 var(--current-mark);
 }
 .chip:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 .settings-dialog {
-  top: 48px;
+  --dialog-top: min(24px, 6vh);
   width: min(900px, 94vw);
-  max-height: calc(100vh - 80px);
+  max-height: min(calc(100dvh - 80px), calc(100dvh - var(--bar-height) - var(--dialog-top) - var(--pad)));
 }
 
 /* A section label: 11px uppercase in secondary ink, never the accent. */
@@ -374,8 +409,32 @@ input[type="search"]::-webkit-search-decoration {
 
 /* Every field's placeholder is faint ink, never the browser's own colour. */
 ::placeholder {
-  color: var(--ink-3);
+  color: var(--ink-2);
   opacity: 1;
+}
+
+.open-id input::placeholder {
+  color: var(--ink-2);
+}
+
+/* Shared by both node shapes and the viewer's declared graph. The gap keeps the current ring
+   off the node's own outline and its status strip. A minimized whole also clears its stack. */
+.graph-face {
+  --ring-gap: 2px;
+  --target-offset: 0px;
+  --node-current: 0 0 0 transparent;
+  --node-target: 0 0 0 transparent;
+  --node-decoration: 0 0 0 transparent;
+  box-shadow: var(--node-decoration), var(--node-target), var(--node-current), var(--node-lift, 0 0 0 transparent);
+}
+.graph-face:is(.selected, .open) {
+  --ring-offset: calc(var(--ring-gap) + var(--target-offset));
+  --node-current: 0 0 0 var(--ring-offset) var(--surface-app), 0 0 0 calc(var(--ring-offset) + 1px) var(--current-mark);
+}
+.graph-face.target {
+  --target-offset: 1px;
+  --node-target: 0 0 0 1px var(--accent);
+  border-color: var(--accent);
 }
 
 /* A graph node's ports: where edges reach it, a triangle pointing in on its left side; where
@@ -398,4 +457,14 @@ input[type="search"]::-webkit-search-decoration {
 }
 .ported.outward > .svelte-flow__handle.source {
   opacity: 1;
+}
+
+/* Find in a Chat conversation (D-CHAT-11): each place the text appears on a quiet face, the
+   shown one over the current mark. Highlights leave the conversation's own nodes as drawn. */
+::highlight(chat-find) {
+  background-color: var(--accent-soft);
+  color: var(--ink-bright);
+}
+::highlight(chat-find-current) {
+  text-decoration: underline 2px var(--current-mark);
 }

@@ -156,3 +156,74 @@ async fn graph_agent_tool_prints_current_extracted_structure_from_any_artifact()
         crate::config::HumanToolKind::Launch
     );
 }
+
+#[tokio::test]
+async fn artifact_type_exposes_the_same_scoped_declarations_to_both_tools() {
+    let repo = crate::test_os::tempdir();
+    let definitions = repo.path().join(".artifactize");
+    let scoped = definitions.join("design");
+    fs::create_dir_all(&scoped).unwrap();
+    fs::write(repo.path().join("inside.txt"), "design").unwrap();
+    fs::write(repo.path().join("plain.txt"), "custom").unwrap();
+    fs::write(repo.path().join("outside.txt"), "outside").unwrap();
+    fs::write(
+        scoped.join("inside.artf"),
+        "path = 'inside.txt'\ntype = 'markdown'\nbasis = true\n",
+    )
+    .unwrap();
+    fs::write(
+        scoped.join("plain.artf"),
+        "path = 'plain.txt'\nbasis = true\n",
+    )
+    .unwrap();
+    fs::write(
+        definitions.join("outside.artf"),
+        "path = 'outside.txt'\nbasis = true\n",
+    )
+    .unwrap();
+    fs::write(
+        definitions.join("design-definitions.artf"),
+        r#"path = '.artifactize/design/'
+type = 'artifactize'
+[evals.inspect]
+title = 'Inspect design declarations'
+profile = { kind = 'agent', backend = 'openai', model = 'fixture' }
+payload.instruction = 'Inspect the declared graph.'
+"#,
+    )
+    .unwrap();
+    let config = crate::config::read_workspace_config(repo.path()).unwrap();
+    let registry =
+        crate::tools::Registry::new(&config, &"design-definitions/inspect".parse().unwrap())
+            .unwrap();
+    let tool = "declarations_design-definitions";
+    let result = registry
+        .call(tool, json!({}), repo.path(), CancellationToken::new())
+        .await;
+    let [crate::tools::Content::Text { text }] = result.content() else {
+        panic!("{result:?}")
+    };
+    assert!(
+        text.contains("inside [File]") && !text.contains("outside"),
+        "{text}"
+    );
+    let viewer =
+        crate::viewer::Session::open(repo.path(), &"design-definitions".parse().unwrap()).unwrap();
+    let graph = viewer.declarations().unwrap();
+    assert_eq!(
+        graph
+            .artifacts
+            .keys()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>(),
+        ["inside", "plain"]
+    );
+    let wire = serde_json::to_value(graph).unwrap();
+    assert_eq!(wire["artifacts"]["inside"]["type"], "markdown");
+    assert_eq!(
+        wire["artifacts"]["plain"].get("type"),
+        Some(&serde_json::Value::Null)
+    );
+    let whole = serde_json::to_value(extract(&config)).unwrap();
+    assert!(whole["artifacts"]["inside"].get("type").is_none());
+}

@@ -1,6 +1,6 @@
 import { createContext, untrack } from "svelte";
 
-import type { CommandActivity, Refresh } from "./activity";
+import type { CommandActivity, Refresh, SearchActivity } from "./activity";
 import type { BrowseView } from "./client";
 
 // Read-only command activity at the frontend's IPC boundary. Arguments and results are
@@ -27,17 +27,20 @@ class Refreshes {
 // snapshot field and no recorder: the bundle drops all of it.
 const refreshes = import.meta.env.MODE === "e2e" ? new WeakMap<Activity, Refreshes>() : null;
 
-/** The Pane's search query a `browse` call carries, if it carries one. */
+/** Only the query shown in the branch search or Review filter. */
 function searched(name: string, argument: unknown): string | undefined {
+  if (name === "humanSearch") return typeof argument === "string" ? argument : undefined;
   if (name !== "browse" || typeof argument !== "object" || argument === null) return undefined;
   const query: unknown = (argument as { query?: unknown }).query;
   return typeof query === "string" ? query : undefined;
 }
 
+type SearchCommand = "browse" | "humanSearch";
+
 export class Activity {
   #revision = $state(0);
   #commands = $state<Record<string, { started: number; completed: number; failed: number }>>({});
-  #search = $state<{ query: string; sequence: number; completed: boolean } | null>(null);
+  #searches = $state<Partial<Record<SearchCommand, SearchActivity>>>({});
   readonly #projectedCommands = $derived(Object.freeze(Object.fromEntries(
     Object.entries(this.#commands).map(([name, state]) => [name, Object.freeze({
       ...state, pending: state.started - state.completed,
@@ -48,7 +51,8 @@ export class Activity {
     revision: this.#revision,
     pending: this.#pending,
     commands: this.#projectedCommands,
-    search: this.#search === null ? null : Object.freeze({ ...this.#search }),
+    search: this.#searches.browse ? Object.freeze({ ...this.#searches.browse }) : null,
+    reviewSearch: this.#searches.humanSearch ? Object.freeze({ ...this.#searches.humanSearch }) : null,
     ...(import.meta.env.MODE === "e2e" ? { refresh: refreshes?.get(this)?.last ?? null } : {}),
   }));
 
@@ -71,16 +75,22 @@ export class Activity {
     state.started += 1;
     this.#revision += 1;
     const sequence = state.started;
-    if (query !== undefined) this.#search = { query, sequence, completed: false };
+    const key = name === "browse" || name === "humanSearch" ? name : null;
+    const search = query === undefined ? null : { query, sequence, completed: false };
+    if (key && search) this.#searches[key] = search;
+    let failed = false;
     try { return await operation(); }
     catch (error) {
+      failed = true;
       state.failed += 1;
       throw error;
     }
     finally {
       state.completed += 1;
       this.#revision += 1;
-      if (query !== undefined && this.#search?.sequence === sequence) this.#search.completed = true;
+      if (key && search && this.#searches[key]?.sequence === sequence) {
+        this.#searches[key] = { ...search, completed: true, ...(failed ? { failed: true } : {}) };
+      }
     }
   }
 }

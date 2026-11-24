@@ -57,7 +57,7 @@ additionalProperties = false
 
 [views.agent_tools.launch]
 session = "app"
-description = "Restart the real headless desktop app in one of its actual launch modes: monitor (no arguments: nothing chosen), repo (`--repo`: the fixture's branch selected, its last Run shown), review (`review`: the newest waiting review open) or graph (`graph --repo`: the branch's Current, from current declarations and fresh state with no saved Run). Answers with the new window snapshot; builds nothing."
+description = "Restart the real headless desktop app in one of its actual launch modes: monitor (no arguments: nothing chosen), repo (`--repo`: the fixture's branch selected, its last Run shown), review (`review`: the newest waiting review open) or graph (`graph --repo`: New chat on the fixture branch in fresh state; create its session and select Graph to see the branch's Current). Answers with the new window snapshot; builds nothing."
 command = "node"
 args = ["harness/harness.mts", "launch"]
 protocol = "json"
@@ -78,23 +78,23 @@ payload.instruction = "Run eslint over the TypeScript automation harness directl
 
 [evals.follows-test-rules]
 title = "The desktop automation harness and integration tests follow the test rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read the TEST- rules and M-TAUTOLOGICAL-TESTS of {rules-code-style}. Review the automation harness owned by {desktop} (harness/) and its Rust integration tests (tests/). The tests of {desktop-ui} and {desktop-e2e} have their own reviews: do not duplicate them. Check M-TAUTOLOGICAL-TESTS and every TEST- rule as {rules-code-style} states them. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
 
 [evals.release-excludes-test-build]
 title = "The release app compiles in none of the E2E test build's WebdriverIO plugins"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 red_at = "P1"
 payload.instruction = """
 Read E2E-TEST-BUILD-ONLY of the end-to-end rules {desktop-e2e-rules}, which names the WebdriverIO plugins (their Rust \
 crates, capability permissions and the frontend import) that only the E2E test build may get. The release app, its \
 default capabilities and its frontend bundle contain none of them. Read how {desktop} assembles its app: \
-Cargo.toml (features and optional dependencies), build.rs, src/ where it registers plugins, the capability files and \
-tauri*.json, and the frontend entry and build configuration in ui/. Check the release app, built with the default \
+Cargo.toml (features and optional dependencies), build.rs, the capability files and tauri*.json; src/ where it \
+registers plugins, in its part {desktop-backend}; and the frontend entry and build configuration in its part {desktop-ui}. Check the release app, built with the default \
 Cargo features and the default frontend build, against that; how the suite \
-selects the test build is judged by desktop-e2e."""
+selects the test build is judged by desktop-e2e-infra/follows-rules."""
 
 [evals.suite-passes]
 title = "The end-to-end suite passes on a headless display"
@@ -103,7 +103,7 @@ profile = { kind = "runtime", command = "pnpm", args = ["-C", "ui", "e2e"], time
 
 [evals.suite-passes.payload]
 instruction = """
-Build the E2E test app of {desktop} from {desktop-backend} and {desktop-ui} (the test-only Cargo feature and its frontend build) and the CLI from {engine-cli}, {engine-core} and {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} into build output this run owns, then run the WebdriverIO suite {desktop-e2e} against it on a headless display."""
+Run the HTML example's Point test in {desktop-ui}, then build the E2E test app of {desktop} from {desktop-backend} and {desktop-ui} (the test-only Cargo feature and its frontend build) and the CLI from {engine-cli}, {engine-core} and {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock} into build output this run owns, and run the WebdriverIO suite {desktop-e2e} against it on a headless display."""
 
 [evals.fmt]
 title = "The Rust formatting check passes"

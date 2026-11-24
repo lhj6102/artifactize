@@ -27,14 +27,15 @@ text = "Canvas note shown in the desktop app."
 |---|---|
 | 식별자 | Artifact 이름은 `.artf` 파일 이름(확장자 제외)으로 정해지며 `.artifactize/` 전체에서 대소문자를 무시하고 비교했을 때 겹칠 수 없습니다(`con`, `nul` 같은 Windows 장치 이름은 피하세요). eval ID는 해당 Artifact 안에서, 도구·세션·대체 실행 프로필 ID는 각 선언 테이블 안에서 겹치지 않아야 합니다. |
 | `path` | **필수.** 프로젝트 루트 기준 상대 경로나 Live URI를 지정합니다. 로컬 경로는 `/`를 쓰며, 폴더는 `"dir/"`나 `"./"`처럼 끝에 `/`를 붙여야 합니다. 일반 파일 하나를 지정할 때는 `"file.ext"`처럼 적습니다. Live 대상은 URI로 적습니다(예: `"https://example.com"`). HTTP(S)만 허용하는 내장 `open` 도구와 달리 Live 대상에는 다른 URI 스킴도 쓸 수 있습니다. |
+| `type` | [Artifact 유형](../guides/viewer-plugins.md)을 지정하는 선택 필드입니다. 내장 유형이나 설치한 유형을 지정합니다. 생략하면 Custom Artifact가 됩니다. |
 | `select` | 폴더 `path` 안에서 고른 상대 경로 배열로 **Aspect**를 정의합니다. 파일이나 Live Artifact에는 쓸 수 없습니다. |
 | `parts` | 상위 Artifact를 구성하는 하위 Artifact의 이름을 배열로 적습니다. 이 Artifact의 이름을 `parts`에 넣을 수 없으며, `parts`만 따라 원래 Artifact로 돌아오는 순환 관계도 만들 수 없습니다. |
 | `basis` | 불리언 값입니다. `true`로 설정하면 이 Artifact 자체는 리뷰하지 않으며, `evals`가 있으면 이 값을 쓸 수 없습니다. |
 | `tags` | 비어 있지 않은 표시용 문자열 배열(`status`와 `config graph`에 표시). |
 | `fingerprint` | 선택:<br>• **폴더**: 생략하거나 `{}`이면 기본 `artifactsum`, `{ files? = [...], ignore? = [...] }`(`files` 기본값은 `["."]`, `ignore` 기본값은 `[]`), `{ script = { command = "...", args = [...], files? = [...], timeout_ms? = N } }`, 또는 `false`.<br>• **Aspect**: 생략하면 `select`에 대한 기본 `artifactsum`, `{ files = [...], ignore? = [...] }`(`files` 필수이며 `select` 범위 안; Aspect에서 `fingerprint = {}`는 거부됨), `{ script = ... }`, 또는 `false`.<br>• **파일**: 생략하거나 `{ files = ["<대상파일이름>"] }`(`ignore` 불가), `{ script = ... }`, 또는 `false`.<br>• **Live**: 생략(스냅샷 없음), `{ script = ... }`, 또는 `false`.<br>자세한 규칙은 [fingerprint와 재사용](../concepts/reuse.md#fingerprints-artifactsum-script-false)을 참고하세요. |
-| `views.agent_tools` | `<tool_id>`별 `{ builtin = "...", args? = [...], description? = "..." }`(`graph`, `help`, `section`에는 `args`가 필수이고 고정 대상 `read`/`list`에는 선택; [내장 도구](../guides/tools.md#builtin-tools) 참고) 또는 `{ description, protocol = "json"\|"plain", command, args, input_schema?, execution_paths?, timeout_ms?, session? }` 매핑. |
+| `views.agent_tools` | `<tool_id>`별 `{ builtin = "...", args? = [...], description? = "..." }`(`declarations`, `graph`, `help`, `section`에는 `args`가 필수이고 고정 대상 `read`/`list`에는 선택; [내장 도구](../guides/tools.md#builtin-tools) 참고) 또는 `{ description, protocol = "json"\|"plain", command, args, input_schema?, execution_paths?, timeout_ms?, session? }` 매핑. |
 | `views.agent_sessions` | `<session_id>`별 `{ start = { command, args, execution_paths? }, stop = { command, args, execution_paths? } }` 매핑(`start`와 `stop`에는 `timeout_ms`를 쓰지 않으며, 연결된 개별 도구에서 `timeout_ms`를 선언합니다). |
-| `views.human_tools` | `<tool_id>`별 `{ builtin = "...", args = [...], description?, kind? }` 또는 `{ description, kind = "launch"\|"output", command, args, timeout_ms? }` 매핑(`timeout_ms`는 `output` 실행 시간을 제한하며 `launch`에는 적용되지 않음). |
+| `views.human_tools` | `<tool_id>`별 `{ builtin = "...", args = [...], description?, kind? }` 또는 `{ description, kind = "launch"\|"output", command, args, timeout_ms? }` 매핑(`timeout_ms`는 `output` 실행 시간을 제한하며 `launch`에는 적용되지 않음). 뷰어를 제공하는 유형에서는 `{ kind = "viewer", description = "..." }`로 데스크톱 앱에서 Artifact Viewer를 엽니다. CLI에서는 뷰어를 열지 않습니다. |
 | `annotations` | 화면에 표시할 메타데이터(`style.at`, `style.parts`, `comment.text`)를 지정합니다. `artifactsum`이 `.artf` 내용을 정규화할 때와 eval 정의 해시를 계산할 때 제외됩니다. |
 
 ## eval 필드 (`[evals.<id>]`) {#eval-fields-evalsid}
@@ -47,7 +48,7 @@ text = "Canvas note shown in the desktop app."
 | `profile` | **필수.** 평가자 프로필 테이블(`kind = "runtime"`, `"agent"`, `"human"` 중 하나):<br>• `runtime`: `{ kind = "runtime", command = "...", args = [...], timeout_ms? = N }`<br>• `agent`: `{ kind = "agent", backend = "...", model = "...", reasoning? = "...", timeout_ms? = N, max_tokens? = N, max_tool_calls? = N }`<br>• `human`: `{ kind = "human" }` |
 | `profile_variants` | 같은 `kind`의 대체 실행 프로필 매핑(`verify --profile NAME` 또는 `status --profile NAME`으로 선택). 직접 선택했거나 재귀 옵션으로 포함한 eval 중 실행 가능한 eval마다 대체 실행 프로필을 정의해야 합니다. Runtime 대체 실행 프로필의 `args`에 적은 참조 때문에 새로 포함된 선행 eval은 기본 프로필로 실행합니다. |
 | `mutex` | `runtime` 또는 `agent` eval에 지정하는 계층형 잠금 태그 배열(`"use-computer"` 또는 `"use-computer:display"` 같은 하위 경로). 태그가 같거나 상하위 관계에 있으면(`use-computer`는 모든 하위 태그와 충돌) 한 eval이 끝날 때까지 다른 eval은 대기합니다. |
-| `payload.instruction` | **필수.** 평가 기준 문자열. `payload.instruction`이나 Runtime `args`에서 다른 Artifact를 `{name}`으로 참조하면 그 Artifact가 해당 eval의 입력이 됩니다. 해당 eval의 검사 대상 자체를 참조할 때는 의존성을 추가하지 않습니다. |
+| `payload.instruction` | **필수.** 평가 기준 문자열. `payload.instruction`이나 Runtime `args`에서 다른 Artifact를 `{name}`으로 참조하면 그 Artifact가 해당 eval의 입력이 됩니다. 해당 eval의 평가 대상 자체를 참조할 때는 의존성을 추가하지 않습니다. |
 | `red_at` | `agent` eval에만 지정하는 선택적 우선순위 기준(`"P0"`, `"P1"`, `"P2"`, `"P3"` 중 하나이며 `P0`이 가장 높음). `red_at` 이상의 지적 사항이 있으면 `RED`로 판정하고, 생략하면 지적 사항이 하나만 있어도 `RED`로 판정합니다. 기준보다 낮은 지적 사항은 `GREEN` 판정에서도 결과에 남습니다. |
 | `pass_schema`, `fail_schema` | `human` eval의 결과 필드를 검증할 JSON Schema로, 필요할 때만 지정합니다(`agent` eval에서는 쓸 수 없습니다). `runtime` 선언에도 적을 수 있으며, 종료 코드 판정은 바꾸지 않고 eval 정의 해시에만 반영됩니다. |
 
@@ -67,7 +68,7 @@ Human 결과에는 `"verdict": "GREEN" | "RED"`와 함께 사용자가 선언한
 
 ## 선언 파일 이전과 Artifact 이름 변경 {#upgrading-an-in-tree-project}
 
-- **`artifactize config migrate [--repo PATH]`**: 기존 디렉터리 곳곳에 있던 `index.artf`, 개별 `.artf`, 루트 `.artf` 선언 파일을 `.artifactize/<name>.artf` 형식으로 옮기면서 `path`와 `parts`를 명시합니다. 이때 `agent` eval에 남아 있던 기존 `pass_schema`와 `fail_schema` 선언은 제거하고 Human 스키마는 그대로 유지합니다. `.artfignore`에 따라 변환에서 제외한 하위 프로젝트를 알리고, 새 형식으로 옮긴 선언의 원본 파일과 `.artfignore`를 삭제합니다.
+- **`artifactize config migrate [--repo PATH]`**: 기존 디렉터리 곳곳에 있던 `index.artf`, 개별 `.artf`, 루트 `.artf` 선언 파일을 `.artifactize/<name>.artf` 형식으로 옮기면서 `path`와 `parts`를 명시합니다. 이때 `agent` eval에 남아 있던 기존 `pass_schema`와 `fail_schema` 선언은 제거하고 Human 스키마는 그대로 유지합니다. `.artfignore`에 따라 변환에서 제외한 하위 프로젝트를 알리고, 새 형식으로 옮긴 선언의 원본 파일과 `.artfignore`를 삭제합니다. 이미 이전한 프로젝트에서도 리뷰에 필요한 도구가 빠진 로컬 Artifact에 `type = "files"`를 추가할 수 있습니다. 기존 사용자 지정 도구가 플러그인 도구와 충돌하면 필요한 도구를 직접 추가하세요.
 - **`artifactize config rename OLD NEW`**: 프로젝트 유효성을 확인한 뒤 `.artifactize/**/<OLD>.artf` 파일 이름을 `<NEW>.artf`로 바꾸고 `parts`, `{OLD}` 참조, `[annotations.style]`에 저장한 하위 Artifact의 위치를 함께 갱신합니다.
 
 ## 운영체제별 규칙 {#operating-systems}

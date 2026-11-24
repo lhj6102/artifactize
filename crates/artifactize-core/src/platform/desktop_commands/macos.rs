@@ -55,7 +55,11 @@ pub(super) fn register(
         Ok(existing) if existing == content => return Ok(()),
         // A moved/deleted bundle's old entry can be repaired. Another working bundle is
         // not ours to replace, even if this shell does not use path_helper.
-        Ok(existing) if Path::new(existing.trim_end()).join("artifactize").is_file() => {
+        Ok(existing)
+            if Path::new(existing.trim_end_matches(['\r', '\n']))
+                .join("artifactize")
+                .is_file() =>
+        {
             return Ok(());
         }
         Ok(_) => {}

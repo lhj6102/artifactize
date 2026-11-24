@@ -7,7 +7,7 @@ use crate::{App, Failure, browse::BranchKey};
 use artifactize_core::{config::edit, types::ArtifactName};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::collections::BTreeMap;
 
 /// A place on a graph, `[x, y]`.
 pub type Place = [f64; 2];
@@ -253,23 +253,12 @@ impl From<edit::Refusal> for EditRefusal {
     }
 }
 
-/// The project as the library reads it for verify, for what it says of parts.
-type Config = Option<artifactize_core::config::RepoConfig>;
-
-fn view(project: edit::Project, config: &Config) -> DefinitionsView {
+fn view(project: edit::Project) -> DefinitionsView {
     let files = project
         .files
         .iter()
         .filter_map(|(file, source)| Some((text(file), source.clone()?)))
         .collect();
-    // Its parts as the library reads the project, by name.
-    let parts = |name: &ArtifactName| -> Vec<String> {
-        config
-            .as_ref()
-            .and_then(|config| config.artifacts.get(name))
-            .map(|artifact| artifact.parts.iter().map(ToString::to_string).collect())
-            .unwrap_or_default()
-    };
     let nodes = project
         .nodes
         .iter()
@@ -279,7 +268,7 @@ fn view(project: edit::Project, config: &Config) -> DefinitionsView {
             target: node.target.clone(),
             kind: node.kind.into(),
             target_missing: node.target_missing,
-            parts: parts(name),
+            parts: node.parts.iter().map(ToString::to_string).collect(),
             at: node.annotations.at,
             places: node
                 .annotations
@@ -295,10 +284,6 @@ fn view(project: edit::Project, config: &Config) -> DefinitionsView {
     DefinitionsView { nodes, files }
 }
 
-async fn workspace(app: &App, branch: &BranchKey) -> Result<PathBuf, Failure> {
-    Ok(app.browse.branch(&branch.to_place())?.workspace)
-}
-
 /// The definitions of `branch`'s worktree as they are now.
 #[tauri::command]
 #[specta::specta]
@@ -306,14 +291,9 @@ pub async fn definitions(
     app: tauri::State<'_, App>,
     branch: BranchKey,
 ) -> Result<DefinitionsView, Failure> {
-    let workspace = workspace(&app, &branch).await?;
+    let workspace = app.current_workspace(&branch).await?;
     crate::failure::joined(
-        tokio::task::spawn_blocking(move || {
-            let project = edit::read_project(&workspace)?;
-            let config = artifactize_core::config::read_workspace_config(&workspace).ok();
-            Ok(view(project, &config))
-        })
-        .await,
+        tokio::task::spawn_blocking(move || edit::read_project(&workspace).map(view)).await,
     )?
     .map_err(|refusal: edit::Refusal| Failure::Read(refusal.to_string()))
 }
@@ -335,7 +315,7 @@ pub async fn definition_check(
     branch: BranchKey,
     operation: EditOperation,
 ) -> Result<EditCheck, Failure> {
-    let workspace = workspace(&app, &branch).await?;
+    let workspace = app.current_workspace(&branch).await?;
     let operation = edit::Operation::try_from(operation)?;
     crate::failure::joined(
         tokio::task::spawn_blocking(move || {
@@ -366,38 +346,21 @@ pub async fn definition_edit(
     shown: BTreeMap<String, String>,
     operation: EditOperation,
 ) -> Result<EditOutcome, Failure> {
-    let workspace = workspace(&app, &branch).await?;
+    let workspace = app.current_workspace(&branch).await?;
     let operation = edit::Operation::try_from(operation)?;
     let applied = crate::failure::joined(
         tokio::task::spawn_blocking(move || {
-            if matches!(&operation, edit::Operation::MoveComment { .. }) {
-                // A move creates no definition. Give the library the shown bases
-                // directly so its conflict check runs before any semantic refusal.
-                let based_on = shown
-                    .into_iter()
-                    .map(|(file, source)| (PathBuf::from(file), Some(source)))
-                    .collect();
-                return edit::apply(&workspace, &based_on, operation);
-            }
-            let project = edit::read_project(&workspace)?;
-            let footprint = edit::footprint(&project, &operation)?;
-            let mut based_on = edit::BasedOn::default();
-            for (file, current) in footprint.files {
-                let base = match current {
-                    None => None,
-                    Some(current) => match shown.get(&text(&file)) {
-                        Some(text) => Some(text.clone()),
-                        None => {
-                            return Err(edit::Refusal::Changed {
-                                file,
-                                current: Some(current),
-                            });
-                        }
-                    },
-                };
-                based_on.insert(file, base);
-            }
-            edit::apply(&workspace, &based_on, operation)
+            let based_on = shown
+                .into_iter()
+                .map(|(file, source)| {
+                    artifactize_tools::files::path_from_text(&file)
+                        .map(|file| (file, Some(source)))
+                        .map_err(|error| edit::Refusal::NotAllowed {
+                            reason: error.to_string(),
+                        })
+                })
+                .collect::<Result<edit::BasedOn, _>>()?;
+            edit::apply_shown(&workspace, &based_on, operation)
         })
         .await,
     )?;
