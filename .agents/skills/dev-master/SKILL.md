@@ -20,8 +20,9 @@ dev-master cycle, start the next run from step 1.
   requests and drives `main` back to GREEN. Its states: RED (an eval fails),
   YELLOW (only Human sign-offs remain) and GREEN (verify GREEN and CI green).
   Changes reach `main` only as merged pull requests whose blocking checks
-  passed (CI skips pull requests that change only the website, and pushes to
-  `main` start none); never push to `main` directly.
+  passed (CI skips pull requests that change only the website; pushes to
+  `main` also run CI to seed caches, with Desktop E2E informational); never
+  push to `main` directly.
 - `main-green` is a lightweight tag on the latest GREEN `main` commit. Only you
   move it. Both dev-worker branches and `release/*` branches start from it.
 - `release/*` branches and `v*` tags are the release channel. Releases are the

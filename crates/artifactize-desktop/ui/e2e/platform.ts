@@ -13,12 +13,13 @@
 //   build's opener seam on Windows). The stand-in it runs is the same on every OS.
 import type {} from "@wdio/tauri-service";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import { homedir, release } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
-import { basename, delimiter, isAbsolute, join, relative, sep, toNamespacedPath } from "node:path";
-import { callWindow, makeDirectory, nativePath, newDirectory, readTextIfExists, removeTree, replaceText, writeText, type NativePath } from "./portable.ts";
+import { basename, delimiter, isAbsolute, join, relative, resolve, sep, toNamespacedPath } from "node:path";
+import { callWindow, makeDirectory, nativePath, newDirectory, readTextIfExists, removeTree, replaceText, scratchDirectory, writeText, type NativePath } from "./portable.ts";
 
 const WINDOWS = process.platform === "win32";
 const MACOS = process.platform === "darwin";
@@ -59,6 +60,16 @@ export function pathNotUrl(path: NativePath): string {
   return toNamespacedPath(path);
 }
 
+/** Whether two native paths refer to the same file on this OS. */
+export function samePath(left: NativePath, right: NativePath): boolean {
+  const canonical = (path: NativePath): string => {
+    try { return realpathSync.native(path); } catch { return resolve(path); }
+  };
+  const a = canonical(left);
+  const b = canonical(right);
+  return WINDOWS ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
 // ---------------------------------------------------------------------------------
 // Environment
 
@@ -78,6 +89,10 @@ export function variable(name: string): string | undefined {
 export function setVariable(name: string, value: string | undefined): void {
   for (const key of Object.keys(process.env)) if (sameName(key, name)) delete process.env[key];
   if (value !== undefined) process.env[name] = value;
+}
+
+function hasVariable(env: Environment, name: string): boolean {
+  return Object.keys(env).some((key) => sameName(key, name) && env[key] !== undefined);
 }
 
 /** `env` with `name` set to `value`, removing differently spelled Windows aliases. */
@@ -176,14 +191,37 @@ export function packageCommand(args: string[]): { program: string; args: string[
 
 // Keep a native Job Object handle in the wrapper, not in the command that might finish
 // before its children. The wrapper joins before starting any command, so no child can race
-// assignment. Killing the wrapper closes the last handle and kills the whole job, even when
-// the command's own PID has already gone away. No shell interprets the command's arguments.
-const WINDOWS_JOB = String.raw`
-$ErrorActionPreference = 'Stop'
-Add-Type -TypeDefinition @'
+// assignment. Killing the wrapper closes the last non-inheritable handle and kills the whole
+// job, even when the command's own PID has already gone away. No shell interprets the
+// command's arguments. Compiled once per run into a standalone .exe so batches avoid
+// repeated PowerShell and C# compiler startup, and so the wrapper remains the batch Node
+// process's direct parent (batchJobPids / checkForeground).
+//
+// After a build root exits, Cargo intentionally allows long-lived toolchain daemons (such as
+// mspdbsrv.exe) to outlive the build; waiting blindly on ActiveProcesses > 1 stalls for their
+// 15-minute idle timeout. Instead, inspect the job's PID list via JobObjectBasicProcessIdList
+// (class 3) and stop waiting once every remaining descendant is on the build-daemon allowlist,
+// relying on the per-build private _MSPDBSRV_ENDPOINT_ so kill-on-close never disrupts
+// concurrent builds. Any other descendant (such as a stdout holder in runner.test.ts) keeps
+// the wrapper waiting, and a wait past 10s logs the remaining image names to stderr.
+const WINDOWS_JOB_SOURCE = String.raw`
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+
 public static class E2eBuildJob {
+  private const uint KILL_ON_JOB_CLOSE = 0x2000;
+  private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+  private const int JOB_OBJECT_BASIC_PROCESS_ID_LIST = 3;
+  private const int JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9;
+  private const int ERROR_MORE_DATA = 234;
+  private const int ERROR_INVALID_PARAMETER = 87;
+  private const int WAIT_DIAGNOSTIC_MS = 10000;
+
   [StructLayout(LayoutKind.Sequential)] public struct Limits {
     public long ProcessTime, JobTime;
     public uint Flags;
@@ -192,57 +230,249 @@ public static class E2eBuildJob {
     public UIntPtr Affinity;
     public uint Priority, Scheduling;
   }
+
   [StructLayout(LayoutKind.Sequential)] public struct Extended {
     public Limits Basic;
     public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes;
     public UIntPtr ProcessLimit, JobLimit, PeakProcess, PeakJob;
   }
-  [StructLayout(LayoutKind.Sequential)] public struct Accounting {
-    public long User, Kernel, PeriodUser, PeriodKernel;
-    public uint Faults, Total, Active, Terminated;
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern IntPtr CreateJobObject(IntPtr attributes, IntPtr name);
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern bool SetInformationJobObject(IntPtr job, int type, ref Extended info, uint size);
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern bool QueryInformationJobObject(IntPtr job, int type, IntPtr info, uint size, IntPtr returned);
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  private static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, StringBuilder buffer, ref uint size);
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern bool CloseHandle(IntPtr handle);
+
+  private static uint[] ListJobPids(IntPtr job) {
+    int capacity = 64;
+    while (true) {
+      int size = 8 + capacity * IntPtr.Size;
+      IntPtr buffer = Marshal.AllocHGlobal(size);
+      try {
+        if (QueryInformationJobObject(job, JOB_OBJECT_BASIC_PROCESS_ID_LIST, buffer, (uint)size, IntPtr.Zero)) {
+          int count = Marshal.ReadInt32(buffer, 4);
+          uint[] pids = new uint[count];
+          for (int i = 0; i < count; i++) {
+            pids[i] = unchecked((uint)Marshal.ReadIntPtr(buffer, 8 + i * IntPtr.Size).ToInt64());
+          }
+          return pids;
+        }
+        int err = Marshal.GetLastWin32Error();
+        if (err == ERROR_MORE_DATA) {
+          int assigned = Marshal.ReadInt32(buffer, 0);
+          capacity = Math.Max(assigned + 16, capacity * 2);
+          continue;
+        }
+        throw new InvalidOperationException("cannot observe E2E build Job Object (Win32 error " + err + ")");
+      } finally {
+        Marshal.FreeHGlobal(buffer);
+      }
+    }
   }
-  [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr CreateJobObject(IntPtr attributes, IntPtr name);
-  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetInformationJobObject(IntPtr job, int type, ref Extended info, uint size);
-  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
-  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool QueryInformationJobObject(IntPtr job, int type, out Accounting info, uint size, IntPtr returned);
-  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);
+
+  private static string ProcessImageName(uint pid) {
+    IntPtr handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+    if (handle == IntPtr.Zero) {
+      int err = Marshal.GetLastWin32Error();
+      if (err == ERROR_INVALID_PARAMETER) return null;
+      return "<pid:" + pid + ">";
+    }
+    try {
+      StringBuilder sb = new StringBuilder(1024);
+      uint len = (uint)sb.Capacity;
+      if (!QueryFullProcessImageNameW(handle, 0, sb, ref len)) {
+        return "<pid:" + pid + ">";
+      }
+      string full = sb.ToString(0, (int)len);
+      string name = Path.GetFileName(full);
+      return string.IsNullOrEmpty(name) ? full : name;
+    } finally {
+      CloseHandle(handle);
+    }
+  }
+
+  private static bool IsAllowedDaemon(string imageName) {
+    return string.Equals(imageName, "mspdbsrv.exe", StringComparison.OrdinalIgnoreCase);
+  }
+
+  public static int Main() {
+    try {
+      IntPtr job = CreateJobObject(IntPtr.Zero, IntPtr.Zero);
+      if (job == IntPtr.Zero) {
+        Console.Error.WriteLine("cannot create E2E build Job Object");
+        return 1;
+      }
+      Extended limits = new Extended();
+      limits.Basic.Flags = KILL_ON_JOB_CLOSE;
+      uint limitSize = (uint)Marshal.SizeOf(limits);
+      if (!SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ref limits, limitSize)) {
+        Console.Error.WriteLine("cannot set kill-on-close for the E2E build Job Object");
+        return 1;
+      }
+      Process self = Process.GetCurrentProcess();
+      uint selfPid = unchecked((uint)self.Id);
+      if (!AssignProcessToJobObject(job, self.Handle)) {
+        Console.Error.WriteLine("cannot enter the E2E build Job Object");
+        return 1;
+      }
+
+      string program = Environment.GetEnvironmentVariable("DESKTOP_BUILD_PROGRAM");
+      string args = Environment.GetEnvironmentVariable("DESKTOP_BUILD_ARGS") ?? "";
+      bool completesWithRoot = Environment.GetEnvironmentVariable("DESKTOP_TREE_COMPLETES_WITH_ROOT") == "1";
+      if (string.IsNullOrEmpty(program)) {
+        Console.Error.WriteLine("DESKTOP_BUILD_PROGRAM is not set");
+        return 1;
+      }
+
+      ProcessStartInfo info = new ProcessStartInfo();
+      info.FileName = program;
+      info.Arguments = args;
+      info.UseShellExecute = false;
+      info.EnvironmentVariables.Remove("DESKTOP_BUILD_PROGRAM");
+      info.EnvironmentVariables.Remove("DESKTOP_BUILD_ARGS");
+      info.EnvironmentVariables.Remove("DESKTOP_TREE_COMPLETES_WITH_ROOT");
+      if (completesWithRoot) {
+        info.EnvironmentVariables["DESKTOP_TEST_BATCH_JOB_PID"] = self.Id.ToString();
+      }
+
+      int code;
+      using (Process child = Process.Start(info)) {
+        if (child == null) {
+          Console.Error.WriteLine("cannot start E2E build child process");
+          return 1;
+        }
+        child.WaitForExit();
+        code = child.ExitCode;
+      }
+
+      // A batch owns service teardown; if it exits leaving apps behind, close the job as a
+      // fail-safe instead of waiting forever. Build commands drain their descendants except
+      // isolated toolchain daemons (mspdbsrv.exe) on the allowlist.
+      if (!completesWithRoot) {
+        Stopwatch wait = Stopwatch.StartNew();
+        bool loggedSlowWait = false;
+        while (true) {
+          uint[] pids = ListJobPids(job);
+          List<string> remaining = new List<string>();
+          bool hasUnlisted = false;
+          bool sawTransientExit = false;
+          for (int i = 0; i < pids.Length; i++) {
+            uint pid = pids[i];
+            if (pid == selfPid) continue;
+            string name = ProcessImageName(pid);
+            if (name == null) {
+              sawTransientExit = true;
+              continue;
+            }
+            remaining.Add(name + " (pid " + pid + ")");
+            if (!IsAllowedDaemon(name)) hasUnlisted = true;
+          }
+          if (remaining.Count == 0 && !sawTransientExit) break;
+          if (remaining.Count > 0 && !hasUnlisted && !sawTransientExit) {
+            Console.Error.WriteLine("[e2e-job] releasing lingering build daemon(s): " + string.Join(", ", remaining.ToArray()));
+            break;
+          }
+          if (!loggedSlowWait && wait.ElapsedMilliseconds >= WAIT_DIAGNOSTIC_MS) {
+            loggedSlowWait = true;
+            Console.Error.WriteLine("[e2e-job] waiting >10s after root exit for job process(es): " + string.Join(", ", remaining.ToArray()));
+          }
+          Thread.Sleep(20);
+        }
+      }
+
+      // The wrapper itself is in the job. Keep the handle until process exit so the OS closes
+      // it atomically and terminates any remaining processes in the job.
+      GC.KeepAlive(job);
+      return code;
+    } catch (Exception ex) {
+      Console.Error.WriteLine(ex.ToString());
+      return 1;
+    }
+  }
 }
-'@
-$job = [E2eBuildJob]::CreateJobObject([IntPtr]::Zero, [IntPtr]::Zero)
-if ($job -eq [IntPtr]::Zero) { throw 'cannot create E2E build Job Object' }
-$limits = New-Object E2eBuildJob+Extended
-$basic = $limits.Basic
-$basic.Flags = 0x2000
-$limits.Basic = $basic
-$limitSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf($limits)
-if (-not [E2eBuildJob]::SetInformationJobObject($job, 9, [ref]$limits, $limitSize)) { throw 'cannot set kill-on-close for the E2E build Job Object' }
-$self = [Diagnostics.Process]::GetCurrentProcess()
-if (-not [E2eBuildJob]::AssignProcessToJobObject($job, $self.Handle)) { throw 'cannot enter the E2E build Job Object' }
-$info = New-Object Diagnostics.ProcessStartInfo
-$info.FileName = $env:DESKTOP_BUILD_PROGRAM
-$info.Arguments = $env:DESKTOP_BUILD_ARGS
-$info.UseShellExecute = $false
-$info.EnvironmentVariables.Remove('DESKTOP_BUILD_PROGRAM')
-$info.EnvironmentVariables.Remove('DESKTOP_BUILD_ARGS')
-if ($env:DESKTOP_TREE_COMPLETES_WITH_ROOT -eq '1') {
-  $info.EnvironmentVariables['DESKTOP_TEST_BATCH_JOB_PID'] = [string]$PID
-}
-$child = [Diagnostics.Process]::Start($info)
-$child.WaitForExit()
-$code = $child.ExitCode
-# A batch owns service teardown; if it exits leaving apps behind, close the job as a
-# fail-safe instead of waiting forever. Build commands normally drain their descendants.
-if ($env:DESKTOP_TREE_COMPLETES_WITH_ROOT -ne '1') {
-  $counts = New-Object E2eBuildJob+Accounting
-  $accountSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf($counts)
-  do {
-    if (-not [E2eBuildJob]::QueryInformationJobObject($job, 1, [ref]$counts, $accountSize, [IntPtr]::Zero)) { throw 'cannot observe E2E build Job Object' }
-    if ($counts.Active -gt 1) { Start-Sleep -Milliseconds 20 }
-  } while ($counts.Active -gt 1)
-}
-# The wrapper itself is in the job. The OS closes the handle on its way out.
-exit $code
 `;
+
+let windowsJobHelper: { dir?: NativePath; exe: NativePath } | undefined;
+let treeSequence = 0;
+
+function findWindowsCsc(): NativePath {
+  const root = variable("SystemRoot") ?? "C:\\Windows";
+  const candidates = [
+    join(root, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe"),
+    join(root, "Microsoft.NET", "Framework", "v4.0.30319", "csc.exe"),
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) throw new Error(`cannot compile Windows Job Object helper: csc.exe not found at ${candidates.join(" or ")}`);
+  return found as NativePath;
+}
+
+/** Prepare per-run process-tree resources once before build/batch steps (compiles the
+ * standalone Windows Job Object helper once; no-op on other OSes). Returns a cleanup handle. */
+export function prepareProcessTrees(): () => void {
+  if (!WINDOWS) return () => {};
+  const existing = variable("DESKTOP_TEST_JOB_HELPER");
+  if (existing && existsSync(existing)) {
+    windowsJobHelper = { exe: existing as NativePath };
+    return () => {};
+  }
+  if (windowsJobHelper && existsSync(windowsJobHelper.exe)) return () => {};
+  const dir = newDirectory(scratchDirectory(), "artifactize-e2e-job-");
+  const source = nativePath(dir, "job.cs");
+  const exe = nativePath(dir, "job.exe");
+  try {
+    writeText(source, WINDOWS_JOB_SOURCE);
+    const csc = findWindowsCsc();
+    const compiled = spawnSync(csc, ["/nologo", "/optimize+", "/r:System.dll", "/target:exe", `/out:${exe}`, source], {
+      encoding: "utf8", windowsHide: true, timeout: 60000,
+    });
+    if (compiled.error || compiled.status !== 0 || !existsSync(exe)) {
+      const detail = compiled.error ? String(compiled.error) : (compiled.stderr.trim() || compiled.stdout.trim() || `exited ${compiled.status}`);
+      throw new Error(`failed to compile Windows Job Object helper with ${csc}: ${detail}`);
+    }
+    windowsJobHelper = { dir, exe };
+    setVariable("DESKTOP_TEST_JOB_HELPER", exe);
+    const dispose = (bestEffort: boolean) => {
+      if (windowsJobHelper?.dir === dir) {
+        windowsJobHelper = undefined;
+        if (variable("DESKTOP_TEST_JOB_HELPER") === exe) setVariable("DESKTOP_TEST_JOB_HELPER", undefined);
+        try { removeTree(dir); }
+        catch (error) { if (!bestEffort) throw error; }
+      }
+    };
+    const onExit = () => dispose(true);
+    process.once("exit", onExit);
+    return () => {
+      process.off("exit", onExit);
+      dispose(false);
+    };
+  } catch (error) {
+    removeTree(dir);
+    throw error;
+  }
+}
+
+function ensureWindowsJobHelper(): NativePath {
+  prepareProcessTrees();
+  if (!windowsJobHelper || !existsSync(windowsJobHelper.exe)) {
+    throw new Error("Windows Job Object helper executable is unavailable");
+  }
+  return windowsJobHelper.exe;
+}
 
 /** Windows' argv quoting for CreateProcess (including trailing backslashes). */
 function windowsArg(arg: string): string {
@@ -253,11 +483,17 @@ function windowsArg(arg: string): string {
 export function startTree(program: string, args: readonly string[], options: { cwd: NativePath; env: Environment; capture: boolean; captureDiagnostics?: boolean; completesWithRoot?: boolean }): ChildProcess {
   const stdio = ["ignore", options.capture ? "pipe" : "inherit", options.captureDiagnostics ? "pipe" : "inherit"] as const;
   if (WINDOWS) {
-    const powershell = join(variable("SystemRoot") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-    const script = Buffer.from(WINDOWS_JOB, "utf16le").toString("base64");
-    const env = { ...options.env, DESKTOP_BUILD_PROGRAM: program, DESKTOP_BUILD_ARGS: args.map(windowsArg).join(" "),
-      DESKTOP_TREE_COMPLETES_WITH_ROOT: options.completesWithRoot ? "1" : "0" };
-    return spawn(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", script], { cwd: options.cwd, env, windowsHide: true, stdio: [...stdio] });
+    const exe = ensureWindowsJobHelper();
+    let env: Environment = {
+      ...options.env,
+      DESKTOP_BUILD_PROGRAM: program,
+      DESKTOP_BUILD_ARGS: args.map(windowsArg).join(" "),
+      DESKTOP_TREE_COMPLETES_WITH_ROOT: options.completesWithRoot ? "1" : "0",
+    };
+    if (!options.completesWithRoot && !hasVariable(env, "_MSPDBSRV_ENDPOINT_")) {
+      env = withVariable(env, "_MSPDBSRV_ENDPOINT_", `artifactize-e2e-${process.pid}-${++treeSequence}-${randomBytes(4).toString("hex")}`);
+    }
+    return spawn(exe, [], { cwd: options.cwd, env, windowsHide: true, stdio: [...stdio] });
   }
   return spawn(program, args, { cwd: options.cwd, env: options.env, detached: true, windowsHide: true, stdio: [...stdio] });
 }

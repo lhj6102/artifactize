@@ -5,11 +5,11 @@ import { it } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { PNG } from "pngjs";
 import { BatchLifecycle } from "./batch-lifecycle.ts";
-import { checkE2eApp, cleanup, runStep } from "./build.ts";
+import { buildFolder, checkE2eApp, cleanup, runStep, stageCandidateBinaries, workspace } from "./build.ts";
 import { own } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { checkForeground, nodeProgram, processRunning, processState, quarantineForeground, releaseForeground, waitForProcessExit, xwdPng } from "./platform.ts";
-import { exists, nativePath, newDirectory, readTextIfExists, removeTree, scratchDirectory, suitePath, withMachineLock } from "./portable.ts";
+import { checkForeground, nodeProgram, prepareProcessTrees, processRunning, processState, quarantineForeground, releaseForeground, samePath, waitForProcessExit, xwdPng } from "./platform.ts";
+import { exists, nativePath, newDirectory, readTextIfExists, removeTree, scratchDirectory, suitePath, withMachineLock, writeText } from "./portable.ts";
 import { batches } from "./run.ts";
 
 it("batches scenarios in order, at most `size` apps at once, one that runs alone or is started again by itself", () => {
@@ -230,4 +230,45 @@ it("retains the lease when service shutdown cannot be confirmed", async (test) =
   owner.arm({}, async () => { throw new Error("shutdown not confirmed"); });
   assert.equal(await owner.close(), false);
   assert.throws(() => new BatchLifecycle(marker, "next batch"), /unreleased fixture apps/);
+});
+
+it("keeps isolated build targets by default and copies binaries without removing a shared target", (test) => {
+  const parent = newDirectory(scratchDirectory(), "desktop-target-test-");
+  test.after(() => removeTree(parent));
+  const isolated = buildFolder(parent);
+  assert.equal(isolated.env.CARGO_TARGET_DIR, nativePath(isolated.root, "target"));
+  assert.equal(isolated.env.CARGO_BUILD_BUILD_DIR, nativePath(isolated.root, "cargo-build"));
+  removeTree(isolated.root);
+
+  const shared = buildFolder(parent, { sharedTarget: true });
+  const workspaceTarget = nativePath(workspace, "target");
+  assert.equal(shared.env.CARGO_TARGET_DIR, workspaceTarget);
+  assert.equal(shared.env.CARGO_BUILD_BUILD_DIR, workspaceTarget);
+
+  const fakeTarget = newDirectory(parent, "fake-target-");
+  const builtCli = nativePath(fakeTarget, "cli-bin");
+  const builtApp = nativePath(fakeTarget, "app-bin");
+  writeText(builtCli, "cli");
+  writeText(builtApp, "app");
+
+  const candidate = stageCandidateBinaries(shared.root, builtCli, builtApp);
+  assert.equal(samePath(candidate.cli, builtCli), false);
+  assert.equal(samePath(candidate.app, builtApp), false);
+  assert.equal(samePath(candidate.app, nativePath(shared.root, ".", candidate.app.slice(shared.root.length + 1))), true);
+
+  cleanup(candidate.root);
+  assert.equal(exists(candidate.root), false);
+  assert.equal(exists(builtCli), true);
+  assert.equal(exists(builtApp), true);
+});
+
+it("reuses prepared process-tree resources across repeated steps and cleans them up", async () => {
+  const dispose = prepareProcessTrees();
+  try {
+    const cwd = scratchDirectory();
+    assert.equal(await runStep(nodeProgram, ["-e", "process.stdout.write('one')"], { env: process.env, cwd, capture: true }), "one");
+    assert.equal(await runStep(nodeProgram, ["-e", "process.stdout.write('two')"], { env: process.env, cwd, capture: true }), "two");
+  } finally {
+    dispose();
+  }
 });

@@ -12,7 +12,7 @@ import { BatchLifecycle } from "./batch-lifecycle.ts";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { appsAtOnce, assertHeadless, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, runnerCommand, systemName, setVariable, startBatch, variable } from "./platform.ts";
+import { appsAtOnce, assertHeadless, desktopResources, foregroundQuarantine, nodeProgram, packageCommand, prepareProcessTrees, runnerCommand, systemName, setVariable, startBatch, variable } from "./platform.ts";
 import { asNativePath, exists, makeDirectory, nativePath, newDirectory, readText, removeTree, scratchDirectory, sourceTree, suitePath, withMachineLock, writeText, type NativePath } from "./portable.ts";
 import { APPS_UNRELEASED, type Scenario } from "./scenario.ts";
 
@@ -93,6 +93,7 @@ async function suite(ids: string[]): Promise<void> {
   /** Whether the failures say already that the run was interrupted. */
   const noted = () => failures.some((failure) => failure instanceof Error && failure.message.startsWith("interrupted"));
   let candidate: Awaited<ReturnType<typeof prepare>> | undefined;
+  const disposeTrees = prepareProcessTrees();
   try {
     candidate = await prepare();
     for (const [index, ids] of groups.entries()) {
@@ -143,6 +144,9 @@ async function suite(ids: string[]): Promise<void> {
   } finally {
     try {
       if (candidate) cleanup(candidate.root);
+    } catch (error) { failures.push(error); }
+    try {
+      disposeTrees();
     } catch (error) { failures.push(error); }
   }
   if (failed.length) failures.unshift(new Error(`desktop scenarios failed on ${systemName}: ${failed.join(", ")}`));
@@ -276,13 +280,18 @@ if (import.meta.main) {
       process.exitCode = 0;
     }
     else if (mode === "prepare") {
-      const candidate = await prepare();
-      await turned();
-      if (interrupted) {
-        cleanup(candidate.root);
-        throw new Error("interrupted while preparing the E2E candidate");
+      const disposeTrees = prepareProcessTrees();
+      try {
+        const candidate = await prepare();
+        await turned();
+        if (interrupted) {
+          cleanup(candidate.root);
+          throw new Error("interrupted while preparing the E2E candidate");
+        }
+        console.log(candidate.manifest);
+      } finally {
+        disposeTrees();
       }
-      console.log(candidate.manifest);
     }
     else if (mode === "cleanup") cleanup(readCandidate(process.argv[3]).root);
     else if (mode === "unit") await unit();

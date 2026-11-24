@@ -2,7 +2,7 @@
 // candidate), the production app for a person's launch, and the Rust gates. Each build has
 // its own folder, Cargo output included, removed when its owner is done with it.
 import { readdirSync } from "node:fs";
-import { executableName, packageCommand, pathNotUrl, setVariable, startTree, stopTree, tempEnvironment, testWindowOptions, variable, type Environment } from "./platform.ts";
+import { executableName, packageCommand, pathNotUrl, setVariable, startTree, stopTree, tempEnvironment, testWindowOptions, variable, withVariable, type Environment } from "./platform.ts";
 import { absolutePath, asNativePath, copyFile, exists, makeDirectory, nativePath, newDirectory, readJson, removeTree, runProgram, scratchDirectory, suitePath, writeJson, type NativePath } from "./portable.ts";
 
 export const workspace = absolutePath(suitePath(), "../../../..");
@@ -39,14 +39,18 @@ export async function runStep(program: string, args: readonly string[], options:
   }
 }
 
-/** A new build folder; with Cargo's final and intermediate output inside it. */
-function buildFolder(parent = scratchDirectory()): { root: NativePath; env: Environment } {
+/** A new build folder; with Cargo's final and intermediate output inside it, unless
+ * `sharedTarget` opts into `<workspace>/target` for CI dependency caching in `prepare()`. */
+export function buildFolder(parent = scratchDirectory(), { sharedTarget = false } = {}): { root: NativePath; env: Environment } {
   const root = newDirectory(parent, "artifactize-desktop-build-");
-  return { root, env: {
+  const target = sharedTarget ? nativePath(workspace, "target") : undefined;
+  let env: Environment = {
     ...process.env,
-    CARGO_TARGET_DIR: nativePath(root, "target"), CARGO_BUILD_BUILD_DIR: nativePath(root, "cargo-build"),
     CARGO_PROFILE_DEV_DEBUG: "0", CARGO_PROFILE_DEV_INCREMENTAL: "false", ...tempEnvironment(makeDirectory(nativePath(root, "tmp"))),
-  } };
+  };
+  env = withVariable(env, "CARGO_TARGET_DIR", target ?? nativePath(root, "target"));
+  env = withVariable(env, "CARGO_BUILD_BUILD_DIR", target ?? nativePath(root, "cargo-build"));
+  return { root, env };
 }
 
 /** Build the frontend for `kind` into the build folder; the variables that make Cargo embed it. */
@@ -67,8 +71,8 @@ async function frontend(root: NativePath, env: Environment, kind: "production" |
 }
 
 /** Run `build` in a new build folder, removing the folder when it fails. */
-async function building<T>(parent: NativePath | undefined, build: (root: NativePath, env: Environment) => Promise<T>): Promise<T> {
-  const { root, env } = buildFolder(parent);
+async function building<T>(parent: NativePath | undefined, build: (root: NativePath, env: Environment) => Promise<T>, options?: { sharedTarget?: boolean }): Promise<T> {
+  const { root, env } = buildFolder(parent, options);
   try { return await build(root, env); }
   catch (error) {
     removeTree(root);
@@ -83,8 +87,19 @@ function save(root: NativePath, cli: NativePath, app: NativePath): Candidate {
   return candidate;
 }
 
+/** Copy built executables into `root` so the candidate is self-contained and `cleanup(root)`
+ * never touches a shared target directory. */
+export function stageCandidateBinaries(root: NativePath, builtCli: NativePath, builtApp: NativePath): Candidate {
+  const cli = nativePath(root, executableName("artifactize"));
+  const app = nativePath(root, executableName("artifactize-desktop"));
+  copyFile(builtCli, cli);
+  copyFile(builtApp, app);
+  return save(root, cli, app);
+}
+
 /** Build the E2E test app and the CLI into a new folder under `parent`. */
 export function prepare(parent?: NativePath): Promise<Candidate> {
+  const sharedTarget = variable("DESKTOP_E2E_SHARED_TARGET_DIR") === "1";
   return building(parent, async (root, base) => {
     const env = await frontend(root, base, "e2e");
     // `json-render-diagnostics` keeps only Cargo's own reports on the captured standard output:
@@ -103,8 +118,8 @@ export function prepare(parent?: NativePath): Promise<Candidate> {
     const cli = built.get("artifactize");
     const app = built.get("artifactize-desktop");
     if (!cli || !app) throw new Error("Cargo did not build the CLI and the desktop app");
-    return save(root, cli, app);
-  });
+    return sharedTarget ? stageCandidateBinaries(root, cli, app) : save(root, cli, app);
+  }, { sharedTarget });
 }
 
 /** The candidate the manifest `DESKTOP_TEST_CANDIDATE` names. */
