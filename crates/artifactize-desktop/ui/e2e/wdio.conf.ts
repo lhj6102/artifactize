@@ -8,7 +8,7 @@ import { checkE2eApp, readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { own, type Owned } from "./fixtures/owned.ts";
 import { environment } from "./fixtures/repo.ts";
-import { appsAtOnce, displayEnvironment, displayScreenshot, fallbackImage, fallbackImageEnvironment, setVariable, startupImage, variable, type Environment } from "./platform.ts";
+import { appsAtOnce, displayEnvironment, displayScreenshot, fallbackImage, fallbackImageEnvironment, samePath, setVariable, startupImage, variable, type Environment } from "./platform.ts";
 import { asNativePath, embeddedPorts, exists, makeDirectory, nativePath, readBytes, readJson, suitePath, writeJson, writeText } from "./portable.ts";
 import { APPS_UNRELEASED, COMPLETED, LAST_WINDOW, keepEvidence, type Context } from "./scenario.ts";
 
@@ -167,7 +167,7 @@ export const config = {
           const input = await item.prepare(scope);
           const env = { ...environment(input.fixture), ...displayEnvironment(), ARTIFACTIZE_NO_UPDATE_CHECK: "1", ...input.env };
           const app = asNativePath(input.app ?? candidate.app);
-          checkE2eApp(app, scope.root, env);
+          if (!samePath(app, candidate.app)) checkE2eApp(app, scope.root, env);
           return { scope, input, env, app };
         })().catch(async (cause: unknown) => {
           // The scenario whose preparation failed is the one that failed: the failure names it

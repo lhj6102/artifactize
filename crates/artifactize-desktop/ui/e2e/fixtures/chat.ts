@@ -18,6 +18,10 @@ export const CHAT_ANSWER = "The notes were read and Verify was started.";
 export const GRAPH_PROMPT = "Summarize what you see on the graph";
 export const GRAPH_GATE = "graph-answer";
 export const GRAPH_ANSWER = "I see the Current while we work.";
+export const MOVE_PROMPT = "Read the marker in the moved checkout";
+export const MOVE_FILE = "elsewhere-only/marker.txt";
+export const MOVE_MARKER = "Moved checkout marker.";
+export const MOVE_ANSWER = "The moved checkout marker was read.";
 
 function call(id: string, name: string, args: object) {
   return { type: "function_call", id: `fc_${id}`, call_id: id, name, arguments: JSON.stringify(args), status: "completed" };
@@ -44,7 +48,8 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
         return;
       }
       if (body.includes(QUIT_PROMPT)) return; // Quitting the app ends this response.
-      const resumed = body.includes(CONTINUE_PROMPT);
+      const askedMove = body.includes(MOVE_PROMPT);
+      const resumed = !askedMove && body.includes(CONTINUE_PROMPT);
       const askedGraph = body.includes(GRAPH_PROMPT);
       if (askedGraph) {
         const gate = nativePath(fixture.root, GRAPH_GATE);
@@ -83,7 +88,17 @@ export async function installChatProvider(owned: Owned, fixture: Fixture): Promi
       }
       let number = 1;
       let output: object[];
-      if (resumed || body.includes('"call_id":"verify-notes"')) {
+      if (askedMove) {
+        const readMoved = body.includes('"call_id":"read-moved"');
+        if (readMoved && !body.includes(MOVE_MARKER)) {
+          response.writeHead(422).end();
+          return;
+        }
+        number = readMoved ? 3 : 1;
+        output = readMoved
+          ? [{ type: "message", id: "msg_moved", role: "assistant", status: "completed", content: [{ type: "output_text", text: MOVE_ANSWER, annotations: [] }] }]
+          : [call("read-moved", "read", { path: MOVE_FILE })];
+      } else if (resumed || body.includes('"call_id":"verify-notes"')) {
         number = 3;
         output = [{ type: "message", id: "msg_notes", role: "assistant", status: "completed", content: [{ type: "output_text", text: resumed ? CONTINUE_ANSWER : `${CHAT_ANSWER}\n\n${"More release notes.\n\n".repeat(60)}`, annotations: [] }] }];
       } else if (body.includes('"call_id":"read-notes"')) {
