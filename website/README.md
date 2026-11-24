@@ -175,7 +175,7 @@ on stable `v*` release tags (excluding prerelease `v*-*` tags) deploys `website/
 `artifactize.dev` custom domain; unknown paths get `dist/docs/ko/404.html` under
 `/docs/ko/`, `dist/docs/404.html` elsewhere under `/docs/` and `dist/404.html`
 elsewhere. `workflow_dispatch` deploys the selected branch by
-hand from the Actions tab. The Rust CI workflow skips changes that touch only
+hand from the Actions tab. The Rust CI workflow skips pull requests that touch only
 `website/`.
 
 The deploy step is skipped with a notice when its secrets are missing.

@@ -1,34 +1,40 @@
 ---
 name: dev-master
-description: Run the main convergence cycle of the artifactize repository - merge the pull requests waiting for main, verify main, fix what is RED until verify is GREEN, move the main-green tag to that commit, and schedule the next run 58 minutes later. Run only when invoked explicitly.
+description: Run the main convergence (reduce) cycle of the artifactize repository - merge ready pull requests waiting for main, resolve conflicts on overlapping ready pull requests directly on a convergence branch, absorb newly ready pull requests while fixing RED evals until verify is GREEN, move the main-green tag to that commit, and schedule the next run 58 minutes later. Run only when invoked explicitly.
 disable-model-invocation: true
 ---
 
 # dev-master
 
-You keep `main` converging. One run merges the pull requests waiting for `main`,
-then verifies `main` and fixes what is RED until verify is GREEN, records that
-commit as `main-green`, and schedules the next run. When a scheduled prompt asks
-you to continue the dev-master cycle, start the next run from step 1.
+You keep `main` converging. One run reduces the ready pull requests waiting for
+`main` (merging non-conflicting ones directly and integrating conflicting ones
+without sending them back to dev-worker for rebase), verifies `main` and fixes
+what is RED until verify is GREEN, records that commit as `main-green`, and
+schedules the next run. When a scheduled prompt asks you to continue the
+dev-master cycle, start the next run from step 1.
 
 ## Branch model
 
-- `main` is where work comes together. Merging a ready pull request may turn it
-  RED; that is expected, and this cycle brings it back to GREEN. Its states:
-  RED (an eval fails), YELLOW (only Human sign-offs remain) and GREEN
-  (verify GREEN and CI green). Changes reach `main` only as merged pull requests
-  whose blocking checks passed (CI skips pull requests that change only the
-  website, and pushes to `main` start none); never push to `main` directly.
+- `main` is where work comes together. Merging ready pull requests may turn it
+  RED; that is expected, and this cycle continuously reduces waiting pull
+  requests and drives `main` back to GREEN. Its states: RED (an eval fails),
+  YELLOW (only Human sign-offs remain) and GREEN (verify GREEN and CI green).
+  Changes reach `main` only as merged pull requests whose blocking checks
+  passed (CI skips pull requests that change only the website, and pushes to
+  `main` start none); never push to `main` directly.
 - `main-green` is a lightweight tag on the latest GREEN `main` commit. Only you
-  move it. dev-worker branches start from it.
+  move it. Both dev-worker branches and `release/*` branches start from it.
 - `release/*` branches and `v*` tags are the release channel. Releases are the
-  owner's decision: never create, push to, or merge a `release/*` branch, never
-  merge a `release/*` → `main` pull request, never create a `v*` tag or publish
-  a release.
+  owner's decision (via release-master): never create, push to, or merge a
+  `release/*` branch, never merge a `release/*` → `main` pull request, never
+  create a `v*` tag or publish a release.
 - dev-worker branches (`feat/…`, `fix/…`, `docs/…`, `chore/…`) start at
-  `main-green` and open a pull request into `main` once verify is GREEN, or YELLOW
-  while sign-offs wait; you merge one only when its head verifies GREEN (step 2).
-  Your own fix branches start at `origin/main` instead (step 3).
+  `main-green`, verify once until GREEN (or YELLOW while sign-offs wait), and
+  open a pull request into `main` without rebasing onto newer `main` commits.
+  Once a pull request's head has verified GREEN and passed blocking CI, you
+  integrate it into `main` even if its base commit is an older `main-green` or
+  it conflicts with newer commits on `main` (steps 2–3). Your own convergence
+  and fix branches start at `origin/main` instead (step 3).
 
 ## Verify
 
@@ -87,7 +93,7 @@ git -C .claude/worktrees/dev-master checkout --detach origin/main
 Work only in worktrees under `.claude/worktrees/`; never touch the main
 checkout or other sessions' worktrees.
 
-### 2. Merge the waiting pull requests
+### 2. Merge or queue the waiting pull requests
 
 ```sh
 gh pr list --base main --state open --json number,title,headRefName,headRefOid,isDraft,mergeable,body
@@ -106,41 +112,76 @@ verify: <Run ID> <GREEN or YELLOW> <SHA of the verified commit>
 -->
 ```
 
-Merge one when all of these hold:
+A pull request is **ready** when both of these hold (regardless of whether
+`main` moved ahead after its `from:` commit):
 
 1. **Verify GREEN on its head.** The note says GREEN for the current
    `headRefOid`. Otherwise (YELLOW, an older commit, no note),
-   verify the head yourself in `.claude/worktrees/pr-N`
+   verify the head yourself without rebasing in `.claude/worktrees/pr-N`
    (`git fetch origin pull/N/head` and `git worktree add --detach … FETCH_HEAD`);
    results whose reuse key still matches are reused. When it is GREEN, update
-   the note's `verify` line. When only sign-offs remain, list them for the owner and leave the pull
-   request waiting; when it is RED, leave it for its worker.
+   the note's `verify` line. When only sign-offs remain, list them for the owner
+   and leave the pull request waiting; when it is RED, leave it for its worker.
 2. **CI green.** `gh pr checks N`: every job passed, judged by each job's own
    conclusion. Desktop E2E is informational on pull requests into `main` (it
    blocks only `release/*` pushes and pull requests into `release/*`); record
    its failures for the release phase instead of blocking the merge.
-3. **No conflict.** A conflicting pull request stays open; say so in a pull
-   request comment, once.
 
-```sh
-gh pr merge N --merge
-```
+For each ready pull request:
 
-### 3. Verify main until GREEN
+- **No conflict:** merge it directly into `main`:
+  ```sh
+  gh pr merge N --merge
+  ```
+- **Conflict with `main` (overlapping changes):** do **not** bounce it back to
+  dev-worker for rebase. Queue it for direct conflict-resolution integration on
+  your convergence branch in step 3. Only leave a conflicting pull request open
+  and ask the owner (in a pull request comment, once) when two pull requests
+  have genuinely contradictory requirements or designs that cannot be resolved
+  without an owner decision.
 
-Check out the new `origin/main` in `.claude/worktrees/dev-master` and verify.
+### 3. Integrate conflicts and verify main until GREEN
 
-- **RED, ERROR or INCOMPLETE:** fix it on a branch from `main`'s head:
+Fetch `origin/main` so it includes every non-conflicting pull request merged in
+step 2.
+
+- **If step 2 queued conflicting ready pull requests:** create a convergence
+  branch from `origin/main`:
   `git worktree add -b fix/main-<yyyymmdd-hhmm> .claude/worktrees/dev-fix origin/main`.
-  Verify there until GREEN, open a pull request with `--base main` whose note
-  says `role: dev-master` and `from:` that head, wait for CI
-  (`gh pr checks N --watch`) and merge it under the rules of step 2.
-- **Newly waiting pull requests:** before verifying again, run step 2 again.
+  For each queued pull request `N` in number order, fetch its verified head
+  (`git fetch origin pull/N/head`) and merge it with
+  `git merge --no-ff FETCH_HEAD`, resolving Git conflicts directly without
+  re-verifying each pull request separately. Verify the combined convergence
+  branch once.
+- **Otherwise:** check out the new `origin/main` in `.claude/worktrees/dev-master`
+  and verify.
+
+Drive the active branch (either `origin/main` or your convergence branch
+`fix/main-<yyyymmdd-hhmm>`) to GREEN:
+
+- **RED, ERROR or INCOMPLETE:** if you are not yet on a convergence branch,
+  create `fix/main-<yyyymmdd-hhmm>` from `origin/main` in
+  `.claude/worktrees/dev-fix`. Fix the failing Artifacts on that branch.
+- **Newly ready pull requests while fixing a RED:** before running the next
+  verify pass on a RED convergence branch, check step 2 again. Merge any
+  non-conflicting newly ready pull requests into `main` and merge `origin/main`
+  into the convergence branch; merge any conflicting newly ready pull requests
+  directly into the convergence branch with `git merge --no-ff FETCH_HEAD` and
+  resolve conflicts. Then continue converging in one sweep.
+- **Convergence branch reaches GREEN:** do not hold back a finished GREEN
+  checkpoint for newly arrived pull requests (they are absorbed in the next
+  run). Open a pull request with `--base main` whose note says
+  `role: dev-master` and `from:` the `origin/main` SHA it branched from, wait
+  for CI (`gh pr checks N --watch`), and merge it with `gh pr merge N --merge`
+  (because each conflicting pull request's head commit was merged with
+  `--no-ff`, GitHub automatically marks those pull requests as merged too).
+  Then check out the updated `origin/main` in `.claude/worktrees/dev-master`
+  and verify once (reusing cached GREEN results) before step 4.
 - **YELLOW:** list the pending sign-offs for the owner and go to
   step 5 without moving `main-green`. The next run verifies again and reuses the
   signed-off results.
-- **GREEN:** go to step 4 if the verified commit is still `origin/main`'s head
-  after a fresh fetch; otherwise step 2 again.
+- **GREEN on `origin/main`:** go to step 4 if the verified commit is still
+  `origin/main`'s head after a fresh fetch; otherwise step 2 again.
 
 ### 4. Record main-green
 

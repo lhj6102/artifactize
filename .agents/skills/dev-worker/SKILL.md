@@ -14,20 +14,23 @@ anything else.
 
 ## Branch model
 
-- `main` is where work comes together. It moves between RED and GREEN; the
-  dev-master skill merges pull requests into it and drives it back to GREEN.
-  Never push to `main` directly.
+- `main` is where work comes together. It moves between RED, YELLOW and GREEN;
+  the dev-master skill merges ready pull requests into it (including resolving
+  conflicts on overlapping pull requests) and drives it back to GREEN. Never
+  push to `main` directly.
 - `main-green` is a lightweight tag on the latest `main` commit whose full
-  verify was GREEN and whose CI was green. Only dev-master moves it.
+  verify was GREEN and whose CI was green. Only dev-master moves it. Both
+  dev-worker branches and `release/*` branches start from it.
 - `release/*` branches and `v*` tags are the release channel. Only the owner
-  releases: cutting a `release/*` branch from `main` for QA, tagging `v*` on
-  `release/*` to publish, and back-merging any QA fixes into `main`. Never
-  create or push to a `release/*` branch, open a pull request into it, tag
-  `v*` or publish a release.
+  (or release-master when invoked by the owner) releases: cutting a `release/*`
+  branch from `main-green` for QA, tagging `v*` on `release/*` to publish, and
+  back-merging any QA fixes into `main`. Never create or push to a `release/*`
+  branch, open a pull request into it, tag `v*` or publish a release.
 - Development branches (`feat/…`, `fix/…`, `docs/…`, `chore/…`) start at
-  `main-green` and open a pull request into `main` once verify is GREEN, or
-  YELLOW while Human sign-offs wait; dev-master merges it only when its head
-  verifies GREEN.
+  `main-green`, verify once until GREEN (or YELLOW while Human sign-offs wait),
+  and open a pull request into `main` as-is. Do not rebase onto or merge newer
+  `main` commits just to chase a moving `main` after your branch reaches GREEN:
+  dev-master handles integration, conflict resolution and convergence on `main`.
 
 ## 1. Start from main-green
 
@@ -164,9 +167,11 @@ push and watch again.
 
 When the pull request is open, CI is green and only sign-offs may remain,
 report once: the pull request URL, the Run ID and outcome, CI, the sign-offs
-still needed, and the structural choices you made. Do not merge: dev-master
-merges into `main`. Then wait. On review feedback, fix, verify, push and update
-the note.
+still needed, and the structural choices you made. Do not merge and do not
+rebase onto newer `main` commits once your head is GREEN: dev-master integrates
+pull requests into `main` (resolving conflicts directly) and converges `main`
+to GREEN. Then wait. On review feedback about your own changes, fix, verify,
+push and update the note.
 
 Report only when done, blocked, or with a question the code and docs cannot
 answer; no progress messages. Decide structure and workflow questions (file

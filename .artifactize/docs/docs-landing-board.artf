@@ -9,16 +9,16 @@ red_at = "P1"
 
 [evals.reads-the-record.payload]
 instruction = """
-Read index.html, model.js and main.js of {docs-landing-board}, and dev-master/SKILL.md and
-dev-worker/SKILL.md of {dev-skills}. Check that:
+Read index.html, model.js and main.js of {docs-landing-board}, and dev-master/SKILL.md,
+dev-worker/SKILL.md and release-master/SKILL.md of {dev-skills}. Check that:
 - the board parses exactly the pull request note the skills tell agents to write: its
   marker, every field name, the value forms (Run IDs, outcomes, commit SHAs, times) and
   where dev-master adds `green:` lines; a note the skills describe is never dropped, and a
   malformed note never breaks the page;
 - what the board derives agrees with the skills' branch model: `main`, the `main-green`
-  tag, pull requests into `main`, releases cut on `release/*` branches with `v*` tags
-  (and optional QA back-merge pull requests into `main`), the roles dev-master and
-  dev-worker, verify outcomes and CI;
+  tag, pull requests into `main`, releases cut from `main-green` on `release/*` branches
+  with `v*` tags (and optional QA back-merge pull requests into `main`), the roles
+  dev-master, dev-worker and release-master, verify outcomes and CI;
 - the page's description of the flow and the roles says the same as the skills;
 - it uses only GitHub's public REST API without credentials, and stays usable when GitHub
   fails or its rate limit is used up."""

@@ -9,7 +9,6 @@ on:
     paths-ignore: ["website/**", ".github/workflows/website.yml"]
   push:
     branches: ["release/*"]
-    paths-ignore: ["website/**", ".github/workflows/website.yml"]
   workflow_dispatch:
 
 jobs:
