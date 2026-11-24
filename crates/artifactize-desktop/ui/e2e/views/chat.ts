@@ -157,12 +157,17 @@ export class Chat {
   /** Find in the conversation from the stage header's Find, typing `text`; what the field says. */
   async find(text: string): Promise<string> {
     const field = `${MAIN} > header input[aria-label="Find in the conversation"]`;
-    if (!(await this.browser.$(field).isExisting())) {
+    const had = await this.browser.$(field).isExisting();
+    const before = had ? await this.browser.execute((main) => document.querySelector(`${main} > header .find [role="status"]`)?.textContent?.trim() ?? "", MAIN) : "";
+    if (!had) {
       await this.browser.$(`${MAIN} > header button[aria-label^="Find ("]`).click();
       await holds(this.browser, () => this.browser.execute((query) => document.activeElement === document.querySelector(query), field), "the find field took Find's place, focused");
     }
     await fill(this.browser, field, text);
-    return this.findCount();
+    return (await until(this.browser, () => this.browser.execute((main, selector) => ({
+      value: document.querySelector<HTMLInputElement>(selector)?.value ?? "",
+      said: document.querySelector(`${main} > header .find [role="status"]`)?.textContent?.trim() ?? "",
+    }), MAIN, field), ({ value, said }) => value === text && said !== "" && said !== before, "the find field says what it found")).said;
   }
 
   /** What the find field says: which place of how many, or that none matches. */

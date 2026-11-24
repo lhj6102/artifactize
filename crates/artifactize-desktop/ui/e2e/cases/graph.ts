@@ -146,6 +146,7 @@ export const scenarios: Scenario[] = [
       const favorites = await app.graph.openFind((shown) => shown.entries.length > 0, "the find field opened listing the favorites");
       assert.deepEqual(favorites.entries.map((entry) => entry.name), ["docs"], "the starred Artifact listed with nothing typed");
       await app.graph.chooseFound("docs", "Artifact docs");
+      await app.detail.until((shown) => shown.starred, "docs's Detail shows its star");
       await app.detail.star();
       assert.equal((await app.detail.read())?.starred, false, "the star taken away");
     },
