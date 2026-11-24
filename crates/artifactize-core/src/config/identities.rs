@@ -98,6 +98,7 @@ fn name(value: &str) -> bool {
     super::identifier(value, "").is_ok()
 }
 identity!(ModelId, |value: &str| !value.trim().is_empty());
+identity!(ProfileAliasName, name);
 identity!(ProfileVariantName, name);
 identity!(ToolOperationName, name);
 // Published tool names concatenate an operation and Artifact name with `_`; each

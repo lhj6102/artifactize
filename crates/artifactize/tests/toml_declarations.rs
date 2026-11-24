@@ -591,3 +591,91 @@ fn json_backed_tool_and_fingerprint_fields_report_the_offending_field_span() {
         );
     }
 }
+
+#[test]
+fn cli_config_commands_resolve_and_preserve_profile_aliases() {
+    let root = support::os::tempdir();
+    fs::create_dir_all(root.path().join(".artifactize")).unwrap();
+    fs::create_dir_all(root.path().join("app")).unwrap();
+    fs::create_dir_all(root.path().join("spec")).unwrap();
+    fs::write(
+        root.path().join(".artifactize/settings.toml"),
+        r#"
+[profiles.sol]
+kind = "agent"
+backend = "codex"
+model = "gpt-6.2-sol"
+reasoning = "xhigh"
+timeout_ms = 1800000
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.path().join(".artifactize/spec.artf"),
+        "path = \"spec/\"\ntype = \"files\"\nbasis = true\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join(".artifactize/app.artf"),
+        r#"path = "app/"
+type = "files"
+
+[evals.review]
+title = "Review app against spec"
+profile = !sol(reasoning = "high", timeout_ms = 600000)
+red_at = "P1"
+payload.instruction = "Check {app} against {spec}."
+
+[evals.review.profile_variants]
+full = !sol
+"#,
+    )
+    .unwrap();
+
+    let check = std::process::Command::new(support::os::cli())
+        .arg("--repo")
+        .arg(root.path())
+        .args(["config", "check", "--json"])
+        .record_output()
+        .unwrap();
+    assert!(check.status.success(), "{check:?}");
+    let checked: Value = serde_json::from_slice(&check.stdout).unwrap();
+    assert_eq!(checked["ok"], true);
+    assert_eq!(checked["artifacts"], 2);
+    assert_eq!(checked["evals"], 1);
+
+    let graph = std::process::Command::new(support::os::cli())
+        .arg("--repo")
+        .arg(root.path())
+        .args(["config", "graph", "--json"])
+        .record_output()
+        .unwrap();
+    assert!(graph.status.success(), "{graph:?}");
+    let graph: Value = serde_json::from_slice(&graph.stdout).unwrap();
+    let eval = &graph["evals"][0]["declaration"];
+    assert_eq!(eval["profile"]["kind"], "agent");
+    assert_eq!(eval["profile"]["backend"], "codex");
+    assert_eq!(eval["profile"]["model"], "gpt-6.2-sol");
+    assert_eq!(eval["profile"]["reasoning"], "high");
+    assert_eq!(eval["profile"]["timeoutMs"], 600000);
+    assert_eq!(eval["profileVariants"]["full"]["reasoning"], "xhigh");
+    assert_eq!(eval["profileVariants"]["full"]["timeoutMs"], 1800000);
+
+    let rename = std::process::Command::new(support::os::cli())
+        .arg("--repo")
+        .arg(root.path())
+        .args(["config", "rename", "spec", "contract"])
+        .record_output()
+        .unwrap();
+    assert!(rename.status.success(), "{rename:?}");
+    let app_source = fs::read_to_string(root.path().join(".artifactize/app.artf")).unwrap();
+    assert!(
+        app_source.contains("profile = !sol(reasoning = \"high\", timeout_ms = 600000)"),
+        "{app_source}"
+    );
+    assert!(app_source.contains("full = !sol\n"), "{app_source}");
+    assert!(
+        app_source.contains("Check {app} against {contract}."),
+        "{app_source}"
+    );
+}

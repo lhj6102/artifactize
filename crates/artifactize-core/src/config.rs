@@ -23,6 +23,7 @@ mod plain;
 pub mod plugins;
 mod profile;
 mod schemas;
+mod settings;
 mod site;
 mod stored;
 mod tools;
@@ -39,10 +40,11 @@ use discovery::{logical_join, read_regular_text};
 pub use eval::{EvalDeclaration, EvalPayload, LocalEvalId, Priority};
 pub use identities::{
     ArtifactType, ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId,
-    ProfileVariantName, ReferenceName, ToolName, ToolOperationName,
+    ProfileAliasName, ProfileVariantName, ReferenceName, ToolName, ToolOperationName,
 };
 pub use mutex::MutexTag;
 pub use profile::{Profile, ProfileKind, Reasoning};
+pub use settings::{SETTINGS_FILE, Settings, parse_settings};
 pub use site::{ScopeReadError, Site, read_sites};
 pub(crate) use site::{read_artifact_scope, read_eval_scope};
 pub use stored::{Field, StoredPayload, StoredProfile};

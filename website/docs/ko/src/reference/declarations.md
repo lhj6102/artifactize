@@ -45,12 +45,42 @@ text = "Canvas note shown in the desktop app."
 | 필드 | 타입 및 규칙 |
 |---|---|
 | `title` | **필수.** 통과 조건을 요약하는 문자열. |
-| `profile` | **필수.** 평가자 프로필 테이블(`kind = "runtime"`, `"agent"`, `"human"` 중 하나):<br>• `runtime`: `{ kind = "runtime", command = "...", args = [...], timeout_ms? = N }`<br>• `agent`: `{ kind = "agent", backend = "...", model = "...", reasoning? = "...", timeout_ms? = N, max_tokens? = N, max_tool_calls? = N }`<br>• `human`: `{ kind = "human" }` |
-| `profile_variants` | 같은 `kind`의 대체 실행 프로필 매핑(`verify --profile NAME` 또는 `status --profile NAME`으로 선택). 직접 선택했거나 재귀 옵션으로 포함한 eval 중 실행 가능한 eval마다 대체 실행 프로필을 정의해야 합니다. Runtime 대체 실행 프로필의 `args`에 적은 참조 때문에 새로 포함된 선행 eval은 기본 프로필로 실행합니다. |
+| `profile` | **필수.** 평가자 프로필 테이블(`kind = "runtime"`, `"agent"`, `"human"` 중 하나) 또는 Agent [프로필 별칭](#project-settings)(`!name`이나 `!name(field = value, ...)`):<br>• `runtime`: `{ kind = "runtime", command = "...", args = [...], timeout_ms? = N }`<br>• `agent`: `{ kind = "agent", backend = "...", model = "...", reasoning? = "...", timeout_ms? = N, max_tokens? = N, max_tool_calls? = N }`<br>• `human`: `{ kind = "human" }` |
+| `profile_variants` | 같은 `kind`의 대체 실행 프로필 매핑(`verify --profile NAME` 또는 `status --profile NAME`으로 선택). `agent` eval에서는 인라인 테이블 대신 [프로필 별칭](#project-settings)도 쓸 수 있습니다. 직접 선택했거나 재귀 옵션으로 포함한 eval 중 실행 가능한 eval마다 대체 실행 프로필을 정의해야 합니다. Runtime 대체 실행 프로필의 `args`에 적은 참조 때문에 새로 포함된 선행 eval은 기본 프로필로 실행합니다. |
 | `mutex` | `runtime` 또는 `agent` eval에 지정하는 계층형 잠금 태그 배열(`"use-computer"` 또는 `"use-computer:display"` 같은 하위 경로). 태그가 같거나 상하위 관계에 있으면(`use-computer`는 모든 하위 태그와 충돌) 한 eval이 끝날 때까지 다른 eval은 대기합니다. |
 | `payload.instruction` | **필수.** 평가 기준 문자열. `payload.instruction`이나 Runtime `args`에서 다른 Artifact를 `{name}`으로 참조하면 그 Artifact가 해당 eval의 입력이 됩니다. 해당 eval의 평가 대상 자체를 참조할 때는 의존성을 추가하지 않습니다. |
 | `red_at` | `agent` eval에만 지정하는 선택적 우선순위 기준(`"P0"`, `"P1"`, `"P2"`, `"P3"` 중 하나이며 `P0`이 가장 높음). `red_at` 이상의 지적 사항이 있으면 `RED`로 판정하고, 생략하면 지적 사항이 하나만 있어도 `RED`로 판정합니다. 기준보다 낮은 지적 사항은 `GREEN` 판정에서도 결과에 남습니다. |
 | `pass_schema`, `fail_schema` | `human` eval의 결과 필드를 검증할 JSON Schema로, 필요할 때만 지정합니다(`agent` eval에서는 쓸 수 없습니다). `runtime` 선언에도 적을 수 있으며, 종료 코드 판정은 바꾸지 않고 eval 정의 해시에만 반영됩니다. |
+
+## 프로젝트 설정 (`.artifactize/settings.toml`) {#project-settings}
+
+선택 파일인 `.artifactize/settings.toml`에 Agent 평가자 프로필 별칭을 한 번만 정의해 두면 여러 `.artf` 파일에 같은 프로필을 반복해서 적지 않아도 됩니다.
+
+```toml
+# .artifactize/settings.toml
+[profiles.sol]
+kind = "agent"
+backend = "codex"
+model = "gpt-6.2-sol"
+reasoning = "high"
+timeout_ms = 1800000
+```
+
+```toml
+# .artifactize/app.artf
+[evals.review]
+title = "The implementation satisfies the spec"
+profile = !sol
+red_at = "P1"
+payload.instruction = "Review {app} against {spec}."
+
+[evals.review.profile_variants]
+fast = !sol(reasoning = "low", timeout_ms = 600000)
+```
+
+- **별칭 정의**: `[profiles.<name>]`에는 `kind = "agent"`인 Agent 프로필만 적을 수 있습니다. 사용할 수 있는 필드는 인라인 Agent 프로필과 같습니다(`backend`, `model`, `reasoning`, `timeout_ms`, `max_tool_calls`, `max_tokens`).
+- **별칭 사용과 필드 재정의**: eval의 `profile`이나 `profile_variants`에 `!name`을 적으면 별칭을 그대로 쓰고, `!name(field = value, ...)`처럼 괄호 안에 필드를 적으면 해당 Agent 필드만 바꿔서 적용합니다(`kind`는 바꿀 수 없습니다). 별칭 표기는 `profile`과 `profile_variants`에서만 쓸 수 있습니다.
+- **재사용과 fingerprint**: 프로필 별칭은 실행 옵션이므로 `.artifactize/settings.toml`을 바꿔도 eval 정의 해시, 재사용 키, 그래프 fingerprint는 달라지지 않습니다. `artifactsum`으로 `.artf` 파일을 해시할 때는 다른 선언 필드와 마찬가지로 별칭의 재정의 항목도 정규화합니다.
 
 ## 결과 스키마 (`pass_schema`와 `fail_schema`) {#owner-result-schemas}
 

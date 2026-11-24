@@ -62,6 +62,7 @@ pub(super) fn read_sources_unresolved(
         evals: Vec::new(),
         relations: Vec::new(),
     };
+    let settings = super::settings::read(&config.root)?;
     let mut schemas = schemas::Schemas::default();
     let mut names = BTreeMap::<String, PathBuf>::new();
     for (file, source) in sources {
@@ -83,7 +84,7 @@ pub(super) fn read_sources_unresolved(
                 ),
             ));
         }
-        let parsed = parse_definition(&name, source, &mut schemas)
+        let parsed = parse_definition(&name, source, &settings, &mut schemas)
             .map_err(|error| ConfigError::new(file, error))?;
         insert_artifact(
             &mut config,
@@ -210,9 +211,13 @@ pub(super) struct ParsedDefinition {
 pub(super) fn parse_definition(
     name: &ArtifactName,
     source: &str,
+    settings: &super::settings::Settings,
     schemas: &mut schemas::Schemas,
 ) -> Result<ParsedDefinition, String> {
-    let table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
+    let masked = artifactize_tools::artf::mask(source)
+        .map_err(|error| location::positioned_message(source, error.offset, error.message))?;
+    let table = toml::de::DeTable::parse(&masked.toml)
+        .map_err(|error| location::toml_error(source, &masked, error))?;
     if table.get_ref().contains_key("name") {
         return Err(location::error_at(
             source,
@@ -220,7 +225,7 @@ pub(super) fn parse_definition(
             "the file name is the Artifact's name",
         ));
     }
-    let (authored_path, path, kind) = target(source, &table)?;
+    let (authored_path, path, kind) = target(source, &masked, &table)?;
     // Retain the original spans through typed validation: changing a key in memory
     // must not shift an error away from the source the editor is displaying.
     let declaration = super::definition::parse_table(
@@ -230,6 +235,8 @@ pub(super) fn parse_definition(
             path: path.local().unwrap_or(Path::new("")),
             file: Path::new(""),
             source,
+            masked: &masked,
+            settings,
         },
         schemas,
         table,
@@ -378,6 +385,7 @@ pub(super) fn insert_artifact(
 
 fn target(
     source: &str,
+    masked: &artifactize_tools::artf::Masked,
     table: &toml::Spanned<toml::de::DeTable<'_>>,
 ) -> Result<(String, Target, ArtifactKind), String> {
     let doc = table.get_ref();
@@ -390,6 +398,17 @@ fn target(
         .ok_or_else(|| {
             location::error_at(source, &["path"], "path is required and must be a string")
         })?;
+    if let Some(index) = masked.invocation_index(text) {
+        let invocation = &masked.invocations()[index];
+        return Err(location::positioned_message(
+            source,
+            invocation.span.start,
+            format!(
+                "Profile alias `!{}` can be used only as an eval profile or profile variant.",
+                invocation.name
+            ),
+        ));
+    }
     let (authored, target) = text
         .parse::<AuthoredTarget>()
         .map_err(|error| location::error_at(source, &["path"], &error))?

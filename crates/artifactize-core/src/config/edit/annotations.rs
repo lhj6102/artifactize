@@ -109,7 +109,7 @@ fn comment(doc: &DocumentMut) -> Result<Option<String>, String> {
         .map(|text| text.filter(|text| !text.is_empty()))
 }
 pub(super) fn read(source: &str, config: &RepoConfig, name: &ArtifactName) -> Annotations {
-    let doc = source.parse::<DocumentMut>().expect("validated TOML");
+    let (_, doc) = parse_document(source);
     let mut annotations = Annotations::default();
     match section(&doc, "style") {
         Ok(Some(style)) => {
@@ -132,11 +132,10 @@ pub(super) fn read(source: &str, config: &RepoConfig, name: &ArtifactName) -> An
     }
     annotations
 }
-fn invalid(doc: &DocumentMut, file: &Path, section: &str, message: String) -> Refusal {
-    let source = doc.to_string();
+fn invalid(source: &str, file: &Path, section: &str, message: String) -> Refusal {
     ConfigError::new(
         file,
-        location::error_at(&source, &["annotations", section], &message),
+        location::error_at(source, &["annotations", section], &message),
     )
     .into()
 }
@@ -219,21 +218,23 @@ fn prune_style(doc: &mut DocumentMut, config: &RepoConfig, name: &ArtifactName) 
 pub(super) fn validate_style(
     doc: &DocumentMut,
     file: &Path,
+    source: &str,
     config: &RepoConfig,
     name: &ArtifactName,
 ) -> Result<(), Refusal> {
     style(doc, config, name)
         .map(|_| ())
-        .map_err(|error| invalid(doc, file, "style", error))
+        .map_err(|error| invalid(source, file, "style", error))
 }
 pub(super) fn set_at(
     doc: &mut DocumentMut,
     file: &Path,
+    source: &str,
     config: &RepoConfig,
     name: &ArtifactName,
     at: Option<Point>,
 ) -> Result<(), Refusal> {
-    style(doc, config, name).map_err(|error| invalid(doc, file, "style", error))?;
+    style(doc, config, name).map_err(|error| invalid(source, file, "style", error))?;
     if let Some(at) = at {
         if at.iter().any(|number| !number.is_finite()) {
             return Err(forbidden("Places must be finite coordinates."));
@@ -254,12 +255,13 @@ pub(super) fn set_at(
 pub(super) fn set_parts(
     doc: &mut DocumentMut,
     file: &Path,
+    source: &str,
     config: &RepoConfig,
     name: &ArtifactName,
     places: &BTreeMap<ArtifactName, Point>,
     reset: bool,
 ) -> Result<(), Refusal> {
-    style(doc, config, name).map_err(|error| invalid(doc, file, "style", error))?;
+    style(doc, config, name).map_err(|error| invalid(source, file, "style", error))?;
     if places.values().flatten().any(|number| !number.is_finite()) {
         return Err(forbidden("Places must be finite coordinates."));
     }
@@ -290,8 +292,13 @@ pub(super) fn set_parts(
     prune_style(doc, config, name);
     Ok(())
 }
-pub(super) fn set_comment(doc: &mut DocumentMut, file: &Path, text: &str) -> Result<(), Refusal> {
-    comment(doc).map_err(|error| invalid(doc, file, "comment", error))?;
+pub(super) fn set_comment(
+    doc: &mut DocumentMut,
+    file: &Path,
+    source: &str,
+    text: &str,
+) -> Result<(), Refusal> {
+    comment(doc).map_err(|error| invalid(source, file, "comment", error))?;
     if text.is_empty() {
         if let Some(comment) = doc
             .get_mut("annotations")
@@ -306,12 +313,17 @@ pub(super) fn set_comment(doc: &mut DocumentMut, file: &Path, text: &str) -> Res
     cleanup(doc, "comment");
     Ok(())
 }
-pub(super) fn take_comment(doc: &DocumentMut, file: &Path) -> Result<Option<String>, Refusal> {
-    comment(doc).map_err(|error| invalid(doc, file, "comment", error))
+pub(super) fn take_comment(
+    doc: &DocumentMut,
+    file: &Path,
+    source: &str,
+) -> Result<Option<String>, Refusal> {
+    comment(doc).map_err(|error| invalid(source, file, "comment", error))
 }
 pub(super) fn rename_part(
     doc: &mut DocumentMut,
     file: &Path,
+    source: &str,
     before: &RepoConfig,
     owner: &ArtifactName,
     old: &ArtifactName,
@@ -326,7 +338,7 @@ pub(super) fn rename_part(
     if !has_place {
         return Ok(());
     }
-    style(doc, before, owner).map_err(|error| invalid(doc, file, "style", error))?;
+    style(doc, before, owner).map_err(|error| invalid(source, file, "style", error))?;
     let parts = section_mut(doc, "style")
         .get_mut("parts")
         .expect("placed part")

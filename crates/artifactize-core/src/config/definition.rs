@@ -5,6 +5,8 @@ pub(super) struct Input<'a> {
     pub path: &'a Path,
     pub file: &'a Path,
     pub source: &'a str,
+    pub masked: &'a artifactize_tools::artf::Masked,
+    pub settings: &'a super::settings::Settings,
     pub name: Option<&'a ArtifactName>,
 }
 /// Validate a parsed declaration as its kind declares it.
@@ -24,7 +26,14 @@ pub(super) fn parse_table(
         .and_then(|value| value.get_ref().get("ignore"))
         .is_some();
     let parse = |schemas: &mut super::schemas::Schemas| {
-        declaration::parse_declaration_table(source, schemas, found.name, table)
+        declaration::parse_declaration_table(
+            source,
+            found.masked,
+            found.settings,
+            schemas,
+            found.name,
+            table,
+        )
     };
     if found.kind != ArtifactKind::Aspect && has_select {
         return Err(found_error(
