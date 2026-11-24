@@ -161,8 +161,9 @@ it("fails a build interrupted after its root exits but while a descendant holds 
     child.once('spawn', () => require('node:fs').writeFileSync(process.argv[1], String(process.pid)));
     child.unref();`;
   let finished = false;
+  let stepError: unknown;
   const step = runStep(nodeProgram, ["-e", launcher, pidFile, descendant, holder], { env: process.env, cwd: root, capture: true });
-  void step.then(() => (finished = true), () => (finished = true));
+  void step.then(() => (finished = true), (error: unknown) => { stepError = error; finished = true; });
   try {
     // The wrapper has to start and compile its job helper before the command exists.
     // Time the interrupted-after-exit transition only once its target PID is known.
@@ -174,7 +175,8 @@ it("fails a build interrupted after its root exits but while a descendant holds 
         deadline ??= Date.now() + 4000;
         if (!processRunning(pid) && Number(readTextIfExists(descendant)) > 0) break;
       }
-      assert.ok(Date.now() < (deadline ?? launchDeadline) && !finished, "the build command exited with its pipe still open");
+      assert.ok(Date.now() < (deadline ?? launchDeadline) && !finished,
+        `the build command exited with its pipe still open (pid=${readTextIfExists(pidFile) ?? "none"}, descendant=${readTextIfExists(descendant) ?? "none"}${stepError ? `, error=${String(stepError)}` : ""})`);
       await delay(10);
     }
     assert.equal(finished, false, "the descendant still holds stdout");

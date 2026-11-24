@@ -247,7 +247,7 @@ public static class E2eBuildJob {
   private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
 
   [DllImport("kernel32.dll", SetLastError = true)]
-  private static extern bool QueryInformationJobObject(IntPtr job, int type, IntPtr info, uint size, IntPtr returned);
+  private static extern bool QueryInformationJobObject(IntPtr job, int type, IntPtr info, uint size, out uint returned);
 
   [DllImport("kernel32.dll", SetLastError = true)]
   private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
@@ -264,8 +264,16 @@ public static class E2eBuildJob {
       int size = 8 + capacity * IntPtr.Size;
       IntPtr buffer = Marshal.AllocHGlobal(size);
       try {
-        if (QueryInformationJobObject(job, JOB_OBJECT_BASIC_PROCESS_ID_LIST, buffer, (uint)size, IntPtr.Zero)) {
+        Marshal.WriteInt32(buffer, 0, 0);
+        Marshal.WriteInt32(buffer, 4, 0);
+        uint returned;
+        if (QueryInformationJobObject(job, JOB_OBJECT_BASIC_PROCESS_ID_LIST, buffer, (uint)size, out returned)) {
+          int assigned = Marshal.ReadInt32(buffer, 0);
           int count = Marshal.ReadInt32(buffer, 4);
+          if (assigned > count) {
+            capacity = Math.Max(assigned + 16, capacity * 2);
+            continue;
+          }
           uint[] pids = new uint[count];
           for (int i = 0; i < count; i++) {
             pids[i] = unchecked((uint)Marshal.ReadIntPtr(buffer, 8 + i * IntPtr.Size).ToInt64());
@@ -437,7 +445,7 @@ export function prepareProcessTrees(): () => void {
   try {
     writeText(source, WINDOWS_JOB_SOURCE);
     const csc = findWindowsCsc();
-    const compiled = spawnSync(csc, ["/nologo", "/optimize+", "/r:System.dll", "/target:exe", `/out:${exe}`, source], {
+    const compiled = spawnSync(csc, ["/nologo", "/optimize+", "/platform:anycpu", "/r:System.dll", "/target:exe", `/out:${exe}`, source], {
       encoding: "utf8", windowsHide: true, timeout: 60000,
     });
     if (compiled.error || compiled.status !== 0 || !existsSync(exe)) {
