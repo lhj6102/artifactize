@@ -20,7 +20,8 @@ export const scenarios: Scenario[] = [
       const newer = await verifyWorktree(fixture, "scope-one");
       orderRuns(fixture, [worktree, newer]);
       await addRepository(fixture, "other");
-      return { fixture, data: { run, worktree, newer } };
+      // Started without CLI arguments (no --repo): J-LAUNCH opens Verify with nothing chosen.
+      return { fixture, args: [], data: { run, worktree, newer } };
     },
     run: async (app, { fixture, data: { run, worktree, newer } }) => {
       await app.pane.branch("other  master");
@@ -71,13 +72,17 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "palette-help",
-    title: "the brand button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
-    journeys: ["J-PALETTE", "J-HELP"],
+    title: "started with --repo it selects that branch in Verify; the brand button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
+    journeys: ["J-LAUNCH", "J-PALETTE", "J-HELP"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
-      return { fixture, args: ["--repo", fixture.repo], data: null };
+      return { fixture, args: ["--repo", fixture.repo], data: { run: request(fixture).runId } };
     },
-    run: async (app) => {
+    run: async (app, { data: { run } }) => {
+      await app.graph.titled(run);
+      const selected = await app.pane.branch("repo  master", (branch) => branch.expanded, "--repo selects that branch in Verify");
+      assert.equal(selected.entries[0]?.id, run);
+      assert.equal(selected.entries[0]?.shown, true);
       await app.graph.node("a:release");
       const palette = await app.openPalette();
       const commands = palette.commands.map((command) => [command.label, command.keys]);
