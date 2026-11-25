@@ -67,6 +67,7 @@ export class Graph {
   async openInChat(): Promise<void> {
     const link = this.browser.$(VERIFY_MAIN).$("button=Open in Chat");
     await link.waitForDisplayed();
+    await link.waitForEnabled({ timeoutMsg: "timed out: Open in Chat is enabled once the Run is read" });
     await link.click();
   }
 

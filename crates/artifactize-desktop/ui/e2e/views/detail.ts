@@ -104,7 +104,9 @@ export class Detail {
    * each OS's font, even inside a word: its rows read as one text with no break between them,
    * so a check holds wherever the rows break. */
   async view(name: string, ok: (text: string) => boolean, what: string): Promise<string> {
-    await this.browser.$(`${DETAIL} [role="tablist"][aria-label="Views"]`).$(`button=${name}`).click();
+    const tab = this.browser.$(`${DETAIL} [role="tablist"][aria-label="Views"]`).$(`button=${name}`);
+    await tab.click();
+    await holds(this.browser, async () => await tab.getAttribute("aria-selected") === "true", `${name} tab selected`);
     return until(this.browser, () => this.browser.execute((detail) => {
       const shown = document.querySelector<HTMLElement>(`${detail} [role="document"] .shown`);
       const rows = [...(shown?.querySelectorAll<HTMLElement>('[role="log"] .row') ?? [])];
