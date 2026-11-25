@@ -28,7 +28,6 @@ use crate::{
     chat::{Outcome, ToolKind, Turn, tools::Tools},
     llm::stdio_mcp::{self, RpcId},
     platform, repository, runs,
-    secret::StreamRedactor,
     store::{
         Receipts,
         chat::{DeliverClaim, NewPermission, Owner},
@@ -42,6 +41,7 @@ use super::{
     catalog::{self, AgentSpec},
     handoff,
     pool::{Pool, TakeOutcome, WarmChild},
+    redactor::StreamRedactor,
     trust::{self, LauncherFingerprint, TrustRequirement, TrustScope},
     verify_bridge::{BridgeCall, VerifyBridge},
     wire::{
@@ -244,10 +244,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         None => {
             match WarmChild::spawn(
                 input.session_id.clone(),
-                &input.launch.spec,
-                &input.launch.fingerprint.resolved_executable,
-                input.launch.fingerprint.executable_sha256.clone(),
-                input.launch.runtime_fingerprint.clone(),
+                &input.launch,
                 generation,
                 input.worktree,
             )

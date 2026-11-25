@@ -155,11 +155,8 @@ pub async fn logout() -> Result<(), String> {
     let stdout = child.stdout().take().expect("stdout piped");
     let stdin = child.stdin().take().expect("stdin piped");
     let mut stderr = child.stderr().take().expect("stderr piped");
-    let stderr_task = tokio::spawn(async move {
-        let mut buf = Vec::new();
-        let _ = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut buf).await;
-        buf
-    });
+    let stderr_task =
+        tokio::spawn(async move { crate::acp::catalog::read_bounded_stderr(&mut stderr).await });
     let mut conn = Connection::new(
         &spec.name,
         &spec.install_hint,

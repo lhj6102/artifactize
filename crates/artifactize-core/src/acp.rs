@@ -5,9 +5,10 @@
 //! catalog inside this anti-corruption layer. Evals never admit ACP backends.
 
 pub mod catalog;
-pub mod engine;
+pub(crate) mod engine;
 pub mod handoff;
-pub mod pool;
+pub(crate) mod pool;
+pub(crate) mod redactor;
 pub mod trust;
 pub mod verify_bridge;
 pub mod wire;

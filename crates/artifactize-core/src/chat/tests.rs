@@ -348,7 +348,7 @@ fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
         "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
     });
     let session: Session = serde_json::from_value(agy_record).unwrap();
-    assert!(!session.legacy_migration_notice);
+    assert!(session.legacy_migration_notice);
     assert!(matches!(
         session.target,
         Some(ChatTarget::Acp { ref agent, ref config })

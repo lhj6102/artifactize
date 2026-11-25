@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{platform, process, types::SessionId};
 
-use super::{AcpBinding, AgentId, Problem, catalog::AgentSpec, wire::Connection};
+use super::{AcpBinding, AgentId, Problem, engine::VerifiedAcpLaunch, wire::Connection};
 
 /// Bound idle warm child lifetime so Windows CWD locks do not outlive inactive sessions (`P-FILES`).
 pub const IDLE_TTL: Duration = Duration::from_secs(5 * 60);
@@ -46,17 +46,19 @@ pub struct WarmChild {
 }
 
 impl WarmChild {
-    /// Spawn a fresh supervised ACP child in `worktree` with `process_cancel` decoupled from
-    /// any turn timeout.
-    pub async fn spawn(
+    /// Spawn a fresh supervised ACP child in `worktree` using an already-verified Workspace Trust
+    /// proof (`VerifiedAcpLaunch`), with `process_cancel` decoupled from any turn timeout
+    /// (`C-TRUST-BEFORE-WORKTREE`).
+    pub(crate) async fn spawn(
         session_id: SessionId,
-        spec: &AgentSpec,
-        resolved_executable: &Path,
-        executable_sha256: String,
-        runtime_fingerprint: String,
+        launch: &VerifiedAcpLaunch,
         generation: u64,
         worktree: &Path,
     ) -> Result<Self, Problem> {
+        let spec = &launch.spec;
+        let resolved_executable = &launch.fingerprint.resolved_executable;
+        let executable_sha256 = launch.fingerprint.executable_sha256.clone();
+        let runtime_fingerprint = launch.runtime_fingerprint.clone();
         let process_cancel = CancellationToken::new();
         let command = process::Command {
             program: resolved_executable.as_os_str().to_owned(),

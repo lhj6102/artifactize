@@ -319,19 +319,26 @@ pub struct Session {
     pub live_config_options: Vec<ConfigOption>,
     /// Live Verify MCP bridge state while an ACP turn is running.
     pub verify_bridge_state: VerifyBridgeState,
-    /// True when this historical session was saved on retired `claude-agent`.
+    /// True when this historical session was saved on a legacy engine (`claude-agent` or legacy
+    /// `antigravity`) so the UI and handoff surface the transition explicitly (`C-NO-SILENT-REGRESSION`).
     pub legacy_migration_notice: bool,
     pub unavailable: Option<String>,
 }
 
 impl From<SessionWire> for Session {
     fn from(wire: SessionWire) -> Self {
+        let migrated_from_legacy_antigravity = wire.target.is_none()
+            && wire
+                .model
+                .as_ref()
+                .is_some_and(|legacy| legacy.backend.trim() == "antigravity");
         let target = wire
             .target
             .or_else(|| wire.model.and_then(LegacyModelWire::migrate));
         let legacy_migration_notice = target
             .as_ref()
-            .is_some_and(ChatTarget::is_legacy_claude_agent);
+            .is_some_and(ChatTarget::is_legacy_claude_agent)
+            || migrated_from_legacy_antigravity;
         Self {
             id: wire.id,
             title: wire.title,
@@ -1363,8 +1370,12 @@ impl Chat {
                         };
                         let prior_turns = transcript::turns(conversation.as_ref(), false, &[]);
                         let last_outcome = conversation.as_ref().and_then(transcript::last_outcome);
-                        let previous_engine_label =
-                            previous_engine_label(previous_target.as_ref(), session.acp_binding.as_ref(), agent);
+                        let previous_engine_label = previous_engine_label(
+                            previous_target.as_ref(),
+                            session.acp_binding.as_ref(),
+                            session.legacy_migration_notice,
+                            agent,
+                        );
                         ChatEngine::Acp {
                             config: config.clone(),
                             launch: Box::new(launch),
@@ -1851,11 +1862,16 @@ fn default_config_selections(options: &[ConfigOption]) -> Vec<ConfigSelection> {
 fn previous_engine_label(
     previous_target: Option<&ChatTarget>,
     binding: Option<&AcpBinding>,
+    legacy_migration_notice: bool,
     next_agent: &AgentId,
 ) -> Option<String> {
     if let Some(prev) = previous_target {
         match prev {
-            ChatTarget::Acp { agent, .. } if agent == next_agent => {}
+            ChatTarget::Acp { agent, .. } if agent == next_agent => {
+                if legacy_migration_notice && binding.is_none() {
+                    return Some("Legacy Antigravity".into());
+                }
+            }
             other => return Some(other.engine_label()),
         }
     }

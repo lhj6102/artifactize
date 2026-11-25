@@ -23,8 +23,9 @@ use crate::{
     chat::ToolKind,
     llm::{models::ListedModel, stdio_mcp::RpcId},
     platform,
-    secret::StreamRedactor,
 };
+
+use super::redactor::StreamRedactor;
 
 use super::{
     ConfigCategory, ConfigChoice, ConfigOption, ConfigSelection, PermissionOption,

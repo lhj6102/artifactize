@@ -421,20 +421,22 @@ impl AgentSpec {
     }
 
     /// Build the child environment following the #145 env contract uniformly across probe,
-    /// login, Chat, and resume.
+    /// login, Chat, and resume. Relative `PATH` entries and denylisted auth keys are stripped
+    /// after applying custom/secret overrides so custom env cannot re-introduce them
+    /// (`C-TRUST-BEFORE-WORKTREE`).
     pub fn build_env(&self, for_worktree: bool) -> BTreeMap<OsString, OsString> {
         let mut env = platform::environment::for_command();
-        if for_worktree {
-            platform::environment::strip_relative_path_entries(&mut env);
-        }
-        for name in &self.env_denylist {
-            platform::environment::remove(&mut env, name);
-        }
         for (key, value) in &self.extra_env {
             platform::environment::set(&mut env, key, value);
         }
         for (key, secret) in &self.secret_env {
             platform::environment::set(&mut env, key, secret.expose());
+        }
+        if for_worktree {
+            platform::environment::strip_relative_path_entries(&mut env);
+        }
+        for name in &self.env_denylist {
+            platform::environment::remove(&mut env, name);
         }
         env
     }
@@ -895,11 +897,7 @@ async fn run_live_probe(
     let stdout = child.stdout().take().expect("probe stdout piped");
     let stdin = child.stdin().take().expect("probe stdin piped");
     let mut stderr = child.stderr().take().expect("probe stderr piped");
-    let stderr_task = tokio::spawn(async move {
-        let mut buf = Vec::new();
-        let _ = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut buf).await;
-        buf
-    });
+    let stderr_task = tokio::spawn(async move { read_bounded_stderr(&mut stderr).await });
     let mut conn = Connection::new(
         &spec.name,
         &spec.install_hint,
@@ -957,6 +955,26 @@ async fn run_live_probe(
             }
         }
     }
+}
+
+/// Maximum stderr bytes retained from a short-lived ACP probe or logout child (`C-ACP-EDGE-ISOLATION`).
+const PROBE_STDERR_LIMIT: usize = 64 * 1024;
+const PROBE_STDERR_CHUNK: usize = 4 * 1024;
+
+pub(crate) async fn read_bounded_stderr(stderr: &mut tokio::process::ChildStderr) -> Vec<u8> {
+    use tokio::io::AsyncReadExt;
+    let mut kept = Vec::new();
+    let mut buf = [0u8; PROBE_STDERR_CHUNK];
+    while let Ok(count) = stderr.read(&mut buf).await {
+        if count == 0 {
+            break;
+        }
+        kept.extend_from_slice(&buf[..count]);
+        if kept.len() > PROBE_STDERR_LIMIT {
+            kept.drain(..kept.len() - PROBE_STDERR_LIMIT);
+        }
+    }
+    kept
 }
 
 async fn probe_version(

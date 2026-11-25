@@ -443,7 +443,11 @@
     {/if}
     {#if current.legacyMigrationNotice}
       <div class="legacy-banner" role="status">
-        <span>Legacy Claude Agent Chat has been retired. Choose <strong>Claude ACP</strong> or a direct provider below to continue this conversation with an automatic handoff.</span>
+        {#if current.target?.engine === "legacyClaudeAgent"}
+          <span>Legacy Claude Agent Chat has been retired. Choose <strong>Claude ACP</strong> or a direct provider below to continue this conversation with an automatic handoff.</span>
+        {:else}
+          <span>Migrated from legacy Antigravity Chat to the unified ACP engine; sending continues with a deterministic handoff.</span>
+        {/if}
       </div>
     {/if}
     {#if rejected}
