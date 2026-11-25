@@ -598,12 +598,14 @@ impl Connection {
                 continue;
             };
 
+            let is_mode = current_opt.category == ConfigCategory::Mode
+                || inferred_cat == ConfigCategory::Mode;
             let choice_exists = current_opt
                 .choices
                 .iter()
                 .any(|choice| choice.value == selection.value);
             if !choice_exists {
-                if current_opt.category == ConfigCategory::Mode {
+                if is_mode {
                     return Err(Problem::ModeMismatch {
                         requested: selection.value.clone(),
                         actual: Some(current_opt.current_value.clone()),
@@ -628,8 +630,7 @@ impl Connection {
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
                         opt.current_value = selection.value.clone();
                     }
-                } else if session.uses_legacy_modes && current_opt.category == ConfigCategory::Mode
-                {
+                } else if session.uses_legacy_modes && is_mode {
                     let confirmed = self
                         .set_legacy_mode(&session.session_id, &selection.value)
                         .await?;
@@ -651,7 +652,7 @@ impl Connection {
                         .find(|opt| opt.id == current_opt.id)
                         .map(|opt| opt.current_value.as_str());
                     if confirmed != Some(selection.value.as_str()) {
-                        if current_opt.category == ConfigCategory::Mode {
+                        if is_mode {
                             return Err(Problem::ModeMismatch {
                                 requested: selection.value.clone(),
                                 actual: confirmed.map(str::to_owned),

@@ -7,7 +7,7 @@
 
 use std::{
     collections::BTreeMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant as StdInstant},
 };
@@ -55,9 +55,45 @@ const CAS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Pre-checked ACP launch context verified BEFORE a Chat turn is accepted into JSONL.
 pub(crate) struct VerifiedAcpLaunch {
+    pub state: PathBuf,
+    pub scope: TrustScope,
     pub spec: AgentSpec,
     pub fingerprint: LauncherFingerprint,
     pub runtime_fingerprint: String,
+}
+
+impl VerifiedAcpLaunch {
+    /// Re-hash the executable bytes on disk and re-verify Workspace Trust immediately before
+    /// spawning or reusing an ACP child in `worktree` (`C-TRUST-BEFORE-WORKTREE`).
+    pub(crate) fn reverify_before_exec(&self, worktree: &Path) -> Result<(), Problem> {
+        let current =
+            LauncherFingerprint::compute(&self.fingerprint.resolved_executable, &self.spec.args)
+                .map_err(Problem::Failed)?;
+        match trust::check_trust(
+            Some(&self.state),
+            Some(worktree),
+            &self.spec.id,
+            &self.spec.name,
+            &self.scope,
+            &current,
+        )
+        .map_err(Problem::Failed)?
+        {
+            Ok(()) if current == self.fingerprint => Ok(()),
+            Ok(()) => Err(Problem::TrustRequired(Box::new(TrustRequirement {
+                agent_id: self.spec.id.clone(),
+                agent_name: self.spec.name.clone(),
+                scope: self.scope.clone(),
+                fingerprint: current,
+                disclosure: self.scope.disclosure().to_owned(),
+                reason: format!(
+                    "{} executable changed between preparation and launch; re-confirm Workspace Trust.",
+                    self.spec.name
+                ),
+            }))),
+            Err(requirement) => Err(Problem::TrustRequired(Box::new(requirement))),
+        }
+    }
 }
 
 /// Verify executable resolution, direct SHA-256 hashing, and explicit Workspace Trust consent
@@ -87,6 +123,8 @@ pub(crate) fn verify_launch(
         Ok(()) => {
             let runtime_fingerprint = fingerprint.runtime_fingerprint(catalog::auth_generation());
             Ok(Ok(VerifiedAcpLaunch {
+                state: state.to_path_buf(),
+                scope,
                 spec,
                 fingerprint,
                 runtime_fingerprint,
@@ -238,9 +276,20 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         Vec::new()
     };
 
-    // Spawn a fresh child if Path A did not supply a warm one.
+    // Re-verify executable hash & Workspace Trust right before warm reuse or fresh spawn.
     let (mut child, is_fresh_child) = match child {
-        Some(warm) => (warm, false),
+        Some(warm) => {
+            if let Err(problem) = input.launch.reverify_before_exec(input.worktree) {
+                let _ = warm.terminate().await;
+                bridge.stop().await;
+                return AcpTurnOutcome {
+                    result: Err(problem.into()),
+                    generation,
+                    warm_owner: None,
+                };
+            }
+            (warm, false)
+        }
         None => {
             match WarmChild::spawn(
                 input.session_id.clone(),
@@ -1101,11 +1150,16 @@ impl TurnAccumulator {
         if chunk.is_empty() {
             return;
         }
-        self.pending_text.push_str(chunk);
         if self.answer.len() < FINAL_ANSWER_BYTES {
             let room = FINAL_ANSWER_BYTES.saturating_sub(self.answer.len());
             let (slice, _) = bound_text(chunk, room);
             self.answer.push_str(&slice);
+        }
+        let remaining_persisted = TURN_PERSISTED_BYTES
+            .saturating_sub(self.persisted_bytes.saturating_add(self.pending_text.len()));
+        if remaining_persisted > 0 {
+            let (slice, _) = bound_text(chunk, remaining_persisted);
+            self.pending_text.push_str(&slice);
         }
         let turn = self.turn_index();
         self.record_display(
@@ -1142,7 +1196,32 @@ impl TurnAccumulator {
     fn flush_prose_segment(&mut self, recorder: &mut Recorder) {
         if !self.pending_text.is_empty() {
             let text = std::mem::take(&mut self.pending_text);
-            recorder.message(self.turn_index(), &Message::assistant(text), false);
+            let remaining = TURN_PERSISTED_BYTES.saturating_sub(self.persisted_bytes);
+            if remaining == 0 || self.display_events >= TURN_DISPLAY_EVENTS {
+                if !self.cap_noticed {
+                    self.cap_noticed = true;
+                    recorder.event(Kind::Notice {
+                        text: format!(
+                            "{} exceeded the per-turn display cap ({TURN_DISPLAY_EVENTS} events / 8 MiB); further output is omitted.",
+                            self.agent_name
+                        ),
+                    });
+                }
+                return;
+            }
+            let (bounded, truncated) = bound_text(&text, remaining);
+            self.display_events += 1;
+            self.persisted_bytes = self.persisted_bytes.saturating_add(bounded.len());
+            recorder.message(self.turn_index(), &Message::assistant(bounded), false);
+            if truncated && !self.cap_noticed {
+                self.cap_noticed = true;
+                recorder.event(Kind::Notice {
+                    text: format!(
+                        "{} exceeded the per-turn display cap ({TURN_DISPLAY_EVENTS} events / 8 MiB); further output is omitted.",
+                        self.agent_name
+                    ),
+                });
+            }
             self.segment += 1;
         }
     }

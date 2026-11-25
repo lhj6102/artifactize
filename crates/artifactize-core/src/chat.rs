@@ -469,10 +469,11 @@ impl Session {
 
     fn with_checkout(mut self) -> Self {
         self.unavailable = self.check_checkout().err();
-        self.legacy_migration_notice = self
-            .target
-            .as_ref()
-            .is_some_and(ChatTarget::is_legacy_claude_agent);
+        self.legacy_migration_notice = self.legacy_migration_notice
+            || self
+                .target
+                .as_ref()
+                .is_some_and(ChatTarget::is_legacy_claude_agent);
         self
     }
 }
@@ -555,7 +556,12 @@ struct ActiveEntry {
 
 /// Resolved execution engine for a single accepted Chat turn (`T-ILLEGAL-STATES`).
 enum ChatEngine {
-    Direct(DirectSelection),
+    Direct {
+        selection: DirectSelection,
+        engine_label: String,
+        previous_engine_label: Option<String>,
+        prior_turns_count: usize,
+    },
     Acp {
         config: Vec<ConfigSelection>,
         launch: Box<VerifiedAcpLaunch>,
@@ -612,20 +618,36 @@ impl Chat {
         let pool = self.pool.clone();
         let permission_notify = self.permission_notify.clone();
         async move {
-            // Uniform Stop path: commit SQLite stop_requested + permission cancellation FIRST,
-            // then wake waiters and fire the in-memory CancellationToken.
+            // Uniform Stop path (`C-ONE-TURN-OWNERSHIP`): commit SQLite stop_requested +
+            // permission cancellation FIRST, and only fire the in-memory CancellationToken for
+            // turns whose Stop transaction succeeded (or that have no SQLite active turn yet).
+            let mut stopped_ids = std::collections::BTreeSet::new();
             for (id, entry) in &entries {
-                if let (Some(token), Some(worktree)) = (&entry.owner_token, &entry.worktree)
-                    && let Ok(receipts) = Receipts::open(&state, worktree).await
-                {
-                    let _ = receipts.stop_chat_by_token(id, token).await;
-                    let _ = receipts.close().await;
+                if let (Some(token), Some(worktree)) = (&entry.owner_token, &entry.worktree) {
+                    let mut committed = false;
+                    for attempt in 0..5 {
+                        if let Ok(receipts) = Receipts::open(&state, worktree).await {
+                            let stopped = receipts.stop_chat_by_token(id, token).await;
+                            let closed = receipts.close().await;
+                            if stopped.and(closed).is_ok() {
+                                committed = true;
+                                break;
+                            }
+                        }
+                        if attempt < 4 {
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                        }
+                    }
+                    if committed {
+                        stopped_ids.insert(id.clone());
+                        entry.cancel.cancel();
+                    }
+                } else {
+                    stopped_ids.insert(id.clone());
+                    entry.cancel.cancel();
                 }
             }
             permission_notify.notify_waiters();
-            for (_, entry) in &entries {
-                entry.cancel.cancel();
-            }
             loop {
                 let settled = active.settled.notified();
                 tokio::pin!(settled);
@@ -635,7 +657,8 @@ impl Chat {
                     .lock()
                     .expect("Chat active turns lock")
                     .turns
-                    .is_empty()
+                    .keys()
+                    .all(|id| !stopped_ids.contains(id))
                 {
                     break;
                 }
@@ -948,10 +971,11 @@ impl Chat {
                         Some(current) => checkout_refusal(session.repository.as_ref(), current),
                         None => Some("This Chat's worktree no longer exists.".into()),
                     };
-                    session.legacy_migration_notice = session
-                        .target
-                        .as_ref()
-                        .is_some_and(ChatTarget::is_legacy_claude_agent);
+                    session.legacy_migration_notice = session.legacy_migration_notice
+                        || session
+                            .target
+                            .as_ref()
+                            .is_some_and(ChatTarget::is_legacy_claude_agent);
                     session
                 })
                 .collect()
@@ -1346,11 +1370,31 @@ impl Chat {
                         backend,
                         model,
                         effort,
-                    } => ChatEngine::Direct(DirectSelection {
-                        backend: backend.clone(),
-                        model: model.clone(),
-                        effort: effort.clone(),
-                    }),
+                    } => {
+                        let engine_label = effective_target.engine_label();
+                        let previous_label = previous_target
+                            .as_ref()
+                            .map(ChatTarget::engine_label)
+                            .filter(|prev| prev != &engine_label)
+                            .or_else(|| {
+                                session
+                                    .acp_binding
+                                    .as_ref()
+                                    .map(|b| format!("ACP ({})", b.agent_id))
+                            });
+                        let prior_turns_count =
+                            conversation.as_ref().map(Conversation::sends).unwrap_or(0);
+                        ChatEngine::Direct {
+                            selection: DirectSelection {
+                                backend: backend.clone(),
+                                model: model.clone(),
+                                effort: effort.clone(),
+                            },
+                            engine_label,
+                            previous_engine_label: previous_label,
+                            prior_turns_count,
+                        }
+                    }
                     ChatTarget::Acp { agent, config } => {
                         let state = self.state.clone();
                         let worktree = session.worktree.clone();
@@ -1479,7 +1523,23 @@ impl Chat {
                 let tools = tools::Tools::new(&context, output.path())
                     .guard_checkout(session.repository.as_ref());
                 match engine {
-                    ChatEngine::Direct(selection) => {
+                    ChatEngine::Direct {
+                        selection,
+                        engine_label,
+                        previous_engine_label,
+                        prior_turns_count,
+                    } => {
+                        if let Some(prev_label) = previous_engine_label
+                            && prior_turns_count > 0
+                        {
+                            recorder.event(Kind::Handoff(crate::agent::session::HandoffEvent {
+                                from: prev_label,
+                                to: engine_label.clone(),
+                                summary: format!(
+                                    "Continued conversation in {engine_label} carrying {prior_turns_count} prior turn(s)."
+                                ),
+                            }));
+                        }
                         let turn = agent::chat_turn(
                             &selection,
                             &context,
@@ -1669,14 +1729,16 @@ impl Chat {
                     Ok(receipts) => {
                         let stopped = receipts.stop_chat_by_token(&id, token).await;
                         let closed = receipts.close().await;
-                        if let Err(error) = stopped.and(closed) {
-                            failed.push(format!("{id}: {error}"));
+                        match stopped.and(closed) {
+                            Ok(()) => entry.cancel.cancel(),
+                            Err(error) => failed.push(format!("{id}: {error}")),
                         }
                     }
                     Err(error) => failed.push(format!("{id}: {error}")),
                 }
+            } else {
+                entry.cancel.cancel();
             }
-            entry.cancel.cancel();
         }
         self.permission_notify.notify_waiters();
         let turns = store::chat::active_turns(&self.state, true)
