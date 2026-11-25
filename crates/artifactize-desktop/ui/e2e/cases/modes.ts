@@ -47,7 +47,7 @@ export const scenarios: Scenario[] = [
       await app.review.closeFind();
       await app.review.back();
       await app.graph.titled(runId);
-      await stage("yours");
+      await app.detail.until((detail) => detail.tabs.some((tab) => tab.name === "signoff" && tab.selected), "back returned to Verify with the sign-off tab open");
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
       await app.review.until((shown) => shown.stage === "Yours", "the direct reference shows the claimed review");

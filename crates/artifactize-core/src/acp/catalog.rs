@@ -841,18 +841,31 @@ async fn run_live_probe(
     let deadline = tokio::time::Instant::now() + PROBE_TIMEOUT;
 
     let detected_version = probe_version(spec, executable, probe_dir, deadline, &cancel).await;
-    if let (Some(minimum), Some(found)) = (&spec.minimum_version, &detected_version)
-        && found < minimum
-    {
-        return AgentAvailability::TooOld {
-            executable: executable.to_path_buf(),
-            version: found.to_string(),
-            required_version: minimum.to_string(),
-            reason: format!(
-                "{} {found} is too old; update to {minimum} or newer.",
-                spec.name
-            ),
-        };
+    if let Some(minimum) = &spec.minimum_version {
+        match &detected_version {
+            None => {
+                return AgentAvailability::Failed {
+                    executable: Some(executable.to_path_buf()),
+                    version: None,
+                    error: format!(
+                        "Cannot read the {} CLI version; requires {minimum} or newer.",
+                        spec.name
+                    ),
+                };
+            }
+            Some(found) if found < minimum => {
+                return AgentAvailability::TooOld {
+                    executable: executable.to_path_buf(),
+                    version: found.to_string(),
+                    required_version: minimum.to_string(),
+                    reason: format!(
+                        "{} {found} is too old; update to {minimum} or newer.",
+                        spec.name
+                    ),
+                };
+            }
+            Some(_) => {}
+        }
     }
 
     let mut args: Vec<OsString> = spec.args.iter().map(OsString::from).collect();
