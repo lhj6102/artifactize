@@ -63,6 +63,9 @@
     margin: 0;
     padding: 0;
   }
+  .timeline:last-child {
+    padding-bottom: 4px;
+  }
   .timeline li {
     position: relative;
   }
@@ -73,7 +76,7 @@
     z-index: 1;
     pointer-events: none;
     left: 38.5px;
-    top: 17px;
+    top: 18px;
     bottom: -10px;
     width: 1px;
     background: var(--line-group);
@@ -84,16 +87,17 @@
     display: grid;
     grid-template-columns: 18px minmax(0, 1fr) auto;
     column-gap: 8px;
+    row-gap: 2px;
     align-items: baseline;
     align-content: center;
-    height: var(--row-pane);
+    min-height: var(--row-pane);
     margin: 0;
-    padding: 0 var(--pad) 0 30px;
+    padding: 6px var(--pad) 6px 30px;
     border: 0;
     background: none;
     color: var(--ink-2);
     font: inherit;
-    line-height: 15px;
+    line-height: 16px;
     text-align: left;
     cursor: pointer;
   }

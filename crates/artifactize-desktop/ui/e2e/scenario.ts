@@ -21,7 +21,7 @@ export type Context<T = unknown> = Prepared<T> & {
 export type Scenario = {
   id: string;
   title: string;
-  /** The journeys (J- ids of UX-FEATURES.md) it covers (E2E-COVERAGE). */
+  /** The journeys (J- ids of rules/ux/) it covers (E2E-COVERAGE). */
   journeys: string[];
   /** It uses a once-per-machine resource, such as a fixed port or the display's focus, which a
    * window opened mid-scenario takes: no other app runs beside it (E2E-ISOLATED). */

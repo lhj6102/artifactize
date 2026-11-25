@@ -101,7 +101,7 @@
         {@const open = m.expanded.has(key)}
         {@const newest = latest(branch)}
         <li role="treeitem" aria-expanded={open} aria-selected={isSelected(key)} class="branch" class:open data-key={key}>
-          <div class="head" class:selected={isSelected(key)} class:has-latest={!open && newest?.kind === "run"}>
+          <div class="head" class:selected={isSelected(key)}>
             <button class="chevron" tabindex="-1" aria-label="{open ? 'Fold' : 'Expand'} {name(branch)}" onclick={() => ontoggle(branch)}
               ><Icon name={open ? "unfold" : "fold"} /></button
             >
@@ -187,20 +187,20 @@
   /* A chevron, then the name over its newest Run's status, then the star. */
   .head {
     position: relative;
-    height: var(--row-pane);
+    min-height: var(--row-pane);
   }
   /* Hover only highlights the branch under the pointer, and the control under it. */
   .head:not(.selected):hover {
     background: var(--surface-group);
   }
-  /* The fold icon in a 20px box, the unfold icon while expanded. */
+  /* The fold icon in a 20px box, the unfold icon while expanded; centred on the name line. */
   .chevron {
     display: grid;
     place-items: center;
     width: 20px;
     height: 20px;
     position: absolute;
-    top: 50%;
+    top: 18px;
     left: 6px;
     transform: translateY(-50%);
     padding: 0;
@@ -213,16 +213,17 @@
     display: grid;
     align-content: center;
     grid-template-columns: minmax(0, 1fr);
+    row-gap: 4px;
     width: 100%;
-    height: 100%;
+    min-height: var(--row-pane);
     min-width: 0;
     margin: 0;
-    padding: 0 calc(var(--pad) + var(--control)) 0 30px;
+    padding: 8px calc(var(--pad) + var(--control)) 8px 30px;
     border: 0;
     background: none;
     color: var(--ink-2);
     font: inherit;
-    line-height: 15px;
+    line-height: 16px;
     text-align: left;
     cursor: pointer;
   }
@@ -235,7 +236,7 @@
   /* The branch reads first; its project is the quieter half of the name. */
   .label {
     font-size: var(--text-title);
-    line-height: 18px;
+    line-height: 20px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -252,7 +253,7 @@
     align-items: center;
     column-gap: 8px;
     font-size: var(--text-small);
-    line-height: 12px;
+    line-height: 16px;
   }
   .latest .dot {
     width: 8px;
@@ -266,14 +267,14 @@
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
-  /* The star is its own 24px target over the branch's full-width button. */
+  /* The star is its own 24px target over the branch's full-width button, centred on the name line. */
   .star {
     display: grid;
     place-items: center;
     width: var(--control);
     height: var(--control);
     position: absolute;
-    top: 50%;
+    top: 18px;
     right: calc(var(--pad) - 4px);
     transform: translateY(-50%);
     padding: 0;
@@ -281,9 +282,6 @@
     background: none;
     color: var(--ink-2);
     cursor: pointer;
-  }
-  .has-latest :is(.chevron, .star) {
-    top: calc(50% - 6px);
   }
   .star.on {
     color: var(--ink);

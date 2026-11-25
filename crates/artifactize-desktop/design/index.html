@@ -28,7 +28,7 @@
 <h1>The desktop app, designed as a workbench in three modes</h1>
 <p class="lead">
   This Artifact plans the desktop app's UI and UX: one page per screen, drawn with the same
-  anatomy the app must have, for the journeys of <code>rules/UX-FEATURES.md</code>
+  anatomy the app must have, for the journeys of <code>rules/ux/</code>
   (<code>J-…</code>). Each page ends in rules with ids (<code>D-…</code>); Agent
   evals judge the app's UI against them. The style applies what a professional workbench
   does well: the screen is divided by the work, the selection drives an inspector, surfaces
@@ -158,7 +158,7 @@
     <tr><td><code>--row</code></td><td>A list row: palette items, Settings choices; a section's header row</td></tr>
     <tr><td><code>--row-dense</code></td><td>A dense row: eval rows, find results, chips</td></tr>
     <tr><td><code>--row-head</code></td><td>A head row inside a panel: a section's header in Review, a reply card's head</td></tr>
-    <tr><td><code>--row-pane</code></td><td>A row a Pane chooses by a click: a Chat session, a Verify branch, a review</td></tr>
+    <tr><td><code>--row-pane</code></td><td>A single-line row a Pane chooses by a click (a Chat session, a single-line Verify branch head, a review), and the minimum height of Verify's two-line rows</td></tr>
     <tr><td><code>--control</code></td><td>A button's or field's height</td></tr>
     <tr><td><code>--bar-height</code></td><td>The bottom bar (44): an item's icon over its word</td></tr>
     <tr><td><code>--pad</code></td><td>A panel's side padding (12); spacing follows the 4 / 8 / 12 / 16 scale</td></tr>
@@ -254,7 +254,7 @@
   <dt id="D-SYS-3">D-SYS-3</dt>
   <dd>Boundaries are 1px lines in the strength of what they separate: <code>--line-panel</code> between panels (the bar's top, the Pane/Main divider, the Detail's and a dialog's edge), <code>--line-group</code> between groups inside a panel (section tops, branch rows, the chip row's bottom), <code>--line-input</code> around a field, <code>--line-node</code> around a graph's node and whole. Large panels meet at a line, not at a gap. <span class="avoid">gaps of 16px or more between panels; boxes drawn around single items.</span></dd>
   <dt id="D-SYS-4">D-SYS-4</dt>
-  <dd>Density: a list row is <code>--row</code> (24px), a dense row <code>--row-dense</code> (22px), a control <code>--control</code> (24px) tall, the stage header 32px, a reply card's head <code>--row-head</code> (28px), and every row a Pane chooses by a click (Chat's top row, a project and a session, a Verify branch, a review) <code>--row-pane</code> (36px), chosen by a click anywhere on it, across the Pane's width (J-PANE-ROWS); a panel pads its sides by <code>--pad</code> (12px); spacing uses the 4 / 8 / 12 / 16 scale and never exceeds 16px between groups of one panel. <span class="avoid">32px controls; 20px panel paddings; empty space doing a line's job.</span></dd>
+  <dd>Density: a list row is <code>--row</code> (24px), a dense row <code>--row-dense</code> (22px), a control <code>--control</code> (24px) tall, the stage header 32px, a reply card's head <code>--row-head</code> (28px), and every row a Pane chooses by a click (Chat's top row, a project and a session, a Verify branch and its Run entries, a review) at least <code>--row-pane</code> (36px) tall—exactly <code>--row-pane</code> for single-line rows, taller where a Verify branch or Run entry shows a second line so both lines and the space between rows breathe (D-PANE-2, D-PANE-3)—chosen by a click anywhere on it, across the Pane's width (J-PANE-ROWS); a panel pads its sides by <code>--pad</code> (12px); spacing uses the 4 / 8 / 12 / 16 scale and never exceeds 16px between groups of one panel. <span class="avoid">32px controls; 20px panel paddings; empty space doing a line's job.</span></dd>
   <dt id="D-SYS-5">D-SYS-5</dt>
   <dd>Type: body 13px, secondary 12px. A section of the inspector, of a review or of Settings stands under a header row: its name at 12px semibold in <code>--ink</code>, in sentence case (D-INS-9). A group label inside a list (a provider in the model menu, a palette group, a Help group, a table's head) is 11px uppercase and letter-spaced in <code>--ink-2</code>. Neither is ever the accent. Numbers that align or change (ages, times, counts, tokens, IDs) use tabular figures. Weight is hierarchy alone: a title, a section's or a group's name, a branch's name, a whole's or an Artifact's name, and the brand may be semibold; a status word, a chosen choice, a selected row and every other state are at the text's own weight (D-SYS-13). <span class="avoid">accent-coloured headings; uppercase letter-spaced labels as section headings; proportional figures in an age column.</span></dd>
   <dt id="D-SYS-6">D-SYS-6</dt>

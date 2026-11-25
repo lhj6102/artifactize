@@ -369,7 +369,8 @@
   align-items: center;
   column-gap: 4px;
   min-height: var(--row-pane);
-  padding: 0 var(--pad) 0 6px;
+  padding: 8px var(--pad) 8px 6px;
+  box-sizing: border-box;
 }
 .m-chevron {
   width: 20px;
@@ -396,6 +397,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-title);
+  line-height: 20px;
 }
 .m-branch-name .m-project {
   color: var(--ink-2);
@@ -418,17 +420,26 @@
   grid-template-columns: 10px auto minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
-  padding: 0 var(--pad) 4px 30px;
+  padding: 0 var(--pad) 8px 30px;
   font-size: var(--text-small);
+  line-height: 16px;
 }
 .m-branch.folded {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  gap: 4px;
+  padding: 8px 0;
   min-height: var(--row-pane);
+  box-sizing: border-box;
 }
 .m-branch.folded > .m-branch-head {
-  min-height: 18px;
+  min-height: 20px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.m-branch.folded > .m-branch-head .m-star {
+  margin: -2px 0;
 }
 .m-branch.folded > .m-latest {
   padding-bottom: 0;
@@ -465,16 +476,20 @@
 .m-timeline {
   margin: 0;
 }
+.m-timeline:last-child {
+  padding-bottom: 4px;
+}
 .m-entry {
   position: relative;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
   column-gap: 8px;
+  row-gap: 2px;
   align-items: baseline;
   align-content: center;
-  height: var(--row-pane);
-  padding: 0 var(--pad) 0 30px;
-  line-height: 15px;
+  min-height: var(--row-pane);
+  padding: 6px var(--pad) 6px 30px;
+  line-height: 16px;
   box-sizing: border-box;
   font-size: var(--text-small);
 }
@@ -499,8 +514,8 @@
   content: "";
   position: absolute;
   left: 38.5px;
-  top: 22px;
-  bottom: -14px;
+  top: 18px;
+  bottom: -10px;
   width: 1px;
   background: var(--line-group);
 }
