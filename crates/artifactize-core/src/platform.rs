@@ -49,8 +49,8 @@ pub(crate) use os::{
     home_directory, host_name, ipc, is_owner_only, is_private_dir, is_private_file,
     kill_saved_group, kill_saved_session, path_from_bytes, private_named_dir, private_options,
     private_tempdir_in, process_start_time, release_free_memory, remove_tree,
-    resolve_system_aliases, restrict_file, running_process_start_time, spawn_gated, spawn_now,
-    spawn_windowless, sync_dir, transient_file_access,
+    resolve_system_aliases, restrict_executable_file, restrict_file, running_process_start_time,
+    spawn_gated, spawn_now, spawn_windowless, sync_dir, transient_file_access, venv_bin_dir,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
@@ -323,6 +323,48 @@ pub(crate) fn serialize_paths<S: serde::Serializer>(
         .map(path_text)
         .collect::<Vec<_>>()
         .serialize(serializer)
+}
+
+/// Normalize an external path reported by an ACP agent so stored and displayed paths always
+/// use `/` separators on every OS (`P-PATHS`).
+pub(crate) fn normalize_external_path(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    path_text(std::path::Path::new(trimmed)).replace('\\', "/")
+}
+
+/// Official ACP Registry platform key for the current OS and CPU architecture (`P-ONE-LAYER`).
+pub(crate) fn registry_platform() -> &'static str {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => "darwin-aarch64",
+        ("macos", "x86_64") => "darwin-x86_64",
+        ("linux", "aarch64") => "linux-aarch64",
+        ("linux", "x86_64") => "linux-x86_64",
+        ("windows", "aarch64") => "windows-aarch64",
+        ("windows", "x86_64") => "windows-x86_64",
+        _ => "unknown",
+    }
+}
+
+/// Write an owner-only executable binary atomically into `target_dir` through the platform layer
+/// (`P-FILES`), setting execute permissions on Unix and owner-only DACL on Windows.
+pub(crate) fn install_executable(
+    target_dir: &std::path::Path,
+    name: &str,
+    bytes: &[u8],
+) -> std::io::Result<std::path::PathBuf> {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new_in(target_dir)?;
+    restrict_executable_file(file.as_file())?;
+    file.write_all(bytes)?;
+    file.flush()?;
+    file.as_file().sync_all()?;
+    let final_path = target_dir.join(name);
+    paths::replace_open_file(file, &final_path)?;
+    sync_dir(target_dir)?;
+    Ok(final_path)
 }
 
 #[cfg(test)]

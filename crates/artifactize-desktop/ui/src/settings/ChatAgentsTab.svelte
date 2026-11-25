@@ -353,6 +353,16 @@
                 <dt>Arguments</dt>
                 <dd class="mono">{(spec.args ?? []).join(" ")}</dd>
               {/if}
+              <dt>Environment</dt>
+              <dd class="mono">
+                {#if Object.keys(spec.envPairs ?? {}).length > 0}
+                  {Object.entries(spec.envPairs ?? {})
+                    .map(([key, value]) => `${key}=${value}`)
+                    .join(", ")}
+                {:else}
+                  None
+                {/if}
+              </dd>
               <dt>SHA-256</dt>
               <dd class="mono">{spec.artifactSha256 ?? "Not published by Registry"}</dd>
             </dl>
@@ -395,7 +405,7 @@
 <style>
   .agents {
     display: grid;
-    grid-template-columns: 168px minmax(0, 1fr);
+    grid-template-columns: 180px minmax(0, 1fr);
     gap: 20px;
     min-height: 0;
   }
@@ -479,11 +489,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 6px 8px;
-    border: 1px solid var(--line-group);
-    border-radius: var(--radius-control);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line-group);
     font-size: var(--text-small);
   }
+  .trust-list li:last-child, .registry-list li:last-child { border-bottom: 0; }
   .trust-info, .registry-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .fields {
     display: grid;

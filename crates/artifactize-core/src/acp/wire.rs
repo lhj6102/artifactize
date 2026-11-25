@@ -1831,7 +1831,7 @@ fn extract_tool_content(items: Vec<RawToolContent>) -> (Option<String>, Option<T
             } => {
                 let (old_text, new_text, truncated) = bound_diff(old_text, new_text);
                 diff = Some(ToolDiff {
-                    path,
+                    path: platform::normalize_external_path(&path),
                     old_text,
                     new_text,
                     truncated,
@@ -1893,7 +1893,7 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
             let locations: Vec<ToolLocation> = locations
                 .into_iter()
                 .map(|loc| ToolLocation {
-                    path: loc.path,
+                    path: platform::normalize_external_path(&loc.path),
                     line: loc.line,
                 })
                 .collect();
@@ -1930,7 +1930,7 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
             let locations = locations.map(|locs| {
                 locs.into_iter()
                     .map(|loc| ToolLocation {
-                        path: loc.path,
+                        path: platform::normalize_external_path(&loc.path),
                         line: loc.line,
                     })
                     .collect()
@@ -1992,9 +1992,12 @@ fn normalize_permission(
         let paths: Vec<_> = tool
             .locations
             .iter()
-            .map(|loc| match loc.line {
-                Some(line) => format!("{}:{line}", loc.path),
-                None => loc.path.clone(),
+            .map(|loc| {
+                let path = platform::normalize_external_path(&loc.path);
+                match loc.line {
+                    Some(line) => format!("{path}:{line}"),
+                    None => path,
+                }
             })
             .collect();
         format!("{title} ({})", paths.join(", "))

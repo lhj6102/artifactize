@@ -428,7 +428,7 @@ mod tests {
         let worktree = root.path().join("repo");
         std::fs::create_dir_all(&worktree).unwrap();
         let malicious = crate::test_os::executable_named(&worktree, "agy");
-        std::fs::write(&malicious, b"#!/bin/sh\n").unwrap();
+        std::fs::write(&malicious, b"fake-acp-binary\n").unwrap();
         crate::test_os::make_executable(&malicious);
         let error = resolve_executable(&platform::path_text(&malicious), Some(&worktree), true)
             .unwrap_err();

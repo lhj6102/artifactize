@@ -487,7 +487,7 @@ it("creates a usable empty Chat after every agent and provider answers with none
   const create = within(dialog).getByRole("button", { name: "Create" });
   expect(create.hasAttribute("disabled")).toBe(false);
   await fireEvent.click(create);
-  await screen.findByRole("button", { name: "Choose a model or agent" });
+  await screen.findByRole("button", { name: "Choose a model" });
   expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({
     worktree: session.worktree,
     branch: session.branchKey,
@@ -508,15 +508,15 @@ it("keeps the typed draft and enables the first Send only after a target is pick
   await fireEvent.input(composer, { target: { value: "My first draft" } });
   await fireEvent.keyDown(composer, { key: "Enter" });
   expect(send.disabled).toBe(true);
-  expect(screen.getByText("Choose a model or agent to send")).toBeTruthy();
+  expect(screen.getByText("Choose a model to send")).toBeTruthy();
   expect(composer.value).toBe("My first draft");
   expect(calls.some(({ cmd }) => cmd === "chat_send")).toBe(false);
-  await fireEvent.click(screen.getByRole("button", { name: "Choose a model or agent" }));
+  await fireEvent.click(screen.getByRole("button", { name: "Choose a model" }));
   const model = await screen.findByRole("menuitemradio", { name: "GPT-5 Mini" });
   expect(screen.queryAllByRole("menuitemradio", { checked: true })).toHaveLength(0);
   await fireEvent.click(model);
   await waitFor(() => expect(send.disabled).toBe(false));
-  expect(screen.queryByText("Choose a model or agent to send")).toBeNull();
+  expect(screen.queryByText("Choose a model to send")).toBeNull();
   state.send = async () => {
     expect(state.session.target).toMatchObject({ engine: "direct", model: "gpt-5-mini" });
     return { kind: "accepted" };

@@ -48,6 +48,9 @@ pub(crate) fn transient_file_access(_error: &io::Error) -> bool {
 /// sockets and review state, so no other local user may list or enter them.
 const PRIVATE_DIR_MODE: u32 = 0o700;
 
+/// Owner-only executable file mode (rwx------): installed runtime binaries under `$STATE/chat/runtimes/`.
+const PRIVATE_EXECUTABLE_MODE: u32 = 0o700;
+
 /// Owner-only file mode (rw-------): these files hold credentials, Agent transcripts and review
 /// evidence, so no other local user may read them.
 const PRIVATE_FILE_MODE: u32 = 0o600;
@@ -125,6 +128,16 @@ pub(crate) fn private_options() -> OpenOptions {
 /// Make an open file 0600.
 pub(crate) fn restrict_file(file: &File) -> io::Result<()> {
     file.set_permissions(Permissions::from_mode(PRIVATE_FILE_MODE))
+}
+
+/// Restrict an installed executable binary to owner-only read/write/execute (`0700`).
+pub(crate) fn restrict_executable_file(file: &File) -> io::Result<()> {
+    file.set_permissions(Permissions::from_mode(PRIVATE_EXECUTABLE_MODE))
+}
+
+/// Directory holding installed console entrypoints inside a Python virtual environment.
+pub(crate) fn venv_bin_dir(venv: &Path) -> std::path::PathBuf {
+    venv.join("bin")
 }
 
 /// Persist a directory's entries, such as a file just renamed into it.

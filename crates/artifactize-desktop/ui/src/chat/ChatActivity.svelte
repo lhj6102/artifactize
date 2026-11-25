@@ -100,6 +100,5 @@
   }
   .diff { margin-top: 6px; }
   .diff-path { margin: 0 0 2px; color: var(--ink-2); }
-  .diff-old { border-left: 2px solid var(--red); }
-  .diff-new { border-left: 2px solid var(--green); }
+  .diff-old, .diff-new { border-left: 2px solid var(--line-group); }
 </style>

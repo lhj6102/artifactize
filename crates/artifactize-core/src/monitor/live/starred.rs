@@ -88,13 +88,19 @@ fn read<T: DeserializeOwned + Default>(state: Option<&Path>, file: &str) -> Resu
 }
 
 fn read_file<T: DeserializeOwned + Default>(dir: &Path, file: &str) -> Result<T, String> {
+    use std::io::Read;
     let path = dir.join(file);
-    match std::fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|e| format!("{}: {e}", crate::platform::path_text(&path))),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
-        Err(e) => Err(format!("{}: {e}", crate::platform::path_text(&path))),
-    }
+    let mut handle = match crate::platform::open_regular(&path) {
+        Ok(handle) => handle,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(T::default()),
+        Err(e) => return Err(format!("{}: {e}", crate::platform::path_text(&path))),
+    };
+    let mut bytes = Vec::new();
+    handle
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("{}: {e}", crate::platform::path_text(&path)))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| format!("{}: {e}", crate::platform::path_text(&path)))
 }
 
 /// Lock a stable sidecar instead of the file being atomically replaced.

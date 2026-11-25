@@ -158,7 +158,6 @@
     cursor: pointer;
   }
   .tab:not([aria-selected="true"]):hover {
-    background: var(--surface-group);
     color: var(--ink);
   }
   .tab[aria-selected="true"] {

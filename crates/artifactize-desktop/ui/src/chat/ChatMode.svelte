@@ -424,9 +424,7 @@
       {@render runCard(part.block.card)}
     {/if}
   {/each}
-  {#if turn.state.kind === "waitingPermission"}
-    <p class="end waiting-end">Waiting for your permission choice…</p>
-  {:else if turn.state.kind === "stopped"}
+  {#if turn.state.kind === "stopped"}
     <p class="end">Stopped</p>
   {:else if turn.state.kind === "interrupted"}
     <p class="end">Interrupted · The app or agent process exited before the turn finished.</p>
@@ -477,7 +475,7 @@
         {:else if running}
           <button class="button icon-button" disabled={current.unavailable !== null} aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
         {:else}
-          {#if !canSendTarget}<span class="need-model" id="chat-need-model">{current.legacyMigrationNotice ? "Switch target to send" : "Choose a model or agent to send"}</span>{/if}
+          {#if !canSendTarget}<span class="need-model" id="chat-need-model">{current.legacyMigrationNotice ? "Switch target to send" : "Choose a model to send"}</span>{/if}
           <button class="button icon-button primary" aria-label="Send (Enter)" aria-describedby={canSendTarget ? undefined : "chat-need-model"} aria-keyshortcuts="Enter" disabled={!canSendTarget || typed.trim() === "" || current.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
         {/if}
       </div>
@@ -1030,8 +1028,8 @@
     color: var(--ink-2);
   }
   .find:focus-within {
-    outline: 1px solid var(--current-mark);
-    outline-offset: -2px;
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
   }
   .find input {
     flex: 1;
@@ -1342,7 +1340,7 @@
     padding: 6px 10px;
     border: 1px solid var(--line-group);
     border-radius: var(--radius-control);
-    background: var(--surface-group);
+    background: var(--surface-panel);
     font-size: var(--text-small);
   }
   .plan-label {
@@ -1370,12 +1368,11 @@
     flex-direction: column;
     gap: 6px;
     padding: 8px 10px;
-    border: 1px solid var(--line-group);
+    border: 1px solid var(--line-panel);
     border-radius: var(--radius-control);
-    background: var(--surface-group);
+    background: var(--surface-panel);
     font-size: var(--text-small);
   }
-  .permission.pending { border-color: var(--yellow); }
   .perm-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .perm-title { font-weight: 600; color: var(--ink); }
   .perm-status { color: var(--ink-2); }
@@ -1384,6 +1381,8 @@
   .perm-detail {
     margin: 0;
     padding: 6px 8px;
+    max-height: 240px;
+    overflow: auto;
     background: var(--surface-input);
     border-radius: var(--radius-control);
     font-family: var(--mono);
@@ -1394,16 +1393,15 @@
   .perm-actions .button { display: inline-flex; flex-direction: column; align-items: flex-start; height: auto; padding: 4px 10px; }
   .perm-persist { font-size: var(--text-label); color: var(--ink-2); font-weight: 400; }
   .notice-block { margin: 0; color: var(--ink-2); font-size: var(--text-small); }
-  .waiting-end { color: var(--yellow); }
   .legacy-banner {
     padding: 6px 10px;
-    border: 1px solid var(--yellow);
+    border: 1px solid var(--line-panel);
     border-radius: var(--radius-control);
-    background: var(--surface-group);
+    background: var(--surface-panel);
     color: var(--ink);
     font-size: var(--text-small);
   }
-  :global(.dialog.trust-workspace) { width: min(500px, 92vw); }
+  :global(.dialog.trust-workspace) { width: min(480px, 92vw); }
   .trust-facts {
     display: grid;
     grid-template-columns: 92px minmax(0, 1fr);

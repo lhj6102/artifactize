@@ -164,7 +164,7 @@
     aria-busy={c.choosing.has(session.id)}
     onclick={() => (c.picking ? (c.picking = false) : void c.openPicker())}
   >
-    <span class="model-name" class:empty={!triggerLabel}>{triggerLabel ?? "Choose a model or agent"}</span><Icon name="unfold" />
+    <span class="model-name" class:empty={!triggerLabel}>{triggerLabel ?? "Choose a model"}</span><Icon name="unfold" />
   </button>
   {#if c.picking && session.unavailable === null}
     <div
@@ -220,7 +220,6 @@
                           role="menuitemradio"
                           aria-checked={selected && current === choice.value}
                           disabled={c.choosing.has(session.id)}
-                          title={choice.bypassWarning ? "Auto-approves actions without asking" : choice.description ?? choice.name}
                           onclick={() => pickAgentOption(item.entry.id, options, option, choice.value)}
                         >
                           {choice.name}{#if choice.bypassWarning} ⚠{/if}

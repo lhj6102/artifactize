@@ -273,7 +273,7 @@ export const scenarios: Scenario[] = [
     run: async (app) => {
       const starting = await app.chat.createFromDialog("repo / master");
       assert.match(starting, /No agent or provider is ready/, `targetless New chat explains why no target is set: ${starting}`);
-      assert.equal(await app.chat.selected(), "Choose a model or agent");
+      assert.equal(await app.chat.selected(), "Choose a model");
       await app.chat.show("Graph");
       await app.graph.node("a:other", (node) => node.label === "other: would run (1 eval)", "a targetless session's Graph still scans its Current");
     },

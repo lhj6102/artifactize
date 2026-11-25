@@ -163,8 +163,8 @@
     border: 1px solid var(--line-input);
     border-radius: var(--radius-control);
     background: var(--surface-input);
-    outline: 1px solid var(--current-mark);
-    outline-offset: -1px;
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
     color: var(--ink-2);
   }
   .query {

@@ -1106,8 +1106,6 @@ async fn install_pinned_binary(
     if !matches!(url.scheme(), "https" | "http") {
         return Err("Registry binary downloads require an http(s) URL.".into());
     }
-    let staging =
-        platform::private_tempdir_in("acp-stage-", target_dir).map_err(|e| e.to_string())?;
     let client = reqwest::Client::builder()
         .timeout(REGISTRY_FETCH_TIMEOUT)
         .build()
@@ -1146,10 +1144,8 @@ async fn install_pinned_binary(
             ));
         }
     }
-    let staged_path = staging.path().join(spec.registry_id.as_str());
-    std::fs::write(&staged_path, &bytes).map_err(|e| e.to_string())?;
-    let final_path = target_dir.join(spec.registry_id.as_str());
-    std::fs::rename(&staged_path, &final_path).map_err(|e| e.to_string())?;
+    let final_path = platform::install_executable(target_dir, spec.registry_id.as_str(), &bytes)
+        .map_err(|e| format!("Cannot install {}: {e}.", spec.registry_id))?;
     Ok(final_path)
 }
 
@@ -1191,19 +1187,21 @@ async fn install_pinned_npm(
         ));
     }
     let bin_dir = target_dir.join("node_modules").join(".bin");
-    let candidate = bin_dir.join(spec.registry_id.as_str());
-    if candidate.is_file() {
-        Ok(candidate)
+    if let Ok(resolved) =
+        platform::program::resolve(&bin_dir.join(spec.registry_id.as_str()), &bin_dir)
+    {
+        Ok(resolved)
     } else {
-        // Fall back to the first regular executable in node_modules/.bin.
+        // Fall back to the first runnable entrypoint in node_modules/.bin via platform lookup.
         let handle = platform::open_directory(&bin_dir).map_err(|e| e.to_string())?;
         let entries = platform::read_dir(&handle).map_err(|e| e.to_string())?;
         let mut found = None;
         for entry in entries {
             let entry = entry.map_err(|e| e.to_string())?;
-            let path = bin_dir.join(entry.file_name());
-            if path.is_file() {
-                found = Some(path);
+            if let Ok(resolved) =
+                platform::program::resolve(&bin_dir.join(entry.file_name()), &bin_dir)
+            {
+                found = Some(resolved);
                 break;
             }
         }
@@ -1265,14 +1263,10 @@ async fn install_pinned_uv(
             platform::output_text(&installed.stderr).trim()
         ));
     }
-    for sub in ["bin", "Scripts"] {
-        let dir = venv_dir.join(sub);
-        let candidate = dir.join(spec.registry_id.as_str());
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-    Err("Pinned uv install produced no runnable entrypoint in the isolated venv.".into())
+    let bin_dir = platform::venv_bin_dir(&venv_dir);
+    platform::program::resolve(&bin_dir.join(spec.registry_id.as_str()), &bin_dir).map_err(|_| {
+        "Pinned uv install produced no runnable entrypoint in the isolated venv.".into()
+    })
 }
 
 /// Reject symlinks and reparse points anywhere inside a pinned runtime directory.
@@ -1310,15 +1304,7 @@ fn hex_sha256(bytes: &[u8]) -> String {
 }
 
 fn current_platform_key() -> &'static str {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("macos", "aarch64") => "darwin-aarch64",
-        ("macos", "x86_64") => "darwin-x86_64",
-        ("linux", "aarch64") => "linux-aarch64",
-        ("linux", "x86_64") => "linux-x86_64",
-        ("windows", "aarch64") => "windows-aarch64",
-        ("windows", "x86_64") => "windows-x86_64",
-        _ => "unknown",
-    }
+    platform::registry_platform()
 }
 
 #[derive(Deserialize)]
