@@ -2,6 +2,7 @@
 // programs, loopback servers and SQLite fixtures. They behave the same on every OS; what
 // differs between operating systems stays in platform.ts (E2E-PLATFORM).
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   appendFileSync, chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync,
   renameSync, rmSync, writeFileSync,
@@ -58,6 +59,16 @@ export function scratchDirectory(): NativePath {
 
 export function exists(path: NativePath): boolean {
   return existsSync(path);
+}
+
+/** Canonical filesystem path in native form (resolving symlinks). */
+export function realNativePath(path: NativePath): NativePath {
+  return realpathSync(path) as NativePath;
+}
+
+/** Lowercase hex SHA-256 digest of a file's bytes. */
+export function fileSha256(path: NativePath): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 /** Create a directory and its parents; `private` keeps it to the current user. */

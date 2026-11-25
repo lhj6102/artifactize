@@ -160,7 +160,14 @@ pub async fn logout() -> Result<(), String> {
         let _ = tokio::io::AsyncReadExt::read_to_end(&mut stderr, &mut buf).await;
         buf
     });
-    let mut conn = Connection::new(&spec.name, &spec.install_hint, stdout, stdin, false);
+    let mut conn = Connection::new(
+        &spec.name,
+        &spec.install_hint,
+        stdout,
+        stdin,
+        false,
+        spec.known_secrets(),
+    );
     let result = tokio::time::timeout(PROBE_TIMEOUT, conn.logout())
         .await
         .unwrap_or_else(|_| {

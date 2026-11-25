@@ -1170,14 +1170,12 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
             if request.method == "GET" {
                 return openai::models(&["restart-model"]);
             }
-            let text = if request.body.to_string().contains("Close a running turn") {
+            let body = request.body.to_string();
+            let text = if body.contains("Close a running turn") {
                 closing_request.notify_one();
                 closing.wait();
                 "This did not stop."
-            } else if request
-                .body
-                .to_string()
-                .contains("Resume the interrupted session")
+            } else if body.contains("Resume the interrupted session") && !body.contains("Resumed.")
             {
                 "Resumed."
             } else {

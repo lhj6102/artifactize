@@ -81,9 +81,14 @@ export const scenarios: Scenario[] = [
       await app.graph.node("a:release");
       const palette = await app.openPalette();
       const commands = palette.commands.map((command) => [command.label, command.keys]);
-      for (const expected of [["Keyboard shortcuts", "?"], ["Show Settings", shortcutLabel("Ctrl+,")], ["Show or hide the Pane", shortcutLabel("Ctrl+B")],
-        ["Search the branches", "/"], ["Open a request by ID", shortcutLabel("Ctrl+O")], ["Refresh", shortcutLabel("Ctrl+R")], ["Quit", "q"], ["Find", shortcutLabel("Ctrl+F")]]) {
-        assert.ok(commands.some(([label, keys]) => label === expected[0] && keys.includes(expected[1])), `the palette lists ${expected[0]} with ${expected[1]}: ${JSON.stringify(commands)}`);
+      for (const expected of [
+        ["Keyboard shortcuts", "?"], ["Show Settings", shortcutLabel("Ctrl+,")],
+        ["Show Chat", shortcutLabel("Ctrl+1")], ["Show Verify", shortcutLabel("Ctrl+2")], ["Show Review", shortcutLabel("Ctrl+3")],
+        ["Show or hide the Pane", shortcutLabel("Ctrl+B")], ["New chat", ""], ["Search the branches", "/"],
+        ["Filter the reviews", ""], ["Open a request by ID", shortcutLabel("Ctrl+O")], ["Refresh", shortcutLabel("Ctrl+R")],
+        ["Quit", "q"], ["Find", shortcutLabel("Ctrl+F")],
+      ]) {
+        assert.ok(commands.some(([label, keys]) => label === expected[0] && (expected[1] === "" || keys.includes(expected[1]))), `the palette lists ${expected[0]} with ${expected[1]}: ${JSON.stringify(commands)}`);
       }
       // The app's commands come before the graph's.
       assert.ok(commands.findIndex(([label]) => label === "Quit") < commands.findIndex(([label]) => label === "Find"));

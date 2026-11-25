@@ -278,7 +278,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         generation,
         current_warm_owner,
         binding.as_ref().map(|b| b.generation),
-        redactor,
+        redactor.clone(),
         recorder,
     )
     .await;
@@ -313,10 +313,9 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         }
         Err((failure, stderr_classify)) => {
             let stderr_bytes = child.terminate().await;
-            let final_failure = if stderr_classify && failure.code == Code::ProviderError {
+            let mut final_failure = if stderr_classify && failure.code == Code::ProviderError {
                 let stderr_text = platform::output_text(&stderr_bytes);
-                let redacted_stderr =
-                    StreamRedactor::new(input.launch.spec.known_secrets()).redact_all(&stderr_text);
+                let redacted_stderr = redactor.redact_all(&stderr_text);
                 if redacted_stderr.contains(super::wire::AUTH_LINK_MARKER) {
                     Problem::SignedOut {
                         agent: input.launch.spec.name.clone(),
@@ -335,6 +334,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             } else {
                 failure
             };
+            final_failure.message = redactor.redact_all(&final_failure.message);
             AcpTurnOutcome {
                 result: Err(final_failure),
                 generation,
@@ -390,6 +390,7 @@ async fn execute_on_child(
 
     // 2. Open session: try `session/load` when eligible, otherwise `session/new` (+ Handoff).
     let mut used_load = false;
+    let mut load_fallback_reason: Option<String> = None;
     let opened: OpenedSession = if let Some(remote_id) = load_remote_id
         && capabilities.load_session
     {
@@ -406,8 +407,17 @@ async fn execute_on_child(
                 used_load = true;
                 session
             }
-            Err(_) => {
-                // Fall back to `session/new` + Handoff cleanly on the same child.
+            Err(
+                problem @ (Problem::SignedOut { .. }
+                | Problem::Quota { .. }
+                | Problem::RateLimit { .. }),
+            ) => {
+                bridge.stop().await;
+                return Err((Failure::from(problem), true));
+            }
+            Err(problem) => {
+                load_fallback_reason = Some(redactor.redact_all(&Failure::from(problem).message));
+                // Fall back to `session/new` + Handoff cleanly on the same child and surface the reset explicitly.
                 let sys = capabilities
                     .system_prompt_append
                     .then_some(handoff::ACP_CHAT_GUARDRAILS);
@@ -471,6 +481,21 @@ async fn execute_on_child(
         recorder.event(Kind::Notice {
             text: notice.clone(),
         });
+    }
+    if let Some(reason) = load_fallback_reason {
+        let notice = if input.prior_turns.is_empty() {
+            format!(
+                "Could not resume prior {} session ({reason}); started a fresh ACP session.",
+                input.launch.spec.name
+            )
+        } else {
+            format!(
+                "Could not resume prior {} session ({reason}); started a fresh ACP session with a deterministic summary of {} prior turn(s).",
+                input.launch.spec.name,
+                input.prior_turns.len()
+            )
+        };
+        recorder.event(Kind::Notice { text: notice });
     }
     let _ = input
         .receipts
@@ -1232,7 +1257,7 @@ impl TurnAccumulator {
                     },
                 );
             }
-            SessionEvent::ConfigOptionsUpdated { .. } => {}
+            SessionEvent::ConfigOptionsUpdated { .. } | SessionEvent::ModeChanged { .. } => {}
         }
     }
 }

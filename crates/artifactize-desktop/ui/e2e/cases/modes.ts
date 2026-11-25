@@ -40,6 +40,16 @@ export const scenarios: Scenario[] = [
       await app.mode("Verify");
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
+      assert.equal(await app.review.hasBack(), true, "Open in Review shows the contextual way back to Verify");
+      assert.equal(await app.review.backLabel(), `Verify · ${runId} › release`);
+      assert.match(await app.review.find("approve"), /^1 of \d+$/, "Find in the review conversation matches the instruction");
+      assert.equal(await app.review.find("no such review phrase"), "No match");
+      await app.review.closeFind();
+      await app.review.back();
+      await app.graph.titled(runId);
+      await stage("yours");
+      await app.detail.reviewAction("Open in Review");
+      await app.review.titleContains("release/signoff");
       await app.review.until((shown) => shown.stage === "Yours", "the direct reference shows the claimed review");
       assert.equal(await app.review.hasOutsideHint(), false);
       assert.equal(await app.review.filter(), "type:human waiting");
@@ -185,6 +195,13 @@ export const scenarios: Scenario[] = [
       await app.command("Quit");
       await app.dialogTitled("Quit while the agent works?");
       await app.exitsBy(() => app.dialogButton("Quit"));
+    },
+    restarted: async (app) => {
+      await app.mode("Chat");
+      await app.chat.openSaved(QUIT_PROMPT);
+      await app.chat.finished();
+      const ends = await app.chat.turnEnds();
+      assert.ok(ends.some((end) => /^(Stopped|Interrupted)/.test(end)), `quitting stopped the running turn instead of resuming it: ${JSON.stringify(ends)}`);
     },
   }),
 ];

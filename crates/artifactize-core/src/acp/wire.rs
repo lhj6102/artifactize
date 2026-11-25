@@ -23,6 +23,7 @@ use crate::{
     chat::ToolKind,
     llm::{models::ListedModel, stdio_mcp::RpcId},
     platform,
+    secret::StreamRedactor,
 };
 
 use super::{
@@ -171,6 +172,9 @@ pub enum SessionEvent {
     ConfigOptionsUpdated {
         options: Vec<ConfigOption>,
     },
+    ModeChanged {
+        mode_id: String,
+    },
     Notice {
         text: String,
     },
@@ -224,6 +228,7 @@ pub struct Connection {
     id: u64,
     agent_name: String,
     auth_hint: String,
+    redactor: StreamRedactor,
     write: ChildStdin,
     frames: mpsc::Receiver<WireFrame>,
     reader_task: JoinHandle<()>,
@@ -239,6 +244,7 @@ impl Connection {
         stdout: ChildStdout,
         stdin: ChildStdin,
         hide_always_options: bool,
+        known_secrets: Vec<String>,
     ) -> Self {
         let id = NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel(UPDATE_CHANNEL_CAPACITY);
@@ -247,6 +253,7 @@ impl Connection {
             id,
             agent_name: agent_name.into(),
             auth_hint: auth_hint.into(),
+            redactor: StreamRedactor::new(known_secrets),
             write: stdin,
             frames: rx,
             reader_task,
@@ -397,7 +404,9 @@ impl Connection {
                             self.agent_name
                         )));
                     }
-                    WireFrame::ProtocolError(msg) => return Err(Problem::Failed(msg)),
+                    WireFrame::ProtocolError(msg) => {
+                        return Err(Problem::Failed(self.redactor.redact_all(&msg)));
+                    }
                     _ => {}
                 }
             }
@@ -451,15 +460,79 @@ impl Connection {
         &mut self,
         session_id: &str,
         mode_id: &str,
-    ) -> Result<(), Problem> {
-        let _: Value = self
-            .request_with_timeout(
+    ) -> Result<Option<String>, Problem> {
+        let request_id = self
+            .send_request(
                 "session/set_mode",
                 json!({ "sessionId": session_id, "modeId": mode_id }),
-                CONFIG_TIMEOUT,
             )
             .await?;
-        Ok(())
+        let mut observed_mode: Option<String> = None;
+        let outcome = tokio::time::timeout(CONFIG_TIMEOUT, async {
+            loop {
+                match self.next_raw_frame("session/set_mode").await? {
+                    WireFrame::UnknownServerRequest { id, .. } => {
+                        self.send_method_not_found(id).await?;
+                    }
+                    WireFrame::PermissionRequest(req) => {
+                        self.send_permission_cancelled(req.rpc_id).await?;
+                    }
+                    WireFrame::Update {
+                        session_id: update_sid,
+                        event,
+                    } if update_sid == session_id => match event {
+                        SessionEvent::ModeChanged { mode_id } => {
+                            observed_mode = Some(mode_id);
+                        }
+                        SessionEvent::ConfigOptionsUpdated { options } => {
+                            if let Some(opt) = options
+                                .iter()
+                                .find(|opt| opt.category == ConfigCategory::Mode)
+                            {
+                                observed_mode = Some(opt.current_value.clone());
+                            }
+                        }
+                        _ => {}
+                    },
+                    WireFrame::Response { id, result } if id == request_id => {
+                        return Ok(extract_confirmed_legacy_mode(&result).or(observed_mode));
+                    }
+                    WireFrame::Error {
+                        id,
+                        code,
+                        message,
+                        data,
+                    } if id == request_id => {
+                        return Err(self.rpc_error("session/set_mode", code, &message, &data));
+                    }
+                    WireFrame::SignedOut => {
+                        return Err(Problem::SignedOut {
+                            agent: self.agent_name.clone(),
+                            hint: self.auth_hint.clone(),
+                        });
+                    }
+                    WireFrame::Eof => {
+                        return Err(Problem::Failed(format!(
+                            "{} exited while handling ACP session/set_mode.",
+                            self.agent_name
+                        )));
+                    }
+                    WireFrame::ProtocolError(msg) => {
+                        return Err(Problem::Failed(self.redactor.redact_all(&msg)));
+                    }
+                    WireFrame::Update { .. }
+                    | WireFrame::Response { .. }
+                    | WireFrame::Error { .. } => {}
+                }
+            }
+        })
+        .await;
+        outcome.unwrap_or_else(|_| {
+            Err(Problem::Failed(format!(
+                "{} timed out while handling ACP session/set_mode.",
+                self.agent_name
+            )))
+        })
     }
 
     /// Apply user-selected `configOptions` in dependency order:
@@ -556,8 +629,15 @@ impl Connection {
                     }
                 } else if session.uses_legacy_modes && current_opt.category == ConfigCategory::Mode
                 {
-                    self.set_legacy_mode(&session.session_id, &selection.value)
+                    let confirmed = self
+                        .set_legacy_mode(&session.session_id, &selection.value)
                         .await?;
+                    if confirmed.as_deref() != Some(selection.value.as_str()) {
+                        return Err(Problem::ModeMismatch {
+                            requested: selection.value.clone(),
+                            actual: confirmed,
+                        });
+                    }
                     if let Some(opt) = live.iter_mut().find(|opt| opt.id == current_opt.id) {
                         opt.current_value = selection.value.clone();
                     }
@@ -825,7 +905,9 @@ impl Connection {
                             self.agent_name
                         )));
                     }
-                    WireFrame::ProtocolError(msg) => return Err(Problem::Failed(msg)),
+                    WireFrame::ProtocolError(msg) => {
+                        return Err(Problem::Failed(self.redactor.redact_all(&msg)));
+                    }
                     WireFrame::Update { .. }
                     | WireFrame::Response { .. }
                     | WireFrame::Error { .. } => {}
@@ -884,32 +966,89 @@ impl Connection {
     }
 
     fn rpc_error(&self, method: &str, code: i64, message: &str, data: &str) -> Problem {
-        if code == AUTH_REQUIRED {
-            return Problem::SignedOut {
-                agent: self.agent_name.clone(),
-                hint: self.auth_hint.clone(),
-            };
-        }
-        Problem::classify_text(
+        classify_rpc_error(
             &self.agent_name,
             &self.auth_hint,
-            &format!("{code} {message} {data}"),
+            &self.redactor,
+            method,
+            code,
+            message,
+            data,
         )
-        .unwrap_or_else(|| {
-            let detail = message.trim();
-            if detail.is_empty() {
-                Problem::Failed(format!(
-                    "{} rejected ACP {method} (error {code}).",
-                    self.agent_name
-                ))
-            } else {
-                Problem::Failed(format!(
-                    "{} rejected ACP {method} (error {code}): {detail}",
-                    self.agent_name
-                ))
-            }
-        })
     }
+}
+
+fn classify_rpc_error(
+    agent_name: &str,
+    auth_hint: &str,
+    redactor: &StreamRedactor,
+    method: &str,
+    code: i64,
+    message: &str,
+    data: &str,
+) -> Problem {
+    if code == AUTH_REQUIRED {
+        return Problem::SignedOut {
+            agent: agent_name.to_owned(),
+            hint: auth_hint.to_owned(),
+        };
+    }
+    let redacted_message = redactor.redact_all(message.trim());
+    let redacted_data = redactor.redact_all(data);
+    Problem::classify_text(
+        agent_name,
+        auth_hint,
+        &format!("{code} {redacted_message} {redacted_data}"),
+    )
+    .unwrap_or_else(|| {
+        let detail: String = redacted_message
+            .chars()
+            .filter(|c| !c.is_control())
+            .collect();
+        if detail.is_empty() {
+            Problem::Failed(format!(
+                "{agent_name} rejected ACP {method} (error {code})."
+            ))
+        } else {
+            Problem::Failed(format!(
+                "{agent_name} rejected ACP {method} (error {code}): {detail}"
+            ))
+        }
+    })
+}
+
+/// Extract a confirmed mode ID from a legacy `session/set_mode` JSON-RPC result when present.
+fn extract_confirmed_legacy_mode(result: &Value) -> Option<String> {
+    if let Some(mode) = result
+        .get("currentModeId")
+        .or_else(|| result.get("modeId"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(mode.to_owned());
+    }
+    if let Some(mode) = result
+        .get("modes")
+        .and_then(|m| m.get("currentModeId"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(mode.to_owned());
+    }
+    if let Some(raw_opts) = result.get("configOptions").and_then(Value::as_array) {
+        let parsed: Vec<RawConfigOption> = raw_opts
+            .iter()
+            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+            .collect();
+        let options = normalize_config_options(parsed);
+        if let Some(opt) = options
+            .into_iter()
+            .find(|opt| opt.category == ConfigCategory::Mode && !opt.current_value.is_empty())
+        {
+            return Some(opt.current_value);
+        }
+    }
+    None
 }
 
 impl Drop for Connection {
@@ -1558,6 +1697,10 @@ enum RawUpdate {
         #[serde(rename = "configOptions", default)]
         config_options: Vec<RawConfigOption>,
     },
+    CurrentModeUpdate {
+        #[serde(rename = "currentModeId", default)]
+        current_mode_id: String,
+    },
     #[serde(other)]
     Other,
 }
@@ -1820,6 +1963,11 @@ fn normalize_update(raw: RawUpdate) -> Option<SessionEvent> {
                 options: normalize_config_options(config_options),
             })
         }
+        RawUpdate::CurrentModeUpdate { current_mode_id } if !current_mode_id.is_empty() => {
+            Some(SessionEvent::ModeChanged {
+                mode_id: current_mode_id,
+            })
+        }
         _ => None,
     }
 }
@@ -2076,5 +2224,34 @@ mod tests {
             .unwrap();
         assert!(!mode.choices[0].bypass_warning);
         assert!(mode.choices[1].bypass_warning);
+    }
+
+    #[test]
+    fn legacy_mode_confirmation_requires_reported_mode_and_rpc_errors_redact_secrets() {
+        assert_eq!(extract_confirmed_legacy_mode(&json!({})), None);
+        assert_eq!(
+            extract_confirmed_legacy_mode(&json!({ "currentModeId": "ask" })),
+            Some("ask".into())
+        );
+        assert_eq!(
+            extract_confirmed_legacy_mode(&json!({ "modes": { "currentModeId": "plan" } })),
+            Some("plan".into())
+        );
+
+        let redactor = StreamRedactor::new(["sk-acp-super-secret-value-999".to_owned()]);
+        let problem = classify_rpc_error(
+            "Fixture",
+            "sign in",
+            &redactor,
+            "session/prompt",
+            -32001,
+            "Upstream refused key sk-acp-super-secret-value-999 immediately",
+            "",
+        );
+        let Problem::Failed(msg) = problem else {
+            panic!("expected Problem::Failed, got {problem:?}");
+        };
+        assert!(!msg.contains("sk-acp-super-secret-value-999"), "{msg}");
+        assert!(msg.contains("[REDACTED]"), "{msg}");
     }
 }

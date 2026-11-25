@@ -7,7 +7,8 @@ import { browserHandoffs, standInBrowser } from "../fixtures/browser.ts";
 import { claudeCode } from "../fixtures/claude.ts";
 import { check } from "../fixtures/declarations.ts";
 import { artifactizeAsync, createEmpty, createProject, createRelease, declareRelease, environment, newFixture, signoffGrace, type Fixture } from "../fixtures/repo.ts";
-import { appendText, exists, nativePath, readText, readTextIfExists, serveLoopbackHttp, writeText } from "../portable.ts";
+import { portablePath } from "../platform.ts";
+import { appendText, exists, fileSha256, nativePath, readText, readTextIfExists, realNativePath, serveLoopbackHttp, writeText } from "../portable.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 
 const KEY = "sk-environment-0123456789";
@@ -263,7 +264,11 @@ export const scenarios: Scenario[] = [
       await app.chat.create();
       await app.chat.model(AGY_MODELS[1].name);
       await app.chat.send(AGY_PROMPT, false);
-      await app.chat.trustWorkspace();
+      const trust = await app.chat.trustWorkspace();
+      assert.match(trust.agent, /Antigravity.*antigravity/, `trust dialog names the agent: ${trust.agent}`);
+      assert.ok(trust.scope.includes(portablePath(realNativePath(fixture.repo))), `trust dialog names the repository scope: ${trust.scope}`);
+      assert.equal(trust.executable, portablePath(realNativePath(installed)), "trust dialog names the resolved executable");
+      assert.equal(trust.sha256, fileSha256(installed), "trust dialog shows the executable SHA-256");
       await app.chat.says(AGY_PROMPT);
       await app.chat.says(AGY_PARTIAL);
       await app.chat.working();

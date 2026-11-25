@@ -122,14 +122,30 @@ export class Chat {
     await holds(this.browser, async () => !(await this.browser.$(menu).isDisplayed()) && (await this.selected()).includes(name), `${name} selected and its model menu closed`);
   }
 
-  /** Confirm the Trust workspace modal before spawning an ACP agent in an untrusted repository. */
-  async trustWorkspace(): Promise<void> {
-    const dialog = this.browser.$('[role="dialog"].trust-workspace');
+  /** Read the Trust workspace modal's agent, scope, executable and SHA-256 facts, then confirm it. */
+  async trustWorkspace(): Promise<{ agent: string; scope: string; executable: string; sha256: string; text: string }> {
+    const selector = '[role="dialog"].trust-workspace';
+    const dialog = this.browser.$(selector);
     await dialog.waitForDisplayed({ timeoutMsg: "Trust workspace dialog opened" });
+    const facts = await this.browser.execute((query) => {
+      const root = document.querySelector<HTMLElement>(query);
+      const map: Record<string, string> = {};
+      for (const term of root?.querySelectorAll("dl.trust-facts > dt") ?? []) {
+        map[term.textContent?.trim() ?? ""] = (term.nextElementSibling as HTMLElement | null)?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      }
+      return {
+        agent: map.Agent ?? "",
+        scope: map.Scope ?? "",
+        executable: map.Executable ?? "",
+        sha256: map["SHA-256"] ?? "",
+        text: root?.innerText.replace(/\s+/g, " ").trim() ?? "",
+      };
+    }, selector);
     const confirm = dialog.$("button=Trust and continue");
     await confirm.waitForEnabled({ timeoutMsg: "Trust and continue is enabled" });
     await confirm.click();
     await dialog.waitForDisplayed({ reverse: true, timeoutMsg: "Trust workspace dialog closed" });
+    return facts;
   }
 
   /** Search the sessions: Search in the Pane's top row turns into its field, then the text. */
@@ -312,5 +328,11 @@ export class Chat {
       [...document.querySelectorAll<HTMLElement>(`${selector} .turn`)].some((turn) =>
         turn.querySelector("p.end")?.textContent?.trim() === "Stopped" && turn.innerText.includes(partial)),
     `${MAIN} ${LOG}`, kept), "the stopped turn keeps its partial response in the conversation");
+  }
+
+  /** The end-of-turn status lines (`Stopped`, `Interrupted · …`, error text) shown in the conversation. */
+  turnEnds(): Promise<string[]> {
+    return this.browser.execute((selector) => [...document.querySelectorAll<HTMLElement>(`${selector} .turn p.end`)]
+      .map((line) => line.textContent?.replace(/\s+/g, " ").trim() ?? ""), `${MAIN} ${LOG}`);
   }
 }

@@ -893,6 +893,7 @@ async fn run_live_probe(
         stdout,
         stdin,
         spec.hide_always_options,
+        spec.known_secrets(),
     );
     let result = tokio::time::timeout(PROBE_TIMEOUT, conn.inspect_models(probe_dir))
         .await

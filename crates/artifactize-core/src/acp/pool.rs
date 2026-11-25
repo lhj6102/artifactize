@@ -102,6 +102,7 @@ impl WarmChild {
             stdout,
             stdin,
             spec.hide_always_options,
+            spec.known_secrets(),
         );
         Ok(Self {
             session_id,

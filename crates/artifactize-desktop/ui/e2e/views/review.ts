@@ -143,9 +143,38 @@ export class Review {
   /** The way back, shown for a review followed from Verify: `Verify · {Run} › {Artifact}`. */
   back(): Promise<void> { return this.browser.$(`section.stage-area[aria-label="Review's main area"] > header`).$("button*=Verify · ").click(); }
 
+  /** The label of the contextual way back to Verify, or "" when absent. */
+  backLabel(): Promise<string> {
+    return this.browser.execute(() => [...document.querySelectorAll(`section.stage-area[aria-label="Review's main area"] > header button`)]
+      .find((button) => button.textContent?.trim().startsWith("Verify · "))?.textContent?.replace(/\s+/g, " ").trim() ?? "");
+  }
+
   /** Whether the stage header leads back to Verify. */
   hasBack(): Promise<boolean> {
     return this.browser.execute(() => [...document.querySelectorAll(`section.stage-area[aria-label="Review's main area"] > header button`)].some((button) => button.textContent?.trim().startsWith("Verify · ")));
+  }
+
+  /** Find in the review conversation from the stage header's Find button, typing `text`; what it says. */
+  async find(text: string): Promise<string> {
+    const header = `section.stage-area[aria-label="Review's main area"] > header`;
+    const field = `${header} input[aria-label="Find in the conversation"]`;
+    const had = await this.browser.$(field).isExisting();
+    const before = had ? await this.browser.execute((h) => document.querySelector(`${h} .find [role="status"]`)?.textContent?.trim() ?? "", header) : "";
+    if (!had) {
+      await this.browser.$(`${header} button[aria-label="Find in the conversation"]`).click();
+      await holds(this.browser, () => this.browser.execute((query) => document.activeElement === document.querySelector(query), field), "the review find field opened focused");
+    }
+    await fill(this.browser, field, text);
+    return (await until(this.browser, () => this.browser.execute((h, selector) => ({
+      value: document.querySelector<HTMLInputElement>(selector)?.value ?? "",
+      said: document.querySelector(`${h} .find [role="status"]`)?.textContent?.trim() ?? "",
+    }), header, field), ({ value, said }) => value === text && said !== "" && said !== before, "the review find field says what it found")).said;
+  }
+
+  /** Esc in the review find field: the find tool icon is back. */
+  async closeFind(): Promise<void> {
+    const field = `section.stage-area[aria-label="Review's main area"] > header input[aria-label="Find in the conversation"]`;
+    await press(this.browser, ["Escape"], async () => !(await this.browser.$(field).isExisting()), "the review find field closed");
   }
 
   /** Open in Verify, always among the stage header's tools. */
