@@ -71,10 +71,11 @@ export class AppState {
   readonly reviewMode = new ReviewModeState();
   /** Chat's sessions and the one shown. */
   readonly chat: ChatModeState = new ChatModeState(this.ipc, () => this.mode === "chat");
-  settingsTab = $state<"providers" | "remote" | "limits">("providers");
+  settingsTab = $state<"providers" | "chat-agents" | "remote" | "limits">("providers");
 
-  openSettings() {
-    if (!this.monitor.settings) this.settingsTab = "providers";
+  openSettings(tab?: "providers" | "chat-agents" | "remote" | "limits") {
+    if (tab) this.settingsTab = tab;
+    else if (!this.monitor.settings) this.settingsTab = "providers";
     this.monitor.settings = true;
   }
 

@@ -257,7 +257,9 @@ impl From<&artifactize_core::runs::Origin> for RunOrigin {
         match origin {
             Origin::Cli => Self::Cli,
             Origin::Mcp => Self::Mcp,
-            Origin::Chat { session_id, title } => Self::Chat {
+            Origin::Chat {
+                session_id, title, ..
+            } => Self::Chat {
                 session_id: session_id.clone().into(),
                 title: title.clone(),
             },

@@ -7,13 +7,27 @@ use serde_json::json;
 
 use super::{Context, cancellation_listener, print_json};
 
-pub(super) async fn login(context: Context, provider: Provider) -> Result<u8, String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum LoginTarget {
+    Codex,
+    #[value(name = "claude-agent")]
+    ClaudeAgent,
+    Openai,
+    Anthropic,
+    Gemini,
+    Antigravity,
+}
+
+pub(super) async fn login(context: Context, target: LoginTarget) -> Result<u8, String> {
     let (state, repo) = (context.state_dir.as_deref(), context.repo.as_deref());
-    match provider {
-        Provider::ClaudeAgent => return claude_agent_login(&context).await,
-        Provider::Antigravity => return antigravity_login(&context).await,
-        _ => {}
-    }
+    let provider = match target {
+        LoginTarget::Antigravity => return antigravity_login(&context).await,
+        LoginTarget::ClaudeAgent => return claude_agent_login(&context).await,
+        LoginTarget::Codex => Provider::Codex,
+        LoginTarget::Openai => Provider::Openai,
+        LoginTarget::Anthropic => Provider::Anthropic,
+        LoginTarget::Gemini => Provider::Gemini,
+    };
     if provider != Provider::Codex {
         let key = super::secret::read(&format!("{provider} API key"))?.parse()?;
         artifactize_core::auth::providers::save_key(state, repo, provider, key).await?;
@@ -80,24 +94,32 @@ async fn antigravity_login(context: &Context) -> Result<u8, String> {
     listener.abort();
     signed_in?;
     if context.json {
-        print_json(&json!({ "provider": Provider::Antigravity, "signed_in": true }))?;
+        print_json(&json!({ "provider": "antigravity", "signed_in": true }))?;
     } else {
         writeln!(io::stdout().lock(), "Signed in with Antigravity.").map_err(|e| e.to_string())?;
     }
     Ok(0)
 }
 
-pub(super) async fn logout(context: Context, provider: Provider) -> Result<u8, String> {
-    if provider == Provider::Antigravity {
+pub(super) async fn logout(context: Context, target: LoginTarget) -> Result<u8, String> {
+    if target == LoginTarget::Antigravity {
         artifactize_core::auth::antigravity::logout().await?;
         if context.json {
-            print_json(&json!({ "provider": provider, "signed_in": false }))?;
+            print_json(&json!({ "provider": "antigravity", "signed_in": false }))?;
         } else {
             writeln!(io::stdout().lock(), "Signed out of Antigravity.")
                 .map_err(|e| e.to_string())?;
         }
         return Ok(0);
     }
+    let provider = match target {
+        LoginTarget::Codex => Provider::Codex,
+        LoginTarget::ClaudeAgent => Provider::ClaudeAgent,
+        LoginTarget::Openai => Provider::Openai,
+        LoginTarget::Anthropic => Provider::Anthropic,
+        LoginTarget::Gemini => Provider::Gemini,
+        LoginTarget::Antigravity => unreachable!(),
+    };
     if provider == Provider::ClaudeAgent {
         artifactize_core::auth::claude_agent::logout().await?;
         if context.json {

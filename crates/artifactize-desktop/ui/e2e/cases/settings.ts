@@ -52,8 +52,13 @@ export const scenarios: Scenario[] = [
       const beneath = await app.graph.title();
       let shown = await app.settings.open();
       shown = await app.settings.until((each) => each.providers.length > 1, "the providers listed");
-      assert.deepEqual(shown.tabs, [{ name: "Providers", selected: true }, { name: "Remote", selected: false }, { name: "Limits", selected: false }]);
-      assert.deepEqual(shown.providers.map((provider) => provider.name), ["Codex", "Claude Agent", "Antigravity", "OpenAI", "Anthropic", "Gemini", "Custom provider"]);
+      assert.deepEqual(shown.tabs, [
+        { name: "Providers", selected: true },
+        { name: "Chat Agents", selected: false },
+        { name: "Remote", selected: false },
+        { name: "Limits", selected: false },
+      ]);
+      assert.deepEqual(shown.providers.map((provider) => provider.name), ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "Custom provider"]);
       shown = await app.settings.tab("Limits");
       assert.match(shown.text, /Sign-off idle grace/);
       await app.settings.tab("Providers");
@@ -211,8 +216,8 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "settings-antigravity",
-    title: "Antigravity checks its CLI installation, cancels and finishes sign-in by hand, lists the Google account's models in Settings and Chat, and signs out",
-    journeys: ["J-SET-ANTIGRAVITY"],
+    title: "Chat Agents lists built-in ACP presets, Registry, and Custom agent; Antigravity checks its CLI installation, cancels and finishes sign-in by hand, probes account models, trusts the workspace in Chat, revokes trust, and signs out",
+    journeys: ["J-SET-ANTIGRAVITY", "J-SET-CHAT-AGENTS"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], ...antigravity(fixture, standInBrowser(fixture, environment(fixture))) };
@@ -220,7 +225,10 @@ export const scenarios: Scenario[] = [
     run: async (app, { fixture, data: { staged, installed, version, answer } }) => {
       const status = (ok: (text: string) => boolean, what: string) => app.settings.factUntil("antigravity-status", ok, what);
       await app.settings.open();
-      const shown = await app.settings.provider("Antigravity");
+      await app.settings.tab("Chat Agents");
+      const shown = await app.settings.chatAgent("Antigravity");
+      assert.ok(shown.chatAgents.some((agent) => agent.name === "Browse Registry"), "Chat Agents offers Browse Registry");
+      assert.ok(shown.chatAgents.some((agent) => agent.name === "Custom agent"), "Chat Agents offers Custom agent");
       assert.match(shown.text, /Login kept by Antigravity CLI.*Serves Chat only/);
       await status((text) => text === "agy not found", "Antigravity CLI not installed");
       renameSync(staged, installed);
@@ -247,21 +255,26 @@ export const scenarios: Scenario[] = [
       await app.settings.enterCode(SIGN_IN_CODE);
       await app.settings.button("Finish sign-in");
       await status((text) => text === "Signed in with Google", "Antigravity CLI signed in with Google");
-      await app.settings.button("List models");
+      await app.settings.button("Probe agent");
       const models = await app.settings.modelsUntil((list) => list.length === AGY_MODELS.length, "the CLI's account models");
       assert.deepEqual(models, AGY_MODELS.map(({ name, value }) => `${name} · ${value}`));
       await app.settings.close("Close");
       await app.mode("Chat");
       await app.chat.create();
       await app.chat.model(AGY_MODELS[1].name);
-      await app.chat.send(AGY_PROMPT);
+      await app.chat.send(AGY_PROMPT, false);
+      await app.chat.trustWorkspace();
+      await app.chat.says(AGY_PROMPT);
       await app.chat.says(AGY_PARTIAL);
       await app.chat.working();
       writeText(answer, "finish the ACP turn");
       await app.chat.says(AGY_ANSWER);
       await app.chat.finished();
       await app.settings.open();
-      await app.settings.provider("Antigravity");
+      await app.settings.tab("Chat Agents");
+      await app.settings.chatAgent("Antigravity");
+      await app.settings.button("Revoke");
+      await app.settings.until((each) => /No workspaces trusted for Antigravity yet/.test(each.text), "trusted workspace revoked");
       await app.settings.button("Sign out of Antigravity");
       await status((text) => text === "Not signed in", "Antigravity CLI signed out again");
     },

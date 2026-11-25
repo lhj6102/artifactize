@@ -132,6 +132,12 @@ pub enum Details {
         #[serde(with = "crate::platform::path_serde::option")]
         path: Option<PathBuf>,
     },
+    /// Offline summary of configured ACP Chat agents found on PATH and saved workspace trust count.
+    ChatAgents {
+        available: Vec<crate::acp::AgentId>,
+        custom: Vec<crate::acp::AgentId>,
+        trusted_workspaces: usize,
+    },
 }
 
 /// Where a person without the desktop app installs it.
@@ -391,6 +397,50 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             "Claude Code (`claude`) is not on PATH; the claude-agent backend needs it, signed in with `claude auth login`.",
             Details::ClaudeAgent { program: None },
         ),
+    }
+    // Offline: only check which configured ACP Chat agents resolve on PATH; never spawn them.
+    match crate::acp::catalog::list_catalog(Some(&state), repo) {
+        Ok(entries) => {
+            let probe_root = crate::platform::temporary_directory();
+            let mut available = Vec::new();
+            let mut custom = Vec::new();
+            for entry in entries {
+                if entry.tier != crate::acp::catalog::AgentTier::Preset {
+                    custom.push(entry.id.clone());
+                }
+                if let Ok(program) = crate::platform::program_path(&entry.command)
+                    && crate::platform::program::resolve(&program, &probe_root).is_ok()
+                {
+                    available.push(entry.id);
+                }
+            }
+            let trusted_workspaces = crate::acp::trust::list_trust(Some(&state), repo)
+                .map(|rows| rows.len())
+                .unwrap_or(0);
+            let message = if available.is_empty() {
+                "No ACP Chat agent CLI found on PATH; Chat can still use direct HTTP providers or install an ACP agent via `artifactize chat-agent`.".into()
+            } else {
+                let names = available
+                    .iter()
+                    .map(crate::acp::AgentId::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "ACP Chat agents on PATH: {names} ({trusted_workspaces} trusted workspace scope(s))."
+                )
+            };
+            report.add(
+                "chat-agents",
+                CheckStatus::Pass,
+                &message,
+                Details::ChatAgents {
+                    available,
+                    custom,
+                    trusted_workspaces,
+                },
+            );
+        }
+        Err(error) => report.add("chat-agents", CheckStatus::Warn, &error, Details::None),
     }
     // Offline: configuration and token storage only; `remote status` checks reachability.
     match auth::remote::remote(Some(&state), repo) {

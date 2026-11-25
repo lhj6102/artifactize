@@ -1,7 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use rig_core::providers::{anthropic, gemini, openai};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::Api;
 use crate::config::Backend;
@@ -10,16 +10,18 @@ use crate::config::Backend;
 /// after thirty seconds for both API-key backends and the Codex account endpoint.
 pub(super) const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListedModel {
     pub slug: crate::config::ModelId,
     pub display_name: String,
+    #[serde(default)]
     pub efforts: Vec<String>,
+    #[serde(default)]
     pub default_effort: Option<String>,
 }
 
 impl ListedModel {
-    pub(super) fn new(slug: crate::config::ModelId, display_name: String) -> Self {
+    pub(crate) fn new(slug: crate::config::ModelId, display_name: String) -> Self {
         Self {
             slug,
             display_name,
@@ -28,7 +30,7 @@ impl ListedModel {
         }
     }
 
-    pub(super) fn with_efforts(
+    pub(crate) fn with_efforts(
         mut self,
         efforts: impl IntoIterator<Item = String>,
         default: Option<String>,
@@ -92,8 +94,31 @@ pub async fn availability(
     repo: Option<&Path>,
 ) -> Availability {
     use super::Route;
-    use crate::auth::{antigravity, claude_agent, codex};
+    use crate::auth::{claude_agent, codex};
     use Availability::*;
+    if backend.as_str() == "antigravity" {
+        let id: crate::acp::AgentId = "antigravity".parse().expect("antigravity agent id");
+        return match crate::acp::catalog::probe_agent(&id, state, repo, false).await {
+            crate::acp::catalog::AgentAvailability::Ready { models, .. } => Models(models),
+            crate::acp::catalog::AgentAvailability::Missing { reason } => CliMissing { reason },
+            crate::acp::catalog::AgentAvailability::NotSetUp { reason, .. } => NotSetUp { reason },
+            crate::acp::catalog::AgentAvailability::TooOld {
+                version,
+                required_version,
+                reason,
+                ..
+            } => CliTooOld {
+                version: version
+                    .parse()
+                    .unwrap_or_else(|_| semver::Version::new(0, 0, 0)),
+                required_version: required_version
+                    .parse()
+                    .unwrap_or(crate::acp::catalog::ANTIGRAVITY_MINIMUM),
+                error: reason,
+            },
+            crate::acp::catalog::AgentAvailability::Failed { error, .. } => Failed { error },
+        };
+    }
     let route = match super::route(&backend, state, repo, "to list models") {
         Ok(route) => route,
         Err(failure) if failure.code == crate::agent::error::Code::Authentication => {
@@ -108,26 +133,6 @@ pub async fn availability(
         }
     };
     match route {
-        Route::Antigravity => {
-            use super::antigravity::{MINIMUM, Problem};
-            match antigravity::models_checked().await {
-                Ok(models) => Models(models),
-                Err(Problem::Missing) => CliMissing {
-                    reason: "Install the Antigravity CLI (agy).".into(),
-                },
-                Err(Problem::SignedOut) => NotSetUp {
-                    reason: "Sign in to Antigravity with Google.".into(),
-                },
-                Err(Problem::TooOld { version }) => CliTooOld {
-                    error: format!("Update Antigravity to {MINIMUM} or newer."),
-                    version,
-                    required_version: MINIMUM,
-                },
-                Err(problem) => Failed {
-                    error: crate::agent::error::Failure::from(problem).message,
-                },
-            }
-        }
         Route::ClaudeAgent => {
             let minimum = super::claude_agent::MINIMUM_VERSION;
             match claude_agent::cli_version().await {
@@ -185,10 +190,13 @@ pub async fn list(
     state: Option<&Path>,
     repo: Option<&Path>,
 ) -> Result<Listing, String> {
+    if backend.as_str() == "antigravity" {
+        let models = crate::auth::antigravity::models().await?;
+        return Ok(Listing { backend, models });
+    }
     let route =
         super::route(&backend, state, repo, "to list models").map_err(|failure| failure.message)?;
     let models = match route {
-        super::Route::Antigravity => crate::auth::antigravity::models().await?,
         super::Route::ClaudeAgent => super::claude_agent::models().await?,
         super::Route::Http(super::HttpRoute {
             api: Api::Codex,
@@ -228,7 +236,7 @@ async fn list_at(api: Api, key: &str, base: &str) -> Result<Vec<ListedModel>, St
                     .list_models()
                     .await
             }
-            Api::Codex | Api::ClaudeAgent | Api::Antigravity => {
+            Api::Codex | Api::ClaudeAgent => {
                 unreachable!("they list their own models")
             }
         }

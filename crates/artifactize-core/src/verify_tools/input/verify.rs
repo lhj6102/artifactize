@@ -44,6 +44,8 @@ impl Verify {
 pub(crate) struct Start {
     pub scope: Scope,
     pub request_key: Option<RequestKey>,
+    #[serde(skip)]
+    pub request_args_hash: Option<String>,
     pub comment: Option<RunComment>,
     pub jobs: Option<NonZeroU32>,
     #[serde(default)]

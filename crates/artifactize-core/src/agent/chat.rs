@@ -9,19 +9,19 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    Toolset, Turns, calls_of, check_deadline, claude_agent, definitions,
+    Toolset, Turns, calls_of, check_deadline, definitions,
     error::{Code, Failure},
     session::Recorder,
     text_of,
 };
 use crate::{
-    chat::{Model, tools::Tools},
+    chat::{DirectSelection, tools::Tools},
     llm::{self, Client, Route},
     runs,
 };
 
 /// One turn may do several calls, but a stuck model or tool cannot run forever.
-pub(super) const TURN_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+pub(crate) const TURN_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 pub(super) const SYSTEM: &str = "You are Artifactize Chat, working in the user's selected worktree. Use only the supplied tools to read or change files and run commands. Use the Verify tools to verify changes and observe the Run, and explain failures or waiting Human reviews. Run acceptance is not approval. Never claim a Human review or submit a verdict for a person.";
 
@@ -55,27 +55,10 @@ impl Prompt {
             system,
         }
     }
-
-    /// Replay Artifactize's own history into a fresh subprocess session, not as tool executions.
-    pub(super) fn replay(&self) -> String {
-        if self.history.is_empty() {
-            return self.text.clone();
-        }
-        let records = self
-            .history
-            .iter()
-            .map(|msg| serde_json::to_string(msg).expect("message is JSON"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!(
-            "Conversation history (one JSON message per line):\n{records}\n\nNew user message:\n{}",
-            self.text
-        )
-    }
 }
 
 pub(crate) async fn turn(
-    selection: &Model,
+    selection: &DirectSelection,
     context: &runs::Context,
     tools: &Tools<'_>,
     prompt: Prompt,
@@ -84,8 +67,9 @@ pub(crate) async fn turn(
 ) -> Result<String, Failure> {
     let deadline = Instant::now() + TURN_TIMEOUT;
     check_deadline(cancellation.is_cancelled(), deadline, Instant::now())?;
+    let backend = selection.backend.to_backend();
     let route = llm::route(
-        &selection.backend,
+        &backend,
         Some(context.state()),
         Some(context.repo()),
         "for this Chat model",
@@ -93,18 +77,10 @@ pub(crate) async fn turn(
     let route = match route {
         Route::Http(route) => route,
         Route::ClaudeAgent => {
-            return claude_agent::chat(selection, tools, &prompt, recorder, cancellation).await;
-        }
-        Route::Antigravity => {
-            return super::antigravity::turn(
-                selection,
-                context,
-                tools,
-                &prompt,
-                recorder,
-                cancellation,
-            )
-            .await;
+            return Err(Failure::new(
+                Code::AgentError,
+                "Legacy claude-agent Chat execution has been retired. Switch this session to the `claude-acp` ACP Chat agent or a direct API provider.",
+            ));
         }
     };
     let client = Client::at(route, &selection.model, context.state(), context.repo())?;

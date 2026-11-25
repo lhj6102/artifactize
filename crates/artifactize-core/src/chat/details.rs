@@ -13,7 +13,7 @@ const GAP: &str = "\n…\n";
 /// Keep the activity label short even for a long path or command argument.
 const SUMMARY_CHARS: usize = 120;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ToolKind {
     Read,
@@ -24,12 +24,32 @@ pub enum ToolKind {
 }
 
 impl ToolKind {
-    pub(super) fn for_name(name: &str) -> Self {
+    pub(crate) fn for_name(name: &str) -> Self {
         match name {
             "read" | "list" | "glob" | "grep" => Self::Read,
             "write" | "edit" => Self::Edit,
             "run_command" => Self::Command,
             name if crate::verify_tools::chat_tool(name) => Self::Verify,
+            _ => Self::Other,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Edit => "edit",
+            Self::Command => "command",
+            Self::Verify => "verify",
+            Self::Other => "other",
+        }
+    }
+
+    pub(crate) fn from_db(value: &str) -> Self {
+        match value {
+            "read" => Self::Read,
+            "edit" => Self::Edit,
+            "command" => Self::Command,
+            "verify" => Self::Verify,
             _ => Self::Other,
         }
     }

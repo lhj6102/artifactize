@@ -1,8 +1,8 @@
 //! Route parsed commands to focused workflows; no business logic or rendering here.
 
 use super::{
-    Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, account, cache, config,
-    maintenance, plugin, provider, remote, request, run, server, session, status, workflow,
+    Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, account, cache, chat_agent,
+    config, maintenance, plugin, provider, remote, request, run, server, session, status, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -51,7 +51,7 @@ async fn execute_general(command: Option<Command>, context: Context) -> Result<u
     let executor = matches!(command, Some(Command::VerifyExecution { .. }));
     match command {
         Some(Command::ChatMcp) => {
-            artifactize_core::llm::antigravity::bridge::stdio()?;
+            artifactize_core::acp::verify_bridge::stdio()?;
             Ok(0)
         }
         Some(Command::Mcp) => {
@@ -108,6 +108,15 @@ async fn execute_general(command: Option<Command>, context: Context) -> Result<u
         Some(Command::Logout { provider }) => account::logout(context, provider).await,
         Some(Command::Provider { command }) => {
             provider::execute(
+                context.state_dir.as_deref(),
+                context.repo.as_deref(),
+                command,
+                context.json,
+            )
+            .await
+        }
+        Some(Command::ChatAgent { command }) => {
+            chat_agent::execute(
                 context.state_dir.as_deref(),
                 context.repo.as_deref(),
                 command,

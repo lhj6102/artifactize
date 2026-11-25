@@ -128,3 +128,44 @@ pub(crate) fn set_temporary_directory(
         set(environment, key, dir);
     }
 }
+
+/// Remove empty and relative segments (such as `.` or `./bin`) from `PATH` before spawning a
+/// child with `cwd = worktree`, so sub-scripts (`#!/usr/bin/env node`) cannot be hijacked by
+/// repository files.
+pub(crate) fn strip_relative_path_entries(environment: &mut BTreeMap<OsString, OsString>) {
+    let Some(current) = lookup(environment, "PATH").map(ToOwned::to_owned) else {
+        return;
+    };
+    let absolute: Vec<_> = std::env::split_paths(&current)
+        .filter(|entry| !entry.as_os_str().is_empty() && entry.is_absolute())
+        .collect();
+    if let Ok(joined) = std::env::join_paths(&absolute) {
+        set(environment, "PATH", joined);
+    }
+}
+
+#[cfg(test)]
+mod path_hygiene_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn strip_relative_path_entries_keeps_only_absolute_entries() {
+        let root = crate::test_os::tempdir();
+        let abs_a = root.path().join("bin_a");
+        let abs_b = root.path().join("bin_b");
+        let raw = std::env::join_paths([
+            PathBuf::from("."),
+            PathBuf::from(""),
+            abs_a.clone(),
+            PathBuf::from("relative/bin"),
+            abs_b.clone(),
+        ])
+        .unwrap();
+        let mut env = BTreeMap::new();
+        set(&mut env, "PATH", raw);
+        strip_relative_path_entries(&mut env);
+        let cleaned: Vec<_> = std::env::split_paths(lookup(&env, "PATH").unwrap()).collect();
+        assert_eq!(cleaned, vec![abs_a, abs_b]);
+    }
+}

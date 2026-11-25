@@ -8,7 +8,7 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	launch: () => typedError<LaunchView, Failure>(__TAURI_INVOKE("launch")),
-	/**  Create an empty Chat session for the chosen worktree; `null` leaves its model unset. */
+	/**  Create an empty Chat session for the chosen worktree; `null` leaves its target unset. */
 	chatCreate: (worktree: PathKey, branch: 
 /**  A Git repository's branch, by the repository's common directory. */
 { kind: "branch"; common: PathKey; 
@@ -17,13 +17,12 @@ branch: string } |
 /**  A detached Git worktree, by its folder. */
 { kind: "detached"; common: PathKey; path: PathKey } | 
 /**  A folder outside Git. */
-{ kind: "folder"; path: PathKey } | null, selection: {
-	backend: string,
-	model: string,
-	effort: string | null,
-} | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, branch, selection })),
-	/**  Save the selected model and effort for the next turn without sending a message. */
-	chatSetModel: (id: string, selection: ChatModel) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_model", { id, selection })),
+{ kind: "folder"; path: PathKey } | null, selection: { engine: "direct"; backend: ChatDirectBackend; model: string; effort?: string | null } | { engine: "acp"; agent: string; config?: ChatConfigSelection[] } | { engine: "legacyClaudeAgent"; model: string; effort?: string | null } | null) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_create", { worktree, branch, selection })),
+	/**
+	 *  Save the selected Chat target (ACP agent + config, or direct HTTP model + effort) for the
+	 *  next turn without sending a message.
+	 */
+	chatSetTarget: (id: string, selection: ChatTarget) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_target", { id, selection })),
 	/**  Keep the chosen view for this session without sending a message or reordering Chat. */
 	chatSetView: (id: string, view: ChatSessionView) => typedError<ChatSession, Failure>(__TAURI_INVOKE("chat_set_view", { id, view })),
 	/**  Move a saved Chat to one of the live choices without adding a message. */
@@ -38,18 +37,20 @@ branch: string } |
 	branchKey: BranchKey,
 	view: ChatSessionView,
 	unavailable: string | null,
-	model: ChatModel | null,
+	target: ChatTarget | null,
 	createdAt: string,
 	updatedAt: string,
 	running: boolean,
+	waitingPermission: boolean,
+	legacyMigrationNotice: boolean,
 	outcome: ChatOutcome | null,
 	unseen: boolean,
 } | null, Failure>(__TAURI_INVOKE("chat_latest_for_branch", { branch })),
 	/**
-	 *  Read the starting model for a new session. The pending call is the loading state;
-	 *  `null` means no provider lists a model and the worktree has no previous session.
+	 *  Read the starting target for a new session. `null` means no agent or provider is ready and
+	 *  the worktree has no previous usable session.
 	 */
-	chatDefaultModel: (worktree: PathKey, branch: 
+	chatDefaultTarget: (worktree: PathKey, branch: 
 /**  A Git repository's branch, by the repository's common directory. */
 { kind: "branch"; common: PathKey; 
 /**  Refused at the boundary unless a branch name. */
@@ -57,31 +58,28 @@ branch: string } |
 /**  A detached Git worktree, by its folder. */
 { kind: "detached"; common: PathKey; path: PathKey } | 
 /**  A folder outside Git. */
-{ kind: "folder"; path: PathKey } | null) => typedError<{
-	backend: string,
-	model: string,
-	effort: string | null,
-} | null, Failure>(__TAURI_INVOKE("chat_default_model", { worktree, branch })),
+{ kind: "folder"; path: PathKey } | null) => typedError<{ engine: "direct"; backend: ChatDirectBackend; model: string; effort?: string | null } | { engine: "acp"; agent: string; config?: ChatConfigSelection[] } | { engine: "legacyClaudeAgent"; model: string; effort?: string | null } | null, Failure>(__TAURI_INVOKE("chat_default_target", { worktree, branch })),
 	/**  List saved sessions newest first. `null` applies no worktree or query filter. */
 	chatList: (worktree: string | null, query: string | null) => typedError<ChatSession[], Failure>(__TAURI_INVOKE("chat_list", { worktree, query })),
 	/**  Live branches known through Runs, launch, or saved Chat sessions; ignores Verify search. */
 	chatBranches: () => typedError<ChatBranch[], Failure>(__TAURI_INVOKE("chat_branches")),
 	/**  Acknowledge the latest settled outcome for this machine user. */
 	chatMarkSeen: (id: string) => typedError<null, Failure>(__TAURI_INVOKE("chat_mark_seen", { id })),
-	/**
-	 *  Read a session and its live transcript. `sessionChanged` names sessions to refresh; Run
-	 *  cards can change separately on `stateChanged`, after their originating turn has ended.
-	 */
+	/**  Read a session, its live transcript, permissions, and live ACP configOptions. */
 	chatOpen: (id: string) => typedError<ChatView, Failure>(__TAURI_INVOKE("chat_open", { id })),
 	/**
-	 *  Accept a user message and start its streaming turn. A supplied model selection is saved
-	 *  for later turns; `null` keeps the current model.
+	 *  Accept a user message and start its streaming turn, or return `TrustRequired` before
+	 *  recording anything if the ACP agent has not been trusted for this workspace yet.
 	 */
-	chatSend: (id: string, text: string, selection: {
-	backend: string,
-	model: string,
-	effort: string | null,
-} | null) => typedError<null, Failure>(__TAURI_INVOKE("chat_send", { id, text, selection })),
+	chatSend: (id: string, text: string, selection: { engine: "direct"; backend: ChatDirectBackend; model: string; effort?: string | null } | { engine: "acp"; agent: string; config?: ChatConfigSelection[] } | { engine: "legacyClaudeAgent"; model: string; effort?: string | null } | null) => typedError<ChatSendResult, Failure>(__TAURI_INVOKE("chat_send", { id, text, selection })),
+	/**  Submit a user choice for a pending ACP permission request (`PENDING -> SELECTED`). */
+	chatPermissionRespond: (id: string, permissionId: string, optionId: string) => typedError<boolean, Failure>(__TAURI_INVOKE("chat_permission_respond", { id, permissionId, optionId })),
+	/**  Record explicit machine-local Workspace Trust for an ACP agent on a worktree/repo scope. */
+	chatTrustGrant: (worktree: PathKey, agent: string) => typedError<ChatTrustRecord, Failure>(__TAURI_INVOKE("chat_trust_grant", { worktree, agent })),
+	/**  List all saved machine-local ACP Workspace Trust records. */
+	chatTrustList: () => typedError<ChatTrustRecord[], Failure>(__TAURI_INVOKE("chat_trust_list")),
+	/**  Revoke a saved Workspace Trust record and terminate any matching warm ACP children. */
+	chatTrustRevoke: (agent: string, scope: ChatTrustScope) => typedError<boolean, Failure>(__TAURI_INVOKE("chat_trust_revoke", { agent, scope })),
 	/**  Ask the library to stop the turn, regardless of which process owns it. */
 	chatStop: (id: string) => typedError<boolean, Failure>(__TAURI_INVOKE("chat_stop", { id })),
 	/**  Open an HTTP(S) link from a conversation in the system browser. */
@@ -348,6 +346,18 @@ branch: string } |
 	 *  reports it.
 	 */
 	antigravityLogout: () => typedError<AntigravityStatus, Failure>(__TAURI_INVOKE("antigravity_logout")),
+	/**  List all built-in ACP presets, Registry-installed, and custom ACP Chat agents. */
+	chatAgentsList: () => typedError<ChatAgentCatalogEntry[], Failure>(__TAURI_INVOKE("chat_agents_list")),
+	/**  Probe one ACP Chat agent strictly inside an empty private tempdir. */
+	chatAgentProbe: (agent: string, refresh: boolean) => typedError<ChatAgentAvailability, Failure>(__TAURI_INVOKE("chat_agent_probe", { agent, refresh })),
+	/**  Save or update a machine-local custom ACP Chat agent and its write-only secrets. */
+	chatAgentCustomSave: (input: ChatCustomAgentInput) => typedError<ChatAgentCatalogEntry, Failure>(__TAURI_INVOKE("chat_agent_custom_save", { input })),
+	/**  Remove a custom or Registry-installed ACP Chat agent and its stored secrets. */
+	chatAgentCustomRemove: (agent: string) => typedError<boolean, Failure>(__TAURI_INVOKE("chat_agent_custom_remove", { agent })),
+	/**  Discover official ACP Registry entries (discovery-only; never executes anything). */
+	chatAgentRegistryList: () => typedError<ChatRegistryEntry[], Failure>(__TAURI_INVOKE("chat_agent_registry_list")),
+	/**  Install a pinned official ACP Registry entry after explicit user consent. */
+	chatAgentRegistryInstall: (spec: ChatRegistryInstallSpec) => typedError<ChatAgentCatalogEntry, Failure>(__TAURI_INVOKE("chat_agent_registry_install", { spec })),
 	/**  Ask Claude Code whether it is signed in (`claude auth status`). */
 	claudeAgentStatus: () => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_status")),
 	/**  Start sign-in and return its ID immediately, so it can be cancelled before any prompt. */
@@ -523,7 +533,35 @@ export type CardView = {
 	model: string | null,
 };
 
-export type ChatBlock = { kind: "text"; text: string } | { kind: "tool"; name: string; arguments: string; output: string | null; failed: boolean | null; toolKind: ChatToolKind; summary: string; exitCode: number | null; omittedLines: number; outputTruncated: boolean } | { kind: "run"; card: ChatRun };
+export type ChatAgentAvailability = { kind: "ready"; executable: PathKey; version: string | null; models: ChatAgentModel[]; configOptions: ChatConfigOption[] } | { kind: "notSetUp"; executable: PathKey | null; version: string | null; reason: string; loginAction: string } | { kind: "missing"; reason: string } | { kind: "tooOld"; executable: PathKey; version: string; requiredVersion: string; reason: string } | { kind: "failed"; executable: PathKey | null; version: string | null; error: string };
+
+export type ChatAgentCatalogEntry = {
+	id: string,
+	name: string,
+	tier: ChatAgentTier,
+	command: string,
+	args: string[],
+	env: { [key in string]: string },
+	/**  Secret env variable names only — values are never returned over IPC. */
+	secretEnvKeys: string[],
+	mcpStdio: boolean,
+	canDisableProjectConfig: boolean,
+	nativeSandboxNote: string,
+	loginAction: string,
+	installHint: string,
+	registry: ChatRegistryInstallSpec | null,
+};
+
+export type ChatAgentModel = {
+	slug: string,
+	displayName: string,
+	efforts: string[],
+	defaultEffort: string | null,
+};
+
+export type ChatAgentTier = "preset" | "registry" | "custom";
+
+export type ChatBlock = { kind: "text"; text: string } | { kind: "thought"; text: string } | { kind: "tool"; callId: string | null; name: string; title: string | null; arguments: string; output: string | null; failed: boolean | null; toolKind: ChatToolKind; status: ChatToolStatus; summary: string; exitCode: number | null; omittedLines: number; outputTruncated: boolean; locations: ChatToolLocation[]; diff: ChatToolDiff | null } | { kind: "plan"; steps: ChatPlanStep[] } | { kind: "permission"; permissionId: string; title: string; toolKind: ChatToolKind; summary: string; detail: string | null; options: ChatPermissionOption[]; status: ChatPermissionStatus; selectedOptionId: string | null } | { kind: "notice"; text: string } | { kind: "handoff"; from: string; to: string; summary: string } | { kind: "run"; card: ChatRun };
 
 /**  A live branch and the checkout a new Chat on it can use. */
 export type ChatBranch = {
@@ -533,13 +571,93 @@ export type ChatBranch = {
 	workspace: PathKey,
 };
 
-export type ChatModel = {
-	backend: string,
-	model: string,
-	effort: string | null,
+export type ChatConfigCategory = "model" | "mode" | "thought_level" | "other";
+
+export type ChatConfigChoice = {
+	value: string,
+	name: string,
+	description: string | null,
+	bypassWarning: boolean,
+};
+
+export type ChatConfigOption = {
+	id: string,
+	name: string,
+	category: ChatConfigCategory,
+	currentValue: string,
+	choices: ChatConfigChoice[],
+};
+
+export type ChatConfigSelection = {
+	id: string,
+	value: string,
+	category?: ChatConfigCategory | null,
+};
+
+export type ChatCustomAgentInput = {
+	id: string,
+	name: string,
+	command: string,
+	args?: string[],
+	env?: { [key in string]: string },
+	/**  Write-only secret env values; never echoed back. */
+	setSecrets?: { [key in string]: string },
+	removeSecretKeys?: string[],
+	mcpStdio?: boolean,
+};
+
+export type ChatDirectBackend = { kind: "builtin"; provider: string } | { kind: "custom"; name: string };
+
+export type ChatDistributionKind = "binary" | "archive" | "npx" | "uvx";
+
+export type ChatLauncherFingerprint = {
+	resolvedExecutable: PathKey,
+	executableSha256: string,
+	argsHash: string,
 };
 
 export type ChatOutcome = "running" | "completed" | "failed" | "stopped" | "interrupted";
+
+export type ChatPermissionOption = {
+	optionId: string,
+	name: string,
+	kind: ChatPermissionOptionKind,
+	persistsInAgentSettings: boolean,
+};
+
+export type ChatPermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always";
+
+export type ChatPermissionStatus = "pending" | "selected" | "delivering" | "delivered" | "cancelled" | "expired";
+
+export type ChatPlanStep = {
+	content: string,
+	status: ChatPlanStepStatus,
+	priority: string | null,
+};
+
+export type ChatPlanStepStatus = "pending" | "in_progress" | "completed" | "failed";
+
+export type ChatRegistryEntry = {
+	id: string,
+	name: string,
+	version: string,
+	description: string,
+	spec: ChatRegistryInstallSpec,
+};
+
+export type ChatRegistryInstallSpec = {
+	registryId: string,
+	displayName: string,
+	exactVersion: string,
+	platform: string,
+	distributionKind: ChatDistributionKind,
+	packageOrUrl: string,
+	args?: string[],
+	envPairs?: { [key in string]: string },
+	buildScriptsAllowed?: boolean,
+	artifactSha256?: string | null,
+	allowUnsignedDigest?: boolean,
+};
 
 export type ChatRun = {
 	id: string,
@@ -550,6 +668,8 @@ export type ChatRun = {
 
 export type ChatRunState = "preparing" | "running" | "waiting" | "waiting_human" | "cancelling" | "green" | "red" | "incomplete" | "yellow" | "error" | "cancelled";
 
+export type ChatSendResult = { kind: "accepted" } | { kind: "trustRequired"; requirement: ChatTrustRequirement };
+
 export type ChatSession = {
 	id: string,
 	title: string,
@@ -559,17 +679,56 @@ export type ChatSession = {
 	branchKey: BranchKey,
 	view: ChatSessionView,
 	unavailable: string | null,
-	model: ChatModel | null,
+	target: ChatTarget | null,
 	createdAt: string,
 	updatedAt: string,
 	running: boolean,
+	waitingPermission: boolean,
+	legacyMigrationNotice: boolean,
 	outcome: ChatOutcome | null,
 	unseen: boolean,
 };
 
 export type ChatSessionView = "conversation" | "graph";
 
+export type ChatTarget = { engine: "direct"; backend: ChatDirectBackend; model: string; effort?: string | null } | { engine: "acp"; agent: string; config?: ChatConfigSelection[] } | { engine: "legacyClaudeAgent"; model: string; effort?: string | null };
+
+export type ChatToolDiff = {
+	path: string,
+	oldText: string | null,
+	newText: string,
+	truncated: boolean,
+};
+
 export type ChatToolKind = "read" | "edit" | "command" | "verify" | "other";
+
+export type ChatToolLocation = {
+	path: string,
+	line: number | null,
+};
+
+export type ChatToolStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export type ChatTrustRecord = {
+	agentId: string,
+	scope: ChatTrustScope,
+	scopeLabel: string,
+	fingerprint: ChatLauncherFingerprint,
+	trustedAt: string,
+};
+
+export type ChatTrustRequirement = {
+	agentId: string,
+	agentName: string,
+	scope: ChatTrustScope,
+	scopeLabel: string,
+	fingerprint: ChatLauncherFingerprint,
+	disclosure: string,
+	reason: string,
+	coversAllWorktrees: boolean,
+};
+
+export type ChatTrustScope = { kind: "gitRepo"; commonDir: PathKey } | { kind: "directory"; canonicalPath: PathKey };
 
 export type ChatTurn = {
 	user: string,
@@ -577,12 +736,17 @@ export type ChatTurn = {
 	state: ChatTurnState,
 };
 
-export type ChatTurnState = { kind: "running" } | { kind: "completed" } | { kind: "stopped" } | { kind: "interrupted" } | { kind: "failed"; message: string };
+export type ChatTurnState = { kind: "running" } | { kind: "waitingPermission" } | { kind: "completed" } | { kind: "stopped" } | { kind: "interrupted" } | { kind: "failed"; message: string };
+
+export type ChatVerifyBridgeState = "notConnected" | "connected";
 
 export type ChatView = {
 	session: ChatSession,
 	running: boolean,
+	waitingPermission: boolean,
 	turns: ChatTurn[],
+	liveConfigOptions: ChatConfigOption[],
+	verifyBridgeState: ChatVerifyBridgeState,
 };
 
 /**  One Run in a branch's timeline. */
@@ -1168,7 +1332,7 @@ export type PlanLine = {
 export type Profile = "runtime" | "agent" | "human";
 
 /**  A built-in provider, by the name the CLI and an eval's `backend` give it. */
-export type Provider = "codex" | "claude-agent" | "antigravity" | "openai" | "anthropic" | "gemini";
+export type Provider = "codex" | "claude-agent" | "openai" | "anthropic" | "gemini";
 
 /**  The providers of this machine. */
 export type Providers = {

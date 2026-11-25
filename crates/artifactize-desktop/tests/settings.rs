@@ -199,14 +199,7 @@ fn settings_command_probe() {
 
     // API keys: where each comes from, never its value.
     // Every built-in provider, in the library's order, with the name `backend` takes.
-    let builtin = json!([
-        "codex",
-        "claude-agent",
-        "antigravity",
-        "openai",
-        "anthropic",
-        "gemini"
-    ]);
+    let builtin = json!(["codex", "claude-agent", "openai", "anthropic", "gemini"]);
     let keys = |gemini: &str| {
         json!([
             {"provider": "openai", "variable": "OPENAI_API_KEY", "source": "environment", "saved": false},
@@ -303,17 +296,15 @@ fn settings_command_probe() {
         signed_out,
         json!({"kind":"notSetUp","reason":"Sign in to Codex."})
     );
-    for provider in ["antigravity", "claude-agent"] {
-        let refused = call("provider_custom_save", json!({
-            "name":"native", "target":{"kind":"alias","provider":provider}, "key":{"kind":"none"},
-        })).unwrap_err();
-        assert!(
-            refused["message"]
-                .as_str()
-                .unwrap()
-                .contains("cannot be aliased")
-        );
-    }
+    let refused = call("provider_custom_save", json!({
+        "name":"native", "target":{"kind":"alias","provider":"claude-agent"}, "key":{"kind":"none"},
+    })).unwrap_err();
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("cannot be aliased")
+    );
     call("provider_custom_save", json!({
         "name":"broken", "target":{"kind":"endpoint","api":"openaiChat","url":format!("{provider_url}/unknown")}, "key":{"kind":"none"},
     })).unwrap();

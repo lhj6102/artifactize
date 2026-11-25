@@ -1,7 +1,6 @@
 //! Exact-model rig backends with explicit API-key or Codex credentials, the custom providers
 //! of this machine, and the loopback-only test endpoint override for offline fake providers.
 
-pub mod antigravity;
 mod api;
 pub mod claude_agent;
 pub mod codex;
@@ -69,9 +68,9 @@ pub enum Client {
 }
 
 /// Where a provider's requests go: its API, its root and its key.
+/// Evals never admit ACP Chat agents (`C-EVAL-ARTIFACTIZE-DRIVEN`).
 pub(crate) enum Route {
     ClaudeAgent,
-    Antigravity,
     Http(HttpRoute),
 }
 
@@ -81,15 +80,19 @@ pub(crate) struct HttpRoute {
     key: Option<ApiKey>,
 }
 
-/// Resolve `backend` on this machine: a built-in provider, or the custom provider `state`
-/// saved under that name. `purpose` completes a missing-key error; a missing provider or key
-/// is an authentication failure, as no credentials are.
+/// Resolve `backend` on this machine: a built-in eval/direct provider, or the custom HTTP
+/// provider `state` saved under that name. `purpose` completes a missing-key error; a missing
+/// provider or key is an authentication failure. If an unknown name matches a Chat-only ACP
+/// agent, returns a targeted Chat-only diagnostic.
 pub(crate) fn route(
     backend: &Backend,
     state: Option<&Path>,
     repo: Option<&Path>,
     purpose: &str,
 ) -> Result<Route, Failure> {
+    if let Err(refusal) = backend.validate_eval() {
+        return Err(Failure::from(refusal));
+    }
     let missing = |message: String| Failure::new(Code::Authentication, message);
     let provider = match backend.builtin() {
         Some(provider) => provider,
@@ -103,16 +106,19 @@ pub(crate) fn route(
                 }));
             }
             None => {
+                if crate::acp::catalog::is_chat_agent(backend.as_str(), state, repo) {
+                    return Err(missing(format!(
+                        r#""{backend}" is a Chat-only ACP agent, not an eval backend."#
+                    )));
+                }
                 return Err(missing(format!(
                     "No provider named {backend} is set up on this machine; add it in Settings → Providers or with `artifactize provider add {backend}`."
                 )));
             }
         },
     };
-    match provider {
-        Provider::ClaudeAgent => return Ok(Route::ClaudeAgent),
-        Provider::Antigravity => return Ok(Route::Antigravity),
-        _ => {}
+    if provider == Provider::ClaudeAgent {
+        return Ok(Route::ClaudeAgent);
     }
     let key = match providers::key_variable(provider) {
         Some(variable) => Some(providers::key(provider, state, repo)?.ok_or_else(|| {
@@ -216,7 +222,6 @@ impl Client {
     ) -> Result<Self, Failure> {
         match route(backend, Some(state), Some(repo), "for this Agent backend")? {
             Route::Http(route) => Self::at(route, model, state, repo),
-            Route::Antigravity => Err(antigravity::eval_refusal()),
             Route::ClaudeAgent => Err(Failure::new(
                 Code::AgentError,
                 "Unsupported client backend: claude-agent runs reviews through Claude Code.",
@@ -267,7 +272,7 @@ impl Client {
                 ),
                 key,
             ),
-            Api::Codex | Api::ClaudeAgent | Api::Antigravity => unreachable!("handled above"),
+            Api::Codex | Api::ClaudeAgent => unreachable!("handled above"),
         })
     }
 
@@ -329,7 +334,6 @@ impl Client {
             ),
             // Claude Code's own options: adaptive thinking with its summaries shown, and the
             // declared effort.
-            Api::Antigravity => unreachable!("Antigravity is Chat only"),
             Api::ClaudeAgent => {
                 let mut value = json!({"thinking":"adaptive", "thinkingDisplay":"summarized"});
                 if let Some(effort) = reasoning {
@@ -374,7 +378,6 @@ impl Client {
                     "name":"artifactize_verdict", "strict":true, "schema":schema,
                 }});
             }
-            Api::Antigravity => unreachable!("Antigravity is Chat only"),
             Api::ClaudeAgent => {
                 parameters["jsonSchema"] = schema;
             }
@@ -581,7 +584,7 @@ pub fn base_url_variable(provider: Provider) -> Option<&'static str> {
         Provider::Anthropic => Some("ARTIFACTIZE_ANTHROPIC_BASE_URL"),
         Provider::Gemini => Some("ARTIFACTIZE_GEMINI_BASE_URL"),
         Provider::Codex => Some("ARTIFACTIZE_CODEX_BASE_URL"),
-        Provider::ClaudeAgent | Provider::Antigravity => None,
+        Provider::ClaudeAgent => None,
     }
 }
 
@@ -696,7 +699,7 @@ fn base_url(provider: Provider) -> Result<url::Url, String> {
         Provider::Anthropic => "https://api.anthropic.com",
         Provider::Gemini => gemini::BASE_URL,
         Provider::Codex => codex::BASE_URL,
-        Provider::ClaudeAgent | Provider::Antigravity => unreachable!("no HTTP route"),
+        Provider::ClaudeAgent => unreachable!("no HTTP route"),
     };
     Ok(url::Url::parse(base).expect("built-in provider base URL"))
 }

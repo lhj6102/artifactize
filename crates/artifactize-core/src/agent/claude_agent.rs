@@ -324,45 +324,6 @@ pub(super) async fn follow_up(
     Ok(StartedFollowUp { answer, attempts })
 }
 
-/// Adapt Claude Code's model transport to the same Chat tools and persisted history.
-pub(super) async fn chat(
-    selection: &crate::chat::Model,
-    tools: &crate::chat::tools::Tools<'_>,
-    prompt: &super::chat::Prompt,
-    recorder: &mut Recorder,
-    cancellation: &CancellationToken,
-) -> Result<String, Failure> {
-    let model = &selection.model;
-    let offered = definitions(tools.list());
-    let launch = Launch {
-        model: Some(model.as_str()),
-        effort: selection.effort.as_deref(),
-        system: Some(&prompt.system),
-        tools: offered.iter().map(|tool| tool.name.as_str()).collect(),
-        schema: None,
-    };
-    let server = Server::new(tools.list());
-    let mut attempts = Vec::new();
-    let session = Session {
-        server: &server,
-        registry: Toolset::Chat(tools),
-        output: tools.output(),
-        model,
-        limits: Limits {
-            deadline: Instant::now() + super::chat::TURN_TIMEOUT,
-            max_tokens: None,
-            max_tool_calls: None,
-        },
-        cancellation,
-        recorder,
-        attempts: &mut attempts,
-    };
-    let input = prompt.replay();
-    let (mut conversation, running) = session.open(&launch).await?;
-    let answer = conversation.ask(&input).await;
-    close(conversation, running, answer).await
-}
-
 /// What one Claude Code session works with.
 struct Session<'a, 'r> {
     server: &'a Server,

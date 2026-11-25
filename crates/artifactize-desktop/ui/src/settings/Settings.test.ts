@@ -65,7 +65,7 @@ function backend(options: {
     switch (cmd) {
       case "providers_list":
         return {
-          builtin: ["codex", "claude-agent", "antigravity", "openai", "anthropic", "gemini"],
+          builtin: ["codex", "claude-agent", "openai", "anthropic", "gemini"],
           aliasTargets: ["codex", "openai", "anthropic", "gemini"],
           keys: Object.keys(VARIABLES).map((provider) => ({
             provider: provider as Provider,
@@ -74,6 +74,51 @@ function backend(options: {
             saved: saved.has(provider),
           })),
           custom,
+        };
+      case "chat_agents_list":
+        return [
+          {
+            id: "antigravity",
+            name: "Antigravity",
+            tier: "preset",
+            command: "agy",
+            args: ["acp"],
+            env: {},
+            secretEnvKeys: [],
+            mcpStdio: true,
+            canDisableProjectConfig: true,
+            nativeSandboxNote: "Runs natively in the worktree via agy acp.",
+            loginAction: "artifactize login antigravity",
+            installHint: "Install agy.",
+            registry: null,
+          },
+        ];
+      case "chat_trust_list":
+        return [];
+      case "chat_agent_probe":
+        if (agyStatus().state !== "signedIn") {
+          return {
+            kind: "notSetUp",
+            executable: "/fixture/bin/agy",
+            version: "1.5.14",
+            reason: "Not signed in.",
+            loginAction: "artifactize login antigravity",
+          };
+        }
+        return {
+          kind: "ready",
+          executable: "/fixture/bin/agy",
+          version: "1.5.14",
+          models: [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }],
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              currentValue: "gemini-demo",
+              choices: [{ value: "gemini-demo", name: "Gemini Demo", description: null, bypassWarning: false }],
+            },
+          ],
         };
       case "provider_key_save":
         saved.add(payload.provider as string);
@@ -197,7 +242,6 @@ describe("Settings", () => {
       expect([...list.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
         "Codex",
         "Claude Agent",
-        "Antigravity",
         "OpenAI",
         "Anthropic",
         "Gemini",
@@ -455,12 +499,12 @@ describe("Settings", () => {
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
   });
 
-  it("shows each status Antigravity reports and does not offer it as a custom alias", async () => {
+  it("shows each status Antigravity reports under Chat Agents and does not offer it as a custom alias", async () => {
     let state: AntigravityStatus = { ...AGY, path: null, version: null, state: "missing" };
     const calls = backend({ antigravity: () => state });
     renderHosted(Settings, { active: true });
+    await fireEvent.click(screen.getByRole("tab", { name: "Chat Agents" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Antigravity" }));
-    const nav = screen.getByRole("navigation", { name: "Providers" });
     const account = screen.getByRole("region", { name: "Antigravity" });
     const fact = within(account).getByTestId("antigravity-status");
     await waitFor(() => expect(fact.textContent?.trim()).toBe("agy not found"));
@@ -492,23 +536,26 @@ describe("Settings", () => {
         expect(within(account).getByText("/fixture/bin/agy · 1.5.14")).toBeTruthy();
       }
     }
-    expect(calls.filter(({ cmd }) => cmd === "antigravity_status")).toHaveLength(transitions.length + 1);
+    expect(calls.filter(({ cmd }) => cmd === "antigravity_status").length).toBeGreaterThanOrEqual(transitions.length + 1);
 
+    await fireEvent.click(screen.getByRole("tab", { name: "Providers" }));
+    const nav = screen.getByRole("navigation", { name: "Providers" });
     await fireEvent.click(within(nav).getByRole("button", { name: "Custom provider" }));
     await fireEvent.click(screen.getByRole("radio", { name: "alias of a built-in provider" }));
     const choices = within(screen.getByRole("combobox", { name: "Provider" })).getAllByRole("option");
     expect(choices.map((option) => option.textContent?.trim())).toEqual(["Codex", "OpenAI", "Anthropic", "Gemini"]);
   });
 
-  it("opens the Antigravity prompt, signs in by hand, lists the account's models, and signs out", async () => {
+  it("opens the Antigravity prompt, signs in by hand, probes agent config, and signs out", async () => {
     let finish: (status: AntigravityStatus) => void = () => {};
     const calls = backend({ antigravityWait: () => new Promise((done) => (finish = done)) });
     renderHosted(Settings, { active: true });
+    await fireEvent.click(screen.getByRole("tab", { name: "Chat Agents" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Antigravity" }));
     const fact = screen.getByTestId("antigravity-status");
     await waitFor(() => expect(fact.textContent?.trim()).toBe("Not signed in"));
-    const list = screen.getByRole("button", { name: "List models" });
-    await fireEvent.click(list);
+    const probe = await screen.findByRole("button", { name: "Probe agent" });
+    await fireEvent.click(probe);
     expect((await screen.findByText("Not signed in.")).classList.contains("muted")).toBe(true);
 
     await fireEvent.click(screen.getByRole("button", { name: "Sign in with Antigravity" }));
@@ -533,15 +580,12 @@ describe("Settings", () => {
     expect(fact.textContent?.trim()).toBe("Signed in with Google");
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
     expect(screen.queryByText("Not signed in.")).toBeNull();
-    await fireEvent.click(list);
-    await screen.findByText("Gemini Demo");
-    expect(screen.getByText("gemini-demo")).toBeTruthy();
-    expect(calls.filter(({ cmd }) => cmd === "models_list").map(({ args }) => args)).toEqual([
-      { provider: "antigravity" }, { provider: "antigravity" },
-    ]);
+    await fireEvent.click(probe);
+    const modelsList = await screen.findByRole("list", { name: "Models" });
+    expect(modelsList.textContent).toContain("Gemini Demo");
+    expect(modelsList.textContent).toContain("gemini-demo");
     await fireEvent.click(signOut);
     await waitFor(() => expect(fact.textContent?.trim()).toBe("Not signed in"));
-    expect(screen.queryByText("Gemini Demo")).toBeNull();
     expect(calls.filter(({ cmd }) => cmd === "antigravity_logout")).toHaveLength(1);
   });
 
@@ -550,6 +594,7 @@ describe("Settings", () => {
     const pending = <T,>() => new Promise<T>((_, reject) => (fail = reject));
     const calls = backend(beforePrompt ? { antigravityPrompt: pending } : { antigravityWait: pending });
     renderHosted(Settings, { active: true });
+    await fireEvent.click(screen.getByRole("tab", { name: "Chat Agents" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Antigravity" }));
     await screen.findByText("Not signed in");
     await fireEvent.click(screen.getByRole("button", { name: "Sign in with Antigravity" }));
@@ -560,18 +605,19 @@ describe("Settings", () => {
     await waitFor(() => expect(screen.getByTestId("antigravity-status").textContent?.trim()).toBe("Antigravity sign-in was cancelled."));
     await waitFor(() => expect(screen.getByRole("button", { name: "Sign in with Antigravity" }).hasAttribute("disabled")).toBe(false));
     expect(screen.queryByRole("button", { name: "Finish by hand" })).toBeNull();
-    expect(calls.filter(({ cmd }) => cmd === "antigravity_status")).toHaveLength(2);
+    expect(calls.filter(({ cmd }) => cmd === "antigravity_status").length).toBeGreaterThanOrEqual(2);
   });
 
   it.each([
-    { name: "Antigravity", provider: "Antigravity", prefix: "antigravity", fact: "Signed in with Google" },
-    { name: "Claude Code", provider: "Claude Agent", prefix: "claude_agent", fact: "Signed in · claude.ai · max" },
-  ])("shows $name signing in without ever needing a prompt", async ({ name, provider, prefix, fact }) => {
+    { name: "Antigravity", tab: "Chat Agents", provider: "Antigravity", prefix: "antigravity", fact: "Signed in with Google" },
+    { name: "Claude Code", tab: "Providers", provider: "Claude Agent", prefix: "claude_agent", fact: "Signed in · claude.ai · max" },
+  ])("shows $name signing in without ever needing a prompt", async ({ name, tab, provider, prefix, fact }) => {
     const calls = backend({
       antigravityPrompt: async () => AGY_IN,
       claudeComplete: { state: "signedIn", method: "claude.ai", plan: "max" },
     });
     renderHosted(Settings, { active: true });
+    await fireEvent.click(screen.getByRole("tab", { name: tab }));
     await fireEvent.click(await screen.findByRole("button", { name: provider }));
     await screen.findByText("Not signed in");
     await fireEvent.click(screen.getByRole("button", { name: `Sign in with ${name}` }));

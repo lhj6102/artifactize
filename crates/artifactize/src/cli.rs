@@ -3,6 +3,7 @@
 mod account;
 mod cache;
 use cache::CacheCommand;
+mod chat_agent;
 mod config;
 use config::ConfigCommand;
 #[cfg(test)]
@@ -139,18 +140,24 @@ pub enum Command {
     /// Claude Agent and Antigravity run their own CLI sign-in and keep their own login.
     Login {
         #[arg(value_enum)]
-        provider: artifactize_core::config::Provider,
+        provider: account::LoginTarget,
     },
     /// Revoke and remove artifactize's own Codex tokens, or forget a saved API key.
-    /// Claude Agent runs Claude Code's own `claude auth logout`.
+    /// Claude Agent and Antigravity run their own CLI logout.
     Logout {
         #[arg(value_enum)]
-        provider: artifactize_core::config::Provider,
+        provider: account::LoginTarget,
     },
     /// List, add or remove the custom providers an Agent profile's backend may name.
     Provider {
         #[command(subcommand)]
         command: provider::ProviderCommand,
+    },
+    /// Manage ACP Chat agents, official ACP Registry installs, and Workspace Trust.
+    #[command(name = "chat-agent")]
+    ChatAgent {
+        #[command(subcommand)]
+        command: chat_agent::ChatAgentCommand,
     },
     /// Add, remove, or list Artifact type plugins for this project.
     Plugin {

@@ -1,15 +1,20 @@
-// Settings as a person reads it: a modal over the screen with its tabs (Providers, Remote,
-// Limits), each provider's setup, the shared review store and the limits; each action waits
-// for what it shows.
+// Settings as a person reads it: a modal over the screen with its tabs (Providers, Chat Agents,
+// Remote, Limits), each provider's and chat agent's setup, the shared review store and the
+// limits; each action waits for what it shows.
 import { clickAt, pointerGapClick, visibleCenter } from "../input.ts";
 import { fill } from "../keys.ts";
 import { chooseOption, holds, until } from "./wait.ts";
 
 const SETTINGS = '[role="dialog"].settings-dialog';
 
-/** Settings as read: its tabs with the shown one, the providers listed with the chosen one,
- * and the text of what the shown tab shows. */
-export type Shown = { tabs: { name: string; selected: boolean }[]; providers: { name: string; chosen: boolean }[]; text: string };
+/** Settings as read: its tabs with the shown one, the providers and chat agents listed with the
+ * chosen one, and the text of what the shown tab shows. */
+export type Shown = {
+  tabs: { name: string; selected: boolean }[];
+  providers: { name: string; chosen: boolean }[];
+  chatAgents: { name: string; chosen: boolean }[];
+  text: string;
+};
 
 export class Settings {
   private readonly browser: WebdriverIO.Browser;
@@ -28,6 +33,9 @@ export class Settings {
           name: tab.textContent?.trim() ?? "", selected: tab.getAttribute("aria-selected") === "true",
         })),
         providers: [...dialog.querySelectorAll('nav[aria-label="Providers"] button')].map((button) => ({
+          name: button.textContent?.replace(/\s+/g, " ").trim() ?? "", chosen: button.getAttribute("aria-current") === "true",
+        })),
+        chatAgents: [...dialog.querySelectorAll('nav[aria-label="Chat agents"] button')].map((button) => ({
           name: button.textContent?.replace(/\s+/g, " ").trim() ?? "", chosen: button.getAttribute("aria-current") === "true",
         })),
         text: (dialog.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')?.innerText ?? "").replace(/\s+/g, " ").trim(),
@@ -69,7 +77,7 @@ export class Settings {
   }
 
   /** Click the tab `name`: it shows. */
-  async tab(name: "Providers" | "Remote" | "Limits"): Promise<Shown> {
+  async tab(name: "Providers" | "Chat Agents" | "Remote" | "Limits"): Promise<Shown> {
     await this.browser.$(SETTINGS).$(`[role="tab"]=${name}`).click();
     return this.until((shown) => shown.tabs.some((tab) => tab.name === name && tab.selected), `the ${name} tab shown`);
   }
@@ -84,6 +92,17 @@ export class Settings {
       return this.until((shown) => shown.providers.some((each) => each.name === name && each.chosen), `${name}'s setup shown`);
     }
     throw new Error(`Settings lists no provider ${name}`);
+  }
+
+  /** Click the chat agent `name` in the Chat Agents list: its setup shows. */
+  async chatAgent(name: string): Promise<Shown> {
+    const buttons = await this.browser.$$(`${SETTINGS} nav[aria-label="Chat agents"] button`).getElements();
+    for (const button of buttons) {
+      if ((await button.getText()).replace(/\s+/g, " ").trim() !== name) continue;
+      await clickAt(this.browser, await visibleCenter(this.browser, button));
+      return this.until((shown) => shown.chatAgents.some((each) => each.name === name && each.chosen), `${name}'s setup shown`);
+    }
+    throw new Error(`Settings lists no chat agent ${name}`);
   }
 
   /** The text of what the test id `id` marks (`key-openai`, `codex-status`, `remote-status`). */

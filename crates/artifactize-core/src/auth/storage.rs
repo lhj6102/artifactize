@@ -12,24 +12,44 @@ use crate::platform;
 /// files, consistently for application-owned storage and read-only Codex imports.
 pub(super) const MAX_CREDENTIAL_BYTES: usize = 1024 * 1024;
 
-/// Whose tokens a storage holds, which names it in a refusal.
+/// Whose private state a storage holds, which names its directory and refusal message.
 #[derive(Clone, Copy)]
-pub(super) enum Tokens {
+pub(crate) enum Tokens {
     Codex,
     Remote,
     Providers,
+    ChatTrust,
+    ChatAgents,
+    ChatSecrets,
 }
 
-/// `$STATE/auth` (canonical) and the repository enclosing it, if any: tokens are never
-/// stored inside a git work tree, an artifactize workspace or the `--repo` folder.
-pub(super) struct Location {
+impl Tokens {
+    fn folder(self) -> &'static str {
+        match self {
+            Self::Codex | Self::Remote | Self::Providers => "auth",
+            Self::ChatTrust | Self::ChatAgents | Self::ChatSecrets => "chat",
+        }
+    }
+}
+
+/// `$STATE/auth` or `$STATE/chat` (canonical) and the repository enclosing it, if any:
+/// private state is never stored inside a git work tree, an artifactize workspace or `--repo`.
+pub(crate) struct Location {
     pub directory: PathBuf,
     enclosure: Option<(&'static str, PathBuf)>,
 }
 
 impl Location {
     pub fn find(state: Option<&Path>, repo: Option<&Path>) -> Result<Self, String> {
-        let directory = crate::store::state_dir(state)?.join("auth");
+        Self::find_in(state, repo, "auth")
+    }
+
+    pub fn find_in(
+        state: Option<&Path>,
+        repo: Option<&Path>,
+        folder: &str,
+    ) -> Result<Self, String> {
+        let directory = crate::store::state_dir(state)?.join(folder);
         let directory =
             crate::workspace::canonical_target(&directory).map_err(|e| e.to_string())?;
         let mut marked = None;
@@ -67,16 +87,27 @@ impl Location {
         })
     }
 
-    /// Why tokens may not be stored here, if they may not.
+    /// Why private state may not be stored here, if it may not.
     pub fn refusal(&self, tokens: Tokens) -> Option<String> {
         let (kind, path) = self.enclosure.as_ref()?;
-        let (storage, variable) = match tokens {
-            Tokens::Codex => ("Codex sign-in storage", Some("ARTIFACTIZE_CODEX_AUTH_FILE")),
-            Tokens::Remote => ("Remote token storage", Some("ARTIFACTIZE_REMOTE_TOKEN")),
-            Tokens::Providers => ("Provider key storage", None),
+        let (storage, noun, variable) = match tokens {
+            Tokens::Codex => (
+                "Codex sign-in storage",
+                "tokens",
+                Some("ARTIFACTIZE_CODEX_AUTH_FILE"),
+            ),
+            Tokens::Remote => (
+                "Remote token storage",
+                "tokens",
+                Some("ARTIFACTIZE_REMOTE_TOKEN"),
+            ),
+            Tokens::Providers => ("Provider key storage", "tokens", None),
+            Tokens::ChatTrust => ("Chat workspace trust storage", "private state", None),
+            Tokens::ChatAgents => ("Chat agent configuration storage", "private state", None),
+            Tokens::ChatSecrets => ("Chat agent secret storage", "private state", None),
         };
         Some(format!(
-            "{storage} {} is inside the {kind} {}; artifactize keeps tokens outside repositories. Use a state directory outside it{}.",
+            "{storage} {} is inside the {kind} {}; artifactize keeps {noun} outside repositories. Use a state directory outside it{}.",
             crate::platform::path_text(&self.directory),
             crate::platform::path_text(path),
             variable.map_or(String::new(), |variable| format!(", or set {variable}"))
@@ -84,9 +115,10 @@ impl Location {
     }
 }
 
-/// An owner-only directory under `$STATE/auth/` of 0600, single-link, no-follow files,
-/// replaced atomically. On Windows, owner-only means a protected DACL for the current user.
-pub(super) struct Storage {
+/// An owner-only directory under `$STATE/auth/` or `$STATE/chat/` of 0600, single-link,
+/// no-follow files, replaced atomically. On Windows, owner-only means a protected DACL for the
+/// current user.
+pub(crate) struct Storage {
     pub directory: PathBuf,
 }
 
@@ -109,7 +141,7 @@ impl Storage {
         tokens: Tokens,
         create: bool,
     ) -> Result<Self, String> {
-        let location = Location::find(state, repo)?;
+        let location = Location::find_in(state, repo, tokens.folder())?;
         if let Some(refusal) = location.refusal(tokens) {
             return Err(refusal);
         }

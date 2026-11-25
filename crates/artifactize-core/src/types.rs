@@ -165,11 +165,50 @@ identity!(EvalId, |value: &str| value.split_once('/').is_some_and(
 ));
 /// Caller attempt keys are bounded independently of path-segment identities.
 pub const MAX_REQUEST_KEY_BYTES: usize = 128;
+/// Internal Chat verify_start key prefix; `/` is forbidden in external RequestKey.
+const INTERNAL_CHAT_KEY_PREFIX: &str = "chat/";
+/// Exact length of an internal Chat key: `"chat/"` (5) + 32 lowercase hex chars.
+const INTERNAL_CHAT_KEY_LEN: usize = 37;
+
+fn is_internal_chat_key(value: &str) -> bool {
+    value.len() == INTERNAL_CHAT_KEY_LEN
+        && value.starts_with(INTERNAL_CHAT_KEY_PREFIX)
+        && value[INTERNAL_CHAT_KEY_PREFIX.len()..]
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
 identity!(RequestKey, |value: &str| (1..=MAX_REQUEST_KEY_BYTES)
     .contains(&value.len())
     && value.bytes().all(
         |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')
     ));
+
+impl RequestKey {
+    /// Construct an internal-only `chat/<32-hex>` key, mathematically disjoint from all
+    /// external CLI/MCP caller keys (which forbid `/`).
+    pub(crate) fn internal_chat(value: String) -> Result<Self, String> {
+        if is_internal_chat_key(&value) {
+            Ok(Self(value))
+        } else {
+            Err(format!("Invalid internal chat RequestKey: {value:?}."))
+        }
+    }
+
+    pub(crate) fn is_internal_chat(&self) -> bool {
+        is_internal_chat_key(&self.0)
+    }
+
+    /// Decode a saved RequestKey from SQLite/JSON receipts, permitting both external caller
+    /// keys and internal `chat/*` keys.
+    pub(crate) fn from_stored(value: String) -> Result<Self, String> {
+        if is_internal_chat_key(&value) {
+            Ok(Self(value))
+        } else {
+            Self::try_from(value)
+        }
+    }
+}
 
 /// A verify comment is a short note on one line, counted in characters, not bytes.
 pub const MAX_RUN_COMMENT_CHARS: usize = 200;

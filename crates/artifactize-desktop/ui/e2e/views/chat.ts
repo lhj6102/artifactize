@@ -109,17 +109,27 @@ export class Chat {
 
   async model(name: string, exclude?: string): Promise<void> {
     await this.browser.$(`${MAIN} button[aria-haspopup="menu"]`).click();
-    const menu = '[role="menu"][aria-label="Models"]';
+    const menu = '[role="menu"][aria-label="Chat agents and models"]';
     if (exclude) {
       const other = this.browser.$(menu).$(`[role="menuitemradio"]=${exclude}`);
       await other.waitForDisplayed({ timeoutMsg: `the unfiltered menu shows ${exclude}` });
-      await fill(this.browser, `${menu} input[aria-label="Filter models"]`, name);
+      await fill(this.browser, `${menu} input[aria-label="Filter agents and models"]`, name);
       await holds(this.browser, async () => !(await other.isDisplayed()), `filtering for ${name} excludes ${exclude}`);
     }
-    const option = this.browser.$('[aria-label="Models"]').$(`[role="menuitemradio"]=${name}`);
+    const option = this.browser.$(menu).$(`[role="menuitemradio"]=${name}`);
     await option.waitForDisplayed();
     await option.click();
-    await holds(this.browser, async () => !(await this.browser.$(menu).isDisplayed()) && await this.selected() === name, `${name} selected and its model menu closed`);
+    await holds(this.browser, async () => !(await this.browser.$(menu).isDisplayed()) && (await this.selected()).includes(name), `${name} selected and its model menu closed`);
+  }
+
+  /** Confirm the Trust workspace modal before spawning an ACP agent in an untrusted repository. */
+  async trustWorkspace(): Promise<void> {
+    const dialog = this.browser.$('[role="dialog"].trust-workspace');
+    await dialog.waitForDisplayed({ timeoutMsg: "Trust workspace dialog opened" });
+    const confirm = dialog.$("button=Trust and continue");
+    await confirm.waitForEnabled({ timeoutMsg: "Trust and continue is enabled" });
+    await confirm.click();
+    await dialog.waitForDisplayed({ reverse: true, timeoutMsg: "Trust workspace dialog closed" });
   }
 
   /** Search the sessions: Search in the Pane's top row turns into its field, then the text. */

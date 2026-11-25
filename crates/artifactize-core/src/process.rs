@@ -543,6 +543,30 @@ pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
         .map_err(Error::Spawn)
 }
 
+/// Spawn an owned long-lived process (such as a warm ACP agent) whose supervision lifetime is
+/// decoupled from individual turn deadlines: only `process_cancel`, EOF, eviction or explicit
+/// termination ends the process tree.
+pub(crate) async fn spawn_supervised(
+    command: &Command,
+    process_cancel: &CancellationToken,
+) -> Result<Child, Error> {
+    if process_cancel.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+    let mut child = child_command(command)?;
+    child
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let mut spawned = platform::spawn_now(child).await.map_err(Error::Spawn)?;
+    if process_cancel.is_cancelled() {
+        let _ = terminate(&mut spawned).await;
+        return Err(Error::Cancelled);
+    }
+    Ok(spawned)
+}
+
 /// A desktop handoff whose output a Tool log shows: like [`launch_detached`] it is never
 /// owned, killed or waited on by the review, but its stdout and stderr are pipes, drained
 /// line by line into `run` until the program closes them and exits, whoever still listens.

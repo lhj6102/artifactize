@@ -58,6 +58,7 @@ pub(crate) async fn reserve(
     selection: &Selection,
     options: &VerifyOptions,
     request_key: Option<&crate::types::RequestKey>,
+    request_args_hash: Option<&str>,
     origin: &crate::runs::Origin,
 ) -> Result<(crate::types::RunId, bool), String> {
     if options.jobs == Some(0) {
@@ -98,6 +99,7 @@ pub(crate) async fn reserve(
             modes: options.modes.clone(),
             control: Some(crate::runs::Control::starting()?),
             request_key: request_key.cloned(),
+            request_args_hash: request_args_hash.map(str::to_owned),
             origin: Some(origin.clone()),
             comment: options.comment.clone(),
             id: id.parse()?,

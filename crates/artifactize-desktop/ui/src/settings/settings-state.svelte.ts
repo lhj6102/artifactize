@@ -1,9 +1,16 @@
 import { createContext } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
 import {
   call,
   message,
   type AntigravityPrompt,
   type AntigravityStatus,
+  type ChatAgentAvailability,
+  type ChatAgentCatalogEntry,
+  type ChatRegistryEntry,
+  type ChatRegistryInstallSpec,
+  type ChatTrustRecord,
+  type ChatTrustScope,
   type ClaudeAgentPrompt,
   type ClaudeAgentStatus,
   type CodexPrompt,
@@ -21,6 +28,60 @@ import {
   type SignoffGrace,
   type Target,
 } from "../ipc/client";
+
+/** Which item is shown in the Chat Agents tab. */
+export type ChatAgentChoice =
+  | { kind: "agent"; id: string }
+  | { kind: "registry" }
+  | { kind: "new" };
+
+/** Draft form for a machine-local custom ACP Chat agent; secret values are write-only. */
+export type CustomAgentDraft = {
+  id: string;
+  name: string;
+  command: string;
+  argsText: string;
+  envText: string;
+  secretKey: string;
+  secretValue: string;
+  savedSecretKeys: string[];
+  removeSecretKeys: string[];
+  mcpStdio: boolean;
+  editing: boolean;
+};
+
+const blankCustomAgent = (): CustomAgentDraft => ({
+  id: "",
+  name: "",
+  command: "",
+  argsText: "",
+  envText: "",
+  secretKey: "",
+  secretValue: "",
+  savedSecretKeys: [],
+  removeSecretKeys: [],
+  mcpStdio: true,
+  editing: false,
+});
+
+function customAgentDraftOf(entry: ChatAgentCatalogEntry): CustomAgentDraft {
+  const envText = Object.entries(entry.env)
+    .map(([k, v]) => `${k}=${v ?? ""}`)
+    .join("\n");
+  return {
+    id: entry.id,
+    name: entry.name,
+    command: entry.command,
+    argsText: entry.args.join("\n"),
+    envText,
+    secretKey: "",
+    secretValue: "",
+    savedSecretKeys: [...entry.secretEnvKeys],
+    removeSecretKeys: [],
+    mcpStdio: entry.mcpStdio,
+    editing: true,
+  };
+}
 
 /** The provider whose setup the Providers tab shows: a built-in one, a custom one by name, or
  * a new custom provider being written. */
@@ -96,7 +157,7 @@ export class SettingsState {
   claudeCode = $state("");
   /** Claude Code is being asked, signed in or signed out. */
   claudeBusy = $state(false);
-  /** Antigravity's own sign-in, read when its setup is chosen. */
+  /** Antigravity's own sign-in, read when its setup is chosen under Chat Agents. */
   antigravity = $state.raw<AntigravityStatus | null>(null);
   antigravityError = $state<string | null>(null);
   antigravityAttempt = $state<number | null>(null);
@@ -104,6 +165,19 @@ export class SettingsState {
   antigravityByHand = $state(false);
   antigravityCode = $state("");
   antigravityBusy = $state(false);
+  /** Chat Agents tab: 3-tier ACP catalog, probe results, Registry, custom draft, and Workspace Trust. */
+  chatAgents = $state.raw<ChatAgentCatalogEntry[]>([]);
+  chatAgentsError = $state<string | null>(null);
+  chatAgentChoice = $state.raw<ChatAgentChoice>({ kind: "agent", id: "antigravity" });
+  readonly chatAgentProbes = new SvelteMap<string, ChatAgentAvailability | { kind: "loading" }>();
+  trustRecords = $state.raw<ChatTrustRecord[]>([]);
+  registryEntries = $state.raw<ChatRegistryEntry[] | null>(null);
+  registryLoading = $state(false);
+  registryError = $state<string | null>(null);
+  registryConfirm = $state.raw<ChatRegistryInstallSpec | null>(null);
+  registryInstalling = $state(false);
+  customAgentDraft = $state<CustomAgentDraft>(blankCustomAgent());
+  customAgentSaving = $state(false);
   #modelReads = 0;
   models = $state.raw<ModelsResult | null>(null);
   listing = $state(false);
@@ -134,9 +208,163 @@ export class SettingsState {
    * custom provider. */
   async load() {
     await Promise.all([
-      this.loadProviders(), this.loadCodex(), this.loadRemote(), this.loadGrace(),
-      this.choice.kind === "builtin" && this.choice.provider === "antigravity" ? this.loadAntigravity() : undefined,
+      this.loadProviders(),
+      this.loadChatAgents(),
+      this.loadCodex(),
+      this.loadRemote(),
+      this.loadGrace(),
     ]);
+  }
+
+  async loadChatAgents() {
+    try {
+      const [agents, trust] = await Promise.all([
+        call(this.#commands.chatAgentsList()),
+        call(this.#commands.chatTrustList()),
+      ]);
+      this.chatAgents = agents;
+      this.trustRecords = trust;
+      this.chatAgentsError = null;
+      if (this.chatAgentChoice.kind === "agent") {
+        const selected = this.chatAgentChoice.id;
+        if (!agents.some((a) => a.id === selected) && agents.length > 0) {
+          this.chatAgentChoice = { kind: "agent", id: agents[0].id };
+        }
+      }
+    } catch (failure) {
+      this.chatAgentsError = message(failure);
+    }
+  }
+
+  chooseChatAgent(choice: ChatAgentChoice) {
+    this.chatAgentChoice = choice;
+    this.chatAgentsError = null;
+    if (choice.kind === "new") {
+      this.customAgentDraft = blankCustomAgent();
+    } else if (choice.kind === "registry") {
+      if (this.registryEntries === null && !this.registryLoading) void this.loadRegistry();
+    } else if (choice.kind === "agent") {
+      if (choice.id === "antigravity") void this.loadAntigravity();
+      if (!this.chatAgentProbes.has(choice.id)) void this.probeChatAgent(choice.id, false);
+    }
+  }
+
+  editCustomAgent(entry: ChatAgentCatalogEntry) {
+    this.customAgentDraft = customAgentDraftOf(entry);
+    this.chatAgentChoice = { kind: "new" };
+    this.chatAgentsError = null;
+  }
+
+  async probeChatAgent(id: string, refresh = false) {
+    this.chatAgentProbes.set(id, { kind: "loading" });
+    try {
+      const result = await call(this.#commands.chatAgentProbe(id, refresh));
+      this.chatAgentProbes.set(id, result);
+    } catch (failure) {
+      this.chatAgentProbes.set(id, { kind: "failed", executable: null, version: null, error: message(failure) });
+    }
+  }
+
+  async revokeTrust(agentId: string, scope: ChatTrustScope) {
+    this.chatAgentsError = null;
+    try {
+      await call(this.#commands.chatTrustRevoke(agentId, scope));
+      this.trustRecords = await call(this.#commands.chatTrustList());
+    } catch (failure) {
+      this.chatAgentsError = message(failure);
+    }
+  }
+
+  async loadRegistry() {
+    this.registryLoading = true;
+    this.registryError = null;
+    try {
+      this.registryEntries = await call(this.#commands.chatAgentRegistryList());
+    } catch (failure) {
+      this.registryError = message(failure);
+    } finally {
+      this.registryLoading = false;
+    }
+  }
+
+  async installRegistry(spec: ChatRegistryInstallSpec) {
+    this.registryInstalling = true;
+    this.registryError = null;
+    try {
+      const installed = await call(this.#commands.chatAgentRegistryInstall(spec));
+      this.registryConfirm = null;
+      await this.loadChatAgents();
+      this.chooseChatAgent({ kind: "agent", id: installed.id });
+    } catch (failure) {
+      this.registryError = message(failure);
+    } finally {
+      this.registryInstalling = false;
+    }
+  }
+
+  async saveCustomAgent() {
+    const draft = this.customAgentDraft;
+    const args = draft.argsText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const env: Record<string, string> = {};
+    for (const raw of draft.envText.split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+      const eq = line.indexOf("=");
+      if (eq <= 0) {
+        this.chatAgentsError = `Environment line "${line}" must use KEY=VALUE syntax.`;
+        return;
+      }
+      env[line.slice(0, eq).trim()] = line.slice(eq + 1);
+    }
+    const setSecrets: Record<string, string> = {};
+    const secretKey = draft.secretKey.trim();
+    const secretValue = draft.secretValue;
+    // Secret value leaves frontend state before the IPC call starts.
+    this.customAgentDraft.secretKey = "";
+    this.customAgentDraft.secretValue = "";
+    if (secretKey) {
+      setSecrets[secretKey] = secretValue;
+    }
+    this.customAgentSaving = true;
+    this.chatAgentsError = null;
+    try {
+      const saved = await call(
+        this.#commands.chatAgentCustomSave({
+          id: draft.id.trim(),
+          name: draft.name.trim() || draft.id.trim(),
+          command: draft.command.trim(),
+          args,
+          env,
+          setSecrets,
+          removeSecretKeys: draft.removeSecretKeys,
+          mcpStdio: draft.mcpStdio,
+        }),
+      );
+      await this.loadChatAgents();
+      this.chooseChatAgent({ kind: "agent", id: saved.id });
+    } catch (failure) {
+      this.chatAgentsError = message(failure);
+    } finally {
+      this.customAgentSaving = false;
+    }
+  }
+
+  async removeCustomAgent(id: string) {
+    this.customAgentSaving = true;
+    this.chatAgentsError = null;
+    try {
+      await call(this.#commands.chatAgentCustomRemove(id));
+      this.chatAgentProbes.delete(id);
+      await this.loadChatAgents();
+      this.chooseChatAgent({ kind: "agent", id: this.chatAgents[0]?.id ?? "antigravity" });
+    } catch (failure) {
+      this.chatAgentsError = message(failure);
+    } finally {
+      this.customAgentSaving = false;
+    }
   }
 
   /** The grace in force, and the seconds field set to it. */
@@ -186,7 +414,6 @@ export class SettingsState {
     const custom = choice.kind === "custom" ? this.providers?.custom.find((one) => one.name === choice.name) : undefined;
     this.draft = custom ? draftOf(custom) : blank();
     if (choice.kind === "builtin" && choice.provider === "claude-agent" && !this.claudeBusy) void this.loadClaude();
-    if (choice.kind === "builtin" && choice.provider === "antigravity") void this.loadAntigravity();
   }
 
   async saveKey(provider: Provider) {
@@ -420,8 +647,9 @@ export class SettingsState {
   }
 
   #showAntigravity(status: AntigravityStatus) {
-    // The previous list (or listing error) may no longer belong to this sign-in.
-    if (this.backend === "antigravity" && this.antigravity && this.antigravity.state !== status.state) this.#clearModels();
+    if (this.antigravity && this.antigravity.state !== status.state) {
+      this.chatAgentProbes.delete("antigravity");
+    }
     this.antigravity = status;
   }
 

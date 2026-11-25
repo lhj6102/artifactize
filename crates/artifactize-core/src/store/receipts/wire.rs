@@ -13,6 +13,29 @@ use std::{
     time::Duration,
 };
 
+mod stored_request_key {
+    use crate::types::RequestKey;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(super) fn serialize<S: Serializer>(
+        value: &Option<RequestKey>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(key) => serializer.serialize_some(key.as_str()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<RequestKey>, D::Error> {
+        Option::<String>::deserialize(deserializer)?
+            .map(|raw| RequestKey::from_stored(raw).map_err(serde::de::Error::custom))
+            .transpose()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "RunWire", into = "RunWire")]
 pub struct Run {
@@ -25,6 +48,7 @@ pub struct Run {
     pub modes: crate::runs::RunModes,
     pub control: Option<crate::runs::Control>,
     pub request_key: Option<crate::types::RequestKey>,
+    pub request_args_hash: Option<String>,
     pub origin: Option<crate::runs::Origin>,
     /// What the requester said it is working on; for people only.
     pub comment: Option<crate::types::RunComment>,
@@ -66,8 +90,14 @@ struct RunWire {
     pub modes: crate::runs::RunModes,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control: Option<crate::runs::Control>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "stored_request_key"
+    )]
     pub request_key: Option<crate::types::RequestKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_args_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<crate::runs::Origin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -120,6 +150,7 @@ impl TryFrom<RunWire> for Run {
             modes: wire.modes,
             control: wire.control,
             request_key: wire.request_key,
+            request_args_hash: wire.request_args_hash,
             origin: wire.origin,
             comment: wire.comment,
             id: wire.id,
@@ -151,6 +182,7 @@ impl From<Run> for RunWire {
             modes: record.modes.clone(),
             control: record.control.clone(),
             request_key: record.request_key.clone(),
+            request_args_hash: record.request_args_hash.clone(),
             origin: record.origin.clone(),
             comment: record.comment.clone(),
             status: record.status(),

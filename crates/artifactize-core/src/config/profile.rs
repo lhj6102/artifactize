@@ -133,9 +133,7 @@ impl Profile {
                 location
                     .child("model")
                     .check(text(model, "Agent profile model"))?;
-                if let Some(provider) = backend.builtin() {
-                    location.child("backend").check(provider.validate_eval())?;
-                }
+                location.child("backend").check(backend.validate_eval())?;
                 // A custom provider's API is known only where it runs, so its effort is
                 // checked there.
                 if let (Some(reasoning), Some(provider)) = (reasoning, backend.builtin()) {

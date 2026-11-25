@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import Section from "../shell/Section.svelte";
   import { getSettingsState } from "./settings-state.svelte";
 
@@ -11,13 +13,21 @@
     : null);
   const error = $derived(s.antigravityError ?? (status && "error" in status ? status.error : null));
 
+  const ensureLoaded: Attachment = () => {
+    untrack(() => {
+      if (s.antigravity === null && !s.antigravityBusy && !s.antigravityAttempt) {
+        void s.loadAntigravity();
+      }
+    });
+  };
+
   function paste(event: SubmitEvent) {
     event.preventDefault();
     void s.antigravityPaste();
   }
 </script>
 
-<section aria-labelledby="antigravity-title">
+<section aria-labelledby="antigravity-title" {@attach ensureLoaded}>
   <h2 id="antigravity-title">Antigravity</h2>
   <dl class="facts" aria-label="Antigravity sign-in">
     {#if installation}

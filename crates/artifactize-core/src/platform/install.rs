@@ -82,6 +82,12 @@ pub(crate) fn channel() -> Channel {
     }
 }
 
+/// Whether this copy runs from a Microsoft Store / MSIX package where dynamic runtime
+/// execution under state directories is restricted.
+pub(crate) fn is_msix() -> bool {
+    channel() == Channel::Store
+}
+
 /// The channel that puts an executable at `executable`, given this system's `places`.
 fn installed_channel(executable: &Path, places: &Places) -> Channel {
     Evidence::read(executable, places)
