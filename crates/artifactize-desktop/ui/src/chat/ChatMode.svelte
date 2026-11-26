@@ -21,7 +21,7 @@
   import Stage from "../shell/Stage.svelte";
   import Reference from "../shell/Reference.svelte";
   import { composing } from "../shell/keys";
-  import { providerName } from "../settings/provider-names";
+  import { targetSummary } from "./model-providers";
   import { activity } from "./tool-line";
   import { places } from "../shell/find";
   import ChatActivity from "./ChatActivity.svelte";
@@ -61,9 +61,9 @@
   const rejected = $derived(session === null ? undefined : c.rejected.get(session.id));
   const away = $derived(session !== null && c.scroll[session.id]?.following === false);
   const typed = $derived(session ? c.composer(session.id)?.shown ?? "" : "");
-  /** The model New chat's session starts with, once the library said it for the chosen branch. */
+  /** The target New chat's session starts with, once the library said it for the chosen branch. */
   const answer = $derived(c.starting !== null && c.starting.worktree === c.worktree ? c.starting : null);
-  const starting = $derived(answer?.model ?? null);
+  const starting = $derived(answer?.target ?? null);
   const reading = $derived(answer === null || !answer.known);
   /** The shown session's reply card in Graph: the turn sent from Graph, while it is read. */
   const reply = $derived.by(() => {
@@ -86,8 +86,36 @@
   const ages = $derived(new Map(c.sessions.map((item) => [item.id, age(item.updatedAt, app.now)])));
 
   function sessionState(item: ChatSession) {
+    if (item.waitingPermission) return "waiting";
     if (item.outcome === "running" || item.running) return "running";
-    return item.unseen ? item.outcome === "completed" ? "finished" : item.outcome : null;
+    return item.unseen ? (item.outcome === "completed" ? "finished" : item.outcome) : null;
+  }
+
+  function planStepIcon(status: "pending" | "in_progress" | "completed" | "failed") {
+    switch (status) {
+      case "completed":
+        return "green";
+      case "in_progress":
+        return "running";
+      case "failed":
+        return "red";
+      default:
+        return "queued";
+    }
+  }
+
+  function permissionSettledLabel(
+    status: "pending" | "selected" | "delivering" | "delivered" | "cancelled" | "expired",
+    selectedOptionId: string | null,
+    options: { optionId: string; name: string }[],
+  ): string {
+    if (status === "delivered" || status === "delivering" || status === "selected") {
+      const picked = options.find((opt) => opt.optionId === selectedOptionId)?.name;
+      return picked ? `Chosen: ${picked}` : "Submitted";
+    }
+    if (status === "cancelled") return "Cancelled";
+    if (status === "expired") return "Expired";
+    return "Waiting";
   }
 
   /** A Run card's status word and its icon's status. */
@@ -326,13 +354,72 @@
 
 <!-- What the agent did in a turn and how it ended, in the conversation and in the reply card. -->
 {#snippet turnBody(turn: Shown)}
+  {@const turnActive = turn.state.kind === "running" || turn.state.kind === "waitingPermission"}
   {#each turn.activity as part (part.at)}
     {#if part.kind === "group"}
-      <ChatActivity tools={part.tools} grouped running={turn.state.kind === "running"} />
+      <ChatActivity tools={part.tools} grouped running={turnActive} />
     {:else if part.block.kind === "text"}
       <ChatMarkdown text={part.block.text} />
+    {:else if part.block.kind === "thought"}
+      <details class="thought">
+        <summary><Icon name="fold" />Thought</summary>
+        <div class="thought-body"><ChatMarkdown text={part.block.text} /></div>
+      </details>
     {:else if part.block.kind === "tool"}
-      <ChatActivity tools={[part.block]} running={turn.state.kind === "running"} />
+      <ChatActivity tools={[part.block]} running={turnActive} />
+    {:else if part.block.kind === "plan"}
+      <div class="plan" role="region" aria-label="Agent plan">
+        <p class="plan-label">Plan</p>
+        <ol>
+          {#each part.block.steps as step, stepIndex (stepIndex)}
+            <li class:done={step.status === "completed"} class:failed={step.status === "failed"}>
+              <span class="step-icon" class:tone-running={step.status === "in_progress"}>
+                <Icon name={planStepIcon(step.status)} />
+              </span>
+              <span>{step.content}</span>
+            </li>
+          {/each}
+        </ol>
+      </div>
+    {:else if part.block.kind === "permission"}
+      {@const perm = part.block}
+      <div class="permission" class:pending={perm.status === "pending"} data-permission={perm.permissionId} role="region" aria-label="Permission request: {perm.title}">
+        <div class="perm-head">
+          <span class="perm-title">{perm.title}</span>
+          <span class="perm-status" class:waiting={perm.status === "pending"}>
+            {permissionSettledLabel(perm.status, perm.selectedOptionId, perm.options)}
+          </span>
+        </div>
+        {#if perm.summary}<p class="perm-summary mono">{perm.summary}</p>{/if}
+        {#if perm.detail}<pre class="perm-detail">{perm.detail}</pre>{/if}
+        {#if perm.status === "pending" && session}
+          {@const sid = session.id}
+          {@const busy = c.respondingPermission.has(perm.permissionId)}
+          <div class="perm-actions">
+            {#each perm.options as option (option.optionId)}
+              <button
+                type="button"
+                class="button small"
+                class:primary={option.kind === "allow_once"}
+                disabled={busy}
+                onclick={() => void c.respondPermission(sid, perm.permissionId, option.optionId)}
+              >
+                <span>{option.name}</span>
+                {#if option.persistsInAgentSettings}
+                  <span class="perm-persist">May be saved in agent settings</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {:else if part.block.kind === "notice"}
+      <p class="notice-block" role="status">{part.block.text}</p>
+    {:else if part.block.kind === "handoff"}
+      <details class="handoff">
+        <summary><Icon name="fold" />Continued from {part.block.from} to {part.block.to}</summary>
+        <pre class="handoff-summary">{part.block.summary}</pre>
+      </details>
     {:else}
       {@render runCard(part.block.card)}
     {/if}
@@ -346,12 +433,22 @@
   {/if}
 {/snippet}
 
-<!-- The composer: one field, the model at its bottom left and Send at its bottom right. -->
+<!-- The composer: one field, the target picker at its bottom left and Send at its bottom right. -->
 {#snippet composer(current: ChatSession)}
+  {@const canSendTarget = current.target !== null && current.target.engine !== "legacyClaudeAgent"}
   <div class="composer">
     {#if !graph && current.unavailable}
       <!-- The session's branch cannot be worked on now: it says why, and sends nothing. -->
       <p class="unavailable" role="status">{current.unavailable}</p>
+    {/if}
+    {#if current.legacyMigrationNotice}
+      <div class="legacy-banner" role="status">
+        {#if current.target?.engine === "legacyClaudeAgent"}
+          <span>Legacy Claude Agent Chat has been retired. Choose <strong>Claude ACP</strong> or a direct provider below to continue this conversation with an automatic handoff.</span>
+        {:else}
+          <span>Migrated from legacy Antigravity Chat to the unified ACP engine; sending continues with a deterministic handoff.</span>
+        {/if}
+      </div>
     {/if}
     {#if rejected}
       <div class="rejected">
@@ -382,8 +479,8 @@
         {:else if running}
           <button class="button icon-button" disabled={current.unavailable !== null} aria-label="Stop (Esc)" aria-keyshortcuts="Escape" onclick={() => void c.stop()}><Icon name="stop" /></button>
         {:else}
-          {#if !current.model}<span class="need-model" id="chat-need-model">Choose a model to send</span>{/if}
-          <button class="button icon-button primary" aria-label="Send (Enter)" aria-describedby={current.model ? undefined : "chat-need-model"} aria-keyshortcuts="Enter" disabled={!current.model || typed.trim() === "" || current.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
+          {#if !canSendTarget}<span class="need-model" id="chat-need-model">{current.legacyMigrationNotice ? "Switch target to send" : "Choose a model to send"}</span>{/if}
+          <button class="button icon-button primary" aria-label="Send (Enter)" aria-describedby={canSendTarget ? undefined : "chat-need-model"} aria-keyshortcuts="Enter" disabled={!canSendTarget || typed.trim() === "" || current.unavailable !== null || submitting} onclick={() => void c.send()}><Icon name="send" /></button>
         {/if}
       </div>
     </div>
@@ -467,7 +564,7 @@
                         <span class="title">{item.title || "New chat"}</span>
                         {#if item.branch}<span class="branch">{item.branch}</span>{/if}
                         <span class="spacer"></span>
-                        <span class="age" class:state class:running={state === "running"} class:failed={state === "failed"} class:finished={state === "finished"}>{state ?? ages.get(item.id)}</span>
+                        <span class="age" class:state class:running={state === "running"} class:waiting={state === "waiting"} class:failed={state === "failed"} class:finished={state === "finished"}>{state ?? ages.get(item.id)}</span>
                       </button>
                     </li>
                   {/each}
@@ -614,7 +711,7 @@
             </select>
           </label>
           <div class="field">
-            <span class="field-name" id="new-chat-model">Model</span>
+            <span class="field-name" id="new-chat-model">Agent or model</span>
             <p class="starting" class:quiet={!starting} role="status" aria-labelledby="new-chat-model">
               {#if c.branchError}
                 {c.branchError}
@@ -625,11 +722,11 @@
               {:else if c.worktree === null}
                 Choose a branch.
               {:else if starting}
-                {providerName(starting.backend)} · {starting.model}{starting.effort ? ` · ${starting.effort}` : ""}
+                {targetSummary(starting, c.agents.map((item) => item.entry))}
               {:else if reading}
-                Reading the providers' models…
+                Checking available agents and providers…
               {:else}
-                No provider lists a model. The session starts without one; connect a provider in Settings to send.
+                No agent or provider is ready. The session starts without one; set up a Chat agent or provider in Settings to send.
               {/if}
             </p>
           </div>
@@ -639,6 +736,49 @@
           <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={!c.worktree || reading}>Create</button>
         </div>
       </form>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
+
+<!-- Trust workspace: explicit consent before spawning an ACP agent in a worktree (D-OVL-8). -->
+<Dialog.Root open={c.trustPrompt !== null} onOpenChange={(open) => { if (!open && !c.trustPrompt?.busy) c.trustPrompt = null; }}>
+  <Dialog.Portal>
+    <Dialog.Overlay class="overlay" />
+    <Dialog.Content class="dialog trust-workspace">
+      <Dialog.Title class="dialog-title">Trust workspace</Dialog.Title>
+      {#if c.trustPrompt}
+        {@const prompt = c.trustPrompt}
+        {@const req = prompt.requirement}
+        <form
+          class="dialog-layout"
+          onsubmit={(event) => {
+            event.preventDefault();
+            void c.confirmTrust();
+          }}
+        >
+          <div class="dialog-body">
+            <p class="starting quiet">{req.reason}</p>
+            <dl class="trust-facts">
+              <dt>Agent</dt>
+              <dd>{req.agentName} (<span class="mono">{req.agentId}</span>)</dd>
+              <dt>Scope</dt>
+              <dd class="mono">{req.scopeLabel}</dd>
+              <dt>Executable</dt>
+              <dd class="mono">{req.fingerprint.resolvedExecutable}</dd>
+              <dt>SHA-256</dt>
+              <dd class="mono">{req.fingerprint.executableSha256}</dd>
+            </dl>
+            <p class="starting quiet">{req.disclosure}</p>
+            {#if prompt.error}<p class="refused" role="alert">{prompt.error}</p>{/if}
+          </div>
+          <div class="dialog-actions">
+            <Dialog.Close class="button" disabled={prompt.busy} aria-keyshortcuts="Escape">Cancel</Dialog.Close>
+            <button class="button primary" type="submit" aria-keyshortcuts="Enter" disabled={prompt.busy}>
+              {prompt.busy ? "Trusting…" : "Trust and continue"}
+            </button>
+          </div>
+        </form>
+      {/if}
     </Dialog.Content>
   </Dialog.Portal>
 </Dialog.Root>
@@ -892,8 +1032,8 @@
     color: var(--ink-2);
   }
   .find:focus-within {
-    outline: 1px solid var(--current-mark);
-    outline-offset: -2px;
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
   }
   .find input {
     flex: 1;
@@ -1175,4 +1315,104 @@
     color: var(--ink);
     font: var(--text-small) var(--mono);
   }
+  .age.waiting { color: var(--yellow); }
+  .thought, .handoff {
+    color: var(--ink-2);
+    font-size: var(--text-small);
+  }
+  .thought > summary, .handoff > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    list-style: none;
+    min-height: var(--row-dense);
+  }
+  .thought > summary::-webkit-details-marker, .handoff > summary::-webkit-details-marker { display: none; }
+  .thought-body, .handoff-summary {
+    margin: 4px 0 0 18px;
+    padding: 6px 8px;
+    border-left: 2px solid var(--line-group);
+    color: var(--ink-2);
+  }
+  .handoff-summary {
+    font-family: var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .plan {
+    padding: 6px 10px;
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-control);
+    background: var(--surface-panel);
+    font-size: var(--text-small);
+  }
+  .plan-label {
+    margin: 0 0 4px;
+    font-size: var(--text-label);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .plan ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .plan li { display: flex; align-items: center; gap: 6px; }
+  .plan li.done { color: var(--ink-2); }
+  .plan li.failed { color: var(--red); }
+  .step-icon { display: inline-flex; flex: none; color: var(--ink-3); }
+  .permission {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--line-panel);
+    border-radius: var(--radius-control);
+    background: var(--surface-panel);
+    font-size: var(--text-small);
+  }
+  .perm-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .perm-title { font-weight: 600; color: var(--ink); }
+  .perm-status { color: var(--ink-2); }
+  .perm-status.waiting { color: var(--yellow); font-weight: 500; }
+  .perm-summary { margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+  .perm-detail {
+    margin: 0;
+    padding: 6px 8px;
+    max-height: 240px;
+    overflow: auto;
+    background: var(--surface-input);
+    border-radius: var(--radius-control);
+    font-family: var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .perm-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .perm-actions .button { display: inline-flex; flex-direction: column; align-items: flex-start; height: auto; padding: 4px 10px; }
+  .perm-persist { font-size: var(--text-label); color: var(--ink-2); font-weight: 400; }
+  .notice-block { margin: 0; color: var(--ink-2); font-size: var(--text-small); }
+  .legacy-banner {
+    padding: 6px 10px;
+    border: 1px solid var(--line-panel);
+    border-radius: var(--radius-control);
+    background: var(--surface-panel);
+    color: var(--ink);
+    font-size: var(--text-small);
+  }
+  :global(.dialog.trust-workspace) { width: min(480px, 92vw); }
+  .trust-facts {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 4px 10px;
+    margin: 8px 0;
+    font-size: var(--text-small);
+  }
+  .trust-facts dt { color: var(--ink-2); }
+  .trust-facts dd { margin: 0; overflow-wrap: anywhere; }
 </style>

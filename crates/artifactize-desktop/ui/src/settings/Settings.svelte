@@ -8,6 +8,7 @@
   import type { Attachment } from "svelte/attachments";
   import { useIpc } from "../ipc/client";
   import { useCommands } from "../shell/commands.svelte";
+  import ChatAgentsTab from "./ChatAgentsTab.svelte";
   import LimitsTab from "./LimitsTab.svelte";
   import ProvidersTab from "./ProvidersTab.svelte";
   import RemoteStore from "./RemoteStore.svelte";
@@ -23,6 +24,7 @@
 
   const TABS = [
     { id: "providers", label: "Providers" },
+    { id: "chat-agents", label: "Chat Agents" },
     { id: "remote", label: "Remote" },
     { id: "limits", label: "Limits" },
   ] as const;
@@ -92,6 +94,10 @@
     <div class="dialog-body" id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
       <ProvidersTab />
     </div>
+  {:else if app.settingsTab === "chat-agents"}
+    <div class="dialog-body" id="settings-panel-chat-agents" role="tabpanel" aria-labelledby="settings-tab-chat-agents">
+      <ChatAgentsTab />
+    </div>
   {:else if app.settingsTab === "remote"}
     <div class="dialog-body" id="settings-panel-remote" role="tabpanel" aria-labelledby="settings-tab-remote">
       <RemoteStore />
@@ -152,7 +158,6 @@
     cursor: pointer;
   }
   .tab:not([aria-selected="true"]):hover {
-    background: var(--surface-group);
     color: var(--ink);
   }
   .tab[aria-selected="true"] {

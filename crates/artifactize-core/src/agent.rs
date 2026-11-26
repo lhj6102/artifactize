@@ -3,10 +3,9 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
-mod antigravity;
 mod chat;
 mod claude_agent;
-pub(crate) use chat::{Prompt as ChatPrompt, turn as chat_turn};
+pub(crate) use chat::{Prompt as ChatPrompt, TURN_TIMEOUT as CHAT_TURN_TIMEOUT, turn as chat_turn};
 pub mod error;
 pub mod session;
 pub mod verdict;
@@ -107,7 +106,6 @@ pub async fn execute(
     )
     .and_then(|route| match route {
         llm::Route::ClaudeAgent => Ok(None),
-        llm::Route::Antigravity => Err(llm::antigravity::eval_refusal()),
         llm::Route::Http(route) => Client::at(route, model, state, &config.root).map(Some),
     });
     match client {

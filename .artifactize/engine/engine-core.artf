@@ -31,6 +31,24 @@ instruction = """
 Read the checklist {rules-platform}. Then review the Rust code of {engine-core} (src/, \
 tests/ and Cargo.toml) against every P- item. Tool paths are relative to the Artifact, for example src/cache.rs. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding."""
 
+[evals.follows-chat-acp]
+title = "The core library upholds the Chat ACP principles and invariants"
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+red_at = "P1"
+
+[evals.follows-chat-acp.profile_variants]
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
+
+[evals.follows-chat-acp.payload]
+instruction = """
+Read the invariants {rules-chat-acp}. Then review the Chat, ACP, store, config and eval \
+routing code of {engine-core} (src/) against every C- item. Tool paths are relative to the \
+Artifact, for example src/chat.rs. Report only what a rule item states: each finding names \
+the item it violates and points to a concrete place where that item's text is not met. An \
+improvement the item's text does not require is not a finding."""
+
 [evals.fmt]
 title = "The Rust formatting check passes"
 profile = { kind = "runtime", command = "cargo", args = ["fmt", "--check", "-p", "artifactize-core"], timeout_ms = 60000 }

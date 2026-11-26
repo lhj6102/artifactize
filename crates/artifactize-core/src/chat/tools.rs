@@ -134,6 +134,81 @@ impl<'a> Tools<'a> {
         self.definitions.iter()
     }
 
+    /// Only the allowlisted read-only and Verify tools exposed to ACP Chat agents over the
+    /// one-turn Verify MCP bridge (never file/shell or plugin-mutation tools).
+    pub(crate) fn verify_only_list(&self) -> impl Iterator<Item = &ToolDefinition> {
+        self.definitions
+            .iter()
+            .filter(|def| crate::acp::verify_bridge::is_allowlisted(def.name.as_str()))
+    }
+
+    /// Invoke one allowlisted Verify/read-only tool from the ACP Verify MCP bridge, remapping
+    /// any agent-supplied `verify_start` `request_key` into the disjoint `chat/*` namespace.
+    pub(crate) async fn call_acp_verify(
+        &self,
+        session_id: &crate::types::SessionId,
+        send: usize,
+        name: &str,
+        arguments: Value,
+        cancellation: CancellationToken,
+    ) -> Called {
+        match self
+            .execute_acp_verify(session_id, send, name, arguments, cancellation)
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => ToolResult::error(error).into(),
+        }
+    }
+
+    async fn execute_acp_verify(
+        &self,
+        session_id: &crate::types::SessionId,
+        send: usize,
+        name: &str,
+        arguments: Value,
+        cancellation: CancellationToken,
+    ) -> Result<Called, String> {
+        if cancellation.is_cancelled() {
+            return Err("The Chat turn was stopped.".into());
+        }
+        if !crate::acp::verify_bridge::is_allowlisted(name) {
+            return Err(format!(
+                "Tool {name:?} is not allowlisted on the ACP Verify bridge."
+            ));
+        }
+        let root = self.context.repo();
+        if let Some(identity) = self.checkout {
+            let path = root.to_owned();
+            let identity = identity.cloned();
+            crate::task::blocking(move || super::verify_checkout(&path, identity.as_ref()))
+                .await??;
+        }
+        let raw_value = arguments.clone();
+        let arguments = match arguments {
+            Value::Object(arguments) => arguments,
+            _ => return Err("Tool arguments must be an object.".into()),
+        };
+        let mut call = verify_tools::Call::parse(name, arguments, time::OffsetDateTime::now_utc())
+            .map_err(|error| error.to_string())?;
+        if call.project.is_some() {
+            return Err("Chat Verify tools are scoped to this session's worktree.".into());
+        }
+        call.remap_acp_chat_key(session_id, send, &raw_value)?;
+        let started = call.started_run();
+        let result = call
+            .execute(self.context, cancellation, |_| async { Ok(()) })
+            .await
+            .map_err(|error| error.to_string())?;
+        let run = started.then(|| result.observed_run().cloned()).flatten();
+        Ok(Called {
+            result: ToolResult::success(Content::Json {
+                data: serde_json::to_value(result).map_err(|error| error.to_string())?,
+            }),
+            run,
+        })
+    }
+
     pub(crate) async fn call(
         &self,
         name: &str,

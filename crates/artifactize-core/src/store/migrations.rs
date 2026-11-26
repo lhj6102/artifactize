@@ -27,6 +27,27 @@ CREATE TABLE chat_active_turns(
     data TEXT NOT NULL
 );";
 
+/// Schema v12 table for single-transaction ACP permission CAS. Kept separate from `WORKSPACES`
+/// so a `10 -> 11 -> 12` upgrade never attempts to create it twice.
+pub(super) const CHAT_PERMISSIONS: &str = "CREATE TABLE chat_pending_permissions(
+    session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    owner_token TEXT NOT NULL,
+    permission_id TEXT NOT NULL,
+    rpc_request_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    tool_kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    detail TEXT,
+    options_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    selected_option_id TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    PRIMARY KEY(session_id, owner_token, permission_id)
+);
+CREATE INDEX chat_permissions_open ON chat_pending_permissions(session_id, status)
+    WHERE status = 'PENDING';";
+
 pub(super) fn apply(transaction: &Transaction<'_>) -> Result<(), Error> {
     let mut version: u32 =
         transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -69,6 +90,10 @@ pub(super) fn apply(transaction: &Transaction<'_>) -> Result<(), Error> {
             }
             10 => {
                 transaction.execute_batch(WORKSPACES)?;
+                version += 1;
+            }
+            11 => {
+                transaction.execute_batch(CHAT_PERMISSIONS)?;
                 version += 1;
             }
             version => return Err(Error::Invalid(super::schema_error(version))),

@@ -2493,7 +2493,7 @@ fn a_run_reference_keeps_its_chat_branch_and_discovers_a_new_checkout() {
         &original,
         "chat_create",
         json!({"worktree":os::path_text(&fixture.repo), "branch":branch,
-            "selection":{"backend":"scripted","model":"fixture-chat","effort":null}}),
+            "selection":{"engine":"direct","backend":{"kind":"custom","name":"scripted"},"model":"fixture-chat","effort":null}}),
     )
     .unwrap();
     let run = saved(&fixture, "release/signoff")
@@ -2638,7 +2638,7 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
             "chat_create",
             json!({
                 "worktree": os::path_text(&fixture.repo),
-                "selection": {"backend": "scripted", "model": "fixture-chat", "effort": null},
+                "selection": {"engine": "direct", "backend": {"kind": "custom", "name": "scripted"}, "model": "fixture-chat", "effort": null},
             }),
         )
         .unwrap()
@@ -2650,13 +2650,13 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
     invoke(&first, "chat_set_view", json!({"id":id,"view":"graph"})).unwrap();
     let from_nested = invoke(
         &first,
-        "chat_default_model",
+        "chat_default_target",
         json!({
             "worktree": os::path_text(&fixture.repo.join("nested")),
         }),
     )
     .unwrap();
-    assert_eq!(from_nested, session["model"]);
+    assert_eq!(from_nested, session["target"]);
     let away = fixture.repo.with_file_name("moved-away");
     fs::rename(&fixture.repo, &away).unwrap();
     let old_launch = window(&fixture, Mode::Graph);

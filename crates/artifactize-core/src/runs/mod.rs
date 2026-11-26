@@ -147,6 +147,8 @@ pub enum Origin {
     Chat {
         session_id: crate::types::SessionId,
         title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        send: Option<usize>,
     },
 }
 
@@ -201,7 +203,26 @@ pub async fn start(
     options: &VerifyOptions,
     request_key: Option<RequestKey>,
 ) -> Result<RunObservation, String> {
-    start_observing_launch(context, selection, options, request_key, |_, _| {}).await
+    start_with_args_hash(context, selection, options, request_key, None).await
+}
+
+/// Start a Run with an optional canonical `request_args_hash` enforced on internal `chat/*` keys.
+pub(crate) async fn start_with_args_hash(
+    context: &Context,
+    selection: &Selection,
+    options: &VerifyOptions,
+    request_key: Option<RequestKey>,
+    request_args_hash: Option<String>,
+) -> Result<RunObservation, String> {
+    start_observing_launch_with_hash(
+        context,
+        selection,
+        options,
+        request_key,
+        request_args_hash,
+        |_, _| {},
+    )
+    .await
 }
 
 /// Transfer the supervisor's birth identity at launch, before saving or reading any receipt.
@@ -213,12 +234,25 @@ pub async fn start_observing_launch(
     request_key: Option<RequestKey>,
     launched: impl FnOnce(&RunId, process::ChildIdentity),
 ) -> Result<RunObservation, String> {
+    start_observing_launch_with_hash(context, selection, options, request_key, None, launched).await
+}
+
+async fn start_observing_launch_with_hash(
+    context: &Context,
+    selection: &Selection,
+    options: &VerifyOptions,
+    request_key: Option<RequestKey>,
+    request_args_hash: Option<String>,
+    launched: impl FnOnce(&RunId, process::ChildIdentity),
+) -> Result<RunObservation, String> {
     // Keys are attempt identity, not checkout identity. Retry before discovering declarations.
     if let Some(key) = &request_key
         && crate::platform::paths::target_is_file(&context.state.join(store::DATABASE))
     {
         let receipts = Receipts::open(&context.state, &context.repo).await?;
-        let result = receipts.keyed_run(&context.repo, key).await;
+        let result = receipts
+            .keyed_run(&context.repo, key, request_args_hash.as_deref())
+            .await;
         let closed = receipts.close().await;
         if let Some(id) = result.and_then(|id| closed.map(|()| id))? {
             return status(context, &id).await;
@@ -230,6 +264,7 @@ pub async fn start_observing_launch(
         selection,
         options,
         request_key.as_ref(),
+        request_args_hash.as_deref(),
         &context.origin,
     )
     .await?;

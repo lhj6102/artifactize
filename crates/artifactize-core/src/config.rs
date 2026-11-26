@@ -32,7 +32,7 @@ mod workspace;
 
 pub use crate::types::{ArtifactName, EvalId};
 pub use artifactize_tools::scope::{ArtifactKind, Target, Uri};
-pub use backend::{Backend, Provider};
+pub use backend::{Backend, CustomBackendName, DirectBackend, HttpProvider, Provider};
 pub use declaration::{ArtifactDeclaration, Fingerprint, Views, parse_declaration};
 pub use discovery::read_workspace_config;
 pub(crate) use discovery::read_workspace_declarations;

@@ -63,8 +63,9 @@ const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-dig
 const saved = {
   id: "chat-main", title: "Work on main", worktree: "/work/main", project: "app", branch: "main",
   branchKey: branchKey("main"), view: "conversation", unavailable: null,
-  model: { backend: "fixture", model: "small", effort: null },
-  createdAt: "2026-11-21T00:00:00Z", updatedAt: "2026-11-21T00:00:00Z", running: false, outcome: null, unseen: false,
+  target: { engine: "direct", backend: { kind: "custom", name: "fixture" }, model: "small", effort: null },
+  createdAt: "2026-11-21T00:00:00Z", updatedAt: "2026-11-21T00:00:00Z",
+  running: false, waitingPermission: false, legacyMigrationNotice: false, outcome: null, unseen: false,
 } satisfies ChatSession;
 
 /** The backend: `snapshot` answers every browse; the calls are recorded. */
@@ -103,8 +104,8 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
           return { session: chat, running: false, turns: [] };
         case "chat_branches":
           return [branch("other", []), branch("main", [])];
-        case "chat_default_model":
-          return saved.model;
+        case "chat_default_target":
+          return saved.target;
         case "human_waiting_count":
           return snapshot().waiting.length;
         case "human_open_reference":
@@ -505,7 +506,7 @@ it.each(["reference", "graph launch"])("opens New chat on the target branch when
   await waitFor(() => expect(choices.value).toBe(main.workspace));
   expect([...choices.options].map((option) => option.value)).toEqual([other.workspace, main.workspace]);
   expect(calls.find(({ command }) => command === "chat_latest_for_branch")?.args).toEqual({ branch: main.key });
-  expect(calls.find(({ command }) => command === "chat_default_model")?.args).toEqual({ worktree: main.workspace, branch: main.key });
+  expect(calls.find(({ command }) => command === "chat_default_target")?.args).toEqual({ worktree: main.workspace, branch: main.key });
   expect(calls.some(({ command }) => command === "chat_set_view" || command === "current_scan")).toBe(false);
 });
 

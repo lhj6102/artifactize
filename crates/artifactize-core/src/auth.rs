@@ -7,6 +7,6 @@ pub mod claude_agent;
 pub mod codex;
 pub mod providers;
 pub mod remote;
-mod storage;
+pub(crate) mod storage;
 #[cfg(test)]
 mod tests;

@@ -263,6 +263,23 @@ export const scenarios: Scenario[] = [
   }),
 
   scenario({
+    id: "chat-without-target",
+    title: "started with graph --repo and no provider or Chat agent configured, New chat creates a targetless session whose Graph still scans the branch's Current",
+    journeys: ["J-LAUNCH", "J-CHAT-NEW", "J-CHAT-GRAPH", "J-CHAT-MODEL"],
+    prepare: async (own) => {
+      const fixture = createChecking(own);
+      return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
+    },
+    run: async (app) => {
+      const starting = await app.chat.createFromDialog("repo / master");
+      assert.match(starting, /No agent or provider is ready/, `targetless New chat explains why no target is set: ${starting}`);
+      assert.equal(await app.chat.selected(), "Choose a model");
+      await app.chat.show("Graph");
+      await app.graph.node("a:other", (node) => node.label === "other: would run (1 eval)", "a targetless session's Graph still scans its Current");
+    },
+  }),
+
+  scenario({
     id: "current-scan",
     title: "started with graph --repo on a branch without a session it offers New chat there, whose Graph shows the branch's Current: its graph drawn at once, Artifacts being checked until their fingerprints are in, then coloured in place by what verify would do; the chat floats over it with the reply card of a message sent from Graph, and Conversation finds text in place",
     journeys: ["J-LAUNCH", "J-CHAT-GRAPH", "J-STAGE", "J-CHAT-FIND", "J-CHAT"],

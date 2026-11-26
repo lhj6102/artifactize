@@ -46,6 +46,98 @@ pub enum Kind {
     ToolOutcome(MessageEvent),
     /// Display-only provider delivery; never part of replay history or usage calculations.
     Delivery(Delivery),
+    /// Display-only ACP tool call start (never replayed as a direct-API `Message`).
+    AcpToolCall(AcpToolCallEvent),
+    /// Display-only ACP tool call update (status, output, diff, locations).
+    AcpToolUpdate(AcpToolUpdateEvent),
+    /// Display-only ACP agent plan snapshot.
+    AcpPlan(AcpPlanEvent),
+    /// Display-only ACP permission prompt / settlement record.
+    AcpPermission(AcpPermissionEvent),
+    /// Display-only explicit cross-engine or vendor handoff marker.
+    Handoff(HandoffEvent),
+    /// Display-only notice (e.g. config fallback or stream coalescing).
+    Notice {
+        text: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpToolCallEvent {
+    pub call_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub title: String,
+    pub tool_kind: crate::chat::ToolKind,
+    pub status: crate::acp::ToolStatus,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub arguments: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locations: Vec<crate::acp::ToolLocation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<crate::acp::ToolDiff>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub output_truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpToolUpdateEvent {
+    pub call_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_kind: Option<crate::chat::ToolKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<crate::acp::ToolStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locations: Option<Vec<crate::acp::ToolLocation>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<crate::acp::ToolDiff>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub output_truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpPlanEvent {
+    pub steps: Vec<crate::acp::PlanStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpPermissionEvent {
+    pub permission_id: String,
+    pub title: String,
+    pub tool_kind: crate::chat::ToolKind,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub options: Vec<crate::acp::PermissionOption>,
+    pub status: crate::acp::PermissionStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_option_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffEvent {
+    pub from: String,
+    pub to: String,
+    pub summary: String,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

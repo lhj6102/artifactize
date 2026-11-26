@@ -127,6 +127,7 @@ async fn run_show_reports_cli_and_explicit_chat_origins() {
         &fixture.context().with_origin(runs::Origin::Chat {
             session_id,
             title: "Fixture".into(),
+            send: None,
         }),
         &artifactize_core::project::selection::Selection::All,
         &Default::default(),

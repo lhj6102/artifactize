@@ -518,16 +518,14 @@ fn resolve_alias(
         backend, reasoning, ..
     } = &resolved
     {
-        if let Some(provider) = backend.builtin() {
-            provider.validate_eval().map_err(|message| {
-                let offset = inner_table
-                    .get("backend")
-                    .map_or(invocation.span.start, |value| {
-                        map_offset(value.span().start)
-                    });
-                location::positioned(source, offset, &format!("{path}.backend"), message)
-            })?;
-        }
+        backend.validate_eval().map_err(|message| {
+            let offset = inner_table
+                .get("backend")
+                .map_or(invocation.span.start, |value| {
+                    map_offset(value.span().start)
+                });
+            location::positioned(source, offset, &format!("{path}.backend"), message)
+        })?;
         if let (Some(reasoning), Some(provider)) = (reasoning, backend.builtin()) {
             crate::llm::Api::from(provider)
                 .validate_reasoning(reasoning.as_str())

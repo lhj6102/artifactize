@@ -1,4 +1,4 @@
-"""A local ACP peer and MCP client, with no network or Google credentials."""
+"""A local ACP v1 peer and Verify-only MCP client, with no network or Google credentials."""
 
 import json
 import os
@@ -30,15 +30,17 @@ def answer(request, payload):
 
 def config(current, thought):
     options = [{"id": "account-model", "category": "model", "type": "select",
-             "currentValue": current, "options": [
-                 {"value": "first-model", "name": "First"},
-                 {"group": "other", "name": "Other", "options": [
-                     {"value": "chosen-model", "name": "Chosen"}
-                 ]}
-             ]}]
+                "name": "Model",
+                "currentValue": current, "options": [
+                    {"value": "first-model", "name": "First"},
+                    {"group": "other", "name": "Other", "options": [
+                        {"value": "chosen-model", "name": "Chosen"}
+                    ]}
+                ]}]
 
     if current == "chosen-model":
         options.append({"id": "think", "category": "thought_level", "type": "select",
+                        "name": "Thought level",
                         "currentValue": thought, "options": [
                             {"value": "balanced", "name": "Balanced"},
                             {"value": "deep-thinking", "name": "Deep"},
@@ -66,10 +68,10 @@ def open_tools(server):
         })
         assert result["capabilities"] == {"tools": {}}
         write({"method": "notifications/initialized"}, child.stdin)
-        tools = tool(child, 2, "tools/list", {})["tools"]
-        assert {"read", "write", "edit", "run_command", "verify_start", "verify_wait"} <= {
-            item["name"] for item in tools
-        }
+        tools = {item["name"] for item in tool(child, 2, "tools/list", {})["tools"]}
+        assert {"verify_start", "verify_wait", "run_show", "status"} <= tools, tools
+        # Native ACP bridge must NEVER expose Artifactize file/shell mutation tools.
+        assert not ({"read", "write", "edit", "run_command"} & tools), tools
         return child
     except BaseException:
         child.kill()
@@ -77,7 +79,7 @@ def open_tools(server):
         raise
 
 
-def prompt(request, child, model):
+def prompt(request, child, model, cwd):
     assert model == "chosen-model", model
     params = request["params"]
     session = params["sessionId"]
@@ -90,19 +92,40 @@ def prompt(request, child, model):
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": part}})
 
     if text.endswith("first message"):
+        update({"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": "Inspecting workspace."}})
+        update({"sessionUpdate": "plan", "entries": [
+            {"content": "Read notes", "status": "completed", "priority": "high"},
+            {"content": "Run verify", "status": "in_progress", "priority": "medium"},
+        ]})
         chunk("Reading ")
         chunk("notes.")
-        write({"id": "permission", "method": "session/request_permission", "params": {
+        # Request interactive permission and expect user approval via Permission CAS.
+        write({"id": "perm-1", "method": "session/request_permission", "params": {
             "sessionId": session,
-            "toolCall": {"toolCallId": "native", "title": "Foreign tool", "kind": "execute"},
-            "options": [{"optionId": "permit", "kind": "allow_once", "name": "Allow"}],
+            "toolCall": {"toolCallId": "native-read", "title": "Read notes.txt", "kind": "read"},
+            "options": [
+                {"optionId": "permit", "kind": "allow_once", "name": "Allow once"},
+                {"optionId": "deny", "kind": "reject_once", "name": "Deny"},
+            ],
         }})
         reply = receive()
-        assert reply["id"] == "permission" and reply["result"]["outcome"]["outcome"] == "cancelled"
-        update({"sessionUpdate": "tool_call", "toolCallId": "native-notice", "title": "read", "status": "pending"})
-        result = tool(child, 3, "tools/call", {"name": "read", "arguments": {"path": "notes.txt"}})
-        assert not result["isError"] and "fixture notes" in str(result), result
-        result = tool(child, 4, "tools/call", {"name": "verify_start", "arguments": {"scope": {"kind": "all"}}})
+        assert reply["id"] == "perm-1", reply
+        assert reply["result"]["outcome"] == {"outcome": "selected", "optionId": "permit"}, reply
+
+        notes_text = (cwd / "notes.txt").read_text(encoding="utf-8")
+        update({"sessionUpdate": "tool_call", "toolCallId": "native-read", "title": "Read notes.txt",
+                "kind": "read", "status": "in_progress",
+                "locations": [{"path": "notes.txt", "line": 1}]})
+        update({"sessionUpdate": "tool_call_update", "toolCallId": "native-read", "status": "completed",
+                "content": [
+                    {"type": "content", "content": {"type": "text", "text": notes_text}},
+                    {"type": "diff", "path": "notes.txt", "oldText": "fixture notes", "newText": "fixture notes"},
+                ]})
+
+        result = tool(child, 4, "tools/call", {
+            "name": "verify_start",
+            "arguments": {"scope": {"kind": "all"}, "request_key": "agent-retry-1"},
+        })
         assert not result["isError"], result
         (ROOT / "pids").write_text(f"{os.getpid()} {child.pid}", encoding="utf-8")
         chunk("Waiting for Stop.")
@@ -112,11 +135,17 @@ def prompt(request, child, model):
         # Ignore EOF to prove Stop reaps a stubborn process, not just its pipe.
         import threading
         threading.Event().wait()
-    else:
-        assert "first message" in text and "Reading notes." in text and "verify_start" in text, text
-        assert text.endswith("continue after restart")
+    elif text.endswith("continue after restart"):
+        assert "first message" in text and "Reading notes." in text, text
+        (ROOT / "warm-pid").write_text(str(os.getpid()), encoding="utf-8")
         chunk("Ready again.")
         answer(request, {"stopReason": "end_turn"})
+    elif text.endswith("warm follow-up"):
+        (ROOT / "warm-followup-pid").write_text(str(os.getpid()), encoding="utf-8")
+        chunk("Warm pool reused.")
+        answer(request, {"stopReason": "end_turn"})
+    else:
+        raise AssertionError(f"unexpected prompt: {text!r}")
 
 
 def run():
@@ -134,14 +163,20 @@ def run():
     model = "first-model"
     thought = "balanced"
     child = None
+    active_cwd = None
     try:
         while (request := receive()) is not None:
             method = request["method"]
             if method == "initialize":
                 assert request["params"]["protocolVersion"] == 1
                 assert request["params"]["clientInfo"]["name"] == "artifactize"
-                assert request["params"]["clientCapabilities"] == {}
-                capabilities = {"auth": {"logout": {}}} if mode != "no-logout" else {}
+                assert request["params"]["clientCapabilities"] == {
+                    "fs": {"readTextFile": False, "writeTextFile": False},
+                    "terminal": False,
+                }
+                capabilities = {"loadSession": True}
+                if mode != "no-logout":
+                    capabilities["auth"] = {"logout": {}}
                 answer(request, {"protocolVersion": 1, "agentCapabilities": capabilities})
             elif method == "session/new":
                 if mode == "auth-link":
@@ -156,13 +191,39 @@ def run():
                     continue
                 params = request["params"]
                 cwd = Path(params["cwd"])
-                assert cwd.is_absolute() and not (cwd / "notes.txt").exists()
+                active_cwd = cwd
+                assert cwd.is_absolute()
                 servers = params["mcpServers"]
                 if servers:
+                    # Live Chat turn: runs in trusted worktree with one-turn Verify bridge.
+                    assert (cwd / "notes.txt").exists(), f"expected trusted worktree cwd, got {cwd}"
                     assert len(servers) == 1
+                    if child is not None:
+                        child.stdin.close()
+                        child.wait(timeout=5)
                     child = open_tools(servers[0])
+                else:
+                    # Probe/models/status: MUST run in an empty tempdir, never the worktree.
+                    assert not (cwd / "notes.txt").exists(), f"probe must not use worktree: {cwd}"
                 answer(request, {"sessionId": "fixture-session", "configOptions": config(model, thought),
                                  "models": {"availableModels": [{"modelId": "legacy-only", "name": "Legacy only"}]}})
+            elif method == "session/load":
+                params = request["params"]
+                cwd = Path(params["cwd"])
+                active_cwd = cwd
+                assert params["sessionId"] == "fixture-session"
+                servers = params["mcpServers"]
+                if child is not None:
+                    child.stdin.close()
+                    child.wait(timeout=5)
+                child = open_tools(servers[0]) if servers else None
+                (ROOT / "loaded").write_text(params["sessionId"], encoding="utf-8")
+                # Emit a replayed history update that the client MUST suppress during LoadPhase.
+                write({"method": "session/update", "params": {
+                    "sessionId": "fixture-session",
+                    "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "REPLAYED_NOISE"}},
+                }})
+                answer(request, {"configOptions": config(model, thought)})
             elif method == "session/set_config_option":
                 params = request["params"]
                 if params["configId"] == "account-model":
@@ -173,7 +234,7 @@ def run():
                 answer(request, {"configOptions": config(model, thought)})
             elif method == "session/prompt":
                 assert child is not None and thought == "deep-thinking", thought
-                prompt(request, child, model)
+                prompt(request, child, model, active_cwd)
             elif method == "logout":
                 MODE.write_text("signed-out", encoding="utf-8")
                 answer(request, {})

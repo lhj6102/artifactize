@@ -5,7 +5,17 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
-import type { ChatBlock, ChatModel, ChatSession, ChatSessionView, ChatTurn, ChatView } from "../ipc/client";
+import type {
+  ChatAgentAvailability,
+  ChatAgentCatalogEntry,
+  ChatBlock,
+  ChatSendResult,
+  ChatSession,
+  ChatSessionView,
+  ChatTarget,
+  ChatTurn,
+  ChatView,
+} from "../ipc/client";
 import { renderHosted } from "../test-host";
 import ChatMode from "./ChatMode.svelte";
 import { branch, branchKey, browseView, runChip } from "../monitor/fixtures";
@@ -36,6 +46,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const DEFAULT_TARGET: ChatTarget = {
+  engine: "direct",
+  backend: { kind: "builtin", provider: "codex" },
+  model: "gpt-5-codex",
+  effort: null,
+};
+
 const session: ChatSession = {
   id: "chat-1",
   title: "Fix checkout rounding",
@@ -45,13 +62,42 @@ const session: ChatSession = {
   branchKey: branchKey("fix/rounding"),
   view: "conversation",
   unavailable: null,
-  model: { backend: "claude-agent", model: "claude-opus-5-5", effort: null },
+  target: DEFAULT_TARGET,
   createdAt: "2026-11-21T00:00:00Z",
   updatedAt: "2026-11-21T00:00:00Z",
   running: false,
+  waitingPermission: false,
+  legacyMigrationNotice: false,
   outcome: null,
   unseen: false,
 };
+
+const AGY_ENTRY: ChatAgentCatalogEntry = {
+  id: "antigravity",
+  name: "Antigravity",
+  tier: "preset",
+  command: "agy",
+  args: ["acp"],
+  env: {},
+  secretEnvKeys: [],
+  mcpStdio: true,
+  canDisableProjectConfig: true,
+  nativeSandboxNote: "Runs natively in the worktree.",
+  loginAction: "artifactize login antigravity",
+  installHint: "Install agy.",
+  registry: null,
+};
+
+function chatViewOf(s: ChatSession, running: boolean, turns: ChatTurn[]): ChatView {
+  return {
+    session: s,
+    running,
+    waitingPermission: s.waitingPermission,
+    turns,
+    liveConfigOptions: [],
+    verifyBridgeState: "notConnected",
+  };
+}
 
 /** The library of one session: `turns` is what it holds, `running` whether a turn runs. */
 /** Answers a test adds before the backend's own; undefined falls through to them. */
@@ -65,75 +111,165 @@ function backendWith(answer: (cmd: string, args: Record<string, unknown>) => unk
 function backend() {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   const state = {
-    turns: [] as ChatTurn[], running: false, session,
+    turns: [] as ChatTurn[],
+    running: false,
+    session,
     other: null as ChatSession | null,
-    send: null as ((text: string) => Promise<void>) | null,
+    send: null as ((text: string) => Promise<ChatSendResult | void>) | null,
     stop: null as (() => Promise<boolean>) | null,
     antigravitySignedIn: false,
   };
-  mockIPC((cmd, args) => {
-    calls.push({ cmd, args: args as Record<string, unknown> });
-    const extra = extraAnswers?.(cmd, args as Record<string, unknown>);
-    if (extra !== undefined) return extra;
-    switch (cmd) {
-      case "chat_list":
-        return (args as { query: string | null }).query === "no such chat" ? [] : [state.session, ...(state.other ? [state.other] : [])];
-      case "chat_open":
-        if (state.other && (args as { id: string }).id === state.other.id) return { session: state.other, running: false, turns: [] } satisfies ChatView;
-        return { session: state.session, running: state.running, turns: state.turns } satisfies ChatView;
-      case "chat_mark_seen":
-        state.session = { ...state.session, unseen: false };
-        return null;
-      case "chat_set_model": {
-        const chosen = (args as { selection: ChatModel }).selection;
-        state.session = { ...state.session, model: { ...chosen, effort: chosen.effort ?? "high" } };
-        return state.session;
+  mockIPC(
+    (cmd, args) => {
+      calls.push({ cmd, args: args as Record<string, unknown> });
+      const extra = extraAnswers?.(cmd, args as Record<string, unknown>);
+      if (extra !== undefined) return extra;
+      switch (cmd) {
+        case "chat_list":
+          return (args as { query: string | null }).query === "no such chat"
+            ? []
+            : [state.session, ...(state.other ? [state.other] : [])];
+        case "chat_open":
+          if (state.other && (args as { id: string }).id === state.other.id) {
+            return chatViewOf(state.other, false, []);
+          }
+          return chatViewOf(state.session, state.running, state.turns);
+        case "chat_mark_seen":
+          state.session = { ...state.session, unseen: false };
+          return null;
+        case "chat_set_target": {
+          const chosen = (args as { selection: ChatTarget }).selection;
+          if (chosen.engine === "direct") {
+            state.session = {
+              ...state.session,
+              legacyMigrationNotice: false,
+              target: { ...chosen, effort: chosen.effort ?? "high" },
+            };
+          } else {
+            state.session = {
+              ...state.session,
+              legacyMigrationNotice: chosen.engine === "legacyClaudeAgent",
+              target: chosen,
+            };
+          }
+          return state.session;
+        }
+        case "chat_set_view":
+          state.session = { ...state.session, view: (args as { view: ChatSessionView }).view };
+          return state.session;
+        case "current_scan":
+          return {
+            branch: session.branchKey,
+            scannedAt: 1,
+            fingerprint: "",
+            revision: 1,
+            scanning: false,
+            checking: 0,
+            artifacts: 0,
+            failure: null,
+          };
+        case "graph":
+          return {
+            source: (args as { source: unknown }).source,
+            shape: 1,
+            update: { kind: "shape", nodes: [], edges: [] },
+          };
+        case "chat_send":
+          if (state.send) {
+            return state.send((args as { text: string }).text).then((res) => res ?? ({ kind: "accepted" } satisfies ChatSendResult));
+          }
+          state.running = true;
+          state.turns = [
+            ...state.turns,
+            { user: (args as { text: string }).text, blocks: [], state: { kind: "running" } },
+          ];
+          return { kind: "accepted" } satisfies ChatSendResult;
+        case "chat_permission_respond":
+          return true;
+        case "chat_trust_grant":
+          return {
+            agentId: (args as { agent: string }).agent,
+            scope: { kind: "directory", canonicalPath: (args as { worktree: string }).worktree },
+            scopeLabel: (args as { worktree: string }).worktree,
+            fingerprint: { resolvedExecutable: "/usr/bin/agy", executableSha256: "abc123", argsHash: "def456" },
+            trustedAt: "2026-11-21T00:00:00Z",
+          };
+        case "chat_stop":
+          if (state.stop) return state.stop();
+          state.running = false;
+          state.turns = state.turns.map((turn) => ({ ...turn, state: { kind: "stopped" } }));
+          return true;
+        case "browse":
+          return browseView(2, {
+            run: {
+              kind: "read",
+              id: "run-9",
+              origin: null,
+              headline: null,
+              node: "r:run-9",
+              mark: { status: "RED", glyph: "✗" },
+              needs: [],
+              branch: branchKey("fix/rounding"),
+              chatBranch: branchKey("fix/rounding"),
+            },
+          });
+        case "chat_agents_list":
+          return [AGY_ENTRY];
+        case "chat_agent_probe": {
+          if (!state.antigravitySignedIn) {
+            return {
+              kind: "notSetUp",
+              executable: "/usr/bin/agy",
+              version: "1.5.14",
+              reason: "Not signed in.",
+              loginAction: "artifactize login antigravity",
+            } satisfies ChatAgentAvailability;
+          }
+          return {
+            kind: "ready",
+            executable: "/usr/bin/agy",
+            version: "1.5.14",
+            models: [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }],
+            configOptions: [
+              {
+                id: "model",
+                name: "Model",
+                category: "model",
+                currentValue: "gemini-demo",
+                choices: [{ value: "gemini-demo", name: "Gemini Demo", description: null, bypassWarning: false }],
+              },
+            ],
+          } satisfies ChatAgentAvailability;
+        }
+        case "providers_list":
+          return {
+            builtin: ["codex", "claude-agent", "gemini", "anthropic"],
+            aliasTargets: ["codex", "openai", "anthropic", "gemini"],
+            keys: [
+              { provider: "gemini", variable: "GEMINI_API_KEY", source: "absent", saved: false },
+              { provider: "anthropic", variable: "ANTHROPIC_API_KEY", source: "saved", saved: true },
+            ],
+            custom: [],
+          };
+        case "models_list": {
+          const { provider } = args as { provider: string };
+          if (provider === "gemini") return { kind: "notSetUp", reason: "No key is set." };
+          if (provider === "anthropic") return { kind: "failed", error: "Model listing timed out." };
+          return {
+            kind: "models",
+            models: [
+              { slug: "gpt-5-codex", displayName: "GPT-5 Codex", efforts: ["high", "low", "xhigh"], defaultEffort: "high" },
+              { slug: "gpt-5-mini", displayName: "GPT-5 Mini", efforts: ["high", "low"], defaultEffort: "high" },
+              { slug: "quiet-id", displayName: "Quiet", efforts: [], defaultEffort: null },
+            ],
+          };
+        }
+        default:
+          return null;
       }
-      case "chat_set_view":
-        state.session = { ...state.session, view: (args as { view: ChatSessionView }).view };
-        return state.session;
-      case "current_scan":
-        return { branch: session.branchKey, scannedAt: 1, fingerprint: "", revision: 1, scanning: false, checking: 0, artifacts: 0, failure: null };
-      case "graph":
-        return { source: (args as { source: unknown }).source, shape: 1, update: { kind: "shape", nodes: [], edges: [] } };
-      case "chat_send":
-        if (state.send) return state.send((args as { text: string }).text);
-        state.running = true;
-        state.turns = [...state.turns, { user: (args as { text: string }).text, blocks: [], state: { kind: "running" } }];
-        return null;
-      case "chat_stop":
-        if (state.stop) return state.stop();
-        state.running = false;
-        state.turns = state.turns.map((turn) => ({ ...turn, state: { kind: "stopped" } }));
-        return true;
-      case "browse":
-        // Opened by its ID, run-9 is read with its live branch.
-        return browseView(2, { run: { kind: "read", id: "run-9", origin: null, headline: null, node: "r:run-9", mark: { status: "RED", glyph: "✗" }, needs: [], branch: branchKey("fix/rounding"), chatBranch: branchKey("fix/rounding") } });
-      case "providers_list":
-        return { builtin: ["claude-agent", "gemini", "anthropic", "antigravity"], keys: [
-          { provider: "gemini", source: "absent" }, { provider: "anthropic", source: "saved" },
-        ], custom: [] };
-      case "claude_agent_status":
-        return { state: "signedIn", method: "claude.ai", plan: null };
-      case "antigravity_status":
-        return { state: state.antigravitySignedIn ? "signedIn" : "signedOut" };
-      case "models_list": {
-        const { provider } = args as { provider: string };
-        if (provider === "antigravity") return state.antigravitySignedIn
-          ? { kind: "models", models: [{ slug: "gemini-demo", displayName: "Gemini Demo", efforts: [], defaultEffort: null }] }
-          : { kind: "notSetUp", reason: "Not signed in." };
-        if (provider === "gemini") return { kind: "notSetUp", reason: "No key is set." };
-        if (provider === "anthropic") return { kind: "failed", error: "Model listing timed out." };
-        return { kind: "models", models: [
-          { slug: "claude-opus-5-5", displayName: "Opus 5.5", efforts: ["high", "low", "xhigh"], defaultEffort: "high" },
-          { slug: "claude-sonnet-5-5", displayName: "Sonnet 5.5", efforts: ["high", "low"], defaultEffort: "high" },
-          { slug: "quiet-id", displayName: "Quiet", efforts: [], defaultEffort: null },
-        ] };
-      }
-      default:
-        return null;
-    }
-  }, { shouldMockEvents: true });
+    },
+    { shouldMockEvents: true },
+  );
   return { calls, state };
 }
 
@@ -167,7 +303,7 @@ it("lists sessions by project, sends a message and shows the turn as the library
     user: "Fix it and verify.",
     blocks: [
       { kind: "text", text: "Looking at the total." },
-      { kind: "tool", name: "edit", arguments: JSON.stringify({ path: "checkout/total.ts", old_text: "a", new_text: "b\nc" }), output: "ok", failed: false, toolKind: "edit", summary: "edit checkout/total.ts +2 −1", exitCode: null, omittedLines: 0, outputTruncated: false },
+      tool({ name: "edit", arguments: JSON.stringify({ path: "checkout/total.ts", old_text: "a", new_text: "b\nc" }), output: "ok", failed: false, toolKind: "edit", summary: "edit checkout/total.ts +2 −1" }),
       { kind: "run", card: { id: "run-9", state: "red", failed: ["checkout/unit"], waiting: [] } },
     ],
     state: { kind: "completed" },
@@ -189,7 +325,7 @@ it("lists sessions by project, sends a message and shows the turn as the library
 it("stops a running turn, which ends marked as stopped", async () => {
   const { state } = backend();
   state.running = true;
-  state.turns = [{ user: "Go", blocks: [{ kind: "tool", name: "read", arguments: '{"path":"a.ts"}', output: null, failed: null, toolKind: "read", summary: "read a.ts", exitCode: null, omittedLines: 0, outputTruncated: false }], state: { kind: "running" } }];
+  state.turns = [{ user: "Go", blocks: [tool({ name: "read", arguments: '{"path":"a.ts"}', output: null, failed: null, status: "running", toolKind: "read", summary: "read a.ts" })], state: { kind: "running" } }];
   show();
   await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
   // A tool still running reads in the present tense.
@@ -199,31 +335,38 @@ it("stops a running turn, which ends marked as stopped", async () => {
   expect(screen.getByRole("button", { name: "Send (Enter)" })).toBeTruthy();
 });
 
-it("filters the upward model menu and saves a model and effort immediately, even while streaming", async () => {
+it("filters the upward target menu and saves a model and effort immediately, even while streaming", async () => {
   const { calls, state } = backend();
   state.running = true;
-  state.session = { ...session, model: { backend: "claude-agent", model: "claude-opus-5-5", effort: "high" } };
+  state.session = {
+    ...session,
+    target: { engine: "direct", backend: { kind: "builtin", provider: "codex" }, model: "gpt-5-codex", effort: "high" },
+  };
   show();
   await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
-  const trigger = await screen.findByRole("button", { name: /claude-opus-5-5.*high/ });
+  const trigger = await screen.findByRole("button", { name: /gpt-5-codex.*high/ });
   await fireEvent.click(trigger);
-  const menu = await screen.findByRole("menu", { name: "Models" });
-  const filter = within(menu).getByRole("searchbox", { name: "Filter models" });
+  const menu = await screen.findByRole("menu", { name: "Chat agents and models" });
+  const filter = within(menu).getByRole("searchbox", { name: "Filter agents and models" });
   expect(document.activeElement).toBe(filter);
-  await within(menu).findByText("Sonnet 5.5");
+  await within(menu).findByText("GPT-5 Mini");
   await within(menu).findByText("Model listing timed out.");
-  await within(menu).findByText("Not set up: Gemini, Antigravity");
-  expect(within(menu).getByRole("menuitemradio", { name: "Opus 5.5 · high" }).getAttribute("aria-checked")).toBe("true");
+  await within(menu).findByText("Providers not set up: Gemini");
+  await within(menu).findByText("Agents not set up: Antigravity");
+  expect(within(menu).getByRole("menuitemradio", { name: "GPT-5 Codex · high" }).getAttribute("aria-checked")).toBe("true");
   await fireEvent.input(filter, { target: { value: "missing" } });
-  expect(within(menu).getByText("No model matches.")).toBeTruthy();
+  expect(within(menu).getByText("No agent or model matches.")).toBeTruthy();
   await fireEvent.input(filter, { target: { value: "quiet-id" } });
   expect(within(menu).getByRole("menuitemradio", { name: "Quiet" })).toBeTruthy();
-  expect(within(menu).queryByRole("menuitemradio", { name: "Sonnet 5.5" })).toBeNull();
-  await fireEvent.input(filter, { target: { value: "cLaUdE AgEnT" } });
-  await fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Sonnet 5.5 · low" }));
-  await screen.findByRole("button", { name: /Sonnet 5.5.*low/ });
+  expect(within(menu).queryByRole("menuitemradio", { name: "GPT-5 Mini" })).toBeNull();
+  await fireEvent.input(filter, { target: { value: "cOdEx" } });
+  await fireEvent.click(within(menu).getByRole("menuitemradio", { name: "GPT-5 Mini · low" }));
+  await screen.findByRole("button", { name: /gpt-5-mini.*low/ });
   expect(screen.queryByRole("menu")).toBeNull();
-  expect(calls.find((call) => call.cmd === "chat_set_model")?.args).toEqual({ id: session.id, selection: { backend: "claude-agent", model: "claude-sonnet-5-5", effort: "low" } });
+  expect(calls.find((call) => call.cmd === "chat_set_target")?.args).toEqual({
+    id: session.id,
+    selection: { engine: "direct", backend: { kind: "builtin", provider: "codex" }, model: "gpt-5-mini", effort: "low" },
+  });
   await fireEvent.click(trigger);
   const reopened = await screen.findByRole("menu");
   await fireEvent.keyDown(within(reopened).getByRole("searchbox"), { key: "Escape" });
@@ -231,34 +374,40 @@ it("filters the upward model menu and saves a model and effort immediately, even
   expect(document.activeElement).toBe(trigger);
   expect(calls.some(({ cmd }) => cmd === "chat_stop" || cmd === "chat_send")).toBe(false);
   await fireEvent.click(trigger);
-  await fireEvent.click(await screen.findByRole("menuitemradio", { name: "Opus 5.5" }));
-  expect(calls.filter(({ cmd }) => cmd === "chat_set_model").at(-1)?.args).toEqual({ id: session.id, selection: { backend: "claude-agent", model: "claude-opus-5-5", effort: null } });
-  await screen.findByRole("button", { name: /Opus 5.5.*high/ });
+  await fireEvent.click(await screen.findByRole("menuitemradio", { name: "GPT-5 Codex" }));
+  expect(calls.filter(({ cmd }) => cmd === "chat_set_target").at(-1)?.args).toEqual({
+    id: session.id,
+    selection: { engine: "direct", backend: { kind: "builtin", provider: "codex" }, model: "gpt-5-codex", effort: null },
+  });
+  await screen.findByRole("button", { name: /gpt-5-codex.*high/ });
   await fireEvent.click(trigger);
   await fireEvent.pointerDown(screen.getByRole("textbox", { name: "Message" }));
   expect(screen.queryByRole("menu")).toBeNull();
 });
 
-it("reads Antigravity's account models after sign-in on reopening the Chat model menu", async () => {
+it("probes Antigravity ACP agent after sign-in on reopening the Chat target menu", async () => {
   const { calls, state } = backend();
   show();
   await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
-  const trigger = await screen.findByRole("button", { name: /claude-opus-5-5/ });
+  const trigger = await screen.findByRole("button", { name: /gpt-5-codex/ });
   await fireEvent.click(trigger);
-  const menu = screen.getByRole("menu", { name: "Models" });
-  await within(menu).findByText("Not set up: Gemini, Antigravity");
-  expect(calls.some(({ cmd, args }) => cmd === "models_list" && args.provider === "antigravity")).toBe(true);
-  expect(calls.some(({ cmd }) => cmd === "antigravity_status")).toBe(false);
+  const menu = screen.getByRole("menu", { name: "Chat agents and models" });
+  await within(menu).findByText("Agents not set up: Antigravity");
+  expect(calls.some(({ cmd, args }) => cmd === "chat_agent_probe" && args.agent === "antigravity")).toBe(true);
   await fireEvent.keyDown(within(menu).getByRole("searchbox"), { key: "Escape" });
   state.antigravitySignedIn = true;
 
   await fireEvent.click(trigger);
-  const reopened = screen.getByRole("menu", { name: "Models" });
-  const model = await within(reopened).findByRole("menuitemradio", { name: "Gemini Demo" });
-  expect(within(reopened).getByText("Not set up: Gemini")).toBeTruthy();
-  await fireEvent.click(model);
-  expect(calls.find(({ cmd }) => cmd === "chat_set_model")?.args).toEqual({
-    id: session.id, selection: { backend: "antigravity", model: "gemini-demo", effort: null },
+  const reopened = screen.getByRole("menu", { name: "Chat agents and models" });
+  const agent = await within(reopened).findByRole("menuitemradio", { name: "Antigravity" });
+  await fireEvent.click(agent);
+  expect(calls.find(({ cmd }) => cmd === "chat_set_target")?.args).toEqual({
+    id: session.id,
+    selection: {
+      engine: "acp",
+      agent: "antigravity",
+      config: [{ id: "model", value: "gemini-demo", category: "model" }],
+    },
   });
 });
 
@@ -268,75 +417,90 @@ function unlisted(models: { slug: string; displayName: string }[]) {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
   let answer: () => void = () => {};
   const answered = new Promise<void>((done) => (answer = done));
-  // The library's default: the custom provider `lab`'s first model, once its providers answered.
-  const starting = models[0] ? { backend: "lab", model: models[0].slug, effort: "medium" } : null;
+  const starting: ChatTarget | null = models[0]
+    ? { engine: "direct", backend: { kind: "custom", name: "lab" }, model: models[0].slug, effort: "medium" }
+    : null;
   let created: ChatSession | null = null;
-  mockIPC(async (cmd, args) => {
-    calls.push({ cmd, args: args as Record<string, unknown> });
-    switch (cmd) {
-      case "chat_list":
-        return created ? [created] : [];
-      case "chat_branches":
-        return [{ key: session.branchKey, project: session.project, name: session.branch, workspace: session.worktree }];
-      case "chat_default_model":
-        await answered;
-        return starting;
-      case "chat_create": {
-        const { worktree, selection } = args as { worktree: string; selection: ChatModel | null };
-        created = { ...session, id: "chat-2", title: "New chat", worktree, model: selection };
-        return created;
+  mockIPC(
+    async (cmd, args) => {
+      calls.push({ cmd, args: args as Record<string, unknown> });
+      switch (cmd) {
+        case "chat_list":
+          return created ? [created] : [];
+        case "chat_branches":
+          return [{ key: session.branchKey, project: session.project, name: session.branch, workspace: session.worktree }];
+        case "chat_default_target":
+          await answered;
+          return starting;
+        case "chat_create": {
+          const { worktree, selection } = args as { worktree: string; selection: ChatTarget | null };
+          created = { ...session, id: "chat-2", title: "New chat", worktree, target: selection };
+          return created;
+        }
+        case "chat_open":
+          return chatViewOf(created!, false, []);
+        default:
+          return null;
       }
-      case "chat_open":
-        return { session: created!, running: false, turns: [] } satisfies ChatView;
-      default:
-        return null;
-    }
-  }, { shouldMockEvents: true });
+    },
+    { shouldMockEvents: true },
+  );
   return { calls, answer };
 }
 
-it("waits for the provider list and creates with the model displayed in New chat", async () => {
+it("waits for the target check and creates with the target displayed in New chat", async () => {
   const { calls, answer } = unlisted([{ slug: "lab-large", displayName: "Lab large" }]);
   show();
   await fireEvent.click(await screen.findByRole("button", { name: "New chat" }));
   const dialog = await screen.findByRole("dialog", { name: "New chat" });
   const create = within(dialog).getByRole("button", { name: "Create" });
-  // The providers are still being read: the dialog says so, and Create waits.
-  await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("Reading the providers' models…"));
+  await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("Checking available agents and providers…"));
   expect(create.hasAttribute("disabled")).toBe(true);
   answer();
   await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("lab · lab-large · medium"));
   expect(create.hasAttribute("disabled")).toBe(false);
   await fireEvent.click(create);
-  await waitFor(() => expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({
-    worktree: session.worktree, branch: session.branchKey, selection: { backend: "lab", model: "lab-large", effort: "medium" },
-  }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({
+      worktree: session.worktree,
+      branch: session.branchKey,
+      selection: { engine: "direct", backend: { kind: "custom", name: "lab" }, model: "lab-large", effort: "medium" },
+    }),
+  );
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await waitFor(() => expect(document.activeElement).toBe(composer));
   expect(screen.queryByRole("dialog", { name: "New chat" })).toBeNull();
   expect(screen.getByRole("log", { name: "Conversation" }).textContent?.trim()).toBe("");
 });
 
-it("creates a usable empty Chat after every provider answers with no model", async () => {
+it("creates a usable empty Chat after every agent and provider answers with none ready", async () => {
   const { calls, answer } = unlisted([]);
   show();
   await fireEvent.click(await screen.findByRole("button", { name: "New chat" }));
   const dialog = await screen.findByRole("dialog", { name: "New chat" });
   answer();
-  await waitFor(() => expect(within(dialog).getByRole("status").textContent?.trim()).toBe("No provider lists a model. The session starts without one; connect a provider in Settings to send."));
+  await waitFor(() =>
+    expect(within(dialog).getByRole("status").textContent?.trim()).toBe(
+      "No agent or provider is ready. The session starts without one; set up a Chat agent or provider in Settings to send.",
+    ),
+  );
   const create = within(dialog).getByRole("button", { name: "Create" });
   expect(create.hasAttribute("disabled")).toBe(false);
   await fireEvent.click(create);
   await screen.findByRole("button", { name: "Choose a model" });
-  expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({ worktree: session.worktree, branch: session.branchKey, selection: null });
+  expect(calls.find((call) => call.cmd === "chat_create")?.args).toEqual({
+    worktree: session.worktree,
+    branch: session.branchKey,
+    selection: null,
+  });
   expect(screen.queryByRole("dialog", { name: "New chat" })).toBeNull();
   expect(screen.getByRole("log", { name: "Conversation" }).textContent?.trim()).toBe("");
   expect(screen.getByRole("tab", { name: "Graph" }).hasAttribute("disabled")).toBe(false);
 });
 
-it("keeps the typed draft and enables the first Send only after a model is picked", async () => {
+it("keeps the typed draft and enables the first Send only after a target is picked", async () => {
   const { calls, state } = backend();
-  state.session = { ...session, model: null };
+  state.session = { ...session, target: null };
   show();
   await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
   const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
@@ -348,17 +512,23 @@ it("keeps the typed draft and enables the first Send only after a model is picke
   expect(composer.value).toBe("My first draft");
   expect(calls.some(({ cmd }) => cmd === "chat_send")).toBe(false);
   await fireEvent.click(screen.getByRole("button", { name: "Choose a model" }));
-  const model = await screen.findByRole("menuitemradio", { name: "Sonnet 5.5" });
+  const model = await screen.findByRole("menuitemradio", { name: "GPT-5 Mini" });
   expect(screen.queryAllByRole("menuitemradio", { checked: true })).toHaveLength(0);
   await fireEvent.click(model);
   await waitFor(() => expect(send.disabled).toBe(false));
   expect(screen.queryByText("Choose a model to send")).toBeNull();
-  state.send = () => {
-    expect(state.session.model?.model).toBe("claude-sonnet-5-5");
-    return Promise.resolve();
+  state.send = async () => {
+    expect(state.session.target).toMatchObject({ engine: "direct", model: "gpt-5-mini" });
+    return { kind: "accepted" };
   };
   await fireEvent.click(send);
-  await waitFor(() => expect(calls.find(({ cmd }) => cmd === "chat_send")?.args).toEqual({ id: session.id, text: "My first draft", selection: null }));
+  await waitFor(() =>
+    expect(calls.find(({ cmd }) => cmd === "chat_send")?.args).toEqual({
+      id: session.id,
+      text: "My first draft",
+      selection: null,
+    }),
+  );
 });
 
 it("shows the library's no-model refusal if a Send slips past the displayed state", async () => {
@@ -431,7 +601,7 @@ it("says why a session whose branch cannot be worked on now sends nothing, its c
   mockIPC((cmd) => {
     calls.push(cmd);
     if (cmd === "chat_list") return [gone];
-    if (cmd === "chat_open") return { session: gone, running: false, turns: [] } satisfies ChatView;
+    if (cmd === "chat_open") return chatViewOf(gone, false, []);
     return null;
   }, { shouldMockEvents: true });
   show();
@@ -476,8 +646,22 @@ it("delegates search to the library, clears it with Esc, and acknowledges an uns
 });
 
 const tool = (overrides: Partial<Extract<ChatBlock, { kind: "tool" }>> = {}): ChatBlock => ({
-  kind: "tool", name: "read", arguments: '{"path":"one.ts"}', summary: "read one.ts",
-  output: "ok", failed: false, toolKind: "read", exitCode: null, omittedLines: 0, outputTruncated: false, ...overrides,
+  kind: "tool",
+  callId: null,
+  title: null,
+  name: "read",
+  arguments: '{"path":"one.ts"}',
+  summary: "read one.ts",
+  output: "ok",
+  failed: false,
+  toolKind: "read",
+  status: "completed",
+  exitCode: null,
+  omittedLines: 0,
+  outputTruncated: false,
+  locations: [],
+  diff: null,
+  ...overrides,
 });
 
 it("folds consecutive routine successes, leaves pending and failed tools and Runs visible, and opens kept details", async () => {
@@ -486,7 +670,7 @@ it("folds consecutive routine successes, leaves pending and failed tools and Run
   state.turns = [{ user: "Go", state: { kind: "running" }, blocks: [
     tool(), tool({ summary: "read two.ts" }),
     tool({ name: "run_command", toolKind: "command", summary: "ran cargo test", exitCode: 0, output: "first\n…\nlast", omittedLines: 38, outputTruncated: true }),
-    tool({ summary: "read now.ts", output: null, failed: null }),
+    tool({ summary: "read now.ts", output: null, failed: null, status: "running" }),
     { kind: "run", card: { id: "run-9", state: "green", failed: [], waiting: [] } },
     tool({ name: "run_command", toolKind: "command", summary: "ran cargo fmt", exitCode: 1, output: "No such file", failed: true }),
   ] }];
@@ -706,7 +890,11 @@ it("folds and unfolds a project from its folder row, and names nothing of the se
 
 it("shows a message sent from Graph and its reply in a card above the composer, gone once Conversation is shown", async () => {
   const { state } = backend();
-  state.session = { ...session, view: "graph", model: { backend: "claude-agent", model: "claude-opus-5-5", effort: "high" } };
+  state.session = {
+    ...session,
+    view: "graph",
+    target: { engine: "direct", backend: { kind: "builtin", provider: "codex" }, model: "gpt-5-codex", effort: "high" },
+  };
   state.turns = [{ user: "Earlier work", blocks: [{ kind: "text", text: "Done before." }], state: { kind: "completed" } }];
   show();
   await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
@@ -829,4 +1017,116 @@ it("starts New chat from a project's row on that project's branch", async () => 
   const dialog = await screen.findByRole("dialog", { name: "New chat" });
   await waitFor(() => expect(within(dialog).getByRole<HTMLSelectElement>("combobox", { name: "Branch" }).value).toBe(session.worktree));
   expect(calls.some(({ cmd }) => cmd === "chat_branches")).toBe(true);
+});
+
+it("asks for Workspace Trust on trustRequired and retries send automatically after confirmation", async () => {
+  const { calls, state } = backend();
+  state.session = {
+    ...session,
+    target: { engine: "acp", agent: "antigravity", config: [] },
+  };
+  let trusted = false;
+  state.send = async () => {
+    if (!trusted) {
+      return {
+        kind: "trustRequired",
+        requirement: {
+          agentId: "antigravity",
+          agentName: "Antigravity",
+          scope: { kind: "gitRepo", commonDir: "/work/app/.git" },
+          scopeLabel: "/work/app/.git",
+          fingerprint: { resolvedExecutable: "/usr/bin/agy", executableSha256: "deadbeef1234", argsHash: "abcd" },
+          disclosure: "Trusting this Git repository applies to all worktrees sharing this .git directory.",
+          reason: "Antigravity has not been trusted for this repository yet.",
+          coversAllWorktrees: true,
+        },
+      };
+    }
+    state.running = true;
+    state.turns = [{ user: "Run ACP", blocks: [], state: { kind: "running" } }];
+    return { kind: "accepted" };
+  };
+  show();
+  await fireEvent.click(await screen.findByRole("button", { name: /Fix checkout rounding/ }));
+  const composer = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
+  await fireEvent.input(composer, { target: { value: "Run ACP" } });
+  await fireEvent.keyDown(composer, { key: "Enter" });
+  const dialog = await screen.findByRole("dialog", { name: "Trust workspace" });
+  expect(within(dialog).getByText(/deadbeef1234/)).toBeTruthy();
+  expect(composer.value).toBe("Run ACP");
+  trusted = true;
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Trust and continue" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trust workspace" })).toBeNull());
+  expect(calls.some(({ cmd, args }) => cmd === "chat_trust_grant" && args.agent === "antigravity")).toBe(true);
+  expect(calls.filter(({ cmd }) => cmd === "chat_send")).toHaveLength(2);
+});
+
+it("renders rich ACP blocks, interactive permission cards with always-persistence disclosure, and legacy migration banner", async () => {
+  const { calls, state } = backend();
+  state.running = true;
+  state.session = {
+    ...session,
+    running: true,
+    waitingPermission: true,
+    target: { engine: "acp", agent: "antigravity", config: [] },
+  };
+  state.turns = [
+    {
+      user: "Check and patch",
+      state: { kind: "waitingPermission" },
+      blocks: [
+        { kind: "handoff", from: "Direct (codex)", to: "ACP (antigravity)", summary: "Prior context" },
+        { kind: "thought", text: "Checking tests first." },
+        {
+          kind: "plan",
+          steps: [
+            { content: "Read failing test", status: "completed", priority: "high" },
+            { content: "Run cargo test", status: "in_progress", priority: null },
+          ],
+        },
+        {
+          kind: "permission",
+          permissionId: "perm-1",
+          title: "Run cargo test",
+          toolKind: "command",
+          summary: "cargo test -p app",
+          detail: null,
+          status: "pending",
+          selectedOptionId: null,
+          options: [
+            { optionId: "once", name: "Allow once", kind: "allow_once", persistsInAgentSettings: false },
+            { optionId: "always", name: "Always allow", kind: "allow_always", persistsInAgentSettings: true },
+          ],
+        },
+        { kind: "notice", text: "Saved model fell back to default." },
+      ],
+    },
+  ];
+  show();
+  const row = await screen.findByRole("button", { name: /Fix checkout rounding.*waiting/ });
+  await fireEvent.click(row);
+  const log = within(await screen.findByRole("log", { name: "Conversation" }));
+  expect(log.getByText("Thought")).toBeTruthy();
+  expect(log.getByText("Read failing test")).toBeTruthy();
+  expect(log.getByText("Saved model fell back to default.")).toBeTruthy();
+  expect(log.getByText("May be saved in agent settings")).toBeTruthy();
+  await fireEvent.click(log.getByRole("button", { name: /Allow once/ }));
+  expect(calls.find(({ cmd }) => cmd === "chat_permission_respond")?.args).toEqual({
+    id: session.id,
+    permissionId: "perm-1",
+    optionId: "once",
+  });
+
+  // Legacy claude-agent session shows migration notice and disables Send until switched.
+  state.running = false;
+  state.session = {
+    ...session,
+    running: false,
+    waitingPermission: false,
+    legacyMigrationNotice: true,
+    target: { engine: "legacyClaudeAgent", model: "sonnet", effort: null },
+  };
+  await emit("session-changed", { session: session.id });
+  await screen.findByText(/Legacy Claude Agent Chat has been retired/);
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send (Enter)" }).disabled).toBe(true);
 });

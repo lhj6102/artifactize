@@ -25,17 +25,19 @@
   </nav>
 </header>
 <main data-screen="chat">
-<h1>Chat: a session with Artifactize's own agent</h1>
+<h1>Chat: a session with an ACP agent or direct provider</h1>
 <p class="lead">
   Chat mode, laid out as agent chat applications are: its Pane holds New chat with the search
   behind its magnifier, then each project as a folder row with its sessions under it, one line
   each, a session's branch dimmed after its title and its state where its age is; its Main area
   starts with the stage header, controls only and the same row as Verify's, and holds the chosen
   session's conversation in a column of the reading measure, kept where it is read, and the
-  composer under it. The agent's text reads as Markdown, what it did as quiet
-  one-line rows, routine ones folded into a summary, each with its details a click away, and each
-  verify it starts as a Run reference that opens the Run in Verify. The model selector sits at the composer's bottom left, its menu opening upward;
-  Send, or Stop while a turn runs, at its bottom right.
+  composer under it. The agent's text reads as Markdown, thoughts fold quietly, tools show as quiet
+  one-line rows (with inline diffs, locations and output details a click away), plans list steps,
+  permission cards ask before ACP agent approval actions, notices mark handoffs and config changes,
+  and each verify it starts is a Run reference that opens the Run in Verify. The target selector sits
+  at the composer's bottom left, its menu opening upward; Send, or Stop while a turn runs, at its
+  bottom right.
 </p>
 
 <figure class="figure">
@@ -388,6 +390,8 @@
   <dd>Move is the session's last stage tool in either view, the move icon alone after a 1px <code>--line-group</code> separator, <i>Move to another checkout</i> its accessible name and tooltip, <code>--ink-bright</code> while its dialog is open and drawn unavailable in <code>--ink-3</code> while a turn runs, its tooltip then <i>Stop the running turn to move the chat</i> (J-CHAT-MOVE). It opens <b>Move chat</b>, a dialog as the overlays draw one (D-OVL-1): one field, <b>Checkout</b>, a choice on <code>--surface-input</code> inside <code>--line-input</code> of the live checkouts as New chat lists them, the session's own first; under it one <code>--ink-2</code> line at <code>--text-small</code>, <i>The conversation stays; from its next turn the agent works in the chosen checkout, and Graph shows its Current.</i>; then Cancel and the primary Move, disabled on the session's own checkout. A move the library refuses says why in <code>--red</code> at <code>--text-small</code> under the field, the dialog staying open. <span class="avoid">the checkout as free text; Move in the Pane's rows or as a context menu alone; a move while a turn runs; the conversation cleared or a second session made by a move.</span></dd>
   <dt id="D-CHAT-9">D-CHAT-9</dt>
   <dd>A session whose branch cannot be worked on now keeps its place in the Pane and its conversation; above its composer, one line in <code>--ink-2</code> at <code>--text-small</code> says why, as the library says it, and the composer reads as off: its field and Send disabled, the whole box at reduced opacity. <span class="avoid">the session hidden or removed from the Pane; a red banner; a composer that takes text it cannot send.</span></dd>
+  <dt id="D-CHAT-13">D-CHAT-13</dt>
+  <dd>Rich ACP conversation blocks share the conversation column's quiet anatomy (J-CHAT-SEND). A <b>Thought</b> block is one quiet folded row at <code>--text-small</code> in <code>--ink-2</code> led by the fold icon; a click unfolds the thought text indented 22px in <code>--ink-2</code>. A <b>Tool</b> block's unfolded details include locations in <code>--mono</code> and, when reported, an inline diff on <code>--surface-input</code> with <code>--radius-control</code> in <code>--mono</code> at <code>--text-small</code>; a cancelled tool adds <i>cancelled</i> in <code>--ink-2</code> and is never folded into a summary. A <b>Plan</b> block is a compact bordered list on <code>--surface-panel</code> inside <code>--line-group</code> with <code>--radius-control</code>, one row per step with its status and text. A <b>Permission</b> card stands on <code>--surface-panel</code> inside a 1px <code>--line-panel</code> border with <code>--radius-control</code>: tool title in <code>--ink</code>, kind and summary in <code>--ink-2</code>, optional size-capped detail in <code>--mono</code>, and one row of 24px option buttons (an always option explicitly labelled <i>May be saved in agent settings</i>); while waiting, the session's Pane row shows <i>waiting</i> in <code>--yellow</code>; once decided or cancelled, the buttons go and one quiet line records the outcome read-only. A <b>Notice</b> or <b>Handoff</b> block is one quiet <code>--ink-2</code> line at <code>--text-small</code>; switching engine or agent, or opening a retired legacy <code>claude-agent</code> session, shows a quiet banner above the composer inside the column. The target menu (D-CHAT-7) groups ready <b>Chat Agents</b> (with their live model, mode — noting agent-native approval modes — and thought level options) above direct <b>Providers</b>, and ends with <b>Manage chat agents</b> and <b>Connect provider</b>. <span class="avoid">unfolded thoughts by default; raw JSON payloads in tool or permission cards; an always permission option without persistence disclosure; a silent mode downgrade.</span></dd>
 </dl>
 </main>
 </div>

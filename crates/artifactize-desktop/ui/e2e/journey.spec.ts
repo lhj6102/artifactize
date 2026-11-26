@@ -55,8 +55,8 @@ describe(item.title, () => {
         const carried = await item.run(app, input);
         await leave();
         if (item.restarted) {
-          // Quit as a person does, by closing the window, before the app is started again.
-          await app.exitsBy(() => app.closeWindow());
+          // Quit as a person does, by closing the window, unless the scenario already exited the app.
+          if (browser.sessionId) await app.exitsBy(() => app.closeWindow());
           if (interruption) throw interruption;
           writeJson(nativePath(input.root, FIRST), { carried: carried ?? null });
           return;

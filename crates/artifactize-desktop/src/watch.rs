@@ -70,29 +70,46 @@ pub struct SessionChanged {
     pub session: crate::ids::SessionKey,
 }
 
-/// Only the last opened conversation needs a live transcript fallback in this window.
+type StreamCursor = (
+    artifactize_core::types::SessionId,
+    Option<u64>,
+    Option<artifactize_core::chat::ChatWatermark>,
+);
+
+/// Only the last opened conversation needs a live transcript + SQLite watermark fallback in this window.
 #[derive(Default)]
-pub(crate) struct ChatStream(Mutex<Option<(artifactize_core::types::SessionId, Option<u64>)>>);
+pub(crate) struct ChatStream(Mutex<Option<StreamCursor>>);
 
 impl ChatStream {
-    pub(crate) fn opened(
+    pub(crate) async fn opened(
         &self,
         chat: &artifactize_core::chat::Chat,
         id: &artifactize_core::types::SessionId,
     ) {
+        let size = chat.transcript_size(id);
+        let mark = chat.watermark(id).await.ok().flatten();
         let mut shown = self.0.lock().expect("Chat stream lock");
-        *shown = Some((id.clone(), chat.transcript_size(id)));
+        *shown = Some((id.clone(), size, mark));
     }
 
-    fn changed(&self, chat: &artifactize_core::chat::Chat) -> Option<crate::ids::SessionKey> {
-        let mut shown = self.0.lock().expect("Chat stream lock");
-        let (id, size) = shown.as_mut()?;
-        let current = chat.transcript_size(id);
-        if current == *size {
+    async fn changed(&self, chat: &artifactize_core::chat::Chat) -> Option<crate::ids::SessionKey> {
+        let (id, prev_size, prev_mark) = {
+            let shown = self.0.lock().expect("Chat stream lock");
+            shown.clone()?
+        };
+        let current_size = chat.transcript_size(&id);
+        let current_mark = chat.watermark(&id).await.ok().flatten();
+        if current_size == prev_size && current_mark == prev_mark {
             return None;
         }
-        *size = current;
-        Some(id.clone().into())
+        let mut shown = self.0.lock().expect("Chat stream lock");
+        if let Some((current_id, size, mark)) = shown.as_mut()
+            && *current_id == id
+        {
+            *size = current_size;
+            *mark = current_mark;
+        }
+        Some(id.into())
     }
 }
 
@@ -215,7 +232,10 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                 Change::DraftInvalidated(id) => {
                     crate::human::draft::HumanDraftChanged { id: id.into() }.emit(&hub)
                 }
-                Change::SessionInvalidated(id) => SessionChanged { session: id.into() }.emit(&hub),
+                Change::SessionInvalidated(id) => {
+                    state.chat.evict_warm_if_stale(&id).await;
+                    SessionChanged { session: id.into() }.emit(&hub)
+                }
             };
             // The app is closing; nobody listens any more.
             if sent.is_err() {
@@ -230,7 +250,7 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
             ticks.tick().await;
             // A failed read is the next load's notice; the rescan tries again next tick.
             let app_state = app.state::<App>();
-            if let Some(session) = app_state.chat_stream.changed(&app_state.chat)
+            if let Some(session) = app_state.chat_stream.changed(&app_state.chat).await
                 && (SessionChanged { session }).emit(&app).is_err()
             {
                 return;

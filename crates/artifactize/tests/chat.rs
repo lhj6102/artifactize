@@ -18,8 +18,10 @@ use std::{
 use artifactize_core::{
     changes::Subscription,
     chat::{
-        Block, Chat, Model, MoveError, Outcome, SendError, SessionView, ToolKind, TurnState, View,
+        Block, Chat, ChatTarget, MoveError, Outcome, SendError, SessionView, ToolKind, TurnState,
+        View,
     },
+    config::{DirectBackend, HttpProvider},
     runs, store,
     types::{RunId, SessionId},
 };
@@ -223,15 +225,20 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         String::from_utf8_lossy(&added.stderr)
     );
 
-    let selection = Model {
-        backend: "scripted".parse().unwrap(),
+    let selection = ChatTarget::Direct {
+        backend: DirectBackend::Custom {
+            name: "scripted".parse().unwrap(),
+        },
         model: "scripted-model".parse().unwrap(),
         effort: None,
     };
     let chat = Chat::new(state.clone(), cli.clone());
-    let wrong = Model {
+    let wrong = ChatTarget::Direct {
+        backend: DirectBackend::Custom {
+            name: "scripted".parse().unwrap(),
+        },
         model: "not-listed".parse().unwrap(),
-        ..selection.clone()
+        effort: None,
     };
     assert!(
         chat.create(&worktree, Some(wrong))
@@ -364,19 +371,23 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         run_view.run.origin,
         Some(runs::Origin::Chat {
             session_id: session.id.clone(),
-            title: "Edit and verify the notes".into()
+            title: "Edit and verify the notes".into(),
+            send: Some(1),
         })
     );
-    let next_model = Model {
+    let next_model = ChatTarget::Direct {
+        backend: DirectBackend::Custom {
+            name: "scripted".parse().unwrap(),
+        },
         model: "second-model".parse().unwrap(),
-        ..selection.clone()
+        effort: None,
     };
     let changed_while_streaming = reader
-        .set_model(&session.id, next_model.clone())
+        .set_target(&session.id, next_model.clone())
         .await
         .unwrap();
     assert!(changed_while_streaming.running);
-    assert_eq!(changed_while_streaming.model.as_ref(), Some(&next_model));
+    assert_eq!(changed_while_streaming.target.as_ref(), Some(&next_model));
     final_answer.open();
     let ended = observe(&chat, &session.id, &mut changes, |view| !view.running).await;
     assert!(matches!(ended.turns[0].state, TurnState::Completed));
@@ -398,7 +409,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     assert_eq!(entries[0].id, session.id);
     assert!(!entries[0].running);
     assert_eq!(
-        restarted.default_model(&worktree).await.unwrap(),
+        restarted.default_target(&worktree).await.unwrap(),
         Some(next_model)
     );
     assert_eq!(restored.session.title, "Edit and verify the notes");
@@ -436,7 +447,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     assert_eq!(moved.title, stopped.session.title);
     assert_eq!(moved.created_at, stopped.session.created_at);
     assert!(moved.updated_at > stopped.session.updated_at);
-    assert_eq!(moved.model, stopped.session.model);
+    assert_eq!(moved.target, stopped.session.target);
     assert_eq!(moved.view, SessionView::Graph);
     assert_eq!(moved.unavailable, None);
     assert!(
@@ -493,9 +504,12 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
             .origin,
         run_view.run.origin
     );
-    let changed = Model {
+    let changed = ChatTarget::Direct {
+        backend: DirectBackend::Custom {
+            name: "scripted".parse().unwrap(),
+        },
         model: "second-model".parse().unwrap(),
-        ..selection
+        effort: None,
     };
     restarted
         .send(&session.id, "Continue".into(), Some(changed.clone()))
@@ -505,7 +519,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         !view.running && view.turns.len() == 3
     })
     .await;
-    assert_eq!(continued.session.model.as_ref(), Some(&changed));
+    assert_eq!(continued.session.target.as_ref(), Some(&changed));
     assert!(matches!(continued.turns[2].state, TurnState::Completed));
     assert!(
         continued.turns[2]
@@ -528,7 +542,14 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     assert_ne!(moved_run, run);
     let new_run = store::read_run(&state, moved_run.as_str()).await.unwrap();
     assert_eq!(new_run.run.repo_path, destination);
-    assert_eq!(new_run.run.origin, run_view.run.origin);
+    assert_eq!(
+        new_run.run.origin,
+        Some(runs::Origin::Chat {
+            session_id: session.id.clone(),
+            title: "Edit and verify the notes".into(),
+            send: Some(3),
+        })
+    );
     restarted
         .send(&session.id, "One more turn".into(), None)
         .await
@@ -599,16 +620,19 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
         .unwrap();
     assert_eq!(back.branch(), old_branch);
     support::os::git(&worktree, &["checkout", "-q", "-b", "second"]);
-    let second = Model {
+    let second = ChatTarget::Direct {
+        backend: DirectBackend::Custom {
+            name: "scripted".parse().unwrap(),
+        },
         model: "scripted-model".parse().unwrap(),
-        ..changed.clone()
+        effort: None,
     };
     restarted
         .create(&worktree, Some(second.clone()))
         .await
         .unwrap();
     assert_eq!(
-        restarted.default_model(&worktree).await.unwrap(),
+        restarted.default_target(&worktree).await.unwrap(),
         Some(second)
     );
     let previous = restarted.open(&session.id).await.unwrap();
@@ -632,7 +656,7 @@ async fn custom_provider_streams_reads_edits_and_verifies_then_stop_keeps_the_se
     assert_eq!(restarted.open(&session.id).await.unwrap().turns.len(), 4);
     support::os::git(&worktree, &["checkout", "-q", "first"]);
     assert_eq!(
-        restarted.default_model(&worktree).await.unwrap(),
+        restarted.default_target(&worktree).await.unwrap(),
         Some(changed)
     );
     assert!(
@@ -693,7 +717,7 @@ async fn a_model_free_chat_can_open_current_and_send_after_selecting_a_model() {
     let cli = support::os::cli();
     let chat = Chat::new(state.clone(), cli.clone());
     let session = chat.create(&repo, None).await.unwrap();
-    assert_eq!(session.model, None);
+    assert_eq!(session.target, None);
     chat.set_view(&session.id, SessionView::Graph)
         .await
         .unwrap();
@@ -708,7 +732,7 @@ async fn a_model_free_chat_can_open_current_and_send_after_selecting_a_model() {
     );
     let restarted = Chat::new(state.clone(), cli.clone());
     let empty = restarted.open(&session.id).await.unwrap();
-    assert_eq!(empty.session.model, None);
+    assert_eq!(empty.session.target, None);
     assert_eq!(empty.session.view, SessionView::Graph);
     assert!(empty.turns.is_empty());
 
@@ -740,23 +764,25 @@ async fn a_model_free_chat_can_open_current_and_send_after_selecting_a_model() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let model = Model {
-        backend: "scripted".parse().unwrap(),
+    let model = ChatTarget::Direct {
+        backend: DirectBackend::Custom {
+            name: "scripted".parse().unwrap(),
+        },
         model: "chosen-model".parse().unwrap(),
         effort: None,
     };
     assert_eq!(
         restarted
-            .set_model(&session.id, model.clone())
+            .set_target(&session.id, model.clone())
             .await
             .unwrap()
-            .model,
+            .target,
         Some(model.clone())
     );
     let mut changes = Subscription::new(&state).await;
     let reopened = Chat::new(state.clone(), cli);
     assert_eq!(
-        reopened.open(&session.id).await.unwrap().session.model,
+        reopened.open(&session.id).await.unwrap().session.target,
         Some(model.clone())
     );
     reopened
@@ -777,7 +803,7 @@ async fn a_model_free_chat_can_open_current_and_send_after_selecting_a_model() {
         .unwrap();
     assert_eq!(turn.body["model"], "chosen-model");
     assert_eq!(
-        reopened.default_model(&repo).await.unwrap(),
+        reopened.default_target(&repo).await.unwrap(),
         Some(model.clone())
     );
 
@@ -794,8 +820,8 @@ async fn a_model_free_chat_can_open_current_and_send_after_selecting_a_model() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_ne!(reopened.default_model(&repo).await.unwrap(), Some(model));
-    assert_eq!(reopened.create(&repo, None).await.unwrap().model, None);
+    assert_ne!(reopened.default_target(&repo).await.unwrap(), Some(model));
+    assert_eq!(reopened.create(&repo, None).await.unwrap().target, None);
     changes.close().await.unwrap();
 }
 
@@ -864,8 +890,10 @@ async fn chat_completions_anthropic_and_gemini_get_the_worktree_and_verify_tools
         let session = chat
             .create(
                 &repo,
-                Some(Model {
-                    backend: "scripted".parse().unwrap(),
+                Some(ChatTarget::Direct {
+                    backend: DirectBackend::Custom {
+                        name: "scripted".parse().unwrap(),
+                    },
                     model: model.parse().unwrap(),
                     effort: Some("high".into()),
                 }),
@@ -911,21 +939,26 @@ async fn codex_chat_fixture() {
     let root = owned_run::Root::from(support::os::tempdir());
     let (repo, state) = worktree(&root);
     let chat = Chat::new(state.clone(), support::os::cli());
-    let model = Model {
-        backend: "codex".parse().unwrap(),
+    let model = ChatTarget::Direct {
+        backend: DirectBackend::Builtin {
+            provider: HttpProvider::Codex,
+        },
         model: "fake-codex".parse().unwrap(),
         effort: Some("medium".into()),
     };
     assert_eq!(
-        chat.default_model(&repo).await.unwrap(),
+        chat.default_target(&repo).await.unwrap(),
         Some(model.clone())
     );
     let session = chat.create(&repo, Some(model.clone())).await.unwrap();
-    assert_eq!(session.model, Some(model.clone()));
+    assert_eq!(session.target, Some(model.clone()));
     let mut changes = Subscription::new(&state).await;
-    let rejected = Model {
+    let rejected = ChatTarget::Direct {
+        backend: DirectBackend::Builtin {
+            provider: HttpProvider::Codex,
+        },
+        model: "fake-codex".parse().unwrap(),
         effort: Some("bogus".into()),
-        ..model.clone()
     };
     assert!(
         chat.send(&session.id, "Reject this effort".into(), Some(rejected))
@@ -934,15 +967,18 @@ async fn codex_chat_fixture() {
             .to_string()
             .contains("does not offer effort")
     );
-    let selection = Model {
+    let selection = ChatTarget::Direct {
+        backend: DirectBackend::Builtin {
+            provider: HttpProvider::Codex,
+        },
+        model: "fake-codex".parse().unwrap(),
         effort: Some("high".into()),
-        ..model
     };
     let saved = chat
-        .set_model(&session.id, selection.clone())
+        .set_target(&session.id, selection.clone())
         .await
         .unwrap();
-    assert_eq!(saved.model, Some(selection.clone()));
+    assert_eq!(saved.target, Some(selection.clone()));
     assert!(chat.open(&session.id).await.unwrap().turns.is_empty());
     assert_eq!(
         Chat::new(state.clone(), support::os::cli())
@@ -950,7 +986,7 @@ async fn codex_chat_fixture() {
             .await
             .unwrap()
             .session
-            .model,
+            .target,
         Some(selection.clone())
     );
     chat.send(&session.id, "What can you do?".into(), None)
@@ -964,7 +1000,7 @@ async fn codex_chat_fixture() {
     );
     assert_eq!(
         Chat::new(state, support::os::cli())
-            .default_model(&repo)
+            .default_target(&repo)
             .await
             .unwrap(),
         Some(selection)
@@ -1074,31 +1110,18 @@ async fn claude_chat_fixture() {
     assert_eq!(listed.models[0].efforts, ["high", "low"]);
     assert_eq!(listed.models[0].default_effort.as_deref(), Some("high"));
     assert!(listed.models[1].efforts.is_empty());
+    // Eval model listing for `claude-agent` stays intact, while Chat execution is retired.
     let chat = Chat::new(state.clone(), support::os::cli());
-    let mut selection = Model {
-        backend,
+    let retired = ChatTarget::LegacyClaudeAgent {
         model: "claude-fixture".parse().unwrap(),
-        effort: Some("max".into()),
+        effort: Some("low".into()),
     };
     assert!(
-        chat.create(&repo, Some(selection.clone()))
+        chat.create(&repo, Some(retired))
             .await
             .unwrap_err()
-            .to_string()
-            .contains("does not offer effort")
+            .contains("retired")
     );
-    selection.effort = Some("low".into());
-    let session = chat.create(&repo, Some(selection)).await.unwrap();
-    owned_run::subscribed(&state, async |changes| {
-        chat.send(&session.id, "Ready?".into(), None).await.unwrap();
-        let view = observe(&chat, &session.id, changes, |view| !view.running).await;
-        assert!(
-            matches!(&view.turns[0].state, TurnState::Completed),
-            "{:?}",
-            view.turns[0].state
-        );
-    })
-    .await;
     chat.close().await;
 }
 
@@ -1147,14 +1170,12 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
             if request.method == "GET" {
                 return openai::models(&["restart-model"]);
             }
-            let text = if request.body.to_string().contains("Close a running turn") {
+            let body = request.body.to_string();
+            let text = if body.contains("Close a running turn") {
                 closing_request.notify_one();
                 closing.wait();
                 "This did not stop."
-            } else if request
-                .body
-                .to_string()
-                .contains("Resume the interrupted session")
+            } else if body.contains("Resume the interrupted session") && !body.contains("Resumed.")
             {
                 "Resumed."
             } else {
@@ -1190,8 +1211,10 @@ async fn chat_can_resume_after_its_turn_owner_process_exits() {
     let session = chat
         .create(
             &repo,
-            Some(Model {
-                backend: "scripted".parse().unwrap(),
+            Some(ChatTarget::Direct {
+                backend: DirectBackend::Custom {
+                    name: "scripted".parse().unwrap(),
+                },
                 model: "restart-model".parse().unwrap(),
                 effort: None,
             }),

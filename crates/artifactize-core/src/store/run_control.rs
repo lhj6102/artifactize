@@ -65,18 +65,29 @@ impl Receipts {
         &self,
         repo: &std::path::Path,
         key: &RequestKey,
+        expected_args_hash: Option<&str>,
     ) -> Result<Option<RunId>, String> {
         let repo = crate::platform::path_text(repo);
         let key = key.clone();
+        let expected_args_hash = expected_args_hash.map(str::to_owned);
         self.connection
             .call(move |db| -> Result<Option<RunId>, Error> {
-                Ok(db
+                let row: Option<(RunId, Option<String>)> = db
                     .query_row(
-                        "SELECT id FROM runs WHERE repo=? AND request_key=?",
+                        "SELECT id, json_extract(data,'$.requestArgsHash') FROM runs WHERE repo=? AND request_key=?",
                         params![repo, key],
-                        |row| row.get(0),
+                        |row| Ok((row.get(0)?, row.get(1)?)),
                     )
-                    .optional()?)
+                    .optional()?;
+                if let Some((id, saved_hash)) = row {
+                    if key.is_internal_chat() && saved_hash != expected_args_hash {
+                        return Err(Error::Invalid(
+                            "Conflicting verify_start arguments for the same request_key.".into(),
+                        ));
+                    }
+                    return Ok(Some(id));
+                }
+                Ok(None)
             })
             .await
             .map_err(|error| error.to_string())
@@ -89,7 +100,19 @@ impl Receipts {
             let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let repo = crate::platform::path_text(&run.repo_path);
             if let Some(key) = &run.request_key
-                && let Some(id) = transaction.query_row("SELECT id FROM runs WHERE repo=? AND request_key=?", params![repo,key], |row| row.get(0)).optional()? {
+                && let Some((id, saved_hash)) = transaction
+                    .query_row(
+                        "SELECT id, json_extract(data,'$.requestArgsHash') FROM runs WHERE repo=? AND request_key=?",
+                        params![repo, key],
+                        |row| Ok((row.get::<_, RunId>(0)?, row.get::<_, Option<String>>(1)?)),
+                    )
+                    .optional()?
+            {
+                if key.is_internal_chat() && saved_hash != run.request_args_hash {
+                    return Err(Error::Invalid(
+                        "Conflicting verify_start arguments for the same request_key.".into(),
+                    ));
+                }
                 return Ok(id);
             }
             super::run_record::insert(&transaction, &run)?;

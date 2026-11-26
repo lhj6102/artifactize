@@ -20,7 +20,8 @@ export const scenarios: Scenario[] = [
       const newer = await verifyWorktree(fixture, "scope-one");
       orderRuns(fixture, [worktree, newer]);
       await addRepository(fixture, "other");
-      return { fixture, data: { run, worktree, newer } };
+      // Started without CLI arguments (no --repo): J-LAUNCH opens Verify with nothing chosen.
+      return { fixture, args: [], data: { run, worktree, newer } };
     },
     run: async (app, { fixture, data: { run, worktree, newer } }) => {
       await app.pane.branch("other  master");
@@ -71,19 +72,28 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "palette-help",
-    title: "the brand button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
-    journeys: ["J-PALETTE", "J-HELP"],
+    title: "started with --repo it selects that branch in Verify; the brand button opens the palette listing what can run now with its keys, typing filters it and a click runs a command; its Keyboard shortcuts opens Help with the keys and, on a graph, the marks",
+    journeys: ["J-LAUNCH", "J-PALETTE", "J-HELP"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
-      return { fixture, args: ["--repo", fixture.repo], data: null };
+      return { fixture, args: ["--repo", fixture.repo], data: { run: request(fixture).runId } };
     },
-    run: async (app) => {
+    run: async (app, { data: { run } }) => {
+      await app.graph.titled(run);
+      const selected = await app.pane.branch("repo  master", (branch) => branch.expanded, "--repo selects that branch in Verify");
+      assert.equal(selected.entries[0]?.id, run);
+      assert.equal(selected.entries[0]?.shown, true);
       await app.graph.node("a:release");
       const palette = await app.openPalette();
       const commands = palette.commands.map((command) => [command.label, command.keys]);
-      for (const expected of [["Keyboard shortcuts", "?"], ["Show Settings", shortcutLabel("Ctrl+,")], ["Show or hide the Pane", shortcutLabel("Ctrl+B")],
-        ["Search the branches", "/"], ["Open a request by ID", shortcutLabel("Ctrl+O")], ["Refresh", shortcutLabel("Ctrl+R")], ["Quit", "q"], ["Find", shortcutLabel("Ctrl+F")]]) {
-        assert.ok(commands.some(([label, keys]) => label === expected[0] && keys.includes(expected[1])), `the palette lists ${expected[0]} with ${expected[1]}: ${JSON.stringify(commands)}`);
+      for (const expected of [
+        ["Keyboard shortcuts", "?"], ["Show Settings", shortcutLabel("Ctrl+,")],
+        ["Show Chat", shortcutLabel("Ctrl+1")], ["Show Verify", shortcutLabel("Ctrl+2")], ["Show Review", shortcutLabel("Ctrl+3")],
+        ["Show or hide the Pane", shortcutLabel("Ctrl+B")], ["New chat", ""], ["Search the branches", "/"],
+        ["Filter the reviews", ""], ["Open a request by ID", shortcutLabel("Ctrl+O")], ["Refresh", shortcutLabel("Ctrl+R")],
+        ["Quit", "q"], ["Find", shortcutLabel("Ctrl+F")],
+      ]) {
+        assert.ok(commands.some(([label, keys]) => label === expected[0] && (expected[1] === "" || keys.includes(expected[1]))), `the palette lists ${expected[0]} with ${expected[1]}: ${JSON.stringify(commands)}`);
       }
       // The app's commands come before the graph's.
       assert.ok(commands.findIndex(([label]) => label === "Quit") < commands.findIndex(([label]) => label === "Find"));

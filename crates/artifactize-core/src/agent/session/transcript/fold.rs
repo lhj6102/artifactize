@@ -257,7 +257,13 @@ impl Transcript {
             Kind::Review(_)
             | Kind::Attempt(_)
             | Kind::RunReference { .. }
-            | Kind::ToolOutcome(_) => {}
+            | Kind::ToolOutcome(_)
+            | Kind::AcpToolCall(_)
+            | Kind::AcpToolUpdate(_)
+            | Kind::AcpPlan(_)
+            | Kind::AcpPermission(_)
+            | Kind::Handoff(_)
+            | Kind::Notice { .. } => {}
             Kind::Send(send) => {
                 self.active = None;
                 self.assistant = None;

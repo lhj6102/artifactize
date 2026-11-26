@@ -4,7 +4,6 @@
   // read back.
   import type { EndpointApi, Provider } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
-  import AntigravityAccount from "./AntigravityAccount.svelte";
   import ClaudeAgentAccount from "./ClaudeAgentAccount.svelte";
   import CodexAccount from "./CodexAccount.svelte";
   import { getSettingsState, type Choice } from "./settings-state.svelte";
@@ -77,8 +76,6 @@
       <CodexAccount />
     {:else if s.choice.kind === "builtin" && s.choice.provider === "claude-agent"}
       <ClaudeAgentAccount />
-    {:else if s.choice.kind === "builtin" && s.choice.provider === "antigravity"}
-      <AntigravityAccount />
     {:else if s.choice.kind === "builtin"}
       {@const provider = s.choice.provider}
       <section aria-labelledby="key-title">

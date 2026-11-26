@@ -204,7 +204,10 @@ async fn schema_ten_reviews_keep_their_receipts_and_gain_drafts() {
     drop(db);
     let alice = "alice".parse().unwrap();
     let receipts = fixture.receipts().await;
-    assert_eq!(store::state_schema(&fixture.state).unwrap(), Some(11));
+    assert_eq!(
+        store::state_schema(&fixture.state).unwrap(),
+        Some(store::STATE_SCHEMA_VERSION)
+    );
     human::claim(&receipts, id, &alice).await.unwrap();
     let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
     db.execute(

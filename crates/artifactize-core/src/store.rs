@@ -42,6 +42,7 @@ pub use catalog::{
     CatalogRun, Signoff, read_catalog, read_catalog_run, read_open_run_ids, run_checkout,
     viewer_checkout,
 };
+pub(crate) use runs::for_chat_session as read_chat_runs;
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
 pub(crate) mod reader;
 mod removed;
@@ -197,9 +198,10 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
 
 /// SQLite `user_version`; schema 9 keeps a Run's definitions in their own row, written once,
 /// and numbers every change of a Run, request or execution row; schema 10 adds the open
-/// WAITING_HUMAN Run and names a Run that ended with only sign-offs left YELLOW. Versions from
-/// schema 6 upgrade additively.
-pub const STATE_SCHEMA_VERSION: u32 = 11;
+/// WAITING_HUMAN Run and names a Run that ended with only sign-offs left YELLOW; schema 11
+/// adds review drafts and Chat tables; schema 12 adds `chat_pending_permissions` for ACP
+/// permission CAS. Versions from schema 6 upgrade additively.
+pub const STATE_SCHEMA_VERSION: u32 = 12;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set {}", state_home_variables())]

@@ -190,3 +190,58 @@ fn count(db: &rusqlite::Connection, runs: &mut [RunSummary]) -> Result<(), Error
     }
     Ok(())
 }
+
+/// Recover admitted Runs originating from a Chat session (filtering by the `repo` index first)
+/// so `chat_open` can restore any `RunCard` whose JSONL append raced or failed.
+pub(crate) async fn for_chat_session(
+    state: &Path,
+    worktree: &Path,
+    session_id: &crate::types::SessionId,
+) -> Result<Vec<(crate::types::RunId, Option<usize>)>, String> {
+    let state = canonical_target(state).map_err(|e| e.to_string())?;
+    let repo = canonical_target(worktree)
+        .map(|p| crate::platform::path_text(&p))
+        .unwrap_or_else(|_| crate::platform::path_text(worktree));
+    check_files(&state)?;
+    if !state
+        .join(DATABASE)
+        .try_exists()
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(Vec::new());
+    }
+    let session_id = session_id.as_str().to_owned();
+    let connection = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let result = connection
+        .call(move |db| -> Result<_, Error> {
+            super::wait_when_busy(db)?;
+            let transaction = db.transaction()?;
+            if !schema_initialized(&transaction)? {
+                return Ok(Vec::new());
+            }
+            let rows = {
+                let mut stmt = transaction.prepare(
+                    "SELECT id, json_extract(data,'$.origin.send') FROM runs \
+                     WHERE repo=?1 AND json_extract(data,'$.origin.kind')='chat' \
+                     AND json_extract(data,'$.origin.sessionId')=?2 \
+                     ORDER BY json_extract(data,'$.createdAt') ASC, rowid ASC",
+                )?;
+                stmt.query_map(params![repo, session_id], |row| {
+                    let id: crate::types::RunId = row.get(0)?;
+                    let send: Option<i64> = row.get(1)?;
+                    Ok((id, send.and_then(|n| usize::try_from(n).ok())))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+            };
+            transaction.commit()?;
+            Ok(rows)
+        })
+        .await
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result).await
+}

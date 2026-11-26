@@ -31,6 +31,17 @@ pub(crate) use security::{
     user_identity,
 };
 
+/// Restrict an installed executable binary to an owner-only protected DACL (Windows grants the
+/// owner generic full access, including execute, via `restrict_file`).
+pub(crate) fn restrict_executable_file(file: &File) -> io::Result<()> {
+    restrict_file(file)
+}
+
+/// Directory holding installed console entrypoints inside a Python virtual environment.
+pub(crate) fn venv_bin_dir(venv: &Path) -> std::path::PathBuf {
+    venv.join("Scripts")
+}
+
 /// The Windows heap returns freed memory by itself.
 pub(crate) fn release_free_memory() {}
 

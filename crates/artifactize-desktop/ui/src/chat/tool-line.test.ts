@@ -2,8 +2,8 @@ import { expect, it } from "vitest";
 import { toolLine, type Tool } from "./tool-line";
 
 const activity = (name: string, summary: string): Tool => ({
-  kind: "tool", toolKind: "other", name, summary, arguments: "{}",
-  failed: null, output: null, exitCode: null, omittedLines: 0, outputTruncated: false,
+  kind: "tool", callId: null, title: null, toolKind: "other", status: "completed", name, summary, arguments: "{}",
+  failed: null, output: null, exitCode: null, omittedLines: 0, outputTruncated: false, locations: [], diff: null,
 });
 
 it("presents the library summary rather than deriving activity from tool arguments", () => {

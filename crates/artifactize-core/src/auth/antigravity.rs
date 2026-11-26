@@ -1,6 +1,8 @@
-//! Antigravity's native Google sign-in. URLs and a single pasted code are relayed to the
-//! official CLI; its credentials and vendor files never pass through Artifactize.
-use std::{path::PathBuf, time::Duration};
+//! Antigravity's native Google sign-in, built on top of the unified ACP layer.
+//! URLs and a single pasted code are relayed to the official CLI; its credentials and vendor
+//! files never pass through Artifactize.
+
+use std::{ffi::OsString, path::PathBuf, time::Duration};
 
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -10,11 +12,16 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    agent::error::Failure,
-    llm::{
-        antigravity::{self, Acp, PROBE_TIMEOUT, Problem},
-        models::ListedModel,
+    acp::{
+        AgentId, Problem,
+        catalog::{
+            ANTIGRAVITY_MINIMUM, AgentAvailability, AgentSpec, PROBE_TIMEOUT, bump_auth_generation,
+            invalidate_probe_cache, preset_by_id, probe_spec,
+        },
+        wire::{AUTH_LINK_MARKER, Connection},
     },
+    agent::error::Failure,
+    llm::models::ListedModel,
     platform, process,
 };
 
@@ -34,25 +41,6 @@ pub enum State {
     Failed { error: String },
 }
 
-impl From<Problem> for State {
-    fn from(problem: Problem) -> Self {
-        match problem {
-            Problem::Missing => Self::Missing,
-            Problem::SignedOut => Self::SignedOut,
-            Problem::TooOld { .. } => Self::TooOld {
-                error: Failure::from(problem).message,
-            },
-            Problem::Quota => Self::Quota {
-                error: Failure::from(problem).message,
-            },
-            Problem::RateLimit => Self::RateLimited {
-                error: Failure::from(problem).message,
-            },
-            Problem::Failed(error) => Self::Failed { error },
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Status {
     pub path: Option<PathBuf>,
@@ -61,77 +49,152 @@ pub struct Status {
     pub state: State,
 }
 
-/// The check never authenticates or sends a prompt. A `session/new` distinguishes available
-/// accounts; Antigravity ACP does not report a Google account identity for the session.
+fn antigravity_spec() -> AgentSpec {
+    AgentSpec::from_preset(preset_by_id("antigravity").expect("antigravity preset exists"))
+}
+
+fn antigravity_id() -> AgentId {
+    "antigravity".parse().expect("antigravity id is valid")
+}
+
+/// Probe Antigravity in an empty private tempdir without authenticating or sending a prompt.
 pub async fn status() -> Status {
-    let deadline = Instant::now() + PROBE_TIMEOUT;
-    let cancel = CancellationToken::new();
-    let mut path = None;
-    let mut version = None;
-    let result = async {
-        let directory = antigravity::workspace()?;
-        let executable = antigravity::executable(directory.path())?;
-        let executable = path.insert(executable);
-        let detected =
-            antigravity::version(executable, directory.path(), deadline, &cancel).await?;
-        antigravity::supported(version.insert(detected))?;
-        let acp = Acp::start_checked(directory, executable, deadline, &cancel).await?;
-        probe_started(acp, deadline, Acp::inspect).await
-    }
-    .await;
-    Status {
-        path,
-        version,
-        required_version: antigravity::MINIMUM,
-        state: match result {
-            Ok(_) => State::SignedIn { account: None },
-            Err(problem) => problem.into(),
+    let spec = antigravity_spec();
+    match probe_spec(&spec, true).await {
+        AgentAvailability::Ready {
+            executable,
+            version,
+            ..
+        } => Status {
+            path: Some(executable),
+            version: version.and_then(|v| semver::Version::parse(&v).ok()),
+            required_version: ANTIGRAVITY_MINIMUM,
+            state: State::SignedIn { account: None },
         },
+        AgentAvailability::Missing { .. } => Status {
+            path: None,
+            version: None,
+            required_version: ANTIGRAVITY_MINIMUM,
+            state: State::Missing,
+        },
+        AgentAvailability::TooOld {
+            executable,
+            version,
+            reason,
+            ..
+        } => Status {
+            path: Some(executable),
+            version: semver::Version::parse(&version).ok(),
+            required_version: ANTIGRAVITY_MINIMUM,
+            state: State::TooOld { error: reason },
+        },
+        AgentAvailability::NotSetUp {
+            executable,
+            version,
+            ..
+        } => Status {
+            path: executable,
+            version: version.and_then(|v| semver::Version::parse(&v).ok()),
+            required_version: ANTIGRAVITY_MINIMUM,
+            state: State::SignedOut,
+        },
+        AgentAvailability::Failed {
+            executable,
+            version,
+            error,
+        } => {
+            let state = match Problem::classify_text("Antigravity", "", &error) {
+                Some(Problem::Quota { .. }) => State::Quota { error },
+                Some(Problem::RateLimit { .. }) => State::RateLimited { error },
+                Some(Problem::SignedOut { .. }) => State::SignedOut,
+                _ => State::Failed { error },
+            };
+            Status {
+                path: executable,
+                version: version.and_then(|v| semver::Version::parse(&v).ok()),
+                required_version: ANTIGRAVITY_MINIMUM,
+                state,
+            }
+        }
     }
 }
 
 pub async fn models() -> Result<Vec<ListedModel>, String> {
-    models_checked().await.map_err(message)
-}
-
-pub(crate) async fn models_checked() -> Result<Vec<ListedModel>, Problem> {
-    probe(Acp::inspect).await
+    let spec = antigravity_spec();
+    match probe_spec(&spec, true).await {
+        AgentAvailability::Ready { models, .. } => Ok(models),
+        AgentAvailability::Missing { reason } => Err(reason),
+        AgentAvailability::NotSetUp { reason, .. } => Err(format!(
+            "Antigravity needs your Google sign-in. {reason} Run `artifactize login antigravity` or use Settings → Chat Agents."
+        )),
+        AgentAvailability::TooOld { reason, .. } => Err(reason),
+        AgentAvailability::Failed { error, .. } => Err(error),
+    }
 }
 
 pub async fn logout() -> Result<(), String> {
-    probe(Acp::logout).await.map_err(message)
-}
-
-async fn probe<T>(
-    ask: impl for<'a> AsyncFnOnce(&'a mut Acp) -> Result<T, Problem>,
-) -> Result<T, Problem> {
-    let deadline = Instant::now() + PROBE_TIMEOUT;
+    let spec = antigravity_spec();
+    let probe_dir =
+        platform::private_tempdir_in("artifactize-acp-", &platform::temporary_directory())
+            .map_err(|error| format!("Cannot create Antigravity logout directory: {error}."))?;
+    let resolved = crate::acp::trust::resolve_executable(&spec.program, None, false)?;
+    let mut args: Vec<OsString> = spec.args.iter().map(OsString::from).collect();
+    args.push("--sandbox".into());
+    args.push("--include-default-customizations=false".into());
+    let command = process::Command {
+        program: resolved.into_os_string(),
+        args,
+        cwd: probe_dir.path().to_path_buf(),
+        env: spec.build_env(false),
+        timeout: PROBE_TIMEOUT,
+    };
     let cancel = CancellationToken::new();
-    let acp = Acp::start(deadline, &cancel).await?;
-    probe_started(acp, deadline, ask).await
-}
-
-async fn probe_started<T>(
-    mut acp: Acp,
-    deadline: Instant,
-    ask: impl for<'a> AsyncFnOnce(&'a mut Acp) -> Result<T, Problem>,
-) -> Result<T, Problem> {
-    let result = tokio::time::timeout_at(deadline, ask(&mut acp))
+    let mut child = process::spawn_supervised(&command, &cancel)
+        .await
+        .map_err(|error| format!("Cannot start Antigravity: {error}."))?;
+    let stdout = child.stdout().take().expect("stdout piped");
+    let stdin = child.stdin().take().expect("stdin piped");
+    let mut stderr = child.stderr().take().expect("stderr piped");
+    let stderr_task =
+        tokio::spawn(async move { crate::acp::catalog::read_bounded_stderr(&mut stderr).await });
+    let mut conn = Connection::new(
+        &spec.name,
+        &spec.install_hint,
+        stdout,
+        stdin,
+        false,
+        spec.known_secrets(),
+    );
+    let result = tokio::time::timeout(PROBE_TIMEOUT, conn.logout())
         .await
         .unwrap_or_else(|_| {
             Err(Problem::Failed(
-                "Antigravity did not answer the ACP probe in time.".into(),
+                "Antigravity did not answer ACP logout in time.".into(),
             ))
         });
-    let diagnostic = acp.stop().await;
-    result.map_err(|problem| match problem {
-        Problem::Failed(_) => diagnostic.unwrap_or(problem),
-        _ => problem,
-    })
-}
+    drop(conn);
+    let _ = process::terminate(&mut child).await;
+    let _ = child.cleanup().await;
+    let stderr_bytes = crate::task::joined(stderr_task.await).unwrap_or_default();
+    let stderr_text = platform::output_text(&stderr_bytes);
 
-fn message(problem: Problem) -> String {
-    Failure::from(problem).message
+    bump_auth_generation();
+    invalidate_probe_cache(&antigravity_id());
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(problem) => {
+            let final_problem = if stderr_text.contains(AUTH_LINK_MARKER) {
+                Problem::SignedOut {
+                    agent: spec.name,
+                    hint: spec.install_hint,
+                }
+            } else {
+                problem
+            };
+            Err(Failure::from(final_problem).message)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -146,17 +209,42 @@ pub async fn login_with(
     show: impl FnOnce(&Prompt),
 ) -> Result<(), String> {
     let deadline = Instant::now() + LOGIN_TIMEOUT;
-    let directory = antigravity::workspace().map_err(message)?;
-    let executable =
-        antigravity::check_version(directory.path(), deadline, &CancellationToken::new())
-            .await
-            .map_err(message)?;
-    let mut command = antigravity::command(&["acp", "--login"], directory.path(), deadline);
-    command.program = executable.into_os_string();
+    let spec = antigravity_spec();
+    let directory =
+        platform::private_tempdir_in("artifactize-acp-", &platform::temporary_directory())
+            .map_err(|error| format!("Cannot create Antigravity sign-in directory: {error}."))?;
+    let executable = crate::acp::trust::resolve_executable(&spec.program, None, false)?;
+    // Verify minimum CLI version before launching interactive login.
+    let version_cmd = process::Command {
+        program: executable.as_os_str().to_owned(),
+        args: vec!["--version".into()],
+        cwd: directory.path().to_path_buf(),
+        env: spec.build_env(false),
+        timeout: PROBE_TIMEOUT,
+    };
+    if let Ok(output) =
+        process::run(version_cmd, CancellationToken::new(), |_| async { Ok(()) }).await
+        && output.status.success()
+        && let Some(ver) = platform::output_text(&output.stdout)
+            .split_whitespace()
+            .find_map(|word| semver::Version::parse(word.trim_start_matches('v')).ok())
+        && ver < ANTIGRAVITY_MINIMUM
+    {
+        return Err(format!(
+            "Antigravity CLI {ver} is too old; update `agy` to {ANTIGRAVITY_MINIMUM} or newer."
+        ));
+    }
+
+    let command = process::Command {
+        program: executable.into_os_string(),
+        args: vec!["acp".into(), "--login".into()],
+        cwd: directory.path().to_path_buf(),
+        env: spec.build_env(false),
+        timeout: deadline.saturating_duration_since(Instant::now()),
+    };
     let mut cli = process::spawn_handoff(&command)
         .await
-        .map_err(antigravity::start_problem)
-        .map_err(message)?;
+        .map_err(|error| format!("Cannot start Antigravity: {error}."))?;
     let mut input = cli.stdin().take().expect("sign-in stdin is piped");
     let mut output = BufReader::new(cli.stdout().take().expect("sign-in stdout is piped"));
     let mut errors = BufReader::new(cli.stderr().take().expect("sign-in stderr is piped"));
@@ -214,7 +302,10 @@ pub async fn login_with(
         .map_err(|_| "Antigravity sign-in timed out. Start sign-in again.")?;
     result?;
     cli.release()
-        .map_err(|_| "Cannot release the finished Antigravity sign-in.".to_owned())
+        .map_err(|_| "Cannot release the finished Antigravity sign-in.".to_owned())?;
+    bump_auth_generation();
+    invalidate_probe_cache(&antigravity_id());
+    Ok(())
 }
 
 async fn finish_login(
@@ -222,7 +313,6 @@ async fn finish_login(
     mut output: impl AsyncRead + Unpin,
     mut errors: impl AsyncRead + Unpin,
 ) -> Result<(), &'static str> {
-    // Drain both pipes while waiting; never include sign-in output or the code in a diagnostic.
     let (mut discard_output, mut discard_errors) = (tokio::io::sink(), tokio::io::sink());
     let (ended, _, _) = tokio::join!(
         cli.wait_leader(),

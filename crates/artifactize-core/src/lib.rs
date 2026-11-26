@@ -4,6 +4,7 @@
 #[cfg(test)]
 extern crate self as artifactize_core;
 
+pub mod acp;
 pub mod agent;
 pub mod auth;
 pub mod broker;

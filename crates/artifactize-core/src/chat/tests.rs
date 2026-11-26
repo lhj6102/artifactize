@@ -1,5 +1,49 @@
 use super::*;
 
+fn test_direct_target() -> ChatTarget {
+    ChatTarget::Direct {
+        backend: DirectBackend::Builtin {
+            provider: HttpProvider::Codex,
+        },
+        model: "fixture-model".parse().unwrap(),
+        effort: None,
+    }
+}
+
+fn test_session(
+    id: &str,
+    title: &str,
+    worktree: PathBuf,
+    repository: Option<repository::Identity>,
+    target: Option<ChatTarget>,
+    view: SessionView,
+    timestamp: &str,
+) -> Session {
+    let legacy_migration_notice = target
+        .as_ref()
+        .is_some_and(ChatTarget::is_legacy_claude_agent);
+    let stamp: crate::types::Timestamp = timestamp.parse().unwrap();
+    Session {
+        id: id.parse().unwrap(),
+        title: title.into(),
+        worktree,
+        repository,
+        target,
+        view,
+        created_at: stamp,
+        updated_at: stamp,
+        activity: None,
+        moved_from: None,
+        acp_binding: None,
+        running: false,
+        waiting_permission: false,
+        live_config_options: Vec::new(),
+        verify_bridge_state: VerifyBridgeState::NotConnected,
+        legacy_migration_notice,
+        unavailable: None,
+    }
+}
+
 #[tokio::test]
 async fn stopping_for_quit_cancels_local_work_even_without_a_saved_owner() {
     let root = crate::test_os::tempdir();
@@ -20,23 +64,16 @@ async fn moving_a_branch_prefers_a_usable_session_but_keeps_stranded_history_rea
     let worktree = crate::test_os::canonical(&worktree);
     crate::test_os::git(&worktree, &["init", "--quiet", "--initial-branch=main"]);
     let identity = repository::identify(&worktree);
-    let make = |id: &str, path: PathBuf, repository, stamp: &str| Session {
-        id: id.parse().unwrap(),
-        title: id.into(),
-        worktree: path,
-        repository: Some(repository),
-        model: Some(Model {
-            backend: "codex".parse().unwrap(),
-            model: "fixture-model".parse().unwrap(),
-            effort: None,
-        }),
-        view: SessionView::Graph,
-        created_at: stamp.parse().unwrap(),
-        updated_at: stamp.parse().unwrap(),
-        activity: None,
-        moved_from: None,
-        running: false,
-        unavailable: None,
+    let make = |id: &str, path: PathBuf, repository, stamp: &str| {
+        test_session(
+            id,
+            id,
+            path,
+            Some(repository),
+            Some(test_direct_target()),
+            SessionView::Graph,
+            stamp,
+        )
     };
     let usable = make(
         "chat-live",
@@ -157,56 +194,36 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
         ),
     ];
     for (id, directory, branch, title, time) in fixtures {
-        let time = time.parse().unwrap();
         let directory = crate::platform::canonicalize(directory).unwrap();
-        let session = Session {
-            id: id.parse().unwrap(),
-            title: title.into(),
-            repository: Some(repository::Identity {
+        let session = test_session(
+            id,
+            title,
+            directory.clone(),
+            Some(repository::Identity {
                 common_dir: Some(directory.join(".git")),
-                worktree_path: Some(directory.clone()),
+                worktree_path: Some(directory),
                 branch: Some(branch.into()),
             }),
-            worktree: directory,
-            model: Some(Model {
-                backend: "codex".parse().unwrap(),
-                model: "fixture-model".parse().unwrap(),
-                effort: None,
-            }),
-            view: SessionView::Conversation,
-            created_at: time,
-            updated_at: time,
-            activity: None,
-            moved_from: None,
-            running: false,
-            unavailable: None,
-        };
+            Some(test_direct_target()),
+            SessionView::Conversation,
+            time,
+        );
         receipts.create_chat(&session).await.unwrap();
     }
-    let saved_model = Model {
-        backend: "codex".parse().unwrap(),
-        model: "fixture-model".parse().unwrap(),
-        effort: None,
-    };
     let checkout = crate::test_os::canonical(&worktree);
     crate::test_os::git(
         &checkout,
         &["init", "--quiet", "--initial-branch=feature/Billing"],
     );
-    let newer = Session {
-        id: "chat-newest-on-branch".parse().unwrap(),
-        title: "The latest session".into(),
-        worktree: checkout.clone(),
-        repository: Some(repository::identify(&checkout)),
-        model: Some(saved_model),
-        view: SessionView::Conversation,
-        created_at: "2026-10-25T12:00:00Z".parse().unwrap(),
-        updated_at: "2026-10-25T12:00:00Z".parse().unwrap(),
-        activity: None,
-        moved_from: None,
-        running: false,
-        unavailable: None,
-    };
+    let newer = test_session(
+        "chat-newest-on-branch",
+        "The latest session",
+        checkout.clone(),
+        Some(repository::identify(&checkout)),
+        Some(test_direct_target()),
+        SessionView::Conversation,
+        "2026-10-25T12:00:00Z",
+    );
     let branch = newer.branch();
     drop(receipts);
 
@@ -299,21 +316,161 @@ fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
     recorder.check_saved().unwrap();
     drop(recorder);
     let saved = Conversation::load(&file).unwrap();
-    let turns = transcript::turns(saved.as_ref(), false);
+    let turns = transcript::turns(saved.as_ref(), false, &[]);
     assert!(matches!(&turns[0].blocks[0], Block::Tool {
         result: Some(transcript::ToolResult { exit_code: Some(0), omitted_lines: 0, output_truncated: false, output, .. }), summary, ..
     } if summary == "ran fixture (exit 0)" && output == "one\ntwo\n"));
 }
 
 #[test]
-fn a_session_saved_with_the_previous_selection_field_keeps_its_model() {
-    let record = serde_json::json!({
-        "id": "chat-legacy", "title": "Older chat", "worktree": "workspace",
+fn legacy_session_wire_migrates_codex_antigravity_and_retired_claude_agent() {
+    let codex_record = serde_json::json!({
+        "id": "chat-legacy-codex", "title": "Older chat", "worktree": "workspace",
         "selection": {"backend": "codex", "model": "saved-model", "effort": "high"},
         "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
     });
-    let session: Session = serde_json::from_value(record).unwrap();
-    let saved = session.model.unwrap();
-    assert_eq!(saved.model.as_str(), "saved-model");
-    assert_eq!(saved.effort.as_deref(), Some("high"));
+    let session: Session = serde_json::from_value(codex_record).unwrap();
+    assert!(!session.legacy_migration_notice);
+    assert_eq!(
+        session.target,
+        Some(ChatTarget::Direct {
+            backend: DirectBackend::Builtin {
+                provider: HttpProvider::Codex
+            },
+            model: "saved-model".parse().unwrap(),
+            effort: Some("high".into()),
+        })
+    );
+
+    let agy_record = serde_json::json!({
+        "id": "chat-legacy-agy", "title": "AGY chat", "worktree": "workspace",
+        "model": {"backend": "antigravity", "model": "gemini-3-pro", "effort": "medium"},
+        "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
+    });
+    let session: Session = serde_json::from_value(agy_record).unwrap();
+    assert!(session.legacy_migration_notice);
+    assert!(matches!(
+        session.target,
+        Some(ChatTarget::Acp { ref agent, ref config })
+        if agent.as_str() == "antigravity"
+            && config.len() == 2
+            && config[0].id == "model"
+            && config[0].value == "gemini-3-pro"
+            && config[1].id == "thought_level"
+            && config[1].value == "medium"
+    ));
+
+    let claude_record = serde_json::json!({
+        "id": "chat-legacy-claude", "title": "Claude chat", "worktree": "workspace",
+        "model": {"backend": "claude-agent", "model": "sonnet", "effort": "high"},
+        "createdAt": "2026-11-21T00:00:00Z", "updatedAt": "2026-11-21T00:00:00Z",
+    });
+    let session: Session = serde_json::from_value(claude_record).unwrap();
+    assert!(session.legacy_migration_notice);
+    assert_eq!(
+        session.target,
+        Some(ChatTarget::LegacyClaudeAgent {
+            model: "sonnet".parse().unwrap(),
+            effort: Some("high".into()),
+        })
+    );
+}
+
+#[tokio::test]
+async fn permission_cas_enforces_stop_precedence_and_validates_options() {
+    use crate::acp::{PermissionOption, PermissionOptionKind, PermissionStatus};
+    use crate::store::chat::{DeliverClaim, NewPermission, Owner};
+
+    let root = crate::test_os::tempdir();
+    let worktree = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&worktree).unwrap();
+    let worktree = crate::test_os::canonical(&worktree);
+    let session = test_session(
+        "chat-perm",
+        "Permission CAS",
+        worktree.clone(),
+        Some(repository::identify(&worktree)),
+        Some(ChatTarget::Acp {
+            agent: "antigravity".parse().unwrap(),
+            config: Vec::new(),
+        }),
+        SessionView::Conversation,
+        "2026-11-21T00:00:00Z",
+    );
+    let receipts = store::OwnedReceipts::open(&state, &worktree).await.unwrap();
+    receipts.create_chat(&session).await.unwrap();
+    let owner = Owner::current().unwrap();
+    receipts
+        .claim_chat(&state, &session.id, &owner)
+        .await
+        .unwrap();
+
+    let perm = NewPermission {
+        session_id: session.id.clone(),
+        owner_token: owner.token.clone(),
+        permission_id: "perm-1".into(),
+        rpc_request_id: "42".into(),
+        title: "Run tests".into(),
+        tool_kind: ToolKind::Command,
+        summary: "cargo test".into(),
+        detail: None,
+        options: vec![
+            PermissionOption {
+                option_id: "allow_once".into(),
+                name: "Allow once".into(),
+                kind: PermissionOptionKind::AllowOnce,
+                persists_in_agent_settings: false,
+            },
+            PermissionOption {
+                option_id: "reject_once".into(),
+                name: "Deny".into(),
+                kind: PermissionOptionKind::RejectOnce,
+                persists_in_agent_settings: false,
+            },
+        ],
+        created_at: "2026-11-21T00:00:01Z".parse().unwrap(),
+    };
+    assert!(receipts.insert_chat_permission(perm).await.unwrap());
+
+    // Invalid option_id is rejected before mutating state.
+    assert!(
+        receipts
+            .respond_chat_permission(&session.id, "perm-1", "bogus")
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        receipts
+            .begin_deliver_chat_permission(&session.id, &owner.token, "perm-1")
+            .await
+            .unwrap(),
+        DeliverClaim::StillPending
+    );
+
+    // Valid selection transitions PENDING -> SELECTED, then Stop cancels SELECTED before delivery.
+    assert!(
+        receipts
+            .respond_chat_permission(&session.id, "perm-1", "allow_once")
+            .await
+            .unwrap()
+    );
+    assert!(
+        receipts
+            .stop_chat_by_token(&session.id, &owner.token)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        receipts
+            .begin_deliver_chat_permission(&session.id, &owner.token, "perm-1")
+            .await
+            .unwrap(),
+        DeliverClaim::Cancelled
+    );
+    let rows = store::chat::list_permissions(&state, &session.id)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].status, PermissionStatus::Cancelled);
 }

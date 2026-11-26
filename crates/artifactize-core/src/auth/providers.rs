@@ -256,7 +256,7 @@ pub fn key_variable(provider: Provider) -> Option<&'static str> {
         Provider::Openai => Some("OPENAI_API_KEY"),
         Provider::Anthropic => Some("ANTHROPIC_API_KEY"),
         Provider::Gemini => Some("GEMINI_API_KEY"),
-        Provider::Codex | Provider::ClaudeAgent | Provider::Antigravity => None,
+        Provider::Codex | Provider::ClaudeAgent => None,
     }
 }
 
@@ -289,7 +289,7 @@ fn read(state: Option<&Path>, repo: Option<&Path>) -> Result<(Saved, Option<Stri
 }
 
 fn can_alias(provider: Provider) -> bool {
-    !matches!(provider, Provider::ClaudeAgent | Provider::Antigravity)
+    !matches!(provider, Provider::ClaudeAgent)
 }
 
 /// What `state` has set up, without any key.
@@ -409,9 +409,9 @@ pub async fn save_custom(
     mut custom: Custom,
     key: KeyChange,
 ) -> Result<(), String> {
-    if let Some(provider) = name.builtin() {
+    if name.is_reserved_custom() {
         return Err(format!(
-            "{provider} is a built-in provider; give the custom provider another name."
+            "{name} is a built-in provider; give the custom provider another name."
         ));
     }
     if let Custom::Alias { provider } = &custom

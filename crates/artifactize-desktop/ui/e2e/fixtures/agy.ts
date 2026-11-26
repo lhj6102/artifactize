@@ -21,9 +21,9 @@ if (args === "--version") {
     else process.exitCode = 1;
     break;
   }
-} else if (args === "acp --sandbox --include-default-customizations=false") {
+} else if (args === "acp" || args === "acp --sandbox --include-default-customizations=false") {
   let model = AGY_MODELS[0].value;
-  const config = (currentValue: string) => [{ id: "model", category: "model", type: "select", currentValue, options: AGY_MODELS }];
+  const config = (currentValue: string) => [{ id: "model", name: "Model", category: "model", type: "select", currentValue, options: AGY_MODELS }];
   for await (const line of lines()) {
     const { id, method, params } = JSON.parse(line) as { id: number; method: string; params: Record<string, unknown> };
     let result: object;

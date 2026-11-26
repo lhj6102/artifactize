@@ -3,6 +3,7 @@
 //! Nothing here stores, validates or reaches a service on its own; secrets never come back to
 //! the frontend.
 mod antigravity;
+mod chat_agents;
 mod claude_agent;
 mod codex;
 mod limits;
@@ -11,6 +12,7 @@ mod remote;
 mod sign_in;
 
 pub use antigravity::*;
+pub use chat_agents::*;
 pub use claude_agent::*;
 pub use codex::*;
 pub use limits::*;

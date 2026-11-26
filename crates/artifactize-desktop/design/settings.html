@@ -28,9 +28,10 @@
 <h1>Settings: a modal over the screen</h1>
 <p class="lead">
   The bar's Settings button opens Settings over the screen; Close, the button again or a click
-  outside it closes it with the screen beneath as it was (J-SETTINGS). Three tabs: Providers (a list
-  beside the chosen provider's setup), Remote (the shared review store) and Limits (the
-  sign-off idle grace).
+  outside it closes it with the screen beneath as it was (J-SETTINGS). Four tabs: Providers (eval
+  and direct API providers), Chat Agents (built-in ACP presets including Antigravity, ACP Registry
+  discovery and pinned installs, custom ACP agents, and workspace trust), Remote (the shared review
+  store) and Limits (the sign-off idle grace).
 </p>
 
 <figure class="figure">
@@ -53,7 +54,7 @@
     <div class="m-dialog m-settings" style="height: 640px">
       <div class="m-settings-head">
         <h2>Settings</h2>
-        <div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div>
+        <div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Chat Agents</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div>
         <span class="m-spacer"></span>
         <span class="m-reviewer">Reviewer alice</span>
         <span class="m-button">0.22.0 available</span>
@@ -63,7 +64,6 @@
         <div>
           <div class="m-choice">Codex</div>
           <div class="m-choice current">Claude Agent</div>
-          <div class="m-choice">Antigravity</div>
           <div class="m-choice">OpenAI</div>
           <div class="m-choice">Anthropic</div>
           <div class="m-choice">Gemini</div>
@@ -109,10 +109,10 @@
     <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Chat Agents</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-providers m-scrolls">
         <div>
-          <div class="m-choice current">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice">Antigravity</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
+          <div class="m-choice current">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
         </div>
         <div class="m-setup">
           <section>
@@ -157,10 +157,10 @@
     <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab active">Providers</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab active">Chat Agents</span><span class="m-tab">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-providers m-scrolls">
         <div>
-          <div class="m-choice">Codex</div><div class="m-choice">Claude Agent</div><div class="m-choice current">Antigravity</div><div class="m-choice">OpenAI</div><div class="m-choice">Anthropic</div><div class="m-choice">Gemini</div><div class="m-choice">sol-proxy</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom provider</div>
+          <div class="m-choice current">Antigravity</div><div class="m-choice">Claude ACP</div><div class="m-choice">Codex ACP</div><div class="m-choice">Gemini CLI</div><div class="m-choice">OpenCode</div><div class="m-choice">Copilot</div><div class="m-choice">Cursor</div><div class="m-choice">Goose</div><div class="m-choice m-cost">Browse Registry</div><div class="m-choice m-cost"><span class="m-icon i-add"></span> Custom agent</div>
         </div>
         <div class="m-setup">
           <section>
@@ -198,7 +198,7 @@
     <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab active">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab">Chat Agents</span><span class="m-tab active">Remote</span><span class="m-tab">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-setup" style="margin-top: 12px; max-width: 640px">
         <section>
           <h3>Shared review store</h3>
@@ -236,7 +236,7 @@
     <section class="m-main"><div class="m-stage-head"><span class="m-stage-left"></span><span class="m-stage-mid"></span><span class="m-stage-tools"><span class="m-tool" aria-label="Find" title="Find"><span class="m-icon i-find"></span></span><span class="m-tool-sep"></span><span class="m-tool" aria-label="Zoom out" title="Zoom out"><span class="m-icon i-minus"></span></span><span class="m-tool m-zoom">100%</span><span class="m-tool" aria-label="Zoom in" title="Zoom in"><span class="m-icon i-add"></span></span><span class="m-tool-sep"></span><span class="m-tool"><span class="m-icon i-fit"></span>Fit</span><span class="m-tool-sep"></span><span class="m-tool">Run details</span></span></div><div class="m-canvas"></div></section>
     <div class="m-scrim"></div>
     <div class="m-dialog m-settings" style="top: 24px">
-      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab">Remote</span><span class="m-tab active">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
+      <div class="m-settings-head"><h2>Settings</h2><div class="m-tabs"><span class="m-tab">Providers</span><span class="m-tab">Chat Agents</span><span class="m-tab">Remote</span><span class="m-tab active">Limits</span></div><span class="m-spacer"></span><span class="m-reviewer">Reviewer alice</span><span class="m-button">Close</span></div>
       <div class="m-setup" style="margin-top: 12px; max-width: 640px">
         <section>
           <h3>Sign-off idle grace</h3>
@@ -254,7 +254,7 @@
 
 <ol class="notes">
   <li><span class="n">1</span><div><b>Dialog</b><span>A raised surface with a panel line over a scrim; the bar stays above the scrim so its Settings button closes the dialog again. Its header names this machine's reviewer and, while a newer release is out, holds the release notice, which opens the Update dialog.</span></div></li>
-  <li><span class="n">2</span><div><b>Text tabs</b><span>Providers, Remote, Limits as text with a 2px accent line under the active one; a tab focused from the keyboard shows the focus ring.</span></div></li>
+  <li><span class="n">2</span><div><b>Text tabs</b><span>Providers, Chat Agents, Remote, Limits as text with a 2px accent line under the active one; a tab focused from the keyboard shows the focus ring.</span></div></li>
   <li><span class="n">3</span><div><b>Provider list</b><span>24px rows: the built-in providers, then custom ones by name, then <i>Custom provider</i> led by the add icon; the chosen row is the darker selection row with its name brighter, at one weight.</span></div></li>
   <li><span class="n">4</span><div><b>Setup</b><span>Sections separated by group lines: a title, facts as a key/value grid, then the actions in one row of 24px buttons; no line of description: labels and facts say what a section is. Models has List models and, under it, each model by its name with its ID beside it (<i>No models listed.</i> when there are none, a failure in red; J-SET-MODELS). Claude Agent's facts say what Claude Code reports: <code>claude</code> not found, not signed in, signed in with its method and plan, or its error. An API-key provider's Key fact says where its key comes from, never its value: the environment variable by name, saved here, or not set; with both an environment variable and a saved key, the environment variable, used first, as the key in use, and the saved key as also saved here.</span></div></li>
   <li><span class="n">5</span><div><b>Sign-in in progress</b><span>The state fact turns to <i>sign-in in progress</i> in the warning tone, with Cancel sign-in under it. What finishes a sign-in the browser did not return from stays folded under <i>Finish by hand</i>: the URL the sign-in printed as selectable text, a field for Codex's redirect URL, Claude Code's code or the code Google's page gives Antigravity, and Finish sign-in.</span></div></li>
@@ -283,6 +283,8 @@
   <dd>Remote is one section of at most 640px that shows only what its state can use. Signed out: Store URL, Share level (a choice of <i>summary</i> or <i>full</i>, drawn as the form's round options, D-REV-4) and Token fields in a labelled grid, then one row of buttons, Sign in to the store, the primary button, and Check status beside it; under them the status, one line in its tone: <i>Signed out</i> in <code>--ink-2</code>, or in <code>--red</code> the error of a sign-in or a check that failed, or, for a store this machine names but is not signed in to, its URL and <i>not signed in</i> or <i>unreachable</i> with the store's reason. Signed in: the store's URL and share level as facts of a key/value grid, with the status as its last fact, one line in its tone (<i>Signed in</i>, the reviewer with the token's scopes and what was pushed today, in <code>--green</code>); then one row of buttons, Check status, Push (dry run), Push results and, at the right, Sign out of the store. What takes the status line, and when, is J-SET-REMOTE-STATUS: a push's or a dry run's result in <code>--green</code>, an error in <code>--red</code>. While a sign-in, a sign-out, a push or a dry run runs, every button of the tab is drawn disabled, in place (J-SET-REMOTE). The fields, the token and Sign in to the store come back once signed out. <span class="avoid">the token shown; Sign in or a token field beside a store that is signed in; a signed-out tab without its status line; a status that repeats a fact above it; a result or an error on a second line beside the status; a missing dry-run option beside Push results.</span></dd>
   <dt id="D-SET-8">D-SET-8</dt>
   <dd>Limits is one section, <i>Sign-off idle grace</i>: one <code>--ink-2</code> line says what the grace is, <i>How long a Run with only sign-offs left, none of them claimed, waits before it ends.</i> (J-SET-SIGNOFF-GRACE), since its name cannot; under it one row, a seconds field of <code>--control</code> height holding the grace in force (<i>120</i>, the default, unless changed), <i>seconds</i> in <code>--ink-2</code> after it, and Save, the primary button, drawn disabled while the field holds the grace in force (as in the figure, at <i>120</i>) and usable once it holds another value (J-SET-SIGNOFF-GRACE); a failure to save is one <code>--red</code> line. <span class="avoid">a slider; a unit other than seconds; the grace in force shown beside the field that holds it.</span></dd>
+  <dt id="D-SET-9">D-SET-9</dt>
+  <dd>Chat Agents uses the same two-column layout as Providers (D-SET-3): a 180px list of built-in ACP presets (Antigravity, Claude ACP, Codex ACP, Gemini CLI, OpenCode, Copilot, Cursor, Goose), installed ACP Registry agents, custom ACP agents, <i>Browse Registry</i>, and <code>+ Custom agent</code>; the chosen item's setup at the right in sections separated by <code>--line-group</code> (J-SET-CHAT-AGENTS). Each preset or installed agent shows its executable path, version, sign-in or probe status, native isolation/sandbox facts, live models or <code>configOptions</code>, and saved workspace trust entries with <b>Revoke</b>. Antigravity carries its Google sign-in, <i>Finish by hand</i>, sign-out and <i>Serves: Chat only</i> facts here (J-SET-ANTIGRAVITY). <i>Browse Registry</i> lists official ACP Registry entries with full-spec install details and explicit consent before pinned installation. <code>+ Custom agent</code> shows a labelled grid of <code>--surface-input</code> fields (ID, display name, command, arguments, environment variables and write-only secret env fields never echoed back) with primary Save and, for a saved custom agent, Remove agent. <span class="avoid">Antigravity listed under eval Providers; secret env values echoed back; installing a Registry package without showing its full pinned spec and SHA-256.</span></dd>
 </dl>
 </main>
 </div>

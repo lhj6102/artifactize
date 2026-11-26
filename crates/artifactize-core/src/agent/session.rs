@@ -31,7 +31,8 @@ pub mod transcript;
 #[cfg(test)]
 mod transcript_tests;
 pub use events::{
-    Answer, Budgets, Delivery, DeliveryKind, DeliveryState, End, Event, Header, Kind, MessageEvent,
+    AcpPermissionEvent, AcpPlanEvent, AcpToolCallEvent, AcpToolUpdateEvent, Answer, Budgets,
+    Delivery, DeliveryKind, DeliveryState, End, Event, HandoffEvent, Header, Kind, MessageEvent,
     Send,
 };
 #[cfg(test)]
@@ -596,10 +597,11 @@ impl Conversation {
     }
 
     /// Every message in order, the review's and its follow-ups', ready to send again. Tool
-    /// calls a stopped review never answered get an error result next to the results of
-    /// those that ran, since a provider expects every call answered.
+    /// calls anywhere in the history whose turn stopped before answering get an error result
+    /// right after that assistant message, so switching from a stopped legacy turn to ACP and
+    /// later back to Direct API never sends unanswered `ToolCall`s to Anthropic/OpenAI.
     pub fn history(&self) -> Result<Vec<Message>, String> {
-        let mut messages = self
+        let raw = self
             .events
             .iter()
             .filter_map(|event| match &event.kind {
@@ -607,48 +609,74 @@ impl Conversation {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        let Some(last) = messages
-            .iter()
-            .rposition(|message| matches!(message, Message::Assistant { .. }))
-        else {
-            return Ok(messages);
-        };
-        let answered: Vec<_> = messages[last + 1..]
-            .iter()
-            .flat_map(|message| match message {
-                Message::User { content } => content.as_slice(),
-                _ => &[],
-            })
-            .filter_map(|part| match part {
-                UserContent::ToolResult(result) => Some(result.call.wire()),
-                _ => None,
-            })
-            .collect();
-        let Message::Assistant { content, .. } = &messages[last] else {
-            unreachable!("the last answer")
-        };
-        let missing: Vec<_> = content
-            .iter()
-            .filter_map(|part| match part {
-                AssistantContent::ToolCall(call) if !answered.contains(&call.id.wire()) => {
-                    Some(UserContent::ToolResult(call.result(vec![
-                        ToolResultContent::text(
-                            "Not run: the review stopped before this tool call completed.",
-                        ),
-                    ])))
+        let mut normalized = Vec::with_capacity(raw.len());
+        let mut index = 0;
+        while index < raw.len() {
+            let message = raw[index].clone();
+            match &message {
+                Message::Assistant { content, .. } => {
+                    let calls: Vec<_> = content
+                        .iter()
+                        .filter_map(|part| match part {
+                            AssistantContent::ToolCall(call) => Some(call.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    normalized.push(message);
+                    index += 1;
+                    if calls.is_empty() {
+                        continue;
+                    }
+                    // Collect any immediately following user tool-result messages answering this assistant turn.
+                    let mut answered = std::collections::BTreeSet::new();
+                    let mut last_tool_result_pos = None;
+                    while index < raw.len() {
+                        let is_tool_result_msg = match &raw[index] {
+                            Message::User { content } => content
+                                .iter()
+                                .any(|part| matches!(part, UserContent::ToolResult(_))),
+                            _ => false,
+                        };
+                        if !is_tool_result_msg {
+                            break;
+                        }
+                        if let Message::User { content } = &raw[index] {
+                            for part in content {
+                                if let UserContent::ToolResult(result) = part {
+                                    answered.insert(result.call.wire().into_owned());
+                                }
+                            }
+                        }
+                        last_tool_result_pos = Some(normalized.len());
+                        normalized.push(raw[index].clone());
+                        index += 1;
+                    }
+                    let missing: Vec<_> = calls
+                        .iter()
+                        .filter(|call| !answered.contains(call.id.wire().as_ref()))
+                        .map(|call| {
+                            UserContent::ToolResult(call.result(vec![ToolResultContent::text(
+                                "Not run: the review stopped before this tool call completed.",
+                            )]))
+                        })
+                        .collect();
+                    if !missing.is_empty() {
+                        if let Some(pos) = last_tool_result_pos
+                            && let Some(Message::User { content }) = normalized.get_mut(pos)
+                        {
+                            content.extend(missing);
+                        } else {
+                            normalized.push(Message::User { content: missing });
+                        }
+                    }
                 }
-                _ => None,
-            })
-            .collect();
-        if missing.is_empty() {
-            return Ok(messages);
+                _ => {
+                    normalized.push(message);
+                    index += 1;
+                }
+            }
         }
-        let ran = last + 1 < messages.len();
-        match messages.last_mut() {
-            Some(Message::User { content }) if ran => content.extend(missing),
-            _ => messages.push(Message::User { content: missing }),
-        }
-        Ok(messages)
+        Ok(normalized)
     }
 }
 

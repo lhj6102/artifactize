@@ -185,6 +185,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "providers",
             "codex",
             "claude-agent",
+            "chat-agents",
             "remote",
             "desktop",
             "release"

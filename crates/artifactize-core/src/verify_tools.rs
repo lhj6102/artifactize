@@ -91,8 +91,14 @@ impl Call {
                     ..Default::default()
                 };
                 Output::Observation(
-                    runs::start(context, args.scope.selection(), &options, args.request_key)
-                        .await?,
+                    runs::start_with_args_hash(
+                        context,
+                        args.scope.selection(),
+                        &options,
+                        args.request_key,
+                        args.request_args_hash,
+                    )
+                    .await?,
                 )
             }
             Verify::Status(run) => Output::Observation(runs::status(context, &run).await?),
@@ -128,6 +134,29 @@ impl Call {
     /// Whether success reports the identity of the Run this tool started, not an inspected Run.
     pub fn started_run(&self) -> bool {
         matches!(self.command, Command::Verify(Verify::Start(_)))
+    }
+
+    /// Remap an ACP agent-supplied `verify_start` `request_key` into the disjoint internal
+    /// `chat/<sha256[..32]>` namespace and attach canonical `request_args_hash`.
+    pub(crate) fn remap_acp_chat_key(
+        &mut self,
+        session_id: &crate::types::SessionId,
+        send: usize,
+        raw_arguments: &serde_json::Value,
+    ) -> Result<(), String> {
+        if let Command::Verify(Verify::Start(args)) = &mut self.command
+            && let Some(agent_key) = args.request_key.take()
+        {
+            args.request_key = Some(crate::acp::verify_bridge::internal_chat_request_key(
+                session_id,
+                send,
+                agent_key.as_str(),
+            )?);
+            args.request_args_hash = Some(crate::acp::verify_bridge::canonical_args_hash(
+                raw_arguments,
+            ));
+        }
+        Ok(())
     }
 }
 
