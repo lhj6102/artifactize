@@ -30,10 +30,49 @@ use crate::{
     tools::{Content, Registry, ToolResult},
 };
 
-/// A review's deadline when its profile sets no `timeoutMs`.
-/// Allow multi-turn evidence gathering by default without leaving an unattended
-/// Agent review running indefinitely; declared profile timeouts override this budget.
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(240);
+/// The variable that sets an Agent review's deadline, in milliseconds, when its profile sets
+/// no `timeout_ms`.
+pub const TIMEOUT_VARIABLE: &str = "ARTIFACTIZE_AGENT_TIMEOUT_MS";
+
+/// An Agent review's deadline without `timeout_ms` or [`TIMEOUT_VARIABLE`]: long enough for a
+/// careful review of a large Artifact, bounded so an unattended review still ends.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
+/// An Agent review's deadline: the profile's `timeout_ms`, else [`TIMEOUT_VARIABLE`], else
+/// [`DEFAULT_TIMEOUT`]. A variable that is not a valid timeout fails the review, naming it.
+pub(crate) fn timeout(declared: Option<Duration>) -> Result<Duration, Failure> {
+    resolve_timeout(
+        declared,
+        crate::platform::environment::var(TIMEOUT_VARIABLE),
+    )
+}
+
+/// [`timeout`] given the variable's value.
+fn resolve_timeout(
+    declared: Option<Duration>,
+    variable: Option<std::ffi::OsString>,
+) -> Result<Duration, Failure> {
+    if let Some(declared) = declared {
+        return Ok(declared);
+    }
+    let Some(value) = variable else {
+        return Ok(DEFAULT_TIMEOUT);
+    };
+    value
+        .to_str()
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .filter(|ms| (1..=crate::config::validation::MAX_TIMEOUT_MS).contains(ms))
+        .map(Duration::from_millis)
+        .ok_or_else(|| {
+            Failure::new(
+                error::Code::AgentError,
+                format!(
+                    "{TIMEOUT_VARIABLE} must be a whole number of milliseconds from 1 to {}, not {value:?}.",
+                    crate::config::validation::MAX_TIMEOUT_MS
+                ),
+            )
+        })
+}
 
 /// What every follow-up's question starts with, before the person's message: the review's
 /// system prompt still asks for JSON issues, and this turn sets that aside.
@@ -422,7 +461,7 @@ async fn run(
     else {
         unreachable!()
     };
-    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
+    let timeout_ms = timeout(*timeout_ms)?;
     let deadline = Instant::now() + timeout_ms;
     let registry = Registry::new(config, &eval.id)?.with_sessions(tools);
     let issues = verdict::Issues::new(eval.declaration.red_at());
@@ -660,7 +699,7 @@ async fn continue_conversation(
     request.additional_params = Some(Client::parameters(client.api(), reasoning, recorder.id())?);
     let tools = registry.sessions(continuation.state, None, cancellation.clone());
     let registry = registry.with_sessions(&tools);
-    let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
+    let deadline = Instant::now() + timeout(budgets.timeout_ms)?;
     request.tools = definitions(registry.list());
     recorder.event(session::Kind::Send(session::Send {
         text: Some(message.into()),

@@ -870,3 +870,27 @@ async fn instruction_names_artifacts_and_lists_each_once_without_paths() {
     );
     assert!(!body.to_string().contains("input.txt"));
 }
+
+#[test]
+fn a_review_deadline_comes_from_the_profile_then_the_variable_then_thirty_minutes() {
+    let minute = std::time::Duration::from_secs(60);
+    assert_eq!(resolve_timeout(None, None).unwrap(), 30 * minute);
+    assert_eq!(
+        resolve_timeout(None, Some("90000".into())).unwrap(),
+        std::time::Duration::from_millis(90_000)
+    );
+    // A profile's own timeout_ms is what that review asked for, whatever the variable says.
+    assert_eq!(
+        resolve_timeout(Some(minute), Some("90000".into())).unwrap(),
+        minute
+    );
+    for invalid in ["0", "ten minutes", "-5", ""] {
+        let failure = resolve_timeout(None, Some(invalid.into())).unwrap_err();
+        assert_eq!(failure.code, error::Code::AgentError);
+        assert!(
+            failure.message.contains(TIMEOUT_VARIABLE),
+            "{}",
+            failure.message
+        );
+    }
+}

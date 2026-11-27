@@ -20,8 +20,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    Continuation, DEFAULT_TIMEOUT, FOLLOW_UP, Prompt, Review, StartedFollowUp, Toolset,
-    definitions,
+    Continuation, FOLLOW_UP, Prompt, Review, StartedFollowUp, Toolset, definitions,
     error::{Code, Failure},
     prompt_text,
     session::{self, Recorder},
@@ -102,7 +101,7 @@ async fn run_review(
     else {
         unreachable!("Agent executor requires an Agent profile")
     };
-    let timeout = timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
+    let timeout = super::timeout(*timeout_ms)?;
     let limits = Limits {
         deadline: Instant::now() + timeout,
         max_tokens: *max_tokens,
@@ -301,7 +300,7 @@ pub(super) async fn follow_up(
         output: continuation.output,
         model,
         limits: Limits {
-            deadline: Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
+            deadline: Instant::now() + super::timeout(budgets.timeout_ms)?,
             max_tokens: budgets.max_tokens,
             max_tool_calls: budgets.max_tool_calls,
         },
