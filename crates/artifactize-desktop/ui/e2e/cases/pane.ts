@@ -188,19 +188,24 @@ export const scenarios: Scenario[] = [
         const rows = await app.review.list();
         return rows.some((row) => row.id === newer) && rows.some((row) => row.id === older && /bob/.test(row.name));
       }, "both projects are listed and the older review names Bob");
+      // A claimed review still waits for a person, its claimant: the waiting filter keeps it,
+      // naming Bob, and the bar keeps counting it.
       await app.review.filterFor("type:human waiting");
-      await app.until(async () => (await app.review.list()).map((row) => row.id).join() === newer, "the claimed review is absent from the waiting filter");
-      await app.waitingBadge(1);
-      assert.equal(artifactize(fixture, ["request", "unclaim", older, "--reviewer", "bob"]).status, 0);
+      await app.until(async () => {
+        const rows = await app.review.list();
+        return rows.length === 2 && rows.some((row) => row.id === older && /bob/.test(row.name));
+      }, "the claimed review stays in the waiting filter, naming its claimant");
       await app.waitingBadge(2);
-      await app.until(async () => (await app.review.list()).some((row) => row.id === older), "releasing Bob's claim restores the waiting review");
+      assert.equal(artifactize(fixture, ["request", "unclaim", older, "--reviewer", "bob"]).status, 0);
+      await app.until(async () => (await app.review.list()).some((row) => row.id === older && !/bob/.test(row.name)), "released, it no longer names Bob");
+      await app.waitingBadge(2);
       await app.review.openListed(newer);
       assert.match(await app.review.debugState(), new RegExp(`^Request ${newer} `));
     },
   }),
   scenario({
     id: "review-live-arrival",
-    title: "a Human review created while Review is shown, with a review open, joins the list and the bar's count without leaving Review; claimed, released and submitted elsewhere it leaves and returns",
+    title: "a Human review created while Review is shown, with a review open, joins the list and the bar's count without leaving Review; claimed and released elsewhere it stays, naming its claimant while claimed, and submitted elsewhere it leaves",
     journeys: ["J-LIVE", "J-REVIEW-LIST", "J-BAR"],
     prepare: async (own) => {
       const fixture = await createRelease(own);
@@ -216,10 +221,10 @@ export const scenarios: Scenario[] = [
       await app.waitingBadge(2);
       assert.equal(await app.currentMode(), "Review", "still in Review");
       assert.equal(artifactize(fixture, ["request", "claim", second, "--reviewer", "bob"]).status, 0);
-      await app.until(async () => !(await app.review.list()).some((row) => row.id === second), "claimed elsewhere, it leaves the waiting list");
-      await app.waitingBadge(1);
+      await app.until(async () => (await app.review.list()).some((row) => row.id === second && /bob/.test(row.name)), "claimed elsewhere, it stays listed, naming its claimant");
+      await app.waitingBadge(2);
       assert.equal(artifactize(fixture, ["request", "unclaim", second, "--reviewer", "bob"]).status, 0);
-      await app.until(async () => (await app.review.list()).some((row) => row.id === second), "released elsewhere, it returns");
+      await app.until(async () => (await app.review.list()).some((row) => row.id === second && !/bob/.test(row.name)), "released elsewhere, it no longer names a claimant");
       signOff(fixture, second);
       await app.until(async () => !(await app.review.list()).some((row) => row.id === second), "submitted elsewhere, it leaves the list");
       await app.waitingBadge(1);

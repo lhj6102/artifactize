@@ -132,7 +132,8 @@ async fn search_page(app: &App, parsed: &search::Query, start: u32) -> Result<Re
     })
 }
 
-/// Number of reviews still waiting to be claimed, independent of the Pane filter.
+/// Number of Human reviews waiting for a person, claimed or not, independent of the Pane
+/// filter.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_waiting_count(app: tauri::State<'_, App>) -> Result<u32, Failure> {
