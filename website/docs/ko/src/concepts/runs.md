@@ -41,7 +41,7 @@ Artifactize는 Run을 시작한 터미널이나 MCP 세션과 독립적으로 �
 
 ## 승인과 Run의 종료 {#sign-offs-and-the-end-of-a-run}
 
-Human eval은 `{name}`으로 참조한 입력의 선행 조건을 모두 충족한 뒤에 시작합니다. 또한 **같은 Artifact**의 모든 자동(`runtime`, `agent`) eval이 `GREEN`(`PROVISIONAL` 포함)이어야 합니다. 같은 Artifact의 자동 eval이 `RED`나 `ERROR`이면 Human eval은 `BLOCKED`가 됩니다.
+Human eval은 가리키는 입력의 선행 조건을 모두 충족한 뒤에 시작합니다. 또한 **같은 Artifact**의 모든 자동(`runtime`, `agent`) eval이 `GREEN`(`PROVISIONAL` 포함)이어야 합니다. 같은 Artifact의 자동 eval이 `RED`나 `ERROR`이면 Human eval은 `BLOCKED`가 됩니다.
 
 조건이 충족되면 선택한 Human eval의 승인 요청을 **`DEFERRED` 요청**으로 기록하며, 이 요청이 다른 eval의 실행을 막지는 않습니다. 아직 끝나지 않은 Run은 **`WAITING_HUMAN`** 상태로 바뀝니다. 해당 승인에 의존하는 하위 eval은 나머지 선행 조건을 충족하고 실행 한도에 여유가 있으면 시작합니다. 이때 통과한(`GREEN`) 하위 eval 결과는 리뷰어가 승인 요청에 대한 판정을 제출할 때까지 **`PROVISIONAL`**로 표시됩니다(`RED`나 `ERROR`는 그대로 표시). 같은 상태 디렉터리에서 `--force` 없이 다른 Run을 시작할 수 있습니다. 이때 재사용 키가 같은 승인 요청이 이미 있으면 새 요청을 만들지 않고 기존 요청의 결과를 공유합니다.
 

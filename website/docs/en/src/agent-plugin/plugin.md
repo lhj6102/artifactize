@@ -42,7 +42,7 @@ Invoke `/artifactize:hey-arti` in Claude Code or select `$artifactize:hey-arti` 
 How Arti works with you:
 
 1. **Learns and interviews.** Arti inspects your repository's code, docs, specs, and test commands, then asks about what it cannot read: your goals, which pieces change together, external specs or shared policies, and which decisions require a person.
-2. **Proposes a composition with reasons.** Arti suggests Artifacts and evals—drawing boundaries around independently edited modules rather than one whole-repository review—and waits for your agreement before writing `.artifactize/<name>.artf` files.
+2. **Proposes a composition with reasons.** Arti suggests Artifacts and evals—drawing boundaries around independently edited modules rather than one whole-repository review—and waits for your agreement before writing `.artf` files under `.artifactize/`.
 3. **Applies and validates.** Once you agree, Arti writes the definitions, validates them with `config_check`, uses `status` to preview which evals verification would run or reuse, and starts verification via `verify_start`.
 4. **Respects human authority.** Arti marks an Artifact `basis = true` only when your team agrees nobody reviews it, never claims or submits a Human sign-off, and hands waiting sign-offs over to you as described in [Working toward YELLOW](#working-toward-yellow).
 
