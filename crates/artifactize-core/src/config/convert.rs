@@ -23,6 +23,8 @@ pub struct Old {
     pub file: PathBuf,
     pub name: String,
     pub table: Value,
+    /// Its comments, each line's text, kept as `//` comments above its `artf`.
+    pub comments: Vec<String>,
 }
 
 /// The new definition files, relative to `.artifactize/`, and what did not carry over.
@@ -80,6 +82,10 @@ pub fn convert(
                 text.push_str(&toolset.text);
                 text.push('\n');
             }
+        }
+        for comment in &old.comments {
+            writeln!(text, "//{}{comment}", if comment.is_empty() { "" } else { " " })
+                .expect("write to String");
         }
         write!(text, "artf {}{header} = {body}", old.name).expect("write to String");
         converted.files.push((old.file.clone(), text));

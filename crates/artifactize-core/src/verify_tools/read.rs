@@ -44,6 +44,10 @@ pub(super) async fn inspect(
         }
         Read::Plugins => to_string(&config::plugins::list(repo).map_err(Error::Config)?)?,
         Read::Config => to_string(&inspect::config_check(repo)?)?,
+        Read::Expand(args) => to_string(
+            &config::expand::expand(repo, args.artifact.as_ref()).map_err(Error::Config)?,
+        )?,
+        Read::Symbols => to_string(&config::expand::symbols(repo).map_err(Error::Config)?)?,
         Read::Runs(args) => to_string(
             &store::read_runs(
                 context.state(),

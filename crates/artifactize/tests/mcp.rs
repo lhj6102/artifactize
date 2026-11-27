@@ -928,7 +928,9 @@ async fn assert_inventory(client: &mut Client) -> Value {
         [
             "cache_show",
             "config_check",
+            "config_expand",
             "config_graph",
+            "config_symbols",
             "doctor",
             "models",
             "plugin_add",

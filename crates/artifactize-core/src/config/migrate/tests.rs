@@ -23,14 +23,17 @@ fn definitions_of_0_25_with_aliases_and_settings_become_the_language() {
     .unwrap();
     fs::write(
         definitions.join("docs.artf"),
-        r#"path = "docs/"
+        r#"# The guide's folder.
+path = "docs/"
 type = "markdown"
 annotations = { x = 1 }
 
 [evals.clear]
 title = "Clear"
 profile = !careful(reasoning = "high")
-payload = { instruction = "Is {docs} clear?" }
+payload = { instruction = """
+# Not a comment
+Is {docs} clear?""" }
 
 [evals.signoff]
 title = "Approved"
@@ -41,11 +44,14 @@ pass_schema = { type = "object" }
     )
     .unwrap();
     let migration = migrate(directory.path()).unwrap();
+    let text = fs::read_to_string(definitions.join("docs.artf")).unwrap();
+    assert!(text.starts_with("// The guide's folder.\nartf docs : markdown = {"), "{text}");
+    assert!(!text.contains("// Not a comment"), "{text}");
     let config = crate::config::read_workspace_config(directory.path()).unwrap();
     let docs = &config.artifacts[&"docs".parse::<crate::config::ArtifactName>().unwrap()];
     assert_eq!(docs.toolsets, ["markdown"]);
     let clear = config.evals.iter().find(|eval| eval.id.as_str() == "docs/clear").unwrap();
-    assert_eq!(clear.declaration.instruction(), Some("Is docs clear?"));
+    assert_eq!(clear.declaration.instruction(), Some("# Not a comment\nIs docs clear?"));
     let crate::config::Profile::Agent { model, .. } = clear.declaration.profile() else {
         panic!("an Agent eval");
     };

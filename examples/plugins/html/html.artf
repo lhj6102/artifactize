@@ -1,0 +1,6 @@
+// The HTML Viewer: an Artifact that composes `html` shows its page in the desktop's
+// Artifact Viewer, and an Agent eval of it can read its source.
+tool html = {
+  agent inspect = builtin(op = "read", description = "Inspect the HTML source of @{artf self}.")
+  human view = viewer(description = "Open @{artf self} in the HTML Viewer.")
+}

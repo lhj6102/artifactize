@@ -14,11 +14,11 @@ use crate::{
     tools::human::{CommandLine, Registry, ToolResult},
 };
 
-/// Bound owner fields and serialized Human results consistently across CLI, editor
-/// and submission so untrusted JSON cannot grow the review audit without limit.
+/// Bound a person's issues and serialized Human results consistently across CLI, desktop
+/// and submission so untrusted text cannot grow the review audit without limit.
 pub const MAX_RESULT_BYTES: usize = 256_000;
 /// Read one sentinel byte beyond the bound to detect oversized files without loading them.
-pub const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
+pub const ISSUES_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
 
 pub fn default_reviewer() -> Result<crate::types::ReviewerId, String> {
     crate::platform::user_name()

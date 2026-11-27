@@ -64,6 +64,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
                 file: relative,
                 name,
                 table,
+                comments: comments(&text),
             });
             removed.push(path);
         }
@@ -79,6 +80,10 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     let converted = convert::convert(&olds, &profiles, &namespaces)
         .map_err(|error| ConfigError::new(&definitions, error))?;
     warnings.extend(converted.warnings);
+    warnings.push(
+        "Saved results do not carry over: every eval, Agent, runtime and Human alike, runs once more under the new reuse keys."
+            .into(),
+    );
     let mut sources = current.clone();
     let mut written = Vec::new();
     for (file, text) in converted.files {
@@ -222,7 +227,7 @@ fn in_tree(
     warnings: &mut Vec<String>,
 ) -> Result<Vec<convert::Old>, ConfigError> {
     let ignored = ignore(root)?;
-    let mut found: Vec<(String, String, bool, Value)> = Vec::new();
+    let mut found: Vec<(String, String, bool, Value, Vec<String>)> = Vec::new();
     let mut pending = vec![(root.to_owned(), PathBuf::new())];
     while let Some((directory, relative)) = pending.pop() {
         let opened = crate::platform::open_directory(&directory)
@@ -287,17 +292,17 @@ fn in_tree(
                 }
             }
             removed.push(path);
-            found.push((name, target, whole, table));
+            found.push((name, target, whole, table, comments(&text)));
         }
     }
     // The nearest enclosing folder Artifact holds each other one as a part.
     let folders: Vec<(String, String)> = found
         .iter()
-        .filter(|(_, _, whole, _)| *whole)
-        .map(|(name, target, _, _)| (name.clone(), target.clone()))
+        .filter(|(_, _, whole, _, _)| *whole)
+        .map(|(name, target, _, _, _)| (name.clone(), target.clone()))
         .collect();
     let mut parts: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (name, target, _, _) in &found {
+    for (name, target, _, _, _) in &found {
         if target == ".artifactize/" {
             continue;
         }
@@ -313,7 +318,7 @@ fn in_tree(
     }
     Ok(found
         .into_iter()
-        .map(|(name, _, _, mut table)| {
+        .map(|(name, _, _, mut table, comments)| {
             if let Some(added) = parts.get(&name)
                 && let Some(object) = table.as_object_mut()
             {
@@ -332,9 +337,31 @@ fn in_tree(
                 file: PathBuf::from(format!("{name}.artf")),
                 name,
                 table,
+                comments,
             }
         })
         .collect())
+}
+
+/// The text of a TOML file's comment lines, in order, outside its multi-line strings; a
+/// comment after a value stays behind.
+fn comments(text: &str) -> Vec<String> {
+    let mut open: Option<&str> = None;
+    let mut found = Vec::new();
+    for line in text.lines() {
+        if open.is_none()
+            && let Some(comment) = line.trim_start().strip_prefix('#')
+        {
+            found.push(comment.strip_prefix(' ').unwrap_or(comment).trim_end().to_owned());
+            continue;
+        }
+        for delimiter in ["\"\"\"", "'''"] {
+            if open.is_none_or(|open| open == delimiter) && line.matches(delimiter).count() % 2 == 1 {
+                open = if open.is_some() { None } else { Some(delimiter) };
+            }
+        }
+    }
+    found
 }
 
 /// The folders the project's `.artfignore` (gitignore syntax) kept out of discovery.

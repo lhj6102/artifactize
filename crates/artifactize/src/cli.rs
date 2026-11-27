@@ -280,9 +280,9 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct PolicyArgs {
-    /// Use a declared profile variant for every included Eval.
+    /// Run every included Agent eval with this declared profile instead of its own.
     #[arg(long, value_name = "NAME")]
-    profile: Option<artifactize_core::config::ProfileVariantName>,
+    profile: Option<artifactize_core::config::ProfileName>,
     /// Include all Evals in the required dependency scope, including cycle peers.
     #[arg(long)]
     recursive: bool,

@@ -55,11 +55,13 @@ const INTERNAL_KEY_HEX_LEN: usize = 32;
 /// Exact allowlist of Artifactize tools exposed to ACP Chat agents over the one-turn bridge
 /// (`verify_tools/tool.rs:26-55`, explicitly excluding file/shell tools and `plugin_add`/`plugin_remove`).
 pub const ALLOWLISTED_TOOLS: &[&str] = &[
-    // Read-only inspection (15 tools)
+    // Read-only inspection (17 tools)
     "status",
     "config_graph",
     "request_logs",
     "config_check",
+    "config_expand",
+    "config_symbols",
     "run_list",
     "run_show",
     "request_list",

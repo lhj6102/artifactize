@@ -1,22 +1,20 @@
-//! IPC types for the library-owned review draft.
+//! IPC types for the library-owned review draft: a verdict, the issues and the Points.
 use artifactize_core::review;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use super::{Caller, FormView, Verdict, form::FieldValue, read};
+use super::{Caller, Verdict, read};
 use crate::{App, Failure, ids::RequestKey};
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewDraft {
     pub verdict: Option<Verdict>,
-    /// Why, oldest first, independent of the verdict.
-    pub reasons: Vec<String>,
+    /// What must change, oldest first, as typed.
+    pub issues: Vec<String>,
     /// Whether each verdict can be submitted now, whichever is chosen.
     pub readiness: DraftReadiness,
     pub points: Vec<ReviewPoint>,
-    pub green: FormView,
-    pub red: FormView,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -77,39 +75,18 @@ pub enum DraftChange {
     Verdict {
         verdict: Verdict,
     },
-    Field {
-        verdict: Verdict,
-        name: String,
-        value: FieldValue,
-    },
-    GroupField {
-        verdict: Verdict,
-        name: String,
-        item: u32,
-        field: String,
-        value: FieldValue,
-    },
-    AddItem {
-        verdict: Verdict,
-        name: String,
-    },
-    RemoveItem {
-        verdict: Verdict,
-        name: String,
-        item: u32,
-    },
-    /// Append one reason; empty text is refused.
-    AddReason {
+    /// Append one issue; empty text is refused.
+    AddIssue {
         text: String,
     },
-    /// Replace reason `index`, refused if it no longer reads `previous`.
-    EditReason {
+    /// Replace issue `index`, refused if it no longer reads `previous`.
+    EditIssue {
         index: u32,
         previous: String,
         text: String,
     },
-    /// Remove reason `index`, refused if it no longer reads `previous`.
-    RemoveReason {
+    /// Remove issue `index`, refused if it no longer reads `previous`.
+    RemoveIssue {
         index: u32,
         previous: String,
     },
@@ -121,52 +98,17 @@ impl From<DraftChange> for review::DraftEdit {
             DraftChange::Verdict { verdict } => Self::Verdict {
                 verdict: verdict.into(),
             },
-            DraftChange::Field {
-                verdict,
-                name,
-                value,
-            } => Self::Field {
-                verdict: verdict.into(),
-                name,
-                value: value.into(),
-            },
-            DraftChange::GroupField {
-                verdict,
-                name,
-                item,
-                field,
-                value,
-            } => Self::GroupField {
-                verdict: verdict.into(),
-                name,
-                item,
-                field,
-                value: value.into(),
-            },
-            DraftChange::AddItem { verdict, name } => Self::AddItem {
-                verdict: verdict.into(),
-                name,
-            },
-            DraftChange::RemoveItem {
-                verdict,
-                name,
-                item,
-            } => Self::RemoveItem {
-                verdict: verdict.into(),
-                name,
-                item,
-            },
-            DraftChange::AddReason { text } => Self::AddReason { text },
-            DraftChange::EditReason {
+            DraftChange::AddIssue { text } => Self::AddIssue { text },
+            DraftChange::EditIssue {
                 index,
                 previous,
                 text,
-            } => Self::EditReason {
+            } => Self::EditIssue {
                 index,
                 previous,
                 text,
             },
-            DraftChange::RemoveReason { index, previous } => Self::RemoveReason { index, previous },
+            DraftChange::RemoveIssue { index, previous } => Self::RemoveIssue { index, previous },
         }
     }
 }
@@ -179,31 +121,20 @@ pub struct HumanDraftChanged {
     pub id: RequestKey,
 }
 
-fn view(
-    request: &artifactize_core::store::Request,
-    draft: review::Draft,
-) -> Result<ReviewDraft, Failure> {
-    let green = draft
-        .owner_form(request, Verdict::Green.into())
-        .map_err(Failure::Invalid)?;
-    let red = draft
-        .owner_form(request, Verdict::Red.into())
-        .map_err(Failure::Invalid)?;
+fn view(draft: review::Draft) -> ReviewDraft {
     let readiness = DraftReadiness {
-        green: draft.readiness(request, Verdict::Green.into()).into(),
-        red: draft.readiness(request, Verdict::Red.into()).into(),
+        green: draft.readiness(Verdict::Green.into()).into(),
+        red: draft.readiness(Verdict::Red.into()).into(),
     };
-    Ok(ReviewDraft {
+    ReviewDraft {
         verdict: draft.verdict.map(Into::into),
-        reasons: draft.reasons,
+        issues: draft.issues,
         readiness,
         points: draft.points.into_iter().map(Into::into).collect(),
-        green: super::form::project(Verdict::Green, &green),
-        red: super::form::project(Verdict::Red, &red),
-    })
+    }
 }
 
-/// Read the saved response and both verdict forms. A released review retains its draft.
+/// Read the saved draft. A released review retains its draft.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_draft(
@@ -215,11 +146,11 @@ pub async fn human_draft(
         .await
         .map_err(Failure::Read)?
         .unwrap_or_default();
-    view(&request.request, draft)
+    Ok(view(draft))
 }
 
-/// Change one field, reason or the verdict of the current reviewer's saved draft. Empty
-/// reason text is `invalid`; a reason another surface changed first is refused.
+/// Change an issue or the verdict of the current reviewer's saved draft. Empty issue text is
+/// `invalid`; an issue another surface changed first is refused.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_draft_edit(
@@ -241,7 +172,7 @@ pub async fn human_draft_edit(
     )
     .await
     .map_err(Failure::Action)?;
-    view(&request.request, draft)
+    Ok(view(draft))
 }
 
 /// Remove a Point from the current reviewer's draft without submitting it.
@@ -264,10 +195,10 @@ pub async fn human_draft_remove_point(
     )
     .await
     .map_err(Failure::Action)?;
-    view(&request.request, draft)
+    Ok(view(draft))
 }
 
-/// Submit the current reviewer's saved form fields.
+/// Submit the current reviewer's saved verdict and issues.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_draft_submit(

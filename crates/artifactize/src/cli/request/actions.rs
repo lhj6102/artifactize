@@ -14,7 +14,7 @@ use artifactize_core::{
 };
 
 use super::super::{FAILURE_EXIT, cancellation_listener, print_json};
-use super::{fields::FieldsSource, inspect};
+use super::{inspect, issues::IssuesSource};
 
 pub(super) async fn claim(
     state: &Path,
@@ -73,8 +73,8 @@ pub(super) async fn tool(
         for content in result.content() {
             match content {
                 Content::Text { text } => writeln!(out, "{text}"),
-                Content::Viewer { artifact } => {
-                    writeln!(out, "Open {artifact} in the Artifactize desktop Viewer.")
+                Content::Viewer { artifact, tool } => {
+                    writeln!(out, "Open {artifact} with {tool} in the Artifactize desktop.")
                 }
                 Content::Launch { launched } => writeln!(
                     out,
@@ -96,10 +96,10 @@ pub(super) async fn submit(
     state: &Path,
     id: RequestId,
     verdict: Verdict,
-    fields: FieldsSource,
+    issues: IssuesSource,
     reviewer: Option<ReviewerId>,
 ) -> Result<(), String> {
-    let submission = fields.submission(verdict)?;
+    let submission = issues.submission(verdict)?;
     let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
     let (cancellation, listener) = cancellation_listener()?;
     let result = human::submit_and_publish(state, &id, &reviewer, &submission, cancellation).await;

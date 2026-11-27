@@ -114,12 +114,15 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
     fs::write(fixture.repo.join("preview.md"), "# Preview").unwrap();
     fs::write(
         fixture.repo.join(".artifactize/preview.artf"),
-        "path = 'preview.md'\ntype = 'markdown'\nbasis = true\n",
+        "artf preview : markdown = { path = \"preview.md\", basis = true }\n",
     )
     .unwrap();
-    let viewer =
-        artifactize_core::viewer::Session::open(&fixture.repo, &"preview".parse().unwrap())
-            .unwrap();
+    let viewer = artifactize_core::viewer::Session::open(
+        &fixture.repo,
+        &"preview".parse().unwrap(),
+        &"markdown.view".parse().unwrap(),
+    )
+    .unwrap();
     let active = artifactize_core::viewer::Review {
         id: id.clone(),
         reviewer: alice.clone(),
@@ -138,8 +141,7 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
         .pointing(state, &active, "#checkout .total")
         .await
         .unwrap();
-    assert_eq!(pointed.green, form.green);
-    assert_eq!(pointed.red, form.red);
+    assert_eq!(pointed.issues, form.issues);
     assert_eq!(pointed.verdict, form.verdict);
     assert_eq!(pointed.points.len(), 2);
     assert_eq!(pointed.points[1].text, "#checkout .total");
@@ -184,7 +186,7 @@ async fn draft_is_shared_across_processes_and_cleared_on_submission() {
     assert_eq!(saved.request.review_notes, None);
     assert_eq!(
         serde_json::to_value(saved.request.result().unwrap()).unwrap(),
-        json!({"verdict":"GREEN","approved":true})
+        json!({"verdict":"GREEN","kind":"human","issues":[]})
     );
     assert!(
         append_point(state, id, &alice, "#settled", "fixture")
@@ -242,7 +244,7 @@ async fn schema_ten_reviews_keep_their_receipts_and_gain_drafts() {
 }
 
 #[tokio::test]
-async fn a_draft_saved_before_reasons_turns_its_red_text_into_a_reason_and_submits_it() {
+async fn a_draft_saved_with_reasons_keeps_them_as_issues_and_submits_them() {
     use artifactize_core::review::{self, Answer, DraftEdit, Job, Readiness, read_draft};
 
     let fixture = Fixture::new(false);
@@ -259,8 +261,9 @@ async fn a_draft_saved_before_reasons_turns_its_red_text_into_a_reason_and_submi
             id,
             json!({
                 "verdict": "RED",
+                "reasons": ["The totals are wrong"],
                 "green": [["approved", {"kind": "fixed"}]],
-                "red": [["reason", {"kind": "text", "value": "The totals are wrong"}]],
+                "red": [],
                 "points": [],
             })
             .to_string()
@@ -273,21 +276,17 @@ async fn a_draft_saved_before_reasons_turns_its_red_text_into_a_reason_and_submi
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(draft.reasons, ["The totals are wrong"]);
-    let request = store::read_request(&fixture.state, id.as_str())
-        .await
-        .unwrap()
-        .request;
+    assert_eq!(draft.issues, ["The totals are wrong"]);
     assert_eq!(
-        draft.readiness(&request, artifactize_core::runtime::Verdict::Red),
+        draft.readiness(artifactize_core::runtime::Verdict::Red),
         Readiness::Ready
     );
-    // The first save keeps the adopted reasons as reasons.
+    // The first save keeps them as issues.
     let saved = review::edit_draft(
         &fixture.state,
         id,
         &alice,
-        DraftEdit::AddReason {
+        DraftEdit::AddIssue {
             text: "The footer overlaps".into(),
         },
     )
@@ -320,7 +319,11 @@ async fn a_draft_saved_before_reasons_turns_its_red_text_into_a_reason_and_submi
         .unwrap();
     assert_eq!(
         serde_json::to_value(settled.request.result().unwrap()).unwrap(),
-        json!({"verdict": "RED", "reason": "The totals are wrong\n\nThe footer overlaps"})
+        json!({
+            "verdict": "RED",
+            "kind": "human",
+            "issues": [{"reason": "The totals are wrong"}, {"reason": "The footer overlaps"}],
+        })
     );
     assert_eq!(read_draft(&fixture.state, id, &alice).await.unwrap(), None);
 }
@@ -335,22 +338,23 @@ fn a_long_open_viewer_cannot_read_a_new_folder_parts_files() {
     fs::write(repo.join("parent/home.txt"), "parent contents").unwrap();
     fs::write(
         repo.join(".artifactize/parent.artf"),
-        "path = 'parent/'\ntype = 'files'\nbasis = true\n",
+        "artf parent : files = { path = \"parent/\", basis = true }\n",
     )
     .unwrap();
     let artifact = "parent".parse().unwrap();
+    let view = "files.view".parse().unwrap();
     let child = "child/report.txt".parse().unwrap();
-    let original = artifactize_core::viewer::Session::open(repo, &artifact).unwrap();
+    let original = artifactize_core::viewer::Session::open(repo, &artifact, &view).unwrap();
     assert_eq!(original.read_text(&child).unwrap(), "report contents");
 
     fs::write(
         repo.join(".artifactize/child.artf"),
-        "path = 'parent/child/'\ntype = 'files'\nbasis = true\n",
+        "artf child : files = { path = \"parent/child/\", basis = true }\n",
     )
     .unwrap();
     fs::write(
         repo.join(".artifactize/parent.artf"),
-        "path = 'parent/'\ntype = 'files'\nparts = ['child']\n",
+        "artf parent : files = { path = \"parent/\", parts = [child] }\n",
     )
     .unwrap();
     assert!(
@@ -359,7 +363,7 @@ fn a_long_open_viewer_cannot_read_a_new_folder_parts_files() {
             .unwrap_err()
             .contains("Reopen the viewer")
     );
-    let reopened = artifactize_core::viewer::Session::open(repo, &artifact).unwrap();
+    let reopened = artifactize_core::viewer::Session::open(repo, &artifact, &view).unwrap();
     assert_ne!(original.scope(), reopened.scope());
     assert!(reopened.read_text(&child).is_err());
     assert_eq!(
@@ -610,18 +614,6 @@ fn write_human(root: &Path, path: &Path, fingerprint: bool) {
                 "title":"Human check",
                 "profile":{"kind":"human"},
                 "payload":{"instruction":"Review."},
-                "pass_schema":{
-                    "type":"object",
-                    "properties":{"approved":{"const":true}},
-                    "required":["approved"],
-                    "additionalProperties":false,
-                },
-                "fail_schema":{
-                    "type":"object",
-                    "properties":{"reason":{"type":"string","minLength":1}},
-                    "required":["reason"],
-                    "additionalProperties":false,
-                },
             },
         ],
     });
@@ -642,7 +634,7 @@ fn returning() -> VerifyOptions {
 }
 
 fn green() -> human::Submission {
-    human::Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap()
+    human::Submission::try_from(json!({"verdict":"GREEN"})).unwrap()
 }
 
 /// A request ID parsed once, where a test names one.
@@ -835,11 +827,12 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     .unwrap();
     assert!(result.is_error());
     for result in [
-        json!({"verdict":"GREEN"}),
-        json!({"verdict":"RED","reason":3}),
+        json!({"verdict":"RED"}),
+        json!({"verdict":"RED","issues":[3]}),
         json!({"verdict":"BLUE"}),
-        json!({"verdict":"GREEN","approved":true,"extra":1}),
-        json!({"verdict":"RED","reason":"x".repeat(256_000)}),
+        json!({"verdict":"GREEN","issues":["still wrong"]}),
+        json!({"verdict":"GREEN","approved":true}),
+        json!({"verdict":"RED","issues":["x".repeat(256_000)]}),
     ] {
         let refused = match human::Submission::try_from(result) {
             Ok(result) => human::submit(
@@ -1451,7 +1444,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &receipts,
         &rid(follower),
         &"alice".parse().unwrap(),
-        &human::Submission::try_from(json!({"verdict":"RED","reason":"Needs work"})).unwrap(),
+        &human::Submission::try_from(json!({"verdict":"RED","issues":["Needs work"]})).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -1500,7 +1493,8 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
             .result()
             .as_ref()
             .unwrap()
-            .owner_fields()["reason"],
+            .issues()[0]
+            .reason,
         "Needs work"
     );
     assert_eq!(
@@ -1804,7 +1798,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     same["title"] = json!("Same criteria");
     let mut different = same.clone();
     different["id"] = json!("zz-different");
-    different["pass_schema"]["properties"]["approved"]["const"] = json!(false);
+    different["payload"]["instruction"] = json!("Review it differently.");
     declaration["evals"]
         .as_array_mut()
         .unwrap()
@@ -1857,7 +1851,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         &receipts,
         &run.requests[2].id,
         &"bob".parse().unwrap(),
-        &human::Submission::try_from(json!({"verdict":"RED","reason":"Different review"})).unwrap(),
+        &human::Submission::try_from(json!({"verdict":"RED","issues":["Different review"]})).unwrap(),
         CancellationToken::new(),
     )
     .await

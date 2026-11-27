@@ -78,7 +78,7 @@ fn text(result: &ToolResult) -> &str {
 fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
     let parse = |tool| {
         parse_declaration(
-            &support::declaration::to_toml(
+            &support::declaration::to_artf(
                 json!({"name":"a","views":{"human_tools":{"inspect":tool}}}),
             )
             .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),

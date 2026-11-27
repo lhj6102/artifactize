@@ -24,6 +24,8 @@ pub(crate) enum Read {
     Graph(GraphInput),
     Logs(LogInput),
     Config,
+    Expand(ExpandInput),
+    Symbols,
     Runs(Runs),
     Run(RunId),
     Requests(Requests),
@@ -65,6 +67,8 @@ impl Inspection {
                 Read::Logs(LogInput { id, query })
             }
             ReadTool::Config => empty(arguments, Read::Config)?,
+            ReadTool::Expand => Read::Expand(decode(arguments)?),
+            ReadTool::Symbols => empty(arguments, Read::Symbols)?,
             ReadTool::Runs => Read::Runs(decode(arguments)?),
             ReadTool::Run => Read::Run(decode::<Run>(arguments)?.run),
             ReadTool::Requests => Read::Requests(decode(arguments)?),
@@ -213,6 +217,12 @@ pub(crate) struct GraphInput {
     pub scope: Scope,
     #[serde(default)]
     pub impact: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ExpandInput {
+    pub artifact: Option<crate::types::ArtifactName>,
 }
 
 #[derive(Deserialize)]

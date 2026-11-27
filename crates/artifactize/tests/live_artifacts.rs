@@ -35,10 +35,11 @@ impl Project {
             provider: None,
         }
     }
-    fn node(&self, name: &str, declaration: Value) {
+    fn node(&self, name: &str, mut declaration: Value) {
+        declaration["name"] = Value::String(name.to_owned());
         fs::write(
             self.repo.join(format!(".artifactize/{name}.artf")),
-            support::declaration::to_toml(declaration).unwrap(),
+            support::declaration::to_artf(declaration).unwrap(),
         )
         .unwrap();
     }

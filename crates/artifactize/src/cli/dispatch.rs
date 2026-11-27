@@ -176,6 +176,12 @@ async fn execute_general(command: Option<Command>, context: Context) -> Result<u
             command: ConfigCommand::Migrate,
         }) => config::migrate(context),
         Some(Command::Config {
+            command: ConfigCommand::Expand { artifact },
+        }) => config::expand(context, artifact),
+        Some(Command::Config {
+            command: ConfigCommand::Symbols,
+        }) => config::symbols(context),
+        Some(Command::Config {
             command: ConfigCommand::Check,
         }) => config::check(context),
         Some(Command::Run {

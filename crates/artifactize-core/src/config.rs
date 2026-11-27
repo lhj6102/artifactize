@@ -89,8 +89,9 @@ mod tests;
 
 /// One definition text's Artifact and evals, read as a project with only that file: for tests
 /// of declaration rules that need no files.
-#[cfg(test)]
-pub(crate) struct ParsedDeclaration {
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct ParsedDeclaration {
     pub evals: Vec<EvalDeclaration>,
     pub views: Views,
     pub tags: Vec<String>,
@@ -98,13 +99,19 @@ pub(crate) struct ParsedDeclaration {
     pub fingerprint: Option<Fingerprint>,
 }
 
-#[cfg(test)]
-pub(crate) fn parse_declaration(text: &str) -> Result<ParsedDeclaration, String> {
-    let root = tempfile::tempdir().map_err(|error| error.to_string())?;
-    let definitions = root.path().join(discovery::DEFINITION_DIR);
-    std::fs::create_dir_all(&definitions).map_err(|error| error.to_string())?;
-    std::fs::write(definitions.join("test.artf"), text).map_err(|error| error.to_string())?;
-    let config = read_workspace_declarations(root.path()).map_err(|error| error.to_string())?;
+#[doc(hidden)]
+pub fn parse_declaration(text: &str) -> Result<ParsedDeclaration, String> {
+    // Nothing is read from this root: the one file is in memory, and only built-in plugins.
+    let root = std::env::temp_dir().join("artifactize-unread-project");
+    let sources = BTreeMap::from([(
+        root.join(discovery::DEFINITION_DIR).join("test.artf"),
+        text.to_owned(),
+    )]);
+    let catalog = plugins::builtin_catalog();
+    let program =
+        discovery::program(&root, &sources, &catalog).map_err(|error| error.to_string())?;
+    let config = discovery::build_program(root, program, catalog)
+        .map_err(|error| error.to_string())?;
     let artifact = config
         .artifacts
         .into_values()

@@ -135,6 +135,18 @@ pub fn tools() -> Vec<Tool> {
             &[],
         ),
         tool(
+            ReadTool::Expand,
+            "Each Artifact's binding as written (file, line, macro) and the declaration it expands to, as .artf code with macros and toolsets filled in. One Artifact, or all.",
+            object!({"artifact":string}),
+            &[],
+        ),
+        tool(
+            ReadTool::Symbols,
+            "Every global binding of the project and its plugins: Artifacts, tools, profiles and evals, macros with their parameters and defaults, and where each is declared.",
+            Map::new(),
+            &[],
+        ),
+        tool(
             ReadTool::Runs,
             "List this repository's saved Runs, newest first. Offset selects older records.",
             object!({"limit":{"type":"integer","minimum":0,"maximum":RUN_LIST_LIMIT,"default":RUN_LIST_LIMIT},"offset":{"type":"integer","minimum":0}}),
@@ -263,6 +275,8 @@ fn annotations(id: ToolId) -> Hints {
             Read::Graph
             | Read::Logs
             | Read::Config
+            | Read::Expand
+            | Read::Symbols
             | Read::Runs
             | Read::Run
             | Read::Requests

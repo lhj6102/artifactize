@@ -1,11 +1,5 @@
-type = "html"
+namespace = "html"
 title = "HTML Viewer"
 
 [viewer]
 entry = "viewer.html"
-
-[views.agent_tools]
-inspect = { builtin = "read", description = "Inspect the HTML source of {artifactName}." }
-
-[views.human_tools]
-view = { kind = "viewer", description = "Open {artifactName} in the HTML Viewer." }

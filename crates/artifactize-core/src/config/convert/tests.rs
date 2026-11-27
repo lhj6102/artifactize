@@ -7,6 +7,7 @@ fn old(name: &str, table: Value) -> Old {
         file: PathBuf::from(format!("{name}.artf")),
         name: name.into(),
         table,
+        comments: Vec::new(),
     }
 }
 

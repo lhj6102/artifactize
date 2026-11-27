@@ -89,6 +89,15 @@ pub(crate) fn program(
     })
 }
 
+/// [`build`] for a program read elsewhere, such as one file in memory.
+pub(super) fn build_program(
+    root: PathBuf,
+    program: lang::Program,
+    catalog: super::plugins::Catalog,
+) -> Result<RepoConfig, ConfigError> {
+    build(root, program, catalog)
+}
+
 fn build(
     root: PathBuf,
     program: lang::Program,

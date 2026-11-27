@@ -102,6 +102,12 @@ impl Artifact {
     pub fn kind(&self) -> ArtifactKind {
         self.path.kind()
     }
+    /// Its `path` as written: a folder ends in `/`, a Live Artifact is an address.
+    pub fn written_path(&self) -> String {
+        self.authored_path
+            .clone()
+            .unwrap_or_else(|| self.path.to_string())
+    }
     pub fn select(&self) -> &[LogicalPath] {
         self.path.select()
     }

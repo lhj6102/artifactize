@@ -249,6 +249,13 @@ pub(super) fn read(directory: &Path) -> Result<Plugin, ConfigError> {
     })
 }
 
+/// The built-in plugins alone.
+pub(crate) fn builtin_catalog() -> Catalog {
+    builtins()
+        .map(|plugin| (plugin.info.name.clone(), Arc::new(plugin)))
+        .collect()
+}
+
 /// The built-in plugins and those installed under `.artifactize/plugins/`.
 pub(crate) fn catalog(root: &Path) -> Result<Catalog, ConfigError> {
     let mut plugins: Catalog = builtins()

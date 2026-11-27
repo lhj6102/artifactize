@@ -188,14 +188,14 @@ impl Drop for Fixture {
 #[test]
 fn declarations_reject_unknown_sessions_and_lifecycle_options_with_spans() {
     use artifactize_core::config::parse_declaration;
-    let unknown = "name = 'app'\nbasis = true\n[views.agent_tools.act]\ndescription = 'act'\ncommand = 'harness'\nargs = []\nprotocol = 'json'\nsession = 'missing'\n";
+    let unknown = "tool app = {\n  agent act = command(\n    description = \"act\",\n    command = \"harness\",\n    args = [],\n    protocol = \"json\",\n    session = \"missing\",\n  )\n}\nartf app : app = { path = \"./\", basis = true }\n";
     let error = parse_declaration(unknown).unwrap_err();
-    assert!(error.contains("Unknown tool session: missing"), "{error}");
-    assert!(error.contains("8 |") || error.contains("line 8"), "{error}");
-    let extra = "name = 'app'\nbasis = true\n[views.agent_sessions.app]\nstart = { command = 'harness', args = [], timeout_ms = 1 }\nstop = { command = 'harness', args = [] }\n";
+    assert!(error.contains("Unknown tool session: app.missing"), "{error}");
+    assert!(error.contains("line 2"), "{error}");
+    let extra = "tool app = {\n  session app = session(\n    start = command(command = \"harness\", args = [], timeout_ms = 1),\n    stop = command(command = \"harness\", args = []),\n  )\n}\nartf app : app = { path = \"./\", basis = true }\n";
     let error = parse_declaration(extra).unwrap_err();
     assert!(error.contains("unknown field `timeout_ms`"), "{error}");
-    assert!(error.contains("4 |") || error.contains("line 4"), "{error}");
+    assert!(error.contains("line 2"), "{error}");
 }
 
 #[test]

@@ -818,8 +818,7 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        // Identical tools are one toolset, named after the first Artifact with them.
-        ["a_inspect_a", "leaf_fixture_read_leaf", "leaf_fixture_read_part"]
+        ["a_inspect_a", "fixture_read_leaf", "fixture_read_part"]
     );
     let result = registry
         .call(

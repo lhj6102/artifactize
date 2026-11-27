@@ -56,20 +56,24 @@ pub fn to_artf(value: Value) -> Result<String, String> {
     // A builder without a target reviews the project folder.
     object.entry("path").or_insert_with(|| Value::String("./".into()));
     let kinds: BTreeSet<&'static str> = evals(&table).iter().filter_map(|eval| review_kind(eval)).collect();
-    with_fallback_tools(&mut table, &kinds);
+    let fallback = fallback_tools(&table, &kinds);
     let converted = convert::convert(
         &[convert::Old {
             file: PathBuf::from(format!("{name}.artf")),
             name: name.clone(),
             table: table.clone(),
+            comments: Vec::new(),
         }],
         &BTreeMap::new(),
         &BTreeSet::new(),
     )?;
     let mut text = marker(&name, &table);
     // Its own file first, then its toolsets and profiles.
-    for (_, file) in converted.files {
-        text.push_str(&file);
+    for (index, (_, file)) in converted.files.into_iter().enumerate() {
+        text.push_str(&if index == 0 { composing(&file, &name, &fallback) } else { file });
+    }
+    if !fallback.is_empty() {
+        text.push_str(FIXTURE_TOOLS);
     }
     Ok(text)
 }
@@ -337,6 +341,7 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
         }
     }
     let mut olds = Vec::new();
+    let mut compositions: BTreeMap<String, Vec<&'static str>> = BTreeMap::new();
     for (file, fixture) in project.iter() {
         let mut table = fixture.table.clone();
         if let Some(parts) = added.get(&fixture.name) {
@@ -353,7 +358,10 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
                 }
             }
         }
-        with_fallback_tools(&mut table, &needs_tools.get(&fixture.name).cloned().unwrap_or_default());
+        let fallback = fallback_tools(&table, &needs_tools.get(&fixture.name).cloned().unwrap_or_default());
+        if !fallback.is_empty() {
+            compositions.insert(fixture.name.clone(), fallback);
+        }
         olds.push(convert::Old {
             file: file
                 .strip_prefix(root.join(".artifactize"))
@@ -361,6 +369,7 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
                 .to_owned(),
             name: fixture.name.clone(),
             table,
+            comments: Vec::new(),
         });
     }
     let converted =
@@ -368,7 +377,15 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
     let directory = root.join(".artifactize");
     fs::create_dir_all(&directory)?;
     let mut shared = BTreeSet::new();
-    for (relative, text) in converted.files {
+    let mut files = converted.files;
+    if !compositions.is_empty() {
+        let mut name = PathBuf::from("fixture-tools.artf");
+        while files.iter().any(|(file, _)| *file == name) {
+            name = PathBuf::from(format!("_{}", name.display()));
+        }
+        files.push((name, FIXTURE_TOOLS.to_owned()));
+    }
+    for (relative, text) in files {
         let file = directory.join(&relative);
         match project.get_mut(&file) {
             Some(fixture) => {
@@ -376,6 +393,11 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
                 if current.is_some() && current != fixture.written {
                     continue;
                 }
+                let text = composing(
+                    &text,
+                    &fixture.name,
+                    compositions.get(&fixture.name).map_or(&[][..], Vec::as_slice),
+                );
                 let text = marker(&fixture.name, &fixture.table) + &text;
                 fs::write(&file, &text)?;
                 fixture.written = Some(text);
@@ -398,30 +420,46 @@ fn regenerate(registry: &mut Registry, root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// An Artifact a review reads gets a fixture tool of each kind it lacks, unless it declares a
-/// plugin type.
-fn with_fallback_tools(table: &mut Value, kinds: &BTreeSet<&'static str>) {
+/// Simple tools for reviews that test another seam, in the `fixture` namespace, so a provider
+/// sees `fixture_read_<artifact>` and a person `fixture.help`. Admission tests write their exact
+/// production declarations directly, not through here.
+const FIXTURE_TOOLS: &str = r#"tool! fixture-agent() = { namespace = "fixture", agent read = builtin(op = "read") }
+tool! fixture-human() = { namespace = "fixture", human help = builtin(op = "help", args = ["artifactize"]) }
+"#;
+
+/// The fixture toolsets an Artifact a review reads composes: one for each kind of review it
+/// has no tools for, unless it declares a plugin type.
+fn fallback_tools(table: &Value, kinds: &BTreeSet<&'static str>) -> Vec<&'static str> {
     if table.get("type").is_some() {
-        return;
+        return Vec::new();
     }
-    for kind in kinds {
-        let audience = format!("{kind}_tools");
-        if table["views"][&audience]
-            .as_object()
-            .is_some_and(|tools| !tools.is_empty())
-        {
-            continue;
-        }
-        let (name, tool) = if *kind == "agent" {
-            ("fixture_read", serde_json::json!({"builtin": "read"}))
-        } else {
-            ("fixture_help", serde_json::json!({"builtin": "help", "args": ["artifactize"]}))
-        };
-        if !table["views"].is_object() {
-            table["views"] = serde_json::json!({});
-        }
-        table["views"][&audience] = serde_json::json!({ name: tool });
+    kinds
+        .iter()
+        .filter(|kind| {
+            table["views"][format!("{kind}_tools")]
+                .as_object()
+                .is_none_or(serde_json::Map::is_empty)
+        })
+        .map(|kind| if *kind == "agent" { "fixture-agent!()" } else { "fixture-human!()" })
+        .collect()
+}
+
+/// `text` with `toolsets` added to the composition of Artifact `name`.
+fn composing(text: &str, name: &str, toolsets: &[&str]) -> String {
+    if toolsets.is_empty() {
+        return text.to_owned();
     }
+    let start = text
+        .find(&format!("artf {name} "))
+        .expect("the converted file binds its Artifact");
+    let equals = start + text[start..].find(" = ").expect("a binding has `=`");
+    let joined = toolsets.join(" & ");
+    let added = if text[start..equals].contains(" : ") {
+        format!(" & {joined}")
+    } else {
+        format!(" : {joined}")
+    };
+    format!("{}{added}{}", &text[..equals], &text[equals..])
 }
 
 /// `agent` or `human` for an eval that reviews with tools.

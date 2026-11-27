@@ -124,7 +124,8 @@ impl Sessions {
                 artifact: context.artifact.clone(),
                 target: context.target.clone(),
             },
-            viewer: context.type_name.to_string(),
+            // One window per viewer tool: `files.view` and `html.view` of one Artifact are two.
+            viewer: viewer.tool().to_string(),
             scope: viewer.scope(),
         };
         let mut sessions = self.0.lock().expect("viewer sessions");

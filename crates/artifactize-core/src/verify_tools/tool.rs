@@ -36,6 +36,8 @@ names!(ReadTool {
     Graph => "config_graph",
     Logs => "request_logs",
     Config => "config_check",
+    Expand => "config_expand",
+    Symbols => "config_symbols",
     Runs => "run_list",
     Run => "run_show",
     Requests => "request_list",

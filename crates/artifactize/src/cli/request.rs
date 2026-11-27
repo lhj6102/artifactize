@@ -1,7 +1,7 @@
 //! Parse and route request commands.
 
 mod actions;
-mod fields;
+mod issues;
 mod inspect;
 
 use std::path::Path;
@@ -11,7 +11,7 @@ use artifactize_core::{
     types::{RequestId, ReviewerId, RunId},
 };
 use clap::Subcommand;
-use fields::FieldsSource;
+use issues::IssuesSource;
 
 #[derive(Debug, Subcommand)]
 pub enum RequestCommand {
@@ -51,13 +51,13 @@ pub enum RequestCommand {
         #[arg(long, value_name = "NAME")]
         reviewer: Option<ReviewerId>,
     },
-    /// Submit a schema-valid Human verdict and owner fields.
+    /// Submit a person's verdict: GREEN with no issue, or RED with the issues to change.
     Submit {
         id: RequestId,
         #[arg(long, value_enum)]
         verdict: Verdict,
         #[command(flatten)]
-        fields: FieldsSource,
+        issues: IssuesSource,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<ReviewerId>,
@@ -81,10 +81,10 @@ pub(super) async fn execute(
         RequestCommand::Submit {
             id,
             verdict,
-            fields,
+            issues,
             reviewer,
         } => {
-            actions::submit(state, id, verdict, fields, reviewer).await?;
+            actions::submit(state, id, verdict, issues, reviewer).await?;
         }
     }
     Ok(0)

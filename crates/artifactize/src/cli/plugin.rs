@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
 };
 
-use artifactize_core::config::{ArtifactType, plugins};
+use artifactize_core::config::{PluginName, plugins};
 use clap::Subcommand;
 
 use super::{Context, print_json};
@@ -13,7 +13,7 @@ pub enum PluginCommand {
     /// Install the plugin folder at PATH into this project.
     Add { path: PathBuf },
     /// Remove a project-installed plugin by its type name.
-    Remove { r#type: ArtifactType },
+    Remove { r#type: PluginName },
     /// List built-in and project-installed types.
     List,
 }

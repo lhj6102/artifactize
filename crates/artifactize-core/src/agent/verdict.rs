@@ -52,6 +52,11 @@ pub struct ValidatedResult {
 }
 
 impl ValidatedResult {
+    /// The answer as a session file saves it.
+    pub fn to_json(&self) -> Value {
+        serde_json::to_value(self).expect("an answer is JSON")
+    }
+
     /// The answer's fields as the model wrote them, for transcripts.
     pub fn fields(&self) -> serde_json::Map<String, Value> {
         let mut fields = self.earlier.clone();

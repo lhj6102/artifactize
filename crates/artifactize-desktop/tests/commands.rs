@@ -2363,7 +2363,7 @@ fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
     let programs = os::tempdir();
     let absent = artifactize_tools::files::path_text(&programs.path().join("not-installed"));
     let declaration = |name: &str, title: &str, instruction: &str| {
-        support::declaration::to_toml(json!({
+        support::declaration::to_artf(json!({
             "name": name,
             "evals": {"check": {
                 "title": title,
