@@ -267,6 +267,6 @@ export class Detail {
   /** Click the part `part` under the Definition's Parts: its own Detail opens. */
   async openPart(name: string, part: string): Promise<void> {
     await this.browser.$(`${DETAIL} ul[aria-label="Parts of ${name}"]`).$(`button=${part}`).click();
-    await this.until((shown) => shown.title === part, `${part}'s Detail opened`);
+    await this.until((shown) => shown.title === `Artifact ${part}`, `${part}'s Detail opened`);
   }
 }

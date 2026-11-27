@@ -79,6 +79,14 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     if olds.is_empty() && plugin_writes.is_empty() && removed.is_empty() {
         return Ok(Migration::default());
     }
+    let readers = convert::untyped_readers(&olds);
+    for old in &mut olds {
+        if readers.contains(&old.name)
+            && let Some(table) = old.table.as_object_mut()
+        {
+            table.insert("type".into(), Value::String("files".into()));
+        }
+    }
     let namespaces: BTreeSet<String> = catalog.keys().map(ToString::to_string).collect();
     let converted = convert::convert(&olds, &profiles, &namespaces)
         .map_err(|error| ConfigError::new(&definitions, error))?;

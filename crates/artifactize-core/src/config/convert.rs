@@ -52,7 +52,6 @@ pub fn convert(
         toolsets: Vec::new(),
         plugins,
         warnings: Vec::new(),
-        files: untyped_readers(declarations),
     };
     for (name, profile) in profiles {
         converter.profile_name(Some(name), profile)?;
@@ -137,14 +136,12 @@ struct Converter<'a> {
     toolsets: Vec<Toolset>,
     plugins: &'a BTreeSet<String>,
     warnings: Vec<String>,
-    /// The Artifacts that compose `files` although they had no type (`untyped_readers`).
-    files: BTreeSet<String>,
 }
 
 /// The old local Artifacts without a type that an Agent or Human eval reads, its own or one
 /// naming it with `{name}`, while they declare no tools for that eval's kind. Before Artifact
 /// types, a local file or folder came with the file tools; `files` gives them now.
-fn untyped_readers(declarations: &[Old]) -> BTreeSet<String> {
+pub(crate) fn untyped_readers(declarations: &[Old]) -> BTreeSet<String> {
     let mut read: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
     for old in declarations {
         let Ok(tables) = evals(old.table.get("evals")) else {
@@ -217,9 +214,6 @@ impl Converter<'_> {
             return Err("a declaration is a table".into());
         };
         let mut toolsets = Vec::new();
-        if self.files.contains(&old.name) {
-            toolsets.push("files".to_owned());
-        }
         let mut out = String::from("{\n");
         for (key, value) in table {
             match key.as_str() {
