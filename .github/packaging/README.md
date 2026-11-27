@@ -159,7 +159,10 @@ runs already checked, so its Binaries run builds and retains the same packages f
 commit without repeating them (release verification belongs to CI and Binaries, not a
 duplicate tag-time test job). `release.yml` enforces it: its first job refuses a tag whose
 commit has no successful Binaries run from a `release/*` push, before anything is built or
-published. On every run, its Linux policy job
+published. That run passes even when a best-effort platform's job fails, so the first job also
+reads its jobs: the Windows zip and Store package, each macOS tarball and the macOS desktop
+bundle are attached only when the jobs that built and smoke-tested them passed, and Homebrew
+is updated only when every macOS package was. On every run, its Linux policy job
 runs `python3 -I .github/scripts/test-channels.py`: generated metadata, prerelease
 skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.
