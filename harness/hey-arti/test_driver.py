@@ -50,55 +50,65 @@ def fake_builder(repo, case_id):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
-    def node(name, target, body):
+    def node(name, target, body, tools="", beside=""):
         if target.endswith("/"):
             (repo / target).mkdir(parents=True, exist_ok=True)
-        write(f".artifactize/{name}.artf", f"path = {json.dumps(target)}\n{body}")
+        head = f"artf {name}{' : ' + tools if tools else ''} = {{"
+        lines = "\n".join("  " + line if line.strip() else "" for line in f"path = {json.dumps(target)}\n{body}".splitlines())
+        write(f".artifactize/{name}.artf", f"{beside}{head}\n{lines}\n}}\n")
 
-    def runtime(name, instruction="Check the local fixture behavior."):
-        return f'''[evals.check]
-title = "{name} behavior"
-profile = {{ kind = "runtime", command = {json.dumps(sys.executable)}, args = ["-I", "{{checks}}", "{name}"] }}
-payload.instruction = {json.dumps(instruction)}
+    def runtime(name, instruction="Check the local fixture behavior.", inputs=()):
+        listed = f"\n  inputs = [{', '.join(inputs)}]" if inputs else ""
+        return f'''eval check : runtime(command = {json.dumps(sys.executable)}, args = ["-I", "@{{path checks}}", "{name}"]) = {{
+  title = "{name} behavior"
+  instruction = {json.dumps(instruction)}{listed}
+}}
 '''
 
     node("checks", "check.py", "basis = true\n")
     if case_id == "library-consumer":
         node("pricing", "library/", runtime("pricing"))
-        node("receipt", "app/", runtime("receipt", "Check the receipt using {pricing}."))
+        node("receipt", "app/", runtime("receipt", "Check the receipt using the pricing.", ["pricing"]))
         node("label", "independent/", runtime("label"))
     elif case_id == "docs-assets":
         node("content", "site/content/", runtime("content"))
         node("theme", "site/theme/", runtime("theme"))
         node("license", "assets/LICENSE.txt", "basis = true\n")
-        node("banner", "assets/banner.svg", runtime("banner", "Check {banner} against {license}."))
-        node("site", "site/", runtime("site", "Check {content}, {theme} and {banner}.").replace('"site"]', '"all"]'))
+        node("banner", "assets/banner.svg", runtime("banner", "Check the banner against the license.", ["license"]))
+        node("site", "site/", runtime("site", "Check the content, theme and banner.", ["content", "theme", "banner"]).replace('"site"]', '"all"]'))
     else:
-        node("api", "api/", 'type = "files"\n' + runtime("api", "Check API against {contract}."))
-        node("contract", "contract/", 'type = "files"\n' + runtime("contract"))
-        node("preview-driver", "preview/probe.py", 'basis = true\ntype = "files"\n')
-        ui = runtime("ui", "Check UI consumes {api} and {contract}.")
-        node("ui", "ui/", 'type = "files"\n' + ui + f'''
-[views.agent_sessions.preview]
-start = {{ command = {json.dumps(sys.executable)}, args = ["-I", "{{preview-driver}}", "start"] }}
-stop = {{ command = {json.dumps(sys.executable)}, args = ["-I", "{{preview-driver}}", "stop"] }}
-[views.agent_tools.inspect]
-session = "preview"
-description = "Read the private preview."
-command = {json.dumps(sys.executable)}
-args = ["-I", "{{preview-driver}}", "inspect"]
-protocol = "json"
-[evals.review]
-title = "UI and API contract review"
-profile = {{ kind = "agent", backend = "codex", model = "fake-host-model" }}
-payload.instruction = "Inspect {{ui}} against {{api}}, {{contract}} and {{preview-driver}}."
-''')
-        node("integration", "integration/", '''type = "files"
-[evals.signoff]
-title = "The person approves integrated publication"
-profile = { kind = "human" }
-payload.instruction = "A person judges {ui} with {api}; the builder must yield."
-''')
+        node("api", "api/", runtime("api", "Check the API against the contract.", ["contract"]), "files")
+        node("contract", "contract/", runtime("contract"), "files")
+        node("preview-driver", "preview/probe.py", "basis = true\n", "files")
+        ui = runtime("ui", "Check the UI consumes the API and the contract.", ["api", "contract"])
+        preview = f'''profile host = agent(backend = "codex", model = "fake-host-model")
+
+tool preview = {{
+  session preview = session(
+    start = command(command = {json.dumps(sys.executable)}, args = ["-I", "@{{path preview-driver}}", "start"]),
+    stop = command(command = {json.dumps(sys.executable)}, args = ["-I", "@{{path preview-driver}}", "stop"]),
+  )
+  agent inspect = command(
+    session = "preview",
+    description = "Read the private preview.",
+    command = {json.dumps(sys.executable)},
+    args = ["-I", "@{{path preview-driver}}", "inspect"],
+    protocol = "json",
+  )
+}}
+
+'''
+        node("ui", "ui/", ui + '''
+eval review : host = {
+  title = "UI and API contract review"
+  instruction = "Inspect @{artf ui} against @{artf api}, @{artf contract} and @{artf preview-driver}."
+}
+''', "files & preview", preview)
+        node("integration", "integration/", '''eval signoff : human = {
+  title = "The person approves integrated publication"
+  instruction = "A person judges @{artf ui} with @{artf api}; the builder must yield."
+}
+''', "files")
 
     write(".github/workflows/review.yml", '''jobs:
   review:
@@ -114,29 +124,40 @@ def tool_request(args):
     return json.dumps({"version": 1, "context": {}, "args": args})
 
 
+def bindings(text):
+    """Each top-level `artf NAME … = { … }` or `tool NAME = { … }` of `text`, with its code."""
+    found = []
+    for match in re.finditer(r"^(artf|tool) ([A-Za-z][\w-]*)[^\n]*=\s*\{", text, re.MULTILINE):
+        depth, end = 0, match.end() - 1
+        for end in range(match.end() - 1, len(text)):
+            depth += {"{": 1, "}": -1}.get(text[end], 0)
+            if depth == 0:
+                break
+        found.append((match.group(1), match.group(2), text[match.start():end + 1]))
+    return found
+
+
 def skill_examples(body):
     """Select declarations by their documented obligations, not Markdown order."""
     roles = {}
-    for match in re.finditer(r"```toml\n(.*?)```", body, re.DOTALL):
-        text = match.group(1)
-        declaration = driver.tomllib.loads(text)
-        labels = re.findall(r"`\.artifactize/([^`]+)\.artf`", body[:match.start()])
-        if "path" in declaration:
-            declaration["name"] = Path(labels[-1]).stem if labels else Path(declaration["path"].rstrip("/")).stem
-        kinds = {evaluation["profile"]["kind"] for evaluation in declaration.get("evals", {}).values()}
-        if declaration.get("basis"):
-            role = "basis"
-        elif {"runtime", "agent"} <= kinds:
-            role = "application"
-        elif "human" in kinds:
-            role = "human"
-        elif declaration.get("views", {}).get("agent_sessions"):
-            role = "preview"
-        else:
-            continue  # Additional valid explanatory fragments do not reorder roles.
-        if role in roles:
-            raise ValueError(f"ambiguous {role} example")
-        roles[role] = (text, declaration)
+    for match in re.finditer(r"```rust\n(.*?)```", body, re.DOTALL):
+        for keyword, name, code in bindings(match.group(1)):
+            evaluators = set(re.findall(r"\beval [\w-]+ : (human|runtime|[\w-]+)", code))
+            if keyword == "tool":
+                if "session(" not in code:
+                    continue
+                role = "preview"
+            elif re.search(r"^\s*basis = true", code, re.MULTILINE):
+                role = "basis"
+            elif "runtime" in evaluators and evaluators - {"runtime", "human"}:
+                role = "application"
+            elif "human" in evaluators:
+                role = "human"
+            else:
+                continue  # Additional valid explanatory fragments do not reorder roles.
+            if role in roles:
+                raise ValueError(f"ambiguous {role} example")
+            roles[role] = (code, {"name": name, "block": match.group(1)})
     return roles
 
 
@@ -256,16 +277,20 @@ class HarnessTests(OwnedTestCase):
         basis = roles["basis"][1]["name"]
         application = roles["application"][1]["name"]
         human = roles["human"][1]["name"]
-        self.assertIn("{" + application + "}", roles["preview"][0])
+        preview = roles["preview"][1]["name"]
+        self.assertIn("@{path self/", roles["preview"][0], "the harness runs from the Artifact composing it")
         if CANDIDATE is None:
             self.skipTest("explicit candidate validates example references")
         repo = self.root / "examples"
-        products = {f".artifactize/{basis}.artf": roles["basis"][0],
-                    f".artifactize/{application}.artf": roles["application"][0] + roles["preview"][0],
-                    f".artifactize/{human}.artf": roles["human"][0],
-                    f"{basis}/requirements.md": "Fixture requirements.\n", f"{human}.svg": "<svg/>\n",
-                    f"{application}/src/lib.rs": "// Source fixture.\n",
-                    f"{application}/tools/preview.py": "# Static example only.\n"}
+        # Every example block as the skill writes it, and the session composed where the
+        # review runs, as the skill says to.
+        blocks = {role[1]["block"] for role in roles.values()}
+        products = {f".artifactize/example-{index}.artf": block for index, block in enumerate(sorted(blocks))}
+        products[".artifactize/composed.artf"] = (
+            f'artf composed : files & {preview} = {{ path = "{application}/", basis = true }}\n')
+        products.update({f"{basis}/requirements.md": "Fixture requirements.\n", f"{human}.svg": "<svg/>\n",
+                         f"{application}/src/lib.rs": "// Source fixture.\n",
+                         f"{application}/tools/preview.py": "# Static example only.\n"})
         for relative, text in products.items():
             path = repo / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -277,9 +302,9 @@ class HarnessTests(OwnedTestCase):
     def test_skill_examples_are_semantic_when_sections_reorder_or_new_fragments_appear(self):
         body = (ROOT.parents[1] / "agent-plugin/skills/hey-arti/SKILL.md").read_text()
         baseline = skill_examples(body)
-        snippets = re.findall(r"```toml\n(.*?)```", body, re.DOTALL)
-        changed = "\n".join("```toml\n" + snippet + "```" for snippet in reversed(snippets))
-        changed += '\n```toml\nfingerprint = false\n```\n'
+        snippets = re.findall(r"```rust\n(.*?)```", body, re.DOTALL)
+        changed = "\n".join("```rust\n" + snippet + "```" for snippet in reversed(snippets))
+        changed += '\n```rust\nartf extra = { path = "extra/", fingerprint = false }\n```\n'
         self.assertEqual({role: text for role, (text, _) in skill_examples(changed).items()},
                          {role: text for role, (text, _) in baseline.items()})
 
@@ -759,7 +784,8 @@ print(ui['render'](api['response']()))
                            "monorepo": ".artifactize/contract.artf"}[case_id]
             path = repo / declaration
             definition = path.read_text(encoding="utf-8")
-            path.write_text(definition.replace('payload.instruction = "', 'payload.instruction = "Extra judgment. ', 1),
+            # A changed judgment: the check's own arguments, which its reuse key covers.
+            path.write_text(definition.replace('args = ["-I", ', 'args = ["-I", "-W", "ignore", ', 1),
                             encoding="utf-8")
             after_judgment = status_keys()
             expected_eval = {"library-consumer": "label/check", "docs-assets": "theme/check", "monorepo": "contract/check"}[case_id]
@@ -876,7 +902,7 @@ elif operation == "stop":
             # also reap it and run the harness's fallback group cleanup.
             stdout = observation.enter_context(tempfile.TemporaryFile(dir=self.root, mode="w+t"))
             stderr = observation.enter_context(tempfile.TemporaryFile(dir=self.root, mode="w+t"))
-            process = self.spawn(command + ["tools", "check", "--execute", "--eval", "ui/review", "--tool", "inspect_ui"],
+            process = self.spawn(command + ["tools", "check", "--execute", "--eval", "ui/review", "--tool", "preview_inspect_ui"],
                                  stdout=stdout, stderr=stderr, env=environment, detached=detached)
             cli = owned_descriptor(lambda: os.pidfd_open(process.pid), observation.callback)
             exits = observation.enter_context(select.epoll())
@@ -1689,13 +1715,15 @@ class HostLifecycleTests(OwnedTestCase):
         state.mkdir()
         (area / "evidence").mkdir()
         (repo / ".artifactize").mkdir()
-        (repo / ".artifactize/owned-harness-run.artf").write_text('''path = "./"
-type = "files"
-fingerprint = false
-[evals.handoff]
-title = "Owned fixture waits at its Human boundary"
-profile = { kind = "human" }
-payload.instruction = "Keep this request pending; the fixture cancels without approving it."
+        (repo / ".artifactize/owned-harness-run.artf").write_text('''artf owned-harness-run : files = {
+  path = "./"
+  fingerprint = false
+
+  eval handoff : human = {
+    title = "Owned fixture waits at its Human boundary"
+    instruction = "Keep this request pending; the fixture cancels without approving it."
+  }
+}
 ''')
         submission_attempted = True
         submitted = json.loads(command(["verify", "--all", "--json"], detached=detached).stdout)

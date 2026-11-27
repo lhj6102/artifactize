@@ -14,8 +14,8 @@
 //      with their verdicts, and the Artifact between its neighbours, unfolded.
 //   C. review.png  — switch to Review in the bottom bar, open the waiting sign-off and claim it,
 //      the filter widened to type:human so the Pane keeps it listed: its conversation with the
-//      instruction and tools, the notes tool's run line unfolded into its lines, a reason as a
-//      bubble, the reasons box, and the decision bar with GREEN chosen.
+//      instruction and tools, the notes tool's run line unfolded into its lines, an issue as a
+//      bubble, the issues box, and the decision bar with RED chosen.
 //
 // Modes:
 //   (none)    capture into assets/screenshots/.
@@ -83,80 +83,46 @@ function fresh(): void {
 /** The example project: core feeds cli and release; cli feeds docs. Every check is real: Node's
  * test runner, syntax check and module loader run on the project's own code. cli's test fails
  * on a real bug (its parser drops the first argument), so docs is blocked; release's sign-off
- * waits for a person after its package check passed. Each Artifact is defined in
- * `.artifactize/{name}.artf` and targets its own folder; cli carries a comment. */
+ * waits for a person after its package check passed. Each Artifact is bound in
+ * `.artifactize/{name}.artf` and targets its own folder. */
 function project(repo: string) {
   mkdirSync(join(repo, ".artifactize"), { recursive: true });
-  const artifact = (name: string, text: string, files: Record<string, string>) => {
+  /** Artifact `name` in its own folder, composing `tools`, with the statements `body`, and
+   * `beside` before it in its file. */
+  const artifact = (name: string, body: string, files: Record<string, string>, tools = "", beside = "") => {
     mkdirSync(join(repo, name), { recursive: true });
     for (const [file, content] of Object.entries(files)) writeFileSync(join(repo, name, file), content);
-    writeFileSync(join(repo, ".artifactize", `${name}.artf`), `path = "${name}/"\n${text}`);
+    writeFileSync(join(repo, ".artifactize", `${name}.artf`), `${beside}artf ${name}${tools ? ` : ${tools}` : ""} = {\n  path = "${name}/"\n${body}}\n`);
   };
-  /** A runtime eval's profile that runs Node itself with `args`. */
-  const node = (...args: string[]) => `{ kind = "runtime", command = ${JSON.stringify(process.execPath)}, args = ${JSON.stringify(args)} }`;
-  artifact("core", `
-[evals.tests]
-title = "The core tests pass"
-profile = ${node("--test", "{core}/sum.test.mjs")}
-payload.instruction = "Run the core tests."
-
-[evals.lint]
-title = "The core code parses"
-profile = ${node("--check", "{core}/sum.mjs")}
-payload.instruction = "Check the syntax of the core code."
-`, {
+  /** A runtime eval that runs Node itself with `args`. */
+  const check = (id: string, title: string, instruction: string, args: string[], inputs: string[] = []) => `
+  eval ${id} : runtime(command = ${JSON.stringify(process.execPath)}, args = ${JSON.stringify(args)}) = {
+    title = ${JSON.stringify(title)}
+    instruction = ${JSON.stringify(instruction)}${inputs.length ? `\n    inputs = [${inputs.join(", ")}]` : ""}
+  }
+`;
+  artifact("core", check("tests", "The core tests pass", "Run the core tests.", ["--test", "@{path self/sum.test.mjs}"])
+    + check("lint", "The core code parses", "Check the syntax of the core code.", ["--check", "@{path self/sum.mjs}"]), {
     "sum.mjs": "export function sum(numbers) {\n  return numbers.reduce((total, each) => total + each, 0);\n}\n",
     "sum.test.mjs": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { sum } from \"./sum.mjs\";\n\ntest(\"adds every number\", () => assert.equal(sum([2, 3, 4]), 9));\n",
   });
-  artifact("cli", `
-[annotations.comment]
-text = "The parser rewrite lands next."
-
-[evals.tests]
-title = "The command line tests pass against core"
-profile = ${node("--test", "{cli}/main.test.mjs")}
-payload.instruction = "Run the command line tests with {core}."
-
-[evals.lint]
-title = "The command line code parses"
-profile = ${node("--check", "{cli}/main.mjs")}
-payload.instruction = "Check the syntax of the command line code."
-`, {
+  artifact("cli", check("tests", "The command line tests pass against core", "Run the command line tests with core.", ["--test", "@{path self/main.test.mjs}"], ["core"])
+    + check("lint", "The command line code parses", "Check the syntax of the command line code.", ["--check", "@{path self/main.mjs}"]), {
     "main.mjs": "import { sum } from \"../core/sum.mjs\";\n\n// The parser rewrite fixes this: the first argument is dropped.\nexport function total(args) {\n  return sum(args.slice(1).map(Number));\n}\n",
     "main.test.mjs": "import assert from \"node:assert/strict\";\nimport test from \"node:test\";\nimport { total } from \"./main.mjs\";\n\ntest(\"totals every argument\", () => assert.equal(total([\"2\", \"3\", \"4\"]), 9));\n",
   });
-  artifact("docs", `
-[evals.examples]
-title = "Every documented command runs"
-profile = ${node("{docs}/examples.mjs")}
-payload.instruction = "Run each command the docs show against {cli}."
-`, {
+  artifact("docs", check("examples", "Every documented command runs", "Run each command the docs show against the command line.", ["@{path self/examples.mjs}"], ["cli"]), {
     "examples.mjs": "import assert from \"node:assert/strict\";\nimport { total } from \"../cli/main.mjs\";\n\n// The README's example: `total 2 3 4` prints 9.\nassert.equal(total([\"2\", \"3\", \"4\"]), 9);\n",
   });
-  artifact("release", `
-[views.human_tools]
-notes = { description = "Print the release notes.", builtin = "read", args = ["{artifactPath}/notes.md"] }
-
-[evals.package]
-title = "The release package builds from core"
-profile = ${node("{release}/package.mjs")}
-payload.instruction = "Build the release package from {core}."
-
-[evals.signoff]
-title = "A person approves the release notes"
-profile = { kind = "human" }
-payload.instruction = "Read the release notes and approve them for publication."
-
-[evals.signoff.pass_schema]
-type = "object"
-properties.approved = { const = true }
-properties.comment = { type = "string" }
-required = ["approved"]
-additionalProperties = false
+  artifact("release", check("package", "The release package builds from core", "Build the release package from core.", ["@{path self/package.mjs}"], ["core"]) + `
+  eval signoff : human = {
+    title = "A person approves the release notes"
+    instruction = "Read the release notes and approve them for publication."
+  }
 `, {
     "package.mjs": "import assert from \"node:assert/strict\";\nimport * as core from \"../core/sum.mjs\";\n\n// The package exports exactly core's public functions.\nassert.deepEqual(Object.keys(core), [\"sum\"]);\n",
     "notes.md": "# Release notes\n\n- Faster startup.\n- Clearer error messages.\n",
-  });
+  }, "release", `tool release = {\n  human notes = builtin(op = "read", args = ["@{path self/notes.md}"], description = "Print the release notes.")\n}\n\n`);
 }
 
 /** Capture every scene into `output`, building in `work`. */
@@ -259,7 +225,7 @@ async function capture(output: string, work: string): Promise<void> {
       await shot("detail.png");
 
       // C. Review's own Pane lists the sign-off Verify left. Claim it, run its notes tool,
-      // add a reason and choose GREEN without submitting a result.
+      // add an issue and choose RED without submitting a result.
       await app.$(waitingReview).click();
       const REVIEW = 'main[aria-label="Review"]:not([hidden])';
       const options = `${REVIEW} [role="listbox"][aria-label="Human reviews"] [role="option"]`;
@@ -282,7 +248,7 @@ async function capture(output: string, work: string): Promise<void> {
       await app.waitUntil(() => app.execute((options) => [...document.querySelectorAll(options)]
         .some((row) => row.getAttribute("aria-selected") === "true" && row.textContent?.includes("release/signoff")), options),
       { timeout: WAIT, timeoutMsg: "the widened filter lists the claimed sign-off, selected" });
-      const notes = app.$(review).$("button=notes");
+      const notes = app.$(review).$("button=release.notes");
       await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the sign-off is claimed and its notes tool is usable" });
       await notes.click();
       // The run's own line in the conversation, unfolded into its lines.
@@ -295,16 +261,16 @@ async function capture(output: string, work: string): Promise<void> {
           .map((row) => row.textContent?.trim());
         return lines.includes("- Faster startup.") && lines.at(-1) === "■ done";
       }, review), { timeout: WAIT, timeoutMsg: "the notes tool printed the notes and finished" });
-      // The log may arrive before the tool command returns. GREEN ignores clicks while that
+      // The log may arrive before the tool command returns. RED ignores clicks while that
       // job is still busy, so wait for the tool button to become usable again.
       await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the finished notes tool is usable again" });
-      // A reason, added from the reasons box, stands as the reviewer's bubble.
-      await fill(app, `${review} [data-reasons]`, "The notes name every change since 0.4.");
-      await app.$(review).$("button=Add reason").click();
-      await app.$(`${review} [aria-label="Reasons"] .message`).waitForDisplayed({ timeout: WAIT, timeoutMsg: "the reason stands as a bubble" });
-      await app.$(`${review} [role="radiogroup"][aria-label="Verdict"]`).$("button*=GREEN").click();
-      await app.$(`${review} [role="radio"][aria-checked="true"].green`).waitForDisplayed({ timeout: WAIT });
-      await app.$(`${review} [aria-label="Decision"] button.submit:not([disabled])`).waitForDisplayed({ timeout: WAIT, timeoutMsg: "Submit GREEN can submit" });
+      // An issue, added from the issues box, stands as the reviewer's bubble.
+      await fill(app, `${review} [data-issues]`, "The notes leave out the new config commands.");
+      await app.$(review).$("button=Add issue").click();
+      await app.$(`${review} [aria-label="Issues"] .message`).waitForDisplayed({ timeout: WAIT, timeoutMsg: "the issue stands as a bubble" });
+      await app.$(`${review} [role="radiogroup"][aria-label="Verdict"]`).$("button*=RED").click();
+      await app.$(`${review} [role="radio"][aria-checked="true"].red`).waitForDisplayed({ timeout: WAIT });
+      await app.$(`${review} [aria-label="Decision"] button.submit:not([disabled])`).waitForDisplayed({ timeout: WAIT, timeoutMsg: "Submit RED can submit" });
       // The shot shows the review as read, not the keyboard's place on the last button.
       await app.execute(() => (document.activeElement as HTMLElement | null)?.blur());
       await shot("review.png");
