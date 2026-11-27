@@ -52,7 +52,7 @@ fn render_eval(out: &mut String, eval: &LoweredEval) {
         (Some(name), _) => name.clone(),
         (None, Profile::Human {}) => "human".into(),
         (None, Profile::Runtime { command, args, timeout_ms }) => {
-            let args: Vec<_> = args.iter().map(|arg| quote(&arg.to_string())).collect();
+            let args: Vec<_> = args.iter().map(|arg| quote_argument(&arg.to_string())).collect();
             let mut call = format!("runtime(command = {}, args = [{}]", quote(command), args.join(", "));
             if let Some(timeout) = timeout_ms {
                 write!(call, ", timeout_ms = {}", timeout.as_millis()).expect("write to String");
@@ -98,7 +98,7 @@ fn render_fingerprint(fingerprint: &Fingerprint) -> String {
             files,
             timeout_ms,
         } => {
-            let args: Vec<_> = args.iter().map(|arg| quote(&arg.to_string())).collect();
+            let args: Vec<_> = args.iter().map(|arg| quote_argument(&arg.to_string())).collect();
             let files: Vec<_> = files.iter().map(|file| file.as_str().to_owned()).collect();
             let mut call = format!(
                 "script(command = {}, args = [{}], files = {}",
@@ -128,7 +128,18 @@ pub(crate) fn quote(text: &str) -> String {
     out
 }
 
+/// An argument, already in its slot form (`@{path …}`, a literal `@{` as `@@{`): only its
+/// escapes.
+fn quote_argument(text: &str) -> String {
+    format!("\"{}\"", escape_characters(text, true))
+}
+
 pub(crate) fn escape(text: &str, one_line: bool) -> String {
+    let out = escape_characters(text, one_line).replace("@{", "@@{");
+    if one_line { out } else { out.replace("\"\"\"", "\\\"\"\"") }
+}
+
+fn escape_characters(text: &str, one_line: bool) -> String {
     let mut out = String::new();
     for character in text.chars() {
         match character {
@@ -143,8 +154,7 @@ pub(crate) fn escape(text: &str, one_line: bool) -> String {
             other => out.push(other),
         }
     }
-    let out = out.replace("@{", "@@{");
-    if one_line { out } else { out.replace("\"\"\"", "\\\"\"\"") }
+    out
 }
 
 /// An instruction: its text and its slots as written, multi-line in `"""` when it reads back

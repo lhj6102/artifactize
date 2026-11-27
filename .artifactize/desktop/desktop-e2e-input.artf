@@ -18,6 +18,6 @@ artf desktop-e2e-input : files = {
     ) = {
     title = "The text-input device calls none of the injection APIs E2E-INPUT bans"
     instruction = "Check every source of the device desktop-e2e-input with the integrity checker desktop-e2e-integrity for the OS-level event and raw key APIs that E2E-INPUT of desktop-e2e-rules bans."
-    inputs = [desktop-e2e-integrity, desktop-e2e-rules]
+    inputs = [desktop-e2e-rules]
   }
 }

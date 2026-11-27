@@ -370,7 +370,7 @@ impl Receipts {
                         if let Some(expected) = &expected
                             && !latest.as_ref().unwrap_or(&crate::review::Draft::default()).same_answer(expected)
                         {
-                            return Err(Error::Invalid("The review's verdict or fields changed while submitting. Review the saved draft and submit again.".into()));
+                            return Err(Error::Invalid("The review's verdict or issues changed while submitting. Review the saved draft and submit again.".into()));
                         }
                         draft::clear(&transaction, &current.id)?;
                         super::RequestState::completed(result, crate::broker::now())

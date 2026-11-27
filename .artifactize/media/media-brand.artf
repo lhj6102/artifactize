@@ -5,6 +5,6 @@ artf media-brand = {
   eval generated : runtime(command = "sh", args = ["check-icons.sh", "@{path media-brand-icon}"], timeout_ms = 120000) = {
     title = "Every generated brand asset matches the approved icon and social template"
     instruction = "After the owner approves media-brand-icon, check that the user's python3 has the required CairoSVG and Pillow modules, then rerender every generated asset in media-brand in memory, the social cards from the example graph images in media-others. Pass only when every committed output matches the approved artwork and those images byte-for-byte. Do not install tools or modify the generated files during evaluation."
-    inputs = [media-brand-icon, media-others]
+    inputs = [media-others]
   }
 }

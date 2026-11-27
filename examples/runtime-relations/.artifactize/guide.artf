@@ -14,6 +14,5 @@ artf guide = {
     ) = {
     title = "Every bold term is defined in the glossary"
     instruction = "Check that every bold term in intro and usage is defined in glossary."
-    inputs = [glossary, intro, usage]
   }
 }

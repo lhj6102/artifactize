@@ -283,6 +283,12 @@ fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
         core.expanded
     );
     assert!(core.expanded.contains("eval style : reviewer = {"), "{}", core.expanded);
+    // An argument's path slot reads as the slot it is, not as escaped text.
+    assert!(
+        core.expanded.contains("\"--manifest-path=@{path core/Cargo.toml}\""),
+        "{}",
+        core.expanded
+    );
     assert_eq!(core.evals[0].from.as_deref(), Some("follows!"));
     // The expansion is code: it reads back as the same Artifact beside the shared definitions.
     project.write("crates.artf", &core.expanded);

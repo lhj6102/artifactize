@@ -300,6 +300,7 @@ Inspect {{input}}."""
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("is declared twice"));
+    fs::remove_dir_all(fixture.0.join(".artifactize/collision")).unwrap();
 
     fs::write(
         support::declaration::source_path(fixture.0.join("other/index.artf")),

@@ -313,11 +313,19 @@ impl Converter<'_> {
             writeln!(out, "    instruction = {text}").expect("write to String");
         }
         if kind == "runtime" {
-            // Its own Artifact is what it checks, not an input.
+            // Its own Artifact is what it checks, and one its arguments name is already read.
+            let argued: BTreeSet<String> = profile
+                .get("args")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .flat_map(|argument| reference_spans(argument).into_iter().map(|(_, _, name)| name))
+                .collect();
             let inputs: BTreeSet<&str> = references
                 .iter()
                 .map(|reference| reference.2.as_str())
-                .filter(|name| *name != artifact)
+                .filter(|name| *name != artifact && !argued.contains(*name))
                 .collect();
             if !inputs.is_empty() {
                 writeln!(out, "    inputs = [{}]", inputs.into_iter().collect::<Vec<_>>().join(", "))

@@ -388,27 +388,20 @@ pub(crate) fn kind(kind: HumanToolKind) -> ToolKind {
     }
 }
 
-/// A settled result as its reviewer entered it: the verdict, then each field the form asked
-/// for, without the constants the form filled in.
+/// A settled result as its reviewer entered it: the verdict, then its issues.
 fn completed(request: &store::Request) -> Option<Vec<ResultEntry>> {
     let result = request.result()?;
-    let verdict = result.verdict();
-    let constants: BTreeSet<String> = review::form(request, verdict)
-        .map(|form| {
-            form.fields
-                .into_iter()
-                .filter(|field| matches!(field.input, review::Input::Fixed(_)))
-                .map(|field| field.name)
-                .collect()
-        })
-        .unwrap_or_default();
-    let verdict = serde_json::json!(verdict);
-    let fields = result.owner_fields();
-    Some(crate::detail::result_entries(
-        std::iter::once((&"verdict".to_owned(), &verdict))
-            .chain(fields.iter().filter(|(key, _)| !constants.contains(*key)))
-            .collect::<Vec<_>>(),
-    ))
+    let verdict = Verdict::from(result.verdict());
+    let mut entries = vec![ResultEntry::Text {
+        key: "verdict".to_owned(),
+        text: match verdict {
+            Verdict::Green => "GREEN",
+            Verdict::Red => "RED",
+        }
+        .to_owned(),
+    }];
+    entries.extend(crate::detail::issue_entries(&result.issues()));
+    Some(entries)
 }
 
 fn view(
@@ -796,15 +789,6 @@ async fn guard(
     }
 }
 
-fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
-    app.human
-        .views
-        .lock()
-        .expect("views lock")
-        .get(id)
-        .map(|(_, view)| view.owner.clone())
-        .ok_or_else(|| Failure::Missing("Open the request first.".into()))
-}
 
 /// Submit `verdict` with `issues` for request `id` and publish it like `request submit`: GREEN
 /// with none, RED with at least one, or it fails as `invalid` and the request keeps waiting.

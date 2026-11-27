@@ -18,9 +18,9 @@
   /** The Source is read once its section is unfolded. */
   const sourceOpen = $derived(app.sections.open("Source"));
   const source = $derived(defs.sources.get(name));
+  // The store keeps what was read until the definitions are read again.
+  // EFFECT: reading the Source is IPC the section's unfolding asks for, which no derived value may do.
   $effect(() => {
-    // Reading the Source is IPC, a side effect the section's unfolding asks for; the store
-    // keeps what was read until the definitions are read again.
     if (sourceOpen && node) void defs.source(branch, name);
   });
 

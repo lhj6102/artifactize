@@ -1,6 +1,6 @@
 // A Human review as a conversation against a mocked command boundary: an explicit claim, the
 // issues written one at a time as bubbles, the decision bar's claim, verdict and Submit with why
-// Submit waits, a verdict's own fields when the eval asks more, each tool run as its own line,
+// Submit waits, each tool run as its own line,
 // Points inserted into the issues field, and keys that leave input methods alone.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import HumanDetail from "./HumanDetail.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "./review.svelte";
-import { draftLibrary, humanView, scoredRed, greenForm } from "./fixtures";
+import { draftLibrary, humanView } from "./fixtures";
 import type { DraftChange, ReviewPoint } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
@@ -129,7 +129,7 @@ describe("HumanDetail", () => {
     expect(why()).toBe("Choose GREEN or RED");
     await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
     await waitFor(() => expect(submitButton().textContent).toBe("Submit RED"));
-    expect(why()).toBe("RED needs a issue");
+    expect(why()).toBe("RED needs at least one issue.");
     await user.type(field(), "The notes are wrong");
     expect(why()).toBe("Add the typed issue first");
     expect(submitButton().disabled).toBe(true);
@@ -140,35 +140,17 @@ describe("HumanDetail", () => {
     await waitFor(() => expect(submitButton().textContent).toBe("Submit GREEN"));
     expect(issues()).toEqual(["The notes are wrong"]);
     expect(within(bar()).getByRole("radio", { name: "GREEN (g)" }).getAttribute("aria-checked")).toBe("true");
+    expect(why()).toBe("GREEN takes no issues: remove them, or submit RED with them.");
+    expect(submitButton().disabled).toBe(true);
+    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
     await user.click(submitButton());
-    const result = await screen.findByRole("group", { name: "Result" });
-    expect(result.textContent).toContain("GREEN");
+    await screen.findByRole("group", { name: "Result" });
+    // The draft submitted holds RED: the verdict was its last change.
+    expect(changes(calls).at(-1)).toEqual({ kind: "verdict", verdict: "RED" });
     expect(screen.queryByRole("group", { name: "Decision" })).toBeNull();
     expect(screen.queryByRole("textbox", { name: "Issue" })).toBeNull();
     expect(calls.filter((call) => call.cmd === "human_draft_submit")).toHaveLength(1);
-  });
-
-  it("shows a verdict's own fields only while that verdict is chosen and the eval asks more than issues", async () => {
-    const kept = draftLibrary(greenForm, scoredRed);
-    backend("review", undefined, kept);
-    const user = userEvent.setup();
-    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
-    await within(await screen.findByRole("group", { name: "Decision" })).findByText("Yours");
-    await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
-    await waitFor(() => expect(submitButton().textContent).toBe("Submit GREEN"));
-    expect(screen.queryByText(/the eval also asks/)).toBeNull();
-    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
-    const fields = await screen.findByRole("group", { name: "RED's fields" });
-    expect(within(fields).getByText("With RED, the eval also asks")).toBeTruthy();
-    expect(within(fields).getByLabelText("note").getAttribute("placeholder")).toBe("Optional");
-    await user.type(field(), "Off by one{Enter}");
-    await waitFor(() => expect(why()).toBe("score is required"));
-    await user.type(within(fields).getByLabelText(/score/), "2");
-    await waitFor(() => expect(submitButton().disabled).toBe(false));
-    await user.click(within(bar()).getByRole("radio", { name: "GREEN (g)" }));
-    await waitFor(() => expect(screen.queryByRole("group", { name: "RED's fields" })).toBeNull());
-    await user.click(within(bar()).getByRole("radio", { name: "RED (r)" }));
-    expect((within(await screen.findByRole("group", { name: "RED's fields" })).getByLabelText(/score/) as HTMLInputElement).value).toBe("2");
   });
 
   it("says a library's refusal where why stands, the draft kept", async () => {
@@ -227,7 +209,7 @@ describe("HumanDetail", () => {
     await user.clear(field());
     await user.type(field(), "확인{Enter}");
     await waitFor(() => expect(issues()).toEqual(["확인"]));
-    await fireEvent.keyDown(screen.getByLabelText("Human review"), { key: "g" });
+    await fireEvent.keyDown(screen.getByLabelText("Human review"), { key: "r" });
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     await fireEvent.keyDown(field(), { key: "s", ctrlKey: true });
     await screen.findByRole("group", { name: "Result" });

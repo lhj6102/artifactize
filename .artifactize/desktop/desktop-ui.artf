@@ -32,6 +32,5 @@ artf desktop-ui : files = {
     ) = {
     title = "The UI's tokens are the design's tokens"
     instruction = "Check with desktop-design-check that src/tokens.css of desktop-ui declares the same custom properties with the same values and the same one dark scheme, as tokens.css of desktop-design."
-    inputs = [desktop-design, desktop-design-check]
   }
 }

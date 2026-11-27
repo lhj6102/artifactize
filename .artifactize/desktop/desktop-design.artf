@@ -26,6 +26,5 @@ artf desktop-design : files & desktop-design = {
   eval well-formed : runtime(command = "node", args = ["@{path desktop-design-check}", "whole", "."], timeout_ms = 30000) = {
     title = "The design's pages, tokens and rules hold together"
     instruction = "Check desktop-design as a whole with desktop-design-check: tokens.css declares the one dark scheme (color-scheme: dark, no second scheme); D- rule ids are unique across the pages; every screen page is linked from index.html; index.html names every token and every icon of mock.css; mock.css and design.css hold no colour literal; and index.html, which no page eval covers, is well formed as a page is. Each screen page's own form is judged by that page's well-formed eval."
-    inputs = [desktop-design-check]
   }
 }

@@ -24,7 +24,7 @@
 // A graph without parts is laid out as one, as before.
 import type { Shape } from "../ipc/client";
 import { NODE, type Point } from "./graph";
-import { BOX, around, copies, drawings, header, type Copy } from "./parts";
+import { BOX, around, copies, drawings, type Copy } from "./parts";
 
 export { NODE };
 /** The most Artifacts ELK lays out, in about half a second for a real graph this size. A larger

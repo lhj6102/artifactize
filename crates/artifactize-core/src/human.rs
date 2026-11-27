@@ -339,7 +339,7 @@ pub(crate) async fn publish_explicit_without_draft(
 }
 
 /// Submit the saved answer, refusing to settle if another surface changes its verdict or
-/// form while its inputs are checked. Notes are read at settlement in either case.
+/// issues while its inputs are checked. Notes are read at settlement in either case.
 pub(crate) async fn publish_saved_draft(
     state: &Path,
     request: &crate::types::RequestId,

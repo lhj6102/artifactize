@@ -70,10 +70,10 @@ it("writes issues and the verdict to the shared draft, split as Review's is, and
 it("says a submission refusal once, above the decision row, the draft kept", async () => {
   const error = "A comment is required.";
   const { library } = backend(error);
-  library.draft.verdict = "GREEN";
+  library.draft.verdict = "RED";
   library.draft.issues = ["Fine"];
   render(PetWindow, { request: "run-a-2" });
-  await fireEvent.click(await screen.findByRole("button", { name: /^Submit GREEN/ }));
+  await fireEvent.click(await screen.findByRole("button", { name: /^Submit RED/ }));
   await waitFor(() => expect(screen.getAllByText(error)).toHaveLength(1));
   expect(screen.getByText("Fine")).toBeTruthy();
 });

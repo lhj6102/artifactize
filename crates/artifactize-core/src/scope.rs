@@ -9,6 +9,7 @@ use crate::config::{Artifact, ArtifactName, ConfigError, Eval, Fingerprint, Prof
 
 mod argument;
 pub use argument::{Argument, LogicalSuffix, LogicalTarget};
+pub(crate) use argument::PATH_SLOT;
 
 mod human;
 pub(crate) use human::{

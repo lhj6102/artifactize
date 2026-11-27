@@ -1,8 +1,5 @@
-tool requirements = {
-  agent read = builtin(op = "read", description = "Read lines of requirements.md in @{artf self}.")
-}
-
-artf requirements : requirements = {
-  basis = true
+// The requirements the specification answers: the IDs the coverage report looks for.
+artf requirements : text = {
   path = "requirements/"
+  basis = true
 }

@@ -444,13 +444,11 @@ impl Fixture {
         let repo = root.path().join("repo");
         write_human(&(repo), &repo.join("review"), false);
         let review = repo.join("review/index.artf");
-        let declaration = support::declaration::read_text(&review).unwrap();
-        assert!(declaration.contains("Review."));
-        fs::write(
-            support::declaration::source_path(&review),
-            declaration.replace("Review.", "Review @{artf spec}."),
-        )
-        .unwrap();
+        let mut declaration: Value =
+            support::declaration::read(support::declaration::read_file(&review).unwrap()).unwrap();
+        assert_eq!(declaration["evals"][0]["payload"]["instruction"], "Review.");
+        declaration["evals"][0]["payload"]["instruction"] = json!("Review {spec}.");
+        support::declaration::write(&repo, &review, declaration.to_string()).unwrap();
         for name in ["spec", "other"] {
             fs::create_dir(repo.join(name)).unwrap();
             support::declaration::write(

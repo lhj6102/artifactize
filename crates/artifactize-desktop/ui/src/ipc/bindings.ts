@@ -138,37 +138,17 @@ branch: string } |
 	humanSearchComplete: (query: string) => typedError<Completion, Failure>(__TAURI_INVOKE("human_search_complete", { query })),
 	/**  Number of reviews still waiting to be claimed, independent of the Pane filter. */
 	humanWaitingCount: () => typedError<number, Failure>(__TAURI_INVOKE("human_waiting_count")),
-	/**
-	 *  The form for `verdict`, from the owner schema recorded with request `id`, holding the values
-	 *  of `kept` (the earlier draft of this verdict) when the schema still takes them.
-	 */
-	humanForm: (id: string, verdict: Verdict, kept: {
-	verdict: Verdict,
-	fields: ([string, FieldValue])[],
-} | null) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict, kept })),
-	/**  Read the saved response and both verdict forms. A released review retains its draft. */
+	/**  Read the saved draft. A released review retains its draft. */
 	humanDraft: (id: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft", { id })),
 	/**
-	 *  Change one field, reason or the verdict of the current reviewer's saved draft. Empty
-	 *  reason text is `invalid`; a reason another surface changed first is refused.
+	 *  Change an issue or the verdict of the current reviewer's saved draft. Empty issue text is
+	 *  `invalid`; an issue another surface changed first is refused.
 	 */
 	humanDraftEdit: (id: string, change: DraftChange) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_edit", { id, change })),
 	/**  Remove a Point from the current reviewer's draft without submitting it. */
 	humanDraftRemovePoint: (id: string, point: ReviewPoint) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft_remove_point", { id, point })),
-	/**  Submit the current reviewer's saved form fields. */
+	/**  Submit the current reviewer's saved verdict and issues. */
 	humanDraftSubmit: (id: string, job: JobId) => typedError<Submitted_Serialize, Failure>(__TAURI_INVOKE("human_draft_submit", { id, job })),
-	/**  `draft` of request `id` with field `name` set to `value`, as the library's form takes it. */
-	humanEditField: (id: string, draft: Draft, name: string, value: FieldValue) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_field", { id, draft, name, value })),
-	/**
-	 *  `draft` of request `id` with an empty item added to its list field `name`, as the library's
-	 *  form adds it.
-	 */
-	humanAddItem: (id: string, draft: Draft, name: string) => typedError<Draft, Failure>(__TAURI_INVOKE("human_add_item", { id, draft, name })),
-	/**
-	 *  `draft` of request `id` with item `item` removed from its list field `name`; the library's
-	 *  form keeps one empty item.
-	 */
-	humanRemoveItem: (id: string, draft: Draft, name: string, item: number) => typedError<Draft, Failure>(__TAURI_INVOKE("human_remove_item", { id, draft, name, item })),
 	/**
 	 *  Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
 	 *  for release on quit, whichever screen took it.
@@ -184,10 +164,10 @@ branch: string } |
 	/**  Cancel running job `job`: a tool, or a submission's fingerprint recheck. */
 	humanCancel: (job: JobId) => __TAURI_INVOKE<void>("human_cancel", { job }),
 	/**
-	 *  Submit `draft` for request `id` and publish it like `request submit`. A result the
-	 *  schema rejects keeps the request waiting and fails as `invalid`.
+	 *  Submit `verdict` with `issues` for request `id` and publish it like `request submit`: GREEN
+	 *  with none, RED with at least one, or it fails as `invalid` and the request keeps waiting.
 	 */
-	humanSubmit: (id: string, draft: Draft, job: JobId) => typedError<Submitted_Serialize, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
+	humanSubmit: (id: string, verdict: Verdict, issues: string[], job: JobId) => typedError<Submitted_Serialize, Failure>(__TAURI_INVOKE("human_submit", { id, verdict, issues, job })),
 	/**  Release this reviewer's claims on `ids` without a verdict. */
 	humanRelease: (ids: string[], job: JobId) => typedError<Acted_Serialize, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**
@@ -225,15 +205,8 @@ branch: string } |
 	currentView: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_view", { branch })),
 	/**  The definitions of `branch`'s worktree as they are now. */
 	definitions: (branch: BranchKey) => typedError<DefinitionsView, Failure>(__TAURI_INVOKE("definitions", { branch })),
-	/**
-	 *  Apply `operation` to `branch`'s definitions, `shown` holding the text of each file as it was
-	 *  shown, by its path relative to the project. The library says which files the edit writes;
-	 *  each is based on the text shown, a new one on nothing, so a file that changed on disk since,
-	 *  or that was never shown, refuses the edit. Nothing is written when it is refused.
-	 */
-	definitionEdit: (branch: BranchKey, shown: { [key in string]: string }, operation: EditOperation) => typedError<EditOutcome, Failure>(__TAURI_INVOKE("definition_edit", { branch, shown, operation })),
-	/**  Check `operation` on `branch`'s definitions as they are now, writing nothing. */
-	definitionCheck: (branch: BranchKey, operation: EditOperation) => typedError<EditCheck, Failure>(__TAURI_INVOKE("definition_check", { branch, operation })),
+	/**  The code that binds `artifact` in `branch`'s worktree now. */
+	definitionSource: (branch: BranchKey, artifact: string) => typedError<DefinitionSource, Failure>(__TAURI_INVOKE("definition_source", { branch, artifact })),
 	/**
 	 *  The Human tools Artifact `artifact` declares in `branch`'s worktree as it is now, with
 	 *  what running each does.
@@ -853,40 +826,45 @@ export type CustomProvider = {
 	target: Target,
 };
 
-/**  What an Artifact's PATH names, as the library reads it. */
+/**  What an Artifact's `path` names, as the library reads it. */
 export type DefinitionKind = "folder" | "file" | "aspect" | "graph" | 
 /**  An address outside the worktree: a Live Artifact. */
 "live";
 
-/**  One Artifact's definition as its file says now. */
+/**  One Artifact as its code declares it now. */
 export type DefinitionNode = {
 	name: string,
-	/**  Its file, relative to the project, with `/`. */
+	/**  The file that binds it, relative to the project, with `/`, and the binding's line. */
 	definition: string,
-	/**  Its PATH as written: a folder ends in `/`, a Live Artifact is an address. */
+	line: number,
+	/**  The macro its binding calls, as `rust-crate!`; none for one written out. */
+	macroName: string | null,
+	/**  Its `path` as written: a folder ends in `/`, a Live Artifact is an address. */
 	target: string,
 	kind: DefinitionKind,
 	targetMissing: boolean,
-	/**  Its parts, by name; none while the project does not read. */
+	/**  Its parts, by name. */
 	parts: string[],
-	/**  Its own place at the top level, when the top level is placed by hand. */
-	at: [(number | null), (number | null)] | null,
-	/**  Its parts' places inside its box, by part, when the box is placed by hand. */
-	places: { [key in string]: [(number | null), (number | null)] },
-	comment: string | null,
-	/**  Why its place or its comment cannot be read; drawing ignores them. */
-	styleError: string | null,
-	commentError: string | null,
+	/**  The toolsets it composes, as written: `files & html`. */
+	tools: string | null,
 };
 
-/**
- *  A branch's definitions, and the exact text of every definition file, which the next edit
- *  names as what it was based on.
- */
+/**  The code that binds one Artifact: as written, and, for a macro call, what it expands to. */
+export type DefinitionSource = {
+	/**  Its file, relative to the project, with `/`, and the line the code starts at. */
+	file: string,
+	line: number,
+	authored: string,
+	/**
+	 *  The declaration a macro call expands to; none for an Artifact written out, whose code
+	 *  is what it expands to.
+	 */
+	expanded: string | null,
+};
+
+/**  A branch's definitions. */
 export type DefinitionsView = {
 	nodes: DefinitionNode[],
-	/**  Each definition file's text, by its path relative to the project, with `/`. */
-	files: { [key in string]: string },
 };
 
 /**  What a Detail describes, from the library's [`Target`]. */
@@ -917,50 +895,18 @@ export type DetailView = {
 	running: boolean,
 };
 
-/**  The frontend's draft of one verdict: field values by name. */
-export type Draft = {
-	verdict: Verdict,
-	fields: ([string, FieldValue])[],
-};
-
-export type DraftChange = { kind: "verdict"; verdict: Verdict } | { kind: "field"; verdict: Verdict; name: string; value: FieldValue } | { kind: "groupField"; verdict: Verdict; name: string; item: number; field: string; value: FieldValue } | { kind: "addItem"; verdict: Verdict; name: string } | { kind: "removeItem"; verdict: Verdict; name: string; item: number } | 
-/**  Append one reason; empty text is refused. */
-{ kind: "addReason"; text: string } | 
-/**  Replace reason `index`, refused if it no longer reads `previous`. */
-{ kind: "editReason"; index: number; previous: string; text: string } | 
-/**  Remove reason `index`, refused if it no longer reads `previous`. */
-{ kind: "removeReason"; index: number; previous: string };
+export type DraftChange = { kind: "verdict"; verdict: Verdict } | 
+/**  Append one issue; empty text is refused. */
+{ kind: "addIssue"; text: string } | 
+/**  Replace issue `index`, refused if it no longer reads `previous`. */
+{ kind: "editIssue"; index: number; previous: string; text: string } | 
+/**  Remove issue `index`, refused if it no longer reads `previous`. */
+{ kind: "removeIssue"; index: number; previous: string };
 
 export type DraftReadiness = {
 	green: Readiness,
 	red: Readiness,
 };
-
-/**
- *  What the library says of an edit before it is made: the definition files it would write, by
- *  their paths relative to the project, or why it would refuse it.
- */
-export type EditCheck = { kind: "checked"; files: string[] } | { kind: "refused"; refusal: EditRefusal };
-
-/**  An edit of a branch's definitions, the library's [`edit::Operation`] by name. */
-export type EditOperation = { kind: "create"; name: string; path: string } | { kind: "setPath"; name: string; path: string } | { kind: "addPart"; whole: string; part: string; at: [(number | null), (number | null)] | null } | { kind: "removePart"; whole: string; part: string } | { kind: "movePart"; part: string; from: string | null; to: string | null; at: [(number | null), (number | null)] | null } | { kind: "saveSource"; name: string; source: string } | { kind: "rename"; old: string; new: string } | { kind: "delete"; name: string } | { kind: "savePlaces"; places: { [key in string]: [(number | null), (number | null)] } } | { kind: "resetPlaces"; whole: string | null } | { kind: "setComment"; name: string; text: string } | { kind: "moveComment"; from: string; to: string };
-
-/**
- *  What an edit did: written, or refused with why. Either way the caller reads the
- *  definitions again before the next edit.
- */
-export type EditOutcome = { kind: "written" } | { kind: "refused"; refusal: EditRefusal };
-
-/**  Why an edit wrote nothing. */
-export type EditRefusal = 
-/**  The result would not be a valid project. */
-{ kind: "invalid"; file: string; message: string; line: number | null; column: number | null } | 
-/**  A file the edit writes changed on disk since it was read. */
-{ kind: "changed"; file: string } | 
-/**  The edit is not allowed: a cycle, a name still in use, a comment already there. */
-{ kind: "notAllowed"; reason: string } | 
-/**  Reading or writing failed. */
-{ kind: "io"; message: string };
 
 /**  The API a custom endpoint speaks. */
 export type EndpointApi = "openaiResponses" | "openaiChat" | "anthropic" | "gemini";
@@ -998,24 +944,6 @@ export type Field = {
 	value: string,
 };
 
-/**  How one owner field is entered. */
-export type FieldInput = 
-/**  A `const`: filled in and fixed; `value` is its JSON. */
-{ kind: "fixed"; value: string } | { kind: "bool" } | 
-/**  String `enum` options, as their JSON text. */
-{ kind: "choice"; options: string[] } | { kind: "text" } | { kind: "integer" } | { kind: "number" } | 
-/**  An array of strings, entered one item at a time. */
-{ kind: "list" } | 
-/**  An array of flat objects: a group of these fields per item. */
-{ kind: "groups"; fields: FormField[] };
-
-/**  A field's draft value, by the field's kind. */
-export type FieldValue = { kind: "fixed" } | { kind: "bool"; value: boolean | null } | 
-/**  The chosen option's index. */
-{ kind: "choice"; value: number | null } | { kind: "text"; value: string } | { kind: "integer"; value: string } | { kind: "number"; value: string } | { kind: "list"; value: string[] } | 
-/**  Each group's field values by name. */
-{ kind: "groups"; value: (([string, FieldValue])[])[] };
-
 /**  What a read-only Codex auth file says of its token. */
 export type FileExpiry = { state: "usable"; expiresAt: UnixSeconds | null } | { state: "expired" };
 
@@ -1023,21 +951,6 @@ export type FileExpiry = { state: "usable"; expiresAt: UnixSeconds | null } | { 
 export type Finding = {
 	found: Found[],
 	more: number,
-};
-
-export type FormField = {
-	name: string,
-	required: boolean,
-	/**  The type and constraints, then any description. */
-	hint: string,
-	input: FieldInput,
-};
-
-/**  A new form: its typed fields, with the draft the library starts it from. */
-export type FormView = {
-	verdict: Verdict,
-	fields: FormField[],
-	draft: Draft,
 };
 
 /**  An Artifact or an eval whose name contains the text, or a starred Artifact. */
@@ -1399,13 +1312,10 @@ pushedToday: number;
 /**  Recent pushes, oldest first. */
 pushes: Push[] };
 
-/**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
+/**  One entry of an eval's result: a text, or its issues. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };
 
-/**
- *  A finding: its priority, or its rule and place, as the head (`P1`, `item · where`), then
- *  its other fields.
- */
+/**  An issue: its priority or its exit code as the head (`P1`, `exit 7`), then its reason. */
 export type ResultItem = {
 	head: string | null,
 	fields: Field[],
@@ -1413,13 +1323,11 @@ export type ResultItem = {
 
 export type ReviewDraft = {
 	verdict: Verdict | null,
-	/**  Why, oldest first, independent of the verdict. */
-	reasons: string[],
+	/**  What must change, oldest first, as typed. */
+	issues: string[],
 	/**  Whether each verdict can be submitted now, whichever is chosen. */
 	readiness: DraftReadiness,
 	points: ReviewPoint[],
-	green: FormView,
-	red: FormView,
 };
 
 export type ReviewMatch = {

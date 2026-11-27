@@ -1,47 +1,63 @@
-tool spec = {
-  agent coverage = command(
-      command = "python3",
-      args = ["coverage.py", "@{path requirements/requirements.md}"],
-      protocol = "json",
-      description = "List each requirement for @{artf self} with the spec.md lines that cite its ID. Pass id to see one requirement.",
-      input_schema = {
-        additionalProperties = false
-        properties = { id = { pattern = "^R[0-9]+$", type = "string" } }
-        type = "object"
-      },
-      timeout_ms = 10000,
-    )
+// Reading and searching the text files of a folder.
+tool text = {
+  agent read = builtin(op = "read", description = "Read lines of a text file in @{artf self}.")
   agent grep = builtin(op = "grep")
-  agent read = builtin(op = "read", description = "Read lines of a text file in @{artf self}, such as spec.md.")
-  agent section = builtin(
-      op = "section",
-      args = ["spec.md"],
-      description = "Print one Markdown section of spec.md in @{artf self}, by its exact heading.",
-    )
-  agent view_image = builtin(op = "view_image", description = "View an image in @{artf self}, such as diagram.png.")
-  human notes = builtin(
-      op = "read",
-      args = ["@{path self/notes.md}"],
-      description = "Print the review notes of @{artf self}.",
-    )
-  human open = builtin(
-      op = "open",
-      args = ["@{path self/notes.md}"],
-      description = "Open the review notes of @{artf self} in the desktop's default application.",
-    )
 }
 
-artf spec : spec = {
+// What a review of the specification reads it with: a coverage report of the requirement IDs
+// it cites, its sections and its diagram; and, for the person who signs off, its notes.
+tool review = {
+  agent coverage = command(
+    command = "python3",
+    args = ["coverage.py", "@{path requirements/requirements.md}"],
+    protocol = "json",
+    description = "List each requirement for @{artf self} with the spec.md lines that cite its ID. Pass id to see one requirement.",
+    input_schema = {
+      type = "object"
+      properties = { id = { type = "string", pattern = "^R[0-9]+$" } }
+      additionalProperties = false
+    },
+    timeout_ms = 10000,
+  )
+  agent section = builtin(
+    op = "section",
+    args = ["spec.md"],
+    description = "Print one Markdown section of spec.md in @{artf self}, by its exact heading.",
+  )
+  agent view_image = builtin(op = "view_image", description = "View an image in @{artf self}, such as diagram.png.")
+  human notes = builtin(
+    op = "read",
+    args = ["@{path self/notes.md}"],
+    description = "Print the review notes of @{artf self}.",
+  )
+  human open = builtin(
+    op = "open",
+    args = ["@{path self/notes.md}"],
+    description = "Open the review notes of @{artf self} in the desktop's default application.",
+  )
+}
+
+artf spec : text & review = {
   path = "spec/"
 
-  eval review : YOUR_OPENAI_MODEL_ID = {
+  eval review : openai = {
     title = "The specification covers every requirement"
     red_at = "P1"
-    instruction = "Review spec.md in @{artf spec} against every requirement in @{artf requirements}. Start with the coverage report to see which lines cite each requirement ID, then read the cited sections and search for anything the coverage report misses. Inspect diagram.png to check that it matches the Diagram section. Each requirement that is not fully specified, and a diagram that does not match, is a finding."
+    instruction = """
+      Review spec.md in @{artf self} against every requirement in @{artf requirements}. Start
+      with @{tool self agent review.coverage} to see which lines cite each requirement ID, then
+      read the cited sections and search for anything the coverage report misses. Inspect
+      diagram.png to check that it matches the Diagram section. Each requirement that is not
+      fully specified, and a diagram that does not match, is an issue.
+    """
   }
 
   eval signoff : human = {
     title = "A reviewer signs off on the open questions"
-    instruction = "Read the review notes of @{artf spec} with the notes or open tool. Submit GREEN with approved: true when every open question has an answer that spec.md supports; otherwise submit RED and list the unresolved questions."
+    instruction = """
+      Read the review notes of @{artf self} with @{tool self human review.notes} or
+      @{tool self human review.open}. Submit GREEN when every open question has an answer that
+      spec.md supports; otherwise submit RED with an issue for each unresolved question.
+    """
   }
 }

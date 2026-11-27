@@ -98,7 +98,7 @@ pub enum Argument {
 }
 
 /// The opener of the one slot kind an argument may hold.
-const PATH_SLOT: &str = "@{path ";
+pub(crate) const PATH_SLOT: &str = "@{path ";
 
 impl Argument {
     /// A literal's own text, as a program receives it.

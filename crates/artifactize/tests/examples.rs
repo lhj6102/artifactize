@@ -192,7 +192,7 @@ fn every_example_passes_static_queries_and_reports_status() {
         .collect();
     kinds.sort();
     kinds.dedup();
-    assert_eq!(kinds, ["argv", "instruction", "part"]);
+    assert_eq!(kinds, ["argv", "part"]);
     assert_eq!(graph["artifacts"]["glossary"]["basis"], true);
     assert_eq!(
         graph["artifacts"]["guide"]["nested"],
@@ -253,7 +253,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
     assert_eq!(red["executionsStarted"], 2);
     let terms = &requests(&red)["guide/terms"];
     assert!(
-        terms["result"]["stdout"]
+        terms["result"]["issues"][0]["reason"]
             .as_str()
             .unwrap()
             .contains("cache: NOT DEFINED"),
@@ -363,7 +363,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
     let unrelated = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(unrelated["executionsStarted"], 0);
     assert_eq!(executions(&unrelated), executions(&first));
-    append(&copy.join("tip.md.artf"), "\n# Declaration-only comment.\n");
+    append(&copy.join(".artifactize/posts.artf"), "\n// Definition-only comment.\n");
     let comment = session.json(&copy, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(comment["executionsStarted"], 0);
 
@@ -393,7 +393,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
     assert_eq!(red["executionsStarted"], 1);
     let red_requests = requests(&red);
     assert!(
-        red_requests["tip/style"]["result"]["stdout"]
+        red_requests["tip/style"]["result"]["issues"][0]["reason"]
             .as_str()
             .unwrap()
             .contains("banned word: leverage")
@@ -412,7 +412,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
     fs::write(&tip, original.split_once('\n').unwrap().1).unwrap();
     let heading = session.json(&copy, &["verify", "--wait", "tip", "--json"], 1);
     assert!(
-        requests(&heading)["tip/style"]["result"]["stdout"]
+        requests(&heading)["tip/style"]["result"]["issues"][0]["reason"]
             .as_str()
             .unwrap()
             .contains("the first line is not a '# ' title")
@@ -420,7 +420,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
     fs::write(&tip, format!("{original}{}\n", "word ".repeat(41))).unwrap();
     let long = session.json(&copy, &["verify", "--wait", "tip", "--json"], 1);
     assert!(
-        requests(&long)["tip/style"]["result"]["stdout"]
+        requests(&long)["tip/style"]["result"]["issues"][0]["reason"]
             .as_str()
             .unwrap()
             .contains("more than 40")
@@ -450,7 +450,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         ])
     );
     assert!(
-        requests(&rules)["welcome/style"]["result"]["stdout"]
+        requests(&rules)["welcome/style"]["result"]["issues"][0]["reason"]
             .as_str()
             .unwrap()
             .contains("banned word: tools")
@@ -483,18 +483,19 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         names,
         [
             vec![
-                "coverage_spec",
-                "grep_spec",
-                "read_requirements",
-                "read_spec",
-                "section_spec",
-                "view_image_spec"
+                "review_coverage_spec",
+                "review_section_spec",
+                "review_view_image_spec",
+                "text_grep_requirements",
+                "text_grep_spec",
+                "text_read_requirements",
+                "text_read_spec"
             ],
-            vec!["notes_spec", "open_spec"],
+            vec!["review_notes_spec", "review_open_spec"],
         ]
     );
 
-    // The declared json tool reads {requirements}, so it runs in spec/review's scope.
+    // The declared json tool reads requirements, so it runs in spec/review's scope.
     let coverage = session.json(
         &repo,
         &[
@@ -504,7 +505,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
             "--eval",
             "spec/review",
             "--tool",
-            "coverage_spec",
+            "review_coverage_spec",
             "--args",
             "{}",
         ],
@@ -534,14 +535,14 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         ];
         session.json(&repo, &args, 0)["result"]["content"][0].clone()
     };
-    let section = execute("section", r#"{"heading":"Dry run"}"#);
+    let section = execute("review_section", r#"{"heading":"Dry run"}"#);
     assert!(
         section["text"]
             .as_str()
             .unwrap()
             .starts_with("## Dry run\n")
     );
-    let image = execute("view_image", r#"{"path":"diagram.png"}"#);
+    let image = execute("review_view_image", r#"{"path":"diagram.png"}"#);
     assert_eq!(image["mimeType"], "image/png");
 
     // README: no person is asked before spec/review is GREEN.
@@ -603,13 +604,12 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     );
     let notes = session.output(
         &repo,
-        &[&["request", "tool", request, "notes_spec"][..], &reviewer].concat(),
+        &[&["request", "tool", request, "review_notes_spec"][..], &reviewer].concat(),
         0,
     );
     assert!(String::from_utf8_lossy(&notes.stdout).contains("## Open questions"));
     let submit = [
         &["request", "submit", request, "--verdict", "GREEN"][..],
-        &["--fields", r#"{"approved":true}"#],
         &reviewer,
     ]
     .concat();
@@ -619,6 +619,9 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     assert_eq!(run["status"], "GREEN");
     assert_eq!(run, session.json(&repo, &["run", "show", &run_id], 0));
     assert_eq!(statuses(&run), map(&[("spec/signoff", "GREEN")]));
-    assert_eq!(requests(&run)["spec/signoff"]["result"]["approved"], true);
+    assert_eq!(
+        requests(&run)["spec/signoff"]["result"],
+        json!({"verdict":"GREEN","kind":"human","issues":[]})
+    );
     assert_eq!(files(&repo), before);
 }

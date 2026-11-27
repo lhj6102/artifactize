@@ -1,0 +1,29 @@
+// A post: one Markdown file that starts with a title, stays within `words` words and avoids
+// every word the house style bans, as house-style/check.py checks.
+artf! post(
+  file,
+  words = "120",
+  tags = ["type:post"],
+  title = "The post fits in 120 words and follows the house style",
+) = {
+  path = "@{param file}"
+  tags = tags
+
+  eval style : runtime(
+    command = "python3",
+    args = ["@{path house-style/check.py}", "@{path self}", "@{path house-style/banned.txt}", "@{param words}"],
+    timeout_ms = 10000,
+  ) = {
+    title = title
+    instruction = "Check that the post starts with a title, stays within @{param words} words, and avoids every word the house style bans."
+  }
+}
+
+artf welcome = post!(file = "welcome.md")
+artf release-notes = post!(file = "release-notes.md")
+artf tip = post!(
+  file = "tip.md",
+  words = "40",
+  tags = ["type:post", "length:brief"],
+  title = "The brief post fits in 40 words and follows the house style",
+)

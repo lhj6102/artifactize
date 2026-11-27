@@ -27,20 +27,6 @@ notes = { description = "Print the release notes.", builtin = "read", args = ["{
 title = "A person approves the release"
 profile = { kind = "human" }
 payload = { instruction = "Read the release notes and approve them." }
-
-[evals.signoff.pass_schema]
-type = "object"
-properties.approved = { const = true }
-properties.comment = { type = "string" }
-required = ["approved", "comment"]
-additionalProperties = false
-
-[evals.signoff.fail_schema]
-type = "object"
-properties.reason = { type = "string", minLength = 3 }
-properties.steps = { type = "array", items = { type = "string" } }
-required = ["reason"]
-additionalProperties = false
 "#;
 
 const SHIP: &str = r#"name = "ship"
@@ -601,7 +587,7 @@ fn verify_browse_and_review_search_are_independent() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
-fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
+fn a_human_review_claims_runs_refuses_what_readiness_refuses_and_submits_green() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
     let id = saved(&fixture, "release/signoff").request.id.to_string();
@@ -612,13 +598,13 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
 
     let open = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
     assert_eq!(open["stage"], "claim");
-    assert_eq!(open["tools"][0]["name"], "notes_release");
+    assert_eq!(open["tools"][0]["name"], "release_notes_release");
     assert_eq!(open["tools"][0]["action"], "prints release/notes.md");
     // Tools need an explicit claim; opening claimed nothing.
     let refused = invoke(
         &window,
         "human_run",
-        json!({"id": id, "tool": "notes_release", "job": 1}),
+        json!({"id": id, "tool": "release_notes_release", "job": 1}),
     )
     .unwrap_err();
     // The library's own refusal, in its words.
@@ -635,75 +621,36 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let ran = invoke(
         &window,
         "human_run",
-        json!({"id": id, "tool": "notes_release", "job": 3}),
+        json!({"id": id, "tool": "release_notes_release", "job": 3}),
     )
     .unwrap();
     // What it printed reaches the Tool log as events; the command answers with the notice.
-    assert_eq!(ran["text"], "notes_release finished.");
+    assert_eq!(ran["text"], "release_notes_release finished.");
 
-    let red = invoke(&window, "human_form", json!({"id": id, "verdict": "RED"})).unwrap();
-    assert_eq!(red["fields"][0]["name"], "reason");
-    assert_eq!(red["fields"][0]["input"], json!({"kind": "text"}));
-    // The library's form adds and removes a list's items and keeps one to type in.
-    let steps = |draft: &Value| draft["fields"][1][1].clone();
-    let draft = json!({"verdict": "RED", "fields": [["reason", {"kind": "text", "value": ""}], ["steps", {"kind": "list", "value": ["a"]}]]});
-    let added = invoke(
-        &window,
-        "human_add_item",
-        json!({"id": id, "draft": draft, "name": "steps"}),
-    )
-    .unwrap();
-    assert_eq!(steps(&added), json!({"kind": "list", "value": ["a", ""]}));
-    let removed = invoke(
-        &window,
-        "human_remove_item",
-        json!({"id": id, "draft": added, "name": "steps", "item": 0}),
-    )
-    .unwrap();
-    assert_eq!(steps(&removed), json!({"kind": "list", "value": [""]}));
-    let removed = invoke(
-        &window,
-        "human_remove_item",
-        json!({"id": id, "draft": removed, "name": "steps", "item": 0}),
-    )
-    .unwrap();
-    assert_eq!(steps(&removed), json!({"kind": "list", "value": [""]}));
-    let invalid = invoke(
-        &window,
-        "human_submit",
-        json!({"id": id, "job": 4, "draft": {"verdict": "RED", "fields": [["reason", {"kind": "text", "value": "no"}]]}}),
-    )
-    .unwrap_err();
-    assert_eq!(invalid["kind"], "invalid");
-    assert!(
-        invalid["message"].as_str().unwrap().contains("reason"),
-        "{invalid}"
-    );
+    // The library's readiness, in its words: RED needs an issue, GREEN takes none.
+    for (verdict, issues, refusal) in [
+        ("RED", json!([]), artifactize_core::human::RED_WITHOUT_ISSUE),
+        ("GREEN", json!(["Off by one"]), artifactize_core::human::GREEN_WITH_ISSUES),
+    ] {
+        let invalid = invoke(
+            &window,
+            "human_submit",
+            json!({"id": id, "job": 4, "verdict": verdict, "issues": issues}),
+        )
+        .unwrap_err();
+        assert_eq!(invalid["kind"], "invalid");
+        assert_eq!(invalid["message"], refusal, "{invalid}");
+    }
     assert_eq!(
         saved(&fixture, "release/signoff").request.status(),
         artifactize_core::types::RequestStatus::Deferred
     );
-
-    let green = invoke(&window, "human_form", json!({"id": id, "verdict": "GREEN"})).unwrap();
-    assert_eq!(
-        green["fields"][0]["input"],
-        json!({"kind": "fixed", "value": "true"})
-    );
-    let draft = json!({"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "확인했습니다"}]]});
-    // Choosing the verdict again hands the kept draft to the library, which answers with it.
-    let again = invoke(
-        &window,
-        "human_form",
-        json!({"id": id, "verdict": "GREEN", "kept": draft}),
-    )
-    .unwrap();
-    assert_eq!(again["draft"]["fields"][1][1]["value"], "확인했습니다");
-    // The editor of owner-fields JSON is gone: a Human result is entered in the form only.
-    assert!(invoke(&window, "human_json", json!({"id": id, "draft": draft})).is_err());
+    // The per-verdict forms are gone: a Human answer is a verdict and its issues.
+    assert!(invoke(&window, "human_form", json!({"id": id, "verdict": "GREEN"})).is_err());
     let submitted = invoke(
         &window,
         "human_submit",
-        json!({"id": id, "job": 5, "draft": draft}),
+        json!({"id": id, "job": 5, "verdict": "GREEN", "issues": []}),
     )
     .unwrap();
     assert_eq!(submitted["settled"], "published");
@@ -711,7 +658,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let saved = saved(&fixture, "release/signoff");
     assert_eq!(
         saved.request.result().map(|result| result.to_json()),
-        Some(json!({"verdict": "GREEN", "approved": true, "comment": "확인했습니다"}))
+        Some(json!({"verdict": "GREEN", "kind": "human", "issues": []}))
     );
     assert_eq!(
         invoke(&window, "human_taken", json!({})).unwrap(),
@@ -786,7 +733,7 @@ payload.instruction = "Review the fixture."
             invoke(
                 first,
                 "human_run",
-                json!({"id": id, "tool": "wait_busy", "job": 2}),
+                json!({"id": id, "tool": "busy_wait_busy", "job": 2}),
             )
         });
         let gate = FinishOnDrop(&release);
@@ -802,7 +749,7 @@ payload.instruction = "Review the fixture."
         let rejected = invoke(
             &other,
             "human_run",
-            json!({"id": id, "tool": "wait_busy", "job": 2}),
+            json!({"id": id, "tool": "busy_wait_busy", "job": 2}),
         )
         .unwrap_err();
         assert_eq!(rejected["kind"], "action");
@@ -846,56 +793,26 @@ payload.instruction = "Review the fixture."
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
-fn two_windows_save_different_fields_in_one_repeated_group() {
-    // Build the additional schema without TOML table nesting changing the existing fields.
-    let declaration = RELEASE.replace(
-        "properties.comment = { type = \"string\" }",
-        r#"properties.comment = { type = "string" }
-properties.groups = { type = "array", items = { type = "object", properties = { left = { type = "string" }, right = { type = "string" } } } }"#,
-    );
-    let declaration = declaration
-        .lines()
-        .filter(|line| !line.starts_with("[views.human_tools]") && !line.starts_with("notes ="))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let fixture = fixture_with(&[(
-        "repeated",
-        &declaration.replace(
-            "name = \"release\"",
-            "name = \"repeated\"\ntype = \"files\"",
-        ),
-    )]);
+fn two_windows_add_issues_to_one_draft() {
+    let fixture = fixture();
     let first = window(&fixture, Mode::Review);
     let second = tauri::WebviewWindowBuilder::new(&first.app, "second", Default::default())
         .build()
         .unwrap();
-    let id = saved(&fixture, "repeated/signoff").request.id.to_string();
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
     invoke(&first, "human_claim", json!({"id":id,"job":1})).unwrap();
-    invoke(
-        &first,
-        "human_draft_edit",
-        json!({"id":id,"change":{"kind":"addItem","verdict":"GREEN","name":"groups"}}),
-    )
-    .unwrap();
-    for (window, field, text) in [
-        (&*first, "left", "saved in Review"),
-        (&second, "right", "saved in the pet"),
-    ] {
+    for (window, text) in [(&*first, "saved in Review"), (&second, "saved in the pet")] {
         invoke(
             window,
             "human_draft_edit",
-            json!({"id":id,"change":{
-                "kind":"groupField","verdict":"GREEN","name":"groups","item":0,"field":field,
-                "value":{"kind":"text","value":text},
-            }}),
+            json!({"id":id,"change":{"kind":"addIssue","text":text}}),
         )
         .unwrap();
     }
     let draft = invoke(&first, "human_draft", json!({"id":id})).unwrap();
-    let text = draft["green"].to_string();
-    assert!(
-        text.contains("saved in Review") && text.contains("saved in the pet"),
-        "{draft}"
+    assert_eq!(
+        draft["issues"],
+        json!(["saved in Review", "saved in the pet"])
     );
 }
 
@@ -918,12 +835,6 @@ fingerprint = {{ script = {{ command = {command}, args = {args}, timeout_ms = 45
 title = "Approve the fixture"
 profile = {{ kind = "human" }}
 payload.instruction = "Review the fixture."
-
-[evals.approve.pass_schema]
-type = "object"
-properties.comment = {{ type = "string", minLength = 1 }}
-required = ["comment"]
-additionalProperties = false
 "#
     );
     let fixture = fixture_with(&[("editable", &declaration)]);
@@ -936,31 +847,28 @@ additionalProperties = false
     invoke(
         &window,
         "human_draft_edit",
-        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
+        json!({"id": id, "change": {"kind": "verdict", "verdict": "RED"}}),
     )
     .unwrap();
-    // The reasons fill GREEN's only text field.
     invoke(
         &window,
         "human_draft_edit",
-        json!({"id": id, "change": {"kind": "addReason", "text": "Before Submit"}}),
+        json!({"id": id, "change": {"kind": "addIssue", "text": "Before Submit"}}),
     )
     .unwrap();
-    let edit = |comment: &str| json!({"id": id, "change": {"kind": "editReason", "index": 0, "previous": "Before Submit", "text": comment}});
+    let edit = |issue: &str| json!({"id": id, "change": {"kind": "editIssue", "index": 0, "previous": "Before Submit", "text": issue}});
+    // An answer given whole while a draft is saved is not the draft's: it is refused.
     let stale = invoke(
         &other,
         "human_submit",
-        json!({
-            "id": id, "job": 5,
-            "draft": { "verdict":"GREEN", "fields":[["comment", {"kind":"text", "value":"Stale copy"}]] },
-        }),
+        json!({"id": id, "job": 5, "verdict": "RED", "issues": ["Stale copy"]}),
     )
     .unwrap_err();
     assert!(
         stale["message"]
             .as_str()
             .unwrap()
-            .contains("verdict or fields changed"),
+            .contains("verdict or issues changed"),
         "{stale}"
     );
 
@@ -1011,44 +919,20 @@ additionalProperties = false
             .request
             .result()
             .unwrap()
-            .owner_fields()["comment"],
-        "Saved during Submit"
+            .to_json()["issues"],
+        json!([{"reason": "Saved during Submit"}])
     );
 }
 
-/// An eval whose RED takes its reasons as a list and needs a severity.
-const REASONS: &str = r#"name = "reasons"
+/// A Human eval whose answer is a verdict and its issues.
+const PLAIN: &str = r#"name = "plain"
 fingerprint = false
 
 [evals.approve]
 title = "Approve the fixture"
 profile = { kind = "human" }
 payload.instruction = "Review the fixture."
-
-[evals.approve.pass_schema]
-type = "object"
-properties.approved = { const = true }
-properties.comment = { type = "string" }
-required = ["approved", "comment"]
-additionalProperties = false
-
-[evals.approve.fail_schema]
-type = "object"
-properties.change = { type = "array", items = { type = "string" }, minItems = 1 }
-properties.severity = { enum = ["minor", "major"] }
-required = ["change", "severity"]
-additionalProperties = false
 "#;
-
-/// The field names a FormView shows.
-fn field_names(form: &Value) -> Vec<String> {
-    form["fields"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|field| field["name"].as_str().unwrap().to_owned())
-        .collect()
-}
 
 fn blocked(reason: &str) -> Value {
     json!({"kind": "blocked", "reason": reason})
@@ -1056,50 +940,54 @@ fn blocked(reason: &str) -> Value {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
-fn reasons_are_edited_in_order_survive_a_restart_and_a_release_and_submit_as_red_items() {
-    let fixture = fixture_with(&[("reasons", REASONS)]);
+fn issues_are_edited_in_order_survive_a_restart_and_a_release_and_submit_as_red() {
+    let fixture = fixture_with(&[("plain", PLAIN)]);
     let window = window(&fixture, Mode::Review);
     let other = tauri::WebviewWindowBuilder::new(&window.app, "other", Default::default())
         .build()
         .unwrap();
-    let id = saved(&fixture, "reasons/approve").request.id.to_string();
+    let id = saved(&fixture, "plain/approve").request.id.to_string();
     invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
     let change = |change: Value| json!({"id": id, "change": change});
 
     let fresh = invoke(&window, "human_draft", json!({"id": id})).unwrap();
-    assert_eq!(fresh["reasons"], json!([]));
-    // The reasons' fields are left out; constants and the other owner fields stay.
-    assert_eq!(field_names(&fresh["green"]), ["approved"]);
-    assert_eq!(field_names(&fresh["red"]), ["severity"]);
+    assert_eq!(fresh["issues"], json!([]));
     assert_eq!(fresh["readiness"]["green"], json!({"kind": "ready"}));
-    assert_eq!(fresh["readiness"]["red"], blocked("RED needs a reason."));
+    assert_eq!(
+        fresh["readiness"]["red"],
+        blocked(artifactize_core::human::RED_WITHOUT_ISSUE)
+    );
 
     let empty = invoke(
         &window,
         "human_draft_edit",
-        change(json!({"kind": "addReason", "text": "  \n"})),
+        change(json!({"kind": "addIssue", "text": "  \n"})),
     )
     .unwrap_err();
     assert_eq!(empty["kind"], "invalid");
     let first = invoke(
         &window,
         "human_draft_edit",
-        change(json!({"kind": "addReason", "text": "Totals are wrong"})),
+        change(json!({"kind": "addIssue", "text": "Totals are wrong"})),
     )
     .unwrap();
-    assert_eq!(first["readiness"]["red"], blocked("Fill in severity."));
+    assert_eq!(first["readiness"]["red"], json!({"kind": "ready"}));
+    assert_eq!(
+        first["readiness"]["green"],
+        blocked(artifactize_core::human::GREEN_WITH_ISSUES)
+    );
     invoke(
         &other,
         "human_draft_edit",
-        change(json!({"kind": "addReason", "text": "The footer overlaps"})),
+        change(json!({"kind": "addIssue", "text": "The footer overlaps"})),
     )
     .unwrap();
 
-    // An edit or removal names the reason it saw; a reason changed meanwhile is refused.
+    // An edit or removal names the issue it saw; an issue changed meanwhile is refused.
     for stale in [
-        json!({"kind": "editReason", "index": 0, "previous": "Totals look wrong", "text": "x"}),
-        json!({"kind": "removeReason", "index": 1, "previous": "Totals are wrong"}),
-        json!({"kind": "removeReason", "index": 2, "previous": "The footer overlaps"}),
+        json!({"kind": "editIssue", "index": 0, "previous": "Totals look wrong", "text": "x"}),
+        json!({"kind": "removeIssue", "index": 1, "previous": "Totals are wrong"}),
+        json!({"kind": "removeIssue", "index": 2, "previous": "The footer overlaps"}),
     ] {
         let refused = invoke(&window, "human_draft_edit", change(stale)).unwrap_err();
         assert_eq!(refused["kind"], "action", "{refused}");
@@ -1108,7 +996,7 @@ fn reasons_are_edited_in_order_survive_a_restart_and_a_release_and_submit_as_red
         &window,
         "human_draft_edit",
         change(
-            json!({"kind": "editReason", "index": 0, "previous": "Totals are wrong", "text": " "}),
+            json!({"kind": "editIssue", "index": 0, "previous": "Totals are wrong", "text": " "}),
         ),
     )
     .unwrap_err();
@@ -1116,162 +1004,66 @@ fn reasons_are_edited_in_order_survive_a_restart_and_a_release_and_submit_as_red
     invoke(
         &window,
         "human_draft_edit",
-        change(json!({"kind": "editReason", "index": 0, "previous": "Totals are wrong", "text": "Totals are off by one"})),
+        change(json!({"kind": "editIssue", "index": 0, "previous": "Totals are wrong", "text": "Totals are off by one"})),
     )
     .unwrap();
     invoke(
         &window,
         "human_draft_edit",
-        change(json!({"kind": "addReason", "text": "A typo"})),
+        change(json!({"kind": "addIssue", "text": "A typo"})),
     )
     .unwrap();
     let removed = invoke(
         &window,
         "human_draft_edit",
-        change(json!({"kind": "removeReason", "index": 2, "previous": "A typo"})),
+        change(json!({"kind": "removeIssue", "index": 2, "previous": "A typo"})),
     )
     .unwrap();
-    let reasons = json!(["Totals are off by one", "The footer overlaps"]);
-    assert_eq!(removed["reasons"], reasons);
-    let rated = invoke(
-        &window,
-        "human_draft_edit",
-        change(json!({"kind": "field", "verdict": "RED", "name": "severity", "value": {"kind": "choice", "value": 1}})),
-    )
-    .unwrap();
-    assert_eq!(rated["readiness"]["red"], json!({"kind": "ready"}));
-    assert_eq!(rated["readiness"]["green"], json!({"kind": "ready"}));
-    // The field the reasons fill is not edited as a field.
-    assert!(
-        invoke(
-            &window,
-            "human_draft_edit",
-            change(json!({"kind": "field", "verdict": "RED", "name": "change", "value": {"kind": "list", "value": ["x"]}})),
-        )
-        .is_err()
-    );
+    let issues = json!(["Totals are off by one", "The footer overlaps"]);
+    assert_eq!(removed["issues"], issues);
 
     // The draft outlives the app and a release.
     drop(other);
     drop(window);
     let window = self::window(&fixture, Mode::Review);
     let restarted = invoke(&window, "human_draft", json!({"id": id})).unwrap();
-    assert_eq!(restarted["reasons"], reasons);
+    assert_eq!(restarted["issues"], issues);
     invoke(&window, "human_release", json!({"ids": [id], "job": 1})).unwrap();
     let released = invoke(&window, "human_draft", json!({"id": id})).unwrap();
-    assert_eq!(released["reasons"], reasons);
+    assert_eq!(released["issues"], issues);
     invoke(&window, "human_claim", json!({"id": id, "job": 2})).unwrap();
 
+    // GREEN with issues is refused; RED takes them.
+    invoke(
+        &window,
+        "human_draft_edit",
+        change(json!({"kind": "verdict", "verdict": "GREEN"})),
+    )
+    .unwrap();
+    let refused = invoke(&window, "human_draft_submit", json!({"id": id, "job": 3})).unwrap_err();
+    assert_eq!(refused["kind"], "invalid");
+    assert_eq!(refused["message"], artifactize_core::human::GREEN_WITH_ISSUES);
     invoke(
         &window,
         "human_draft_edit",
         change(json!({"kind": "verdict", "verdict": "RED"})),
     )
     .unwrap();
-    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 3})).unwrap();
+    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 4})).unwrap();
     assert_eq!(submitted["settled"], "published");
     assert_eq!(
-        saved(&fixture, "reasons/approve")
+        saved(&fixture, "plain/approve")
             .request
             .result()
             .map(|result| result.to_json()),
         Some(json!({
             "verdict": "RED",
-            "change": ["Totals are off by one", "The footer overlaps"],
-            "severity": "major",
+            "kind": "human",
+            "issues": [{"reason": "Totals are off by one"}, {"reason": "The footer overlaps"}],
         }))
     );
     let after = invoke(&window, "human_draft", json!({"id": id})).unwrap();
-    assert_eq!(after["reasons"], json!([]));
-}
-
-#[test]
-#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
-fn green_joins_its_reasons_into_its_text_field_and_red_names_its_missing_owner_field() {
-    let fixture = fixture();
-    let window = window(&fixture, Mode::Review);
-    let id = saved(&fixture, "release/signoff").request.id.to_string();
-    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
-    for text in ["Read the notes", "The version matches"] {
-        invoke(
-            &window,
-            "human_draft_edit",
-            json!({"id": id, "change": {"kind": "addReason", "text": text}}),
-        )
-        .unwrap();
-    }
-    let draft = invoke(
-        &window,
-        "human_draft_edit",
-        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
-    )
-    .unwrap();
-    // RED's one list takes the reasons; its required text stays an owner field.
-    assert_eq!(field_names(&draft["red"]), ["reason"]);
-    assert_eq!(draft["readiness"]["red"], blocked("Fill in reason."));
-    assert_eq!(draft["readiness"]["green"], json!({"kind": "ready"}));
-    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 2})).unwrap();
-    assert_eq!(submitted["settled"], "published");
-    assert_eq!(
-        saved(&fixture, "release/signoff")
-            .request
-            .result()
-            .map(|result| result.to_json()),
-        Some(json!({
-            "verdict": "GREEN",
-            "approved": true,
-            "comment": "Read the notes\n\nThe version matches",
-        }))
-    );
-}
-
-#[test]
-#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
-fn a_verdict_without_a_field_for_reasons_is_blocked_while_reasons_exist() {
-    let declaration = r#"name = "plain"
-fingerprint = false
-
-[evals.approve]
-title = "Approve the fixture"
-profile = { kind = "human" }
-payload.instruction = "Review the fixture."
-"#;
-    let fixture = fixture_with(&[("plain", declaration)]);
-    let window = window(&fixture, Mode::Review);
-    let id = saved(&fixture, "plain/approve").request.id.to_string();
-    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
-    let draft = invoke(
-        &window,
-        "human_draft_edit",
-        json!({"id": id, "change": {"kind": "addReason", "text": "Why"}}),
-    )
-    .unwrap();
-    assert_eq!(
-        draft["readiness"]["green"],
-        blocked("GREEN takes no reasons; remove them.")
-    );
-    assert_eq!(
-        draft["readiness"]["red"],
-        blocked("RED takes no reasons; remove them.")
-    );
-    invoke(
-        &window,
-        "human_draft_edit",
-        json!({"id": id, "change": {"kind": "verdict", "verdict": "GREEN"}}),
-    )
-    .unwrap();
-    let refused = invoke(&window, "human_draft_submit", json!({"id": id, "job": 2})).unwrap_err();
-    assert_eq!(refused["kind"], "invalid");
-    assert_eq!(refused["message"], "GREEN takes no reasons; remove them.");
-    let removed = invoke(
-        &window,
-        "human_draft_edit",
-        json!({"id": id, "change": {"kind": "removeReason", "index": 0, "previous": "Why"}}),
-    )
-    .unwrap();
-    assert_eq!(removed["readiness"]["green"], json!({"kind": "ready"}));
-    let submitted = invoke(&window, "human_draft_submit", json!({"id": id, "job": 3})).unwrap();
-    assert_eq!(submitted["settled"], "published");
+    assert_eq!(after["issues"], json!([]));
 }
 
 #[test]
@@ -1369,7 +1161,7 @@ payload.instruction = "Read the page separately."
     let launched = invoke(
         &window,
         "human_run",
-        json!({"id": id, "tool": "view_page", "job": 2}),
+        json!({"id": id, "tool": "files_view_page", "job": 2}),
     )
     .unwrap();
     let denied = invoke(
@@ -1393,7 +1185,7 @@ payload.instruction = "Read the page separately."
     let refused = invoke(
         &window,
         "human_run",
-        json!({"id":id,"tool":"view_page","job":20}),
+        json!({"id":id,"tool":"files_view_page","job":20}),
     )
     .unwrap_err();
     assert!(
@@ -1413,7 +1205,7 @@ payload.instruction = "Read the page separately."
     let same_name = invoke(
         &window,
         "artifact_tool_run",
-        json!({"branch": follower_branch["key"], "artifact": "page", "tool": "view_page", "job": 3}),
+        json!({"branch": follower_branch["key"], "artifact": "page", "tool": "files_view_page", "job": 3}),
     )
     .unwrap();
     let same_name_session = &same_name["viewer"]["session"];
@@ -1522,7 +1314,7 @@ payload.instruction = "Read the page."
     let launch = invoke(
         &window,
         "human_run",
-        json!({"id":id,"tool":"view_page","job":2}),
+        json!({"id":id,"tool":"files_view_page","job":2}),
     )
     .unwrap();
     let viewer = &launch["viewer"];
@@ -1561,14 +1353,15 @@ fn a_new_branch_target_matches_the_pet_instead_of_the_old_viewer() {
         fs::write(
             repo.join(".artifactize/page.artf"),
             format!(
-                r#"path = "{target}/"
-type = "files"
-fingerprint = {{ files = ["content.txt"] }}
+                r#"artf page : files = {{
+  path = "{target}/"
+  fingerprint = {{ files = ["content.txt"] }}
 
-[evals.approve]
-title = "Review the page"
-profile = {{ kind = "human" }}
-payload.instruction = "Read the page."
+  eval approve : human = {{
+    title = "Review the page"
+    instruction = "Read the page."
+  }}
+}}
 "#,
             ),
         )
@@ -1602,7 +1395,7 @@ payload.instruction = "Read the page."
         let ran = invoke(
             &window,
             "human_run",
-            json!({"id": id, "tool": "view_page", "job": job + 1}),
+            json!({"id": id, "tool": "files_view_page", "job": job + 1}),
         )
         .unwrap();
         ran["viewer"]["session"].clone()
@@ -1639,7 +1432,7 @@ payload.instruction = "Read the page."
         &window,
         "artifact_tool_run",
         json!({
-            "branch": other, "artifact": "page", "tool": "view_page", "job": 8,
+            "branch": other, "artifact": "page", "tool": "files_view_page", "job": 8,
         }),
     )
     .unwrap()["viewer"]["session"]
@@ -1667,7 +1460,7 @@ payload.instruction = "Read the page."
     let current = invoke(
         &window,
         "artifact_tool_run",
-        json!({"branch":other,"artifact":"page","tool":"view_page","job":9}),
+        json!({"branch":other,"artifact":"page","tool":"files_view_page","job":9}),
     )
     .unwrap()["viewer"]["session"]
         .clone();
@@ -1802,7 +1595,7 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
     let submitted = invoke(
         &window,
         "human_submit",
-        json!({"id": id, "job": 2, "draft": {"verdict": "GREEN", "fields": [], "json": "{\"approved\": true, \"comment\": \"\"}"}}),
+        json!({"id": id, "job": 2, "verdict": "GREEN", "issues": []}),
     )
     .unwrap();
     assert_eq!(submitted["settled"], "savedLocally");
@@ -2097,99 +1890,71 @@ fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
-fn the_definitions_are_read_and_edited_on_what_was_shown() {
+fn the_definitions_are_read_only_with_each_bindings_source() {
     let fixture = fixture();
+    fs::write(fixture.repo.join("tip.md"), "# Tip\n").unwrap();
+    fs::write(
+        fixture.repo.join(".artifactize").join("posts.artf"),
+        "// A post.\nartf! post(file) = {\n  path = \"@{param file}\"\n  basis = true\n}\n\nartf tip = post!(file = \"tip.md\")\n",
+    )
+    .unwrap();
     let monitor = window(&fixture, Mode::Monitor);
     let branch = branch(&monitor);
     let read = invoke(&monitor, "definitions", json!({"branch": branch})).unwrap();
-    let ship = read["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| node["name"] == "ship")
-        .unwrap();
+    let node = |name: &str| {
+        read["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["name"] == name)
+            .unwrap_or_else(|| panic!("{name} in {read}"))
+            .clone()
+    };
+    let ship = node("ship");
+    assert_eq!(ship["definition"], ".artifactize/ship.artf", "{read}");
+    assert_eq!(ship["target"], "ship/");
+    assert_eq!(ship["macroName"], Value::Null);
+    let tip = node("tip");
     assert_eq!(
-        ship["definition"],
-        json!(".artifactize/ship.artf"),
-        "{read}"
+        [&tip["definition"], &tip["line"], &tip["macroName"], &tip["target"]],
+        [
+            &json!(".artifactize/posts.artf"),
+            &json!(7),
+            &json!("post!"),
+            &json!("tip.md")
+        ],
+        "{tip}"
     );
-    assert_eq!(ship["target"], json!("ship/"));
-    assert_eq!(ship["comment"], Value::Null);
-    let file = fixture.repo.join(".artifactize").join("ship.artf");
-    assert_eq!(
-        read["files"][".artifactize/ship.artf"],
-        json!(fs::read_to_string(&file).unwrap())
-    );
-    // Written on the text that was shown: a comment, nothing else in the file changed.
-    let before = fs::read_to_string(&file).unwrap();
-    let comment = json!({"kind": "setComment", "name": "ship", "text": "Ship after the review."});
-    let written = invoke(
-        &monitor,
-        "definition_edit",
-        json!({"branch": branch, "shown": read["files"], "operation": comment}),
-    )
-    .unwrap();
-    assert_eq!(written, json!({"kind": "written"}));
-    let after = fs::read_to_string(&file).unwrap();
-    assert!(after.starts_with(&before), "{after}");
-    assert!(after.contains("Ship after the review."), "{after}");
-    let again = invoke(&monitor, "definitions", json!({"branch": branch})).unwrap();
-    assert!(
-        again["nodes"].as_array().unwrap().iter().any(
-            |node| node["name"] == "ship" && node["comment"] == json!("Ship after the review.")
-        ),
-        "{again}"
-    );
-    // The same edit on the text shown before is refused, naming the file, and writes nothing.
-    let stale = invoke(
-        &monitor,
-        "definition_edit",
-        json!({"branch": branch, "shown": read["files"], "operation": {"kind": "setComment", "name": "ship", "text": "Other."}}),
-    )
-    .unwrap();
-    assert_eq!(
-        stale,
-        json!({"kind": "refused", "refusal": {"kind": "changed", "file": ".artifactize/ship.artf"}})
-    );
-    assert_eq!(fs::read_to_string(&file).unwrap(), after);
-    // An edit that is not allowed says why: release is named by ship.
-    let named = invoke(
-        &monitor,
-        "definition_edit",
-        json!({"branch": branch, "shown": again["files"], "operation": {"kind": "delete", "name": "release"}}),
-    )
-    .unwrap();
-    assert_eq!(named["refusal"]["kind"], json!("notAllowed"), "{named}");
-    // Asked first, the library says the same and which files an edit would write, writing none.
-    let check = |operation: Value| {
+    // Written out: its source is the code, with nothing to expand.
+    let source = |artifact: &str| {
         invoke(
             &monitor,
-            "definition_check",
-            json!({"branch": branch, "operation": operation}),
+            "definition_source",
+            json!({"branch": branch, "artifact": artifact}),
         )
         .unwrap()
     };
-    assert_eq!(
-        check(json!({"kind": "delete", "name": "release"}))["refusal"]["kind"],
-        json!("notAllowed")
-    );
-    let rename = check(json!({"kind": "rename", "old": "ship", "new": "deliver"}));
-    assert_eq!(rename["refusal"], Value::Null, "{rename}");
+    let ship = source("ship");
+    assert_eq!(ship["file"], ".artifactize/ship.artf");
     assert!(
-        rename["files"]
-            .as_array()
+        ship["authored"].as_str().unwrap().starts_with("artf ship"),
+        "{ship}"
+    );
+    assert_eq!(ship["expanded"], Value::Null);
+    // A macro call: the call as written, and the declaration it makes.
+    let tip = source("tip");
+    assert_eq!(tip["authored"], "artf tip = post!(file = \"tip.md\")");
+    assert!(
+        tip["expanded"]
+            .as_str()
             .unwrap()
-            .contains(&json!(".artifactize/ship.artf")),
-        "{rename}"
+            .contains("path = \"tip.md\""),
+        "{tip}"
     );
-    assert!(fixture.repo.join(".artifactize").join("ship.artf").exists());
-    assert!(
-        fixture
-            .repo
-            .join(".artifactize")
-            .join("release.artf")
-            .exists()
-    );
+    // Nothing writes them: the editing commands are gone.
+    for command in ["definition_edit", "definition_check"] {
+        assert!(invoke(&monitor, command, json!({"branch": branch})).is_err());
+    }
 }
 
 #[test]
@@ -2292,7 +2057,7 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     invoke(
         &human,
         "human_submit",
-        json!({"id": id, "job": 2, "draft": {"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "ok"}]], "json": null}}),
+        json!({"id": id, "job": 2, "verdict": "GREEN", "issues": []}),
     )
     .unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -2736,17 +2501,13 @@ fn a_chat_only_checkout_keeps_its_view_and_current_after_restart() {
     assert_eq!(current["artifacts"], 1);
     let definitions = invoke(&restarted, "definitions", json!({"branch":branch})).unwrap();
     assert!(definitions.to_string().contains("app"));
-    let changed = invoke(
+    let source = invoke(
         &restarted,
-        "definition_check",
-        json!({
-            "branch":branch,
-            "operation":{"kind":"setComment","name":"app","text":"Chat can edit Current"},
-        }),
+        "definition_source",
+        json!({"branch":branch, "artifact":"app"}),
     )
     .unwrap();
-    assert_eq!(changed["kind"], "checked");
-    assert_eq!(changed["files"].as_array().unwrap().len(), 1);
+    assert!(source["authored"].as_str().unwrap().contains("artf app"), "{source}");
 
     os::git(&fixture.repo, &["symbolic-ref", "HEAD", "refs/heads/other"]);
     let stale = invoke(&restarted, "chat_open", json!({"id":id})).unwrap();
@@ -3053,7 +2814,7 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     )
     .unwrap();
     assert_eq!(detail["plan"]["text"], "would run");
-    assert_eq!(detail["card"]["instruction"], "Review {app}.");
+    assert_eq!(detail["card"]["instruction"], "Review app.");
     assert_eq!(detail["card"]["result"], Value::Null, "nothing to reuse");
     assert_eq!(detail["profile"], "human");
     // Nothing was verified or recorded.
@@ -3103,8 +2864,8 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
         json!({"branch": branch, "artifact": "release"}),
     )
     .unwrap();
-    assert_eq!(tools[0]["name"], "notes_release");
-    assert_eq!(tools[0]["operation"], "notes");
+    assert_eq!(tools[0]["name"], "release_notes_release");
+    assert_eq!(tools[0]["operation"], "release_notes");
     assert_eq!(tools[0]["action"], "prints release/notes.md");
     // ship declares none of its own.
     assert_eq!(
@@ -3119,12 +2880,12 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
     let ran = invoke(
         &window,
         "artifact_tool_run",
-        json!({"branch": branch, "artifact": "release", "tool": "notes_release", "job": 1}),
+        json!({"branch": branch, "artifact": "release", "tool": "release_notes_release", "job": 1}),
     )
     .unwrap();
     assert_eq!(
         ran,
-        json!({"text": "notes_release finished.", "error": false})
+        json!({"text": "release_notes_release finished.", "error": false})
     );
     // Nobody claimed the waiting review, and nothing was recorded on it.
     let saved = saved(&fixture, "release/signoff");
@@ -3137,12 +2898,12 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
     let refused = invoke(
         &window,
         "artifact_tool_run",
-        json!({"branch": branch, "artifact": "ship", "tool": "notes_release", "job": 2}),
+        json!({"branch": branch, "artifact": "ship", "tool": "release_notes_release", "job": 2}),
     )
     .unwrap();
     assert_eq!(
         refused,
-        json!({"text": "notes_release did not run.", "error": true})
+        json!({"text": "release_notes_release did not run.", "error": true})
     );
 }
 
@@ -3179,13 +2940,15 @@ fn an_artifacts_tools_follow_its_declaration_when_it_moves_or_is_renamed() {
         list("release").unwrap()[0]["action"],
         "prints archive/release/notes.md"
     );
-    // Renamed, it declares another Artifact. Only its own declarations are read: ship's
-    // reference to the old name, which a whole-workspace read refuses, is not.
-    fs::rename(
-        fixture.repo.join(".artifactize/release.artf"),
-        fixture.repo.join(".artifactize/notes.artf"),
-    )
-    .unwrap();
+    // Bound to another name, it is another Artifact; ship's input follows the new name.
+    let renamed = fs::read_to_string(&file)
+        .unwrap()
+        .replace("artf release ", "artf notes ");
+    fs::write(&file, renamed).unwrap();
+    let ship = fixture.repo.join(".artifactize/ship.artf");
+    let follows = fs::read_to_string(&ship).unwrap();
+    assert!(follows.contains("inputs = [release]"), "{follows}");
+    fs::write(&ship, follows.replace("inputs = [release]", "inputs = [notes]")).unwrap();
     assert_eq!(list("release").unwrap_err()["kind"], "missing");
-    assert_eq!(list("notes").unwrap()[0]["name"], "notes_notes");
+    assert_eq!(list("notes").unwrap()[0]["name"], "release_notes_notes");
 }

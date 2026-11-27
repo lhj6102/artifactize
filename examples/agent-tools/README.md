@@ -1,13 +1,17 @@
 # Agent eval with built-in and declared tools
 
 An LLM reviews a short specification against its requirements, using only the
-tools that the specification declares. A Human eval asks a reviewer to sign off
+tools that the specification composes. A Human eval asks a reviewer to sign off
 on the open questions.
 
 ```
 agent-tools/
-├── requirements/        basis Artifact: requirements.md lists R1–R4, with a read tool
-└── spec/                reviewed Artifact; its review references requirements
+├── .artifactize/
+│   ├── profiles.artf    the Agent profiles the review can run with
+│   ├── requirements.artf
+│   └── spec.artf        the text and review toolsets, and spec's two evals
+├── requirements/        basis Artifact: requirements.md lists R1–R4
+└── spec/                reviewed Artifact; its review reads requirements
     ├── spec.md          the specification under review
     ├── diagram.png      checked with the built-in view_image tool
     ├── notes.md         review notes for the Human eval
@@ -16,39 +20,40 @@ agent-tools/
 
 What it demonstrates:
 
-- **An Agent eval with prioritized findings.** `spec/review` returns a list of
-  findings, each with a priority from P0 (the most important) to P3 and a reason.
-  `red_at = "P1"` makes the eval RED when a finding is P1 or above; P2 and P3
-  findings are reported but do not fail it. An invalid answer gets one repair
+- **An Agent eval with prioritized issues.** `spec/review` returns a list of
+  issues, each with a priority from P0 (the most important) to P3 and a reason.
+  `red_at = "P1"` makes the eval RED when an issue is P1 or above; P2 and P3
+  issues are reported but do not fail it. An invalid answer gets one repair
   turn with tools disabled. The profile also sets `timeout_ms` and
   `max_tool_calls` budgets.
-- **Built-in tools.** `read`, `grep` and `view_image` are declared as
-  `{ builtin = "read" }`. They run inside artifactize, read only, and each sees
-  only the Artifact that declares it. `requirements` declares its own `read`, so
-  the reviewer reads `requirements.md` with `read_requirements`.
-- **A fixed-file built-in tool.** `section` is declared as
-  `{ builtin = "section", args = ["spec.md"] }`. The model passes only
-  `{"heading": ...}`. It prints the matching Markdown heading and its contents,
-  stopping before the next heading at the same or a higher level; no shell script
-  or external program is needed.
+- **Toolsets.** `tool text = { … }` declares `read` and `grep`, and
+  `tool review = { … }` the review's own tools. `artf spec : text & review`
+  composes both; `artf requirements : text` composes only `text`. Built-in tools
+  such as `builtin(op = "read")` run inside artifactize, read only, and each sees
+  only the Artifact that composes it.
+- **A fixed-file built-in tool.** `section` is `builtin(op = "section", args = ["spec.md"])`.
+  The model passes only `{"heading": ...}`. It prints the matching Markdown heading
+  and its contents, stopping before the next heading at the same or a higher
+  level; no shell script or external program is needed.
 - **A declared `json` tool.** `coverage` reads `{version, context, args}` on
-  stdin. Its argv gets `{requirements}/requirements.md` as an absolute path. It prints a
-  structured observation: the spec lines that cite each requirement ID, and the
-  IDs that nothing cites. An unknown `id` returns an authored error
+  stdin. Its argv gets `@{path requirements/requirements.md}` as an absolute path.
+  It prints a structured observation: the spec lines that cite each requirement
+  ID, and the IDs that nothing cites. An unknown `id` returns an authored error
   (`isError: true` with one text block).
-- **Tool names.** The reviewer sees each tool as `<tool>_<artifact>`:
-  `read_spec`, `grep_spec`, `view_image_spec`, `section_spec`, `coverage_spec`
-  and `read_requirements`.
+- **Tool names.** The reviewer sees each tool as `<toolset>_<tool>_<artifact>`:
+  `text_read_spec`, `text_grep_spec`, `review_section_spec`,
+  `review_view_image_spec`, `review_coverage_spec` and `text_read_requirements`.
+  An instruction names one with a slot, `@{tool self agent review.coverage}`,
+  which always reads as the name the reviewer sees.
 - **A basis and a dependency.** `requirements` is a basis Artifact. The
-  instruction of `spec/review` names it as `{requirements}`, which makes it that
-  eval's dependency and admits it, with its tools, to the review.
-- **A Human eval with Human tools.** `spec/signoff` declares two Human tools.
-  `open` uses `{ builtin = "open", args = ["{artifactPath}/notes.md"] }` to
-  launch the desktop's default application on Linux, macOS or Windows; it records
-  only that the application launch was accepted. `notes` uses the `read` builtin
-  with the same fixed path to print the notes in the terminal. These tools run
-  inside artifactize, take no model arguments and need no `artifactize-tools`
-  executable on `PATH`.
+  instruction of `spec/review` names it as `@{artf requirements}`, which makes it
+  that eval's dependency and admits it, with its tools, to the review.
+- **A Human eval with Human tools.** `review` declares two Human tools. `open` is
+  `builtin(op = "open", args = ["@{path self/notes.md}"])`: it launches the
+  desktop's default application on Linux, macOS or Windows and records only that
+  the launch was accepted. `notes` uses the `read` builtin with the same fixed path
+  to print the notes in the terminal. These tools run inside artifactize, take no
+  model arguments and need no `artifactize-tools` executable on `PATH`.
 
 `spec` uses the default artifactsum fingerprint, so unchanged files reuse earlier reviews.
 
@@ -61,29 +66,30 @@ cd examples/agent-tools
 artifactize config check
 artifactize config graph
 artifactize tools check      # static: schemas, executables and scoped paths; runs nothing
-artifactize tools check --execute --eval spec/review --tool coverage_spec --args '{}'
-artifactize tools check --execute --eval spec/review --tool coverage_spec --args '{"id":"R9"}'
-artifactize tools check --execute --artifact spec --audience agent --tool section --args '{"heading":"Dry run"}'
-artifactize tools check --execute --artifact requirements --audience agent --tool read --args '{"path":"requirements.md"}'
-artifactize tools check --execute --artifact spec --audience agent --tool view_image --args '{"path":"diagram.png"}'
-artifactize tools check --execute --artifact spec --audience human --tool notes
+artifactize tools check --execute --eval spec/review --tool review_coverage_spec --args '{}'
+artifactize tools check --execute --eval spec/review --tool review_coverage_spec --args '{"id":"R9"}'
+artifactize tools check --execute --artifact spec --audience agent --tool review_section --args '{"heading":"Dry run"}'
+artifactize tools check --execute --artifact requirements --audience agent --tool text_read --args '{"path":"requirements.md"}'
+artifactize tools check --execute --artifact spec --audience agent --tool review_view_image --args '{"path":"diagram.png"}'
+artifactize tools check --execute --artifact spec --audience human --tool review_notes
 ```
 
-An explicit check runs one tool and creates no Run, verdict or cache entry. It
-exits 1 when the tool reports an error, as `coverage` does for `R9`. `coverage`
-reads `{requirements}`, so it runs in the scope of `spec/review`, whose instruction
-names `requirements`; `--artifact spec` admits only `spec`. Static
-checks validate built-in tools without launching a desktop application. Actually using
-`open_spec` requires a working desktop default-application mechanism;
-`notes_spec` works in any terminal.
+With `--artifact`, a tool is named without its Artifact (`review_section`); with
+`--eval`, by the name the reviewer sees. An explicit check runs one tool and
+creates no Run, verdict or cache entry. It exits 1 when the tool reports an
+error, as `coverage` does for `R9`. `coverage` reads requirements, so it runs in
+the scope of `spec/review`, whose instruction names `requirements`; `--artifact spec`
+admits only `spec`. Static checks validate built-in tools without launching a
+desktop application. Actually using `review_open_spec` requires a working desktop
+default-application mechanism; `review_notes_spec` works in any terminal.
 
 ## Choose a backend and model
 
-`spec/review` names exactly one backend and one exact model. There is no
-fallback or model catalog. The default profile uses `backend = "openai"` with
-the placeholder `YOUR_OPENAI_MODEL_ID`. The `anthropic` and `codex` entries in
-`profile_variants` are complete alternative profiles. Replace the `model`
-placeholder of the profile you use in `.artifactize/spec.artf`:
+`spec/review` runs with the `openai` profile, which names exactly one backend
+and one exact model. There is no fallback or model catalog. `profiles.artf`
+declares three profiles, `openai`, `anthropic` and `codex`, each with a model
+placeholder (`YOUR_OPENAI_MODEL_ID` and so on). Replace the placeholder of the
+profile you use:
 
 | Backend | Credentials | Models | Review command |
 |---|---|---|---|
@@ -96,15 +102,14 @@ any provider.
 
 `reasoning` must be a value that the backend accepts (`openai` and `codex`:
 `none` to `max`; `anthropic`: `low`, `medium`, `high`, `max`).
-artifactize never remaps it. Use `--profile` together with
-`--eval spec/review`, because a named profile must exist on every included
-eval and `spec/signoff` is a Human eval. To change the default instead, edit
-`backend` and `model` in `profile`. See [Agent reviews](https://artifactize.dev/docs/features/agent.html#agent-reviews)
-for details on each backend.
+artifactize never remaps it. `--profile NAME` runs every included Agent eval
+with that profile instead of its own and leaves runtime and Human evals as they
+are; a profile is how an eval runs, so a result another profile produced is
+reused. To change the default instead, change the profile `spec/review` names.
 
 ```sh
 artifactize verify --eval spec/review   # exit 0 GREEN, 1 RED, 2 ERROR (for example, a missing API key)
-artifactize run show RUN_ID             # verdict, owner fields, per-attempt usage
+artifactize run show RUN_ID             # verdict, issues, per-attempt usage
 artifactize session show REQUEST_ID     # the review's conversation, every tool call included
 artifactize session show REQUEST_ID --summary   # turns, tokens, tool calls per tool
 ```
@@ -133,18 +138,17 @@ and the next `verify` reuses your later sign-off):
 ```sh
 artifactize request list --run RUN_ID   # shows the REQUEST_ID of spec/signoff
 artifactize request claim REQUEST_ID
-artifactize request tool REQUEST_ID notes_spec   # prints notes.md
-artifactize request tool REQUEST_ID open_spec    # opens notes.md in the desktop's default application
-artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true,"comment":"Both questions are answered."}'
+artifactize request tool REQUEST_ID review_notes_spec   # prints notes.md
+artifactize request tool REQUEST_ID review_open_spec    # opens notes.md in the desktop's default application
+artifactize request submit REQUEST_ID --verdict GREEN
 artifactize run show RUN_ID
 ```
 
 `claim`, `tool` and `submit` use `$USER` as the reviewer unless you pass
-`--reviewer NAME`. Only the claimant can run tools or submit. Fields are checked
-against the eval's schemas: `{"approved":false}` is rejected and the request
-stays open. A RED sign-off looks like
-`--verdict RED --fields '{"unresolved":["Which files count as old?"]}'`.
-Once you submit GREEN, `verify` records the sign-off and exits 0: with the
-reused `spec/review` result, every eval of `spec` is GREEN. The default
+`--reviewer NAME`. Only the claimant can run tools or submit. A person answers
+GREEN with no issues, or RED with at least one: a RED sign-off looks like
+`--verdict RED --issue "Which files count as old?"`, one `--issue` for each thing
+to change. Once you submit GREEN, `verify` records the sign-off and exits 0: with
+the reused `spec/review` result, every eval of `spec` is GREEN. The default
 artifactsum fingerprint lets a later `verify` reuse the sign-off while the files
 and eval criteria remain unchanged. Set `fingerprint = false` to ask for a fresh sign-off every time.

@@ -25,19 +25,18 @@ What it demonstrates:
   `intro/heading` and `usage/heading` to be GREEN.
 - **A basis Artifact.** `glossary` declares `basis = true`: it has no evals
   and counts as accepted input. A basis never waives its own dependencies.
-- **`{artifact}` references.** The instruction of `guide/terms` names
-  `{intro}`, `{usage}` and `{glossary}`. Each one is a graph relation,
-  and the text is never expanded. A reference is what makes an Artifact an eval's
-  dependency. Its argv operands `{glossary}/terms.txt`, `{intro}/page.md` and
-  `{usage}/page.md` are resolved to absolute paths before the command runs.
+- **`@{path …}` references.** The arguments of `guide/terms` name
+  `@{path glossary/terms.txt}`, `@{path intro/page.md}` and `@{path usage/page.md}`.
+  Each one is a graph relation and is resolved to an absolute path before the command
+  runs. A reference is what makes an Artifact an eval's dependency; a runtime eval
+  that reads an Artifact its arguments do not name lists it in `inputs`.
 - **Runtime evals.** The exit code is the verdict: 0 is GREEN, anything else is RED.
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
   `python3 check_terms.py`. Each command runs from its owner's folder with the
   author's environment.
 - **Content fingerprint and reuse.** Each Artifact omits `fingerprint`, so it uses the
   built-in content fingerprint, artifactsum, which hashes the Artifact's own files (the targets of declared parts, including folder and file parts and
-  aspect selections, excluded). Built-in ignores and `.gitignore` still apply;
-  `.artf` files are ordinary inputs, with their non-structural annotations removed. An eval's reuse key adds the
+  aspect selections, excluded). Built-in ignores and `.gitignore` still apply. An eval's reuse key adds the
   fingerprints of its target's parts (recursively) and the Artifacts it names: `guide/terms` depends on `intro`,
   `usage` and `glossary`. That is
   why the `glossary` basis participates in reuse too. The default fingerprint is
@@ -54,7 +53,7 @@ You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/ge
 ```sh
 cd examples/runtime-relations
 artifactize config check    # static validation; runs no owner code
-artifactize config graph    # Artifacts, evals, components and part/instruction/argv relations
+artifactize config graph    # Artifacts, evals, components and part/argv relations
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # nothing executes: each line says "(reused from RUN_ID)"

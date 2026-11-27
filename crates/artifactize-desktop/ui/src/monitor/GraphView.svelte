@@ -38,7 +38,7 @@
   import Navigator from "./Navigator.svelte";
   import WholeNode from "./WholeNode.svelte";
   import { boxes, copies, copyEdges, drawings, partsCount } from "./parts";
-  import { BLOCKING, NODE, WORDS, ZOOM_STEP, currentWords, tallyWords, type Point } from "./graph";
+  import { BLOCKING, WORDS, ZOOM_STEP, currentWords, tallyWords, type Point } from "./graph";
   import { area, centred, revealed, whole, zoomedAround, type Area, type Fit, type Insets } from "./camera";
   import { Picture, hit, legible, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
