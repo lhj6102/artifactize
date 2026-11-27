@@ -233,8 +233,8 @@ loops.
   with a call; `config expand NAME` shows what a call makes. A macro takes only what
   changes what is checked (a path, a package, a limit); titles and instructions are written
   out. Declare how Agent evals run once, in a `.artfprofiles` file (`profile reviewer :
-  agent = { … }`), and name the profile in evals; `match TIER { default => { … }, heavy =>
-  { … } }` lets an environment variable choose a profile's setting for a Run.
+  agent = { … }`), and name the profile in evals; `match REVIEW_TIER { default => { … },
+  heavy => { … } }` lets an environment variable choose a profile's setting for a Run.
 - **Live observations.** Use a URI target for external state you need to observe, not
   for deployment. artifactize does not fetch the URI automatically; a declared command
   receives the URI in `argv` when its `args` name `@{path name}` (or `@{path name/subpath}`), and a

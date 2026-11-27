@@ -145,7 +145,7 @@ profile은 Agent eval을 어떻게 실행할지 정합니다. `.artf` 파일이 
 
 ```rust
 // .artifactize/profiles.artfprofiles
-profile reviewer : agent = match TIER {
+profile reviewer : agent = match REVIEW_TIER {
   default => { backend = "codex", model = "gpt-6-luna", reasoning = "max" },
   heavy => { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" },
 }

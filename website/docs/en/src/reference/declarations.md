@@ -145,7 +145,7 @@ Profiles say how Agent evals run. They are declared in `.artfprofiles` files und
 
 ```rust
 // .artifactize/profiles.artfprofiles
-profile reviewer : agent = match TIER {
+profile reviewer : agent = match REVIEW_TIER {
   default => { backend = "codex", model = "gpt-6-luna", reasoning = "max" },
   heavy => { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" },
 }

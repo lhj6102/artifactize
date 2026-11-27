@@ -7,7 +7,9 @@ name: Release
 #
 #   git tag v0.5.4 && git push origin v0.5.4
 #
-# 1. The Linux release builds run after reading the tag.
+# 1. The Linux release builds run after reading the tag. The tag must name a commit whose
+#    Binaries run on its release/* push passed: that run smoke-tested the installers, which
+#    the tag release builds again without repeating the smoke.
 # 2. Once they pass, publish creates the GitHub release with the Linux archives and
 #    their .sha256 checksums, so install.sh serves the new version; crates then publishes
 #    the crates to crates.io. A failed Linux build publishes nothing, and a failed
@@ -34,15 +36,27 @@ jobs:
   plan:
     name: Read the tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version: ${{ steps.tag.outputs.version }}
       prerelease: ${{ steps.tag.outputs.prerelease }}
     steps:
       - id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
           if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
             echo "Tag $GITHUB_REF_NAME is not v<major>.<minor>.<patch>[-<prerelease>]." >&2
+            exit 1
+          fi
+          # The installers of this commit were smoke-tested by its release/* Binaries run; a
+          # commit without a passing one is refused before anything is built or published.
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/binaries.yml/runs?head_sha=$GITHUB_SHA&event=push&status=success&per_page=1" --jq '.total_count')
+          if [ "${passed:-0}" -eq 0 ]; then
+            echo "Commit $GITHUB_SHA has no passing Binaries run from a release/* push; push it to its release branch, let Binaries pass, then tag it." >&2
             exit 1
           fi
           case $version in
