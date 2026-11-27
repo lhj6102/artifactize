@@ -23,6 +23,8 @@ const TEXT_LIMIT: usize = 64 * 1024;
 #[serde(rename_all = "camelCase")]
 pub struct ToolDefinition {
     pub name: crate::config::ToolName,
+    /// The name a person reads: the tool's FQN on its Artifact.
+    pub fqn: crate::config::ToolFqn,
     pub artifact_id: crate::config::ArtifactName,
     pub description: String,
     pub kind: HumanToolKind,
@@ -37,8 +39,10 @@ pub enum Content {
     Launch {
         launched: bool,
     },
+    /// One window per Artifact and viewer tool: opening it again focuses that window.
     Viewer {
         artifact: crate::types::ArtifactName,
+        tool: crate::config::ToolFqn,
     },
 }
 
@@ -207,12 +211,11 @@ impl<'a> Registry<'a> {
         let mut tools = BTreeMap::new();
         for (id, artifact) in &scope.artifacts {
             for (operation, declaration) in &artifact.views.human_tools {
-                let name: crate::config::ToolName = format!("{operation}_{}", id)
-                    .parse()
-                    .expect("validated tool and Artifact names");
+                let name = operation.published(id.as_str());
                 let entry = RegisteredTool {
                     definition: ToolDefinition {
                         name: name.clone(),
+                        fqn: operation.clone(),
                         artifact_id: artifact.name.clone(),
                         description: declaration.description().replace("{artifactName}", id),
                         kind: declaration.kind(),
@@ -332,12 +335,14 @@ impl<'a> Registry<'a> {
                 let content =
                     artifactize_tools::result::ContentBlocks::new(vec![Content::Viewer {
                         artifact: tool.definition.artifact_id.clone(),
+                        tool: tool.definition.fqn.clone(),
                     }])
                     .expect("a Viewer result always has one block");
                 let pending = if run.waits_for_viewer() {
                     match crate::viewer::Session::from_config(
                         self.config,
                         &tool.definition.artifact_id,
+                        &tool.definition.fqn,
                     ) {
                         Ok(viewer) => Some((Box::new(viewer), run)),
                         Err(error) => return failed(run, error),

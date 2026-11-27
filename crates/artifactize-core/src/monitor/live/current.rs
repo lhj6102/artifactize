@@ -246,12 +246,9 @@ fn card(
     let result = reused.and_then(Execution::result);
     Card {
         instruction: instruction.to_owned(),
-        result: result.map(model::entries),
+        issues: result.map(ExecutionResult::issues),
         raw: result.map(model::raw),
-        exit_code: match result {
-            Some(ExecutionResult::Runtime(result)) => result.exit_code.value().copied(),
-            _ => None,
-        },
+        exit_code: result.and_then(ExecutionResult::exit_code),
         error: None,
         reused: plan == Plan::Reuse,
         took: reused
@@ -318,8 +315,8 @@ fn project(
                             .structure
                             .evals
                             .get(&eval.id)
-                            .and_then(|declared| declared.payload.as_ref())
-                            .map_or("", |payload| payload.instruction.as_str());
+                            .and_then(|declared| declared.instruction.as_deref())
+                            .unwrap_or("");
                         let mut facts = vec![("Profile", profile(&eval.profile))];
                         facts.extend(
                             eval.fingerprint

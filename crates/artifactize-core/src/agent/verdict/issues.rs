@@ -1,34 +1,26 @@
-//! An Agent eval's one result: its prioritized findings. The evaluator reports them; artifactize
+//! An Agent eval's one answer: its prioritized issues. The evaluator reports them; artifactize
 //! derives the verdict from their priorities and the eval's `red_at`.
 
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde::Deserialize;
+use serde_json::{Value, json};
 
 use super::{MAX_RESPONSE_BYTES, ValidatedResult, bounded, bounded_result};
-use crate::{config::Priority, runtime::Verdict};
-
-/// One finding as the evaluator reports it and the result saves it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Finding {
-    pub priority: Priority,
-    pub reason: String,
-}
+use crate::{config::Priority, runtime::Verdict, store::AgentIssue};
 
 /// The final answer's object. Providers' structured output needs an object root, so the list
 /// is its one field.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Answer {
-    findings: Vec<Finding>,
+    issues: Vec<AgentIssue>,
 }
 
-/// RED when a finding is at `red_at` or more important; without `red_at`, when there is any
-/// finding. Findings below the bar are kept but leave the eval GREEN.
-pub fn verdict(findings: &[Finding], red_at: Option<Priority>) -> Verdict {
-    if findings
+/// RED when an issue is at `red_at` or more important; without `red_at`, when there is any
+/// issue. Issues below the bar are kept but leave the eval GREEN.
+pub fn verdict(issues: &[AgentIssue], red_at: Option<Priority>) -> Verdict {
+    if issues
         .iter()
-        .any(|finding| red_at.is_none_or(|bar| finding.priority <= bar))
+        .any(|issue| red_at.is_none_or(|bar| issue.priority <= bar))
     {
         Verdict::Red
     } else {
@@ -37,7 +29,7 @@ pub fn verdict(findings: &[Finding], red_at: Option<Priority>) -> Verdict {
 }
 
 /// The result schema sent to the backend, and the eval's bar to judge the answer by.
-pub(in crate::agent) struct Findings {
+pub(in crate::agent) struct Issues {
     pub schema: Value,
     red_at: Option<Priority>,
 }
@@ -59,7 +51,7 @@ impl From<&'static str> for ModelError {
     }
 }
 
-impl Findings {
+impl Issues {
     /// Every keyword here is in the structured-output subset OpenAI, Anthropic and Gemini share:
     /// closed objects, every property required, and a string enum.
     pub fn new(red_at: Option<Priority>) -> Self {
@@ -68,9 +60,9 @@ impl Findings {
             schema: json!({
                 "type":"object",
                 "properties":{
-                    "findings":{
+                    "issues":{
                         "type":"array",
-                        "description":"Every finding of the review; empty when there is none.",
+                        "description":"Every issue the review found; empty when there is none.",
                         "items":{
                             "type":"object",
                             "properties":{
@@ -86,7 +78,7 @@ impl Findings {
                         },
                     },
                 },
-                "required":["findings"],
+                "required":["issues"],
                 "additionalProperties":false,
             }),
             red_at,
@@ -104,20 +96,20 @@ impl Findings {
             |_| "not_json: return exactly one JSON object, without prose or code fences",
         )?;
         let answer = Answer::deserialize(&value).map_err(|error| ModelError {
-            message: "schema_mismatch: result must be an object with a findings list, each finding a priority P0 to P3 and a reason",
+            message: "schema_mismatch: result must be an object with an issues list, each issue a priority P0 to P3 and a reason",
             detail: Some(bounded(error.to_string())),
         })?;
         if answer
-            .findings
+            .issues
             .iter()
-            .any(|finding| finding.reason.trim().is_empty())
+            .any(|issue| issue.reason.trim().is_empty())
         {
-            return Err("schema_mismatch: every finding needs a reason".into());
+            return Err("schema_mismatch: every issue needs a reason".into());
         }
         bounded_result(&value)?;
         Ok(ValidatedResult {
-            verdict: verdict(&answer.findings, self.red_at),
-            fields: Map::from_iter([("findings".into(), json!(answer.findings))]),
+            verdict: verdict(&answer.issues, self.red_at),
+            issues: answer.issues,
         })
     }
 

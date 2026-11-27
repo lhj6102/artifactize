@@ -103,7 +103,28 @@ pub struct Output {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub truncated: bool,
+    /// The last bytes of each stream, whatever the prefix kept.
+    pub stdout_tail: Vec<u8>,
+    pub stderr_tail: Vec<u8>,
     pub duration: Duration,
+}
+
+/// Characters of a failed command's output its issue keeps.
+const REASON_CHARS: usize = 2000;
+
+impl Output {
+    /// Why a command that exited with `exit_code` failed: the end of what it wrote to stderr,
+    /// else to stdout, else that it exited with that code.
+    pub(crate) fn reason(&self, exit_code: i32) -> String {
+        [&self.stderr_tail, &self.stdout_tail]
+            .into_iter()
+            .map(|tail| platform::output_text(tail))
+            .find(|text| !text.trim().is_empty())
+            .map_or_else(
+                || crate::store::exited_with(exit_code),
+                |text| crate::store::output_tail(&text, REASON_CHARS),
+            )
+    }
 }
 
 /// Run a program artifactize itself uses, such as git, found through the shared program

@@ -163,11 +163,8 @@ impl Serialize for RunResultPage {
 pub(super) fn finding(request: &crate::store::Request) -> Finding {
     let summary = if let Some(error) = request.error() {
         error.to_owned()
-    } else if let Some(crate::store::ExecutionResult::Runtime(result)) = request.result() {
-        match result.exit_code.value() {
-            Some(code) => format!("Runtime check exited {code}."),
-            None => format!("Runtime check: {}.", request.status()),
-        }
+    } else if let Some(summary) = request.result().and_then(crate::store::ExecutionResult::summary) {
+        summary
     } else {
         request.status().to_string()
     };

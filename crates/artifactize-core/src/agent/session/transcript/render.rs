@@ -223,7 +223,7 @@ pub(super) fn result_text(result: &crate::agent::verdict::ValidatedResult) -> St
         }
     }
     let mut lines = vec![format!("Verdict: {}", header(result.verdict.as_str()))];
-    for (name, value) in &result.fields {
+    for (name, value) in &result.fields() {
         field(name, value, 0, &mut lines);
     }
     lines.join("\n")

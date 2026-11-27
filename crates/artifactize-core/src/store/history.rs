@@ -44,8 +44,8 @@ pub struct Entry {
     pub completed_at: Option<crate::types::Timestamp>,
     /// `user@host` of the machine that produced the result.
     pub producer: Option<crate::types::ProducerId>,
-    /// The selected profile variant, when the result came from one.
-    pub variant: Option<crate::config::ProfileVariantName>,
+    /// The named profile `verify --profile` chose, when the result came from one.
+    pub variant: Option<crate::config::ProfileName>,
     /// The remote store URL of a mirrored record.
     pub origin: Option<crate::types::StoreUrl>,
     /// How many records the key holds.

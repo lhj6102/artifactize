@@ -1,19 +1,13 @@
-//! Artifact declarations, their fingerprint inputs, and TOML parsing with source locations.
+//! What an Artifact's evals may use (its composed tools) and what its reviews depend on (its
+//! fingerprint), each with the checks that hold across its fields.
 
-use super::{
-    AgentTool, ArtifactName, BuiltinTool, CommandTool, EvalDeclaration, HumanTool, LogicalPath,
-    MAX_DECLARED_ITEMS, ToolOperationName, ToolSession, artifact_name,
-    eval::declared_evals,
-    identifier,
-    location::{self, Location},
-    schemas, settings,
-    validation::{path, paths, present, script, tags, text, timeout},
-};
-use artifactize_tools::artf::{Masked, mask};
+use super::{AgentTool, HumanTool, LogicalPath, MAX_DECLARED_ITEMS, ToolFqn, ToolSession, schemas,
+    validation::{path, paths, script, timeout}};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// An Artifact's tools by audience, each named by its FQN (`files.read`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(
     rename_all(serialize = "camelCase", deserialize = "snake_case"),
@@ -21,108 +15,56 @@ use std::collections::{BTreeMap, BTreeSet};
 )]
 pub struct Views {
     #[serde(default)]
-    pub agent_sessions: BTreeMap<ToolOperationName, ToolSession>,
+    pub agent_sessions: BTreeMap<ToolFqn, ToolSession>,
     #[serde(default)]
-    pub agent_tools: BTreeMap<ToolOperationName, AgentTool>,
+    pub agent_tools: BTreeMap<ToolFqn, AgentTool>,
     #[serde(default)]
-    pub human_tools: BTreeMap<ToolOperationName, HumanTool>,
+    pub human_tools: BTreeMap<ToolFqn, HumanTool>,
 }
 
 impl Views {
-    fn parse(location: &Location<'_, '_>) -> Result<Self, String> {
-        let mut views = Self::default();
-        for (key, _) in location.table()? {
-            let field = location.child(key.get_ref());
-            match key.get_ref().as_ref() {
-                "agent_sessions" => views.agent_sessions = tool_map(&field, |value, _| value.deserialize())?,
-                "agent_tools" => views.agent_tools = tool_map(&field, |value, tool| {
-                    if tool.get("builtin").is_some() {
-                        value.deserialize::<BuiltinTool>().map(AgentTool::Builtin)
-                    } else {
-                        value.deserialize::<CommandTool>().map(AgentTool::Command)
-                    }
-                })?,
-                "human_tools" => views.human_tools = tool_map(&field, |value, _| value.deserialize())?,
-                name => return Err(location.key(name).error(format!(
-                    "unknown field `{name}`, expected `agent_sessions`, `agent_tools`, or `human_tools`"
-                ))),
-            }
-        }
-        Ok(views)
-    }
-
-    pub(super) fn validate(
+    /// Every tool bounded as a provider or a person receives it, and every session a command
+    /// tool joins declared beside it. A failure names the table and tool it concerns.
+    pub(super) fn check(
         &self,
-        location: &Location<'_, '_>,
         schemas: &mut schemas::Schemas,
-        plugin: Option<&super::ArtifactType>,
-    ) -> Result<(), String> {
+    ) -> Result<(), (&'static str, ToolFqn, String)> {
         for (name, session) in &self.agent_sessions {
-            let sessions = location.child("agent_sessions");
-            sessions
-                .child(name)
-                .child("start")
-                .check(session.start.validate())?;
-            sessions
-                .child(name)
-                .child("stop")
-                .check(session.stop.validate())?;
+            session
+                .start
+                .validate()
+                .and_then(|()| session.stop.validate())
+                .map_err(|message| ("agent_sessions", name.clone(), message))?;
         }
         for (name, tool) in &self.agent_tools {
-            let tools = location.child("agent_tools");
-            if let AgentTool::Command(tool) = tool
-                && let Some(session) = &tool.session
-                && plugin.is_none()
+            if let AgentTool::Command(command) = tool
+                && let Some(session) = &command.session
                 && !self.agent_sessions.contains_key(session)
             {
-                return Err(tools
-                    .child(name)
-                    .child("session")
-                    .error(format!("Unknown tool session: {session}")));
-            }
-            tools.child(name).check(
-                tool.validate(schemas)
-                    .map_err(|e| format!("Tool {name}: {e}")),
-            )?;
-        }
-        for (name, tool) in &self.human_tools {
-            let tools = location.child("human_tools");
-            tools
-                .child(name)
-                .check(tool.validate().map_err(|e| format!("Tool {name}: {e}")))?;
-        }
-        Ok(())
-    }
-
-    pub(super) fn validate_sessions(&self) -> Result<(), String> {
-        for (name, tool) in &self.agent_tools {
-            if let AgentTool::Command(tool) = tool
-                && let Some(session) = &tool.session
-                && !self.agent_sessions.contains_key(session)
-            {
-                return Err(format!(
-                    "Agent tool {name}: unknown tool session {session}."
+                return Err((
+                    "agent_tools",
+                    name.clone(),
+                    format!("Agent tool {name}: unknown tool session {session}."),
                 ));
             }
+            tool.validate(schemas)
+                .map_err(|message| ("agent_tools", name.clone(), format!("Tool {name}: {message}")))?;
+        }
+        for (name, tool) in &self.human_tools {
+            tool.validate()
+                .map_err(|message| ("human_tools", name.clone(), format!("Tool {name}: {message}")))?;
         }
         Ok(())
     }
-}
 
-fn tool_map<T>(
-    location: &Location<'_, '_>,
-    parse: impl Fn(Location<'_, '_>, &toml::de::DeValue<'_>) -> Result<T, String>,
-) -> Result<BTreeMap<ToolOperationName, T>, String> {
-    location
-        .table()?
-        .iter()
-        .map(|(name, value)| {
-            let name = name.get_ref().as_ref();
-            let id = location.key(name).check(name.parse())?;
-            let tool = parse(location.child(name), value.get_ref())?;
-            Ok((id, tool))
-        })
-        .collect()
+    /// Keep each input schema once in `schemas`, shared with the equal ones already read.
+    pub(super) fn share(&mut self, schemas: &mut schemas::Schemas) {
+        for tool in self.agent_tools.values_mut() {
+            if let AgentTool::Command(tool) = tool {
+                tool.input_schema = schemas.tool(&tool.input_schema);
+            }
+        }
+    }
 }
 
 /// The developer's definition of what an Artifact's reviews depend on: a script's output or
@@ -187,10 +129,6 @@ impl Default for Fingerprint {
             ignore: Default::default(),
         }
     }
-}
-
-fn default_fingerprint() -> Option<Fingerprint> {
-    Some(Fingerprint::default())
 }
 
 const INVALID_FINGERPRINT: &str =
@@ -273,27 +211,8 @@ impl From<Fingerprint> for Value {
     }
 }
 
-impl Fingerprint {
-    fn parse(
-        location: &Location<'_, '_>,
-        value: &toml::de::DeValue<'_>,
-    ) -> Result<Option<Self>, String> {
-        use toml::de::DeValue;
-        match value {
-            DeValue::Boolean(false) => Ok(None),
-            DeValue::Table(fields) if fields.contains_key("script") => location
-                .deserialize::<ScriptForm>()
-                .map(|form| Some(form.into())),
-            DeValue::Table(fields) if fields.contains_key("dependencies") => {
-                Err(location.child("dependencies").error(REMOVED_DEPENDENCIES))
-            }
-            DeValue::Table(_) => location
-                .deserialize::<ArtifactsumForm>()
-                .map(|form| Some(form.into())),
-            _ => Err(location.error(INVALID_FINGERPRINT)),
-        }
-    }
 
+impl Fingerprint {
     pub fn kind(&self) -> crate::types::FingerprintKind {
         match self {
             Self::Graph => crate::types::FingerprintKind::Graph,
@@ -302,7 +221,8 @@ impl Fingerprint {
         }
     }
 
-    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
+    /// Its own bounds: a script's command and files, or 1–64 unique artifactsum files.
+    pub(super) fn check(&self) -> Result<(), String> {
         match self {
             Self::Graph => Ok(()),
             Self::Script {
@@ -311,374 +231,23 @@ impl Fingerprint {
                 files,
                 ..
             } => {
-                location.child("script").check(script(command, args))?;
-                location
-                    .child("script")
-                    .child("files")
-                    .check(paths(files, "fingerprint.script.files"))
+                script(command, args)?;
+                paths(files, "fingerprint.script.files")
             }
             Self::Artifactsum { files, .. } => {
                 if files.is_empty()
                     || files.len() > MAX_DECLARED_ITEMS
                     || files.iter().collect::<BTreeSet<_>>().len() != files.len()
                 {
-                    return Err(location.child("files").error(
-                        "fingerprint.files must contain 1–64 unique owner-relative paths.",
-                    ));
+                    return Err(
+                        "fingerprint.files must contain 1–64 unique owner-relative paths.".into(),
+                    );
                 }
                 for file in files.iter().filter(|file| *file != ".") {
-                    location.child("files").check(
-                        path(file).map_err(|message| format!("fingerprint.files: {message}")),
-                    )?;
+                    path(file).map_err(|message| format!("fingerprint.files: {message}"))?;
                 }
                 Ok(())
             }
         }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub struct ArtifactDeclaration {
-    pub name: ArtifactName,
-    #[serde(rename = "type")]
-    pub type_name: Option<super::ArtifactType>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default, deserialize_with = "declared_evals")]
-    pub evals: Vec<EvalDeclaration>,
-    #[serde(default)]
-    pub views: Views,
-    #[serde(default, deserialize_with = "present")]
-    pub basis: Option<bool>,
-    #[serde(
-        default = "default_fingerprint",
-        deserialize_with = "declared_fingerprint"
-    )]
-    pub fingerprint: Option<Fingerprint>,
-    /// An aspect's paths, relative to its declaration's folder.
-    #[serde(default, deserialize_with = "present")]
-    pub select: Option<Vec<LogicalPath>>,
-    /// Artifacts this one is made of besides those its folder holds.
-    #[serde(default, deserialize_with = "present")]
-    pub parts: Option<Vec<ArtifactName>>,
-}
-
-impl ArtifactDeclaration {
-    /// Keep each of its schemas once in `schemas`, shared with the equal ones already read.
-    fn share(&mut self, schemas: &mut schemas::Schemas) {
-        for tool in self.views.agent_tools.values_mut() {
-            if let AgentTool::Command(tool) = tool {
-                tool.input_schema = schemas.tool(&tool.input_schema);
-            }
-        }
-        for eval in &mut self.evals {
-            eval.share(schemas);
-        }
-    }
-
-    fn validate(
-        &self,
-        location: &Location<'_, '_>,
-        schemas: &mut schemas::Schemas,
-    ) -> Result<(), String> {
-        location
-            .child("name")
-            .check(artifact_name(&self.name, "Artifact name"))?;
-        location.child("tags").check(tags(&self.tags))?;
-        for eval in &self.evals {
-            eval.validate(&location.child("evals").key(&eval.id), schemas)
-                .map_err(|message| format!("Eval {}: {message}", eval.id))?;
-        }
-        if self.basis == Some(true) && !self.evals.is_empty() {
-            return Err(location
-                .child("basis")
-                .error(format!("Basis Artifact {} cannot own Evals.", self.name)));
-        }
-        self.views
-            .validate(&location.child("views"), schemas, self.type_name.as_ref())?;
-        if self.type_name.is_none()
-            && self
-                .views
-                .human_tools
-                .values()
-                .any(|tool| matches!(tool, HumanTool::Viewer(_)))
-        {
-            return Err(location
-                .child("views")
-                .child("human_tools")
-                .error("A viewer Human tool needs an Artifact type with a viewer entry."));
-        }
-        if let Some(fingerprint) = &self.fingerprint {
-            fingerprint.validate(&location.child("fingerprint"))?;
-        }
-        if let Some(parts) = &self.parts {
-            let parts_location = location.child("parts");
-            if parts.is_empty()
-                || parts.len() > MAX_DECLARED_ITEMS
-                || parts.iter().collect::<BTreeSet<_>>().len() != parts.len()
-            {
-                return Err(parts_location.error("parts must name 1–64 unique Artifacts."));
-            }
-            if parts.contains(&self.name) {
-                return Err(
-                    parts_location.error(format!("{} cannot be a part of itself.", self.name))
-                );
-            }
-        }
-        if let Some(select) = &self.select {
-            let select_location = location.child("select");
-            if select.is_empty()
-                || select.len() > MAX_DECLARED_ITEMS
-                || select.iter().collect::<BTreeSet<_>>().len() != select.len()
-            {
-                return Err(select_location
-                    .error("select must contain 1–64 unique paths relative to the declaration."));
-            }
-            for selected in select {
-                select_location
-                    .check(path(selected).map_err(|message| format!("select: {message}")))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-/// Validate an Artifact declaration without opening scripts or declared inputs.
-pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
-    let masked = mask(source)
-        .map_err(|error| location::positioned_message(source, error.offset, error.message))?;
-    let table = toml::de::DeTable::parse(&masked.toml)
-        .map_err(|error| location::toml_error(source, &masked, error))?;
-    parse_declaration_table(
-        source,
-        &masked,
-        &settings::Settings::default(),
-        &mut schemas::Schemas::default(),
-        None,
-        table,
-    )
-}
-
-pub(super) fn parse_declaration_table(
-    source: &str,
-    masked: &Masked,
-    settings: &settings::Settings,
-    schemas: &mut schemas::Schemas,
-    name: Option<&ArtifactName>,
-    mut table: toml::Spanned<toml::de::DeTable<'_>>,
-) -> Result<ArtifactDeclaration, String> {
-    if let Some(name) = name {
-        table.get_mut().remove("path");
-        table.get_mut().remove("annotations");
-        table.get_mut().insert(
-            toml::Spanned::new(0..0, std::borrow::Cow::Borrowed("name")),
-            toml::Spanned::new(
-                0..0,
-                toml::de::DeValue::String(std::borrow::Cow::Owned(name.to_string())),
-            ),
-        );
-    }
-    let span = table.span();
-    let document = toml::Spanned::new(span, toml::de::DeValue::Table(table.into_inner()));
-    let location = Location::root_masked(source, &document, Some(masked));
-    for (key, value) in document.get_ref().as_table().unwrap() {
-        reject_non_json_values(value, key.get_ref().as_ref(), source, |offset| {
-            masked.original_offset(offset)
-        })?;
-    }
-    if document.get_ref().get("family").is_some() {
-        return Err(location
-            .child("family")
-            .error("family was removed in 0.9.0; declare each instance as its own Artifact."));
-    }
-    for key in ["stale_key", "stale"] {
-        if document.get_ref().get(key).is_some() {
-            return Err(location.child(key).error(format!(
-                "{key} was renamed to fingerprint: use fingerprint = {{ files = [\".\"], ignore = [] }} or [fingerprint.script]."
-            )));
-        }
-    }
-    if let Some(evals) = document
-        .get_ref()
-        .get("evals")
-        .and_then(|value| value.get_ref().as_table())
-    {
-        for (id, eval) in evals {
-            if eval.get_ref().get("gate").is_some() {
-                return Err(location
-                    .child("evals")
-                    .child(id.get_ref())
-                    .child("gate")
-                    .error(format!(
-                        "Eval {}: gate was removed in 0.16.0; remove it. A Human sign-off never holds up other evals.",
-                        id.get_ref()
-                    )));
-            }
-            if eval.get_ref().get("result_check").is_some() {
-                return Err(location
-                    .child("evals")
-                    .child(id.get_ref())
-                    .child("result_check")
-                    .error(format!(
-                        "Eval {}: result_check was removed in 0.6.0; remove it. The review's tool calls are in its saved session (artifactize session show).",
-                        id.get_ref()
-                    )));
-            }
-        }
-    }
-    // TOML buffers enum/table-key deserialization. Check lexical fields at their
-    // own source positions before constructing validated identities, not in discovery.
-    validate_identity_locations(&location, &document)?;
-    // Decode these fields directly from their spanned TOML nodes. Keep the original
-    // document for validation diagnostics, but don't deserialize those fields again.
-    let mut body = document.get_ref().as_table().unwrap().clone();
-    let mut consumed = vec![false; masked.invocations().len()];
-    let evals = if body.remove("evals").is_some() {
-        EvalDeclaration::parse_map(
-            &location.child("evals"),
-            source,
-            masked,
-            settings,
-            &mut consumed,
-        )?
-    } else {
-        Vec::new()
-    };
-    if let Some(invocation) = masked
-        .invocations()
-        .iter()
-        .zip(consumed)
-        .find_map(|(invocation, used)| (!used).then_some(invocation))
-    {
-        return Err(location::positioned_message(
-            source,
-            invocation.span.start,
-            format!(
-                "Profile alias `!{}` can be used only as an eval profile or profile variant.",
-                invocation.name
-            ),
-        ));
-    }
-    let views = if body.remove("views").is_some() {
-        Views::parse(&location.child("views"))?
-    } else {
-        Views::default()
-    };
-    let fingerprint = match body
-        .remove("fingerprint")
-        .as_ref()
-        .map(toml::Spanned::get_ref)
-    {
-        Some(value) => Fingerprint::parse(&location.child("fingerprint"), value)?,
-        None => default_fingerprint(),
-    };
-    let mut declaration = ArtifactDeclaration::deserialize(toml::de::ValueDeserializer::from(
-        toml::Spanned::new(document.span(), toml::de::DeValue::Table(body)),
-    ))
-    .map_err(|error| location::toml_error(source, masked, error))?;
-    declaration.evals = evals;
-    declaration.views = views;
-    declaration.fingerprint = fingerprint;
-    declaration.share(schemas);
-    declaration.validate(&location, schemas)?;
-    Ok(declaration)
-}
-
-fn validate_identity_locations(
-    location: &Location<'_, '_>,
-    document: &toml::Spanned<toml::de::DeValue<'_>>,
-) -> Result<(), String> {
-    use toml::de::DeValue;
-    if let Some(name) = document.get_ref().get("name")
-        && let DeValue::String(name) = name.get_ref()
-    {
-        location
-            .child("name")
-            .check(artifact_name(name, "Artifact name"))?;
-    }
-    if let Some(evals) = document
-        .get_ref()
-        .get("evals")
-        .and_then(|value| value.get_ref().as_table())
-    {
-        for (id, eval) in evals {
-            let eval_location = location.child("evals").key(id.get_ref());
-            eval_location.check(identifier(id.get_ref(), "Eval id"))?;
-            if let Some(model) = eval
-                .get_ref()
-                .get("profile")
-                .and_then(|profile| profile.get_ref().get("model"))
-                && let DeValue::String(model) = model.get_ref()
-            {
-                eval_location
-                    .child("profile")
-                    .child("model")
-                    .check(text(model, "Agent profile model"))?;
-            }
-            if let Some(variants) = eval
-                .get_ref()
-                .get("profile_variants")
-                .and_then(|value| value.get_ref().as_table())
-            {
-                for (name, profile) in variants {
-                    let variant = eval_location.child("profile_variants").key(name.get_ref());
-                    variant.check(identifier(name.get_ref(), "Profile variant name"))?;
-                    if let Some(model) = profile.get_ref().get("model")
-                        && let DeValue::String(model) = model.get_ref()
-                    {
-                        variant
-                            .child("model")
-                            .check(text(model, "Agent profile model"))?;
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Reject TOML values that would become lossy or implementation-specific owner JSON.
-pub(super) fn reject_non_json_values(
-    value: &toml::Spanned<toml::de::DeValue<'_>>,
-    path: &str,
-    source: &str,
-    map_offset: impl Copy + Fn(usize) -> usize,
-) -> Result<(), String> {
-    use toml::de::DeValue;
-    let diagnostic =
-        |message| location::positioned(source, map_offset(value.span().start), path, message);
-    match value.get_ref() {
-        DeValue::Datetime(_) => Err(diagnostic(
-            "TOML date/time values have no JSON equivalent; use a quoted string.",
-        )),
-        DeValue::Float(number)
-            if matches!(
-                number.as_str(),
-                "inf" | "+inf" | "-inf" | "nan" | "+nan" | "-nan"
-            ) =>
-        {
-            Err(diagnostic(
-                "TOML non-finite floats have no JSON equivalent.",
-            ))
-        }
-        DeValue::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                reject_non_json_values(item, &format!("{path}[{index}]"), source, map_offset)?;
-            }
-            Ok(())
-        }
-        DeValue::Table(table) => {
-            for (key, value) in table {
-                reject_non_json_values(
-                    value,
-                    &format!("{path}.{}", key.get_ref()),
-                    source,
-                    map_offset,
-                )?;
-            }
-            Ok(())
-        }
-        _ => Ok(()),
     }
 }

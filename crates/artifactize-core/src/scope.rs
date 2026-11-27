@@ -11,12 +11,9 @@ mod argument;
 pub use argument::{Argument, LogicalSuffix, LogicalTarget};
 
 mod human;
-mod instruction;
 pub(crate) use human::{
-    builtin_args, human_arguments, resolve_human_argv, validate_human_argument,
+    builtin_args, resolve_human_argv,
 };
-pub use instruction::instruction_references;
-pub(crate) use instruction::references as reference_spans;
 
 pub use artifactize_tools::scope::{ArtifactId, ScopeError, ScopedPath, scoped_path};
 pub(crate) use artifactize_tools::scope::{logical_path, open_child, open_scoped};
@@ -49,6 +46,12 @@ pub enum RelationKind {
         index: usize,
         name: crate::config::ReferenceName,
         path: LogicalTarget,
+    },
+    /// A runtime eval's declared input.
+    Input {
+        #[serde(rename = "evalId")]
+        eval_id: crate::config::EvalId,
+        name: crate::config::ReferenceName,
     },
 }
 
@@ -288,29 +291,23 @@ pub enum InstructionPart {
     Artifact(ArtifactName),
 }
 
-/// A reference resolved while loading the declaration, with its span in the authored text.
-#[derive(Debug)]
-pub(crate) struct InstructionReference {
-    span: std::ops::Range<usize>,
-    artifact: ArtifactName,
-}
-
-/// Present resolved names without expanding content or mutating the authored payload.
+/// The instruction with its `@{artf …}` slots as the Artifacts they name; paths and tools
+/// read as their rendered text.
 pub(crate) fn artifact_instruction(eval: &Eval) -> Vec<InstructionPart> {
-    let Some(payload) = eval.declaration.payload() else {
+    let Some(source) = eval.declaration.instruction() else {
         return Vec::new();
     };
-    let source = &payload.instruction;
     let mut parts = Vec::new();
     let mut start = 0;
-    for reference in &eval.instruction_references {
-        if start < reference.span.start {
-            parts.push(InstructionPart::Text(
-                source[start..reference.span.start].into(),
-            ));
+    for slot in eval.declaration.slots() {
+        let crate::config::Slot::Artf { artifact } = &slot.slot else {
+            continue;
+        };
+        if start < slot.range.start {
+            parts.push(InstructionPart::Text(source[start..slot.range.start].into()));
         }
-        parts.push(InstructionPart::Artifact(reference.artifact.clone()));
-        start = reference.span.end;
+        parts.push(InstructionPart::Artifact(artifact.clone()));
+        start = slot.range.end;
     }
     if start < source.len() {
         parts.push(InstructionPart::Text(source[start..].into()));
@@ -327,11 +324,9 @@ fn reference_target<'a>(
         return Err(ScopeError(format!("Unknown Artifact: {owner}")));
     }
     let target = config.artifacts.get_key_value(name.as_str());
-    target.map(|(id, _)| id).ok_or_else(|| {
-        ScopeError(format!(
-            "Unknown Artifact reference {{{name}}}. Escape literal braces with a backslash."
-        ))
-    })
+    target
+        .map(|(id, _)| id)
+        .ok_or_else(|| ScopeError(format!("Unknown Artifact in `@{{path {name}}}`.")))
 }
 
 /// One native argument and its diagnostic spelling. Only resolved path portions are
@@ -384,7 +379,8 @@ pub(crate) fn resolved_argv(
     args.iter()
         .map(|argument| {
             let Argument::Reference { prefix, name, path } = argument else {
-                return Ok(ResolvedArgument::Literal(argument.to_string()));
+                let literal = argument.literal().expect("a literal argument");
+                return Ok(ResolvedArgument::Literal(literal.to_owned()));
             };
             let id = reference_target(config, owner, name)?;
             reference_path(config, id, path)?;
@@ -430,11 +426,7 @@ pub(crate) fn validate_selections(config: &RepoConfig) -> Result<(), ConfigError
             scope
                 .resolve_input(&config.root, id, selected)
                 .map_err(|failure| {
-                    ConfigError::declaration(
-                        config.root.join(artifact.declaration_path()),
-                        &["select"],
-                        format!("select: {selected}: {failure}"),
-                    )
+                    config.error_at(id, &["select"], format!("select: {selected}: {failure}"))
                 })?;
         }
     }
@@ -445,9 +437,7 @@ pub(crate) fn validate_selections(config: &RepoConfig) -> Result<(), ConfigError
 pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError> {
     let mut relations = Vec::new();
     for (id, artifact) in &config.artifacts {
-        let error = |keys: &[&str], message: String| {
-            ConfigError::declaration(config.root.join(artifact.declaration_path()), keys, message)
-        };
+        let error = |keys: &[&str], message: String| config.error_at(id, keys, message);
         for (name, tool) in &artifact.views.agent_tools {
             if let crate::config::AgentTool::Builtin(tool) = tool
                 && let Some(args) = &tool.args
@@ -522,11 +512,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             continue;
         };
         let error = |message: String| {
-            ConfigError::declaration(
-                config.root.join(artifact.declaration_path()),
-                &["fingerprint", "files"],
-                format!("fingerprint.files: {message}"),
-            )
+            config.error_at(id, &["fingerprint", "files"], format!("fingerprint.files: {message}"))
         };
         // A covering folder part subtracts every input, including a file/aspect's defaults.
         if artifact.covering_part.is_some() {
@@ -554,18 +540,11 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     }
     for (eval, found) in config.evals.iter_mut().zip(resolved) {
         eval.references = found.references;
-        eval.instruction_references = found.instruction_references;
         eval.deps = found.deps;
     }
     for artifact in config.artifacts.values() {
         for part in &artifact.parts {
-            let error = |message: String| {
-                ConfigError::declaration(
-                    config.root.join(artifact.declaration_path()),
-                    &["parts"],
-                    message,
-                )
-            };
+            let error = |message: String| config.error_at(&artifact.name, &["parts"], message);
             match config.artifacts.get(part) {
                 None => return Err(error(format!("Unknown Artifact {part}."))),
                 Some(part) if part.kind() == crate::config::ArtifactKind::Graph => {
@@ -613,24 +592,21 @@ pub(crate) fn validate_eval_tools(config: &RepoConfig) -> Result<(), ConfigError
     let Some((eval, artifact, kind)) = missing_eval_tools(config).next() else {
         return Ok(());
     };
-    let (article, table) = if kind == "Agent" {
-        ("an", "agent_tools")
+    let (article, audience) = if kind == "Agent" {
+        ("an", "agent")
     } else {
-        ("a", "human_tools")
+        ("a", "human")
     };
-    let type_fix = if artifact.kind() == crate::config::ArtifactKind::Live {
+    let toolset_fix = if artifact.kind() == crate::config::ArtifactKind::Live {
         String::new()
     } else {
-        r#"; for a local file or folder, type = "files" supplies both tool kinds"#.to_owned()
+        "; for a local file or folder, `: files` gives both".to_owned()
     };
-    let path = config
-        .root
-        .join(config.artifacts[&eval.target].declaration_path());
-    Err(ConfigError::declaration(
-        path,
+    Err(config.error_at(
+        &eval.target,
         &["evals", eval.declaration.id.as_ref()],
         format!(
-            "Eval {} includes Artifact {} without {article} {kind} Tool. Add one under [views.{table}] on {} or use an Artifact type that provides one{type_fix}.",
+            "Eval {} includes Artifact {} without {article} {kind} tool. Compose a toolset with `{audience}` tools on {}{toolset_fix}.",
             eval.id, artifact.name, artifact.name
         ),
     ))
@@ -648,9 +624,8 @@ fn everything(config: &RepoConfig) -> artifactize_tools::scope::Scope {
     .tool_scope()
 }
 
-/// What an eval's instruction and runtime arguments reference.
+/// What an eval's instruction, runtime arguments and inputs reference.
 struct EvalReferences {
-    instruction_references: Vec<InstructionReference>,
     references: BTreeMap<crate::config::ReferenceName, ArtifactName>,
     /// The referenced Artifacts other than the eval's target.
     deps: Vec<ArtifactName>,
@@ -667,42 +642,46 @@ fn eval_references(
     let error = |field: &[&str], failure: ScopeError| {
         let mut keys = vec!["evals", eval.declaration.id.as_ref()];
         keys.extend_from_slice(field);
-        ConfigError::declaration(
-            config
-                .root
-                .join(config.artifacts[&eval.target].declaration_path()),
-            &keys,
-            format!("Eval {}: {failure}", eval.id),
-        )
+        config.error_at(&eval.target, &keys, format!("Eval {}: {failure}", eval.id))
     };
     let mut references = BTreeMap::new();
-    let mut instruction_references = Vec::new();
     let mut deps = BTreeSet::new();
-    let instruction = eval
-        .declaration
-        .payload()
-        .map_or("", |payload| payload.instruction.as_str());
-    for reference in instruction::references(instruction) {
-        let name = reference.name;
-        let source = reference_target(config, &eval.target, &name)
-            .map_err(|failure| error(&["payload", "instruction"], failure))?;
-        if instruction[reference.end..].starts_with('/') {
-            reference_path(config, source, "/")
-                .map_err(|failure| error(&["payload", "instruction"], failure))?;
+    // Every slot that names another Artifact admits it: its tools join the review and its
+    // fingerprint the reuse key.
+    for slot in eval.declaration.slots() {
+        let source = slot.slot.artifact();
+        if let crate::config::Slot::Path { path, .. } = &slot.slot {
+            nested_path(everything, source, path)
+                .map_err(|failure| error(&["instruction"], failure))?;
         }
-        instruction_references.push(InstructionReference {
-            span: reference.start..reference.end,
-            artifact: source.clone(),
-        });
-        if references.insert(name.clone(), source.clone()).is_some() {
+        let name = crate::config::ReferenceName::from(source);
+        if references.insert(name.clone(), source.clone()).is_some() || source == &eval.target {
             continue;
         }
-        if source != &eval.target {
-            deps.insert(source.clone());
+        deps.insert(source.clone());
+        relations.push(Relation {
+            source: source.clone(),
+            target: eval.target.clone(),
+            kind: RelationKind::Instruction {
+                eval_id: eval.id.clone(),
+                name,
+            },
+        });
+    }
+    for input in eval.declaration.inputs() {
+        if input == &eval.target {
+            return Err(error(
+                &["inputs"],
+                ScopeError(format!("{input} is the eval's own Artifact; list other Artifacts in inputs.")),
+            ));
+        }
+        let name = crate::config::ReferenceName::from(input);
+        references.insert(name.clone(), input.clone());
+        if deps.insert(input.clone()) {
             relations.push(Relation {
-                source: source.clone(),
+                source: input.clone(),
                 target: eval.target.clone(),
-                kind: RelationKind::Instruction {
+                kind: RelationKind::Input {
                     eval_id: eval.id.clone(),
                     name,
                 },
@@ -741,7 +720,6 @@ fn eval_references(
         }
     }
     Ok(EvalReferences {
-        instruction_references,
         references,
         deps: deps.into_iter().collect(),
         relations,
@@ -752,8 +730,8 @@ fn eval_references(
 fn parts_acyclic(config: &RepoConfig) -> Result<(), ConfigError> {
     for artifact in config.artifacts.values() {
         if config.descendants(&artifact.name).contains(&&artifact.name) {
-            return Err(ConfigError::declaration(
-                config.root.join(artifact.declaration_path()),
+            return Err(config.error_at(
+                &artifact.name,
                 &["parts"],
                 format!("{} is a part of itself through its parts.", artifact.name),
             ));

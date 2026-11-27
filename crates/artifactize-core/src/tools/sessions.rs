@@ -19,7 +19,7 @@ use ownership::{Cleanup, Ownership};
 
 use super::{Invocation, Registry};
 use crate::{
-    config::{AgentTool, ArtifactName, ToolOperationName},
+    config::{AgentTool, ArtifactName, ToolFqn},
     platform, process, runtime, workspace,
 };
 
@@ -32,7 +32,7 @@ const LIFECYCLE_TIMEOUT: Duration = Duration::from_secs(30);
 const DRAIN_BYTES: usize = 8192;
 
 #[derive(Default)]
-pub struct Sessions(BTreeMap<(ArtifactName, ToolOperationName), Mutex<Session>>);
+pub struct Sessions(BTreeMap<(ArtifactName, ToolFqn), Mutex<Session>>);
 
 enum Session {
     Pending(Box<Start>),
@@ -121,7 +121,7 @@ impl Session {
 impl Sessions {
     pub(crate) async fn call(
         &self,
-        name: &(ArtifactName, ToolOperationName),
+        name: &(ArtifactName, ToolFqn),
     ) -> Result<ownership::Call, String> {
         let ended = || format!("The tool session `{}` ended.", name.1);
         let session = self.0.get(name).ok_or_else(ended)?;
@@ -241,9 +241,9 @@ impl Registry<'_> {
 }
 
 pub(super) fn session_key(
-    name: &crate::config::ToolOperationName,
+    name: &crate::config::ToolFqn,
     owner: &crate::config::ArtifactName,
-) -> (ArtifactName, ToolOperationName) {
+) -> (ArtifactName, ToolFqn) {
     (owner.clone(), name.clone())
 }
 

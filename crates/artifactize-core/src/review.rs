@@ -2,8 +2,6 @@
 
 mod detail;
 mod draft;
-mod form;
-mod reasons;
 mod runs;
 pub mod search;
 
@@ -11,10 +9,9 @@ pub mod search;
 pub use crate::{human::Submission, tools::human::log};
 pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
 pub use draft::{
-    Draft, DraftEdit, DraftFields, EMPTY_REASON, FieldValue, Point, REASON_CHANGED, Readiness,
-    append_point, edit_draft, read_draft, remove_point, values_of,
+    Draft, DraftEdit, EMPTY_ISSUE, ISSUE_CHANGED, Point, Readiness, append_point, edit_draft,
+    read_draft, remove_point,
 };
-pub use form::{Field, Form, Input, Key, Row, Specification};
 pub use runs::Runs;
 
 use crate::{
@@ -462,9 +459,7 @@ impl ArtifactDeclarations {
             .human_tools
             .iter()
             .map(|(operation, declaration)| {
-                let name: ToolName = format!("{operation}_{}", self.artifact)
-                    .parse()
-                    .expect("validated tool and Artifact names");
+                let name: ToolName = operation.published(self.artifact.as_str());
                 let command = registry.is_command(&name).then(|| registry.command(&name));
                 let tool = Tool {
                     name,
@@ -543,7 +538,7 @@ fn declared(
                         HumanTool::Viewer(tool) => (HumanToolKind::Viewer, &tool.description),
                     };
                     Some(Tool {
-                        name: format!("{operation}_{}", id).parse().ok()?,
+                        name: operation.published(id.as_str()),
                         artifact: id.clone(),
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),
@@ -554,14 +549,6 @@ fn declared(
         .collect();
     tools.sort_by(|a, b| a.name.cmp(&b.name));
     tools
-}
-
-/// The typed specification of the saved Human form. A missing definition is not an empty form.
-pub fn form(request: &Request, verdict: crate::runtime::Verdict) -> Result<Form, String> {
-    let definition = request.human_definition.as_ref().ok_or(
-        "This request records no Human definition; open the original request its actions go to.",
-    )?;
-    definition.eval.form(verdict)
 }
 
 /// Words joined for an on-screen preview, double-quoted when a word has whitespace or a

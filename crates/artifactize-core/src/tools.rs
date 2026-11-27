@@ -159,9 +159,7 @@ impl<'a> Registry<'a> {
                         return Err(format!("Artifact tool session names collide: {key}"));
                     }
                 }
-                let name: crate::config::ToolName = format!("{operation}_{}", id)
-                    .parse()
-                    .expect("validated tool and Artifact names");
+                let name = operation.published(id.as_str());
                 let description = match declaration {
                     AgentTool::Command(tool) => tool.description.clone(),
                     AgentTool::Builtin(tool) => {

@@ -17,21 +17,13 @@ impl From<&config::EvalDeclaration> for Declaration {
             id: Field::Value(source.id.clone()),
             title: Field::Value(source.title.clone()),
             profile: Field::Value(source.profile().into()),
-            profile_variants: if source.profile_variants().is_empty() {
-                Field::Missing
-            } else {
-                Field::Value(
-                    source
-                        .profile_variants()
-                        .iter()
-                        .map(|(name, profile)| (name.clone(), profile.into()))
-                        .collect(),
-                )
-            },
+            profile_name: optional(source.profile_name().map(str::to_owned)),
+            profile_variants: Field::Missing,
             payload: Field::Value(source.payload().into()),
+            inputs: nonempty(source.inputs()),
             red_at: optional(source.red_at()),
-            pass_schema: source.pass_schema().cloned().into(),
-            fail_schema: source.fail_schema().cloned().into(),
+            pass_schema: Field::Missing,
+            fail_schema: Field::Missing,
             extra: Map::new(),
         }
     }

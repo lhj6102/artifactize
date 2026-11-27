@@ -57,49 +57,43 @@ pub async fn original(state: &Path, view: &RequestView) -> Result<RequestView, S
     store::read_original(state, view).await
 }
 
-pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {
+pub fn evidence(state: &Path, view: &RequestView) -> Evidence {
     match view.request.profile.kind() {
         ProfileKind::Agent => Evidence {
             title: "Agent session".into(),
             text: "Loading session…".into(),
         },
         ProfileKind::Runtime => {
-            let logs = view
-                .request
-                .result()
-                .cloned()
-                .and_then(|result| match result {
-                    store::ExecutionResult::Runtime(logs)
-                        if logs.stdout.value().is_some() && logs.stderr.value().is_some() =>
-                    {
-                        Some(logs)
-                    }
-                    _ => None,
-                });
-            let text = match logs {
-                Some(logs) => format!(
-                    "exit code: {}\ncapture truncated: {}\n\nstdout\n{}\n\nstderr\n{}",
-                    logs.exit_code.value()
-                        .map_or("unreported".into(), |code| code.to_string()),
-                    logs.truncated.value().copied().unwrap_or(false),
-                    logs.stdout.value().expect("filtered logs"),
-                    logs.stderr.value().expect("filtered logs")
-                ),
+            // Output lives in the attempt's logs; the result keeps only its issue.
+            let streams = crate::inspect::logs::tails(state, view)
+                .ok()
+                .filter(|streams| streams.iter().any(|stream| !stream.lines.is_empty()));
+            let text = match streams {
+                Some(streams) => streams
+                    .iter()
+                    .map(|stream| {
+                        let lines: Vec<_> =
+                            stream.lines.iter().map(|line| line.text.as_str()).collect();
+                        let name = format!("{:?}", stream.stream).to_lowercase();
+                        format!("{name}\n{}", lines.join("\n"))
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n"),
                 None if view.request.origin.is_some() => {
-                    "Logs unavailable: this remote result contains only a summary; stdout/stderr were not saved here."
+                    "Logs unavailable: this remote result carries its exit code, not its output."
                         .into()
                 }
                 None if view.request.status() == RequestStatus::Running => {
-                    "Logs unavailable while running: only completed runtime output is saved; this view does not stream live pipes."
+                    "Logs unavailable while running: this view shows a finished attempt's logs."
                         .into()
                 }
                 None => {
-                    "Logs unavailable: stdout/stderr were not saved for this request (for example timeout, cancellation, operational failure, or a summary-only reused result)."
+                    "Logs unavailable: this request's attempt left no logs here (for example a timeout, a cancellation, a reused result, or pruned Run output)."
                         .into()
                 }
             };
             Evidence {
-                title: "Saved runtime stdout / stderr".into(),
+                title: "Runtime stdout / stderr".into(),
                 text,
             }
         }

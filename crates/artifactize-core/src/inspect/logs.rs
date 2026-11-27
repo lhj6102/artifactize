@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
     ffi::OsStr,
-    io::{self, BufRead, BufReader, Cursor, Read},
+    io::{self, BufRead, BufReader, Read},
     path::Path,
 };
 
@@ -51,7 +51,6 @@ pub struct LogOptions {
 pub enum Evidence {
     Complete,
     Partial,
-    SavedAudit,
     Missing,
     NotRuntime,
 }
@@ -133,7 +132,7 @@ pub async fn logs(state: &Path, id: &RequestId, query: LogQuery) -> Result<Logs,
                 stream => vec![stream],
             }
             .into_iter()
-            .map(|stream| excerpt(&state, source.as_ref(), &view, runtime, stream, &query))
+            .map(|stream| excerpt(&state, source.as_ref(), runtime, stream, &query))
             .collect::<Result<_, _>>()?;
             Ok(Logs {
                 request: id,
@@ -180,10 +179,18 @@ impl TryFrom<LogOptions> for LogQuery {
     }
 }
 
+/// The last lines of a local runtime request's two streams, from its attempt's logs.
+pub(crate) fn tails(state: &Path, view: &store::RequestView) -> Result<Vec<LogExcerpt>, String> {
+    let source = view.request.origin.is_none().then_some(view);
+    [Stream::Stdout, Stream::Stderr]
+        .into_iter()
+        .map(|stream| excerpt(state, source, true, stream, &LogQuery::default()))
+        .collect()
+}
+
 fn excerpt(
     state: &Path,
     source: Option<&store::RequestView>,
-    view: &store::RequestView,
     runtime: bool,
     stream: Stream,
     query: &LogQuery,
@@ -241,37 +248,9 @@ fn excerpt(
             });
         }
     }
-    let result = view
-        .request
-        .result()
-        .or_else(|| source.and_then(|v| v.request.result()));
-    if let Some(store::ExecutionResult::Runtime(result)) = result {
-        let audit = match stream {
-            Stream::Stdout => result.stdout.value(),
-            _ => result.stderr.value(),
-        };
-        if let Some(text) = audit {
-            let (lines, next_start) = select(Cursor::new(text.as_bytes()), query)?;
-            let note = match result.truncated.value() {
-                Some(false) => {
-                    "Full capture unavailable (older, remote or pruned); saved cleaned audit reports no truncation."
-                }
-                _ => {
-                    "Full capture unavailable (older, remote or pruned); audit may contain only the first 128 KiB. Missing tail cannot be recovered."
-                }
-            };
-            return Ok(LogExcerpt {
-                stream,
-                evidence: Evidence::SavedAudit,
-                note: note.into(),
-                lines,
-                next_start,
-            });
-        }
-    }
     Ok(absent(
         Evidence::Missing,
-        "No retained stream or saved audit: not started, remote, older or pruned evidence.",
+        "No retained stream: not started, remote, older or pruned evidence. A RED result keeps its exit code and the end of its output as its issue.",
     ))
 }
 

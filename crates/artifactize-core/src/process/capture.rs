@@ -17,6 +17,9 @@ use crate::{
 
 /// Drain process pipes in small bounded chunks without one read per byte.
 const CAPTURE_BUFFER_BYTES: usize = 8192;
+/// The end of a stream kept beside its prefix: enough lines for a failed command's issue to
+/// say why, whatever it printed before.
+pub(crate) const TAIL_BYTES: usize = 4096;
 
 /// How long a pipe may stay open once the process group is gone. Only a process outside the
 /// group can hold it then, such as a descendant that left the group. The time counts only
@@ -41,6 +44,8 @@ pub(super) enum PipeEnd {
 pub(super) struct Captured {
     pub output: Vec<u8>,
     pub truncated: bool,
+    /// Its last [`TAIL_BYTES`] bytes.
+    pub tail: Vec<u8>,
     pub pipe: PipeEnd,
     pub evidence: io::Result<()>,
 }
@@ -57,6 +62,7 @@ pub(super) async fn capture(
 ) -> Captured {
     let mut evidence = Evidence::open(path);
     let mut output = Vec::new();
+    let mut tail = Vec::new();
     let mut buffer = [0; CAPTURE_BUFFER_BYTES];
     let mut truncated = false;
     let mut grace = OUTPUT_CLOSE_GRACE;
@@ -75,7 +81,14 @@ pub(super) async fn capture(
         let retained = count.min(limit - output.len());
         output.extend_from_slice(&chunk[..retained]);
         truncated |= retained < count;
+        tail.extend_from_slice(chunk);
+        if tail.len() > 2 * TAIL_BYTES {
+            tail.drain(..tail.len() - TAIL_BYTES);
+        }
     };
+    if tail.len() > TAIL_BYTES {
+        tail.drain(..tail.len() - TAIL_BYTES);
+    }
     if let Some(lines) = &mut lines {
         lines.finish();
     }
@@ -83,6 +96,7 @@ pub(super) async fn capture(
     Captured {
         output,
         truncated,
+        tail,
         pipe: pipe_end,
         evidence,
     }
@@ -227,7 +241,7 @@ fn end_text(status: &platform::ProcessOutcome) -> String {
 
 impl Captured {
     /// The output read, and what failed.
-    fn split(self) -> ((Vec<u8>, bool), impl Iterator<Item = StreamFailure>) {
+    fn split(self) -> ((Vec<u8>, bool, Vec<u8>), impl Iterator<Item = StreamFailure>) {
         let pipe = match self.pipe {
             PipeEnd::Closed => None,
             PipeEnd::Open => Some(StreamFailure::Open),
@@ -235,7 +249,7 @@ impl Captured {
         };
         let evidence = self.evidence.err().map(StreamFailure::Evidence);
         (
-            (self.output, self.truncated),
+            (self.output, self.truncated, self.tail),
             pipe.into_iter().chain(evidence),
         )
     }
@@ -248,8 +262,8 @@ pub(super) fn finish(
     stderr: Captured,
     duration: Duration,
 ) -> Result<super::Output, super::Error> {
-    let ((stdout, stdout_truncated), stdout_failures) = stdout.split();
-    let ((stderr, stderr_truncated), stderr_failures) = stderr.split();
+    let ((stdout, stdout_truncated, stdout_tail), stdout_failures) = stdout.split();
+    let ((stderr, stderr_truncated, stderr_tail), stderr_failures) = stderr.split();
     let failures: Vec<_> = stdout_failures
         .map(|failure| (Stream::Stdout, failure))
         .chain(stderr_failures.map(|failure| (Stream::Stderr, failure)))
@@ -259,6 +273,8 @@ pub(super) fn finish(
         stdout,
         stderr,
         truncated: stdout_truncated || stderr_truncated,
+        stdout_tail,
+        stderr_tail,
         duration,
     };
     if failures.is_empty() {

@@ -77,7 +77,7 @@ impl From<&super::EvalPayload> for StoredPayload {
     fn from(payload: &super::EvalPayload) -> Self {
         Self {
             instruction: Field::Value(payload.instruction.clone()),
-            extra: payload.extra.clone(),
+            extra: Default::default(),
         }
     }
 }

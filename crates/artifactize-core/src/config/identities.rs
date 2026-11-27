@@ -89,8 +89,10 @@ macro_rules! identity {
         }
     };
 }
-/// Two declaration identifiers of 64 bytes, joined by one underscore.
-const MAX_TOOL_NAME_BYTES: usize = 129;
+/// A provider-safe tool name: a tool's FQN and its Artifact's name joined by `_`.
+const MAX_TOOL_NAME_BYTES: usize = MAX_TOOL_FQN_BYTES + 1 + 64;
+/// A tool's dotted name: a few namespace segments and the tool's own identifier.
+const MAX_TOOL_FQN_BYTES: usize = 128;
 /// Endpoint namespaces retain a complete SHA-256 digest in lowercase hexadecimal.
 const ENDPOINT_HEX_BYTES: usize = 64;
 
@@ -98,9 +100,8 @@ fn name(value: &str) -> bool {
     super::identifier(value, "").is_ok()
 }
 identity!(ModelId, |value: &str| !value.trim().is_empty());
-identity!(ProfileAliasName, name);
-identity!(ProfileVariantName, name);
-identity!(ToolOperationName, name);
+identity!(ProfileName, name);
+identity!(ToolFqn, |value: &str| ToolFqn::namespace(value).is_ok());
 // Published tool names concatenate an operation and Artifact name with `_`; each
 // component is at most 64 ASCII bytes. Collision detection remains a registry concern.
 identity!(ToolName, |value: &str| !value.is_empty()
@@ -108,10 +109,11 @@ identity!(ToolName, |value: &str| !value.is_empty()
     && value.bytes().all(
         |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
     ));
-// Provenance also names lifecycle commands; a dot cannot occur in published tools.
+// Provenance also names session lifecycle commands after a `:`, which no published tool name
+// or tool FQN contains, so `svc.start` and a session's start never share a pin.
 identity!(ExecutionPinName, |value: &str| value
-    .strip_suffix(".start")
-    .or_else(|| value.strip_suffix(".stop"))
+    .strip_suffix(":start")
+    .or_else(|| value.strip_suffix(":stop"))
     .unwrap_or(value)
     .parse::<ToolName>()
     .is_ok());
@@ -147,10 +149,12 @@ mod tests {
 
     #[test]
     fn declaration_ids_validate_at_json_boundary_and_keep_string_forms() {
-        for invalid in ["", " ", "bad/name", "_bad", "a\nb"] {
-            assert!(serde_json::from_value::<ProfileVariantName>(json!(invalid)).is_err());
-            assert!(serde_json::from_value::<ToolOperationName>(json!(invalid)).is_err());
+        for invalid in ["", " ", "bad/name", "_bad", "a\nb", "a.", ".a", "a..b", "1a.b"] {
+            assert!(serde_json::from_value::<ProfileName>(json!(invalid)).is_err());
+            assert!(serde_json::from_value::<ToolFqn>(json!(invalid)).is_err());
         }
+        let fqn: ToolFqn = serde_json::from_value(json!("desktop.harness.snapshot")).unwrap();
+        assert_eq!(fqn.namespace_part(), "desktop.harness");
         let model: ModelId = serde_json::from_value(json!("provider/model-v1")).unwrap();
         assert_eq!(
             serde_json::to_value(model).unwrap(),
@@ -174,7 +178,7 @@ mod tests {
 /// Match other declaration keys so plugin type names remain short and portable.
 const MAX_ARTIFACT_TYPE_BYTES: usize = 64;
 
-identity!(ArtifactType, |value: &str| {
+identity!(PluginName, |value: &str| {
     value.len() <= MAX_ARTIFACT_TYPE_BYTES
         && value
             .bytes()
@@ -185,3 +189,34 @@ identity!(ArtifactType, |value: &str| {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         && crate::platform::paths::portable_filename(value).is_ok()
 });
+
+impl ToolFqn {
+    /// `a.b.c`: dot-separated identifiers, each starting with a letter.
+    pub fn namespace(value: &str) -> Result<(), String> {
+        if value.is_empty() || value.len() > MAX_TOOL_FQN_BYTES {
+            return Err(format!("A tool name is 1–{MAX_TOOL_FQN_BYTES} bytes: {value:?}."));
+        }
+        for segment in value.split('.') {
+            if !segment.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) {
+                return Err(format!(
+                    "Each part of a tool name starts with a letter: {value:?}."
+                ));
+            }
+            super::identifier(segment, "A tool name's part")?;
+        }
+        Ok(())
+    }
+
+    /// The namespace of `ns.tool`: everything before its last dot.
+    pub fn namespace_part(&self) -> &str {
+        self.0.rsplit_once('.').map_or("", |(namespace, _)| namespace)
+    }
+
+    /// The name a provider sees: `{fqn with . as _}_{artifact}`. Registries reject two tools
+    /// whose names meet here.
+    pub fn published(&self, artifact: &str) -> ToolName {
+        format!("{}_{artifact}", self.0.replace('.', "_"))
+            .parse()
+            .expect("a validated FQN and Artifact name form a provider-safe tool name")
+    }
+}

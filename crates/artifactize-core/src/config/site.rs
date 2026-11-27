@@ -1,4 +1,5 @@
-//! Target and definition locations are independent; moving a definition changes no meaning.
+//! Where an Artifact is declared: its target and the file that binds it. Moving a binding to
+//! another file, or its target elsewhere, is a move; anything else about the file is not.
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,40 +43,20 @@ pub(super) fn declaration_of(kind: ArtifactKind, target: &Target) -> PathBuf {
         }
     }
 }
+
+/// Where every Artifact of the project is declared now.
 pub fn read_sites(repo: &Path) -> Result<BTreeMap<ArtifactName, Site>, ConfigError> {
-    let root =
-        crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
-    let settings = super::settings::read(&root)?;
-    discovery::sources(&root)?
+    let config = discovery::read_workspace_declarations(repo)?;
+    Ok(config
+        .artifacts
         .into_iter()
-        .map(|(file, source)| {
-            let name = discovery::definition_name(
-                file.file_stem()
-                    .and_then(crate::platform::os_text)
-                    .unwrap_or_default(),
-            )
-            .map_err(|error| ConfigError::new(&file, error))?;
-            let parsed = discovery::parse_definition(
-                &name,
-                &source,
-                &settings,
-                &mut schemas::Schemas::default(),
-            )
-            .map_err(|error| ConfigError::new(&file, error))?;
-            let path = parsed
-                .path
-                .with_kind(parsed.kind, parsed.declaration.select.unwrap_or_default())
-                .map_err(|error| ConfigError::new(&file, error))?;
-            Ok((
-                name,
-                Site {
-                    path,
-                    definition: file.strip_prefix(&root).unwrap().to_owned(),
-                },
-            ))
+        .map(|(name, artifact)| {
+            let site = artifact.site();
+            (name, site)
         })
-        .collect()
+        .collect())
 }
+
 #[derive(Debug, Error)]
 pub enum ScopeReadError {
     #[error("{name} is no longer declared at {}.", crate::platform::path_text(.path))]
@@ -83,70 +64,14 @@ pub enum ScopeReadError {
     #[error(transparent)]
     Config(#[from] ConfigError),
 }
+
+/// The project as declared now, when `name` is still declared at `site`.
 fn read_declared(
     repo: &Path,
     name: &ArtifactName,
     site: &Site,
 ) -> Result<RepoConfig, ScopeReadError> {
-    let root =
-        crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
-    let all = discovery::files(&root)?;
-    let by_name = all
-        .iter()
-        .map(|(file, _)| file)
-        .filter_map(|file| {
-            file.file_stem()
-                .and_then(crate::platform::os_text)
-                .map(|name| (name.to_owned(), file))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let expected = root.join(site.declaration_path());
-    if by_name
-        .get(name.as_str())
-        .is_none_or(|file| **file != expected)
-    {
-        return Err(ScopeReadError::Moved {
-            name: name.clone(),
-            path: site.declaration_path(),
-        });
-    }
-    let settings = super::settings::read(&root)?;
-    let mut selected = BTreeMap::new();
-    let mut pending = vec![name.clone()];
-    while let Some(next) = pending.pop() {
-        let file = if next == *name {
-            root.join(site.declaration_path())
-        } else {
-            by_name
-                .get(next.as_str())
-                .map(|file| (*file).clone())
-                .ok_or_else(|| ConfigError::new(&root, format!("Unknown Artifact {next}.")))?
-        };
-        if selected.contains_key(&file) {
-            continue;
-        }
-        let source = read_regular_text(&file).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                ScopeReadError::Moved {
-                    name: next.clone(),
-                    path: site.declaration_path(),
-                }
-            } else {
-                ScopeReadError::Config(ConfigError::new(&file, error))
-            }
-        })?;
-        let parsed = discovery::parse_definition(
-            &next,
-            &source,
-            &settings,
-            &mut schemas::Schemas::default(),
-        )
-        .map_err(|error| ConfigError::new(&file, error))?;
-        pending.extend(parsed.declaration.parts.into_iter().flatten());
-        selected.insert(file, source);
-    }
-    let mut config = discovery::read_sources_unresolved(root, &selected)?;
-    discovery::inspect_targets(&mut config);
+    let config = discovery::read_workspace_declarations(repo)?;
     if !config
         .artifacts
         .get(name)
@@ -159,6 +84,7 @@ fn read_declared(
     }
     Ok(config)
 }
+
 pub(crate) fn read_artifact_scope(
     repo: &Path,
     name: &ArtifactName,
@@ -168,32 +94,27 @@ pub(crate) fn read_artifact_scope(
     config.evals.clear();
     Ok(config)
 }
+
+/// The project as declared now with only eval `id`, when every Artifact it reads is still
+/// declared where `sites` says; none when the eval is no longer declared.
 pub(crate) fn read_eval_scope(
     repo: &Path,
     id: &EvalId,
     sites: &BTreeMap<ArtifactName, Site>,
 ) -> Result<Option<RepoConfig>, ScopeReadError> {
-    let mut combined: Option<RepoConfig> = None;
+    let mut config = discovery::read_workspace_declarations(repo)?;
     for (name, site) in sites {
-        let mut read = read_declared(repo, name, site)?;
-        read.evals.retain(|eval| &eval.id == id);
-        if let Some(config) = &mut combined {
-            config.artifacts.extend(read.artifacts);
-            if config.evals.is_empty() {
-                config.evals = read.evals;
-            }
-        } else {
-            combined = Some(read);
+        if !config
+            .artifacts
+            .get(name)
+            .is_some_and(|artifact| artifact.site() == *site)
+        {
+            return Err(ScopeReadError::Moved {
+                name: name.clone(),
+                path: site.declaration_path(),
+            });
         }
     }
-    let Some(mut config) = combined else {
-        return Ok(None);
-    };
-    if crate::scope::resolve_config(&mut config)
-        .and_then(|()| crate::scope::validate_eval_tools(&config))
-        .is_err()
-    {
-        return Ok(None);
-    }
-    Ok(Some(config))
+    config.evals.retain(|eval| &eval.id == id);
+    Ok((!config.evals.is_empty()).then_some(config))
 }

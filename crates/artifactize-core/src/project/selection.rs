@@ -9,7 +9,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{ArtifactName, Eval, EvalId, ProfileVariantName, RepoConfig},
+    config::{ArtifactName, Eval, EvalId, ProfileKind, ProfileName, RepoConfig},
     graph::Graph,
 };
 
@@ -177,11 +177,14 @@ fn selected_artifact<'a>(config: &'a RepoConfig, id: &str) -> Result<&'a Artifac
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ProfileSelection {
-    Named(ProfileVariantName),
-    Evals(BTreeMap<EvalId, ProfileVariantName>),
+    /// Every included Agent eval runs with this named profile.
+    Named(ProfileName),
+    Evals(BTreeMap<EvalId, ProfileName>),
 }
 
-/// Resolve complete declared profiles in owned configuration, never rewriting source files.
+/// Run included Agent evals with a project's named profile instead of their own, in owned
+/// configuration, never rewriting source files. A profile's execution options are not
+/// criteria, so reuse keys stay the same.
 pub fn select_profiles(
     mut config: RepoConfig,
     selection: &Selection,
@@ -193,31 +196,41 @@ pub fn select_profiles(
     };
     let evals = selection.included_evals(&config, recursive)?;
     let included: BTreeMap<_, _> = evals.iter().map(|eval| (&eval.id, *eval)).collect();
-    let mapping: Vec<(&EvalId, &ProfileVariantName)> = match profile {
-        ProfileSelection::Named(name) => evals.iter().map(|eval| (&eval.id, name)).collect(),
-        ProfileSelection::Evals(mapping) => mapping.iter().collect(),
+    let agent = |eval: &Eval| eval.declaration.profile().kind() == ProfileKind::Agent;
+    let mapping: Vec<(EvalId, ProfileName)> = match profile {
+        ProfileSelection::Named(name) => evals
+            .iter()
+            .filter(|eval| agent(eval))
+            .map(|eval| (eval.id.clone(), name.clone()))
+            .collect(),
+        ProfileSelection::Evals(mapping) => mapping
+            .iter()
+            .map(|(id, name)| (id.clone(), name.clone()))
+            .collect(),
     };
-    let mut profiles = BTreeMap::new();
+    let mut chosen = BTreeMap::new();
     for (id, name) in mapping {
-        let eval = included.get(id).ok_or_else(|| {
+        let eval = included.get(&id).ok_or_else(|| {
             format!("Profile selection is outside the submitted Eval scope: {id}")
         })?;
-        let variant = eval
-            .declaration
-            .profile_variants()
-            .get(name)
-            .ok_or_else(|| format!("Unknown profile variant for {id}: {name}"))?;
-        profiles.insert(id.clone(), (name.clone(), variant.clone()));
+        if !agent(eval) {
+            return Err(format!("{id} is not an Agent eval; only Agent evals run with a chosen profile."));
+        }
+        let profile = config.profiles.get(&name).cloned().ok_or_else(|| {
+            let known: Vec<_> = config.profiles.keys().map(|name| name.as_str()).collect();
+            format!(
+                "Unknown profile {name}; the project's Agent profiles are {}.",
+                if known.is_empty() { "none".to_owned() } else { known.join(", ") }
+            )
+        })?;
+        chosen.insert(id, (name, profile));
     }
     for eval in &mut config.evals {
-        if let Some((name, _profile)) = profiles.remove(&eval.id) {
-            eval.declaration.select_profile(&name)?;
+        if let Some((name, profile)) = chosen.remove(&eval.id) {
+            eval.declaration.select_profile(&name, &profile)?;
             eval.variant = Some(name);
         }
     }
-    // Runtime variants can introduce or remove argv references and dependency gates.
-    crate::scope::resolve_config(&mut config).map_err(|error| error.to_string())?;
-    crate::scope::validate_eval_tools(&config).map_err(|error| error.to_string())?;
     Ok(config)
 }
 

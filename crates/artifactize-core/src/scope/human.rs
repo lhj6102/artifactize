@@ -1,47 +1,10 @@
 use super::{Argument, RepoConfig, Scope, ScopeError, reference_target};
 
-/// Human declarations reject stray braces at their input edge, including extra braces in a
-/// parsed reference's path. Runtime and Agent arguments deliberately remain permissive.
-pub(crate) fn human_arguments<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<Argument>, D::Error> {
-    use serde::{Deserialize, de::Error};
-    Vec::<String>::deserialize(deserializer)?
-        .into_iter()
-        .map(|text| {
-            let argument: Argument = text.parse().map_err(D::Error::custom)?;
-            validate_human_argument(&argument).map_err(D::Error::custom)?;
-            Ok(argument)
-        })
-        .collect()
-}
-
-pub(crate) fn validate_human_argument(argument: &Argument) -> Result<(), ScopeError> {
-    let stray = match argument {
-        Argument::Literal(text) => text.contains(['{', '}']),
-        Argument::Reference { prefix, path, .. } => {
-            prefix.contains(['{', '}']) || path.contains(['{', '}'])
-        }
-    };
-    if stray {
-        return Err(ScopeError(
-            "Human arguments support only {artifactPath} or {name}[/path] scope placeholders (optionally --flag=)."
-                .into(),
-        ));
-    }
-    Ok(())
-}
-
-fn reference_target_or_owner<'a>(
-    config: &'a RepoConfig,
-    owner: &crate::config::ArtifactName,
-    name: &crate::config::ReferenceName,
-) -> Result<&'a crate::config::ArtifactName, ScopeError> {
-    if name.as_str() == "artifactPath" {
-        Ok(&config.artifacts[owner].name)
-    } else {
-        reference_target(config, owner, name)
-    }
+/// A literal's own text, or an Artifact path's declared spelling until it resolves.
+fn spelled(argument: &Argument) -> String {
+    argument
+        .literal()
+        .map_or_else(|| argument.to_string(), str::to_owned)
 }
 
 pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::ConfigError> {
@@ -52,14 +15,13 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
                     crate::config::HumanTool::Viewer(_) => {}
                     crate::config::HumanTool::Command(command) => {
                         for argument in &command.args {
-                            validate_human_argument(argument)?;
                             if let Argument::Reference {
                                 name: ref_name,
                                 path,
                                 ..
                             } = argument
                             {
-                                let target = reference_target_or_owner(config, owner, ref_name)?;
+                                let target = reference_target(config, owner, ref_name)?;
                                 super::reference_path(config, target, path)?;
                             }
                         }
@@ -72,7 +34,7 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
                                 ..
                             } = argument
                             {
-                                let target = reference_target_or_owner(config, owner, ref_name)?;
+                                let target = reference_target(config, owner, ref_name)?;
                                 super::reference_path(config, target, path)?;
                             }
                         }
@@ -89,8 +51,8 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
                 Ok::<_, ScopeError>(())
             };
             validate().map_err(|error| {
-                super::ConfigError::declaration(
-                    config.root.join(artifact.declaration_path()),
+                config.error_at(
+                    owner,
                     &["views", "human_tools", name, "args"],
                     format!("Human tool {name}: {error}"),
                 )
@@ -109,9 +71,9 @@ pub(crate) fn resolve_human_argv(
     args.iter()
         .map(|argument| {
             let Argument::Reference { prefix, name, path } = argument else {
-                return Ok(super::ResolvedArgument::Literal(argument.to_string()));
+                return Ok(super::ResolvedArgument::Literal(spelled(argument)));
             };
-            let id = reference_target_or_owner(config, owner, name)?;
+            let id = reference_target(config, owner, name)?;
             super::reference_path(config, id, path)?;
             super::argument_value(config, scope, id, path, prefix)
         })
@@ -125,7 +87,7 @@ pub(crate) fn builtin_args(
     owner: &crate::config::ArtifactName,
     tool: &crate::config::HumanBuiltinTool,
 ) -> Result<(crate::config::ArtifactName, Vec<String>), ScopeError> {
-    let mut args: Vec<String> = tool.args.iter().map(ToString::to_string).collect();
+    let mut args: Vec<String> = tool.args.iter().map(spelled).collect();
     if tool.builtin == crate::config::Builtin::Graph
         || tool.builtin == crate::config::Builtin::Help
         || tool.builtin == crate::config::Builtin::Open
@@ -139,7 +101,7 @@ pub(crate) fn builtin_args(
                 "Builtin targets cannot have a flag prefix.".into(),
             ));
         }
-        let target = reference_target_or_owner(config, owner, name)?;
+        let target = reference_target(config, owner, name)?;
         super::reference_path(config, target, path)?;
         if tool.builtin == crate::config::Builtin::Open
             && config.artifacts[target].path.uri().is_some()

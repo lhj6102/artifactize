@@ -1,4 +1,5 @@
 //! The definition view of `.artf` bytes, shared by artifactsum and file tools.
+pub mod lexer;
 mod syntax;
 
 pub use syntax::{AliasInvocation, AliasSyntaxError, Masked, mask};

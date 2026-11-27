@@ -1,46 +1,23 @@
-//! A single draft holds the reviewer's reasons, both verdict forms and the places a reviewer
+//! A single draft holds the reviewer's issues, the verdict chosen and the places a reviewer
 //! pointed at.
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
-use super::{
-    Field, Form, Input,
-    reasons::{self, Shape},
-};
 use crate::{
-    human,
+    human::{self, GREEN_WITH_ISSUES, RED_WITHOUT_ISSUE},
     runtime::Verdict,
-    store::{Receipts, Request},
+    store::Receipts,
     types::{RequestId, ReviewerId, Timestamp},
 };
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
-pub enum FieldValue {
-    Fixed,
-    Bool(Option<bool>),
-    Choice(Option<u32>),
-    Text(String),
-    Integer(String),
-    Number(String),
-    List(Vec<String>),
-    Groups(Vec<DraftFields>),
-}
-
-pub type DraftFields = Vec<(String, FieldValue)>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Draft {
     pub verdict: Option<Verdict>,
-    /// Why, oldest first, whichever verdict is chosen; the recorded schema decides which
-    /// field of the answer they fill.
+    /// What must change, oldest first.
     #[serde(default)]
-    pub reasons: Vec<String>,
-    pub green: DraftFields,
-    pub red: DraftFields,
+    pub issues: Vec<String>,
     #[serde(default)]
     pub points: Vec<Point>,
 }
@@ -64,7 +41,7 @@ impl Point {
     }
 }
 
-/// Whether a verdict's answer can be submitted, or the sentence saying what is missing.
+/// Whether a verdict can be submitted, or the sentence saying what is missing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Readiness {
     Ready,
@@ -78,346 +55,86 @@ pub enum DraftEdit {
     Verdict {
         verdict: Verdict,
     },
-    Field {
-        verdict: Verdict,
-        name: String,
-        value: FieldValue,
-    },
-    GroupField {
-        verdict: Verdict,
-        name: String,
-        item: u32,
-        field: String,
-        value: FieldValue,
-    },
-    AddItem {
-        verdict: Verdict,
-        name: String,
-    },
-    RemoveItem {
-        verdict: Verdict,
-        name: String,
-        item: u32,
-    },
-    AddReason {
+    AddIssue {
         text: String,
     },
-    /// Refused if reason `index` is no longer `previous`.
-    EditReason {
+    /// Refused if issue `index` is no longer `previous`.
+    EditIssue {
         index: u32,
         previous: String,
         text: String,
     },
-    /// Refused if reason `index` is no longer `previous`.
-    RemoveReason {
+    /// Refused if issue `index` is no longer `previous`.
+    RemoveIssue {
         index: u32,
         previous: String,
     },
 }
 
-/// The refusal for a reason without text.
-pub const EMPTY_REASON: &str = "A reason needs text; remove it instead.";
-/// The refusal for changing a reason another surface changed first.
-pub const REASON_CHANGED: &str = "This reason changed; reload the review draft.";
+/// The refusal for an issue without text.
+pub const EMPTY_ISSUE: &str = "An issue needs text; remove it instead.";
+/// The refusal for changing an issue another surface changed first.
+pub const ISSUE_CHANGED: &str = "This issue changed; reload the review draft.";
 
 impl DraftEdit {
     /// Refuse an edit that is invalid whatever the saved draft holds.
     pub fn check(&self) -> Result<(), String> {
         match self {
-            Self::AddReason { text } | Self::EditReason { text, .. } if text.trim().is_empty() => {
-                Err(EMPTY_REASON.into())
+            Self::AddIssue { text } | Self::EditIssue { text, .. } if text.trim().is_empty() => {
+                Err(EMPTY_ISSUE.into())
             }
             _ => Ok(()),
-        }
-    }
-
-    /// The verdict and owner field an edit of fields changes.
-    fn field(&self) -> Option<(Verdict, &str)> {
-        match self {
-            Self::Field { verdict, name, .. }
-            | Self::GroupField { verdict, name, .. }
-            | Self::AddItem { verdict, name }
-            | Self::RemoveItem { verdict, name, .. } => Some((*verdict, name)),
-            Self::Verdict { .. }
-            | Self::AddReason { .. }
-            | Self::EditReason { .. }
-            | Self::RemoveReason { .. } => None,
         }
     }
 }
 
 impl Draft {
-    /// Every field of the recorded schema for `verdict`, with this draft's inputs.
-    pub fn form(&self, request: &Request, verdict: Verdict) -> Result<Form, String> {
-        let mut form = super::form(request, verdict)?;
-        fill(&mut form.fields, self.fields(verdict));
-        Ok(form)
-    }
-
-    /// The owner fields a reviewer of the saved draft edits for `verdict`: [`Draft::form`]
-    /// without the field the reasons fill.
-    pub fn owner_form(&self, request: &Request, verdict: Verdict) -> Result<Form, String> {
-        let mut form = self.form(request, verdict)?;
-        reasons::hide(&mut form);
-        Ok(form)
-    }
-
-    /// The answer `verdict` would submit: the reasons in their field plus the owner fields,
-    /// validated against the recorded schema.
-    fn answer(&self, request: &Request, verdict: Verdict) -> Result<super::Submission, String> {
-        reasons::answer(
-            self.form(request, verdict)?,
-            &self.reasons,
-            schema(request, verdict),
-        )
-    }
-
-    /// Whether `verdict` can be submitted now, whichever verdict is chosen.
-    pub fn readiness(&self, request: &Request, verdict: Verdict) -> Readiness {
-        match self.answer(request, verdict) {
-            Ok(_) => Readiness::Ready,
-            Err(reason) => Readiness::Blocked(reason),
+    /// Whether `verdict` can be submitted now: RED with an issue, GREEN without one.
+    pub fn readiness(&self, verdict: Verdict) -> Readiness {
+        match (verdict, self.issues.is_empty()) {
+            (Verdict::Red, true) => Readiness::Blocked(RED_WITHOUT_ISSUE.into()),
+            (Verdict::Green, false) => Readiness::Blocked(GREEN_WITH_ISSUES.into()),
+            _ => Readiness::Ready,
         }
     }
 
-    pub(crate) fn submission(&self, request: &Request) -> Result<super::Submission, String> {
+    pub(crate) fn submission(&self) -> Result<super::Submission, String> {
         let verdict = self
             .verdict
             .ok_or("Choose GREEN or RED before submitting.")?;
-        self.answer(request, verdict)
+        super::Submission::new(verdict, self.issues.clone())
     }
 
     /// Points can keep changing until settlement; a different answer must be submitted again.
     pub(crate) fn same_answer(&self, other: &Self) -> bool {
-        self.verdict == other.verdict
-            && self.reasons == other.reasons
-            && self.green == other.green
-            && self.red == other.red
+        self.verdict == other.verdict && self.issues == other.issues
     }
 
-    /// Move an earlier draft's answer text into its reasons: the chosen verdict's reasons
-    /// field (RED's list items in order, or a nonempty text). Without a chosen verdict, RED's
-    /// is taken if it holds any, else GREEN's.
-    pub(crate) fn adopt_reasons(&mut self) {
-        let verdicts = match self.verdict {
-            Some(verdict) => vec![verdict],
-            None => vec![Verdict::Red, Verdict::Green],
-        };
-        for verdict in verdicts {
-            let fields = self.fields_mut(verdict);
-            let shapes = fields.iter().map(|(name, value)| {
-                let shape = match value {
-                    FieldValue::List(_) => Shape::List,
-                    FieldValue::Text(_) => Shape::Text,
-                    _ => Shape::Other,
-                };
-                (name.as_str(), shape)
-            });
-            let Some((index, _)) = reasons::target(verdict, shapes) else {
-                continue;
-            };
-            let found = match &fields[index].1 {
-                FieldValue::List(items) => reasons::entered(items),
-                FieldValue::Text(text) => reasons::entered(std::slice::from_ref(text)),
-                _ => unreachable!("a reasons field holds a list or a text"),
-            };
-            if !found.is_empty() {
-                fields.remove(index);
-                self.reasons = found;
-                return;
-            }
-        }
-    }
-
-    pub fn fields(&self, verdict: Verdict) -> &DraftFields {
-        match verdict {
-            Verdict::Green => &self.green,
-            Verdict::Red => &self.red,
-        }
-    }
-
-    fn fields_mut(&mut self, verdict: Verdict) -> &mut DraftFields {
-        match verdict {
-            Verdict::Green => &mut self.green,
-            Verdict::Red => &mut self.red,
-        }
-    }
-
-    /// Apply a typed edit against the recorded review schema.
-    pub fn edit(&mut self, request: &Request, edit: DraftEdit) -> Result<(), String> {
+    pub fn edit(&mut self, edit: DraftEdit) -> Result<(), String> {
         edit.check()?;
         match edit {
             DraftEdit::Verdict { verdict } => self.verdict = Some(verdict),
-            DraftEdit::Field {
-                verdict,
-                name,
-                value,
-            } => {
-                let mut form = self.form(request, verdict)?;
-                let field = form
-                    .fields
-                    .iter_mut()
-                    .find(|field| field.name == name)
-                    .ok_or_else(|| format!("{name} is not a field of this form."))?;
-                fill(std::slice::from_mut(field), &[(name, value)]);
-                *self.fields_mut(verdict) = values_of(&form.fields);
-            }
-            DraftEdit::GroupField {
-                verdict,
-                name,
-                item,
-                field,
-                value,
-            } => {
-                let mut form = self.form(request, verdict)?;
-                let group = form
-                    .fields
-                    .iter_mut()
-                    .find(|group| group.name == name)
-                    .ok_or_else(|| format!("{name} is not a field of this form."))?;
-                let Input::Groups { items, .. } = &mut group.input else {
-                    return Err(format!("{name} is not a repeated group."));
-                };
-                let item = items
-                    .get_mut(item as usize)
-                    .ok_or("The repeated group item no longer exists.")?;
-                let input = item
-                    .iter_mut()
-                    .find(|input| input.name == field)
-                    .ok_or_else(|| format!("{field} is not a field of {name}."))?;
-                fill(std::slice::from_mut(input), &[(field, value)]);
-                *self.fields_mut(verdict) = values_of(&form.fields);
-            }
-            DraftEdit::AddItem { verdict, name } => {
-                self.edit_list(request, verdict, &name, Form::add)?;
-            }
-            DraftEdit::RemoveItem {
-                verdict,
-                name,
-                item,
-            } => {
-                self.edit_list(request, verdict, &name, |form, index| {
-                    form.remove(index, item as usize)
-                })?;
-            }
-            DraftEdit::AddReason { text } => self.reasons.push(text),
-            DraftEdit::EditReason {
+            DraftEdit::AddIssue { text } => self.issues.push(text),
+            DraftEdit::EditIssue {
                 index,
                 previous,
                 text,
-            } => *self.reason(index, &previous)? = text,
-            DraftEdit::RemoveReason { index, previous } => {
-                self.reason(index, &previous)?;
-                self.reasons.remove(index as usize);
+            } => *self.issue(index, &previous)? = text,
+            DraftEdit::RemoveIssue { index, previous } => {
+                self.issue(index, &previous)?;
+                self.issues.remove(index as usize);
             }
         }
         Ok(())
     }
 
-    /// [`Draft::edit`] for the saved draft, whose reasons fill their own field: that field
-    /// changes only through the reasons.
-    fn edit_saved(&mut self, request: &Request, edit: DraftEdit) -> Result<(), String> {
-        if let Some((verdict, name)) = edit.field() {
-            let form = self.form(request, verdict)?;
-            if reasons::target_name(&form) == Some(name) {
-                return Err(format!(
-                    "{name} holds the reasons; change the reasons instead."
-                ));
-            }
-        }
-        self.edit(request, edit)
-    }
-
-    /// Reason `index`, if it still reads `previous`.
-    fn reason(&mut self, index: u32, previous: &str) -> Result<&mut String, String> {
-        self.reasons
+    /// Issue `index`, if it still reads `previous`.
+    fn issue(&mut self, index: u32, previous: &str) -> Result<&mut String, String> {
+        self.issues
             .get_mut(index as usize)
-            .filter(|reason| *reason == previous)
-            .ok_or_else(|| REASON_CHANGED.into())
+            .filter(|issue| *issue == previous)
+            .ok_or_else(|| ISSUE_CHANGED.into())
     }
-
-    fn edit_list(
-        &mut self,
-        request: &Request,
-        verdict: Verdict,
-        name: &str,
-        edit: impl FnOnce(&mut Form, usize),
-    ) -> Result<(), String> {
-        let mut form = self.form(request, verdict)?;
-        let index = form
-            .fields
-            .iter()
-            .position(|field| {
-                field.name == name && matches!(field.input, Input::List(_) | Input::Groups { .. })
-            })
-            .ok_or_else(|| format!("{name} is not a list of this form."))?;
-        edit(&mut form, index);
-        *self.fields_mut(verdict) = values_of(&form.fields);
-        Ok(())
-    }
-}
-
-/// The owner schema `request` recorded for `verdict`.
-fn schema(request: &Request, verdict: Verdict) -> Option<&Map<String, Value>> {
-    let declaration = request.human_definition.as_ref()?.eval.declaration()?;
-    match verdict {
-        Verdict::Green => declaration.pass_schema.value(),
-        Verdict::Red => declaration.fail_schema.value(),
-    }
-}
-
-/// Restore partial or invalid input as typed; only submission validates the answer schema.
-fn fill(fields: &mut [Field], values: &[(String, FieldValue)]) {
-    for field in fields {
-        let Some((_, value)) = values.iter().find(|(name, _)| *name == field.name) else {
-            continue;
-        };
-        match (&mut field.input, value) {
-            (Input::Bool(current), FieldValue::Bool(value)) => *current = *value,
-            (Input::Choice(choice), FieldValue::Choice(index)) => {
-                choice.select(index.map(|index| index as usize));
-            }
-            (Input::Text(current), FieldValue::Text(text))
-            | (Input::Integer(current), FieldValue::Integer(text))
-            | (Input::Number(current), FieldValue::Number(text)) => current.clone_from(text),
-            (Input::List(current), FieldValue::List(items)) => current.clone_from(items),
-            (Input::Groups { fields, items }, FieldValue::Groups(values)) => {
-                *items = values
-                    .iter()
-                    .map(|values| {
-                        let mut item = fields.clone();
-                        fill(&mut item, values);
-                        item
-                    })
-                    .collect();
-            }
-            // A constant stays fixed; a value of another kind is not this field's.
-            _ => {}
-        }
-    }
-}
-
-pub fn values_of(fields: &[Field]) -> DraftFields {
-    fields
-        .iter()
-        .map(|field| {
-            let value = match &field.input {
-                Input::Fixed(_) => FieldValue::Fixed,
-                Input::Bool(value) => FieldValue::Bool(*value),
-                Input::Choice(choice) => {
-                    FieldValue::Choice(choice.selected().map(|index| index as u32))
-                }
-                Input::Text(text) => FieldValue::Text(text.clone()),
-                Input::Integer(text) => FieldValue::Integer(text.clone()),
-                Input::Number(text) => FieldValue::Number(text.clone()),
-                Input::List(items) => FieldValue::List(items.clone()),
-                Input::Groups { items, .. } => {
-                    FieldValue::Groups(items.iter().map(|item| values_of(item)).collect())
-                }
-            };
-            (field.name.clone(), value)
-        })
-        .collect()
 }
 
 /// Read this reviewer's draft, including while the review is released.
@@ -441,9 +158,7 @@ pub async fn edit_draft(
 ) -> Result<Draft, String> {
     with_receipts(state, request, async |receipts| {
         receipts
-            .change_review_draft(request, reviewer, |request, draft| {
-                draft.edit_saved(request, edit)
-            })
+            .change_review_draft(request, reviewer, |_, draft| draft.edit(edit))
             .await
     })
     .await
@@ -515,48 +230,41 @@ async fn with_receipts<T>(
 mod tests {
     use super::*;
 
-    fn text(value: &str) -> FieldValue {
-        FieldValue::Text(value.into())
-    }
-
-    fn list(items: &[&str]) -> FieldValue {
-        FieldValue::List(items.iter().map(|item| (*item).to_owned()).collect())
-    }
-
-    fn earlier(verdict: Option<Verdict>) -> Draft {
-        Draft {
-            verdict,
-            green: vec![
-                ("approved".into(), FieldValue::Fixed),
-                ("comment".into(), text("Fine")),
-            ],
-            red: vec![
-                ("change".into(), list(&["First", " ", "Second"])),
-                ("severity".into(), FieldValue::Choice(Some(0))),
-            ],
-            ..Draft::default()
+    fn edited(edits: Vec<DraftEdit>) -> Result<Draft, String> {
+        let mut draft = Draft::default();
+        for edit in edits {
+            draft.edit(edit)?;
         }
+        Ok(draft)
     }
 
     #[test]
-    fn an_earlier_draft_adopts_its_chosen_verdicts_answer_text_as_reasons() {
-        let mut red = earlier(Some(Verdict::Red));
-        red.adopt_reasons();
-        assert_eq!(red.reasons, ["First", "Second"]);
-        assert_eq!(red.red, [("severity".into(), FieldValue::Choice(Some(0)))]);
-
-        let mut green = earlier(Some(Verdict::Green));
-        green.adopt_reasons();
-        assert_eq!(green.reasons, ["Fine"]);
-        assert_eq!(green.red, earlier(None).red);
-
-        let mut unchosen = earlier(None);
-        unchosen.adopt_reasons();
-        assert_eq!(unchosen.reasons, ["First", "Second"]);
-
-        let mut blank = earlier(Some(Verdict::Green));
-        blank.green[1].1 = text("  ");
-        blank.adopt_reasons();
-        assert!(blank.reasons.is_empty());
+    fn green_takes_no_issues_and_red_needs_one() {
+        let empty = Draft::default();
+        assert_eq!(empty.readiness(Verdict::Green), Readiness::Ready);
+        assert_eq!(empty.readiness(Verdict::Red), Readiness::Blocked(RED_WITHOUT_ISSUE.into()));
+        let one = edited(vec![DraftEdit::AddIssue { text: "Fix the title".into() }]).unwrap();
+        assert_eq!(one.readiness(Verdict::Red), Readiness::Ready);
+        assert_eq!(one.readiness(Verdict::Green), Readiness::Blocked(GREEN_WITH_ISSUES.into()));
+        assert!(one.submission().is_err(), "no verdict chosen");
     }
+
+    #[test]
+    fn issues_change_only_as_last_seen() {
+        let mut draft = edited(vec![
+            DraftEdit::AddIssue { text: "one".into() },
+            DraftEdit::AddIssue { text: "two".into() },
+        ])
+        .unwrap();
+        assert_eq!(
+            draft.edit(DraftEdit::EditIssue { index: 0, previous: "two".into(), text: "x".into() }),
+            Err(ISSUE_CHANGED.into())
+        );
+        draft
+            .edit(DraftEdit::RemoveIssue { index: 0, previous: "one".into() })
+            .unwrap();
+        assert_eq!(draft.issues, ["two"]);
+        assert_eq!(draft.edit(DraftEdit::AddIssue { text: " ".into() }), Err(EMPTY_ISSUE.into()));
+    }
+
 }

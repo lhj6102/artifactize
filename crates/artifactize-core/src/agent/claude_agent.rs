@@ -1,7 +1,7 @@
 //! Reviews and follow-ups on the `claude-agent` backend. Claude Code runs the conversation
 //! with the user's own login; artifactize runs every tool call through the eval's registry,
 //! enforces the budgets and the deadline, records the conversation and its live text, and
-//! validates the findings, with the same one format repair as every backend. Claude Code
+//! validates the issues, with the same one format repair as every backend. Claude Code
 //! retries failed requests itself, so nothing here retries.
 
 mod conversation;
@@ -25,7 +25,7 @@ use super::{
     error::{Code, Failure},
     prompt_text,
     session::{self, Recorder},
-    verdict::{Findings, ValidatedResult},
+    verdict::{Issues, ValidatedResult},
 };
 use crate::{
     config::{Eval, ModelId, Profile, RepoConfig},
@@ -109,11 +109,11 @@ async fn run_review(
         max_tool_calls: *max_tool_calls,
     };
     let registry = Registry::new(config, &eval.id)?.with_sessions(tools);
-    let findings = Findings::new(eval.declaration.red_at());
+    let issues = Issues::new(eval.declaration.red_at());
     let Prompt { system, text } = prompt_text(eval, &registry);
     let effort = reasoning.map(crate::config::Reasoning::as_str);
     let mut parameters = Client::parameters(Api::ClaudeAgent, effort, recorder.id())?;
-    Client::output_format(Api::ClaudeAgent, &mut parameters, findings.schema.clone());
+    Client::output_format(Api::ClaudeAgent, &mut parameters, issues.schema.clone());
     let definitions = definitions(registry.list());
     recorder.start(session::Header {
         backend: Some(backend.clone()),
@@ -136,7 +136,7 @@ async fn run_review(
         effort,
         system: Some(&system),
         tools: definitions.iter().map(|tool| tool.name.as_str()).collect(),
-        schema: Some(&findings.schema),
+        schema: Some(&issues.schema),
     };
     let server = Server::new(registry.list());
     let session = Session {
@@ -150,24 +150,24 @@ async fn run_review(
         attempts,
     };
     let (mut conversation, running) = session.open(&launch).await?;
-    let result = judge(&mut conversation, &text, &findings).await;
+    let result = judge(&mut conversation, &text, &issues).await;
     close(conversation, running, result).await
 }
 
-/// Ask for the findings and validate them, with one format repair: tools are then refused.
+/// Ask for the issues and validate them, with one format repair: tools are then refused.
 async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     conversation: &mut Conversation<'_, '_, R, W>,
     prompt: &str,
-    findings: &Findings,
+    issues: &Issues,
 ) -> Result<ValidatedResult, Failure> {
     let answer = conversation.ask(prompt).await?;
-    let error = match findings.parse_model(&answer) {
+    let error = match issues.parse_model(&answer) {
         Ok(result) => return Ok(result),
         Err(error) => error,
     };
     let repair = Message::user(format!(
         "Your final response did not match the required schema: {}\nReturn only one JSON object matching the schema.",
-        Findings::repair_detail(error)
+        Issues::repair_detail(error)
     ));
     conversation
         .session
@@ -175,7 +175,7 @@ async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         .message(conversation.turn + 1, &repair, true);
     conversation.tools_open = false;
     let answer = conversation.ask(&message_text(&repair)).await?;
-    findings.parse_model(&answer).map_err(|error| {
+    issues.parse_model(&answer).map_err(|error| {
         Failure::new(
             Code::InvalidResult,
             format!("Invalid final Agent result after one format repair: {error}."),
