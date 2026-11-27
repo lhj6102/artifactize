@@ -104,8 +104,8 @@ process ends by telling the user what you found or changed.
 5. Write minimal declarations, following
    [Declarations](https://artifactize.dev/docs/reference/declarations.html) and
    section 4's starter.
-6. Validate with `config_check`, then show with `status` what would run and what
-   would be reused.
+6. Validate with `config_check`, then show with `status`, given the same selector as the
+   verification you agreed on, what would run and what would be reused.
 7. Tell the user what changed, then run the first verification with them (below).
 
 **Adopting it gradually in a large repository**: start with the area that hurts most,
@@ -118,15 +118,17 @@ reference, an eval that reads a part without naming it,
 evals with several obligations,
 sign-offs without a reason, criteria copied where a shared rule document belongs.
 Report each finding with its fix, agree, then change only what was agreed, validate
-with `config_check` and check `status` to report what will now be reviewed or reused.
+with `config_check` and check `status`, scoped as the agreed verification will be, to
+report what will now be reviewed or reused.
 
 **The project grew or changed**: for a new component, decide with the user whether it
 is its own Artifact and which evals consume it; for an Artifact that grew, split it
 along what is edited independently. Validate the edited declarations with `config_check`
 and compare `status` before and after: the edited
 input and its real consumers should need review; independent parts should still be
-reused. Changing an eval's instruction, `red_at` threshold, result schema or runtime command changes
-what it judges; a title, tags, execution options or tool declarations do not.
+reused. Changing an Agent or Human eval's instruction or `red_at` threshold, or a runtime
+eval's command, arguments or `inputs`, changes what it judges; a title, tags, a runtime
+eval's instruction (prose beside its command), the profile or tool declarations do not.
 
 **"Why did this run again?" or "verify is slow"**: read `status` for what changed and
 which evals it covers. Too much rerunning usually means a boundary is too wide or a
@@ -202,7 +204,7 @@ ended YELLOW its historical verdict is final; a later sign-off settles its waiti
 request (and any follower requests joined to it, unless a newer Run in the same working
 tree superseded the old request with `ERROR/SUPERSEDED`, in which case the person reviews
 the replacement request). After the person signs off, verify again: when fingerprinting is
-enabled and the Human eval's reuse key (its criteria, result schemas, and covered inputs)
+enabled and the Human eval's reuse key (its instruction and covered inputs)
 still matches, the new Run reuses that sign-off (`fingerprint = false` disables reuse so a
 fresh sign-off is requested whenever that Human eval is selected, its prerequisites pass,
 and the execution policy permits it). No keep-alive turns or polling
@@ -215,7 +217,9 @@ loops.
 - **Boundaries.** Cut where work is edited and judged independently, each Artifact
   with a concrete obligation. Avoid one review over the whole repository. A consumer
   names what it really uses, even in another folder; sharing a repository is not a
-  dependency, and a command does not add the files it reads. Split an Artifact that
+  dependency, and a command does not add the files it reads: a runtime eval names them,
+  `@{path name}` in its arguments, or `inputs = [name]` for what its command finds by
+  itself, such as a lockfile, a shared checker or a config file. Split an Artifact that
   grows. Use `basis = true` only for an input the team agrees nobody reviews. Keep
   the default fingerprint.
 - **Definition first.** Declare `artf name = { path = … }` in a `.artf` file under
