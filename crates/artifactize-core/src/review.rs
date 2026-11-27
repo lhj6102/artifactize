@@ -204,6 +204,8 @@ impl Outcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tool {
     pub name: ToolName,
+    /// Its name as its toolset declares it: `release.notes`.
+    pub fqn: crate::config::ToolFqn,
     /// The Artifact that declares the tool.
     pub artifact: crate::types::ArtifactName,
     pub kind: HumanToolKind,
@@ -212,16 +214,10 @@ pub struct Tool {
 }
 
 impl Tool {
-    /// Its name in the Artifact that declares it: `open` of `notes` is `open_notes`.
+    /// Its name as a person reads it: the toolset's `release.notes`, whatever Artifact
+    /// composes it.
     pub fn operation(&self) -> &str {
-        Self::operation_of(&self.name, &self.artifact)
-    }
-
-    /// The name tool `name` has in `artifact`, which declares it.
-    pub fn operation_of<'a>(name: &'a ToolName, artifact: &crate::types::ArtifactName) -> &'a str {
-        name.as_str()
-            .strip_suffix(&format!("_{}", artifact))
-            .unwrap_or(name.as_str())
+        self.fqn.as_str()
     }
 
     /// What running the tool does, as the Tools pane shows it: a command's resolved line once
@@ -463,6 +459,7 @@ impl ArtifactDeclarations {
                 let command = registry.is_command(&name).then(|| registry.command(&name));
                 let tool = Tool {
                     name,
+                    fqn: operation.clone(),
                     artifact: self.artifact.clone(),
                     kind: declaration.kind(),
                     description: declaration
@@ -539,6 +536,7 @@ fn declared(
                     };
                     Some(Tool {
                         name: operation.published(id.as_str()),
+                        fqn: operation.clone(),
                         artifact: id.clone(),
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),

@@ -472,9 +472,9 @@ export const scenarios: Scenario[] = [
       await app.graph.open("a:release", "Artifact release");
       // The worktree changed since the shown Run: the tool reads it as it is now.
       writeText(nativePath(fixture.repo, "release", "notes.md"), "# Release notes\n- Changed since the Run.\n");
-      await app.detail.runTool("notes");
+      await app.detail.runTool("release.notes");
       await app.detail.toolLogUntil((rows) => rows.at(-1) === "■ exit 0", "notes ran to its end");
-      assert.deepEqual(await app.detail.toolLog(), ["▶ HH:MM:SS · notes · release", "# Release notes", "- Changed since the Run.", "■ exit 0"]);
+      assert.deepEqual(await app.detail.toolLog(), ["▶ HH:MM:SS · release.notes · release", "# Release notes", "- Changed since the Run.", "■ exit 0"]);
       assert.equal(request(fixture).claim, null, "no claim");
       assert.equal(request(fixture).status, "DEFERRED", "and no review's evidence");
     },

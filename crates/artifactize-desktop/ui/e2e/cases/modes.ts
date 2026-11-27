@@ -56,9 +56,8 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(await listed(), [otherId], "opening the exact review did not pin it into the filtered list");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${id} `));
       await app.review.choose("GREEN");
-      await app.review.addReason("Release notes checked");
+      await app.review.addIssue("Check the linked notes again");
       await app.review.choose("RED");
-      await app.review.enter("reason", "Check the linked notes again");
       await app.review.release();
       await app.waitingBadge(2);
     },
@@ -70,19 +69,17 @@ export const scenarios: Scenario[] = [
       await app.review.openListed(id, true);
       await app.review.claim();
       await app.review.until((shown) => shown.verdict === "RED", "Review automatically opens the saved RED verdict after restart");
-      assert.equal(await app.review.value("reason"), "Check the linked notes again");
+      assert.deepEqual((await app.review.read())!.issues, ["Check the linked notes again"], "the issues kept across the restart");
       // Without any new verdict selection, the pet also opens the draft's last verdict.
       const w = windows();
       await w.mode("Verify");
       await w.pet();
       await w.petUntil((shown) => shown.verdict === "RED", "the pet opens the persisted RED verdict after restart");
       await w.mode("Review");
-      await app.review.choose("GREEN");
-      await app.review.until((shown) => shown.reasons.join() === "Release notes checked", "reclaim after restart restored the reasons");
       const completed = await app.review.submit();
-      assert.match(completed.completed, /Release notes checked/);
+      assert.match(completed.completed, /Check the linked notes again/);
       const saved = requests(fixture).find((row) => row.id === id);
-      assert.equal(saved?.status, "GREEN");
+      assert.equal(saved?.status, "RED");
       await app.waitingBadge(1);
       await app.review.openInVerify();
       await app.graph.titled(runId);
@@ -98,8 +95,8 @@ export const scenarios: Scenario[] = [
       await installChatProvider(owned, fixture);
       const gate = nativePath(fixture.root, "chat-run-gate");
       const definition = nativePath(fixture.repo, ".artifactize", "docs.artf");
-      writeText(definition, readText(definition).replace(/^profile = .*$/m,
-        `profile = ${runtimeProfile("slow", 120000, portablePath(gate))}`));
+      writeText(definition, readText(definition).replace(/^(\s*eval lint : )runtime\(.*\)( = \{)$/m,
+        (_, head: string, tail: string) => `${head}${runtimeProfile("slow", 120000, portablePath(gate))}${tail}`));
       return { fixture, args: ["--repo", fixture.repo], data: { firstRun: request(fixture).runId, gate } };
     },
     run: async (app, { fixture, data: { firstRun, gate } }) => {

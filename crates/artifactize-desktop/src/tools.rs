@@ -161,7 +161,14 @@ pub async fn artifact_tool_run(
     let work = app.human.start_artifact(caller, job)?;
     let workspace = work.prepare(app.current_workspace(&branch)).await?;
     let place = branch.to_place();
-    let operation = review::Tool::operation_of(&tool, &artifact).to_owned();
+    let declarations = app.sites.declarations(&workspace, &artifact).await;
+    // Its run is named as its button is, by the toolset's name; an unknown one by what was asked.
+    let operation = declarations
+        .as_ref()
+        .ok()
+        .and_then(|declarations| declarations.tools().ok())
+        .and_then(|tools| tools.into_iter().find(|(each, _)| each.name == tool))
+        .map_or_else(|| tool.to_string(), |(each, _)| each.fqn.to_string());
     let run = app.human.log().start(
         Key::Artifact {
             repo: workspace.clone(),
@@ -171,7 +178,7 @@ pub async fn artifact_tool_run(
         &operation,
         artifact.as_str(),
     );
-    let result = match app.sites.declarations(&workspace, &artifact).await {
+    let result = match declarations {
         Ok(declarations) => {
             declarations
                 .run_tool(&place, &tool, work.cancel.clone(), run)

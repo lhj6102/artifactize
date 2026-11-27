@@ -1,11 +1,11 @@
 // A Human review as its reviewer reads it, in the main area or in a Detail: a conversation of its
-// instruction, its tools, each tool run's line, its Points, its reasons as bubbles, the reasons
-// box and the decision bar (where the claim stands, GREEN / RED, why Submit waits, Submit), the
-// chosen verdict's own fields and its Debug facts; each action waits for what it shows.
+// instruction, its tools, each tool run's line, its Points, its issues as bubbles, the issues
+// box and the decision bar (where the claim stands, GREEN / RED, why Submit waits, Submit) and
+// its Debug facts; each action waits for what it shows.
 import { clickRowGutter } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { nativeInput } from "../input.ts";
-import { chooseOption, holds, until } from "./wait.ts";
+import { holds, until } from "./wait.ts";
 
 /** The review as read: where its claim stands (`Waiting`, `Yours`, `Taken`, "" once submitted),
  * who else claimed it, what its conversation holds in order, the chosen verdict, the completed
@@ -15,7 +15,7 @@ export type Shown = {
   stage: string;
   claimant: string;
   /** The conversation's parts in order: `Instruction`, `Tools`, `Debug`, `Runs`, `Points`,
-   * `Reasons`, `Result`, then `Claim line` or `Reasons box`, then `Decision`. */
+   * `Issues`, `Result`, then `Claim line` or `Issues box`, then `Decision`. */
   sections: string[];
   verdict: string;
   completed: string;
@@ -29,7 +29,7 @@ export type Shown = {
   /** Why Submit cannot submit yet, as the decision bar says it. */
   why: string;
   submittable: boolean;
-  reasons: string[];
+  issues: string[];
   state: string;
   tools: { name: string; enabled: boolean; group: string }[];
 };
@@ -45,7 +45,7 @@ export class Review {
     this.root = `${scope === "main" ? `section.stage-area[aria-label="Review's main area"]` : 'aside[aria-label="Detail"]'} section[aria-label="Human review"]`;
   }
 
-  /** The boxes of the conversation's column and of its reasons box and decision bar. */
+  /** The boxes of the conversation's column and of its issues box and decision bar. */
   panels(): Promise<{ column: { left: number; right: number; top: number; bottom: number }; bar: { left: number; right: number; top: number; bottom: number } } | null> {
     return this.browser.execute((root) => {
       const review = document.querySelector(root);
@@ -66,8 +66,8 @@ export class Review {
       const taken = /^Taken by (.+)$/.exec(bar?.querySelector(".said")?.textContent?.trim() ?? "");
       const parts: [string, string][] = [
         ["Instruction", '[aria-label="Instruction"] .text'], ["Tools", '[role="group"][aria-label="Tools"]'], ["Debug", ".debug"],
-        ["Runs", ".run"], ["Points", '[aria-label="Points"]'], ["Reasons", '[aria-label="Reasons"]'], ["Result", '[aria-label="Result"]'],
-        ["Claim line", ".bottom > .quiet"], ["Reasons box", "[data-reasons]"], ["Decision", '[aria-label="Decision"]'],
+        ["Runs", ".run"], ["Points", '[aria-label="Points"]'], ["Issues", '[aria-label="Issues"]'], ["Result", '[aria-label="Result"]'],
+        ["Claim line", ".bottom > .quiet"], ["Issues box", "[data-issues]"], ["Decision", '[aria-label="Decision"]'],
       ];
       const submit = bar?.querySelector<HTMLButtonElement>("button.submit");
       const failed = bar?.querySelector(".why.failed")?.textContent?.trim() ?? "";
@@ -84,7 +84,7 @@ export class Review {
         refusal: failed || (review.querySelector('[role="alert"]')?.textContent?.trim() ?? ""),
         why: failed ? "" : bar?.querySelector(".why")?.textContent?.trim() ?? "",
         submittable: !!submit && !submit.disabled,
-        reasons: [...review.querySelectorAll('[aria-label="Reasons"] .message')].map((reason) => reason.textContent ?? ""),
+        issues: [...review.querySelectorAll('[aria-label="Issues"] .message')].map((issue) => issue.textContent ?? ""),
         state: state?.nextElementSibling?.textContent?.trim() ?? "",
         tools: [...review.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Tools"] button')].map((button) => ({
           name: button.textContent?.trim() ?? "", enabled: !button.disabled,
@@ -273,39 +273,39 @@ export class Review {
   }
 
   // -------------------------------------------------------------------------------
-  // The reasons
+  // The issues
 
-  /** Type `text` into the reasons field and add it with Enter: it stands as the newest reason. */
-  async addReason(text: string): Promise<void> {
-    const before = (await this.read())?.reasons.length ?? 0;
-    await fill(this.browser, `${this.root} [data-reasons]`, text);
-    await this.browser.$(`${this.root} [data-reasons]`).click();
-    await press(this.browser, ["Enter"], async () => ((await this.read())?.reasons.length ?? 0) > before, `${text} added as a reason`);
+  /** Type `text` into the issue field and add it with Enter: it stands as the newest issue. */
+  async addIssue(text: string): Promise<void> {
+    const before = (await this.read())?.issues.length ?? 0;
+    await fill(this.browser, `${this.root} [data-issues]`, text);
+    await this.browser.$(`${this.root} [data-issues]`).click();
+    await press(this.browser, ["Enter"], async () => ((await this.read())?.issues.length ?? 0) > before, `${text} added as an issue`);
   }
 
-  /** Press Enter in the reasons field: what it holds is added as the newest reason. */
+  /** Press Enter in the issue field: what it holds is added as the newest issue. */
   async addTyped(): Promise<void> {
-    const before = (await this.read())?.reasons.length ?? 0;
-    await this.browser.$(`${this.root} [data-reasons]`).click();
-    await press(this.browser, ["Enter"], async () => ((await this.read())?.reasons.length ?? 0) > before, "the typed reason added");
+    const before = (await this.read())?.issues.length ?? 0;
+    await this.browser.$(`${this.root} [data-issues]`).click();
+    await press(this.browser, ["Enter"], async () => ((await this.read())?.issues.length ?? 0) > before, "the typed issue added");
   }
 
-  /** Click Edit of reason `at` and replace its text with `text`, Enter keeping it. */
-  async editReason(at: number, text: string): Promise<void> {
-    await this.browser.$(this.root).$(`button[aria-label="Edit reason ${at + 1}"]`).click();
-    await fill(this.browser, `${this.root} textarea[aria-label="Edit reason ${at + 1}"]`, text);
-    await press(this.browser, ["Enter"], async () => (await this.read())?.reasons[at] === text, `reason ${at + 1} reads ${text}`);
+  /** Click Edit of issue `at` and replace its text with `text`, Enter keeping it. */
+  async editIssue(at: number, text: string): Promise<void> {
+    await this.browser.$(this.root).$(`button[aria-label="Edit issue ${at + 1}"]`).click();
+    await fill(this.browser, `${this.root} textarea[aria-label="Edit issue ${at + 1}"]`, text);
+    await press(this.browser, ["Enter"], async () => (await this.read())?.issues[at] === text, `issue ${at + 1} reads ${text}`);
   }
 
-  /** Click Remove of reason `at`. */
-  async removeReason(at: number): Promise<void> {
-    const before = (await this.read())?.reasons.length ?? 0;
-    await this.browser.$(this.root).$(`button[aria-label="Remove reason ${at + 1}"]`).click();
-    await this.until((shown) => shown.reasons.length === before - 1, `reason ${at + 1} removed`);
+  /** Click Remove of issue `at`. */
+  async removeIssue(at: number): Promise<void> {
+    const before = (await this.read())?.issues.length ?? 0;
+    await this.browser.$(this.root).$(`button[aria-label="Remove issue ${at + 1}"]`).click();
+    await this.until((shown) => shown.issues.length === before - 1, `issue ${at + 1} removed`);
   }
 
   // -------------------------------------------------------------------------------
-  // The decision and the verdict's own fields
+  // The decision
 
   /** Click GREEN or RED in the decision bar: it is the chosen verdict. */
   async choose(verdict: "GREEN" | "RED"): Promise<void> {
@@ -313,76 +313,27 @@ export class Review {
     await this.until((shown) => shown.verdict === verdict, `${verdict} chosen`);
   }
 
-  /** A field by `id`: `reasons` is the reasons field, any other a verdict's own field
-   * (`score`, `findings-0-problem`). */
-  private field(id: string): string {
-    return id === "reasons" ? `${this.root} [data-reasons]` : `${this.root} #field-${id}`;
+  /** The issue field's selector. */
+  private get field(): string {
+    return `${this.root} [data-issues]`;
   }
 
-  /** The value of the field `id`. */
-  value(id: string): Promise<string> {
-    return this.browser.$(this.field(id)).getValue();
+  /** What the issue field holds. */
+  value(): Promise<string> {
+    return this.browser.$(this.field).getValue();
   }
 
-  /** Type `text` into the field `id`: it shows it. */
-  async enter(id: string, text: string): Promise<void> {
-    await fill(this.browser, this.field(id), text);
+  /** Type `text` into the issue field, not added: it shows it. */
+  async enter(text: string): Promise<void> {
+    await fill(this.browser, this.field, text);
   }
 
-  /** Click into the field `id` and type `text` at its end, a key at a time. */
-  async typeInto(id: string, text: string): Promise<void> {
-    const before = await this.value(id);
-    await this.browser.$(this.field(id)).click();
+  /** Click into the issue field and type `text` at its end, a key at a time. */
+  async typeInto(text: string): Promise<void> {
+    const before = await this.value();
+    await this.browser.$(this.field).click();
     await typeText(this.browser, text);
-    await until(this.browser, () => this.value(id), (value) => value === before + text, `${text} typed into ${id}`);
-  }
-
-  /** Type `text` into the `at`-th item of the list field `name`. */
-  async enterItem(name: string, at: number, text: string): Promise<void> {
-    await fill(this.browser, `${this.root} textarea[aria-label="${name} ${at + 1}"]`, text);
-  }
-
-  /** Choose `option` of the choice field `id`. */
-  async select(id: string, option: string): Promise<void> {
-    await chooseOption(this.browser, `${this.root} #field-${id}`, option);
-  }
-
-
-  /** Click the true/false field `id`'s `option`. */
-  async check(id: string, option: "true" | "false"): Promise<void> {
-    const choice = this.browser.$(`${this.root} [aria-labelledby="field-${id}"], ${this.root} #field-${id} + .choices`).$(`label*=${option}`).$("input");
-    await choice.click();
-    await holds(this.browser, () => choice.isSelected(), `${id} is ${option}`);
-  }
-
-  /** Click `+ Add` of the field `name`: one more item or group. */
-  async add(name: string): Promise<void> {
-    const before = await this.items(name);
-    await this.browser.$(`${this.root} #field-${name} + button.add`).click();
-    await until(this.browser, () => this.items(name), (count) => count === before + 1, `one more ${name}`);
-  }
-
-  /** Click `✕` of the `at`-th item or group of the field `name`. */
-  async remove(name: string, at: number): Promise<void> {
-    const before = await this.items(name);
-    await this.browser.$(this.root).$(`button[aria-label="Remove ${name} ${at + 1}"]`).click();
-    await until(this.browser, () => this.items(name), (count) => count === before - 1, `one ${name} fewer`);
-  }
-
-  /** How many items or groups the field `name` has. */
-  items(name: string): Promise<number> {
-    return this.browser.execute((root, field) => document.querySelectorAll(`${root} #field-${field} > li, ${root} #field-${field} > .group`).length, this.root, name);
-  }
-
-  /** The labels of the form's fields, as they read (a required one with `*`), and each field's
-   * placeholder or hint as it reads (`Optional`). */
-  fields(): Promise<{ label: string; hint: string }[]> {
-    return this.browser.execute((root) => [...document.querySelectorAll<HTMLElement>(`${root} .form > .field`)].map((field) => ({
-      label: field.querySelector(".name")?.textContent?.trim() ?? "",
-      hint: [field.querySelector<HTMLInputElement | HTMLTextAreaElement>("input:not([type]), textarea")?.placeholder ?? "",
-        field.querySelector("select option:checked")?.textContent?.trim() ?? "", field.querySelector(".optional")?.textContent?.trim() ?? ""]
-        .filter(Boolean).join(" "),
-    })), this.root);
+    await until(this.browser, () => this.value(), (value) => value === before + text, `${text} typed into the issue field`);
   }
 
   /** Click Submit once it can submit: the review completes, or says what the library refused. */
@@ -392,15 +343,15 @@ export class Review {
     return this.until((shown) => !shown.running && (shown.completed !== "" || shown.refusal !== ""), "the submission completed or refused");
   }
 
-  /** Compose `text` into the field `id` through the engine's own input method (the test-only
+  /** Compose `text` into the issue field through the engine's own input method (the test-only
    * input device), as a person's does: the field first shows `composing`, the text still being
    * composed, which differs from `text`, and then `text` in its place once it is committed. */
-  async compose(id: string, composing: string, text: string): Promise<void> {
-    await this.browser.$(this.field(id)).click();
-    const before = await this.value(id);
+  async compose(composing: string, text: string): Promise<void> {
+    await this.browser.$(this.field).click();
+    const before = await this.value();
     await nativeInput(this.browser, { type: "set", text: composing });
-    await holds(this.browser, async () => (await this.value(id)) === before + composing, `${composing} being composed in ${id}`);
+    await holds(this.browser, async () => (await this.value()) === before + composing, `${composing} being composed in the issue field`);
     await nativeInput(this.browser, { type: "commit", text });
-    await holds(this.browser, async () => (await this.value(id)) === before + text, `${text} committed into ${id} in place of ${composing}`);
+    await holds(this.browser, async () => (await this.value()) === before + text, `${text} committed into the issue field in place of ${composing}`);
   }
 }

@@ -11,10 +11,10 @@ const PET = "pet";
 const VIEWER = "viewer-";
 const REVIEW = `[aria-label="Review's main area"] section[aria-label="Human review"]`;
 
-/** The pet overlay as read: its head row, its Points, its reasons, its GREEN and RED tabs as they
+/** The pet overlay as read: its head row, its Points, its issues, its GREEN and RED tabs as they
  * read in order and how many are Verdict radios, the chosen verdict, Point and why it is off,
  * why Submit waits, and what it says went wrong. */
-export type Pet = { head: string; points: string[]; reasons: string[]; choices: string[]; radios: number; verdict: string; point: boolean; why: string; waits: string; refusal: string };
+export type Pet = { head: string; points: string[]; issues: string[]; choices: string[]; radios: number; verdict: string; point: boolean; why: string; waits: string; refusal: string };
 
 export class Windows {
   private readonly browser: WebdriverIO.Browser;
@@ -252,7 +252,7 @@ export class Windows {
       return {
         head: [...(card?.querySelector(".head")?.children ?? [])].map((part) => part.textContent?.trim() ?? "").filter(Boolean).join(" "),
         points: [...(card?.querySelectorAll('[aria-label="Points"] li .text') ?? [])].map((point) => point.textContent ?? ""),
-        reasons: [...(card?.querySelectorAll('[aria-label="Reasons"] .message') ?? [])].map((reason) => reason.textContent ?? ""),
+        issues: [...(card?.querySelectorAll('[aria-label="Issues"] .message') ?? [])].map((issue) => issue.textContent ?? ""),
         choices: [...(card?.querySelectorAll("button") ?? [])].map((button) => button.textContent?.trim() ?? "").filter((text) => text === "GREEN" || text === "RED"),
         radios: card?.querySelectorAll('[role="radiogroup"][aria-label="Verdict"] [role="radio"]').length ?? 0,
         verdict: card?.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
@@ -274,28 +274,28 @@ export class Windows {
     await this.petUntil((pet) => pet.verdict === verdict, `the pet's ${verdict} chosen`);
   }
 
-  /** Type `text` into the pet's reasons field, not added yet. */
+  /** Type `text` into the pet's issue field, not added yet. */
   async petType(text: string): Promise<void> {
-    await fill(this.browser, ".card [data-reasons]", text);
+    await fill(this.browser, ".card [data-issues]", text);
   }
 
-  /** Click the pet's Add: what its reasons field holds is the newest reason. */
+  /** Click the pet's Add issue: what its issue field holds is the newest issue. */
   async petAdd(): Promise<void> {
-    const before = (await this.readPet()).reasons.length;
-    await this.browser.$(".card").$('button[aria-label="Add reason (Enter)"]').click();
-    await this.petUntil((pet) => pet.reasons.length > before, "the pet's reason added");
+    const before = (await this.readPet()).issues.length;
+    await this.browser.$(".card").$('button[aria-label="Add issue (Enter)"]').click();
+    await this.petUntil((pet) => pet.issues.length > before, "the pet's issue added");
   }
 
-  /** Type `text` into the pet's reasons field and add it. */
-  async petAddReason(text: string): Promise<void> {
+  /** Type `text` into the pet's issue field and add it. */
+  async petAddIssue(text: string): Promise<void> {
     await this.petType(text);
     await this.petAdd();
   }
 
-  /** Click Insert of the pet's first Point: the reasons field's text after it. */
+  /** Click Insert of the pet's first Point: the issue field's text after it. */
   async petInsert(): Promise<string> {
     await this.browser.$('.card [aria-label="Points"]').$('button=Insert').click();
-    return this.browser.$(".card [data-reasons]").getValue();
+    return this.browser.$(".card [data-issues]").getValue();
   }
 
   /** The pet card's horizontal bounds, and whether its Submit can be clicked at the right. */

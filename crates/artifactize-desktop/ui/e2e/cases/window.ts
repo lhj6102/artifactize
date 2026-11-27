@@ -247,7 +247,7 @@ export const scenarios: Scenario[] = [
       // What only a Refresh shows is a change in the Current's worktree. A change of the state
       // or of the branches reaches the open app without a reload too (J-LIVE, J-BRANCHES), so a
       // Run or a branch listed after a Refresh would show nothing of the Refresh itself.
-      writeText(definition, readText(definition).replace('payload.instruction = "Check docs."', 'payload.instruction = "Check the docs again."'));
+      writeText(definition, readText(definition).replace('instruction = "Check docs."', 'instruction = "Check the docs again."'));
       const title = await app.graph.title();
       assert.equal((await app.detail.summary()).instruction, "Check docs.", "the change on disk does not show before the Refresh");
       await app.command("Refresh");

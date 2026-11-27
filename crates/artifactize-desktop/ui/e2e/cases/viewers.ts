@@ -27,14 +27,14 @@ export const scenarios: Scenario[] = [
       const unopened = await w.petUntil((shown) => shown.choices.length > 0 && !shown.point && shown.why === `Open ${NOTES} in a viewer to point.`,
         "the pet shows the full reason Point is unavailable");
       assert.deepEqual([unopened.choices, unopened.radios, unopened.verdict, unopened.waits], [["GREEN", "RED"], 2, "", "Choose GREEN or RED"]);
-      await w.petChoose("GREEN");
-      await w.petAddReason("Checking the notes.");
+      await w.petChoose("RED");
+      await w.petAddIssue("Checking the notes.");
       assert.deepEqual(await w.petLayout(), { overflow: [], submitAtRight: true });
       await w.mode("Review");
-      await app.review.until((shown) => shown.verdict === "GREEN" && shown.reasons.join() === "Checking the notes.", "Review shows the pet's verdict and reason, one draft");
+      await app.review.until((shown) => shown.verdict === "RED" && shown.issues.join() === "Checking the notes.", "Review shows the pet's verdict and issue, one draft");
       const beforePoint = "Checking the notes before pointing.";
-      await app.review.enter("reasons", beforePoint);
-      const label = await w.runTool("view");
+      await app.review.enter(beforePoint);
+      const label = await w.runTool("files.view");
       assert.equal(await w.viewer(label), `${NOTES} — File Explorer`, "titled {Artifact} — {viewer}");
       const strip = await w.stripUntil((shown) => shown.point, "Point offered for the claimed review");
       assert.deepEqual(strip.items.slice(0, 2), [NOTES, "File Explorer"]);
@@ -49,8 +49,8 @@ export const scenarios: Scenario[] = [
       await w.point();
       await w.clickLine(2);
       const points = await w.pointsUntil((rows) => rows.length === 1 && /^release\.md L2:C\d+$/.test(rows[0]), "the line is in Points");
-      assert.equal(await app.review.value("reasons"), beforePoint, "Point adds to Points without writing into the reasons field");
-      assert.deepEqual((await app.review.read())!.reasons, ["Checking the notes."], "Point writes no reason");
+      assert.equal(await app.review.value(), beforePoint, "Point adds to Points without writing into the issue field");
+      assert.deepEqual((await app.review.read())!.issues, ["Checking the notes."], "Point writes no issue");
       await w.viewer(label);
       await w.point();
       await w.clickLine(3);
@@ -65,15 +65,15 @@ export const scenarios: Scenario[] = [
       assert.ok(pet.head.startsWith(`${NOTES}/signoff · run-`));
       assert.deepEqual(pet.points, points);
       assert.equal(pet.point, true, "Point while the notes' viewer is open");
-      // The verdict and reason chosen before opening the viewer stay in the same review draft.
-      assert.deepEqual([pet.choices, pet.radios, pet.verdict, pet.reasons], [["GREEN", "RED"], 2, "GREEN", ["Checking the notes."]]);
-      await w.petChoose("RED");
+      // The verdict and issue chosen before opening the viewer stay in the same review draft.
+      assert.deepEqual([pet.choices, pet.radios, pet.verdict, pet.issues], [["GREEN", "RED"], 2, "RED", ["Checking the notes."]]);
       await w.petChoose("GREEN");
+      await w.petChoose("RED");
       const chosen = await w.readPet();
       assert.deepEqual([chosen.choices, chosen.radios], [["GREEN", "RED"], 2], "one verdict choice, as tabs");
       await w.petType("Checked the totals: ");
       assert.equal(await w.petInsert(), `Checked the totals: ${points[0]}`);
-      await w.petUntil((shown) => shown.waits === "Add the typed reason first", "the pet's Submit waits for the typed reason");
+      await w.petUntil((shown) => shown.waits === "Add the typed issue first", "the pet's Submit waits for the typed issue");
       await w.petAdd();
       assert.deepEqual(await w.petLayout(), { overflow: [], submitAtRight: true });
       await w.petSubmit();
@@ -81,8 +81,8 @@ export const scenarios: Scenario[] = [
       await w.mode("Review");
       await app.review.until((shown) => shown.completed.includes(`Checked the totals: ${points[0]}`) && !shown.sections.includes("Points"), "the submitted review shows its result without Points");
       const saved = request(fixture, `${NOTES}/signoff`);
-      assert.equal(saved.status, "GREEN", "the review is settled");
-      assert.equal(saved.result?.comment, `Checking the notes.\n\nChecked the totals: ${points[0]}`, "the reasons as its comment, one paragraph each");
+      assert.equal(saved.status, "RED", "the review is settled");
+      assert.deepEqual(saved.result?.issues, [{ reason: "Checking the notes." }, { reason: `Checked the totals: ${points[0]}` }], "its issues, one each");
       // Closing the viewer's window closes it alone.
       await w.closeViewer(label);
       assert.deepEqual(await w.viewers(), []);
@@ -101,7 +101,7 @@ export const scenarios: Scenario[] = [
     run: async () => {
       const w = windows();
       await w.claimReview("guide/signoff");
-      await w.viewer(await w.runTool("view"));
+      await w.viewer(await w.runTool("markdown.view"));
       assert.deepEqual(await w.entriesUntil("Markdown files", (entries) => entries.length === 2, "the guide's files listed"), ["install.md", "usage.md"]);
       const install = await w.documentUntil((doc) => doc.headings.includes("Install"), "install.md rendered");
       assert.deepEqual(install.items, ["one", "two"], "a list renders as a list");
@@ -110,7 +110,7 @@ export const scenarios: Scenario[] = [
 
       await w.mode("Review");
       await w.claimReview("system/signoff");
-      await w.viewer(await w.runTool("view"));
+      await w.viewer(await w.runTool("artifactize.view"));
       const nodes = await w.nodesUntil((drawn) => drawn.length === 2, "the declared Artifacts drawn");
       assert.deepEqual(nodes.toSorted(), ["back custom", "front custom"], "no verdicts, only names and tags");
       await w.edge("front", "back");
@@ -121,7 +121,7 @@ export const scenarios: Scenario[] = [
 
       await w.mode("Review");
       await w.claimReview("page/signoff");
-      const page = await w.runTool("view");
+      const page = await w.runTool("html.view");
       assert.equal(await w.viewer(page), "page — HTML Viewer");
       const frame = await w.frameUntil((shown) => shown !== null, "the plugin's page framed");
       assert.equal(frame?.sandbox, "allow-scripts", "the page runs sandboxed, without the app's origin");

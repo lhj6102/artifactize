@@ -1001,6 +1001,7 @@ async fn changed_declarations_end_the_request_error_and_the_next_verify_asks_aga
     for (change, action, message) in [
         (Change::Referenced, Action::Submit, "declarations changed"),
         (Change::Title, Action::Commands, "declarations changed"),
+        (Change::Title, Action::Tool, "declarations changed"),
         (Change::Removed, Action::Commands, "no longer exists"),
     ] {
         let fixture = Fixture::referencing();
