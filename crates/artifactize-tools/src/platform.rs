@@ -32,8 +32,9 @@ use windows as os;
 
 pub(crate) use os::{USES_PATHEXT, is_executable, open_desktop, spawn_tree};
 
-/// Resolves when the terminal interrupts this process: Ctrl+C, as Unix and Windows deliver it,
-/// or, on Windows, its console closing.
+/// Resolves when the terminal interrupts this process: Ctrl+C, as Unix and Windows deliver it;
+/// on Windows, its console closing; on Unix, its terminal hanging up (`SIGHUP`) or a request to
+/// terminate (`SIGTERM`).
 pub(crate) async fn interrupted() {
     #[cfg(windows)]
     {
@@ -51,7 +52,10 @@ pub(crate) async fn interrupted() {
         }
     }
     #[cfg(not(windows))]
-    interrupt().await;
+    tokio::select! {
+        () = interrupt() => {}
+        () = os::hung_up() => {}
+    }
 }
 
 async fn interrupt() {
