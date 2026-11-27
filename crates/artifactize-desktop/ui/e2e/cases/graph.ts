@@ -44,7 +44,7 @@ export const scenarios: Scenario[] = [
 
   scenario({
     id: "eval-summary",
-    title: "an eval's tab shows its Summary: its status with what running it took and spent, its instruction and its result, its findings as numbered items each led by its priority",
+    title: "an eval's tab shows its Summary: its status with what running it took and spent, its instruction and its result, its issues as numbered items each led by its priority",
     journeys: ["J-DETAIL-SUMMARY"],
     prepare: async (own) => {
       const fixture = await createReviewed(own);
@@ -59,7 +59,7 @@ export const scenarios: Scenario[] = [
       assert.ok(summary.status.includes(REVIEW_MODEL) && /48(\.\d)?k/.test(summary.status), `what it took and spent, its model and tokens: ${summary.status}`);
       assert.equal(summary.instruction, "Review the receipt.");
       const result = await app.detail.section("Result");
-      assert.ok(/findings\s*P2\s*The receipt reads right; its date could be clearer\./.test(result), `its result's findings, each by its priority: ${result}`);
+      assert.ok(/issues\s*P2\s*The receipt reads right; its date could be clearer\./.test(result), `its result's issues, each by its priority: ${result}`);
       // Its Agent log shows the saved transcript.
       await app.detail.view("Agent log", (text) => text.includes(REVIEW_FINDING), "the Agent log shows the transcript");
     },

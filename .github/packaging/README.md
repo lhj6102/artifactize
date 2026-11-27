@@ -153,7 +153,11 @@ Microsoft references used for the package and API:
 ## Packaging seams
 
 `binaries.yml` runs on `release/*` pushes and pull requests, manual rehearsals, and tag
-releases (via `release.yml`). Its Linux policy job
+releases (via `release.yml`). The install and smoke steps below run on the `release/*`
+pushes and pull requests and the rehearsals; a tag release names a `release/*` commit those
+runs already checked, so its Binaries run builds and retains the same packages from that
+commit without repeating them (release verification belongs to CI and Binaries, not a
+duplicate tag-time test job). On every run, its Linux policy job
 runs `python3 -I .github/scripts/test-channels.py`: generated metadata, prerelease
 skips, missing credentials, simulated certification/drafts, and the Store
 clone/update/upload/commit sequence are checked without network submission.
