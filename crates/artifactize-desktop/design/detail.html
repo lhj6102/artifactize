@@ -32,8 +32,8 @@
   selection drives it: the outlined node and the Detail's title name the same Artifact. The
   Artifact's tab lists its evals, and a click on one opens that eval's tab, where chips read
   as a path back; the first figure shows the Artifact's tab, the second an eval's Summary. On
-  a Current the Artifact's tab also edits its definition: the last figure shows its Definition
-  and its Source.
+  a Current the Artifact's tab also reads its definition: the last figure shows its Definition
+  and its Source, the macro call that binds it as authored, a click away from what it expands to.
 </p>
 
 <figure class="figure">
@@ -74,10 +74,8 @@
         <div class="m-node in light-blocked" style="left: 748px; top: 322px"><span class="m-light"></span><span class="m-name">docs</span><span class="m-tally">0/2</span></div>
         <div class="m-edge light-active" style="left: 656px; top: 214px; width: 92px"></div>
         <div class="m-node minimized in light-waiting" style="left: 748px; top: 194px"><span class="m-light"></span><span class="m-text"><span class="m-name">site</span><span class="m-count">4 parts</span></span><span class="m-tally">0/1</span><span class="m-toggle"><span class="m-icon i-add"></span></span></div>
-        <p class="m-comment" style="left: 160px; top: 304px">Splits into core and store once the read path settles.</p>
         <div class="m-whole light-green" style="left: 160px; top: 428px; width: 496px; height: 176px">
           <div class="m-whole-title"><span class="m-light"></span><span class="m-name">desktop</span><span class="m-tally">1/1</span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
-          <p class="m-comment" style="left: 10px; top: 38px; width: 476px">The backend gets an eval for the store's read path next.</p>
           <div class="m-node light-green" style="left: 24px; top: 66px"><span class="m-light"></span><span class="m-name">desktop-backend</span><span class="m-tally">3/3</span></div>
           <div class="m-node light-green" style="left: 24px; top: 118px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">4/4</span></div>
           <div class="m-node light-green" style="left: 300px; top: 92px"><span class="m-light"></span><span class="m-name">desktop-e2e</span><span class="m-tally">2/2</span></div>
@@ -237,10 +235,10 @@ ok   concepts/reuse.html</div></div></div>
       <div class="m-body">
         <div class="m-views"><span class="chosen">Summary</span><span class="m-bar-sep">|</span><span class="other">Runtime log</span></div>
         <p class="m-summary"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-cost">1m 12s · exit 1</span></p>
-        <p class="m-instruction">Run the CLI's tests of {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}.</p>
+        <p class="m-instruction">Run the CLI's tests with the crates it builds with, the workspace manifest and the lockfile.</p>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>Result</div>
-          <div class="m-sec-body"><dl class="m-kv"><dt>failed</dt><dd><ol style="margin: 0; padding-left: 20px"><li>verify_waits_for_signoff · <span class="m-cost">crates/artifactize/tests/verify.rs:212</span></li><li>status_json_lists_parts · <span class="m-cost">crates/artifactize/tests/status.rs:88</span></li></ol></dd></dl></div>
+          <div class="m-sec-body"><ol style="margin: 0; padding-left: 20px"><li><span class="m-cost">exit 101 ·</span> error: test failed, to rerun pass `-p artifactize --test verify`</li></ol></div>
         </div>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-fold"></span>Execution options</div>
@@ -270,7 +268,7 @@ ok   concepts/reuse.html</div></div></div>
   <li><span class="n">3</span><div><b>Chip path</b><span>The title keeps the Artifact's star on every tab: here cli is starred, so the star is filled (the first figure shows it outlined, not starred). Only on an eval's tab: the Artifact's chip, which leads back to its tab, and a <i>/</i>, the two one group that never breaks, only the Artifact's name cut when long; then one chip per eval: rounded chips of 22px, the chosen one bright over a thin current mark; eval chips lead with the verdict's icon in its colour; many chips wrap.</span></div></li>
   <li><span class="n">7</span><div><b>View switch</b><span>Only for an eval with a log: plain text a level below the chips, Summary, chosen first, then the log, <i>Agent log</i> (its transcript) for an Agent eval or <i>Runtime log</i> (its saved output) for a runtime eval, as here. The chosen view is in the strong text colour over a thin current mark, the other in the quieter one, both at one weight; both read plainly on the panel. No chip, no fill. An eval without a log has no switch, its Summary standing alone.</span></div></li>
   <li><span class="n">8</span><div><b>Status line</b><span>The verdict's icon and word in the status colour, at the line's weight; beside it in neutral secondary ink what running it took and spent (time, tokens in k or M, and the model for an Agent eval) or what reuse saved, and how it ended, said here once.</span></div></li>
-  <li><span class="n">9</span><div><b>Header → label → value</b><span>Three levels: a section's header row, then its facts as a key/value grid, keys right-aligned in secondary ink, values in tabular figures. The Result is unfolded; the sections read now and then are folded to their names, and their values show once unfolded.</span></div></li>
+  <li><span class="n">9</span><div><b>Header → label → value</b><span>Three levels: a section's header row, then its facts as a key/value grid, keys right-aligned in secondary ink, values in tabular figures. A Result is its issues, numbered: a runtime eval's one issue led by its exit code, its reason the end of what the command printed, and an Agent eval's each led by its priority. The Result is unfolded; the sections read now and then are folded to their names, and their values show once unfolded.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -365,7 +363,7 @@ ok   concepts/reuse.html</div></div></div>
       </div>
       <div class="m-body">
         <p class="m-summary"><span class="m-status tone-running"><span class="m-icon i-run"></span> would run</span><span class="m-cost">the fingerprint of cli changed since run-5K2QXA</span></p>
-        <p class="m-instruction">Run the CLI's tests of {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}.</p>
+        <p class="m-instruction">Run the CLI's tests with the crates it builds with, the workspace manifest and the lockfile.</p>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-fold"></span>Execution options</div>
         </div>
@@ -394,18 +392,18 @@ ok   concepts/reuse.html</div></div></div>
 </ol>
 
 <figure class="figure">
-<div class="stage" style="--w: 520; --h: 688; max-width: 540px">
+<div class="stage" style="--w: 520; --h: 560; max-width: 540px">
 <div class="stage-inner">
 <div class="m-window" style="background: var(--surface-app)">
   <div style="position: absolute; inset: 0">
     <aside class="m-dock focused" style="top: 0; width: 500px">
-      <div class="m-main-head"><div class="m-dock-title"><h2>Artifact desktop-ui</h2><span class="m-star m-icon i-star"></span></div><span class="m-button small">Close</span></div>
+      <div class="m-main-head"><div class="m-dock-title"><h2>Artifact engine-cli</h2><span class="m-star m-icon i-star"></span></div><span class="m-button small">Close</span></div>
       <div class="m-body">
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>Evals</div>
           <ul class="m-rows">
-            <li class="m-row"><span class="m-icon i-reused tone-reused"></span><span>lint</span><span class="tone-reused">reused</span><span class="m-right"></span></li>
-            <li class="m-row"><span class="m-icon i-run tone-running"></span><span>follows-design</span><span class="tone-running">would run</span><span class="m-right"></span></li>
+            <li class="m-row"><span class="m-icon i-reused tone-reused"></span><span>follows-style</span><span class="tone-reused">reused</span><span class="m-right"></span></li>
+            <li class="m-row"><span class="m-icon i-run tone-running"></span><span>clippy</span><span class="tone-running">would run</span><span class="m-right"></span></li>
           </ul>
         </div>
         <div class="m-sec">
@@ -413,25 +411,24 @@ ok   concepts/reuse.html</div></div></div>
         </div>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>Tools</div>
-          <div class="m-sec-body"><div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>graph</span><span>Show this branch's Current.</span></div></div>
+          <div class="m-sec-body"><div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>files.view</span><span>Show the files of engine-cli.</span></div></div>
         </div>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>Definition</div>
           <div class="m-sec-body">
             <dl class="m-kv">
-              <dt>File</dt><dd class="m-cost">.artifactize/desktop/desktop-ui.artf</dd>
-              <dt>Path</dt><dd><span class="m-input"><span>crates/artifactize-desktop/ui/</span></span></dd>
-              <dt>Parts</dt><dd><ul class="m-parts"><li><span class="m-name">desktop-e2e</span><span class="m-icon i-remove"></span></li><li><span class="m-button small quiet"><span class="m-icon i-add"></span>Add</span></li></ul></dd>
+              <dt>Bound</dt><dd class="m-cost">.artifactize/engine.artf:58</dd>
+              <dt>Macro</dt><dd class="m-cost">rust-crate!</dd>
+              <dt>Path</dt><dd class="m-cost">crates/artifactize/</dd>
+              <dt>Tools</dt><dd class="m-cost">files</dd>
             </dl>
-            <div class="m-edit-actions"><span class="m-button small">Comment</span><span class="m-button small">Rename</span><span class="m-button small">Delete</span></div>
           </div>
         </div>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>Source</div>
           <div class="m-sec-body">
-            <div class="m-source"><span>path = "crates/artifactize-desktop/ui/"</span><span>parts = ["desktop-e2e"]</span><span></span><span>[evals.lint]</span><span>title = "The frontend lint passes"</span><span>profile = { kind = "runtime", command = "pnpm", args = ["lint"] }</span><span class="marked">payload.instruction = "Lint {desktop-uii}."</span></div>
-            <p class="m-refusal">line 7, column 32: unknown Artifact desktop-uii</p>
-            <div class="m-edit-actions"><span class="m-button small primary">Save</span><span class="m-button small">Revert</span></div>
+            <div class="m-views"><span class="chosen">Authored</span><span class="m-bar-sep">|</span><span class="other">Expanded</span></div>
+            <div class="m-source" style="counter-reset: line 57"><span>artf engine-cli = rust-crate!(</span><span>  path = "crates/artifactize/",</span><span>  pkg = "artifactize",</span><span>  deps = [engine-core, engine-tools, engine-mcp],</span><span>  sample = "src/main.rs",</span><span>)</span></div>
           </div>
         </div>
         <div class="m-sec">
@@ -442,65 +439,18 @@ ok   concepts/reuse.html</div></div></div>
   </div>
 </div>
 <span class="callout" style="left: 476px; top: 202px">14</span>
-<span class="callout" style="left: 494px; top: 250px">15</span>
-<span class="callout" style="left: 186px; top: 276px">16</span>
-<span class="callout" style="left: 470px; top: 368px">17</span>
-<span class="callout" style="left: 330px; top: 532px">18</span>
-<span class="callout" style="left: 156px; top: 562px">19</span>
+<span class="callout" style="left: 300px; top: 250px">15</span>
+<span class="callout" style="left: 186px; top: 372px">17</span>
+<span class="callout" style="left: 470px; top: 420px">18</span>
 </div>
-<figcaption>Stage 520 × 688. The Artifact's tab over a Current: its Tools as on a Run, its Definition in place of Path, and its Source holding typed text that the project refused.</figcaption>
-</figure>
-
-<figure class="figure">
-<div class="stage" style="--w: 1040; --h: 250">
-<div class="stage-inner">
-<div class="m-window" style="background: var(--surface-app)">
-  <div style="position: absolute; inset: 0">
-    <aside class="m-dock" style="top: 0; left: 0; right: auto; width: 500px">
-      <div class="m-body">
-        <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-unfold"></span>Definition</div>
-          <div class="m-sec-body">
-            <dl class="m-kv">
-              <dt>File</dt><dd class="m-cost">.artifactize/desktop/desktop-ui.artf</dd>
-              <dt>Path</dt><dd><span class="m-input"><span>crates/artifactize-desktop/app/</span></span><p class="m-refusal">.artifactize/desktop/desktop-ui.artf changed on disk; nothing written</p></dd>
-            </dl>
-          </div>
-        </div>
-      </div>
-    </aside>
-    <aside class="m-dock" style="top: 0; width: 500px">
-      <div class="m-body">
-        <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-unfold"></span>Source</div>
-          <div class="m-sec-body">
-            <div class="m-source"><span>path = "crates/artifactize-desktop/ui/"</span><span>parts = ["desktop-e2e"]</span><span></span><span>[evals.lint]</span><span>title = "The frontend lint passes"</span></div>
-            <p class="m-refusal">.artifactize/desktop/desktop-ui.artf changed on disk; nothing written</p>
-            <div class="m-edit-actions"><span class="m-button small primary">Save</span><span class="m-button small">Revert</span></div>
-          </div>
-        </div>
-      </div>
-    </aside>
-  </div>
-</div>
-<span class="callout" style="left: 476px; top: 92px">23</span>
-<span class="callout" style="left: 1010px; top: 164px">24</span>
-</div>
-<figcaption>Stage 1040 × 250. Two edits refused because their file changed on disk since the Current read it, after the Current's new scan: a Path, its field now holding the Path on disk (left), and a Source's Save, its typed text kept (right). The app shows one Detail at a time.</figcaption>
+<figcaption>Stage 520 × 560. The Artifact's tab over a Current: its Tools as on a Run, its Definition in place of Path, and its Source showing the macro call that binds it, as authored.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">23</span><div><b>Changed on disk, a field</b><span>Under the field in red, naming the file: nothing was written, and the Current is scanned again, so the graph and the Definition show what is on disk. The field then holds the file's Path as it is on disk (here the one an agent wrote meanwhile), not the Path that was typed, and Parts lists the file's parts; unlike a Source, a field keeps no draft after a conflict.</span></div></li>
-  <li><span class="n">24</span><div><b>Changed on disk, the Source</b><span>Under the Source in red, naming the file and no line or column, no line marked: it is a conflict, not an error in the text. The typed text stays, with Save and Revert, until Revert shows the file's text as it is on disk.</span></div></li>
-</ol>
-
-<ol class="notes">
-  <li><span class="n">14</span><div><b>Definition</b><span>Unfolded, in place of a Run's Path: the file that defines the Artifact, its Path and its Parts as a key/value grid, then Comment, which opens the comment's field under the node on the graph, Rename and Delete.</span></div></li>
-  <li><span class="n">15</span><div><b>Path</b><span>A field holding the target, written by Enter in it (J-DEFINITION-EDIT). A target that is missing is said in red beside it. A Path left being changed when the Detail closed shows, when that Artifact's Detail opens again on the same branch, still as it was typed, in this field (J-DEFINITION-DRAFT).</span></div></li>
-  <li><span class="n">16</span><div><b>Parts</b><span>One row per part with its remove icon: a click on it removes that part and the place this whole's box kept for it at once, with no second question. Add is separate: it opens a field under Parts, focused, that suggests the project's Artifacts that are not yet parts of this one; a click on a suggestion or Enter adds it (J-PARTS-EDIT). A part left being typed when the Detail closed shows, when that Artifact's Detail opens again on the same branch, in this open field as it was typed, its suggestions under it (J-DEFINITION-DRAFT).</span></div></li>
-  <li><span class="n">17</span><div><b>Source</b><span>The file's text in monospace with its line numbers, folded until unfolded; what is typed is written by Save, never on its own.</span></div></li>
-  <li><span class="n">18</span><div><b>Refused</b><span>Under the Source in red, with the line and column; the line it names is marked and the text stays to be corrected.</span></div></li>
-  <li><span class="n">19</span><div><b>Save and Revert</b><span>Only while the Source holds typed text: Save the primary button, Revert beside it.</span></div></li>
+  <li><span class="n">14</span><div><b>Definition</b><span>Unfolded, in place of a Run's Path: where the Artifact is bound, its file and line; the macro it calls, for an Artifact made by one; its Path; its Parts, when it has any, each a link to that part's Detail; and the toolsets it composes. A key/value grid of read values, no field among them.</span></div></li>
+  <li><span class="n">15</span><div><b>Bound and Macro</b><span>The file and line of the <code>artf</code> statement that binds it, selectable, and the macro it calls. A target that is missing is said in red beside its Path.</span></div></li>
+  <li><span class="n">17</span><div><b>Source</b><span>The code that binds the Artifact, in monospace, each line numbered as in its file, folded until unfolded. It is read, never written here: what changes it is an edit of the file, in Chat or elsewhere.</span></div></li>
+  <li><span class="n">18</span><div><b>Authored and Expanded</b><span>Only for an Artifact made by a macro: plain text a level below the section's row, as an eval's view switch is. Authored, chosen first, is the call as written; Expanded is the declaration it expands to, its parameters, defaults and spreads filled in.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
@@ -508,7 +458,7 @@ ok   concepts/reuse.html</div></div></div>
   <dt id="D-INS-1">D-INS-1</dt>
   <dd>The Detail is the inspector: a panel docked at the Main area's right edge over the graph's canvas, from the canvas's top to the area's bottom, below the stage header (D-MAIN-1), whose tools stay readable and usable, with no gap at its top, right or bottom, never beside the Pane. It is a <code>--surface-panel</code> panel meeting the graph at lines, <code>--line-panel</code> at its left and the stage header's <code>--line-panel</code> at its top, with square corners and no shadow; its left edge takes a drag, hovering it showing the resize cursor alone (D-SYS-7), and the drag stops at the limits: never narrower than a readable column of 320px, never so wide that less than 240px of graph shows on its left, and never over the Pane; the width a drag leaves is kept, and the Detail opens at it again, after closing and after the next launch alike. <span class="avoid">a floating card (a gap, a radius or a shadow around the Detail); the Detail pushing the graph aside or moving its camera.</span></dd>
   <dt id="D-INS-2">D-INS-2</dt>
-  <dd>The Detail's header is a panel header row, 32px as the stage header is (D-MAIN-1): the title at <code>--text-small</code> semibold, wrapping to show a long name whole, naming what the tab shows with the Artifact's name whole in it (<i>Artifact {name}</i> on the Artifact's tab, <i>{Artifact}/{eval} · {eval title}</i> on every eval's tab, a Human eval's included, the Run's ID on a Run's), the star beside it on every tab of an Artifact, its own and each eval's (the star icon in <code>--ink-3</code> until the Artifact is starred, then the filled star in <code>--ink</code>; a click puts the star on or takes it away, for that Artifact on every branch of its project, in Runs and Currents alike, and for every later monitor of this machine's user), Close at the end. What closes the Detail, and what goes first, is J-DETAIL, J-DEFINITION-DRAFT and J-HUMAN-ESC: whatever else it holds, an Artifact's tool still running or a Source holding typed text, it closes; an open find field (D-OVL-4) takes an outside click first, the Detail staying open; an open comment field (D-CUR-8) is put back by the same click on Close or the graph's background that closes the Detail, the Comment button going with the Detail (J-COMMENT-EDIT). With focus in the Detail, its 2px <code>--accent</code> top line shows. On the Artifact's own tab, the outlined node and this title are the two places that name the opened Artifact (D-INS-6); an eval's tab also names it in its Artifact chip (D-INS-3). <span class="avoid">a cut title; a second close control; a key cap on Close.</span></dd>
+  <dd>The Detail's header is a panel header row, 32px as the stage header is (D-MAIN-1): the title at <code>--text-small</code> semibold, wrapping to show a long name whole, naming what the tab shows with the Artifact's name whole in it (<i>Artifact {name}</i> on the Artifact's tab, <i>{Artifact}/{eval} · {eval title}</i> on every eval's tab, a Human eval's included, the Run's ID on a Run's), the star beside it on every tab of an Artifact, its own and each eval's (the star icon in <code>--ink-3</code> until the Artifact is starred, then the filled star in <code>--ink</code>; a click puts the star on or takes it away, for that Artifact on every branch of its project, in Runs and Currents alike, and for every later monitor of this machine's user), Close at the end. What closes the Detail, and what goes first, is J-DETAIL and J-HUMAN-ESC: whatever else it holds, an Artifact's tool still running included, it closes; an open find field (D-OVL-4) takes an outside click first, the Detail staying open. With focus in the Detail, its 2px <code>--accent</code> top line shows. On the Artifact's own tab, the outlined node and this title are the two places that name the opened Artifact (D-INS-6); an eval's tab also names it in its Artifact chip (D-INS-3). <span class="avoid">a cut title; a second close control; a key cap on Close.</span></dd>
   <dt id="D-INS-3">D-INS-3</dt>
   <dd>The chip row shows only on an eval's tab, under the header, closed below by <code>--line-group</code>; the Artifact's own tab has none, since its Evals rows lead to every eval (D-INS-4). It reads as a path: the Artifact's chip (the Artifact mark and its name, only the name cut), which leads back to the Artifact's tab, a <i>/</i>, then one chip per eval. Chips are of <code>--row-dense</code> height, <code>--radius-chip</code>, <code>--text-small</code>, with a 1px <code>--line-group</code> border and <code>--ink-2</code> text; the chosen chip has its words in <code>--ink</code> over a 2px <code>--current-mark</code> line along its bottom, unfilled and at the others' weight (D-SYS-13); each eval chip leads with its verdict's icon in the status colour (on a Current, with what verify would do, D-INS-8); the <i>/</i> stays with the Artifact's chip and the rest wrap. <span class="avoid">pills in the accent; a chip without its icon; a chip row above the Artifact's own list of evals.</span></dd>
   <dt id="D-INS-4">D-INS-4</dt>
@@ -522,13 +472,13 @@ ok   concepts/reuse.html</div></div></div>
   <dt id="D-INS-8">D-INS-8</dt>
   <dd>Over a Current the Detail keeps its anatomy and changes what the marks say: each eval chip leads its eval's name with what verify would do with that eval, one of three: would run, would be reused, or still being checked, as that plan's icon alone, in its one colour, with no words on the chip; each eval row leads with the same icon and says the same plan in words in that colour, as the Summary's plan line does (would run <code>--running</code>, would be reused <code>--reused</code>, checking <code>--checking</code>, the colours of the nodes' same plans). Waiting and blocked are marks of an Artifact's node, not of its evals: an eval of a waiting or blocked Artifact still says whether it would run or be reused; an eval's tab shows, in place of the verdict line, the plan (what would happen, in its colour at weight 400) with its reason beside it in <code>--ink-2</code>, then the instruction, the result it would reuse as a Result section under its header row when there is one, laid out as a Run's (each owner field by name, a list as numbered items, D-INS-5) (the plan line already says why an eval would run), then Execution options, Execution metadata and Fingerprint, each a section folded to its name when its facts are present, and Debug, folded, last; when the eval has a log (the Agent log or Runtime log of the result it would reuse), the view switch of D-INS-5 stands under the chips as on a Run, Summary first; an eval without one, such as one that would run or is still being checked, has no switch; and a Current has no Human review. A node still being checked recolours its chips and rows in place as the scan learns. <span class="avoid">a Run's verdict words on a Current; a log switch that has nothing to show; a waiting or blocked mark on an eval's chip, row or Summary.</span></dd>
   <dt id="D-INS-9">D-INS-9</dt>
-  <dd>The inspector reads in three levels: a section's header row, a fact's label, its value. A section's header row is <code>--row</code> high, opened above by <code>--line-group</code>: the fold icon in <code>--ink-2</code> (the unfold icon while the section is unfolded), the section's name at <code>--text-small</code> semibold in <code>--ink</code>, in sentence case without letter-spacing, and nothing else: no count, value or list of what it holds stands at the row's end, folded or unfolded; what a section holds shows when it is unfolded. The whole row takes the click that folds or unfolds its section, and keyboard focus as a control (D-SYS-7); folded, a section is its row alone. A section starts unfolded when it is what its tab is opened for (an Artifact's Evals, Tools, Path and Definition, an eval's Result, a Run's Outcome and Waits for) and folded when it is read now and then (Neighbours, Source, Execution options, Execution metadata, Fingerprint, What, Provenance, Debug and a Run's Technical). Once a person folds or unfolds a section, that state is kept by the section's name, not per Artifact: every Detail opened later, of any Artifact, eval or Run, shows that section so, and so does the next launch. A section with nothing to show is not shown, header row included, and no line stands in for it: an Artifact's Evals when it has no eval, its Neighbours when its evals use no Artifact, no Artifact's evals use it and it is drawn once, its Tools when it has no Human tool, declared or provided by its type, its Tool log before its first run, an eval's Result when it has none (on a Current, no result to reuse), its Execution options, Execution metadata and Fingerprint when it has none, a Run's Waits for when it waits for nothing, and a Debug, What, Provenance or Technical without facts. The ordinary sections of Settings stand under the same row without the fold icon: they do not fold; a Human review has no section rows, its runs folding by their own lines (D-REV-1, D-REV-3). One row is an exception, with the fold icon and taking the click: Settings' <i>Finish by hand</i>, a disclosure row that unfolds a sign-in's address and paste field (D-SET-5). <span class="avoid">11px uppercase labels as section headings; a header row, or a line saying so, for a section with nothing to show; a summary, a count or a table of contents at a row's end; a box around a section; a fold control apart from the row.</span></dd>
+  <dd>The inspector reads in three levels: a section's header row, a fact's label, its value. A section's header row is <code>--row</code> high, opened above by <code>--line-group</code>: the fold icon in <code>--ink-2</code> (the unfold icon while the section is unfolded), the section's name at <code>--text-small</code> semibold in <code>--ink</code>, in sentence case without letter-spacing, and nothing else: no count, value or list of what it holds stands at the row's end, folded or unfolded; what a section holds shows when it is unfolded. The whole row takes the click that folds or unfolds its section, and keyboard focus as a control (D-SYS-7); folded, a section is its row alone. A section starts unfolded when it is what its tab is opened for (an Artifact's Evals, Tools, Path and Definition, an eval's Result, a Run's Outcome and Waits for) and folded when it is read now and then (Neighbours, Source, Execution options, Execution metadata, Fingerprint, What, Provenance, Debug and a Run's Technical). Once a person folds or unfolds a section, that state is kept by the section's name, not per Artifact: every Detail opened later, of any Artifact, eval or Run, shows that section so, and so does the next launch. A section with nothing to show is not shown, header row included, and no line stands in for it: an Artifact's Evals when it has no eval, its Neighbours when its evals use no Artifact, no Artifact's evals use it and it is drawn once, its Tools when the toolsets it composes have no Human tool, its Tool log before its first run, an eval's Result when it has none (on a Current, no result to reuse), its Execution options, Execution metadata and Fingerprint when it has none, a Run's Waits for when it waits for nothing, and a Debug, What, Provenance or Technical without facts. The ordinary sections of Settings stand under the same row without the fold icon: they do not fold; a Human review has no section rows, its runs folding by their own lines (D-REV-1, D-REV-3). One row is an exception, with the fold icon and taking the click: Settings' <i>Finish by hand</i>, a disclosure row that unfolds a sign-in's address and paste field (D-SET-5). <span class="avoid">11px uppercase labels as section headings; a header row, or a line saying so, for a section with nothing to show; a summary, a count or a table of contents at a row's end; a box around a section; a fold control apart from the row.</span></dd>
   <dt id="D-INS-6">D-INS-6</dt>
   <dd>Selection and inspector agree: the node ringed by the <code>--current-mark</code> line (D-NODE-2), every copy of a shared part included (its tab naming each whole those copies are drawn in, D-INS-4), is the Artifact the Detail is titled with, or, when that Artifact is hidden inside a minimized whole, the minimized whole that hides it while the Detail still names the Artifact; opening a neighbour or another node moves both; closing the Detail removes the outline. The Find field's choice opens the Detail and moves only the camera. <span class="avoid">a Detail left open for a node no longer highlighted.</span></dd>
   <dt id="D-INS-10">D-INS-10</dt>
-  <dd>On a Current the Artifact's tab has Definition where a Run's has Path, a section of D-INS-9, its facts a key/value grid: File, the definition file's path in <code>--mono</code> <code>--ink-2</code>, selectable; Path, a <code>--surface-input</code> field in <code>--mono</code> holding the definition's <code>path</code> as written and nothing else, a missing target said beside it in <code>--red</code>; Parts, one <code>--row-dense</code> row per part (its name and the remove icon) and a quiet Add with the add icon, which opens a <code>--surface-input</code> field under Parts, focused, with a list of suggestions as the Search's (D-PANE-1): the project's Artifacts that are not yet parts of this one; the chosen suggestion is added to the file's <code>parts</code> as J-PARTS-EDIT says, a cycle refused with the reason under Parts. Apart from that field, a listed part's remove icon removes that part at once, with its place in this whole's box, without asking again. Under the grid, Comment, Rename and Delete as small quiet buttons: Comment opens the comment field under the Artifact's node on the graph (D-CUR-8); Rename and Delete open their dialogs (D-OVL-7). The comment itself has no section in the Detail: the Source shows it as part of the file. A Path or part is written on Enter, without a Save button; a refusal shows under its field in <code>--red</code> at <code>--text-small</code>, nothing written. An edit the project would not accept says why, the field keeping what was typed to be corrected. Reopened on the same branch after the Detail closed, the Definition shows a Path or a part left being typed as it was left: the Path field holding the typed text, or the Parts field open with it and its suggestions under it (J-DEFINITION-DRAFT). An edit whose file changed on disk since the Current read it names that file, <i>{file} changed on disk; nothing written</i>, without a line or column; the Current is scanned again, and the Path field and Parts then show the file as it is on disk, the edit typed not kept. After an edit that writes, the Current is scanned again and the Detail stays on the same Artifact's tab, under its new name after a Rename; a Delete is the exception: once it succeeds, its dialog and the Detail close and the node goes from the graph (J-NODE-DELETE, D-OVL-7). <span class="avoid">Delete in red or as the primary button; a Save button for the Path; the Artifact's name repeated as a field; a Definition section on a Run; a Run's facts (an address or a resolved target) turned into the Path field.</span></dd>
+  <dd>On a Current the Artifact's tab has Definition where a Run's has Path, a section of D-INS-9, its facts a key/value grid of read values: Bound, the file and line of the <code>artf</code> statement that binds the Artifact, in <code>--mono</code> <code>--ink-2</code>, selectable; Macro, the macro it calls with its <code>!</code>, only for an Artifact made by one; Path, the target as the code resolves it in <code>--mono</code>, a missing target said beside it in <code>--red</code>; Parts, only when it has some, one <code>--row-dense</code> row per part whose name opens that part's Detail as a neighbour does; Tools, the toolsets it composes as the code writes them (<code>files &amp; html</code>). Nothing in the Definition is a field or a button: the Definition reads the code, and every change to it is an edit of its file. <span class="avoid">a field, an input look, a Save, Rename, Delete or Comment control in the Definition; a Definition section on a Run; the Artifact's name repeated as a fact; a resolved Run fact (an address) shown as if written.</span></dd>
   <dt id="D-INS-11">D-INS-11</dt>
-  <dd>Source follows Definition, folded until unfolded: the file's text in <code>--mono</code> at <code>--text-small</code> on <code>--surface-input</code> with a 1px <code>--line-input</code> border, its line numbers in <code>--ink-2</code>, quieter than the code and readable, since a refusal or a point cites them; it scrolls sideways in its own box rather than wrap, so each number stays with its line. While it holds typed text, Save, the primary button, and Revert stand in one row under it, and otherwise neither shows; Save writes the file (J-DEFINITION-EDIT), and nothing writes it on its own; Revert puts back the file's text. A refused Save says why under the text in <code>--red</code> at <code>--text-small</code> in one of two forms: an edit the project would not accept, with its line and column, that line on <code>--selection</code>; or a conflict, the file changed on disk since the Current read it, naming the file, with no line, column or marked line. Either way nothing is written and the typed text stays with Save and Revert; after a conflict the Current is scanned again and the text stays until Revert shows the file as it is on disk. While a Source holds typed text, an edit on the graph that would write its file is refused with the Main area's notice (D-CUR-7). <span class="avoid">a separate editor window; syntax colours taken from the status palette; Save and Revert shown or disabled while nothing was typed; a refusal that clears the typed text; a conflict said with a line and column, or an error in the text said without them.</span></dd>
+  <dd>Source follows Definition, folded until unfolded: the code that binds the Artifact in <code>--mono</code> at <code>--text-small</code> on <code>--surface-input</code> with a 1px <code>--line-input</code> border, read-only, each line numbered in <code>--ink-2</code> as in its file, quieter than the code and readable; it scrolls sideways in its own box rather than wrap, so each number stays with its line, and its text can be selected and copied. For an Artifact made by a macro, the view switch of an eval's tab (D-INS-3) stands above it, <i>Authored</i>, chosen first, then <i>Expanded</i>: Authored shows the call as written, Expanded the declaration it expands to, every parameter, default, spread and <code>@{param …}</code> filled in and its composed tools resolved, numbered from 1 as generated text. An Artifact written out has no switch. <span class="avoid">a caret, an editable look or Save and Revert; syntax colours taken from the status palette; a switch for an Artifact that no macro makes; Expanded opened first; a separate editor window.</span></dd>
 </dl>
 </main>
 </div>
