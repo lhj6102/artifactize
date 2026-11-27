@@ -1,8 +1,0 @@
-type = "artifactize"
-title = "Artifactize Viewer"
-
-[views.agent_tools]
-declarations = { builtin = "declarations", args = [] }
-
-[views.human_tools]
-view = { kind = "viewer", description = "Open {artifactName} in Artifactize Viewer." }
