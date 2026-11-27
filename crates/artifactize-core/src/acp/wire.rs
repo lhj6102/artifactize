@@ -566,6 +566,8 @@ impl Connection {
         ordered.sort_by_key(|(rank, _)| *rank);
 
         let mut effective = Vec::new();
+        // The modes asked for, by option ID: a later setter can replace the whole list.
+        let mut modes = Vec::new();
         for (_, selection) in ordered {
             let inferred_cat = selection
                 .category
@@ -665,11 +667,23 @@ impl Connection {
                     }
                 }
             }
+            if is_mode {
+                modes.push((current_opt.id.clone(), selection.value.clone()));
+            }
             effective.push(ConfigSelection {
                 id: current_opt.id,
                 value: selection.value.clone(),
                 category: Some(current_opt.category),
             });
+        }
+        for (id, requested) in modes {
+            let actual = live
+                .iter()
+                .find(|opt| opt.id == id)
+                .map(|opt| opt.current_value.clone());
+            if actual.as_deref() != Some(requested.as_str()) {
+                return Err(Problem::ModeMismatch { requested, actual });
+            }
         }
 
         Ok(AppliedConfig {

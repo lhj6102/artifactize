@@ -179,8 +179,23 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         }
     };
 
-    let mut generation = input.binding.as_ref().map_or(1, |b| b.generation);
-    let mut binding = input.binding.clone();
+    // A target change since the turn was prepared bumps the stored generation: a warm child is
+    // reused, and a remote session loaded, only from the binding as it is stored now.
+    let stored = match input.receipts.acp_binding(input.session_id).await {
+        Ok(stored) => stored,
+        Err(error) => {
+            return AcpTurnOutcome {
+                result: Err(Failure::new(Code::AgentError, error)),
+                generation: input.binding.as_ref().map_or(1, |b| b.generation),
+                warm_owner: None,
+            };
+        }
+    };
+    let mut generation = stored.as_ref().map_or(1, |b| b.generation);
+    // The generation the stored binding holds: persisting this turn's session compares it.
+    let mut expected_generation = stored.as_ref().map(|b| b.generation);
+    let settled_send = stored.as_ref().map_or(0, |b| b.settled_send);
+    let mut binding = stored;
     let prior_sends = input.send.saturating_sub(1);
 
     // Check warm pool for Path A candidate (also retires stale / digest-mismatched child).
@@ -205,6 +220,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
             if digest_mismatch {
                 if let Ok(bumped) = input.receipts.bump_acp_generation(input.session_id).await {
                     generation = bumped;
+                    expected_generation = expected_generation.map(|_| bumped);
                 }
                 binding = None;
             }
@@ -248,8 +264,8 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
                 // refuse session/load, increment generation, and open session/new + Handoff.
                 if let Ok(bumped) = input.receipts.bump_acp_generation(input.session_id).await {
                     generation = bumped;
+                    expected_generation = expected_generation.map(|_| bumped);
                 }
-                binding = None;
             }
             None => {}
         }
@@ -323,7 +339,7 @@ pub(crate) async fn run_turn(input: AcpTurnInput<'_>, recorder: &mut Recorder) -
         bridge,
         generation,
         current_warm_owner,
-        binding.as_ref().map(|b| b.generation),
+        (expected_generation, settled_send),
         redactor.clone(),
         recorder,
     )
@@ -409,7 +425,7 @@ async fn execute_on_child(
     mut bridge: VerifyBridge,
     generation: u64,
     current_warm_owner: WarmOwner,
-    expected_prev_gen: Option<u64>,
+    (expected_prev_gen, settled_send): (Option<u64>, usize),
     redactor: StreamRedactor,
     recorder: &mut Recorder,
 ) -> Result<CompletedTurn, (Failure, bool)> {
@@ -502,14 +518,34 @@ async fn execute_on_child(
         checkout: input.identity.clone(),
         remote_session_id: Some(opened.session_id.clone()),
         generation,
-        settled_send: input.binding.as_ref().map_or(0, |b| b.settled_send),
+        settled_send,
         runtime_fingerprint: input.launch.runtime_fingerprint.clone(),
         warm_owner: Some(current_warm_owner),
     };
-    let _ = input
+    // A failed CAS means the binding changed since this turn read it, a target change among
+    // others: the session it opened is not this Chat's any more, so nothing is prompted on it.
+    match input
         .receipts
         .save_acp_binding_cas(input.session_id, expected_prev_gen, updated_binding)
-        .await;
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => {
+            bridge.stop().await;
+            return Err((
+                Failure::new(
+                    Code::AgentError,
+                    "This Chat's agent changed while the turn was starting; send the message again."
+                        .to_owned(),
+                ),
+                false,
+            ));
+        }
+        Err(error) => {
+            bridge.stop().await;
+            return Err((Failure::new(Code::AgentError, error), false));
+        }
+    }
 
     // 3. Apply configOptions in dependency order (model -> mode -> thought_level -> rest).
     // Aborts on mode mismatch before `session/prompt` (never silently downgrades approval level).
@@ -754,7 +790,14 @@ async fn execute_on_child(
     let in_flight_at_end = bridge.in_flight_calls();
     bridge.disarm_turn();
 
-    // Cancel any leftover pending permissions on the wire before draining or stopping.
+    // Cancel any leftover pending permissions before draining or stopping: their rows first,
+    // so no responder can select one the agent is then told was cancelled.
+    if !pending_perms.is_empty() {
+        let _ = input
+            .receipts
+            .cancel_open_chat_permissions(input.session_id, &input.owner.token)
+            .await;
+    }
     for (_, slot) in std::mem::take(&mut pending_perms) {
         let _ = child
             .connection
@@ -856,6 +899,14 @@ async fn admit_permission(
     let title = redactor.redact_all(&req.title);
     let summary = redactor.redact_all(&req.summary);
     let detail = req.detail.as_deref().map(|d| redactor.redact_all(d));
+    let options: Vec<_> = req
+        .options
+        .into_iter()
+        .map(|option| super::PermissionOption {
+            name: redactor.redact_all(&option.name),
+            ..option
+        })
+        .collect();
     let rpc_request_id = match &req.rpc_id {
         RpcId::Number(n) => n.to_string(),
         RpcId::Text(s) => s.clone(),
@@ -871,13 +922,13 @@ async fn admit_permission(
             tool_kind: req.tool_kind,
             summary: summary.clone(),
             detail: detail.clone(),
-            options: req.options.clone(),
+            options: options.clone(),
             created_at: crate::broker::now(),
         })
         .await
         .map_err(Failure::from)?;
 
-    if !admitted || req.options.is_empty() {
+    if !admitted || options.is_empty() {
         let _ = conn.send_permission_cancelled(req.rpc_id).await;
         recorder.event(Kind::AcpPermission(AcpPermissionEvent {
             permission_id,
@@ -885,7 +936,7 @@ async fn admit_permission(
             tool_kind: req.tool_kind,
             summary,
             detail,
-            options: req.options,
+            options,
             status: PermissionStatus::Cancelled,
             selected_option_id: None,
         }));
@@ -899,7 +950,7 @@ async fn admit_permission(
         tool_kind: req.tool_kind,
         summary: summary.clone(),
         detail: detail.clone(),
-        options: req.options.clone(),
+        options: options.clone(),
         status: PermissionStatus::Pending,
         selected_option_id: None,
     }));
@@ -914,7 +965,7 @@ async fn admit_permission(
             tool_kind: req.tool_kind,
             summary,
             detail,
-            options: req.options,
+            options,
         },
     );
     Ok(())

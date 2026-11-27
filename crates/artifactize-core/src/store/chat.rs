@@ -710,6 +710,31 @@ impl Receipts {
             .map_err(|error| error.to_string())
     }
 
+    /// Settle the open permissions of the turn `owner_token` still owns (`PENDING`/`SELECTED` ->
+    /// `CANCELLED`, `DELIVERING` -> `EXPIRED`) before it tells the agent they are cancelled: a
+    /// concurrent [`Self::respond_chat_permission`] then finds no `PENDING` row to select.
+    pub(crate) async fn cancel_open_chat_permissions(
+        &self,
+        session_id: &SessionId,
+        owner_token: &str,
+    ) -> Result<(), String> {
+        let session_id = session_id.clone();
+        let owner_token = owner_token.to_owned();
+        self.connection
+            .call(move |db| {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                if owner(&transaction, &session_id)?
+                    .is_some_and(|active| active.token == owner_token)
+                {
+                    cleanup_open_permissions(&transaction, &session_id, crate::broker::now())?;
+                }
+                transaction.commit()?;
+                Ok::<_, Error>(())
+            })
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     /// Step 2 of Permission CAS: user selects `option_id` (`PENDING -> SELECTED`), validating
     /// active owner token, `!stop_requested`, and membership in `options_json` in one `IMMEDIATE`
     /// transaction.
@@ -950,6 +975,15 @@ impl Receipts {
 
     /// Bump `acp_binding.generation` and clear `remote_session_id` + `warm_owner` atomically
     /// (e.g. when refusing `session/load` for a dead/foreign `warm_owner` or digest mismatch).
+    /// The session's ACP binding as it is stored now.
+    pub(crate) async fn acp_binding(&self, id: &SessionId) -> Result<Option<AcpBinding>, String> {
+        let id = id.clone();
+        self.connection
+            .call(move |db| Ok::<_, Error>(saved_chat(db, &id)?.acp_binding))
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) async fn bump_acp_generation(&self, id: &SessionId) -> Result<u64, String> {
         let id = id.clone();
         self.connection

@@ -1729,16 +1729,21 @@ impl Chat {
                 .collect()
         };
         let mut failed = Vec::new();
-        let mut local_ids = std::collections::BTreeSet::new();
+        // Turns stopped here through their owner token; the sweep below skips only these. A
+        // turn snapshotted before it published its token may claim SQLite ownership meanwhile,
+        // so the sweep still stops it there, setting `stop_requested` and its permissions.
+        let mut stopped_by_token = std::collections::BTreeSet::new();
         for (id, entry) in local {
-            local_ids.insert(id.clone());
             if let (Some(token), Some(worktree)) = (&entry.owner_token, &entry.worktree) {
                 match Receipts::open(&self.state, worktree).await {
                     Ok(receipts) => {
                         let stopped = receipts.stop_chat_by_token(&id, token).await;
                         let closed = receipts.close().await;
                         match stopped.and(closed) {
-                            Ok(()) => entry.cancel.cancel(),
+                            Ok(()) => {
+                                entry.cancel.cancel();
+                                stopped_by_token.insert(id.clone());
+                            }
                             Err(error) => failed.push(format!("{id}: {error}")),
                         }
                     }
@@ -1753,7 +1758,7 @@ impl Chat {
             .await
             .map_err(StopRunningError::Unreadable)?;
         for (session, owner) in turns {
-            if owner.in_current_process() && local_ids.contains(&session.id) {
+            if owner.in_current_process() && stopped_by_token.contains(&session.id) {
                 continue;
             }
             if let Err(error) = self.stop_exact(&session, owner).await {

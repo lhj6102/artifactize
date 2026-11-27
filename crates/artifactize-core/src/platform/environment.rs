@@ -131,7 +131,8 @@ pub(crate) fn set_temporary_directory(
 
 /// Remove empty and relative segments (such as `.` or `./bin`) from `PATH` before spawning a
 /// child with `cwd = worktree`, so sub-scripts (`#!/usr/bin/env node`) cannot be hijacked by
-/// repository files.
+/// repository files. With no absolute entry left, `PATH` is removed: an empty `PATH` is itself
+/// one empty entry, which Unix searches as the current directory.
 pub(crate) fn strip_relative_path_entries(environment: &mut BTreeMap<OsString, OsString>) {
     let Some(current) = lookup(environment, "PATH").map(ToOwned::to_owned) else {
         return;
@@ -139,8 +140,9 @@ pub(crate) fn strip_relative_path_entries(environment: &mut BTreeMap<OsString, O
     let absolute: Vec<_> = std::env::split_paths(&current)
         .filter(|entry| !entry.as_os_str().is_empty() && entry.is_absolute())
         .collect();
-    if let Ok(joined) = std::env::join_paths(&absolute) {
-        set(environment, "PATH", joined);
+    match std::env::join_paths(&absolute) {
+        Ok(joined) if !joined.is_empty() => set(environment, "PATH", joined),
+        _ => remove(environment, "PATH"),
     }
 }
 
@@ -167,5 +169,14 @@ mod path_hygiene_tests {
         strip_relative_path_entries(&mut env);
         let cleaned: Vec<_> = std::env::split_paths(lookup(&env, "PATH").unwrap()).collect();
         assert_eq!(cleaned, vec![abs_a, abs_b]);
+        // Only relative entries: no PATH at all, never an empty one that searches the cwd.
+        let mut env = BTreeMap::new();
+        set(
+            &mut env,
+            "PATH",
+            std::env::join_paths([PathBuf::from("."), PathBuf::from("bin")]).unwrap(),
+        );
+        strip_relative_path_entries(&mut env);
+        assert_eq!(lookup(&env, "PATH"), None);
     }
 }
