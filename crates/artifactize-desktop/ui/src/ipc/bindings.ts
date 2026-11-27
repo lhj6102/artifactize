@@ -136,7 +136,10 @@ branch: string } |
 	humanSearch: (query: string, start: number | null) => typedError<ReviewPage, Failure>(__TAURI_INVOKE("human_search", { query, start })),
 	/**  Complete the current Review query term using the library's grammar and suggestions. */
 	humanSearchComplete: (query: string) => typedError<Completion, Failure>(__TAURI_INVOKE("human_search_complete", { query })),
-	/**  Number of reviews still waiting to be claimed, independent of the Pane filter. */
+	/**
+	 *  Number of Human reviews waiting for a person, claimed or not, independent of the Pane
+	 *  filter.
+	 */
 	humanWaitingCount: () => typedError<number, Failure>(__TAURI_INVOKE("human_waiting_count")),
 	/**  Read the saved draft. A released review retains its draft. */
 	humanDraft: (id: string) => typedError<ReviewDraft, Failure>(__TAURI_INVOKE("human_draft", { id })),
