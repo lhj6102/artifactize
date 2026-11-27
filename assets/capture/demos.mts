@@ -340,11 +340,11 @@ process.exit(readFileSync(artifact + "/code.txt", "utf8").includes("BUG") ? 1 : 
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "code.txt"), artifact.bug ? "work in progress: BUG\n" : "done\n");
     const uses = artifact.uses.join(" and ");
-    const inputs = artifact.uses.length ? `\n    inputs = [${artifact.uses.join(", ")}]` : "";
+    const deps = artifact.uses.length ? `\n    deps = [${artifact.uses.join(", ")}]` : "";
     const evals = artifact.evals.map(([id, seconds]) => `
+  // Run the ${id} of ${artifact.name}${uses ? ` with ${uses}` : ""}.
   eval ${id} : runtime(command = ${JSON.stringify(process.execPath)}, args = [${JSON.stringify(checker)}, "@{path self}", "${seconds}"]) = {
-    title = "${artifact.name} ${id} pass"
-    instruction = "Run the ${id} of ${artifact.name}${uses ? ` with ${uses}` : ""}."${inputs}
+    title = "${artifact.name} ${id} pass"${deps}
   }
 `).join("");
     mkdirSync(join(repo, ".artifactize"), { recursive: true });

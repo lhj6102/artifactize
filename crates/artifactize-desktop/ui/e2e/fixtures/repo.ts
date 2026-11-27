@@ -3,7 +3,7 @@
 import { readCandidate } from "../build.ts";
 import { isolatedEnvironment, portablePath, type Environment } from "../platform.ts";
 import { makeDirectory, nativePath, readTextIfExists, removeTree, runProgram, runProgramAsync, runProgramOk, serveLoopbackHttp, updateDatabase, writeText, type NativePath } from "../portable.ts";
-import { check, commandFields, declareArtifact, evalBlock, humanEval, indent, runtimeProfile, type Definition, type Operation } from "./declarations.ts";
+import { check, commandFields, declareArtifact, evalBlock, humanEval, indent, runtimeProfile, type Definition, type Operation, writeProfiles } from "./declarations.ts";
 import type { Owned } from "./owned.ts";
 
 /** A scenario's repository and the state folder the app and the CLI share. */
@@ -172,8 +172,8 @@ const releaseTools = (root: NativePath, signoff: Signoff) => [
 ];
 
 const release = (root: NativePath, signoff: Signoff): Definition => ({
-  tools: "release",
-  beside: `tool release = {\n${releaseTools(root, signoff).map((line) => `  ${line}`).join("\n")}\n}`,
+  tools: "release-tools",
+  beside: `tool release-tools = {\n${releaseTools(root, signoff).map((line) => `  ${line}`).join("\n")}\n}`,
   body: `tags = ["type:release"]\n${humanEval("signoff", signoff.title ?? "A person approves the release", signoff.instruction ?? "Read the release notes and approve them.")}`,
 });
 
@@ -182,8 +182,8 @@ export function declareRelease(fixture: Fixture, signoff: Signoff = {}, repo = f
   declareArtifact(repo, ["release"], "release", release(fixture.root, signoff));
   declareArtifact(repo, ["ship"], "ship", check("check", "ship", "pass", "Ship {release}."));
   declareArtifact(repo, ["docs"], "docs", {
-    tools: "docs",
-    beside: `tool docs = {\n  human reference = builtin(op = "read", args = ["@{path self/notes.md}"], description = "Print documentation review notes.")\n}`,
+    tools: "docs-tools",
+    beside: `tool docs-tools = {\n  human reference = builtin(op = "read", args = ["@{path self/notes.md}"], description = "Print documentation review notes.")\n}`,
     body: check("lint", "docs"),
   });
   writeText(nativePath(repo, "release", "notes.md"), notes);
@@ -259,7 +259,7 @@ export function createProject(own: Owned, artifacts: [string[], string, Definiti
 export async function createStates(own: Owned): Promise<Fixture> {
   const fixture = createProject(own, [
     [["red"], "red", check("check", "red", "fail", "Fail.")],
-    [["crash"], "crash", evalBlock("check", runtimeProfile("hold", 1000), ['title = "Check crash"', 'instruction = "Exceed the deadline."'])],
+    [["crash"], "crash", evalBlock("check", runtimeProfile("hold", 1000), ['title = "Check crash"'], "Exceed the deadline.")],
     [["down"], "down", check("check", "down", "pass", "Run after {red}.")],
     [["fine"], "fine", check("check", "fine")],
     [["gate"], "gate", { tools: "files", body: humanEval("signoff", "A person approves", "Approve.") }],
@@ -323,7 +323,7 @@ export async function createCheckedOnce(own: Owned): Promise<Checking> {
 
 /** Artifact `app` with one runtime eval per name, each saying `checked {name}`. Verified GREEN. */
 export function createEvals(own: Owned, names: string[], operation: Operation = "say"): Fixture {
-  const evals = names.map((name) => evalBlock(name, runtimeProfile(operation, undefined, `checked ${name}`), [`title = "Check ${name}"`, `instruction = "Check ${name}."`])).join("");
+  const evals = names.map((name) => evalBlock(name, runtimeProfile(operation, undefined, `checked ${name}`), [`title = "Check ${name}"`])).join("");
   return createProject(own, [[["app"], "app", evals]]);
 }
 
@@ -401,9 +401,9 @@ export async function createReviewed(own: Owned, fixture = newFixture(own)): Pro
     response.end(`event: ${completed.type}\ndata: ${JSON.stringify(completed)}\n\n`);
   });
   try {
+    writeProfiles(fixture.repo, `profile review : agent = { backend = "openai", model = "${REVIEW_MODEL}" }`);
     declareArtifact(fixture.repo, ["report"], "report", {
       tools: "files",
-      beside: `profile review = agent(backend = "openai", model = "${REVIEW_MODEL}", timeout_ms = 60000)`,
       body: evalBlock("agent", "review", ['title = "Review the receipt"', 'red_at = "P1"', 'instruction = "Review the receipt."']),
     });
     initRepo(fixture);

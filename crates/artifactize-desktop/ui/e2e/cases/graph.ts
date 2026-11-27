@@ -108,7 +108,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(detail.tabs.map((tab) => [tab.name, tab.selected]), [["docs", false], ["lint", true]], "the Artifact's chip, then the eval's, chosen");
       const summary = await app.detail.summaryUntil((shown) => shown.status !== "", "the eval's Summary");
       assert.match(summary.status, /^GREEN/, "its status");
-      assert.equal(summary.instruction, "Check docs.", "its instruction");
+      assert.equal(summary.instruction, "", "a runtime eval asks nothing: its verdict is its exit code");
       await app.graph.clickBackground();
       await app.detail.closed();
     },
@@ -472,9 +472,9 @@ export const scenarios: Scenario[] = [
       await app.graph.open("a:release", "Artifact release");
       // The worktree changed since the shown Run: the tool reads it as it is now.
       writeText(nativePath(fixture.repo, "release", "notes.md"), "# Release notes\n- Changed since the Run.\n");
-      await app.detail.runTool("release.notes");
+      await app.detail.runTool("release-tools.notes");
       await app.detail.toolLogUntil((rows) => rows.at(-1) === "■ exit 0", "notes ran to its end");
-      assert.deepEqual(await app.detail.toolLog(), ["▶ HH:MM:SS · release.notes · release", "# Release notes", "- Changed since the Run.", "■ exit 0"]);
+      assert.deepEqual(await app.detail.toolLog(), ["▶ HH:MM:SS · release-tools.notes · release", "# Release notes", "- Changed since the Run.", "■ exit 0"]);
       assert.equal(request(fixture).claim, null, "no claim");
       assert.equal(request(fixture).status, "DEFERRED", "and no review's evidence");
     },

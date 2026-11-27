@@ -69,9 +69,15 @@ export function runtimeProfile(operation: Operation = "pass", timeoutMs?: number
   return `runtime(${commandFields(operation, ...args)}${timeoutMs === undefined ? "" : `, timeout_ms = ${timeoutMs}`})`;
 }
 
-/** An eval `id` run by `evaluator` (`human`, `runtime(…)` or a profile's name) with the statements `lines`. */
-export function evalBlock(id: string, evaluator: string, lines: string[]): string {
-  return `\neval ${id} : ${evaluator} = {\n${indent(lines.join("\n"))}\n}\n`;
+/** An eval `id` run by `evaluator` (`human`, `runtime(…)` or a profile's name) with the
+ * statements `lines`, after the `//` comment `note` when there is one. */
+export function evalBlock(id: string, evaluator: string, lines: string[], note = ""): string {
+  return `\n${note ? `// ${note}\n` : ""}eval ${id} : ${evaluator} = {\n${indent(lines.join("\n"))}\n}\n`;
+}
+
+/** Declare the profiles of `repo`, `.artifactize/profiles.artfprofiles`: how its Agent evals run. */
+export function writeProfiles(repo: NativePath, profiles: string): void {
+  writeText(nativePath(makeDirectory(nativePath(repo, ".artifactize")), "profiles.artfprofiles"), `${profiles.trim()}\n`);
 }
 
 /** A Human eval `id` titled `title` that asks `instruction`. */
@@ -79,15 +85,14 @@ export function humanEval(id: string, title: string, instruction: string): strin
   return evalBlock(id, "human", [`title = ${JSON.stringify(title)}`, `instruction = ${JSON.stringify(instruction)}`]);
 }
 
-/** A runtime eval `id` of Artifact `name`, titled `Check {name}`, that runs the stand-in program.
- * A `{other}` in `instruction` names an Artifact the check reads: it is one of its inputs, and
- * its instruction reads it as the name. */
-export function check(id: string, name: string, operation: Operation = "pass", instruction = `Check ${name}.`): string {
+/** A runtime eval `id` of Artifact `name`, titled `Check {name}`, that runs the stand-in program,
+ * after the comment `note`. A `{other}` in `note` names an Artifact the check reads: one of its
+ * `deps`, which the comment reads as the name. */
+export function check(id: string, name: string, operation: Operation = "pass", note = ""): string {
   const named = /\{([A-Za-z][\w-]*)\}/g;
-  const inputs = [...new Set([...instruction.matchAll(named)].map((match) => match[1]))].filter((input) => input !== name);
+  const deps = [...new Set([...note.matchAll(named)].map((match) => match[1]))].filter((dep) => dep !== name);
   return evalBlock(id, runtimeProfile(operation), [
     `title = ${JSON.stringify(`Check ${name}`)}`,
-    `instruction = ${JSON.stringify(instruction.replace(named, "$1"))}`,
-    ...(inputs.length ? [`inputs = [${inputs.join(", ")}]`] : []),
-  ]);
+    ...(deps.length ? [`deps = [${deps.join(", ")}]`] : []),
+  ], note.replace(named, "$1"));
 }

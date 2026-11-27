@@ -69,26 +69,26 @@ export const scenarios: Scenario[] = [
       const before = await review.until((each) => each.tools.length > 0, "the review's tools listed");
       assert.ok(before.tools.every((tool) => !tool.enabled), "no tool runs before the claim");
       await review.claim();
-      await review.runTool("release.notes");
-      assert.deepEqual(await review.runUntil("release.notes", (rows) => rows.at(-1)?.startsWith("■") === true, "notes ended"),
-        ["▶ HH:MM:SS · release.notes · release", "# Release notes", "- Ready to ship.", "■ exit 0"]);
-      await app.until(async () => (await review.logLine()) === "Ran release.notes · release exit 0 · 2 lines", "the run's line shows its end and count");
-      await review.runTool("release.fail");
-      assert.deepEqual(await review.runUntil("release.fail", (rows) => rows.at(-1)?.startsWith("■") === true, "fail ended"),
-        ["▶ HH:MM:SS · release.fail · release", "■ exit 1 [red]"]);
-      await app.until(async () => (await review.logLine()) === "Ran release.fail · release exit 1 · 0 lines", "the failed run's line says its end");
+      await review.runTool("release-tools.notes");
+      assert.deepEqual(await review.runUntil("release-tools.notes", (rows) => rows.at(-1)?.startsWith("■") === true, "notes ended"),
+        ["▶ HH:MM:SS · release-tools.notes · release", "# Release notes", "- Ready to ship.", "■ exit 0"]);
+      await app.until(async () => (await review.logLine()) === "Ran release-tools.notes · release exit 0 · 2 lines", "the run's line shows its end and count");
+      await review.runTool("release-tools.fail");
+      assert.deepEqual(await review.runUntil("release-tools.fail", (rows) => rows.at(-1)?.startsWith("■") === true, "fail ended"),
+        ["▶ HH:MM:SS · release-tools.fail · release", "■ exit 1 [red]"]);
+      await app.until(async () => (await review.logLine()) === "Ran release-tools.fail · release exit 1 · 0 lines", "the failed run's line says its end");
       const failed = await review.until((shown) => !shown.running, "the failed run ended");
       assert.equal(failed.notice, "", "a tool's failure is said on its line alone");
       assert.equal((await review.runLines()).length, 2, "each run its own line, the earlier one kept");
-      await review.runTool("release.gone");
-      const gone = await review.runUntil("release.gone", (rows) => rows.at(-1)?.startsWith("■") === true, "the missing tool ended");
+      await review.runTool("release-tools.gone");
+      const gone = await review.runUntil("release-tools.gone", (rows) => rows.at(-1)?.startsWith("■") === true, "the missing tool ended");
       assert.match(gone.at(-1)!, /^■ error: \S.* \[red\]$/, "a tool that could not run ends with its error, the prefix marked");
       // A launched application keeps logging under its own run after its button returned.
-      await review.runTool("release.talk");
-      await review.runUntil("release.talk", (rows) => rows.includes("opened the stand-in"), "the launched application's first line");
+      await review.runTool("release-tools.talk");
+      await review.runUntil("release-tools.talk", (rows) => rows.includes("opened the stand-in"), "the launched application's first line");
       writeText(gate, "go");
-      const talk = await review.runUntil("release.talk", (rows) => rows.at(-1)?.startsWith("■ exit ") === true, "the launched application ended");
-      assert.deepEqual(talk.filter((row) => !row.endsWith("[red]")), ["▶ HH:MM:SS · release.talk · release", "opened the stand-in", "chose: B", "■ exit 0"]);
+      const talk = await review.runUntil("release-tools.talk", (rows) => rows.at(-1)?.startsWith("■ exit ") === true, "the launched application ended");
+      assert.deepEqual(talk.filter((row) => !row.endsWith("[red]")), ["▶ HH:MM:SS · release-tools.talk · release", "opened the stand-in", "chose: B", "■ exit 0"]);
       assert.deepEqual(talk.filter((row) => row.endsWith("[red]")), ["warning: B is slower [red]"], "its stderr marked with a red rule");
       assert.equal(request(fixture).status, "DEFERRED", "tools are no verdict");
     },
@@ -115,7 +115,7 @@ export const scenarios: Scenario[] = [
       await review.removeIssue(0);
       await review.until((shown) => shown.submittable, "GREEN can be submitted again");
       // Submit while a tool of the review runs: the submission stops the tool first.
-      await review.runTool("release.slow");
+      await review.runTool("release-tools.slow");
       await review.until((each) => each.running !== "", "the tool runs");
       const tool = await slowProcess(app, pids, 1);
       const done = await review.submit();
@@ -183,18 +183,18 @@ export const scenarios: Scenario[] = [
       await app.detail.openEval("release/signoff");
       await review.claim();
       await review.addIssue("kept while stepping back");
-      await review.runTool("release.slow");
+      await review.runTool("release-tools.slow");
       await review.until((each) => each.running !== "", "the tool runs");
       const first = await slowProcess(app, pids, 1);
       await review.cancel();
-      await review.runUntil("release.slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Cancel ended the run as cancelled");
+      await review.runUntil("release-tools.slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Cancel ended the run as cancelled");
       await app.until(async () => !processRunning(first), "Cancel stopped the tool's process");
       // Close steps back one thing at a time.
-      await review.runTool("release.slow");
+      await review.runTool("release-tools.slow");
       await review.until((each) => each.running !== "", "the tool runs again");
       const second = await slowProcess(app, pids, 2);
       await app.detail.close();
-      await review.runUntil("release.slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Close first cancelled the running tool");
+      await review.runUntil("release-tools.slow", (rows) => rows.at(-1)?.startsWith("■ cancelled") === true, "Close first cancelled the running tool");
       await app.until(async () => !processRunning(second), "Close stopped the tool's process");
       assert.ok(await app.detail.read(), "the Detail still open");
       await app.detail.close();

@@ -94,11 +94,12 @@ function project(repo: string) {
     for (const [file, content] of Object.entries(files)) writeFileSync(join(repo, name, file), content);
     writeFileSync(join(repo, ".artifactize", `${name}.artf`), `${beside}artf ${name}${tools ? ` : ${tools}` : ""} = {\n  path = "${name}/"\n${body}}\n`);
   };
-  /** A runtime eval that runs Node itself with `args`. */
-  const check = (id: string, title: string, instruction: string, args: string[], inputs: string[] = []) => `
+  /** A runtime eval that runs Node itself with `args`, after the comment `note`; `deps` are the
+   * Artifacts it reads besides its own. */
+  const check = (id: string, title: string, note: string, args: string[], deps: string[] = []) => `
+  // ${note}
   eval ${id} : runtime(command = ${JSON.stringify(process.execPath)}, args = ${JSON.stringify(args)}) = {
-    title = ${JSON.stringify(title)}
-    instruction = ${JSON.stringify(instruction)}${inputs.length ? `\n    inputs = [${inputs.join(", ")}]` : ""}
+    title = ${JSON.stringify(title)}${deps.length ? `\n    deps = [${deps.join(", ")}]` : ""}
   }
 `;
   artifact("core", check("tests", "The core tests pass", "Run the core tests.", ["--test", "@{path self/sum.test.mjs}"])
@@ -122,7 +123,7 @@ function project(repo: string) {
 `, {
     "package.mjs": "import assert from \"node:assert/strict\";\nimport * as core from \"../core/sum.mjs\";\n\n// The package exports exactly core's public functions.\nassert.deepEqual(Object.keys(core), [\"sum\"]);\n",
     "notes.md": "# Release notes\n\n- Faster startup.\n- Clearer error messages.\n",
-  }, "release", `tool release = {\n  human notes = builtin(op = "read", args = ["@{path self/notes.md}"], description = "Print the release notes.")\n}\n\n`);
+  }, "notes", `tool notes = {\n  human read = builtin(op = "read", args = ["@{path self/notes.md}"], description = "Print the release notes.")\n}\n\n`);
 }
 
 /** Capture every scene into `output`, building in `work`. */
@@ -248,7 +249,7 @@ async function capture(output: string, work: string): Promise<void> {
       await app.waitUntil(() => app.execute((options) => [...document.querySelectorAll(options)]
         .some((row) => row.getAttribute("aria-selected") === "true" && row.textContent?.includes("release/signoff")), options),
       { timeout: WAIT, timeoutMsg: "the widened filter lists the claimed sign-off, selected" });
-      const notes = app.$(review).$("button=release.notes");
+      const notes = app.$(review).$("button=notes.read");
       await notes.waitForEnabled({ timeout: WAIT, timeoutMsg: "the sign-off is claimed and its notes tool is usable" });
       await notes.click();
       // The run's own line in the conversation, unfolded into its lines.

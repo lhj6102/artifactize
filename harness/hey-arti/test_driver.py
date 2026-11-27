@@ -57,11 +57,11 @@ def fake_builder(repo, case_id):
         lines = "\n".join("  " + line if line.strip() else "" for line in f"path = {json.dumps(target)}\n{body}".splitlines())
         write(f".artifactize/{name}.artf", f"{beside}{head}\n{lines}\n}}\n")
 
-    def runtime(name, instruction="Check the local fixture behavior.", inputs=()):
-        listed = f"\n  inputs = [{', '.join(inputs)}]" if inputs else ""
-        return f'''eval check : runtime(command = {json.dumps(sys.executable)}, args = ["-I", "@{{path checks}}", "{name}"]) = {{
-  title = "{name} behavior"
-  instruction = {json.dumps(instruction)}{listed}
+    def runtime(name, note="Check the local fixture behavior.", deps=()):
+        listed = f"\n  deps = [{', '.join(deps)}]" if deps else ""
+        return f'''// {note}
+eval check : runtime(command = {json.dumps(sys.executable)}, args = ["-I", "@{{path checks}}", "{name}"]) = {{
+  title = "{name} behavior"{listed}
 }}
 '''
 
@@ -81,9 +81,9 @@ def fake_builder(repo, case_id):
         node("contract", "contract/", runtime("contract"), "files")
         node("preview-driver", "preview/probe.py", "basis = true\n", "files")
         ui = runtime("ui", "Check the UI consumes the API and the contract.", ["api", "contract"])
-        preview = f'''profile host = agent(backend = "codex", model = "fake-host-model")
-
-tool preview = {{
+        write(".artifactize/profiles.artfprofiles",
+              'profile host : agent = { backend = "codex", model = "fake-host-model" }\n')
+        preview = f'''tool preview = {{
   session preview = session(
     start = command(command = {json.dumps(sys.executable)}, args = ["-I", "@{{path preview-driver}}", "start"]),
     stop = command(command = {json.dumps(sys.executable)}, args = ["-I", "@{{path preview-driver}}", "stop"]),
@@ -286,6 +286,11 @@ class HarnessTests(OwnedTestCase):
         # review runs, as the skill says to.
         blocks = {role[1]["block"] for role in roles.values()}
         products = {f".artifactize/example-{index}.artf": block for index, block in enumerate(sorted(blocks))}
+        # The profiles the examples name are declared in a file of profiles, as the skill shows.
+        profiles = [block for block in re.findall(r"```rust\n(.*?)```", body, re.DOTALL)
+                    if re.search(r"^profile [\w-]+ : agent", block, re.MULTILINE)]
+        self.assertTrue(profiles, "the skill shows how an Agent eval's profile is declared")
+        products[".artifactize/profiles.artfprofiles"] = "\n".join(profiles)
         products[".artifactize/composed.artf"] = (
             f'artf composed : files & {preview} = {{ path = "{application}/", basis = true }}\n')
         products.update({f"{basis}/requirements.md": "Fixture requirements.\n", f"{human}.svg": "<svg/>\n",
