@@ -272,6 +272,47 @@ async fn catalog_search_matches_all_words_across_labels_without_reordering() {
 }
 
 #[test]
+fn a_turn_hands_off_from_the_engine_its_last_send_ran_on_whatever_target_is_saved() {
+    let root = crate::test_os::tempdir();
+    let file = root.path().join("chat-sessions").join("handoff.jsonl");
+    let id = "chat-handoff".parse().unwrap();
+    let mut recorder = Recorder::chat(root.path(), &file, &id, 1).unwrap();
+    recorder.event(Kind::Send(Send {
+        text: Some("First".into()),
+        engine: Some("Direct (codex / small)".into()),
+        ..Send::default()
+    }));
+    recorder.event(Kind::Answer(Answer::Completed("done".into())));
+    drop(recorder);
+    let conversation = Conversation::load(&file).unwrap();
+    let saved = || Some("from the saved target".to_owned());
+    // The picker changed the engine: the handoff names the one the last turn ran on.
+    assert_eq!(
+        handoff_from(conversation.as_ref(), "ACP (antigravity)", saved),
+        Some("Direct (codex / small)".into())
+    );
+    // The same engine again hands off from nothing, whatever the saved target says.
+    assert_eq!(
+        handoff_from(conversation.as_ref(), "Direct (codex / small)", saved),
+        None
+    );
+    // Before any turn, or for sends that predate the record, the saved target decides.
+    assert_eq!(handoff_from(None, "ACP (antigravity)", saved), saved());
+    let older = root.path().join("chat-sessions").join("older.jsonl");
+    let mut recorder = Recorder::chat(root.path(), &older, &id, 1).unwrap();
+    recorder.event(Kind::Send(Send {
+        text: Some("First".into()),
+        ..Send::default()
+    }));
+    drop(recorder);
+    let older = Conversation::load(&older).unwrap();
+    assert_eq!(
+        handoff_from(older.as_ref(), "ACP (antigravity)", saved),
+        saved()
+    );
+}
+
+#[test]
 fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
     use rig_core::message::{
         AssistantContent, ToolCall, ToolFunction, ToolName, ToolResultContent,
@@ -284,9 +325,7 @@ fn a_saved_mcp_command_result_exposes_its_exit_and_decodes_its_output() {
     let mut recorder = Recorder::chat(root.path(), &file, &id, 1).unwrap();
     recorder.event(Kind::Send(Send {
         text: Some("Run the fixture".into()),
-        framing: None,
-        files_changed: None,
-        tools: None,
+        ..Send::default()
     }));
     let call = ToolCall::from_wire(
         "call-command",

@@ -36,8 +36,8 @@ use crate::{
 };
 
 use super::{
-    AcpBinding, AgentId, ConfigSelection, PermissionStatus, Problem, ToolDiff, ToolStatus,
-    WarmOwner,
+    AcpBinding, AgentId, ConfigSelection, PermissionStatus, PlanStep, Problem, ToolDiff,
+    ToolLocation, ToolStatus, WarmOwner,
     catalog::{self, AgentSpec},
     handoff,
     pool::{Pool, TakeOutcome, WarmChild},
@@ -1274,17 +1274,18 @@ impl TurnAccumulator {
                 self.flush_prose_segment(recorder);
                 let redacted_diff = diff.map(|d| redact_diff(d, redactor));
                 let redacted_output = output.as_deref().map(|o| redactor.redact_all(o));
+                let title = redactor.redact_all(&title);
                 self.record_display(
                     recorder,
                     Kind::AcpToolCall(AcpToolCallEvent {
                         call_id,
                         name: title.clone(),
-                        title: redactor.redact_all(&title),
+                        title,
                         tool_kind,
                         status,
                         summary: redactor.redact_all(&summary),
                         arguments: String::new(),
-                        locations,
+                        locations: redact_locations(locations, redactor),
                         output: redacted_output,
                         diff: redacted_diff,
                         output_truncated,
@@ -1313,7 +1314,7 @@ impl TurnAccumulator {
                         tool_kind,
                         status,
                         summary: summary.as_deref().map(|s| redactor.redact_all(s)),
-                        locations,
+                        locations: locations.map(|locations| redact_locations(locations, redactor)),
                         output: redacted_output,
                         diff: redacted_diff,
                         output_truncated,
@@ -1323,6 +1324,14 @@ impl TurnAccumulator {
                 );
             }
             SessionEvent::Plan { steps } => {
+                let steps = steps
+                    .into_iter()
+                    .map(|step| PlanStep {
+                        content: redactor.redact_all(&step.content),
+                        priority: step.priority.as_deref().map(|p| redactor.redact_all(p)),
+                        ..step
+                    })
+                    .collect();
                 self.record_display(recorder, Kind::AcpPlan(AcpPlanEvent { steps }));
             }
             SessionEvent::Notice { text } => {
@@ -1338,9 +1347,19 @@ impl TurnAccumulator {
     }
 }
 
+fn redact_locations(locations: Vec<ToolLocation>, redactor: &StreamRedactor) -> Vec<ToolLocation> {
+    locations
+        .into_iter()
+        .map(|location| ToolLocation {
+            path: redactor.redact_all(&location.path),
+            ..location
+        })
+        .collect()
+}
+
 fn redact_diff(diff: ToolDiff, redactor: &StreamRedactor) -> ToolDiff {
     ToolDiff {
-        path: diff.path,
+        path: redactor.redact_all(&diff.path),
         old_text: diff.old_text.as_deref().map(|t| redactor.redact_all(t)),
         new_text: redactor.redact_all(&diff.new_text),
         truncated: diff.truncated,

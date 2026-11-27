@@ -1372,15 +1372,18 @@ impl Chat {
                         effort,
                     } => {
                         let engine_label = effective_target.engine_label();
-                        let previous_label = previous_target
-                            .as_ref()
-                            .map(ChatTarget::engine_label)
-                            .filter(|prev| prev != &engine_label)
-                            .or_else(|| {
-                                session
-                                    .acp_binding
+                        let previous_label =
+                            handoff_from(conversation.as_ref(), &engine_label, || {
+                                previous_target
                                     .as_ref()
-                                    .map(|b| format!("ACP ({})", b.agent_id))
+                                    .map(ChatTarget::engine_label)
+                                    .filter(|prev| prev != &engine_label)
+                                    .or_else(|| {
+                                        session
+                                            .acp_binding
+                                            .as_ref()
+                                            .map(|b| format!("ACP ({})", b.agent_id))
+                                    })
                             });
                         let prior_turns_count =
                             conversation.as_ref().map(Conversation::sends).unwrap_or(0);
@@ -1414,11 +1417,17 @@ impl Chat {
                         };
                         let prior_turns = transcript::turns(conversation.as_ref(), false, &[]);
                         let last_outcome = conversation.as_ref().and_then(transcript::last_outcome);
-                        let previous_engine_label = previous_engine_label(
-                            previous_target.as_ref(),
-                            session.acp_binding.as_ref(),
-                            session.legacy_migration_notice,
-                            agent,
+                        let previous_engine_label = handoff_from(
+                            conversation.as_ref(),
+                            &effective_target.engine_label(),
+                            || {
+                                previous_engine_label(
+                                    previous_target.as_ref(),
+                                    session.acp_binding.as_ref(),
+                                    session.legacy_migration_notice,
+                                    agent,
+                                )
+                            },
                         );
                         ChatEngine::Acp {
                             config: config.clone(),
@@ -1448,9 +1457,8 @@ impl Chat {
                 let mut recorder = Recorder::chat(&self.state, &file, id, send)?;
                 recorder.event(Kind::Send(Send {
                     text: Some(text.to_owned()),
-                    framing: None,
-                    files_changed: None,
-                    tools: None,
+                    engine: Some(effective_target.engine_label()),
+                    ..Send::default()
                 }));
                 let prompt = rig_core::message::Message::user(text.to_owned());
                 recorder.message(1, &prompt, false);
@@ -1919,6 +1927,31 @@ fn default_config_selections(options: &[ConfigOption]) -> Vec<ConfigSelection> {
             category: Some(opt.category),
         })
         .collect()
+}
+
+/// The engine a turn on `next` hands off from: the one the conversation's last turn ran on, as
+/// its send recorded it, when that differs. The picker saves its choice before the next send,
+/// so the saved target names the new engine, not the last one. A conversation whose sends
+/// predate that record falls back to `unrecorded`.
+fn handoff_from(
+    conversation: Option<&Conversation>,
+    next: &str,
+    unrecorded: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    let last = conversation.and_then(|conversation| {
+        conversation
+            .events()
+            .iter()
+            .rev()
+            .find_map(|event| match &event.kind {
+                Kind::Send(send) => Some(send.engine.clone()),
+                _ => None,
+            })
+    });
+    match last {
+        Some(Some(last)) => (last != next).then_some(last),
+        Some(None) | None => unrecorded(),
+    }
 }
 
 fn previous_engine_label(

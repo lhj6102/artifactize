@@ -271,6 +271,7 @@ pub(super) async fn follow_up(
         text: Some(message.into()),
         framing: Some(framing),
         files_changed: continuation.files_changed,
+        engine: None,
         tools: Some(
             definitions
                 .iter()

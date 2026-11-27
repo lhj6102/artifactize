@@ -705,6 +705,7 @@ async fn continue_conversation(
         text: Some(message.into()),
         framing: Some(framing),
         files_changed: continuation.files_changed,
+        engine: None,
         tools: Some(
             request
                 .tools
