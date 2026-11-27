@@ -117,7 +117,8 @@ export const scenarios: Scenario[] = [
       const back = await w.openNode("back");
       assert.equal(back.head, "back");
       assert.equal(back.evals.length, 1);
-      assert.match(back.evals[0], /^back\/serves runtime Title Check back Criteria Check that front is served\. Reads front$/);
+      // A runtime eval asks nothing: its criteria are the command it runs, the stand-in's Node.
+      assert.match(back.evals[0], /^back\/serves runtime Title Check back Criteria .+node(\.exe)? Reads front$/i);
 
       await w.mode("Review");
       await w.claimReview("page/signoff");
