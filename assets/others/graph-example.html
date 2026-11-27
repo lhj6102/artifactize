@@ -93,8 +93,8 @@
   .tree .artf .file { color: var(--dim); }
   .tree .artf svg { width: 24px; height: 24px; }
   .tree .definition { margin-bottom: 2px; }
-  /* Each file's declarations, its checks included: every line is TOML as the file holds it. */
-  .tree .definition code { flex-basis: 100%; margin-left: 22px; color: var(--dim); font: 500 13px/14px var(--mono); white-space: pre; }
+  /* Each file's declarations, its checks included, in its .artf syntax; … marks what is left out. */
+  .tree .definition code { flex-basis: 100%; margin-left: 6px; color: var(--dim); font: 500 12px/13px var(--mono); white-space: pre; }
   .tree svg { width: 30px; height: 30px; flex: none; }
   /* What the listings leave out, under the tree. */
   .tree .excerpt { margin: 2px 16px 0 26px; color: var(--dim); font: 400 14px/18px var(--sans); }
@@ -225,12 +225,12 @@
         <ul>
           <li><span><svg class="folder"><use href="#i-folder"/></svg>.artifactize/</span>
             <ul>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>app.artf</span><code>artf app</code><code>path=&quot;./&quot;</code><code>parts=[code, docs]</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>problem.artf</span><code>artf problem : markdown</code><code>path=&quot;PROBLEM.md&quot;</code><code>eval review : human</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>artf design : markdown</code><code>path=&quot;SPEC.md&quot;</code><code>eval solves : reviewer</code><code>instruction=&quot;…@{artf problem}&quot;</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>artf code : files</code><code>path=&quot;code/&quot;</code><code>eval covers : reviewer</code><code>instruction=&quot;…@{artf design}&quot;</code><code>eval tests : runtime(</code><code>command=&quot;npm&quot;, args=[&quot;test&quot;])</code><code>eval rules : reviewer</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>docs.artf</span><code>artf docs : files</code><code>path=&quot;docs/&quot;</code><code>eval usage : reviewer</code><code>instruction=&quot;…@{artf code}&quot;</code><code>eval readable : reviewer</code></li>
-              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>profiles.artfprofiles</span><code>profile reviewer : agent</code><code>model=&quot;…&quot;</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>app.artf</span><code>artf app={</code><code>  path=&quot;./&quot;</code><code>  parts=[code, docs]}</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>problem.artf</span><code>artf problem : markdown={</code><code>  path=&quot;PROBLEM.md&quot;</code><code>  eval review : human={…}}</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>artf design : markdown={</code><code>  path=&quot;SPEC.md&quot;</code><code>  eval solves : reviewer={</code><code>    instruction=&quot;…@{artf problem}&quot;}}</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>artf code : files={</code><code>  path=&quot;code/&quot;</code><code>  eval covers : reviewer={</code><code>    instruction=&quot;…@{artf design}&quot;}</code><code>  eval tests : runtime(</code><code>    command=&quot;npm&quot;,</code><code>    args=[&quot;test&quot;])={…}</code><code>  eval rules : reviewer={…}}</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>docs.artf</span><code>artf docs : files={</code><code>  path=&quot;docs/&quot;</code><code>  eval usage : reviewer={</code><code>    instruction=&quot;…@{artf code}&quot;}</code><code>  eval readable : reviewer={…}}</code></li>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>profiles.artfprofiles</span><code>profile reviewer : agent={</code><code>  model=&quot;…&quot;}</code></li>
             </ul>
           </li>
           <li class="source"><span><svg class="file"><use href="#i-file"/></svg>PROBLEM.md</span></li><li class="source"><span><svg class="file"><use href="#i-file"/></svg>SPEC.md</span></li>
@@ -331,7 +331,7 @@
       legendAgent: "AI agent review",
       legendHuman: "Person's review",
       legendSelf: "Reads only its own Artifact",
-      excerpt: "In brief: blocks, titles and full instructions omitted. reviewer, in profiles.artfprofiles, is a profile: which AI model runs a check.",
+      excerpt: "An excerpt: … marks what is left out. reviewer, in profiles.artfprofiles, is a profile that chooses which AI model runs a check.",
     },
     ko: {
       repository: "프로젝트 파일",
@@ -353,7 +353,7 @@
       legendAgent: "AI 에이전트 검토",
       legendHuman: "사람이 검토",
       legendSelf: "자기 Artifact만 읽는 평가",
-      excerpt: "발췌라서 블록, 평가 제목, 지시 전문은 뺐습니다. profiles.artfprofiles의 reviewer는 AI 평가를 어떤 모델로 돌릴지 정하는 profile입니다.",
+      excerpt: "발췌입니다. …는 생략한 부분입니다. profiles.artfprofiles의 reviewer는 AI 평가를 어떤 모델로 돌릴지 정하는 profile입니다.",
     },
     zh: {
       repository: "项目文件",
@@ -375,7 +375,7 @@
       legendAgent: "AI 智能体审查",
       legendHuman: "人工审查",
       legendSelf: "只读取自身 Artifact 的评估",
-      excerpt: "节选省略了代码块、每项检查的标题和完整指令。profiles.artfprofiles 中的 reviewer 是一个配置（profile），规定 AI 检查用哪个模型运行。",
+      excerpt: "节选：… 表示省略的部分。profiles.artfprofiles 中的 reviewer 是一个配置（profile），决定 AI 检查用哪个模型运行。",
     },
   };
 
