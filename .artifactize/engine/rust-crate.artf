@@ -1,0 +1,61 @@
+// The checks every workspace crate carries, the same apart from the crate: its code against
+// the code and platform checklists, its formatting, clippy and its tests.
+
+eval! follows-code(subject, example) : luna = {
+  title = "@{param subject} follows the code checklist"
+  red_at = "P1"
+  instruction = """
+    Read the checklist @{artf rules-code-style}. Then review the Rust code of @{artf self} (src/ \
+    and Cargo.toml; tests/ for M-TAUTOLOGICAL-TESTS and every TEST- rule) against every item. \
+    Tool paths are relative to the Artifact, for example @{param example}. Report only what a \
+    rule item states: each issue names the item it violates and points to a concrete place \
+    where that item's text is not met. An improvement the item's text does not require (a \
+    further split, a stronger type, an extra assertion, a scenario on an OS the item does not \
+    name) is not an issue.
+  """
+}
+
+eval! follows-platform(subject, example) : luna = {
+  title = "@{param subject} follows the platform checklist"
+  red_at = "P1"
+  instruction = """
+    Read the checklist @{artf rules-platform}. Then review the Rust code of @{artf self} (src/, \
+    tests/ and Cargo.toml) against every P- item. Tool paths are relative to the Artifact, for \
+    example @{param example}. Report only what a rule item states: each issue names the item it \
+    violates and points to a concrete place where that item's text is not met. An improvement \
+    the item's text does not require (a further split, a stronger type, an extra assertion, a \
+    scenario on an OS the item does not name) is not an issue.
+  """
+}
+
+// A workspace crate under crates/PACKAGE/. `subject` names its code in titles ("The CLI
+// code"); `builds_with` are the crates its clippy and tests build with besides itself.
+artf! rust-crate(package, subject, example, builds_with = [], extra_evals = {}) : files = {
+  path = "crates/@{param package}/"
+
+  eval follows-style = follows-code!(subject = subject, example = example)
+  eval follows-platform = follows-platform!(subject = subject, example = example)
+
+  eval fmt : runtime(command = "cargo", args = ["fmt", "--check", "-p", "@{param package}"], timeout_ms = 60000) = {
+    title = "The Rust formatting check passes"
+    instruction = "Check the formatting of the crate."
+  }
+
+  eval clippy : runtime(
+    command = "cargo",
+    args = ["clippy", "--locked", "-p", "@{param package}", "--all-targets", "--", "-D", "warnings"],
+    timeout_ms = 1800000,
+  ) = {
+    title = "Clippy passes for every Rust target"
+    instruction = "Check every Rust target of the crate, with the crates it builds with and the workspace manifest and lockfile, treating every clippy warning as an error."
+    inputs = [...builds_with, engine-cargo-manifest, engine-cargo-lock]
+  }
+
+  eval tests : runtime(command = "cargo", args = ["test", "--locked", "-p", "@{param package}"], timeout_ms = 1800000) = {
+    title = "The Rust crate tests pass"
+    instruction = "Run the tests of the crate, with the crates it builds with and the workspace manifest and lockfile. Fixtures build or declare every executable they use and own their resources."
+    inputs = [...builds_with, engine-cargo-manifest, engine-cargo-lock]
+  }
+
+  ...extra_evals
+}

@@ -54,7 +54,7 @@ pub fn tools() -> Vec<Tool> {
     vec![
         tool(
             ReadTool::Plugins,
-            "List built-in and installed project Artifact types.",
+            "List the built-in and installed plugins by namespace.",
             Map::new(),
             &[],
         ),
@@ -66,9 +66,9 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             PluginTool::Remove,
-            "Remove an installed Artifact type plugin by type name.",
-            object!({"type":string}),
-            &["type"],
+            "Remove an installed plugin by its namespace.",
+            object!({"namespace":string}),
+            &["namespace"],
         ),
         tool(
             VerifyTool::Start,

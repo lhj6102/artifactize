@@ -1,35 +1,38 @@
-tags = ["type:skill"]
-path = "agent-plugin/skills/focus-then-sweep/SKILL.md"
-type = "files"
+artf agent-focus-then-sweep : files = {
+  path = "agent-plugin/skills/focus-then-sweep/SKILL.md"
+  tags = ["type:skill"]
 
-[evals.correct]
-title = "What the skill recommends exists in today's artifactize"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-payload.instruction = """
-Read the skill {agent-focus-then-sweep} using read_agent-focus-then-sweep. Check that every selector, command, flag, tool,
-status, exit code and behaviour it mentions or recommends matches {engine-core},
-{engine-cli}, {engine-mcp} and {docs-en}. Judge accuracy only: an omission is not a
-finding. Each statement that is wrong or outdated is a finding."""
+  eval correct : luna = {
+    title = "What the skill recommends exists in today's artifactize"
+    red_at = "P1"
+    instruction = """
+      Read the skill @{artf agent-focus-then-sweep} using read_agent-focus-then-sweep. Check that every selector, command, flag, tool,
+      status, exit code and behaviour it mentions or recommends matches @{artf engine-core},
+      @{artf engine-cli}, @{artf engine-mcp} and @{artf docs-en}. Judge accuracy only: an omission is not a
+      issue. Each statement that is wrong or outdated is an issue.
+    """
+  }
 
-[evals.guides]
-title = "The skill guides a builder through focus, sweep and the three plans"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-payload.instruction = """
-Read the skill {agent-focus-then-sweep} using read_agent-focus-then-sweep, as a builder, a coding agent fixing RED evals in a
-project that artifactize verifies, using {docs-en} only to understand the concepts. Check
-that it:
-- explains why: a fix changes the Artifact's fingerprint, so every eval that sees it needs
-  review again, and rerunning everything after each fix costs time and money;
-- makes Plan A, focus first and sweep last, the default: rerun only the RED eval after each
-  fix until it is GREEN, one RED eval after another, without rerunning the evals the fix
-  made stale; then run everything once, and send a new RED back to focus;
-- offers Plan B, focus with the expected impact: include the evals a fix may affect, with
-  a way to find them, and run evals in a cycle together;
-- offers Plan C, always sweep, and says when to choose it;
-- tells the builder how to read a focus Run whose outcome is not GREEN although the
-  focused eval is;
-- makes YELLOW the target: sign-offs wait for people without holding the builder up, the
-  builder keeps working and hands them over, and never signs off itself.
-Each of these it does not do, and each step a builder could not follow without guessing, is a finding."""
+  eval guides : luna = {
+    title = "The skill guides a builder through focus, sweep and the three plans"
+    red_at = "P1"
+    instruction = """
+      Read the skill @{artf agent-focus-then-sweep} using read_agent-focus-then-sweep, as a builder, a coding agent fixing RED evals in a
+      project that artifactize verifies, using @{artf docs-en} only to understand the concepts. Check
+      that it:
+      - explains why: a fix changes the Artifact's fingerprint, so every eval that sees it needs
+        review again, and rerunning everything after each fix costs time and money;
+      - makes Plan A, focus first and sweep last, the default: rerun only the RED eval after each
+        fix until it is GREEN, one RED eval after another, without rerunning the evals the fix
+        made stale; then run everything once, and send a new RED back to focus;
+      - offers Plan B, focus with the expected impact: include the evals a fix may affect, with
+        a way to find them, and run evals in a cycle together;
+      - offers Plan C, always sweep, and says when to choose it;
+      - tells the builder how to read a focus Run whose outcome is not GREEN although the
+        focused eval is;
+      - makes YELLOW the target: sign-offs wait for people without holding the builder up, the
+        builder keeps working and hands them over, and never signs off itself.
+      Each of these it does not do, and each step a builder could not follow without guessing, is an issue.
+    """
+  }
+}

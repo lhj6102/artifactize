@@ -7,6 +7,7 @@ use artifactize_core::{
     cache, human,
     project::{VerifyOptions, selection::Selection},
     remote::Record,
+    runtime::Verdict,
     store::OwnedReceipts,
 };
 use rusqlite::Connection;
@@ -51,7 +52,7 @@ fn write_repo(repo: &Path, profile: Value) {
         "title":"Check",
         "payload":{"instruction":"Review."},
     });
-    // A Human sign-off declares its form; an Agent eval reports findings.
+    // A Human sign-off and an Agent eval both report issues.
     if profile["kind"] == "agent" {
         eval["red_at"] = json!("P1");
     } else {
@@ -117,10 +118,10 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     let producer = execution.producer.clone().unwrap();
     assert_eq!(producer.version, env!("CARGO_PKG_VERSION"));
     assert!(producer.name.contains('@'));
-    assert_eq!(
-        execution.result().unwrap().to_json()["stdout"],
-        "stdout-marker\n"
-    );
+    // What the process printed stays in the Run's logs; a GREEN result has no issue.
+    let local = execution.result().unwrap().to_json();
+    assert_eq!(local["issues"], json!([]));
+    assert!(!local.to_string().contains("marker"), "{local}");
 
     let summary = Record::new(&execution, false).unwrap();
     let text = serde_json::to_string(&summary).unwrap();
@@ -141,7 +142,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     let summary_json = summary.result.to_json();
     let mut keys: Vec<_> = summary_json.as_object().unwrap().keys().collect();
     keys.sort();
-    assert_eq!(keys, ["durationMs", "exitCode", "truncated", "verdict"]);
+    assert_eq!(keys, ["durationMs", "issues", "kind", "verdict"]);
     let full = Record::new(&execution, true).unwrap();
     // A full record an earlier artifactize published still holds its tool calls and result
     // check limit; readers ignore them.
@@ -155,8 +156,8 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
             .contains("toolCalls")
     );
     assert_eq!(
-        full.execution.unwrap().result().unwrap().to_json()["stderr"],
-        "stderr-marker\n"
+        full.execution.unwrap().result().unwrap().to_json(),
+        local
     );
 
     let mut stored = summary;
@@ -330,7 +331,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
         &receipts,
         &request.id,
         &"alice".parse().unwrap(),
-        &human::Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap(),
+        &human::Submission::new(Verdict::Green, Vec::new()).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -345,7 +346,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     assert_eq!(summary.reviewer.as_deref(), Some("alice"));
     assert_eq!(
         summary.result.to_json(),
-        json!({"verdict":"GREEN","approved":true})
+        json!({"verdict":"GREEN","kind":"human","issues":[]})
     );
 }
 
@@ -409,7 +410,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             start_time: 1,
         }),
         state: artifactize_core::store::ExecutionState::Completed {
-            result: json!({"verdict":"GREEN","findings":[]}).try_into().unwrap(),
+            result: json!({"verdict":"GREEN","kind":"agent","issues":[]}).try_into().unwrap(),
             at: completed,
         },
         profile: artifactize_core::config::StoredProfile::from(&variant),

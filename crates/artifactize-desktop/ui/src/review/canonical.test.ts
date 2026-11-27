@@ -25,7 +25,7 @@ for (const [first, second] of [["run-a-2", "run-follower-2"], ["run-follower-2",
     await opened.load();
     await opened.choose("RED");
     await opened.form!.set("note", { kind: "text", value: "first draft" });
-    await opened.addReason("first reason");
+    await opened.addIssue("first issue");
     const originalForm = opened.form;
 
     // The screen may already hold this handle when its read discovers the alias.
@@ -36,8 +36,8 @@ for (const [first, second] of [["run-a-2", "run-follower-2"], ["run-follower-2",
     expect(held.form).toBe(originalForm);
     await held.form!.set("note", { kind: "text", value: "through the alias" });
     expect(opened.form!.values.note).toEqual({ kind: "text", value: "through the alias" });
-    await held.addReason("second reason");
-    expect(opened.reasons).toEqual(["first reason", "second reason"]);
+    await held.addIssue("second issue");
+    expect(opened.issues).toEqual(["first issue", "second issue"]);
     await held.choose("GREEN");
     expect(opened.form).toBe(held.form);
     await opened.choose("RED");

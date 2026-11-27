@@ -34,7 +34,6 @@
   const { current, chat: c } = app;
   /** The gap between the floating chat and the graph's bottom. */
   const FLOAT_GAP = 12;
-  const definitions = $derived(app.definitions);
 
   const branches = $derived(c.branches ?? []);
   /** The sessions grouped by project, the projects and their sessions newest first. */
@@ -54,7 +53,7 @@
   const graph = $derived(session?.view === "graph");
   const mainMin = $derived(graph ? mainSplitMinimum(app.windowWidth) : 30);
   const live = $derived(graph && session?.unavailable === null);
-  const mainNotice = $derived((live ? definitions.notice ?? c.graph?.graph.error : null) ?? c.error);
+  const mainNotice = $derived((live ? c.graph?.graph.error : null) ?? c.error);
   const running = $derived(view?.running ?? false);
   const stopping = $derived(session !== null && c.stopping.has(session.id));
   const submitting = $derived(session !== null && (c.sending.has(session.id) || c.choosing.has(session.id)));

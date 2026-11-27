@@ -1,5 +1,8 @@
-basis = true
-path = "requirements/"
+tool requirements = {
+  agent read = builtin(op = "read", description = "Read lines of requirements.md in @{artf self}.")
+}
 
-[views.agent_tools]
-read = { builtin = "read", description = "Read lines of requirements.md in {artifactName}." }
+artf requirements : requirements = {
+  basis = true
+  path = "requirements/"
+}

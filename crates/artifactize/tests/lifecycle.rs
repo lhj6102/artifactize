@@ -343,12 +343,21 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
 #[test]
 fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_survive() {
     // Independent schema-5 records: ordering, nulls and omissions are part of the old wire format.
-    const REQUEST: &str = r#"{"id":"legacy-request","runId":"legacy-run","evalId":"app/check","target":"app","title":"Check","profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","options":{},"executionId":"legacy-execution","provenance":null,"usage":null,"payload":{"instruction":"Review."},"references":{},"deps":[],"force":false,"fingerprint":null,"key":null,"status":"GREEN","createdAt":"2026-01-01T00:00:00.000000000Z","startedAt":null,"completedAt":"2026-01-01T00:00:01.000000000Z","cwd":"repo","runDir":null,"argv":null,"child":null,"result":{"verdict":"GREEN"},"error":null,"errorCode":null,"blockedReason":null}"#;
-    const EXECUTION: &str = r#"{"id":"legacy-execution","key":null,"fingerprint":null,"evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ownerPid":1,"ownerStartTime":1,"status":"GREEN","result":{"verdict":"GREEN"},"error":null,"errorCode":null,"profile":{"kind":"human"},"options":{},"usage":null,"provenance":{"repoPath":"repo","runId":"legacy-run","requestId":"legacy-request","evalId":"app/check","evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","completedAt":"2026-01-01T00:00:01.000000000Z"},"startedAt":"2026-01-01T00:00:00.000000000Z","completedAt":"2026-01-01T00:00:01.000000000Z"}"#;
+    const REQUEST: &str = r#"{"id":"legacy-request","runId":"legacy-run","evalId":"app/check","target":"app","title":"Check","profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","options":{},"executionId":"legacy-execution","provenance":null,"usage":null,"payload":{"instruction":"Review."},"references":{},"deps":[],"force":false,"fingerprint":null,"key":null,"status":"GREEN","createdAt":"2026-01-01T00:00:00.000000000Z","startedAt":null,"completedAt":"2026-01-01T00:00:01.000000000Z","cwd":"repo","runDir":null,"argv":null,"child":null,"result":{"issues":[],"kind":"human","verdict":"GREEN"},"error":null,"errorCode":null,"blockedReason":null}"#;
+    const EXECUTION: &str = r#"{"id":"legacy-execution","key":null,"fingerprint":null,"evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ownerPid":1,"ownerStartTime":1,"status":"GREEN","result":{"issues":[],"kind":"human","verdict":"GREEN"},"error":null,"errorCode":null,"profile":{"kind":"human"},"options":{},"usage":null,"provenance":{"repoPath":"repo","runId":"legacy-run","requestId":"legacy-request","evalId":"app/check","evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","completedAt":"2026-01-01T00:00:01.000000000Z"},"startedAt":"2026-01-01T00:00:00.000000000Z","completedAt":"2026-01-01T00:00:01.000000000Z"}"#;
     let request: Request = serde_json::from_str(REQUEST).unwrap();
     let execution: Execution = serde_json::from_str(EXECUTION).unwrap();
     assert_eq!(serde_json::to_string(&request).unwrap(), REQUEST);
     assert_eq!(serde_json::to_string(&execution).unwrap(), EXECUTION);
+    // A result saved before results were tagged still reads, as its kind's result.
+    let legacy = REQUEST.replace(
+        r#""result":{"issues":[],"kind":"human","verdict":"GREEN"}"#,
+        r#""result":{"verdict":"GREEN"}"#,
+    );
+    assert_eq!(
+        serde_json::to_string(&serde_json::from_str::<Request>(&legacy).unwrap()).unwrap(),
+        REQUEST
+    );
     let base: Value = serde_json::from_str(REQUEST).unwrap();
     let execution_base: Value = serde_json::from_str(EXECUTION).unwrap();
     for status in [

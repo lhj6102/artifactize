@@ -252,10 +252,10 @@
         {#if branch}
           {#key toolsKey(branch.workspace, branch.key, row.name)}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
         {/if}
-        <!-- On a Current the Artifact's definition, which its graph and its Detail edit, stands
-             where a Run's Path does. -->
+        <!-- On a Current the Artifact's definition, read from its code, stands where a Run's
+             Path does. -->
         {#if branch && source.kind === "current"}
-          {#key row.name}<Definition branch={branch.key} name={row.name} {active} />{/key}
+          {#key row.name}<Definition branch={branch.key} name={row.name} {onopen} />{/key}
         {/if}
       {/if}
       {#if d.error}

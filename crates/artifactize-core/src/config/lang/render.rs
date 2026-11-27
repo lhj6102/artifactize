@@ -28,7 +28,7 @@ pub(crate) fn artifact(artifact: &LoweredArtifact) -> String {
     match &artifact.fingerprint.0 {
         LoweredFingerprint::Default => {}
         LoweredFingerprint::Disabled => field(&mut out, 1, "fingerprint", "false"),
-        LoweredFingerprint::Declared(fingerprint) => {
+        LoweredFingerprint::Declared(fingerprint, _) => {
             field(&mut out, 1, "fingerprint", &render_fingerprint(fingerprint));
         }
     }

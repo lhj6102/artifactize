@@ -1,0 +1,22 @@
+// The project's Agent profiles: what an Agent eval runs with.
+profile YOUR_OPENAI_MODEL_ID = agent(
+  backend = "openai",
+  model = "YOUR_OPENAI_MODEL_ID",
+  max_tool_calls = 20,
+  reasoning = "medium",
+  timeout_ms = 240000,
+)
+profile anthropic = agent(
+  backend = "anthropic",
+  model = "YOUR_ANTHROPIC_MODEL_ID",
+  max_tool_calls = 20,
+  reasoning = "medium",
+  timeout_ms = 240000,
+)
+profile codex = agent(
+  backend = "codex",
+  model = "YOUR_CODEX_MODEL_SLUG",
+  max_tool_calls = 20,
+  reasoning = "medium",
+  timeout_ms = 240000,
+)

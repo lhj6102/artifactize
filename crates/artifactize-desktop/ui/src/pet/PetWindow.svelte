@@ -2,7 +2,7 @@
   // The pet overlay (J-PET, D-PET-1): a small frameless window above every window while this
   // reviewer works away from the active review's evaluation space. It holds the review's eval and
   // Run (a link to the review in Review) and the same library draft, split as Review's is,
-  // compactly: its Points with Insert, its reasons with Remove, the reasons field with Add and
+  // compactly: its Points with Insert, its issues with Remove, the issues field with Add and
   // Point (pointing in an open viewer of the review's Artifact), then apart the GREEN and RED
   // choice and Submit. The main window shows and hides it; it follows the active review.
   import { emit, listen } from "@tauri-apps/api/event";
@@ -11,10 +11,10 @@
   import { commands, onActiveReviewChanged, onHumanDraftChanged, onStateChanged, subscribe } from "../ipc/client";
   import { Jobs } from "../ipc/jobs.svelte";
   import { Review } from "../review/review.svelte";
-  import { ReasonsCaret } from "../review/reasons-caret.svelte";
+  import { IssuesCaret } from "../review/issues-caret.svelte";
   import ReviewPoints from "../review/ReviewPoints.svelte";
-  import Reasons from "../review/Reasons.svelte";
-  import ReasonsBox from "../review/ReasonsBox.svelte";
+  import Issues from "../review/Issues.svelte";
+  import IssuesBox from "../review/IssuesBox.svelte";
   import DecisionBar from "../review/DecisionBar.svelte";
   import Icon from "../shell/Icon.svelte";
   import { ARM, ASK, PRESENCE, type Presence } from "../viewers/viewer-state.svelte";
@@ -31,8 +31,8 @@
   const [getPetState, setPetState] = createContext<PetState>();
   setPetState(new PetState(untrack(() => request)));
   const pet = getPetState();
-  const caret = new ReasonsCaret();
-  /** What the overlay's reasons field holds and has not added: its own until Add. */
+  const caret = new IssuesCaret();
+  /** What the overlay's issues field holds and has not added: its own until Add. */
   let typed = $state("");
   const review = $derived(pet.review);
   const view = $derived(review.view);
@@ -95,12 +95,12 @@
       {#if review.draft?.points.length}
         <ReviewPoints {review} compact ready={caret.ready} insert={(text) => caret.insert(text)} />
       {/if}
-      <Reasons {review} compact />
-      <ReasonsBox {review} {caret} compact bind:typed>
+      <Issues {review} compact />
+      <IssuesBox {review} {caret} compact bind:typed>
         {#snippet after()}
           <button class="button small point" class:off={pointer === null} aria-pressed={pointer?.pointing ?? false} disabled={pointer === null} onclick={() => pointer && void emit(ARM, { session: pointer.session })}><Icon name="point" />Point</button>
         {/snippet}
-      </ReasonsBox>
+      </IssuesBox>
       {#if pointer === null}<p class="why">Open {view.artifact} in a viewer to point.</p>{/if}
       {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
       <div class="decision">
@@ -175,7 +175,7 @@
   .run {
     color: var(--ink-2);
   }
-  /* The decision row stands apart from the reasons row (D-PET-1). */
+  /* The decision row stands apart from the issues row (D-PET-1). */
   .decision {
     display: flex;
     flex-direction: column;

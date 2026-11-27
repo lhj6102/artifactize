@@ -448,7 +448,7 @@ impl Fixture {
         assert!(declaration.contains("Review."));
         fs::write(
             support::declaration::source_path(&review),
-            declaration.replace("Review.", "Review {spec}."),
+            declaration.replace("Review.", "Review @{artf spec}."),
         )
         .unwrap();
         for name in ["spec", "other"] {
@@ -680,7 +680,7 @@ async fn a_folder_whole_with_parts_can_be_claimed_inspected_submitted_and_reused
         &receipts,
         &request.id,
         &reviewer,
-        &"inspect_review".parse().unwrap(),
+        &"review_inspect_review".parse().unwrap(),
         CancellationToken::new(),
         artifactize_core::review::log::Run::unwatched(),
     )
@@ -774,7 +774,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"bob".parse().unwrap(),
-            &"inspect_review".parse().unwrap(),
+            &"review_inspect_review".parse().unwrap(),
             CancellationToken::new(),
             artifactize_core::review::log::Run::unwatched()
         )
@@ -797,7 +797,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"alice".parse().unwrap(),
-            &"read_review".parse().unwrap(),
+            &"review_read_review".parse().unwrap(),
             CancellationToken::new(),
             artifactize_core::review::log::Run::unwatched()
         )
@@ -808,7 +808,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         &receipts,
         id,
         &"alice".parse().unwrap(),
-        &"inspect_review".parse().unwrap(),
+        &"review_inspect_review".parse().unwrap(),
         CancellationToken::new(),
         artifactize_core::review::log::Run::unwatched(),
     )
@@ -819,7 +819,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         &receipts,
         id,
         &"alice".parse().unwrap(),
-        &"fail_review".parse().unwrap(),
+        &"review_fail_review".parse().unwrap(),
         CancellationToken::new(),
         artifactize_core::review::log::Run::unwatched(),
     )
@@ -888,7 +888,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"alice".parse().unwrap(),
-            &"inspect_review".parse().unwrap(),
+            &"review_inspect_review".parse().unwrap(),
             CancellationToken::new(),
             artifactize_core::review::log::Run::unwatched()
         )
@@ -930,7 +930,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
                 &receipts,
                 id,
                 &"alice".parse().unwrap(),
-                &"inspect_review".parse().unwrap(),
+                &"review_inspect_review".parse().unwrap(),
                 CancellationToken::new(),
                 artifactize_core::review::log::Run::unwatched(),
             )
@@ -981,8 +981,6 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
 /// How a waiting request's declarations stop matching those it recorded.
 #[derive(Clone, Copy)]
 enum Change {
-    /// A new child Artifact joins the eval's scope.
-    Child,
     /// The declaration of the Artifact the eval references differs.
     Referenced,
     /// The eval's own declaration differs.
@@ -1003,7 +1001,6 @@ enum Action {
 #[tokio::test]
 async fn changed_declarations_end_the_request_error_and_the_next_verify_asks_again() {
     for (change, action, message) in [
-        (Change::Child, Action::Tool, "declarations changed"),
         (Change::Referenced, Action::Submit, "declarations changed"),
         (Change::Title, Action::Commands, "declarations changed"),
         (Change::Removed, Action::Commands, "no longer exists"),
@@ -1016,15 +1013,6 @@ async fn changed_declarations_end_the_request_error_and_the_next_verify_asks_aga
         human::claim(&receipts, &id, &alice).await.unwrap();
         let review = fixture.repo.join("review");
         match change {
-            Change::Child => {
-                fs::create_dir(review.join("child")).unwrap();
-                support::declaration::write(
-                    &(fixture.repo),
-                    review.join("child/index.artf"),
-                    r#"{"name":"child","basis":true}"#,
-                )
-                .unwrap();
-            }
             Change::Referenced => support::declaration::write(
                 &(fixture.repo),
                 fixture.repo.join("spec/index.artf"),
@@ -1052,7 +1040,7 @@ async fn changed_declarations_end_the_request_error_and_the_next_verify_asks_aga
                 &receipts,
                 &id,
                 &alice,
-                &"inspect_review".parse().unwrap(),
+                &"review_inspect_review".parse().unwrap(),
                 CancellationToken::new(),
                 artifactize_core::review::log::Run::unwatched(),
             )
@@ -1112,12 +1100,12 @@ async fn unreadable_declarations_refuse_the_action_and_the_request_keeps_waiting
 }
 
 #[tokio::test]
-async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outside_the_scope() {
+async fn human_actions_never_read_the_runs_saved_definitions() {
     let fixture = Fixture::referencing();
     let run = fixture.verify(returning()).await;
     let id = run.requests[0].id.clone();
-    // The Run's saved graph no longer decodes, and the workspace no longer reads as a whole:
-    // a reader of either fails.
+    // The Run's saved graph no longer decodes: a reader of it fails. (Definitions are one
+    // program now, so the workspace itself must read.)
     struct SavedDefinition {
         db: rusqlite::Connection,
         run_id: artifactize_core::types::RunId,
@@ -1162,13 +1150,7 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
             [&run.run.id],
         )
         .unwrap();
-    fs::write(
-        support::declaration::source_path(fixture.repo.join("other/index.artf")),
-        "name = ",
-    )
-    .unwrap();
     assert!(store::read_request(&fixture.state, &id).await.is_err());
-    assert!(artifactize_core::config::read_workspace_config(&fixture.repo).is_err());
     let alice = "alice".parse().unwrap();
     fixture
         .with_human_receipts(&id, async |receipts, repo| {
@@ -1178,7 +1160,7 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
                 receipts,
                 &id,
                 &alice,
-                &"inspect_review".parse().unwrap(),
+                &"review_inspect_review".parse().unwrap(),
                 CancellationToken::new(),
                 artifactize_core::review::log::Run::unwatched(),
             )
@@ -1430,7 +1412,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &receipts,
         follower,
         &"alice".parse().unwrap(),
-        &"inspect_review".parse().unwrap(),
+        &"review_inspect_review".parse().unwrap(),
         CancellationToken::new(),
         artifactize_core::review::log::Run::unwatched(),
     )
@@ -1889,47 +1871,6 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
 }
 
 #[tokio::test]
-async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
-    let fixture = Fixture::new(true);
-    let path = fixture.repo.join("index.artf");
-    let mut declaration: Value =
-        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
-    declaration["evals"][0]["profile_variants"] = json!({"lead":{"kind":"human"}});
-    support::declaration::write(&(fixture.repo), &path, declaration.to_string()).unwrap();
-    let run = fixture
-        .verify(VerifyOptions {
-            profile: Some(project::selection::ProfileSelection::Named(
-                "lead".parse().unwrap(),
-            )),
-            ..returning()
-        })
-        .await;
-    let request = &run.requests[0];
-    assert_eq!(request.status().as_str(), "DEFERRED");
-    assert_eq!(request.options.variant.as_deref(), Some("lead"));
-    let receipts = fixture.receipts().await;
-    human::claim(&receipts, &request.id, &"alice".parse().unwrap())
-        .await
-        .unwrap();
-    let settled = human::submit(
-        &receipts,
-        &request.id,
-        &"alice".parse().unwrap(),
-        &green(),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(settled.status().as_str(), "GREEN");
-    // The declared profile reuses the sign-off the variant produced.
-    let reused = fixture.verify(returning()).await;
-    assert_eq!(reused.requests[0].status().as_str(), "GREEN");
-    assert_eq!(reused.requests[0].execution_id, request.execution_id);
-    assert_eq!(reused.requests[0].options.variant.as_deref(), Some("lead"));
-    assert_eq!(reused.requests[0].reviewer.as_deref(), Some("alice"));
-}
-
-#[tokio::test]
 async fn a_removed_original_leaves_review_and_a_remaining_follower_takes_its_signoff_over() {
     let fixture = Fixture::new(true);
     fixture.no_idle_grace();
@@ -1974,7 +1915,7 @@ async fn a_removed_original_leaves_review_and_a_remaining_follower_takes_its_sig
                 receipts,
                 &follower_id,
                 &bob,
-                &"inspect_review".parse().unwrap(),
+                &"review_inspect_review".parse().unwrap(),
                 CancellationToken::new(),
                 artifactize_core::review::log::Run::unwatched(),
             )

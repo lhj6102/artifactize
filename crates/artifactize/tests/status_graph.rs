@@ -251,26 +251,13 @@ fn status_selection_policy_and_final_obligations_match_verify() {
 }
 
 #[test]
-fn profiles_rebuild_static_gates_without_running_commands() {
+fn status_refuses_an_unknown_profile_without_creating_state() {
     let fixture = Fixture::new("runtime");
-    let path = fixture.repo.join("red/index.artf");
-    let mut declaration: Value =
-        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
-    declaration["evals"][0]["profile_variants"] = json!({"dependent":{
-        "kind":"runtime","command":"missing-command","args":["{green}/missing.txt"]
-    }});
-    support::declaration::write(&(fixture.repo), &path, declaration.to_string()).unwrap();
-    let view = fixture.json(&["status", "red", "--profile", "dependent"], 1);
-    assert_eq!(row(&view, "evals", "red/check")["state"], "WAIT_DEPENDENCY");
-    assert_eq!(
-        row(&view, "evals", "red/check")["blockedBy"],
-        json!(["green/check"])
+    let refused = fixture.json(&["status", "red", "--profile", "unknown"], 2);
+    assert!(
+        refused["error"].as_str().unwrap().contains("Unknown profile unknown"),
+        "{refused}"
     );
-    assert_eq!(
-        row(&view, "evals", "red/check")["profile"]["command"],
-        "missing-command"
-    );
-    fixture.json(&["status", "red", "--profile", "unknown"], 2);
     assert!(!fixture.state.exists());
 }
 
@@ -291,11 +278,12 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     )
     .unwrap();
     let graph = fixture.json(&["config", "graph"], 0);
-    assert_eq!(graph["version"], 2);
+    assert_eq!(graph["version"], 3);
     let relations = graph["relations"].as_array().unwrap();
+    // A runtime eval names the Artifacts it reads in `inputs`.
     for (kind, field, value) in [
         ("part", "source", "part"),
-        ("instruction", "evalId", "cycle-a/check"),
+        ("input", "evalId", "cycle-a/check"),
         ("argv", "evalId", "green/check"),
     ] {
         assert!(
@@ -351,7 +339,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     let text =
         String::from_utf8(fixture.output(&["config", "graph", "cycle-a"], 0).stdout).unwrap();
     assert!(text.contains("[cycle]"));
-    assert!(text.contains("cycle-b -> cycle-a [instruction"));
+    assert!(text.contains("cycle-b -> cycle-a [input"));
     assert!(!fixture.state.exists());
 }
 
@@ -364,35 +352,52 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
         &hook,
         "from pathlib import Path\nPath('hook-executed').write_text('called')\nraise SystemExit(91)\n",
     );
-    let path = fixture.repo.join("review/index.artf");
-    let mut declaration: Value =
-        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     let command = support::os::python_program();
-    declaration["fingerprint"]["script"] =
-        json!({"command":command,"args":["hook.py"],"files":["hook.py"]});
-    declaration["views"]["agent_tools"]["read"]["command"] = json!(command);
-    declaration["views"]["agent_tools"]["read"]["args"] = json!(["hook.py"]);
-    declaration["views"]["human_tools"]["read"]["command"] = json!(command);
-    declaration["views"]["human_tools"]["read"]["args"] = json!(["hook.py"]);
-    let runtime = declaration["evals"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|eval| eval["profile"]["kind"] == "runtime")
-        .unwrap();
-    runtime["profile"]["command"] = json!(command);
-    runtime["profile"]["args"] = json!(["hook.py"]);
-    support::declaration::write(&fixture.repo, &path, declaration.to_string()).unwrap();
+    let review = format!(
+        r#"tool review = {{
+  agent read = command(command = {command:?}, args = ["hook.py"], protocol = "plain", description = "Read @{{artf self}}", input_schema = {{ type = "object" }}, timeout_ms = 1000)
+  human read = command(command = {command:?}, args = ["hook.py"], description = "Read @{{artf self}}", kind = "output")
+}}
+
+artf review : review = {{
+  fingerprint = script(command = {command:?}, args = ["hook.py"], files = ["hook.py"], timeout_ms = 1000)
+  path = "review/"
+
+  eval agent : not-called = {{
+    title = "Review input"
+    red_at = "P1"
+    instruction = "Inspect @{{artf input}}."
+  }}
+
+  eval human : human = {{
+    title = "Inspect input"
+    instruction = "Inspect @{{artf input}}."
+  }}
+
+  eval runtime : runtime(command = {command:?}, args = ["hook.py"], timeout_ms = 1000) = {{
+    title = "Check input"
+    instruction = "Check input."
+    inputs = [input]
+  }}
+}}
+"#
+    );
+    let path = fixture.repo.join(".artifactize/review.artf");
+    fs::write(&path, &review).unwrap();
     fixture.json(&["config", "check"], 0);
     fixture.json(&["config", "graph"], 0);
     assert!(!marker.exists());
     assert!(!fixture.state.exists());
-    let path = fixture.repo.join("review/index.artf");
-    let mut declaration: Value =
-        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
-    declaration["fingerprint"]["script"] =
-        json!({"command":echo_program(),"args":["current-fingerprint"]});
-    support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
+    let review = review.replace(
+        &format!(
+            "fingerprint = script(command = {command:?}, args = [\"hook.py\"], files = [\"hook.py\"], timeout_ms = 1000)"
+        ),
+        &format!(
+            "fingerprint = script(command = {:?}, args = [\"current-fingerprint\"])",
+            echo_program()
+        ),
+    );
+    fs::write(&path, review).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
     assert_eq!(row(&view, "evals", "review/agent")["action"], "execute");

@@ -41,13 +41,13 @@ export class AppState {
   readonly browse = new Browse(this.ipc);
   /** The Current of the branch shown in Chat's Graph. */
   readonly current: Current = new Current(this.ipc, (branch) => void this.prepareDefinitions(branch).load(branch));
-  /** The shown branch's definitions, which its Current edits. */
+  /** The shown branch's definitions, read from its code. */
   #definitions = $state.raw<Record<string, Definitions>>({});
   prepareDefinitions(branch: BranchKey): Definitions {
     const key = keyOf(branch);
     const existing = this.#definitions[key];
     if (existing) return existing;
-    const owner = new Definitions(this.ipc, (each) => void this.current.scan(each, true));
+    const owner = new Definitions(this.ipc);
     this.#definitions = { ...this.#definitions, [key]: owner };
     return owner;
   }

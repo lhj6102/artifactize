@@ -421,20 +421,12 @@ input[type="search"]::-webkit-search-decoration {
    off the node's own outline and its status strip. A minimized whole also clears its stack. */
 .graph-face {
   --ring-gap: 2px;
-  --target-offset: 0px;
   --node-current: 0 0 0 transparent;
-  --node-target: 0 0 0 transparent;
   --node-decoration: 0 0 0 transparent;
-  box-shadow: var(--node-decoration), var(--node-target), var(--node-current), var(--node-lift, 0 0 0 transparent);
+  box-shadow: var(--node-decoration), var(--node-current);
 }
 .graph-face:is(.selected, .open) {
-  --ring-offset: calc(var(--ring-gap) + var(--target-offset));
-  --node-current: 0 0 0 var(--ring-offset) var(--surface-app), 0 0 0 calc(var(--ring-offset) + 1px) var(--current-mark);
-}
-.graph-face.target {
-  --target-offset: 1px;
-  --node-target: 0 0 0 1px var(--accent);
-  border-color: var(--accent);
+  --node-current: 0 0 0 var(--ring-gap) var(--surface-app), 0 0 0 calc(var(--ring-gap) + 1px) var(--current-mark);
 }
 
 /* A graph node's ports: where edges reach it, a triangle pointing in on its left side; where

@@ -1,62 +1,47 @@
-path = "spec/"
+tool spec = {
+  agent coverage = command(
+      command = "python3",
+      args = ["coverage.py", "@{path requirements/requirements.md}"],
+      protocol = "json",
+      description = "List each requirement for @{artf self} with the spec.md lines that cite its ID. Pass id to see one requirement.",
+      input_schema = {
+        additionalProperties = false
+        properties = { id = { pattern = "^R[0-9]+$", type = "string" } }
+        type = "object"
+      },
+      timeout_ms = 10000,
+    )
+  agent grep = builtin(op = "grep")
+  agent read = builtin(op = "read", description = "Read lines of a text file in @{artf self}, such as spec.md.")
+  agent section = builtin(
+      op = "section",
+      args = ["spec.md"],
+      description = "Print one Markdown section of spec.md in @{artf self}, by its exact heading.",
+    )
+  agent view_image = builtin(op = "view_image", description = "View an image in @{artf self}, such as diagram.png.")
+  human notes = builtin(
+      op = "read",
+      args = ["@{path self/notes.md}"],
+      description = "Print the review notes of @{artf self}.",
+    )
+  human open = builtin(
+      op = "open",
+      args = ["@{path self/notes.md}"],
+      description = "Open the review notes of @{artf self} in the desktop's default application.",
+    )
+}
 
-[views.agent_tools]
-read = { builtin = "read", description = "Read lines of a text file in {artifactName}, such as spec.md." }
-grep = { builtin = "grep" }
-view_image = { builtin = "view_image", description = "View an image in {artifactName}, such as diagram.png." }
+artf spec : spec = {
+  path = "spec/"
 
-[views.agent_tools.section]
-description = "Print one Markdown section of spec.md in {artifactName}, by its exact heading."
-builtin = "section"
-args = ["spec.md"]
+  eval review : YOUR_OPENAI_MODEL_ID = {
+    title = "The specification covers every requirement"
+    red_at = "P1"
+    instruction = "Review spec.md in @{artf spec} against every requirement in @{artf requirements}. Start with the coverage report to see which lines cite each requirement ID, then read the cited sections and search for anything the coverage report misses. Inspect diagram.png to check that it matches the Diagram section. Each requirement that is not fully specified, and a diagram that does not match, is a finding."
+  }
 
-[views.agent_tools.coverage]
-description = "List each requirement for {artifactName} with the spec.md lines that cite its ID. Pass id to see one requirement."
-input_schema = { type = "object", properties = { id = { type = "string", pattern = "^R[0-9]+$" } }, additionalProperties = false }
-protocol = "json"
-command = "python3"
-args = ["coverage.py", "{requirements}/requirements.md"]
-timeout_ms = 10000
-
-[views.human_tools]
-open = { description = "Open the review notes of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}/notes.md"] }
-notes = { description = "Print the review notes of {artifactName}.", builtin = "read", args = ["{artifactPath}/notes.md"] }
-
-[evals.review]
-title = "The specification covers every requirement"
-profile = { kind = "agent", backend = "openai", model = "YOUR_OPENAI_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20 }
-red_at = "P1"
-
-[evals.review.profile_variants]
-anthropic = { kind = "agent", backend = "anthropic", model = "YOUR_ANTHROPIC_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20 }
-codex = { kind = "agent", backend = "codex", model = "YOUR_CODEX_MODEL_SLUG", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20 }
-
-[evals.review.payload]
-instruction = """
-Review spec.md in {spec} against every requirement in {requirements}. Start with the coverage report to see \
-which lines cite each requirement ID, then read the cited sections and search for anything the \
-coverage report misses. Inspect diagram.png to check that it matches the Diagram section. Each \
-requirement that is not fully specified, and a diagram that does not match, is a finding."""
-
-[evals.signoff]
-title = "A reviewer signs off on the open questions"
-profile = { kind = "human" }
-
-[evals.signoff.payload]
-instruction = """
-Read the review notes of {spec} with the notes or open tool. Submit GREEN with approved: true when \
-every open question has an answer that spec.md supports; otherwise submit RED and list the \
-unresolved questions."""
-
-[evals.signoff.pass_schema]
-type = "object"
-properties.approved = { const = true }
-properties.comment = { type = "string" }
-required = ["approved"]
-additionalProperties = false
-
-[evals.signoff.fail_schema]
-type = "object"
-properties.unresolved = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
-required = ["unresolved"]
-additionalProperties = false
+  eval signoff : human = {
+    title = "A reviewer signs off on the open questions"
+    instruction = "Read the review notes of @{artf spec} with the notes or open tool. Submit GREEN with approved: true when every open question has an answer that spec.md supports; otherwise submit RED and list the unresolved questions."
+  }
+}

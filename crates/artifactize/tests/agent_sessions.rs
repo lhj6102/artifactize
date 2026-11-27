@@ -29,7 +29,7 @@ use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
 // An independent expectation for the provider/session wire framing, not the production
 // formatter or constant that emits it.
-const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the findings stay as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
+const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the issues stay as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
 
 /// A workspace of one Artifact, `notes`, with one Agent eval and a content fingerprint.
 struct Project {
@@ -213,7 +213,7 @@ fn reply(request: &Request) -> Reply {
         let text = if request.body.to_string().contains(FOLLOW_UP) {
             "Anthropic: R1 holds."
         } else {
-            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#
+            r#"{"issues":[{"priority":"P2","reason":"R1 holds."}]}"#
         };
         return anthropic::text(request, text, 10, 2);
     }
@@ -230,9 +230,9 @@ fn reply(request: &Request) -> Reply {
         (2, _) => vec![openai::message("Still GREEN.")],
         (count, _) if count > 2 => vec![openai::message("Noted.")],
         _ if repairing(request) => vec![openai::message(
-            r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+            r#"{"issues":[{"priority":"P2","reason":"R1 holds."}]}"#,
         )],
-        _ if replayed(request) => vec![openai::message(r#"{"findings":[{"priority":"P2"}]}"#)],
+        _ if replayed(request) => vec![openai::message(r#"{"issues":[{"priority":"P2"}]}"#)],
         _ => vec![
             openai::reasoning("rs_1", "Reading the notes", "enc-review-1"),
             read("call_1"),
@@ -287,7 +287,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert_eq!(header["model"], format!("{backend}-model"));
         assert_eq!(header["parameters"]["prompt_cache_key"], session.as_str());
         assert_eq!(header["budgets"]["timeoutMs"], 20000);
-        assert_eq!(header["tools"][0]["name"], "read_notes");
+        assert_eq!(header["tools"][0]["name"], "notes_read_notes");
         assert_eq!(header["state"], review["session"]["state"]);
         assert_eq!(
             roles(&events),
@@ -312,7 +312,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             "You are an artifactize evaluator. Review only the supplied Artifacts; do not implement or repair. Execute only registered Artifact tools."
         ));
         assert!(system.ends_with(
-            "If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the findings stay as recorded."
+            "If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the issues stay as recorded."
         ));
         let reasoning = &messages[2]["message"]["content"][0];
         assert_eq!(reasoning["type"], "reasoning");
@@ -327,7 +327,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert!(
             messages[4]
                 .to_string()
-                .contains(r#"{\"findings\":[{\"priority\":\"P2\"}]}"#)
+                .contains(r#"{\"issues\":[{\"priority\":\"P2\"}]}"#)
         );
         assert!(
             text_of(&messages[5]["message"])
@@ -341,7 +341,8 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert_eq!(end["kind"], "end");
         assert_eq!(
             end["result"],
-            json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"R1 holds."}]})
+            // The session keeps the answer as the reviewer gave it.
+            json!({"verdict":"GREEN","issues":[{"priority":"P2","reason":"R1 holds."}]})
         );
         {
             assert!(support::os::private_dir(&project.sessions()));
@@ -357,8 +358,8 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             format!("Reference: {reference}"),
             "── System".into(),
             "[reasoning] Reading the notes".into(),
-            r#"[tool call read_notes] {"path":"notes.md"}"#.into(),
-            "[tool result read_notes]".into(),
+            r#"[tool call notes_read_notes] {"path":"notes.md"}"#.into(),
+            "[tool result notes_read_notes]".into(),
             "── Repair prompt (turn 3)".into(),
             "── Result: {".into(),
         ] {
@@ -384,7 +385,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         for call in &calls[3..] {
             assert_eq!(call.body["prompt_cache_key"], session.as_str());
             assert_eq!(call.body["model"], format!("{backend}-model"));
-            assert_eq!(call.body["tools"][0]["name"], "read_notes");
+            assert_eq!(call.body["tools"][0]["name"], "notes_read_notes");
             if backend == "codex" {
                 assert_eq!(call.headers["session-id"], session);
             }
@@ -514,7 +515,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert_eq!(summary["tokens"]["outputTokens"], 12);
         assert_eq!(
             summary["toolCalls"],
-            json!({"read_notes":{"calls":2,"failed":0}})
+            json!({"notes_read_notes":{"calls":2,"failed":0}})
         );
         assert!(summary["durationMs"].is_u64());
         let shown = project.text(&provider, &["session", "show", &session, "--summary"], 0);
@@ -524,7 +525,7 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             "Tokens: input 60 · output 12 · cache read 0 · reasoning 0\n".into(),
             "  turn 1: input 10 · output 2 · cache read 0 · reasoning 0\n".into(),
             "  follow-up 2, turn 1: input 10 · output 2 · cache read 0 · reasoning 0\n".into(),
-            "Tool calls: 2\n  read_notes: 2\n".into(),
+            "Tool calls: 2\n  notes_read_notes: 2\n".into(),
         ] {
             assert!(shown.contains(&expected), "{expected} in {shown}");
         }
@@ -587,7 +588,7 @@ fn anthropic_reviews_are_saved_and_continued_without_a_cache_key() {
     assert!(
         call.body
             .to_string()
-            .contains(r#"{\"findings\":[{\"priority\":\"P2\""#)
+            .contains(r#"{\"issues\":[{\"priority\":\"P2\""#)
     );
 }
 
@@ -617,7 +618,7 @@ fn concurrent_sends_take_turns_in_one_thread() {
                 return responses(
                     request,
                     vec![openai::message(
-                        r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+                        r#"{"issues":[{"priority":"P2","reason":"R1 holds."}]}"#,
                     )],
                 );
             };
@@ -684,7 +685,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
             responses(
                 request,
                 vec![openai::message(
-                    r#"{"findings":[{"priority":"P2","reason":"R1 holds."}]}"#,
+                    r#"{"issues":[{"priority":"P2","reason":"R1 holds."}]}"#,
                 )],
             )
         }

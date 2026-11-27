@@ -2914,46 +2914,30 @@ pub fn port_fixture(path: &Path) {
     if !stand_ins() && !cfg!(target_os = "macos") {
         return;
     }
-    /// Whether anything changed.
-    fn commands(value: &mut Value) -> bool {
-        match value {
-            Value::Object(object) => {
-                let mut changed = false;
-                for (key, value) in object.iter_mut() {
-                    changed |= match value {
-                        Value::String(command)
-                            if key == "command"
-                                && (command.starts_with("/bin/")
-                                    || command.starts_with("/usr/bin/")
-                                    || command == "sh") =>
-                        {
-                            let resolved = path_text(Path::new(&bin(command)));
-                            let changed = *command != resolved;
-                            *command = resolved;
-                            changed
-                        }
-                        other => commands(other),
-                    };
-                }
-                changed
-            }
-            Value::Array(items) => {
-                let mut changed = false;
-                for item in items {
-                    changed |= commands(item);
-                }
-                changed
-            }
-            _ => false,
-        }
-    }
     match path.file_name().and_then(|name| name.to_str()) {
         // Rewritten only when needed: a declaration's bytes can be part of a fingerprint.
         Some(name) if name.ends_with(".artf") => {
-            let mut declaration: Value =
-                toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-            if commands(&mut declaration) {
-                fs::write(path, toml::to_string_pretty(&declaration).unwrap()).unwrap();
+            const KEY: &str = "command = \"";
+            let text = fs::read_to_string(path).unwrap();
+            let mut ported = String::new();
+            let mut rest = text.as_str();
+            while let Some(at) = rest.find(KEY) {
+                let (before, after) = rest.split_at(at + KEY.len());
+                ported.push_str(before);
+                let end = after.find('"').expect("a command string ends");
+                let command = &after[..end];
+                if command.starts_with("/bin/") || command.starts_with("/usr/bin/") || command == "sh"
+                {
+                    let resolved = path_text(Path::new(&bin(command)));
+                    ported.push_str(&resolved.replace('\\', "\\\\").replace('"', "\\\""));
+                } else {
+                    ported.push_str(command);
+                }
+                rest = &after[end..];
+            }
+            ported.push_str(rest);
+            if ported != text {
+                fs::write(path, ported).unwrap();
             }
         }
         Some("check.sh") => {
@@ -3884,7 +3868,11 @@ pub fn colon_target_definition(repo: &Path) -> std::path::PathBuf {
     let definitions = repo.join(".artifactize");
     fs::create_dir(&definitions).unwrap();
     let definition = definitions.join("file.artf");
-    fs::write(&definition, "path = 'inputs/a:b'\nfingerprint = false\n").unwrap();
+    fs::write(
+        &definition,
+        "artf file = { path = \"inputs/a:b\", fingerprint = false }\n",
+    )
+    .unwrap();
     definition
 }
 

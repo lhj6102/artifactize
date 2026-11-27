@@ -1,29 +1,25 @@
-path = ".artifactize/desktop/"
+artf graph-desktop : files & definitions = {
+  path = ".artifactize/desktop/"
 
-[views.agent_tools]
-list = { builtin = "list" }
-glob = { builtin = "glob" }
-grep = { builtin = "grep" }
-read = { builtin = "read" }
-graph = { builtin = "graph", args = [] }
-
-[evals.derives]
-title = "The desktop definitions judge each Artifact against what specifies it"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-payload.instruction = """
-Read every definition in {graph-desktop}; use the graph tool for relations that leave the
-folder. The desktop app is specified by the journeys (desktop-ux-features) and the design
-(desktop-design with its pages), and realized by desktop-ui, desktop-backend, desktop-e2e and desktop. Check that:
-- Direction: an eval judges a realization against what specifies it, never a
-  specification against its realization. The journeys are judged against nothing in this
-  folder, the design against the journeys.
-- Coverage: each realization has an eval naming what specifies it: the UI names the
-  design; the end-to-end tests name the journeys; the eval that runs the
-  suite names the UI, the backend and the tests it runs.
-- Sign-offs: Human evals sit only on specifications.
-- Composition: every definition in this folder is desktop or one of its parts, their
-  parts included; the design's pages are parts of the design.
-- One home: no two evals here state the same criterion about the same Artifact; a check
-  lives on the Artifact it judges.
-- Shared rules are named, not copied into instructions."""
+  eval derives : luna = {
+    title = "The desktop definitions judge each Artifact against what specifies it"
+    red_at = "P1"
+    instruction = """
+      Read every definition in @{artf graph-desktop}; use @{tool self agent definitions.graph} for relations that leave the
+      folder. The desktop app is specified by the journeys (desktop-ux-features) and the design
+      (desktop-design with its pages), and realized by desktop-ui, desktop-backend, desktop-e2e and desktop. Check that:
+      - Direction: an eval judges a realization against what specifies it, never a
+        specification against its realization. The journeys are judged against nothing in this
+        folder, the design against the journeys.
+      - Coverage: each realization has an eval naming what specifies it: the UI names the
+        design; the end-to-end tests name the journeys; the eval that runs the
+        suite names the UI, the backend and the tests it runs.
+      - Sign-offs: Human evals sit only on specifications.
+      - Composition: every definition in this folder is desktop or one of its parts, their
+        parts included; the design's pages are parts of the design.
+      - One home: no two evals here state the same criterion about the same Artifact; a check
+        lives on the Artifact it judges.
+      - Shared rules are named, not copied into instructions.
+    """
+  }
+}

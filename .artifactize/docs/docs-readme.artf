@@ -1,35 +1,30 @@
-path = "README.md"
+tool docs-readme = {
+  agent read = builtin(op = "read", args = ["README.md"])
+}
 
-[views.agent_tools.read]
-builtin = "read"
-args = ["README.md"]
+artf docs-readme : docs-readme = {
+  path = "README.md"
 
-[evals.follows-rules]
-title = "The README introduces the project in the owner's flow"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
+  eval follows-rules : luna = {
+    title = "The README introduces the project in the owner's flow"
+    red_at = "P1"
+    instruction = """
+      Read the README rules @{artf rules-writer-readme}, the shared introduction checklist @{artf rules-writer-introduction} and the
+      root README @{artf docs-readme}. Check every R- and W- item.
+    """
+  }
 
-[evals.follows-rules.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-
-[evals.follows-rules.payload]
-instruction = """
-Read the README rules {rules-writer-readme}, the shared introduction checklist {rules-writer-introduction} and the
-root README {docs-readme}. Check every R- and W- item."""
-
-[evals.matches-landing-install]
-title = "The README's installation matches the landing page's install section"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-
-[evals.matches-landing-install.payload]
-instruction = """
-Read the installation section of the root README {docs-readme} and the install section of index.html
-of {docs-landing}. For each operating system (Linux, macOS, Windows), compare what the two tell a
-reader to do: the default install command must be identical, an alternative method both name
-must be the same, and both must agree on which channels are not available yet. Wording and
-layout may differ, and either may mention a detail the other leaves out as long as nothing
-contradicts.
-Each mismatch is a finding, to be fixed in the README."""
+  eval matches-landing-install : luna = {
+    title = "The README's installation matches the landing page's install section"
+    red_at = "P1"
+    instruction = """
+      Read the installation section of the root README @{artf docs-readme} and the install section of index.html
+      of @{artf docs-landing}. For each operating system (Linux, macOS, Windows), compare what the two tell a
+      reader to do: the default install command must be identical, an alternative method both name
+      must be the same, and both must agree on which channels are not available yet. Wording and
+      layout may differ, and either may mention a detail the other leaves out as long as nothing
+      contradicts.
+      Each mismatch is an issue, to be fixed in the README.
+    """
+  }
+}

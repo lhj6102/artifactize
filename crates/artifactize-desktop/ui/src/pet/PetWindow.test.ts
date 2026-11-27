@@ -1,5 +1,5 @@
 // The pet overlay against a mocked command boundary: it holds the active review's library
-// draft (Points, reasons, the verdict and its fields), points in an open viewer of the review's Artifact
+// draft (Points, issues, the verdict and its fields), points in an open viewer of the review's Artifact
 // only, submits as Review does, and leads back to the review in the main window.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -36,7 +36,7 @@ function backend(submitError?: string) {
   return { calls, library };
 }
 
-it("writes reasons and the verdict to the shared draft, split as Review's is, and submits as Review does", async () => {
+it("writes issues and the verdict to the shared draft, split as Review's is, and submits as Review does", async () => {
   const { calls, library } = backend();
   // Saved before (another window, an earlier run of the app): GREEN was chosen.
   library.draft.verdict = "GREEN";
@@ -47,19 +47,19 @@ it("writes reasons and the verdict to the shared draft, split as Review's is, an
   expect(screen.getAllByRole("radio").map((button) => button.textContent?.trim())).toEqual(["GREEN", "RED"]);
   // No claim in the overlay: no Claim to review, no Release claim.
   expect(screen.queryByRole("button", { name: /claim/i })).toBeNull();
-  const field = screen.getByRole<HTMLInputElement>("textbox", { name: "Reason" });
-  const add = screen.getByRole<HTMLButtonElement>("button", { name: "Add reason (Enter)" });
+  const field = screen.getByRole<HTMLInputElement>("textbox", { name: "Issue" });
+  const add = screen.getByRole<HTMLButtonElement>("button", { name: "Add issue (Enter)" });
   expect(add.disabled).toBe(true);
   await user.type(field, "Looks right");
   expect(submit.disabled).toBe(true);
-  expect(screen.getByText("Add the typed reason first")).toBeTruthy();
+  expect(screen.getByText("Add the typed issue first")).toBeTruthy();
   await user.keyboard("{Enter}");
-  await waitFor(() => expect(library.draft.reasons).toEqual(["Looks right"]));
+  await waitFor(() => expect(library.draft.issues).toEqual(["Looks right"]));
   expect(field.value).toBe("");
-  const reasons = screen.getByRole("list", { name: "Reasons" });
-  expect(within(reasons).getByText("Looks right")).toBeTruthy();
-  // Each reason has Remove alone; none is edited in the overlay.
-  expect(within(reasons).queryByRole("button", { name: /Edit/ })).toBeNull();
+  const issues = screen.getByRole("list", { name: "Issues" });
+  expect(within(issues).getByText("Looks right")).toBeTruthy();
+  // Each issue has Remove alone; none is edited in the overlay.
+  expect(within(issues).queryByRole("button", { name: /Edit/ })).toBeNull();
   await user.click(screen.getByRole("radio", { name: "RED (r)" }));
   await screen.findByRole("button", { name: /^Submit RED/ });
   expect(library.draft.verdict).toBe("RED");
@@ -71,7 +71,7 @@ it("says a submission refusal once, above the decision row, the draft kept", asy
   const error = "A comment is required.";
   const { library } = backend(error);
   library.draft.verdict = "GREEN";
-  library.draft.reasons = ["Fine"];
+  library.draft.issues = ["Fine"];
   render(PetWindow, { request: "run-a-2" });
   await fireEvent.click(await screen.findByRole("button", { name: /^Submit GREEN/ }));
   await waitFor(() => expect(screen.getAllByText(error)).toHaveLength(1));
@@ -112,7 +112,7 @@ it("leads back to the review in the main window", async () => {
   expect(calls.some((call) => call.cmd === "main_focus")).toBe(true);
 });
 
-it("shows a saved draft's verdict and reasons, sending nothing; a fresh draft chooses none and says so", async () => {
+it("shows a saved draft's verdict and issues, sending nothing; a fresh draft chooses none and says so", async () => {
   const fresh = backend();
   render(PetWindow, { request: "run-a-2" });
   await screen.findByRole("button", { name: "Show release/signoff in Review" });
@@ -122,10 +122,10 @@ it("shows a saved draft's verdict and reasons, sending nothing; a fresh draft ch
   expect(fresh.calls.some((call) => call.cmd === "human_draft_edit")).toBe(false);
   cleanup();
   clearMocks();
-  // Saved with RED and a reason, as before a restart.
+  // Saved with RED and a issue, as before a restart.
   const saved = backend();
   saved.library.draft.verdict = "RED";
-  saved.library.draft.reasons = ["The total is wrong."];
+  saved.library.draft.issues = ["The total is wrong."];
   render(PetWindow, { request: "run-a-2" });
   const chosen = await screen.findByRole("radio", { name: "RED (r)" });
   await waitFor(() => expect(chosen.getAttribute("aria-checked")).toBe("true"));
@@ -133,7 +133,7 @@ it("shows a saved draft's verdict and reasons, sending nothing; a fresh draft ch
   expect(saved.calls.some((call) => call.cmd === "human_draft_edit")).toBe(false);
 });
 
-it("reads compact Points from the shared draft; Insert puts one into the overlay's reasons field", async () => {
+it("reads compact Points from the shared draft; Insert puts one into the overlay's issues field", async () => {
   const { library } = backend();
   const user = userEvent.setup();
   render(PetWindow, { request: "run-a-2" });
@@ -147,10 +147,10 @@ it("reads compact Points from the shared draft; Insert puts one into the overlay
   expect(within(points).getByText(text)).toBeTruthy();
   expect(points.textContent).not.toContain("File Explorer");
   expect(within(points).queryByRole("button", { name: /remove/i })).toBeNull();
-  const field = screen.getByRole<HTMLInputElement>("textbox", { name: "Reason" });
+  const field = screen.getByRole<HTMLInputElement>("textbox", { name: "Issue" });
   await user.type(field, "Here: ");
   await user.click(within(points).getByRole("button", { name: "Insert" }));
   expect(field.value).toBe(`Here: ${text}`);
-  expect(library.draft.reasons).toEqual([]);
+  expect(library.draft.issues).toEqual([]);
   expect(library.draft.points).toHaveLength(1);
 });

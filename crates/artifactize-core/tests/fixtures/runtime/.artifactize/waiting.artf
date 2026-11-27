@@ -1,10 +1,10 @@
-fingerprint = false
-path = "waiting/"
+artf waiting = {
+  fingerprint = false
+  path = "waiting/"
 
-[evals.check]
-title = "Check waiting"
-profile = { kind = "runtime", command = "/bin/false", args = [] }
-
-[evals.check.payload]
-instruction = """
-Check {timeout}."""
+  eval check : runtime(command = "/bin/false", args = []) = {
+    title = "Check waiting"
+    instruction = "Check timeout."
+    inputs = [timeout]
+  }
+}

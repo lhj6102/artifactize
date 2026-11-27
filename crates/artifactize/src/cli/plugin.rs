@@ -12,9 +12,9 @@ use super::{Context, print_json};
 pub enum PluginCommand {
     /// Install the plugin folder at PATH into this project.
     Add { path: PathBuf },
-    /// Remove a project-installed plugin by its type name.
-    Remove { r#type: PluginName },
-    /// List built-in and project-installed types.
+    /// Remove a project-installed plugin by its namespace.
+    Remove { namespace: PluginName },
+    /// List the built-in and project-installed plugins.
     List,
 }
 
@@ -39,7 +39,7 @@ pub(super) fn execute(context: Context, command: PluginCommand) -> Result<u8, St
                 describe(&info)?;
             }
         }
-        PluginCommand::Remove { r#type: name } => {
+        PluginCommand::Remove { namespace: name } => {
             plugins::remove(&repo, &name).map_err(|error| error.to_string())?;
             if context.json {
                 print_json(&name)?;

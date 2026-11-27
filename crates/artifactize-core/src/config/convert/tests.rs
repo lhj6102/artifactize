@@ -137,7 +137,8 @@ fn identical_tools_are_one_shared_toolset_and_variants_named_profiles() {
     let config = read_back(&converted);
     assert_eq!(config.artifacts[&name("b")].toolsets, ["a"]);
     let profiles: Vec<_> = config.profiles.keys().map(|name| name.as_str().to_owned()).collect();
-    assert_eq!(profiles, ["fast", "gpt-5-5"]);
+    // An unnamed profile is named after its backend.
+    assert_eq!(profiles, ["codex", "fast"]);
 }
 
 #[test]

@@ -337,7 +337,7 @@ impl<'a> Expander<'a> {
             match (piece, strings) {
                 (Piece::Text(part), Strings::Argument) => text.push_str(&part.replace("@{", "@@{")),
                 (Piece::Text(part), _) => text.push_str(&part),
-                (Piece::Slot(SlotRef::Artf { target, span }), Strings::Described) => {
+                (Piece::Slot(SlotRef::Artf { target: target @ SlotTarget::SelfRef, span }), Strings::Described) => {
                     text.push_str(&self.bound(&target, span)?);
                 }
                 (Piece::Slot(SlotRef::Path { target, path, span }), Strings::Argument) => {

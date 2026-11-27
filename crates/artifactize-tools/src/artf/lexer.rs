@@ -456,12 +456,25 @@ fn slot(
 ) -> Result<Slot, SyntaxError> {
     let at = |index: usize| map.get(offset + index).copied().unwrap_or(span.start);
     let mut words = Vec::new();
+    let mut starts = Vec::new();
     let mut cursor = 0;
     for word in inner.split([' ', '\t', '\n', '\r']) {
         if !word.is_empty() {
             words.push((word.to_owned(), at(cursor)..at(cursor) + word.len()));
+            starts.push(cursor);
         }
         cursor += word.len() + 1;
+    }
+    // A path under an Artifact is a file name, which may hold spaces: `@{path NAME/a b.txt}`
+    // runs to the closing brace.
+    if words.first().is_some_and(|(kind, _)| kind == "path")
+        && words.len() > 2
+        && words[1].0.contains('/')
+    {
+        let start = starts[1];
+        let rest = inner[start..].trim_end();
+        words.truncate(1);
+        words.push((rest.to_owned(), at(start)..at(start) + rest.len()));
     }
     let Some((kind, kind_span)) = words.first().cloned() else {
         return Err(error(span.start, "An empty `@{}` slot; write `@{artf NAME}`, `@{path NAME}`, `@{param NAME}` or `@{tool NAME AUDIENCE TOOL}`, or `@@{` for a literal `@{`."));

@@ -301,14 +301,24 @@ impl Converter<'_> {
         }
         if !instruction.is_empty() {
             let text = if kind == "runtime" {
-                quote_text(instruction)
+                // Prose nothing hashes: an old `{name}` reads as the name.
+                let mut text = instruction.to_owned();
+                for (start, end, name) in references.iter().rev() {
+                    text.replace_range(*start..*end, name);
+                }
+                quote_text(&text)
             } else {
                 instruction_text(instruction, &references)
             };
             writeln!(out, "    instruction = {text}").expect("write to String");
         }
         if kind == "runtime" {
-            let inputs: BTreeSet<&str> = references.iter().map(|reference| reference.2.as_str()).collect();
+            // Its own Artifact is what it checks, not an input.
+            let inputs: BTreeSet<&str> = references
+                .iter()
+                .map(|reference| reference.2.as_str())
+                .filter(|name| *name != artifact)
+                .collect();
             if !inputs.is_empty() {
                 writeln!(out, "    inputs = [{}]", inputs.into_iter().collect::<Vec<_>>().join(", "))
                     .expect("write to String");
@@ -372,10 +382,11 @@ impl Converter<'_> {
         {
             return Ok(name.clone());
         }
+        // An unnamed profile is named after its backend, the first thing an author changes.
         let base = identifier(
             wanted
-                .or_else(|| profile.get("model").and_then(Value::as_str))
                 .or_else(|| profile.get("backend").and_then(Value::as_str))
+                .or_else(|| profile.get("model").and_then(Value::as_str))
                 .unwrap_or("agent"),
         );
         let mut name = base.clone();
@@ -560,20 +571,45 @@ fn reference_spans(source: &str) -> Vec<(usize, usize, String)> {
     found
 }
 
-/// An instruction with its old references as `@{artf …}` slots.
+/// An instruction with its old references as slots: `{name}` an `@{artf …}`, and `{name}/sub`,
+/// a path under it, an `@{path name/sub}`.
 fn instruction_text(text: &str, references: &[(usize, usize, String)]) -> String {
     let mut pieces = Vec::new();
     let mut cursor = 0;
     for (start, end, name) in references {
         pieces.push(super::lang::Piece::Text(text[cursor..*start].to_owned()));
-        pieces.push(super::lang::Piece::Slot(super::lang::SlotRef::Artf {
-            target: super::lang::SlotTarget::Named(name.clone(), super::lang::Span::default()),
-            span: super::lang::Span::default(),
+        let target = super::lang::SlotTarget::Named(name.clone(), super::lang::Span::default());
+        let path = sub_path(&text[*end..]);
+        pieces.push(super::lang::Piece::Slot(if path.is_empty() {
+            super::lang::SlotRef::Artf {
+                target,
+                span: super::lang::Span::default(),
+            }
+        } else {
+            super::lang::SlotRef::Path {
+                target,
+                path: path[1..].to_owned(),
+                span: super::lang::Span::default(),
+            }
         }));
-        cursor = *end;
+        cursor = *end + path.len();
     }
     pieces.push(super::lang::Piece::Text(text[cursor..].to_owned()));
     render::template(&pieces, 2)
+}
+
+/// The `/sub/path` that follows an old reference, without a sentence's closing punctuation.
+fn sub_path(rest: &str) -> &str {
+    if !rest.starts_with('/') {
+        return "";
+    }
+    let end = rest
+        .char_indices()
+        .skip(1)
+        .find(|(_, character)| !(character.is_ascii_alphanumeric() || matches!(character, '/' | '.' | '_' | '-')))
+        .map_or(rest.len(), |(index, _)| index);
+    let path = rest[..end].trim_end_matches(['.', '/']);
+    if path.len() > 1 { path } else { "" }
 }
 
 fn quote_text(text: &str) -> String {
@@ -664,8 +700,12 @@ fn key_text(key: &str) -> String {
 
 /// `name(key = value, …)`, `args` and `command` written in `strings`, a description as one.
 fn call(name: &str, fields: &Map<String, Value>, depth: usize, strings: Strings) -> String {
-    let arguments: Vec<_> = fields
-        .iter()
+    // What a call is, then what it runs with: authored order, which a JSON map has lost.
+    const FIRST: [&str; 9] = ["op", "backend", "model", "command", "args", "protocol", "session", "description", "start"];
+    let mut ordered: Vec<(&String, &Value)> = fields.iter().collect();
+    ordered.sort_by_key(|(key, _)| FIRST.iter().position(|first| first == key).unwrap_or(FIRST.len()));
+    let arguments: Vec<_> = ordered
+        .into_iter()
         .map(|(key, value)| {
             let mode = match key.as_str() {
                 "args" => strings,

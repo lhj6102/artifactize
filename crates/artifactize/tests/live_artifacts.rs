@@ -88,7 +88,7 @@ fn request<'a>(run: &'a Value, id: &str) -> &'a Value {
 fn passing(request: &support::Request) -> support::Reply {
     support::openai::completed(
         request,
-        vec![support::openai::message("{\"findings\":[]}")],
+        vec![support::openai::message("{\"issues\":[]}")],
         support::openai::usage(10, 2),
     )
 }
@@ -154,11 +154,11 @@ fn runtime_observations_receive_uris_run_from_the_project_and_never_reuse_even_w
         fs::read_to_string(project.repo.join("environment.txt")).unwrap(),
         "from-the-terminal\nfrom-the-terminal\n"
     );
+    // It ran in the project folder, as its output in the Run's logs says.
+    let id = request(&second, "service/observe")["id"].as_str().unwrap().to_owned();
+    let logs = project.json(&["request", "logs", &id, "--stream", "stdout"], 0);
     assert_eq!(
-        request(&second, "service/observe")["result"]["stdout"]
-            .as_str()
-            .unwrap()
-            .trim(),
+        logs["streams"][0]["lines"][0]["text"].as_str().unwrap().trim(),
         support::os::path_text(&support::os::canonical(&project.repo))
     );
     let saved = project.json(&["run", "show", first["id"].as_str().unwrap()], 0);
@@ -309,10 +309,10 @@ async fn command_tools_and_fingerprint_scripts_receive_the_same_opaque_live_addr
     }));
     let config = config::read_workspace_config(&project.repo).unwrap();
     let registry = Registry::for_artifact(&config, &"service".parse().unwrap()).unwrap();
-    registry.preflight("observe_service").unwrap();
+    registry.preflight("service_observe_service").unwrap();
     let result = registry
         .call(
-            "observe_service",
+            "service_observe_service",
             json!({}),
             &project.root.path().join("tool-output"),
             CancellationToken::new(),

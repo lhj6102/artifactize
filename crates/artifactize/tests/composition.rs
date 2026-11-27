@@ -232,7 +232,7 @@ fn parts_reject_cycles_unknown_names_and_invalid_names() {
     assert!(
         fixture
             .error(&["config", "check"])
-            .contains("parts: Unknown Artifact missing")
+            .contains("Unknown Artifact `missing`")
     );
     fixture.declare("b/index.artf", json!({"name":"b","parts":["b"]}));
     assert!(
@@ -245,10 +245,14 @@ fn parts_reject_cycles_unknown_names_and_invalid_names() {
     fixture.declare("a/index.artf", json!({"name":"a","parts":["graph"]}));
     assert!(fixture.cli(&["config", "check"]).status.success());
     fixture.declare("a/index.artf", json!({"name":"a"}));
-    // Spaces are legal in a physical filename on every supported OS, but not in a name.
-    fixture.declare("b/index.artf", json!({"name":"a b"}));
+    // A name starts with a letter; the error names the line it is on.
+    fs::write(
+        fixture.repo.join(".artifactize/bad.artf"),
+        "artf 1b = { path = \"b/\" }\n",
+    )
+    .unwrap();
     let error = fixture.error(&["config", "check"]);
-    assert!(error.contains("Artifact name must match"), "{error}");
+    assert!(error.contains("bad.artf") && error.contains("line 1"), "{error}");
 }
 
 #[test]
@@ -396,7 +400,7 @@ fn an_aspect_selects_part_of_a_folder_and_reuses_while_the_rest_changes() {
                 "--audience",
                 "agent",
                 "--tool",
-                "list",
+                "fireball_list",
                 "--args",
                 &args,
             ],

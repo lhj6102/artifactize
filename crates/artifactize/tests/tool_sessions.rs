@@ -48,9 +48,9 @@ impl Fixture {
         let provider = FakeProvider::start(move |request| {
             let index = count.fetch_add(1, Ordering::SeqCst);
             let result = if index < calls {
-                openai::function_call(&format!("call_{index}"), "act_app", &json!({}))
+                openai::function_call(&format!("call_{index}"), "app_act_app", &json!({}))
             } else {
-                openai::message(&json!({"findings":[]}).to_string())
+                openai::message(&json!({"issues":[]}).to_string())
             };
             openai::completed(request, vec![result], openai::usage(10, 5))
         });
@@ -190,7 +190,7 @@ fn declarations_reject_unknown_sessions_and_lifecycle_options_with_spans() {
     use artifactize_core::config::parse_declaration;
     let unknown = "tool app = {\n  agent act = command(\n    description = \"act\",\n    command = \"harness\",\n    args = [],\n    protocol = \"json\",\n    session = \"missing\",\n  )\n}\nartf app : app = { path = \"./\", basis = true }\n";
     let error = parse_declaration(unknown).unwrap_err();
-    assert!(error.contains("Unknown tool session: app.missing"), "{error}");
+    assert!(error.contains("unknown tool session app.missing"), "{error}");
     assert!(error.contains("line 2"), "{error}");
     let extra = "tool app = {\n  session app = session(\n    start = command(command = \"harness\", args = [], timeout_ms = 1),\n    stop = command(command = \"harness\", args = []),\n  )\n}\nartf app : app = { path = \"./\", basis = true }\n";
     let error = parse_declaration(extra).unwrap_err();
@@ -275,7 +275,7 @@ fn two_calls_share_one_started_session_and_cleanup_precedes_green_publication() 
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-        for key in ["app_app.start", "app_app.stop"] {
+        for key in ["app_app_app:start", "app_app_app:stop"] {
             assert_eq!(pins[key]["harness.py"], expected);
         }
         let reused = fixture.json(&["verify", "--wait", "--all"], 0);
@@ -318,7 +318,7 @@ fn execute_diagnostic_and_follow_up_get_their_own_sessions() {
             "--audience",
             "agent",
             "--tool",
-            "act",
+            "app_act",
         ],
         0,
     );
@@ -332,7 +332,7 @@ fn execute_diagnostic_and_follow_up_get_their_own_sessions() {
     let calls = AtomicUsize::new(0);
     fixture.provider = FakeProvider::start(move |request| {
         let result = if calls.fetch_add(1, Ordering::SeqCst) == 0 {
-            openai::function_call("followup_call", "act_app", &json!({}))
+            openai::function_call("followup_call", "app_act_app", &json!({}))
         } else {
             openai::message("Evidence from a fresh tool session.")
         };
@@ -363,7 +363,7 @@ fn concurrent_reviews_have_distinct_sessions_and_both_cleanup() {
         if !request.body.to_string().contains("function_call_output") {
             return openai::completed(
                 request,
-                vec![openai::function_call("call", "act_app", &json!({}))],
+                vec![openai::function_call("call", "app_act_app", &json!({}))],
                 openai::usage(10, 5),
             );
         }
@@ -372,7 +372,7 @@ fn concurrent_reviews_have_distinct_sessions_and_both_cleanup() {
         });
         openai::completed(
             request,
-            vec![openai::message(&json!({"findings":[]}).to_string())],
+            vec![openai::message(&json!({"issues":[]}).to_string())],
             openai::usage(10, 5),
         )
     });
@@ -397,7 +397,7 @@ fn diagnostic_fixture_releases_detached_processes_before_removal_on_drop_and_unw
                 "--audience",
                 "agent",
                 "--tool",
-                "act",
+                "app_act",
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -463,7 +463,7 @@ fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
         requests[2]
             .body
             .to_string()
-            .contains("The tool session `app` ended.")
+            .contains("The tool session `app.app` ended.")
     );
 }
 
@@ -483,7 +483,7 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
                 "--audience",
                 "agent",
                 "--tool",
-                "act",
+                "app_act",
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -533,7 +533,7 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
                 "--audience",
                 "agent",
                 "--tool",
-                "act",
+                "app_act",
             ],
             0,
         );
@@ -579,7 +579,7 @@ fn crash_sweep_recovers_stop_and_bound_invocation_groups_with_their_descendants(
                 "--audience",
                 "agent",
                 "--tool",
-                "act",
+                "app_act",
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -616,7 +616,7 @@ fn crash_sweep_recovers_stop_and_bound_invocation_groups_with_their_descendants(
                 "--audience",
                 "agent",
                 "--tool",
-                "act",
+                "app_act",
             ],
             0,
         );
@@ -635,14 +635,14 @@ fn red_reviews_stop_and_cleanup_before_the_result_is_published() {
         if !request.body.to_string().contains("function_call_output") {
             return openai::completed(
                 request,
-                vec![openai::function_call("call", "act_app", &json!({}))],
+                vec![openai::function_call("call", "app_act_app", &json!({}))],
                 openai::usage(10, 5),
             );
         }
         openai::completed(
             request,
             vec![openai::message(
-                &json!({"findings":[{"priority":"P0","reason":"broken"}]}).to_string(),
+                &json!({"issues":[{"priority":"P0","reason":"broken"}]}).to_string(),
             )],
             openai::usage(10, 5),
         )
@@ -662,7 +662,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
         if !request.body.to_string().contains("function_call_output") {
             return openai::completed(
                 request,
-                vec![openai::function_call("call", "act_app", &json!({}))],
+                vec![openai::function_call("call", "app_act_app", &json!({}))],
                 openai::usage(10, 5),
             );
         }
@@ -671,7 +671,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
         });
         openai::completed(
             request,
-            vec![openai::message(&json!({"findings":[]}).to_string())],
+            vec![openai::message(&json!({"issues":[]}).to_string())],
             openai::usage(10, 5),
         )
     });
@@ -707,7 +707,7 @@ fn an_ended_session_stops_its_processes_while_the_verdict_is_pending() {
     let requests = AtomicUsize::new(0);
     fixture.provider = FakeProvider::start(move |request| {
         let content = if requests.fetch_add(1, Ordering::SeqCst) == 0 {
-            openai::function_call("call", "act_app", &json!({}))
+            openai::function_call("call", "app_act_app", &json!({}))
         } else {
             fs::write(
                 support::declaration::source_path(log.join("awaiting-verdict")),
@@ -717,7 +717,7 @@ fn an_ended_session_stops_its_processes_while_the_verdict_is_pending() {
             support::os::wait_until(Duration::from_secs(15), || {
                 support::declaration::read_text(log.join("verdict")).unwrap_or_default() == "ready"
             });
-            openai::message(&json!({"findings":[]}).to_string())
+            openai::message(&json!({"issues":[]}).to_string())
         };
         openai::completed(request, vec![content], openai::usage(10, 5))
     });
@@ -768,7 +768,7 @@ fn leader_retirement_io_error_still_cancels_bound_calls_and_runs_stop() {
             "--audience",
             "agent",
             "--tool",
-            "act",
+            "app_act",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -833,7 +833,7 @@ async fn paused_cleanup_probe() {
             artifact: "app".parse().unwrap(),
             args: None,
         },
-        tool: "act".parse().unwrap(),
+        tool: "app_act".parse().unwrap(),
     };
     let check = check_tools(&repo, Some(&state), &options, CancellationToken::new());
     tokio::select! {
@@ -892,7 +892,7 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
             "--audience",
             "agent",
             "--tool",
-            "act",
+            "app_act",
         ],
         0,
     );
@@ -921,7 +921,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
     fixture.provider = FakeProvider::start(move |request| {
         let turn = calls.fetch_add(1, Ordering::SeqCst);
         let content = if turn == 0 {
-            openai::function_call("probe", "probe_app", &json!({}))
+            openai::function_call("probe", "app_probe_app", &json!({}))
         } else if turn == 1 {
             let probe = request.body["input"]
                 .as_array()
@@ -940,7 +940,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
             support::os::wait_until(Duration::from_secs(10), || {
                 support::declaration::read_text(log.join("admit")).unwrap_or_default() == "ready"
             });
-            openai::function_call("failed_call", "act_app", &json!({}))
+            openai::function_call("failed_call", "app_act_app", &json!({}))
         } else {
             fs::write(
                 support::declaration::source_path(log.join("rejected")),
@@ -950,7 +950,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
             support::os::wait_until(Duration::from_secs(10), || {
                 support::declaration::read_text(log.join("verdict")).unwrap_or_default() == "ready"
             });
-            openai::message(&json!({"findings":[]}).to_string())
+            openai::message(&json!({"issues":[]}).to_string())
         };
         openai::completed(request, vec![content], openai::usage(10, 5))
     });

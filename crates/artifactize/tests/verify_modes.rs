@@ -201,7 +201,13 @@ impl Fixture {
             &receipts,
             &request.id,
             &reviewer,
-            &human::Submission::try_from(json!({"verdict":verdict})).unwrap(),
+            // RED says what to change.
+            &human::Submission::try_from(if verdict == "RED" {
+                json!({"verdict":verdict,"issues":["Needs work"]})
+            } else {
+                json!({"verdict":verdict})
+            })
+            .unwrap(),
             CancellationToken::new(),
         )
         .await
@@ -237,7 +243,7 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
                 support::openai::completed(
                     request,
                     vec![support::openai::message(
-                        &json!({"findings":[]}).to_string(),
+                        &json!({"issues":[]}).to_string(),
                     )],
                     support::openai::usage(1, 1),
                 )
@@ -499,20 +505,8 @@ async fn c2_signoffs_are_late_provisional_end_yellow_and_are_reused_by_the_next_
 }
 
 #[tokio::test]
-async fn c2_removed_gate_and_defer_human_are_refused_with_their_replacement() {
+async fn c2_removed_defer_human_is_refused_with_its_replacement() {
     let fixture = Fixture::new();
-    let mut eval = human_eval(&[]);
-    eval["gate"] = json!("blocking");
-    fixture.declare("up", vec![eval]);
-    let output = support::os::run(fixture.command().args(["verify", "--all"]));
-    assert!(!output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains(
-            "gate was removed in 0.16.0; remove it. A Human sign-off never holds up other evals."
-        ),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
     fixture.declare("up", vec![human_eval(&[])]);
     let output = support::os::run(fixture.command().args(["verify", "--all", "--defer-human"]));
     assert!(!output.status.success());
@@ -1163,7 +1157,7 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
             support::openai::completed(
                 request,
                 vec![support::openai::message(
-                    &json!({"findings":[]}).to_string(),
+                    &json!({"issues":[]}).to_string(),
                 )],
                 support::openai::usage(1, 1),
             )

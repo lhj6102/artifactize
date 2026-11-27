@@ -12,7 +12,6 @@
   import DetailPane from "../monitor/DetailPane.svelte";
   import GraphStage from "../monitor/GraphStage.svelte";
   import GraphTools from "../monitor/GraphTools.svelte";
-  import EditDialogs from "./EditDialogs.svelte";
 
   let {
     branch: branchKey,
@@ -124,7 +123,6 @@
   </GraphStage>
 </section>
 
-<EditDialogs branch={active ? branch : null} ondeleted={() => void close()} />
 
 <style>
   .current, .pending {

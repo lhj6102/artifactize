@@ -1,6 +1,5 @@
 import { createContext } from "svelte";
 import type { Area } from "./camera";
-import type { Point } from "./graph";
 
 export class GraphViewState {
   /** The canvas element, while it is mounted. */
@@ -17,18 +16,6 @@ export class GraphViewState {
   cell = $state(24);
   /** An Artifact's name's font at zoom 1, in screen pixels, as the --text-body token sets it. */
   font = $state(13);
-  /** Grows when what was dragged goes back where it was: the nodes are drawn from the layout
-   * again. */
-  epoch = $state(0);
-  /** The copy a release would drop on, highlighted while the drop would be accepted. */
-  target = $state<string | null>(null);
-  /** A comment being dragged: whose copy, and where the pointer is in the canvas. */
-  comment = $state.raw<{ key: string; x: number; y: number; shape: Lifted } | null>(null);
-  /** The node being dragged, and whether Esc put it back. */
-  dragging = $state.raw<{ key: string; cancelled: boolean } | null>(null);
-  /** Where the pointer last went down on the graph: a dropped node moved as far as the pointer
-   * did from there, whatever frames its drawing skipped. */
-  pressed = $state.raw<Point | null>(null);
   /** The drawn copy focus is on, by key. */
   focused = $state<string | null>(null);
   /** A whole's face was just dragged to pan: the click that ends it opens nothing. */
@@ -38,7 +25,7 @@ export class GraphViewState {
 export const [getGraphViewState, setGraphViewState] = createContext<GraphViewState>();
 
 /** The graph view a node is drawn in; none for a node drawn elsewhere, such as the Detail's
- * Neighbours, which nothing is dragged onto. */
+ * Neighbours. */
 export function graphViewStateOf(): GraphViewState | null {
   try {
     return getGraphViewState();
@@ -46,7 +33,3 @@ export function graphViewStateOf(): GraphViewState | null {
     return null;
   }
 }
-
-/** How a dragged comment keeps the look it had under its node: its width and padding at zoom 1,
- * and the zoom it was drawn at. */
-export type Lifted = { width: number; padding: string; zoom: number };

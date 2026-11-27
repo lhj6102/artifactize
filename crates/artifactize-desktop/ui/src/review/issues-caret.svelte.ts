@@ -2,9 +2,9 @@ import type { Attachment } from "svelte/attachments";
 
 type Field = HTMLTextAreaElement | HTMLInputElement;
 
-/** One surface's reasons field and its DOM caret, independent of the library's draft and of
+/** One surface's issues field and its DOM caret, independent of the library's draft and of
  * other surfaces: a point's Insert puts its text there (J-HUMAN-POINTS). */
-export class ReasonsCaret {
+export class IssuesCaret {
   #field: Field | null = $state(null);
   /** The field has had the caret, so its selection is where the person left it. */
   #placed = false;

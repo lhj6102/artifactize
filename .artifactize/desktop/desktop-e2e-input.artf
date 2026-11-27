@@ -1,21 +1,23 @@
-path = "crates/artifactize-desktop/src/"
-type = "files"
-select = ["e2e_input.rs", "e2e_input"]
-# The test-only native text-input device the end-to-end suite drives the WebView engines
-# through (E2E-INPUT). Compiled into the backend only for the E2E test build; a part of
-# desktop-e2e.
+// The test-only native text-input device the end-to-end suite drives the WebView engines
+// through (E2E-INPUT). Compiled into the backend only for the E2E test build; a part of
+// desktop-e2e.
+artf desktop-e2e-input : files = {
+  path = "crates/artifactize-desktop/src/"
+  select = ["e2e_input.rs", "e2e_input"]
 
-[evals.engine-apis]
-title = "The text-input device follows E2E-INPUT"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-payload.instruction = """
-Read E2E-INPUT of the end-to-end rules {desktop-e2e-rules} and the engine contract in the module comment of \
-e2e_input/platform.rs of {desktop-e2e-input}, which names the WebView-engine text and editing APIs the device may \
-call on each OS. Review the test-only native text-input device (e2e_input.rs and e2e_input/) against that contract. \
-The banned injection APIs are checked by no-injection, how the suite reaches the device by desktop-e2e."""
+  eval engine-apis : luna = {
+    title = "The text-input device follows E2E-INPUT"
+    red_at = "P1"
+    instruction = "Read E2E-INPUT of the end-to-end rules @{artf desktop-e2e-rules} and the engine contract in the module comment of e2e_input/platform.rs of @{artf desktop-e2e-input}, which names the WebView-engine text and editing APIs the device may call on each OS. Review the test-only native text-input device (e2e_input.rs and e2e_input/) against that contract. The banned injection APIs are checked by no-injection, how the suite reaches the device by desktop-e2e."
+  }
 
-[evals.no-injection]
-title = "The text-input device calls none of the injection APIs E2E-INPUT bans"
-profile = { kind = "runtime", command = "node", args = ["{desktop-e2e-integrity}/e2e-integrity.ts", "device"], timeout_ms = 60000 }
-payload.instruction = "Check every source of the device {desktop-e2e-input} with the integrity checker {desktop-e2e-integrity} for the OS-level event and raw key APIs that E2E-INPUT of {desktop-e2e-rules} bans."
+  eval no-injection : runtime(
+      command = "node",
+      args = ["@{path desktop-e2e-integrity/e2e-integrity.ts}", "device"],
+      timeout_ms = 60000,
+    ) = {
+    title = "The text-input device calls none of the injection APIs E2E-INPUT bans"
+    instruction = "Check every source of the device desktop-e2e-input with the integrity checker desktop-e2e-integrity for the OS-level event and raw key APIs that E2E-INPUT of desktop-e2e-rules bans."
+    inputs = [desktop-e2e-integrity, desktop-e2e-rules]
+  }
+}

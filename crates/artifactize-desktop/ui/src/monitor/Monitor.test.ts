@@ -109,7 +109,7 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
         case "human_waiting_count":
           return snapshot().waiting.length;
         case "human_open_reference":
-          return { view: humanView(stage), outsideFilter: outside !== null, outsideReason: outside };
+          return { view: humanView(stage), outsideFilter: outside !== null, outsideIssue: outside };
         case "detail": {
           const asked = args as { source: unknown; node: string };
           return {
@@ -555,7 +555,7 @@ it("opens a review by reference without changing the filter or adding a banner, 
   await waitFor(() => expect(shownRun()).toBe("run-a"));
 });
 
-it("holds Find and Open in Verify in a review's stage header; Esc leaves the reasons field, then returns to the Pane", async () => {
+it("holds Find and Open in Verify in a review's stage header; Esc leaves the issues field, then returns to the Pane", async () => {
   backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1")] }));
   render(App);
   const main = await screen.findByLabelText("Review's main area");
@@ -574,10 +574,10 @@ it("holds Find and Open in Verify in a review's stage header; Esc leaves the rea
 
   await fireEvent.keyDown(region, { key: "c" });
   await within(main).findByText("Yours");
-  const reason = await within(main).findByRole("textbox", { name: "Reason" });
-  reason.focus();
-  // The first Esc leaves the reasons field with the review still open; the next returns to the Pane.
-  await fireEvent.keyDown(reason, { key: "Escape" });
+  const issue = await within(main).findByRole("textbox", { name: "Issue" });
+  issue.focus();
+  // The first Esc leaves the issues field with the review still open; the next returns to the Pane.
+  await fireEvent.keyDown(issue, { key: "Escape" });
   await waitFor(() => expect(document.activeElement).toBe(region));
   expect(shownReview()).toMatch(/release\/signoff/);
   await fireEvent.keyDown(region, { key: "Escape" });

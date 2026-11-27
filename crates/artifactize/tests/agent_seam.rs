@@ -112,14 +112,14 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
                 .any(|item| item["type"] == "function_call_output")
         });
         if replayed {
-            let verdict = json!({"findings":[{"priority":"P2","reason":"R1 is covered."}]});
+            let verdict = json!({"issues":[{"priority":"P2","reason":"R1 is covered."}]});
             openai::completed(
                 request,
                 vec![openai::message(&verdict.to_string())],
                 openai::usage(40, 8),
             )
         } else {
-            let call = openai::function_call("call_1", "read_spec", &json!({"path":"spec.md"}));
+            let call = openai::function_call("call_1", "spec_read_spec", &json!({"path":"spec.md"}));
             openai::completed(request, vec![call], openai::usage(30, 5))
         }
     });
@@ -135,7 +135,7 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
     assert_eq!(review["status"], "GREEN", "{run}");
     assert_eq!(
         review["result"],
-        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"R1 is covered."}]})
+        json!({"verdict":"GREEN","kind":"agent","issues":[{"priority":"P2","reason":"R1 is covered."}]})
     );
     // The review's tool calls live in its saved session, not in the request.
     assert!(review.get("toolCalls").is_none());
@@ -154,7 +154,7 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
         assert_eq!(call.body["model"], "fake-model");
         assert_eq!(call.body["reasoning"], json!({"effort":"max"}));
         assert_eq!(call.body["stream"], true);
-        assert_eq!(call.body["tools"][0]["name"], "read_spec");
+        assert_eq!(call.body["tools"][0]["name"], "spec_read_spec");
     }
     let output = calls[1].body["input"]
         .as_array()
@@ -179,7 +179,7 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
             |request| match (request.method.as_str(), request.path.as_str()) {
                 ("POST", "/v1/messages") => anthropic::text(
                     request,
-                    &json!({"findings":[{"priority":"P1","reason":"R1 is missing."}]}).to_string(),
+                    &json!({"issues":[{"priority":"P1","reason":"R1 is missing."}]}).to_string(),
                     12,
                     3,
                 ),
@@ -210,7 +210,7 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
     let schema = &review.body["output_config"]["format"]["schema"];
     assert_eq!(schema["type"], "object");
     assert!(schema.get("anyOf").is_none());
-    assert_eq!(schema["required"], json!(["findings"]));
+    assert_eq!(schema["required"], json!(["issues"]));
 
     for (backend, variable, base, model) in [
         (
@@ -383,12 +383,12 @@ fn the_repair_turn_names_the_failing_schema_paths() {
         if last_prompt(request).starts_with("Your final response did not match") {
             reply(
                 request,
-                json!({"findings":[{"priority":"P2","reason":"R1 is covered."}]}),
+                json!({"issues":[{"priority":"P2","reason":"R1 is covered."}]}),
             )
         } else {
             reply(
                 request,
-                json!({"findings":[{"priority":"P5","reason":"R1"}]}),
+                json!({"issues":[{"priority":"P5","reason":"R1"}]}),
             )
         }
     });
@@ -402,13 +402,13 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     );
     assert_eq!(
         run["requests"][0]["result"],
-        json!({"verdict":"GREEN","findings":[{"priority":"P2","reason":"R1 is covered."}]})
+        json!({"verdict":"GREEN","kind":"agent","issues":[{"priority":"P2","reason":"R1 is covered."}]})
     );
     let calls = repaired.requests();
     assert_eq!(calls.len(), 2);
     let prompt = last_prompt(&calls[1]);
     assert!(
-        prompt.starts_with("Your final response did not match the required schema: schema_mismatch: result must be an object with a findings list, each finding a priority P0 to P3 and a reason\n- "),
+        prompt.starts_with("Your final response did not match the required schema: schema_mismatch: result must be an object with an issues list, each issue a priority P0 to P3 and a reason\n- "),
         "{prompt}"
     );
     assert!(prompt.contains("P5"), "{prompt}");
@@ -418,7 +418,7 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     let stubborn = FakeProvider::start(move |request| {
         reply(
             request,
-            json!({"findings":[{"priority":"P5","reason":"R1"}]}),
+            json!({"issues":[{"priority":"P5","reason":"R1"}]}),
         )
     });
     let run = parsed(
@@ -431,7 +431,7 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     );
     assert_eq!(
         run["requests"][0]["error"],
-        "Invalid final Agent result after one format repair: schema_mismatch: result must be an object with a findings list, each finding a priority P0 to P3 and a reason."
+        "Invalid final Agent result after one format repair: schema_mismatch: result must be an object with an issues list, each issue a priority P0 to P3 and a reason."
     );
     assert_eq!(stubborn.requests().len(), 2);
 }
@@ -472,15 +472,15 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
             .collect();
         let turn = outputs.len();
         let call = match turn {
-            0 => openai::function_call("fixed", "fixed_spec", &json!({})),
-            1 => openai::function_call("section", "section_spec", &json!({"heading":"First"})),
-            2 => openai::function_call("missing", "section_spec", &json!({"heading":"Absent"})),
-            3 => openai::function_call("help", "help_spec", &json!({})),
+            0 => openai::function_call("fixed", "spec_fixed_spec", &json!({})),
+            1 => openai::function_call("section", "spec_section_spec", &json!({"heading":"First"})),
+            2 => openai::function_call("missing", "spec_section_spec", &json!({"heading":"Absent"})),
+            3 => openai::function_call("help", "spec_help_spec", &json!({})),
             _ => {
                 return openai::completed(
                     request,
                     vec![openai::message(
-                        &json!({"findings":[{"priority":"P2","reason":"R1 is covered."}]})
+                        &json!({"issues":[{"priority":"P2","reason":"R1 is covered."}]})
                             .to_string(),
                     )],
                     openai::usage(30, 5),
@@ -500,13 +500,13 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
     assert_eq!(run["requests"][0]["status"], "GREEN");
     let requests = provider.requests();
     let tools = requests[0].body["tools"].as_array().unwrap();
-    for name in ["fixed_spec", "fixed_section_spec", "help_spec"] {
+    for name in ["spec_fixed_spec", "spec_fixed_section_spec", "spec_help_spec"] {
         let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
         assert_eq!(tool["parameters"]["properties"], json!({}));
     }
     let section = tools
         .iter()
-        .find(|tool| tool["name"] == "section_spec")
+        .find(|tool| tool["name"] == "spec_section_spec")
         .unwrap();
     assert_eq!(section["parameters"]["required"], json!(["heading"]));
     assert_eq!(

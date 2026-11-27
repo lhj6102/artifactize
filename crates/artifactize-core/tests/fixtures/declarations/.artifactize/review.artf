@@ -1,34 +1,33 @@
-fingerprint = { script = { command = "hook.sh", args = [], files = ["hook.sh"], timeout_ms = 1000 } }
-path = "review/"
+tool review = {
+  agent read = command(
+      command = "sh",
+      args = ["hook.sh"],
+      protocol = "plain",
+      description = "Read @{artf self}",
+      input_schema = { type = "object" },
+      timeout_ms = 1000,
+    )
+  human read = command(command = "sh", args = ["hook.sh"], description = "Read @{artf self}", kind = "output")
+}
 
-[views.agent_tools]
-read = { description = "Read {artifactName}", input_schema = { type = "object" }, timeout_ms = 1000, command = "sh", args = ["hook.sh"], protocol = "plain" }
+artf review : review = {
+  fingerprint = script(command = "hook.sh", args = [], files = ["hook.sh"], timeout_ms = 1000)
+  path = "review/"
 
-[views.human_tools]
-read = { description = "Read {artifactName}", kind = "output", command = "sh", args = ["hook.sh"] }
+  eval agent : not-called = {
+    title = "Review input"
+    red_at = "P1"
+    instruction = "Inspect @{artf input}."
+  }
 
-[evals.runtime]
-title = "Check input"
-profile = { kind = "runtime", command = "sh", args = ["hook.sh"], timeout_ms = 1000 }
+  eval human : human = {
+    title = "Inspect input"
+    instruction = "Inspect @{artf input}."
+  }
 
-[evals.runtime.payload]
-instruction = """
-Check {input}."""
-owner = { literal = "$HOME" }
-
-[evals.agent]
-title = "Review input"
-profile = { kind = "agent", backend = "openai", model = "not-called", reasoning = "high" }
-red_at = "P1"
-
-[evals.agent.payload]
-instruction = """
-Inspect {input}."""
-
-[evals.human]
-title = "Inspect input"
-profile = { kind = "human" }
-
-[evals.human.payload]
-instruction = """
-Inspect {input}."""
+  eval runtime : runtime(command = "sh", args = ["hook.sh"], timeout_ms = 1000) = {
+    title = "Check input"
+    instruction = "Check input."
+    inputs = [input]
+  }
+}

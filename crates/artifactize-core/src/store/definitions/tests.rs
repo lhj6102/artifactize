@@ -221,7 +221,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                     "kind":"agent","backend":"openai","model":"fixture",
                     "reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null,
                 },
-                "profileName":"fixture",
+                "profileName":"openai",
                 "payload":{"instruction":"Check."},
                 "redAt":"P1",
             },

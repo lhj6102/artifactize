@@ -76,7 +76,7 @@ fn expand_and_symbols_show_what_the_code_declares() {
     fixture.write(".artifactize/project.artf", DEFINITIONS);
     let output = fixture.run(&["config", "expand", "core"]);
     let text = String::from_utf8(output.stdout).unwrap();
-    assert!(text.starts_with("// .artifactize/project.artf:14 (by crate!)\n"), "{text}");
+    assert!(text.starts_with("// .artifactize/project.artf:13 (by crate!)\n"), "{text}");
     assert!(text.contains("artf core : files = {\n  path = \"crates/core/\""), "{text}");
     assert!(text.contains("instruction = \"Is @{artf self} readable next to @{artf docs}?\""), "{text}");
     let expanded = fixture.json(&["--json", "config", "expand"]);
@@ -94,7 +94,7 @@ fn expand_and_symbols_show_what_the_code_declares() {
         .iter()
         .find(|symbol| symbol["name"] == "crate")
         .unwrap();
-    assert_eq!(crate_macro["isMacro"], true);
+    assert_eq!(crate_macro["macro"], true);
     assert_eq!(crate_macro["params"][0]["name"], "dir");
     let missing = fixture.run(&["config", "expand", "nowhere"]);
     assert!(!missing.status.success());
@@ -110,7 +110,7 @@ fn check_prints_the_line_and_the_macro_call_of_an_error() {
     let output = fixture.run(&["config", "check"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
-    assert!(error.contains("line 14") && error.contains("size"), "{error}");
+    assert!(error.contains("line 13") && error.contains("size"), "{error}");
 }
 
 #[test]

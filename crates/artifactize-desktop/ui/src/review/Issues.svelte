@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The reviewer's reasons (D-REV-10, J-HUMAN-REASONS): oldest first, each drawn as a person's
+  // The reviewer's issues (D-REV-10, J-HUMAN-REASONS): oldest first, each drawn as a person's
   // message is in Chat, its text exactly as typed, Edit and Remove beside it at its left. Edit
   // turns the bubble into a field in its place: Enter keeps the change, Esc leaves it as it was,
   // Shift+Enter starts a new line. In the pet overlay each is one line with Remove alone (D-PET-1).
@@ -15,9 +15,9 @@
     onleave?: () => void;
   } = $props();
 
-  /** The reason being edited: where it stood, what it read when the edit began, what it reads now. */
+  /** The issue being edited: where it stood, what it read when the edit began, what it reads now. */
   let editing = $state<{ index: number; previous: string; text: string } | null>(null);
-  const reasons = $derived(review.reasons);
+  const issues = $derived(review.issues);
   const usable = $derived(review.owned && !review.settled);
 
   /** The edit's field takes the caret at its end as it opens. */
@@ -30,7 +30,7 @@
     const edit = editing;
     if (!edit) return;
     editing = null;
-    await review.editReason(edit.index, edit.previous, edit.text);
+    await review.editIssue(edit.index, edit.previous, edit.text);
   }
 
   function keydown(event: KeyboardEvent) {
@@ -48,14 +48,14 @@
   }
 </script>
 
-{#if reasons.length > 0}
-  <ol class="reasons" class:compact aria-label="Reasons">
-    {#each reasons as reason, index (`${index}:${reason}`)}
-      <li class="reason">
+{#if issues.length > 0}
+  <ol class="issues" class:compact aria-label="Issues">
+    {#each issues as issue, index (`${index}:${issue}`)}
+      <li class="issue">
         {#if editing?.index === index}
           <textarea
             class="editing"
-            aria-label="Edit reason {index + 1}"
+            aria-label="Edit issue {index + 1}"
             bind:value={editing.text}
             onkeydown={keydown}
             onblur={() => void keep()}
@@ -64,11 +64,11 @@
         {:else}
           <span class="tools">
             {#if !compact}
-              <button class="icon" aria-label="Edit reason {index + 1}" title="Edit" disabled={!usable} onclick={() => (editing = { index, previous: reason, text: reason })}><Icon name="edit" /></button>
+              <button class="icon" aria-label="Edit issue {index + 1}" title="Edit" disabled={!usable} onclick={() => (editing = { index, previous: issue, text: issue })}><Icon name="edit" /></button>
             {/if}
-            <button class="icon" aria-label="Remove reason {index + 1}" title="Remove" disabled={!usable} onclick={() => void review.removeReason(index, reason)}><Icon name="remove" /></button>
+            <button class="icon" aria-label="Remove issue {index + 1}" title="Remove" disabled={!usable} onclick={() => void review.removeIssue(index, issue)}><Icon name="remove" /></button>
           </span>
-          <p class="message">{reason}</p>
+          <p class="message">{issue}</p>
         {/if}
       </li>
     {/each}
@@ -76,7 +76,7 @@
 {/if}
 
 <style>
-  .reasons {
+  .issues {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -84,7 +84,7 @@
     padding: 6px 0 0;
     list-style: none;
   }
-  .reason {
+  .issue {
     align-self: flex-end;
     display: flex;
     align-items: flex-start;
@@ -92,7 +92,7 @@
     max-width: 80%;
     min-width: 0;
   }
-  .reason:has(.editing) {
+  .issue:has(.editing) {
     align-self: stretch;
     max-width: none;
     justify-content: flex-end;
@@ -150,7 +150,7 @@
     padding: 0;
     gap: 4px;
   }
-  .compact .reason {
+  .compact .issue {
     max-width: 100%;
   }
   .compact .tools {

@@ -3,34 +3,24 @@
   // and nowhere else, both in the status's one colour: its icon before the name and a strip along
   // its bottom. After the name, how many of its evals are GREEN of how many (on a Current, how
   // many would be reused). Where edges reach it or leave it, a port says which by its shape and
-  // side (app.css). Its comment, when it has one, is text alone under it; on a Current the
-  // comment opens in its field there, and a drop that would make it a part outlines it.
+  // side (app.css).
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
-  import Comment from "./Comment.svelte";
   import type { Light, Tally } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
   import { LIGHTS } from "../shell/icons";
-  import { graphViewStateOf } from "./graph-view-state.svelte";
 
   let {
-    id,
     data,
     selected,
-  }: NodeProps & { data: { name: string; light: Light; tally: Tally | null; open: boolean; inward: boolean; outward: boolean; comment?: string | null; editing?: boolean; oncomment?: (event: PointerEvent) => void; onfield?: (written: string | null) => void } } = $props();
-  const v = graphViewStateOf();
-  /** The Artifact a release would make the dragged one's whole. */
-  const target = $derived(v?.target === id);
-  /** Its comment, its place left empty while the comment is dragged. */
-  const comment = $derived(v?.comment?.key === id ? null : (data.comment ?? null));
+  }: NodeProps & { data: { name: string; light: Light; tally: Tally | null; open: boolean; inward: boolean; outward: boolean } } = $props();
 </script>
 
-<div class="artifact graph-face ported light-{data.light}" class:selected class:open={data.open} class:target class:inward={data.inward} class:outward={data.outward}>
+<div class="artifact graph-face ported light-{data.light}" class:selected class:open={data.open} class:inward={data.inward} class:outward={data.outward}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="light"><Icon name={LIGHTS[data.light].icon} /></span>
   <span class="name">{data.name}</span>
   {#if data.tally}<span class="tally" aria-hidden="true">{data.tally.passed}/{data.tally.of}</span>{/if}
   <Handle type="source" position={Position.Right} isConnectable={false} />
-  <Comment name={data.name} text={comment} editing={data.editing ?? false} oncomment={data.oncomment} onfield={data.onfield} />
 </div>
 
 <style>
@@ -49,8 +39,8 @@
     font-size: var(--text-body);
     font-weight: 500;
   }
-  /* The pointer only steps up the outline of a node that is not current or a drop target. */
-  .artifact:hover:not(.selected, .open, .target) {
+  /* The pointer only steps up the outline of a node that is not current. */
+  .artifact:hover:not(.selected, .open) {
     border-color: var(--ink-3);
   }
   .artifact {

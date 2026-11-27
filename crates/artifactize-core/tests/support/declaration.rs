@@ -212,10 +212,15 @@ pub fn write(
         .or(stem)
         .ok_or_else(|| io::Error::other("Fixture node requires a name."))?;
     let folder_target = object.contains_key("select");
-    object.insert(
-        "path".into(),
-        Value::String(fixture_path(relative, folder_target)),
-    );
+    // A builder written into `.artifactize/` keeps the target it names; elsewhere its place is
+    // its target, as an old `.artf` beside it was.
+    let named = relative.starts_with(".artifactize") && object.contains_key("path");
+    if !named {
+        object.insert(
+            "path".into(),
+            Value::String(fixture_path(relative, folder_target)),
+        );
+    }
     let file = root.join(".artifactize").join(format!("{name}.artf"));
     if let Some(previous) = previous.filter(|previous| *previous != file) {
         if let Some(project) = registry.projects.get_mut(root) {

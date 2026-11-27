@@ -24,7 +24,7 @@ const row = (id: string, project = "app"): ReviewMatch => ({
 it("leads back to Verify only from a review followed from Verify; Open in Verify is always there", async () => {
   mockIPC((command) => {
     if (command === "human_search") return { reviews: [row("release")], next: null };
-    if (command === "human_open_reference") return { view: humanView("claim", { id: "release" }), outsideFilter: false, outsideReason: null };
+    if (command === "human_open_reference") return { view: humanView("claim", { id: "release" }), outsideFilter: false, outsideIssue: null };
     if (command === "human_open") return humanView("claim", { id: "release" });
     return null;
   }, { shouldMockEvents: true });
@@ -52,7 +52,7 @@ it("reads three cursor pages once each without replacing the opened review or it
     }
     if (command === "human_open_reference" || command === "human_open") {
       const view = humanView("claim", { id: "release" });
-      return command === "human_open" ? view : { view, outsideFilter: false, outsideReason: null };
+      return command === "human_open" ? view : { view, outsideFilter: false, outsideIssue: null };
     }
     return null;
   }, { shouldMockEvents: true });

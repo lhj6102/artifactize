@@ -637,7 +637,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
 
     // Unknown and escaping references fail closed in config check and status alike.
     for (reference, message) in [
-        ("{missing}", "Unknown Artifact reference {missing}"),
+        ("{missing}", "Unknown Artifact in `@{path missing}`"),
         ("{core}/../api", "safe relative logical path"),
     ] {
         fixture.write("api/index.artf", api(reference));

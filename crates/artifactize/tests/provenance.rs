@@ -80,7 +80,7 @@ impl Fixture {
         let provider = FakeProvider::start(|request| {
             openai::completed(
                 request,
-                vec![openai::message(&json!({"findings":[]}).to_string())],
+                vec![openai::message(&json!({"issues":[]}).to_string())],
                 openai::usage(10, 5),
             )
         });
@@ -129,7 +129,7 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
     let first = fixture.json(&["verify", "--wait", "--all"], 0);
     let request = &first["requests"][0];
     assert_eq!(request["status"], "GREEN", "{request}");
-    let pins = &request["provenance"]["executionPaths"]["sim_app"];
+    let pins = &request["provenance"]["executionPaths"]["app_sim_app"];
     assert_eq!(pins["bin/sim"], SIM_V1);
     let rules = pins["rules"].as_str().unwrap().to_owned();
     assert_eq!(rules.len(), 64);
@@ -162,7 +162,7 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
     )
     .unwrap();
     let forced = fixture.json(&["verify", "--wait", "--all", "--force"], 0);
-    let pins = &forced["requests"][0]["provenance"]["executionPaths"]["sim_app"];
+    let pins = &forced["requests"][0]["provenance"]["executionPaths"]["app_sim_app"];
     assert_eq!(pins["bin/sim"], SIM_V2);
     assert_ne!(pins["rules"], rules.as_str());
 
@@ -175,7 +175,7 @@ fn agent_results_pin_their_tools_execution_paths_and_keep_the_pins_on_reuse() {
         request["error"]
             .as_str()
             .unwrap()
-            .contains("Tool sim_app executionPaths bin/sim"),
+            .contains("Tool app_sim_app executionPaths bin/sim"),
         "{request}"
     );
     assert_eq!(fixture.provider.requests().len(), calls + 1);

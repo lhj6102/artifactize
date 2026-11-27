@@ -1,3 +1,0 @@
-# The workspace manifest is an input of every Cargo build and needs no review of its own.
-basis = true
-path = "Cargo.toml"

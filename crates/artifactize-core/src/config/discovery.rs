@@ -274,17 +274,20 @@ fn artifact(
                 ignore: Default::default(),
             }),
         },
-        LoweredFingerprint::Declared(declared) => {
+        LoweredFingerprint::Declared(declared, ignore_written) => {
             declared.check().map_err(|message| fail(fingerprint_span, message))?;
             match (kind, declared) {
                 (ArtifactKind::Live, Fingerprint::Artifactsum { .. }) => {
                     return Err(fail(fingerprint_span, "A Live Artifact uses a fingerprint script or none, never artifactsum.".into()));
                 }
                 (ArtifactKind::File, Fingerprint::Artifactsum { files, ignore }) => {
-                    if !ignore.patterns().is_empty() {
+                    if *ignore_written || !ignore.patterns().is_empty() {
                         return Err(fail(fingerprint_span, "fingerprint.ignore is not supported for a file Artifact.".into()));
                     }
                     let own = file_name(&target);
+                    if files.is_empty() {
+                        return Err(fail(fingerprint_span, format!("fingerprint.files for a file Artifact names its target {own}.")));
+                    }
                     if let Some(other) = files.iter().find(|input| input.as_str() != own) {
                         return Err(fail(fingerprint_span, format!("fingerprint.files for a file Artifact may name only its target {own}, not {other}.")));
                     }
@@ -437,7 +440,7 @@ fn declaration(
                             .parse()
                             .map_err(|error: crate::scope::ScopeError| fail(*span, error.to_string()))?;
                         if artifact.file_name().is_some() && !path.is_empty() {
-                            return Err(fail(*span, format!("File Artifact {name} has no paths under it.")));
+                            return Err(fail(*span, format!("File Artifact {name} cannot have a /path suffix.")));
                         }
                         text.push_str(&shown_path(artifact, path));
                         eval::Slot::Path {

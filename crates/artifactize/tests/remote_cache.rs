@@ -943,7 +943,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
-    for key in ["app_app.start", "app_app.stop"] {
+    for key in ["app_app_app:start", "app_app_app:stop"] {
         assert_eq!(pins[key]["harness.py"], expected);
     }
     let entries = server.entries();

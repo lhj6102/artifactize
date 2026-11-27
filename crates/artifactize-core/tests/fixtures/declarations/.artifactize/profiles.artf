@@ -1,0 +1,2 @@
+// The project's Agent profiles: what an Agent eval runs with.
+profile not-called = agent(backend = "openai", model = "not-called", reasoning = "high")

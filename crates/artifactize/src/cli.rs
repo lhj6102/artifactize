@@ -159,7 +159,7 @@ pub enum Command {
         #[command(subcommand)]
         command: chat_agent::ChatAgentCommand,
     },
-    /// Add, remove, or list Artifact type plugins for this project.
+    /// Add, remove, or list this project's plugins.
     Plugin {
         #[command(subcommand)]
         command: plugin::PluginCommand,

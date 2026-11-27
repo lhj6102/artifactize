@@ -1,10 +1,10 @@
-fingerprint = false
-path = "blocked/"
+artf blocked = {
+  fingerprint = false
+  path = "blocked/"
 
-[evals.check]
-title = "Check blocked"
-profile = { kind = "runtime", command = "/bin/sh", args = ["-c", "printf 'must not execute\\n'"] }
-
-[evals.check.payload]
-instruction = """
-Check {red}."""
+  eval check : runtime(command = "/bin/sh", args = ["-c", "printf 'must not execute\\n'"]) = {
+    title = "Check blocked"
+    instruction = "Check red."
+    inputs = [red]
+  }
+}

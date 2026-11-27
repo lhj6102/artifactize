@@ -1,30 +1,18 @@
-tags = ["type:capture"]
-path = "assets/capture/screenshots.mts"
-type = "files"
+artf media-screenshots-script : files = {
+  path = "assets/capture/screenshots.mts"
+  tags = ["type:capture"]
 
-[evals.records-scenes]
-title = "The script captures scenes A, B and C from the real app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
+  eval records-scenes : luna = {
+    title = "The script captures scenes A, B and C from the real app"
+    red_at = "P1"
+    instruction = """
+      Read @{artf media-screenshots-script}, its shared capture lifecycle in @{artf media-capture-lifecycle}, the app's feature journeys in @{artf desktop-ux-features}, and the app in @{artf desktop-backend}, @{artf desktop-ui} and @{artf desktop-e2e} as far as the scenes need. Judge whether running the script captures each scene below from the real desktop app at 1920×1080, with real data made through the real CLI and nothing mocked:
 
-[evals.records-scenes.payload]
-instruction = """
-Read {media-screenshots-script}, its shared capture lifecycle in {media-capture-lifecycle}, the app's feature journeys in {desktop-ux-features}, and the app in {desktop-backend}, {desktop-ui} and {desktop-e2e} as far as the \
-scenes need. Judge whether running the \
-script captures each scene below from the real desktop app at 1920×1080, with real data made \
-through the real CLI and nothing mocked:
+      A. Verify (J-BAR, J-PANE, J-BRANCH-RUNS, J-MAIN-RUN, J-GRAPH-COLOURS): the Pane with the example's branch and its Run timeline, the Run's graph with mixed verdicts (GREEN, RED, blocked and waiting for a person), and the Review button's waiting count in the bottom bar.
+      B. An Artifact's Detail (J-DETAIL, J-DETAIL-NEIGHBOURS) docked over the Run's graph on its Artifact tab: the Artifact between its neighbours, and its evals with their verdicts.
+      C. Switch to Review from the bottom bar, select the waiting sign-off in Review's Pane and claim it (J-BAR, J-REVIEW-LIST, J-HUMAN-CLAIM). Show its conversation: the instruction and its tools, the finished notes tool's run line unfolded into its lines, a reason added from the reasons box standing as a bubble, and the decision bar with GREEN chosen (J-HUMAN-LAYOUT, J-HUMAN-LOG, J-HUMAN-REASONS, J-HUMAN-GREEN). Do not submit the review.
 
-A. Verify (J-BAR, J-PANE, J-BRANCH-RUNS, J-MAIN-RUN, J-GRAPH-COLOURS): the Pane with the \
-example's branch and its Run timeline, the Run's graph with mixed verdicts (GREEN, RED, \
-blocked and waiting for a person), and the Review button's waiting count in the bottom bar.
-B. An Artifact's Detail (J-DETAIL, J-DETAIL-NEIGHBOURS) docked over the Run's graph on its \
-Artifact tab: the Artifact between its neighbours, and its evals with their verdicts.
-C. Switch to Review from the bottom bar, select the waiting sign-off in Review's Pane and \
-claim it (J-BAR, J-REVIEW-LIST, J-HUMAN-CLAIM). Show its conversation: the instruction and its \
-tools, the finished notes tool's run line unfolded into its lines, a reason added from the \
-reasons box standing as a bubble, and the decision bar with GREEN chosen (J-HUMAN-LAYOUT, \
-J-HUMAN-LOG, J-HUMAN-REASONS, J-HUMAN-GREEN). Do not submit the review.
-
-Check that each scene's selectors and actions reach the state the journey describes, that the \
-script waits for that state rather than a fixed delay alone before capturing, and that it \
-cleans up the app, the build and the project it made. Check also that every scene is captured."""
+      Check that each scene's selectors and actions reach the state the journey describes, that the script waits for that state rather than a fixed delay alone before capturing, and that it cleans up the app, the build and the project it made. Check also that every scene is captured.
+    """
+  }
+}

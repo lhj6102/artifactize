@@ -78,7 +78,9 @@ pub(crate) enum LoweredFingerprint {
     Default,
     /// `fingerprint = false`: never reused.
     Disabled,
-    Declared(Fingerprint),
+    /// Declared, and whether it writes an `ignore` list, which a File Artifact may not even
+    /// empty.
+    Declared(Fingerprint, bool),
 }
 
 #[derive(Debug, Clone)]
@@ -455,8 +457,9 @@ impl<'a> Expander<'a> {
                 ));
             }
         };
+        let ignore = object.contains_key("ignore");
         Fingerprint::try_from(object)
-            .map(LoweredFingerprint::Declared)
+            .map(|fingerprint| LoweredFingerprint::Declared(fingerprint, ignore))
             .map_err(|error| self.error(value.span(), format!("`fingerprint`: {error}")))
     }
 

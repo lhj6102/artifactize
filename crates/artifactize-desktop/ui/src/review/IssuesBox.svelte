@@ -1,13 +1,13 @@
 <script lang="ts">
-  // The reasons box (D-REV-5, J-HUMAN-REASONS): where Chat's composer stands and drawn as its
-  // field, holding only the reasons field and Add reason. Add reason (also Enter) adds what is
-  // typed as the newest reason and empties the field; Shift+Enter starts a new line. What is
+  // The issues box (D-REV-5, J-HUMAN-REASONS): where Chat's composer stands and drawn as its
+  // field, holding only the issues field and Add issue. Add issue (also Enter) adds what is
+  // typed as the newest issue and empties the field; Shift+Enter starts a new line. What is
   // typed and not added is this field's own. Esc leaves the field for the review. In the pet
   // overlay it is one line, with Add and what the overlay puts after it (D-PET-1).
   import type { Snippet } from "svelte";
   import { composing } from "../shell/keys";
   import type { Review } from "./review.svelte";
-  import type { ReasonsCaret } from "./reasons-caret.svelte";
+  import type { IssuesCaret } from "./issues-caret.svelte";
 
   let {
     review,
@@ -20,7 +20,7 @@
     review: Review;
     /** What the field holds and has not added. */
     typed?: string;
-    caret: ReasonsCaret;
+    caret: IssuesCaret;
     /** The pet overlay's one-line row. */
     compact?: boolean;
     /** Esc left the field: the review takes the keys again. */
@@ -37,7 +37,7 @@
     adding = true;
     try {
       // Typed on meanwhile, the field keeps what came after.
-      if (await review.addReason(text)) typed = typed.startsWith(text) ? typed.slice(text.length) : typed;
+      if (await review.addIssue(text)) typed = typed.startsWith(text) ? typed.slice(text.length) : typed;
     } finally {
       adding = false;
     }
@@ -62,9 +62,9 @@
   {#if compact}
     <input
       class="bare-field"
-      aria-label="Reason"
-      placeholder="Enter adds the reason"
-      data-reasons
+      aria-label="Issue"
+      placeholder="Enter adds the issue"
+      data-issues
       bind:value={typed}
       onkeydown={keydown}
       {@attach caret.attach}
@@ -73,20 +73,20 @@
     <textarea
       class="bare-field"
       rows="1"
-      aria-label="Reason"
-      placeholder="Enter adds the reason"
-      data-reasons
+      aria-label="Issue"
+      placeholder="Enter adds the issue"
+      data-issues
       bind:value={typed}
       onkeydown={keydown}
       {@attach caret.attach}
     ></textarea>
   {/if}
-  <button class="button {compact ? 'small' : ''}" aria-label={compact ? "Add reason (Enter)" : undefined} aria-keyshortcuts="Enter" disabled={empty || adding} onclick={() => void add()}>{compact ? "Add" : "Add reason"}</button>
+  <button class="button {compact ? 'small' : ''}" aria-label={compact ? "Add issue (Enter)" : undefined} aria-keyshortcuts="Enter" disabled={empty || adding} onclick={() => void add()}>{compact ? "Add" : "Add issue"}</button>
   {#if after}{@render after()}{/if}
 </div>
 
 <style>
-  /* Chat's composer field (D-CHAT-6): the field, then Add reason at its bottom right. */
+  /* Chat's composer field (D-CHAT-6): the field, then Add issue at its bottom right. */
   .box {
     display: flex;
     align-items: flex-end;
@@ -127,7 +127,7 @@
   .button {
     flex: none;
   }
-  /* The pet overlay's reasons row: a one-line field taking the row, Add, then Point. */
+  /* The pet overlay's issues row: a one-line field taking the row, Add, then Point. */
   .box.compact {
     align-items: center;
     gap: 6px;

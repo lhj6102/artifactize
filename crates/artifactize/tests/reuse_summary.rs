@@ -29,7 +29,7 @@ impl Fixture {
         let provider = FakeProvider::start(|request| {
             assert_eq!(request.path, "/v1/responses");
             let verdict =
-                json!({"findings":[{"priority":"P3","reason":"The docs match the API."}]});
+                json!({"issues":[{"priority":"P3","reason":"The docs match the API."}]});
             openai::completed(
                 request,
                 vec![openai::message(&verdict.to_string())],
@@ -242,7 +242,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     let review = request(&second, "docs/review");
     assert_eq!(
         review["result"],
-        json!({"verdict":"GREEN","findings":[{"priority":"P3","reason":"The docs match the API."}]})
+        json!({"verdict":"GREEN","kind":"agent","issues":[{"priority":"P3","reason":"The docs match the API."}]})
     );
     let spent = &second["usage"]["spent"];
     assert_eq!(spent["inputTokens"], 120, "{spent}");

@@ -1,3 +1,5 @@
-basis = true
-tags = ["type:style"]
-path = "house-style/"
+artf house-style = {
+  basis = true
+  path = "house-style/"
+  tags = ["type:style"]
+}

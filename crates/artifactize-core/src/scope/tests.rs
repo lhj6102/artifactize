@@ -219,10 +219,10 @@ fn references_keep_canonical_ids() {
     let source = &eval.declaration.payload().as_ref().unwrap().instruction;
     assert_eq!(
         artifact_instruction(eval),
+        // `{input}/file` was a path under input: it reads as that path, input's target and the
+        // file under it.
         vec![
-            InstructionPart::Text("Read ".into()),
-            InstructionPart::Artifact("input".parse().unwrap()),
-            InstructionPart::Text("/file, ".into()),
+            InstructionPart::Text("Read data/file, ".into()),
             InstructionPart::Artifact("input".parse().unwrap()),
             InstructionPart::Text(", ".into()),
             InstructionPart::Artifact("review".parse().unwrap()),

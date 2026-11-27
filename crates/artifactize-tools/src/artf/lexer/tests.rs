@@ -103,7 +103,14 @@ fn slots_are_typed_with_spans_and_double_at_escapes_them() {
     );
     assert_eq!(parts[0], text("Read "));
     assert_eq!(parts[6], text(", not @{artf x}."));
-    for bad in [r#""@{}""#, r#""@{name x}""#, r#""@{tool a b}""#, r#""@{artf a b}""#, r#""@{artf a""#] {
+    // A file name under an Artifact may hold spaces; the path runs to the closing brace.
+    let spaced = r#""@{path self/open me.txt }""#;
+    let Part::Slot(path) = &literal(spaced).parts[0] else {
+        panic!("{spaced}");
+    };
+    assert_eq!(path.words.len(), 1);
+    assert_eq!(&spaced[path.words[0].1.clone()], "self/open me.txt");
+    for bad in [r#""@{}""#, r#""@{name x}""#, r#""@{tool a b}""#, r#""@{artf a b}""#, r#""@{artf a""#, r#""@{path a b}""#] {
         assert!(lex(bad).is_err(), "{bad}");
     }
 }

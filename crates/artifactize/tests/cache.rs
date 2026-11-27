@@ -386,7 +386,7 @@ impl ClaimProvider {
                 support::openai::completed(
                     request,
                     vec![support::openai::message(
-                        &json!({"findings":[{
+                        &json!({"issues":[{
                             "priority":"P3", "reason":request.body["model"],
                         }]})
                         .to_string(),
@@ -608,16 +608,17 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
             "name":"test",
             "fingerprint":fingerprint("shared"),
             "evals":[
-                {
-                    "id":"pass",
-                    "title":"Pass",
-                    "profile":{"kind":"runtime","command":true_program(),"args":[]},
-                    "payload":{"instruction":"Review."},
-                },
+                // Evals keep the order they are written in.
                 {
                     "id":"fail",
                     "title":"Fail",
                     "profile":{"kind":"runtime","command":false_program(),"args":[]},
+                    "payload":{"instruction":"Review."},
+                },
+                {
+                    "id":"pass",
+                    "title":"Pass",
+                    "profile":{"kind":"runtime","command":true_program(),"args":[]},
                     "payload":{"instruction":"Review."},
                 },
             ],
@@ -1070,7 +1071,10 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     assert_eq!(dead["status"], "ERROR");
     assert_eq!(dead["errorCode"], "OWNER_DIED");
     assert!(dead["completedAt"].is_string());
-    assert_eq!(recovered["requests"][0]["result"]["stdout"], "recovered");
+    assert_eq!(
+        support::runs::logged(&fixture.state, recovered["requests"][0]["id"].as_str().unwrap(), "stdout"),
+        "recovered\n"
+    );
     assert_ne!(
         recovered["requests"][0]["executionId"],
         waiting["executionId"]
@@ -1194,7 +1198,10 @@ async fn cancelling_a_joined_run_leaves_its_owner_running_and_cancelling_the_own
     let execution = fixture.execution(waiting.execution_id.as_deref().unwrap());
     assert_eq!(execution["errorCode"], "CANCELLED");
     let recovered = fixture.completed(&target, &next_id, waiter, 0).await;
-    assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
+    assert_eq!(
+        support::runs::logged(&fixture.state, recovered["requests"][0]["id"].as_str().unwrap(), "stdout"),
+        "retried\n"
+    );
     let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();
     assert!(support::os::gone(pid as u32));
 }
@@ -1239,7 +1246,10 @@ fn joined_waiter_keeps_its_execution_when_a_forced_result_completes_first() {
     let waiter = fixture.spawn(&target, &[]);
     let waiting = fixture.waiting_request(&waiter);
     let forced = fixture.command(&target, &["verify", "--wait", "--all", "--force"], 0);
-    assert_eq!(forced["requests"][0]["result"]["stdout"], "forced");
+    assert_eq!(
+        support::runs::logged(&fixture.state, forced["requests"][0]["id"].as_str().unwrap(), "stdout"),
+        "forced\n"
+    );
     fixture.release();
     let original = finish(owner, 0);
     let joined = finish(waiter, 0);
@@ -1840,7 +1850,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     )
     .unwrap();
     db.execute(
-        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT 'replacement',key,eval_def_hash,status,owner_pid,owner_start_time,'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00.000000000Z',json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?",
+        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT 'replacement',key,eval_def_hash,status,owner_pid,owner_start_time,'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00.000000000Z',json_set(data,'$.id','replacement','$.result.durationMs',999999) FROM executions WHERE id=?",
         [waiting["executionId"].as_str().unwrap()],
     )
     .unwrap();
@@ -1891,7 +1901,8 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     let _publisher_suspended = Suspended::new(support::runs::worker_pid(&fixture.state, &source));
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
     execution.state = artifactize_core::store::ExecutionState::Completed {
-        result: json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)})
+        // A GREEN answer whose one minor issue is larger than a saved result may be.
+        result: json!({"verdict":"GREEN","kind":"agent","issues":[{"priority":"P3","reason":"x".repeat(16 * 1024 * 1024)}]})
             .try_into()
             .unwrap(),
         at: "2026-10-04T00:00:00Z".parse().unwrap(),
@@ -1931,7 +1942,10 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     assert_eq!(fixture.starts(), 1);
     let later = fixture.command(&target, &["verify", "--wait", "--all"], 0);
     assert_ne!(later["requests"][0]["executionId"], execution.id.as_str());
-    assert_eq!(later["requests"][0]["result"]["stdout"], "unexpected");
+    assert_eq!(
+        support::runs::logged(&fixture.state, later["requests"][0]["id"].as_str().unwrap(), "stdout"),
+        "unexpected\n"
+    );
 }
 
 #[test]
@@ -2016,10 +2030,11 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
             json!({"name":"test","fingerprint":fingerprint("unchanged"),"evals":[changed]}),
         );
     };
-    // Execution options and names are not part of the key.
+    // Execution options and names are not part of the key, nor is a runtime eval's prose.
     for (pointer, value) in [
         ("/profile/timeout_ms", json!(1000)),
         ("/title", json!("Renamed")),
+        ("/payload/instruction", json!("Different words.")),
     ] {
         change(pointer, value);
         assert_eq!(
@@ -2032,20 +2047,8 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
         assert_eq!(run["requests"][0]["key"], original["requests"][0]["key"]);
     }
     for (pointer, value, code) in [
-        (
-            "/pass_schema",
-            json!({"type":"object","properties":{"extra":{"type":"string"}}}),
-            0,
-        ),
-        (
-            "/fail_schema",
-            json!({"type":"object","properties":{"reason":{"type":"string"}}}),
-            0,
-        ),
         ("/profile/command", json!(false_program()), 1),
         ("/profile/args", json!(["unused"]), 0),
-        ("/payload/instruction", json!("Different criteria."), 0),
-        ("/payload/extra", json!({"criteria":[1,2]}), 0),
     ] {
         change(pointer, value);
         assert_eq!(
@@ -2064,97 +2067,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
             "reuse"
         );
     }
-    assert_eq!(fixture.records(), 7);
-}
-#[test]
-fn profile_variants_share_a_result_unless_they_change_the_strategy() {
-    let fixture = Fixture::new();
-    let mut declaration = eval("check", &[]);
-    declaration["profile"]["timeout_ms"] = json!(5000);
-    declaration["profile_variants"] = json!({
-        "fail":{"kind":"runtime","command":false_program(),"args":[]},
-        "patient":{
-            "kind":"runtime",
-            "command":support::os::steps(),
-            "args":[],
-            "timeout_ms":60000,
-        },
-    });
-    let repo = fixture.repo(
-        "repo",
-        json!({"name":"test","fingerprint":fingerprint("variants"),"evals":[declaration]}),
-    );
-    // The patient variant produces the result; the default profile reuses it.
-    let patient = fixture.command(
-        &repo,
-        &["verify", "--wait", "--all", "--profile", "patient"],
-        0,
-    );
-    assert_eq!(
-        patient["requests"][0]["options"],
-        json!({"timeoutMs":60000,"variant":"patient"})
-    );
-    let default = fixture.command(&repo, &["verify", "--wait", "--all"], 0);
-    assert_eq!(default["executionsStarted"], 0);
-    let reused = &default["requests"][0];
-    assert_eq!(reused["executionId"], patient["requests"][0]["executionId"]);
-    // The request and the record show which profile produced the result.
-    assert_eq!(
-        reused["options"],
-        json!({"timeoutMs":60000,"variant":"patient"})
-    );
-    assert_eq!(reused["profile"]["timeoutMs"], 60000);
-    assert_eq!(reused["requestedProfile"]["timeoutMs"], 5000);
-    let record = fixture.command(&repo, &["cache", "show", &key(&default, 0)], 0);
-    assert_eq!(record["options"]["variant"], "patient");
-    let text = Command::new(support::os::cli())
-        .arg("--repo")
-        .arg(&repo)
-        .arg("--state-dir")
-        .arg(&fixture.state)
-        .env("ARTIFACTIZE_REMOTE", "off")
-        .args(["verify", "--wait", "--all"])
-        .record_output()
-        .unwrap();
-    let text = String::from_utf8(text.stdout).unwrap();
-    assert!(text.contains(", profile patient)"), "{text}");
-    assert!(
-        text.contains("reused 1 (runtime 1, agent 0, human 0); 1 produced by another profile"),
-        "{text}"
-    );
-    let status = fixture.command(&repo, &["status"], 0);
-    assert!(
-        status["evals"][0]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("produced by profile patient"),
-        "{status}"
-    );
-
-    assert_eq!(
-        fixture.command(&repo, &["status", "--profile", "fail"], 1)["evals"][0]["action"],
-        "execute"
-    );
-    let different = fixture.command(
-        &repo,
-        &["verify", "--wait", "--all", "--profile", "fail"],
-        1,
-    );
-    assert_eq!(different["executionsStarted"], 1);
-    assert_ne!(
-        different["requests"][0]["evalDefHash"],
-        default["requests"][0]["evalDefHash"]
-    );
-    declaration["profile_variants"]["fail"]["args"] = json!(["changed unused variant"]);
-    write(
-        &repo,
-        "index.artf",
-        json!({"name":"test","fingerprint":fingerprint("variants"),"evals":[declaration]}),
-    );
-    assert_eq!(
-        fixture.command(&repo, &["verify", "--wait", "--all"], 0)["requests"][0]["executionId"],
-        patient["requests"][0]["executionId"]
-    );
+    assert_eq!(fixture.records(), 3);
 }
 #[test]
 fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() {
@@ -2220,9 +2133,10 @@ fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() 
     human_value.as_object_mut().unwrap().remove("red_at");
     let human = parse(human_value);
     assert_ne!(hash, eval_definition_hash(&human));
-    let mut nested = first_value;
-    nested["payload"]["nested"]["a"] = json!(3);
-    assert_ne!(hash, eval_definition_hash(&parse(nested)));
+    // An eval asks what its instruction says; there is no other payload.
+    let mut asked = first_value;
+    asked["payload"]["instruction"] = json!("Review again.");
+    assert_ne!(hash, eval_definition_hash(&parse(asked)));
 }
 #[test]
 fn concurrent_claims_dedupe_each_definition_without_blocking_another() {

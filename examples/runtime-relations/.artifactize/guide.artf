@@ -1,10 +1,19 @@
-path = "guide/"
-parts = ["intro", "usage"]
+artf guide = {
+  parts = [intro, usage]
+  path = "guide/"
 
-[evals.terms]
-title = "Every bold term is defined in the glossary"
-profile = { kind = "runtime", command = "python3", args = ["check_terms.py", "{glossary}/terms.txt", "{intro}/page.md", "{usage}/page.md"], timeout_ms = 10000 }
-
-[evals.terms.payload]
-instruction = """
-Check that every bold term in {intro} and {usage} is defined in {glossary}."""
+  eval terms : runtime(
+      command = "python3",
+      args = [
+        "check_terms.py",
+        "@{path glossary/terms.txt}",
+        "@{path intro/page.md}",
+        "@{path usage/page.md}",
+      ],
+      timeout_ms = 10000,
+    ) = {
+    title = "Every bold term is defined in the glossary"
+    instruction = "Check that every bold term in intro and usage is defined in glossary."
+    inputs = [glossary, intro, usage]
+  }
+}

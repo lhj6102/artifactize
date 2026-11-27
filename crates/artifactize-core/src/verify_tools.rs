@@ -37,7 +37,7 @@ pub enum Output {
 pub enum PluginResult {
     Added(crate::config::plugins::PluginInfo),
     Removed {
-        #[serde(rename = "type")]
+        #[serde(rename = "namespace")]
         name: crate::config::PluginName,
     },
 }

@@ -30,18 +30,18 @@ function backend(library = draftLibrary()) {
 afterEach(() => clearMocks());
 
 describe("Review", () => {
-  it("shows a saved draft's verdict and reasons as the library holds them, sending nothing", async () => {
+  it("shows a saved draft's verdict and issues as the library holds them, sending nothing", async () => {
     const { pending, library } = backend();
     library.draft.verdict = "GREEN";
-    library.draft.reasons = ["Read it all."];
+    library.draft.issues = ["Read it all."];
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     await waitFor(() => expect(review.verdict).toBe("GREEN"));
-    expect(review.reasons).toEqual(["Read it all."]);
+    expect(review.issues).toEqual(["Read it all."]);
     expect(review.form?.verdict).toBe("GREEN");
     expect(review.blocked("")).toBeNull();
     expect(review.submittable("")).toBe(true);
-    expect(review.blocked("half typed")).toBe("Add the typed reason first");
+    expect(review.blocked("half typed")).toBe("Add the typed issue first");
     expect(pending).toEqual([]);
   });
 
@@ -68,30 +68,30 @@ describe("Review", () => {
     expect(review.form?.verdict).toBe("RED");
   });
 
-  it("writes reasons one after another, each edit naming the reason it saw; a refused edit says why and shows the draft as it stands", async () => {
+  it("writes issues one after another, each edit naming the issue it saw; a refused edit says why and shows the draft as it stands", async () => {
     const { library } = backend();
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     await waitFor(() => expect(review.draft).not.toBeNull());
-    const [first, second] = await Promise.all([review.addReason("one"), review.addReason("two")]);
+    const [first, second] = await Promise.all([review.addIssue("one"), review.addIssue("two")]);
     expect([first, second]).toEqual([true, true]);
-    expect(review.reasons).toEqual(["one", "two"]);
-    expect(await review.addReason("   ")).toBe(false);
+    expect(review.issues).toEqual(["one", "two"]);
+    expect(await review.addIssue("   ")).toBe(false);
     // Changed elsewhere meanwhile: the edit names what it saw, the library refuses it.
-    library.draft.reasons[1] = "two, as another window wrote it";
-    expect(await review.editReason(1, "two", "2")).toBe(false);
+    library.draft.issues[1] = "two, as another window wrote it";
+    expect(await review.editIssue(1, "two", "2")).toBe(false);
     expect(review.notice?.error).toBe(true);
-    expect(review.reasons).toEqual(["one", "two, as another window wrote it"]);
-    expect(await review.removeReason(0, "one")).toBe(true);
-    expect(review.reasons).toEqual(["two, as another window wrote it"]);
+    expect(review.issues).toEqual(["one", "two, as another window wrote it"]);
+    expect(await review.removeIssue(0, "one")).toBe(true);
+    expect(review.issues).toEqual(["two, as another window wrote it"]);
   });
 
-  it("keeps each verdict's own fields in the library when switching verdicts, the reasons kept", async () => {
+  it("keeps each verdict's own fields in the library when switching verdicts, the issues kept", async () => {
     const { pending, library } = backend(draftLibrary(greenForm, scoredRed));
     const review = new Review("run-a-2", new Jobs());
     await review.load();
     await waitFor(() => expect(review.draft).not.toBeNull());
-    await review.addReason("off by one");
+    await review.addIssue("off by one");
     const red = review.choose("RED");
     await waitFor(() => expect(pending).toHaveLength(1));
     pending[0].answer();
@@ -109,7 +109,7 @@ describe("Review", () => {
     await again;
     expect(library.draft.verdict).toBe("RED");
     expect(review.form?.values.score).toEqual({ kind: "integer", value: "2" });
-    expect(review.reasons).toEqual(["off by one"]);
+    expect(review.issues).toEqual(["off by one"]);
   });
 
   it("reloads a Point independently of the verdict's fields", async () => {

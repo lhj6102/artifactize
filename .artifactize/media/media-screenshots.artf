@@ -1,36 +1,32 @@
-path = "assets/screenshots/"
+tool media-screenshots = {
+  agent fresh = command(
+      command = "node",
+      args = ["@{path media-screenshots-script}", "fresh"],
+      protocol = "json",
+      session = "capture",
+      description = "View a screenshot just captured from the current app by the screenshots' script: monitor.png, detail.png or review.png.",
+      input_schema = {
+        additionalProperties = false
+        properties = { name = { enum = ["monitor.png", "detail.png", "review.png"] } }
+        required = ["name"]
+        type = "object"
+      },
+    )
+  agent list = builtin(op = "list")
+  agent view_image = builtin(
+      op = "view_image",
+      description = "View a screenshot saved in @{artf self}, such as monitor.png.",
+    )
+  session capture = session(start = command(command = "node", args = ["@{path media-screenshots-script}", "session"]), stop = command(command = "node", args = ["@{path media-screenshots-script}", "stop"]))
+}
 
-# The review captures the scenes again into its own folder, outside the repository.
-[views.agent_sessions.capture]
-start = { command = "node", args = ["{media-screenshots-script}", "session"] }
-stop = { command = "node", args = ["{media-screenshots-script}", "stop"] }
+// The review captures the scenes again into its own folder, outside the repository.
+artf media-screenshots : media-screenshots = {
+  path = "assets/screenshots/"
 
-[views.agent_tools]
-list = { builtin = "list" }
-view_image = { description = "View a screenshot saved in {artifactName}, such as monitor.png.", builtin = "view_image" }
-
-[views.agent_tools.fresh]
-session = "capture"
-description = "View a screenshot just captured from the current app by the screenshots' script: monitor.png, detail.png or review.png."
-command = "node"
-args = ["{media-screenshots-script}", "fresh"]
-protocol = "json"
-
-[views.agent_tools.fresh.input_schema]
-type = "object"
-properties.name = { enum = ["monitor.png", "detail.png", "review.png"] }
-required = ["name"]
-additionalProperties = false
-
-[evals.matches-capture]
-title = "The saved screenshots show what the script captures from the current app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-
-[evals.matches-capture.payload]
-instruction = """
-{media-screenshots} holds the screenshots {media-screenshots-script} captured from the desktop app, \
-built from {desktop-backend} and {desktop-ui} and driven through {desktop-e2e}. For each of monitor.png, detail.png and \
-review.png, view the saved one with view_image and the one just captured from the current \
-app with fresh, and compare them. Ignore what differs on every capture: Run and request \
-IDs, times, durations, temporary paths and fingerprints. Every pair shows the same screen with the same layout, controls, text and colours; each screenshot that differs is a finding, saying what changed, and the script then runs again to replace the saved screenshots."""
+  eval matches-capture : luna = {
+    title = "The saved screenshots show what the script captures from the current app"
+    red_at = "P1"
+    instruction = "@{artf media-screenshots} holds the screenshots @{artf media-screenshots-script} captured from the desktop app, built from @{artf desktop-backend} and @{artf desktop-ui} and driven through @{artf desktop-e2e}. For each of monitor.png, detail.png and review.png, view the saved one with view_image and the one just captured from the current app with fresh, and compare them. Ignore what differs on every capture: Run and request IDs, times, durations, temporary paths and fingerprints. Every pair shows the same screen with the same layout, controls, text and colours; each screenshot that differs is an issue, saying what changed, and the script then runs again to replace the saved screenshots."
+  }
+}

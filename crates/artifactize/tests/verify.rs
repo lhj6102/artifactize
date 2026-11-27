@@ -138,7 +138,8 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     assert_eq!(output.status.code(), Some(2));
     let verified = json_output(&output);
     assert_eq!(verified["status"], "ERROR");
-    assert!(output.stdout.windows(6).any(|bytes| bytes == b"stdout"));
+    // The RED check keeps its exit code and the end of its output as its issue.
+    assert!(String::from_utf8_lossy(&output.stdout).contains("\"exitCode\""));
     assert!(!fixture.home.exists(), "--state-dir moves the whole state");
     fixture.release();
     fs::remove_dir_all(&fixture.repo).unwrap();
@@ -167,9 +168,17 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     };
     let green = request("green/check");
     assert_eq!(green["result"]["verdict"], "GREEN");
-    assert_eq!(green["result"]["stdout"], "GREEN scoped input\n");
-    assert_eq!(green["result"]["stderr"], "runtime stderr\n");
-    assert_eq!(green["result"]["exitCode"], 0);
+    // A GREEN runtime result has no issue; what it printed is in the Run's logs.
+    assert_eq!(green["result"]["issues"], json!([]));
+    let id = green["id"].as_str().unwrap();
+    assert_eq!(
+        support::runs::logged(&fixture.state, id, "stdout"),
+        "GREEN scoped input\n"
+    );
+    assert_eq!(
+        support::runs::logged(&fixture.state, id, "stderr"),
+        "runtime stderr\n"
+    );
     assert!(green["result"]["durationMs"].is_u64());
     assert!(green["child"]["pid"].as_u64().unwrap() > 0);
     assert!(green["child"]["startTime"].as_u64().unwrap() > 0);
@@ -188,7 +197,7 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
         support::declaration::read_text(output_dir.join("output/result.txt")).unwrap(),
         "runtime output\n"
     );
-    assert_eq!(request("red/check")["result"]["exitCode"], 7);
+    assert_eq!(request("red/check")["result"]["issues"][0]["exitCode"], 7);
     assert_eq!(request("timeout/check")["status"], "ERROR");
     assert_eq!(request("timeout/check")["errorCode"], "TIMEOUT");
     for (id, status) in [
@@ -329,7 +338,11 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     assert!(output.status.success());
     let first = json_output(&output);
     assert_eq!(
-        first["requests"][0]["result"]["stdout"],
+        support::runs::logged(
+            Path::new(first["stateDir"].as_str().unwrap()),
+            first["requests"][0]["id"].as_str().unwrap(),
+            "stdout"
+        ),
         format!("{} a; echo injected a b\n", support::os::home_expression())
     );
     let state = PathBuf::from(first["stateDir"].as_str().unwrap());
@@ -567,53 +580,9 @@ fn selection_errors_fail_before_discovery_or_receipts() {
 }
 
 #[test]
-fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_patching_sources() {
+fn verify_file_and_csv_selectors_preserve_order() {
     let fixture = Fixture::new();
     support::copy_fixture("runtime", &fixture.repo);
-    let source = fixture.repo.join("review/index.artf");
-    let mut declaration: Value =
-        support::declaration::read(support::declaration::read_file(&source).unwrap()).unwrap();
-    declaration["evals"][0]["profile_variants"] = json!({
-        "brief": {
-            "kind":"runtime",
-            "command":support::os::echo_program(),
-            "args":["variant", "{input}/data.txt"],
-        },
-    });
-    support::declaration::write(&(fixture.repo), &source, declaration.to_string()).unwrap();
-    let original = support::declaration::read_file(&source).unwrap();
-    let selected = fixture
-        .command()
-        .args([
-            "verify",
-            "--wait",
-            "--eval",
-            "green/check",
-            "--profile",
-            "brief",
-            "--json",
-        ])
-        .record_output()
-        .unwrap();
-    assert!(selected.status.success());
-    let run = json_output(&selected);
-    assert_eq!(
-        run["selection"],
-        json!({"kind":"eval","evalId":"green/check"})
-    );
-    assert_eq!(
-        run["requests"][0]["profile"]["command"],
-        support::os::echo_program()
-    );
-    assert_eq!(
-        run["requests"][0]["result"]["stdout"],
-        format!(
-            "variant {}\n",
-            support::os::path_text(&fixture.repo.join("input").join("data.txt"))
-        )
-    );
-    assert_eq!(support::declaration::read_file(&source).unwrap(), original);
-
     let path = fixture._root.path().join("ids");
     for (flag, json, lines) in [
         (
@@ -827,16 +796,16 @@ fn removed_gate_bypass_is_rejected_in_declarations_verify_and_status() {
         assert!(String::from_utf8_lossy(&output.stderr).contains("--ignore-gates"));
     }
     for policy in ["green", "ignore"] {
-        support::declaration::write(
-            &(fixture.repo),
-            fixture.repo.join("index.artf"),
-            json!({"name":"root","basis":true,"review_policy":{"dependency_gates":policy}})
-                .to_string(),
+        fs::write(
+            fixture.repo.join(".artifactize/root.artf"),
+            format!(
+                "artf root = {{\n  path = \"./\"\n  basis = true\n  review_policy = {{ dependency_gates = \"{policy}\" }}\n}}\n"
+            ),
         )
         .unwrap();
         let output = support::os::run(fixture.command().args(["config", "check"]));
         assert_eq!(output.status.code(), Some(2));
-        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown field `review_policy`"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Unknown field `review_policy`"));
     }
 }
 
@@ -884,39 +853,24 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
 }
 
 #[test]
-fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
+fn recursive_selection_includes_dependencies_and_rebuilds_scope() {
     let fixture = Fixture::runtime_fixture();
-    for folder in ["blocked", "red"] {
-        let path = fixture.repo.join(folder).join("index.artf");
-        let mut declaration: Value =
-            support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
-        declaration["evals"][0]["profile_variants"] = json!({"pass":{"kind":"runtime","command":support::os::echo_program(),"args":["{input}"]}});
-        support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
-    }
-    let recursive = fixture.verify(&["blocked", "--recursive", "--profile", "pass"], 0);
-    assert_eq!(recursive["requests"].as_array().unwrap().len(), 2);
-    assert!(
-        recursive["requests"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|r| r["profile"]["command"] == support::os::echo_program())
-    );
+    // The red check passes here, so the Artifact that names it can run after it.
+    let red = fixture.repo.join(".artifactize/red.artf");
+    let text = support::declaration::read_text(&red).unwrap().replace("exit 7", "exit 0");
+    fs::write(&red, text).unwrap();
+    let recursive = fixture.verify(&["blocked", "--recursive"], 0);
+    let requests = recursive["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|request| request["status"] == "GREEN"));
     assert_eq!(
         recursive["validation"]["artifacts"]
             .as_array()
             .unwrap()
             .len(),
-        3
+        2
     );
-    let input = recursive["validation"]["artifacts"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|a| a["id"] == "input")
-        .unwrap();
-    assert_eq!(input["status"], "BASIS");
-    let individual = fixture.verify(&["blocked", "--profile", "pass"], 4);
+    let individual = fixture.verify(&["blocked"], 4);
     assert_eq!(individual["requests"].as_array().unwrap().len(), 1);
     assert_eq!(individual["requests"][0]["status"], "WAIT_DEPENDENCY");
 }
@@ -951,7 +905,8 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         let path = fixture.repo.join("index.artf");
         let mut declaration: Value =
             support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
-        declaration["evals"].as_array_mut().unwrap().push(json!({
+        // Written first, so its request comes first: evals keep their written order.
+        declaration["evals"].as_array_mut().unwrap().insert(0, json!({
             "id":"agent",
             "title":"Agent",
             "profile":{"kind":"agent","backend":backend,"model":"exact-model"},

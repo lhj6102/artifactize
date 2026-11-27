@@ -538,7 +538,11 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     assert!(second["next_cursor"].is_null());
     support::declaration::remove_file(project.repo.join("release")).unwrap();
     support::declaration::remove_file(project.repo.join("ready")).unwrap();
-    evals.last_mut().unwrap()["payload"]["instruction"] = json!("A new controlled judgment.");
+    // A new argument is a new check; a runtime eval's prose alone is not.
+    evals.last_mut().unwrap()["profile"]["args"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("again"));
     support::declaration::write(
         &(project.repo),
         project.repo.join("index.artf"),
@@ -604,7 +608,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
                 gate.wait();
                 support::openai::completed(
                     request,
-                    vec![support::openai::message("{\"findings\":[]}")],
+                    vec![support::openai::message("{\"issues\":[]}")],
                     support::openai::usage(1, 1),
                 )
             }
@@ -728,7 +732,7 @@ async fn b1_read_tools_match_cli_json_table() {
         } else {
             support::openai::completed(
                 request,
-                vec![support::openai::message("{\"findings\":[]}")],
+                vec![support::openai::message("{\"issues\":[]}")],
                 support::openai::usage(1, 1),
             )
         }
@@ -892,7 +896,7 @@ async fn mcp_installs_lists_and_removes_a_project_plugin() {
         )
         .await;
     assert_eq!(added["action"], "added");
-    assert_eq!(added["type"], "html");
+    assert_eq!(added["namespace"], "html");
     let listed = client.call("plugin_list", json!({})).await;
     let text = listed["entries"]
         .as_array()
@@ -906,10 +910,12 @@ async fn mcp_installs_lists_and_removes_a_project_plugin() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|item| item["type"] == "html")
+            .any(|item| item["namespace"] == "html")
     );
-    let removed = client.call("plugin_remove", json!({"type":"html"})).await;
-    assert_eq!(removed, json!({"type":"html","action":"removed"}));
+    let removed = client
+        .call("plugin_remove", json!({"namespace":"html"}))
+        .await;
+    assert_eq!(removed, json!({"namespace":"html","action":"removed"}));
     assert!(!project.repo.join(".artifactize/plugins/html").exists());
     client.close().await;
 }
@@ -1147,12 +1153,13 @@ async fn runtime_log_queries_retain_tail_and_report_pruned_evidence() {
             json!({"id":request.id,"stream":"stdout","tail":1}),
         )
         .await;
-    assert_eq!(pruned["streams"][0]["evidence"], "saved_audit");
+    // A GREEN result keeps no output; a RED one keeps its end as its issue.
+    assert_eq!(pruned["streams"][0]["evidence"], "missing");
     assert!(
         pruned["streams"][0]["note"]
             .as_str()
             .unwrap()
-            .contains("Missing tail")
+            .contains("A RED result keeps its exit code")
     );
     client.close().await;
 }

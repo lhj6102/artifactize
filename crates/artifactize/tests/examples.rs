@@ -563,7 +563,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         support::openai::completed(
             request,
             vec![support::openai::message(
-                &json!({"findings":[]}).to_string(),
+                &json!({"issues":[]}).to_string(),
             )],
             support::openai::usage(1, 1),
         )

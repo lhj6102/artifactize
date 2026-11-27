@@ -1,0 +1,5 @@
+// What a review of a folder of definitions reads with besides its files: the graph of the
+// relations that leave the folder.
+tool definitions = {
+  agent graph = builtin(op = "graph", args = [])
+}

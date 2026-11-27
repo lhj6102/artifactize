@@ -1,61 +1,52 @@
-tags = ["type:skill"]
-path = "agent-plugin/skills/hey-arti/SKILL.md"
-type = "files"
+tool agent-hey-arti = {
+  human open = builtin(
+      op = "open",
+      args = ["@{path self}"],
+      description = "Open SKILL.md of @{artf self} in the desktop's default application.",
+    )
+}
 
-[views.human_tools]
-open = { description = "Open SKILL.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
+artf agent-hey-arti : files & agent-hey-arti = {
+  path = "agent-plugin/skills/hey-arti/SKILL.md"
+  tags = ["type:skill"]
 
-[evals.correct]
-title = "What the skill recommends exists in today's artifactize"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-payload.instruction = """
-Read the skill {agent-hey-arti} using read_agent__hey-arti. Check that every declaration form,
-command, tool, status and behaviour it mentions or recommends matches {engine-core}, {engine-cli},
-{engine-mcp} and {docs-en}. Judge accuracy only: the skill need not cover every feature, and
-an omission is not a finding. Each statement that is wrong or outdated is a finding."""
+  eval consultant : human = {
+    title = "The skill reads like a Forward Deployed Engineer consulting on the project"
+    instruction = "Open SKILL.md of @{artf agent-hey-arti} with the open tool and read it as a developer meeting it for the first time. Submit GREEN when it reads like a Forward Deployed Engineer consulting on your project rather than a technical manual of artifactize; otherwise submit RED with an issue for each thing to change."
+  }
 
-[evals.waiter]
-title = "The skill helps the user like a restaurant's waiter"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
-red_at = "P1"
-payload.instruction = """
-Read the skill {agent-hey-arti} using read_agent__hey-arti. Judge whether it helps a developer
-the way a good waiter helps a guest, using {docs-en} only to understand the concepts.
-It must not read as a list of artifactize's features. Check that it:
-- explains each concept briefly from the user's side (what an Artifact, an eval, a
-  reference, a verdict and verify mean for their project), not how artifactize
-  computes them;
-- knows concrete best practices for shaping Artifacts and evals, the menu: how to
-  draw boundaries, which kind of eval fits which obligation, how consumers name the
-  inputs they use, recurring project patterns, and the anti-patterns to steer away
-  from;
-- interviews the user about the project's goals, inputs and who judges what before
-  proposing;
-- proposes an Artifact and eval composition with reasons, the menu combination, and
-  gets agreement before changing the project;
-- applies the agreed changes, confirms they match artifactize's schema, and tells
-  the user what changed and what will now be reviewed or reused.
-Each of these it does not do is a finding."""
+  eval correct : luna = {
+    title = "What the skill recommends exists in today's artifactize"
+    red_at = "P1"
+    instruction = """
+      Read the skill @{artf agent-hey-arti} using @{tool self agent files.read}. Check that every declaration form,
+      command, tool, status and behaviour it mentions or recommends matches @{artf engine-core}, @{artf engine-cli},
+      @{artf engine-mcp} and @{artf docs-en}. Judge accuracy only: the skill need not cover every feature, and
+      an omission is not an issue. Each statement that is wrong or outdated is an issue.
+    """
+  }
 
-[evals.consultant]
-title = "The skill reads like a Forward Deployed Engineer consulting on the project"
-profile = { kind = "human" }
-
-[evals.consultant.payload]
-instruction = """
-Open SKILL.md of {agent-hey-arti} with the open tool and read it as a developer meeting it \
-for the first time. Submit GREEN when it reads like a Forward Deployed Engineer \
-consulting on your project rather than a technical manual of artifactize; otherwise \
-submit RED and list what to change."""
-
-[evals.consultant.pass_schema]
-type = "object"
-properties.comment = { type = "string" }
-additionalProperties = false
-
-[evals.consultant.fail_schema]
-type = "object"
-properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
-required = ["change"]
-additionalProperties = false
+  eval waiter : luna = {
+    title = "The skill helps the user like a restaurant's waiter"
+    red_at = "P1"
+    instruction = """
+      Read the skill @{artf agent-hey-arti} using @{tool self agent files.read}. Judge whether it helps a developer
+      the way a good waiter helps a guest, using @{artf docs-en} only to understand the concepts.
+      It must not read as a list of artifactize's features. Check that it:
+      - explains each concept briefly from the user's side (what an Artifact, an eval, a
+        reference, a verdict and verify mean for their project), not how artifactize
+        computes them;
+      - knows concrete best practices for shaping Artifacts and evals, the menu: how to
+        draw boundaries, which kind of eval fits which obligation, how consumers name the
+        inputs they use, recurring project patterns, and the anti-patterns to steer away
+        from;
+      - interviews the user about the project's goals, inputs and who judges what before
+        proposing;
+      - proposes an Artifact and eval composition with reasons, the menu combination, and
+        gets agreement before changing the project;
+      - applies the agreed changes, confirms they match artifactize's schema, and tells
+        the user what changed and what will now be reviewed or reused.
+      Each of these it does not do is an issue.
+    """
+  }
+}
