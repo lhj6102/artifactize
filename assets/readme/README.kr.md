@@ -15,21 +15,24 @@ Artifactize는 프로젝트의 코드, 문서, 이미지, 실행 중인 앱을 �
 
 ## 한눈에 보기
 
-`.artifactize/` 아래에 작은 `.artf` 언어로 각 Artifact와 평가를 선언한 뒤 `artifactize verify`를 실행합니다.
+`.artifactize/` 아래에 작은 `.artf` 언어로 각 Artifact와 평가를 선언하고, Agent 평가를 실행할 방식은 `.artfprofiles` 파일에 적은 뒤 `artifactize verify`를 실행합니다.
+
+```rust
+// .artifactize/profiles.artfprofiles
+profile reviewer : agent = { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
+```
 
 ```rust
 // .artifactize/api.artf
-profile sol = agent(backend = "codex", model = "gpt-6.2-sol", reasoning = "high")
-
 artf api : files = {
   path = "crates/api/"
 
+  // Run the API's test suite.
   eval tests : runtime(command = "cargo", args = ["test", "--locked"]) = {
     title = "API tests pass"
-    instruction = "Run the API's test suite."
   }
 
-  eval matches-spec : sol = {
+  eval matches-spec : reviewer = {
     title = "API implementation matches the specification"
     instruction = "Review @{artf self} against @{artf spec}. Each route that does not match is an issue."
   }

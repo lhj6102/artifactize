@@ -21,7 +21,7 @@ Run `hello` to greet the team.
 EOF
 ```
 
-Now declare `spec` as an unreviewed input (`basis = true`) and `guide` with two runtime checks—one checking its own heading and one checking that it mentions `hello`, as `spec` requires, so `spec` is one of its `inputs`:
+Now declare `spec` as an unreviewed input (`basis = true`) and `guide` with two runtime checks—one checking its own heading and one checking that it mentions `hello`, as `spec` requires, so `spec` is one of its `deps`:
 
 ```sh
 cat > .artifactize/project.artf <<'EOF'
@@ -34,15 +34,15 @@ artf spec = {
 artf guide = {
   path = "guide.md"
 
+  // Its verdict is grep's exit code: 0 when the guide has a top-level Markdown heading.
   eval heading : runtime(command = "grep", args = ["-q", "^# ", "@{path self}"]) = {
     title = "The guide includes a top-level heading"
-    instruction = "Check that the guide includes a top-level Markdown heading."
   }
 
+  // The greeting the spec requires; `deps` makes spec an input the command reads.
   eval mentions-hello : runtime(command = "grep", args = ["-q", "hello", "@{path self}"]) = {
     title = "The guide mentions the command required by the spec"
-    instruction = "Check that the guide mentions the greeting the spec requires."
-    inputs = [spec]
+    deps = [spec]
   }
 }
 EOF

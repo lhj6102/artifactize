@@ -22,17 +22,17 @@ Each Artifact declares how its own state is fingerprinted:
 
 An eval's **reuse key** is a 64-character hex hash combining:
 
-1. **The Eval definition hash**: the eval's `kind` (`runtime`, `agent`, or `human`); for Agent and Human evals, its `instruction`; for Agent evals, `red_at`; for runtime evals, `command`, `args` and `inputs` (a runtime eval's instruction is prose for people and stays out).
+1. **The Eval definition hash**: the eval's `kind` (`runtime`, `agent`, or `human`); for Agent and Human evals, its `instruction`; for Agent evals, `red_at`; for runtime evals, `command`, `args` and `deps`.
 2. **The target Artifact**: its name, kind (`folder`, `file`, `aspect`, or `live`), and current fingerprint.
 3. **All `parts` of the target Artifact** (recursively): each part's name, kind, and fingerprint (adding the first part to or removing the last part from a target invalidates reuse even if that part was already named directly). Changing a part therefore re-reviews the part and the whole's evals, whereas composition alone does not re-review a part when only the whole's own files change (unless the part's eval names the whole).
-4. **Direct inputs**, the Artifacts the eval names in its instruction, its runtime `args` or its `inputs`: each one's name, kind, and fingerprint (one hop only; a dependency's own dependencies do not enter this eval's key, though they still gate final Run satisfaction).
+4. **Direct inputs**, the Artifacts the eval names in its instruction, its runtime `args` or its `deps`: each one's name, kind, and fingerprint (one hop only; a dependency's own dependencies do not enter this eval's key, though they still gate final Run satisfaction).
 
 ### What does NOT change the Eval definition hash
 
 Execution options and presentation metadata are excluded from the Eval definition hash so you can tune execution without changing the evaluation criteria:
 
-- The Agent profile: `backend`, `model`, `reasoning`, `timeout_ms`, `max_tokens`, `max_tool_calls`, the profile's name, and a `--profile` chosen for the Run.
-- Eval `title`, a runtime eval's `instruction`, `mutex` tags, Artifact `tags`, physical repository paths, and toolsets. (An Artifact whose target holds definitions follows their meaning through its definitions fingerprint: changing an eval's criteria there changes it.)
+- The Agent profile: `backend`, `model`, `reasoning`, `timeout_ms`, `max_tokens`, `max_tool_calls`, the profile's name, and the branch the environment chose for the Run.
+- Eval `title`, comments, `mutex` tags, Artifact `tags`, physical repository paths, and toolsets. (An Artifact whose target holds definitions follows their meaning through its definitions fingerprint: changing an eval's criteria there changes it.)
 
 Because physical paths are not part of the key, separate worktrees, clones, teammates' machines (via the [team review store](../guides/team-and-ci.md)), and CI jobs reuse each other's verdicts whenever Artifact names, kinds, fingerprints, and eval criteria match.
 

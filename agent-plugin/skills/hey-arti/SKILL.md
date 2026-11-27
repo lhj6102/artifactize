@@ -127,8 +127,8 @@ along what is edited independently. Validate the edited declarations with `confi
 and compare `status` before and after: the edited
 input and its real consumers should need review; independent parts should still be
 reused. Changing an Agent or Human eval's instruction or `red_at` threshold, or a runtime
-eval's command, arguments or `inputs`, changes what it judges; a title, tags, a runtime
-eval's instruction (prose beside its command), the profile or tool declarations do not.
+eval's command, arguments or `deps`, changes what it judges; a title, tags, comments, the
+profile or tool declarations do not.
 
 **"Why did this run again?" or "verify is slow"**: read `status` for what changed and
 which evals it covers. Too much rerunning usually means a boundary is too wide or a
@@ -218,7 +218,7 @@ loops.
   with a concrete obligation. Avoid one review over the whole repository. A consumer
   names what it really uses, even in another folder; sharing a repository is not a
   dependency, and a command does not add the files it reads: a runtime eval names them,
-  `@{path name}` in its arguments, or `inputs = [name]` for what its command finds by
+  `@{path name}` in its arguments, or `deps = [name]` for what its command finds by
   itself, such as a lockfile, a shared checker or a config file. Split an Artifact that
   grows. Use `basis = true` only for an input the team agrees nobody reviews. Keep
   the default fingerprint.
@@ -229,9 +229,12 @@ loops.
   evals that use them cannot run until the target exists. `config migrate` converts an
   older setup; `config rename OLD NEW` renames an Artifact wherever the code names it.
 - **Write what repeats once.** When several Artifacts share a shape (crates, posts,
-  rule documents), declare an `artf!` macro, or an `eval!` macro for a shared check, and
-  bind each Artifact with a call; `config expand NAME` shows what a call makes. Declare
-  each Agent profile once (`profile name = agent(…)`) and name it in evals.
+  rule documents), declare an `artf!` macro with its evals inside and bind each Artifact
+  with a call; `config expand NAME` shows what a call makes. A macro takes only what
+  changes what is checked (a path, a package, a limit); titles and instructions are written
+  out. Declare how Agent evals run once, in a `.artfprofiles` file (`profile reviewer :
+  agent = { … }`), and name the profile in evals; `match TIER { default => { … }, heavy =>
+  { … } }` lets an environment variable choose a profile's setting for a Run.
 - **Live observations.** Use a URI target for external state you need to observe, not
   for deployment. artifactize does not fetch the URI automatically; a declared command
   receives the URI in `argv` when its `args` name `@{path name}` (or `@{path name/subpath}`), and a
@@ -292,11 +295,15 @@ specification, and a logo a person signs off. Adapt names and commands; the
 [Declarations](https://artifactize.dev/docs/reference/declarations.html) page has
 the full rules.
 
+`.artifactize/profiles.artfprofiles`, how the Agent evals run:
+
+```rust
+profile reviewer : agent = { backend = "codex", model = "YOUR_EXACT_MODEL_ID", reasoning = "high" }
+```
+
 `.artifactize/project.artf`; `spec` is a basis only if the team agrees nobody reviews it:
 
 ```rust
-profile reviewer = agent(backend = "codex", model = "YOUR_EXACT_MODEL_ID", reasoning = "high")
-
 artf spec : files = {
   path = "spec/"
   basis = true
@@ -306,9 +313,9 @@ artf app : files = {
   path = "app/"
   tags = ["type:code"]
 
+  // Its verdict is the command's exit code.
   eval tests : runtime(command = "cargo", args = ["test", "--locked"]) = {
     title = "The application's tests pass"
-    instruction = "Run the application tests."
   }
 
   eval review : reviewer = {

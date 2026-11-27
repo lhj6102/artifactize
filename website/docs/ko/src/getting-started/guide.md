@@ -21,7 +21,7 @@ Run `hello` to greet the team.
 EOF
 ```
 
-이제 두 Artifact를 선언합니다. `spec`은 검증하지 않고 입력으로만 쓰며(`basis = true`), `guide`에는 Runtime eval 두 개를 선언합니다. 첫 번째 eval은 제목 형식을 확인하고, 두 번째 eval은 `spec`이 요구하는 `hello`가 본문에 들어 있는지 확인합니다. 그래서 두 번째 eval의 `inputs`에 `spec`을 적습니다.
+이제 두 Artifact를 선언합니다. `spec`은 검증하지 않고 입력으로만 쓰며(`basis = true`), `guide`에는 Runtime eval 두 개를 선언합니다. 첫 번째 eval은 제목 형식을 확인하고, 두 번째 eval은 `spec`이 요구하는 `hello`가 본문에 들어 있는지 확인합니다. 그래서 두 번째 eval의 `deps`에 `spec`을 적습니다.
 
 ```sh
 cat > .artifactize/project.artf <<'EOF'
@@ -34,15 +34,15 @@ artf spec = {
 artf guide = {
   path = "guide.md"
 
+  // grep의 종료 코드가 판정입니다. 가이드에 최상위 Markdown 제목이 있으면 0입니다.
   eval heading : runtime(command = "grep", args = ["-q", "^# ", "@{path self}"]) = {
     title = "The guide includes a top-level heading"
-    instruction = "Check that the guide includes a top-level Markdown heading."
   }
 
+  // spec이 요구하는 인사말. `deps`로 명령이 읽는 spec을 입력으로 적습니다.
   eval mentions-hello : runtime(command = "grep", args = ["-q", "hello", "@{path self}"]) = {
     title = "The guide mentions the command required by the spec"
-    instruction = "Check that the guide mentions the greeting the spec requires."
-    inputs = [spec]
+    deps = [spec]
   }
 }
 EOF

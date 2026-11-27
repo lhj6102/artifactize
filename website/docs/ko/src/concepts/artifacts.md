@@ -9,9 +9,9 @@ artf guide = {
   parts = [intro, usage]
   tags = ["type:docs"]
 
+  // intro와 usage의 굵은 용어가 모두 glossary에 정의되어 있는지 확인합니다.
   eval terms : runtime(command = "python3", args = ["check_terms.py", "@{path glossary/terms.txt}", "@{path intro/page.md}", "@{path usage/page.md}"]) = {
     title = "Every bold term is defined in the glossary"
-    instruction = "Check that every bold term in intro and usage is defined in the glossary."
   }
 }
 ```
@@ -35,7 +35,7 @@ artf guide = {
 
 **Artifact Graph**는 입력 Artifact와 그 입력을 사용하는 eval을 연결합니다. 같은 저장소나 폴더에 있다는 이유만으로는 의존성이 생기지 않습니다.
 
-- **입력**: eval에서 `spec`을 가리키면 `spec`이 그 eval의 입력이 됩니다. Agent나 Human `instruction`에 `@{artf spec}`이나 `@{path spec/…}`를 쓰거나, runtime eval의 `args`에 `@{path spec}`을 쓰거나, runtime eval에 `inputs = [spec]`을 적으면 됩니다. 입력은 해당 리뷰의 [도구 범위](../guides/tools.md)에 들어가고, 그 eval의 [재사용 키](reuse.md#the-reuse-key)에도 포함됩니다.
+- **입력**: eval에서 `spec`을 가리키면 `spec`이 그 eval의 입력이 됩니다. Agent나 Human `instruction`에 `@{artf spec}`을 쓰거나, runtime eval의 `args`에 `@{path spec}`을 쓰거나, runtime eval에 `deps = [spec]`을 적으면 됩니다. 입력은 해당 리뷰의 [도구 범위](../guides/tools.md)에 들어가고, 그 eval의 [재사용 키](reuse.md#the-reuse-key)에도 포함됩니다.
 - **eval 실행 조건**: 기본 `verify`는 선행 eval부터 순서대로 실행합니다. 예를 들어 `app/e2e`가 `e2e-tests`를 입력으로 가리키는 경우를 보겠습니다. 여기서 `e2e-tests`는 `app`과 같은 순환 참조에 속하지 않는다고 가정합니다. `app/e2e`는 `e2e-tests`의 모든 eval에 유효한 통과 결과가 나올 때까지 대기(`WAIT_DEPENDENCY`)합니다. `e2e-tests`가 순환 참조에 속하면 그 순환 참조에 포함된 모든 eval의 통과 결과가 나와야 `app/e2e`를 실행합니다. 아직 결과가 없는 선행 eval은 `--recursive`나 `--all` 등으로 선택 범위에 포함되었을 때만 실행됩니다. 다만 선택된 선행 Human 승인 요청이 남아 있을 때는 승인을 미루고 하위 평가를 `PROVISIONAL` 상태로 먼저 진행할 수 있습니다([승인과 Run의 종료](runs.md#sign-offs-and-the-end-of-a-run) 참고). 그중 하나라도 `RED`나 `BLOCKED`가 되면 `app/e2e`도 `BLOCKED` 상태가 되며, 실행을 막은 선행 eval을 `blockedBy`에 기록합니다. 이 조건은 eval의 새 실행 여부를 판단할 때 적용하며, Run 통과 요건을 확인할 때도 적용합니다. 선행 eval이 `RED`면 `app/e2e`를 새로 실행할 수 없습니다. 다만 `app/e2e`에 현재 재사용 키와 일치하는 캐시 결과가 있으면 `verify`는 기존 결과를 Run에 반영하며, `status`는 eval의 상태를 `BLOCKED`로, 예상 동작을 `reuse`로 표시합니다. `e2e-tests`를 가리키지 않는 `app`의 다른 eval은 `e2e-tests`의 결과와 관계없이 바로 실행됩니다.
 - **순환 참조(Cycle)**: eval의 입력을 따라가다 출발점인 Artifact로 돌아오면 **순환 참조**입니다. 같은 순환 참조에 속한 eval은 서로의 결과를 확인하기 전에 실행할 수 있으며, 순환 밖의 선행 조건은 공통으로 적용됩니다. Human eval은 같은 Artifact의 자동 eval이 통과한 뒤에 시작합니다. `config graph`의 묶음(components)에는 `parts` 구성 관계도 함께 표시되는데, `parts` 관계 때문에 순환이 생겨도 서로 가리키는 입력의 선행 조건은 그대로 적용됩니다.
 - **Human 승인 선행 조건**: 한 Artifact에 선언된 Human eval을 시작하려면 같은 Artifact의 모든 자동(`runtime`, `agent`) eval이 통과(`GREEN` 또는 `PROVISIONAL`)해야 합니다. Human eval이 가리키는 입력에 적용되는 선행 조건도 모두 충족해야 합니다. 자세한 동작은 [승인과 Run의 종료](runs.md#sign-offs-and-the-end-of-a-run)를 보세요.

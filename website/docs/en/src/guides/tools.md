@@ -1,6 +1,6 @@
 # Tools and Harness Sessions
 
-Tools let an Agent or Human reviewer inspect an Artifact without turning a review into a build session. Tools come in **toolsets**: an Artifact composes toolsets (`artf spec : files & review = { … }`), and an eval sees the tools composed on its target Artifact and on every Artifact it names. A tool's qualified name is `NAMESPACE.TOOL` (`files.read`); a reviewer calls it `NAMESPACE_TOOL_ARTIFACT` with dots as `_` (for example, `files.read` on `spec` is `files_read_spec`), and an instruction names it with a [slot](../reference/declarations.md#slots), `@{tool spec agent files.read}`. Toolsets are ways of viewing an Artifact and are not part of the [Eval definition hash](../concepts/reuse.md#the-reuse-key).
+Tools let an Agent or Human reviewer inspect an Artifact without turning a review into a build session. Tools come in **toolsets**: an Artifact composes toolsets (`artf spec : files & review = { … }`), and an eval sees the tools composed on its target Artifact and on every Artifact it names. A tool's qualified name is `NAMESPACE.TOOL` (`files.read`); a reviewer calls it `NAMESPACE_TOOL_ARTIFACT` with dots as `_` (for example, `files.read` on `spec` is `files_read_spec`), and an instruction names the Artifacts whose tools a review uses with `@{artf spec}`. Toolsets are ways of viewing an Artifact and are not part of the [Eval definition hash](../concepts/reuse.md#the-reuse-key).
 
 The built-in toolsets give a local Artifact common tools without writing any: `files` (the File Explorer: `list`, `glob`, `grep`, `read`, and a viewer), `markdown` (`read` and the Markdown viewer) and `artifactize` (`declarations` and the Artifactize Viewer of definitions). A [viewer plugin](viewer-plugins.md) adds its own. Declare your own with `tool NAME = { … }`; its name is its namespace.
 
@@ -60,8 +60,11 @@ artifactize tools open notes.md
 Declare custom read-only tools as `agent NAME = command(…)` using either the `json` or `plain` protocol:
 
 ```rust
-profile sol = agent(backend = "codex", model = "gpt-6.2-sol")
+// .artifactize/profiles.artfprofiles
+profile sol : agent = { backend = "codex", model = "gpt-6.2-sol" }
+```
 
+```rust
 tool review = {
   // JSON protocol: receives {version, context, args} on stdin, prints JSON content blocks.
   // The eval using it must also name requirements, which the tool reads.
@@ -90,7 +93,7 @@ artf spec : files & review = {
 
   eval review : sol = {
     title = "The spec covers every requirement"
-    instruction = "Review @{artf self} against @{artf requirements} using @{tool self agent review.coverage}."
+    instruction = "Review @{artf self} against @{artf requirements}, starting with its coverage report."
   }
 }
 ```

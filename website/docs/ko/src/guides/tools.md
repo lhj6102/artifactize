@@ -1,6 +1,6 @@
 # 도구와 하네스 세션 {#tools-and-harness-sessions}
 
-도구를 사용하면 Agent나 Human 리뷰어가 빌드 세션을 따로 열지 않고도 Artifact를 살펴볼 수 있습니다. 도구는 **toolset** 단위로 묶입니다. Artifact가 toolset을 조합하면(`artf spec : files & review = { … }`) 리뷰어는 eval의 대상 Artifact와 eval이 가리키는 Artifact에 조합된 도구를 쓸 수 있습니다. 도구의 정규 이름은 `NAMESPACE.TOOL`(`files.read`)이고, 리뷰어는 점을 `_`로 바꾼 `NAMESPACE_TOOL_ARTIFACT` 이름으로 도구를 부릅니다(예: `spec`의 `files.read`는 `files_read_spec`). instruction에서는 [slot](../reference/declarations.md#slots) `@{tool spec agent files.read}`로 도구를 가리킵니다. toolset은 Artifact를 조회하는 수단이므로 [eval 정의 해시](../concepts/reuse.md#the-reuse-key)에 포함되지 않습니다.
+도구를 사용하면 Agent나 Human 리뷰어가 빌드 세션을 따로 열지 않고도 Artifact를 살펴볼 수 있습니다. 도구는 **toolset** 단위로 묶입니다. Artifact가 toolset을 조합하면(`artf spec : files & review = { … }`) 리뷰어는 eval의 대상 Artifact와 eval이 가리키는 Artifact에 조합된 도구를 쓸 수 있습니다. 도구의 정규 이름은 `NAMESPACE.TOOL`(`files.read`)이고, 리뷰어는 점을 `_`로 바꾼 `NAMESPACE_TOOL_ARTIFACT` 이름으로 도구를 부릅니다(예: `spec`의 `files.read`는 `files_read_spec`). instruction에서는 리뷰에 쓸 도구를 가진 Artifact를 `@{artf spec}`으로 가리킵니다. toolset은 Artifact를 조회하는 수단이므로 [eval 정의 해시](../concepts/reuse.md#the-reuse-key)에 포함되지 않습니다.
 
 내장 toolset을 쓰면 로컬 Artifact에 자주 쓰는 도구를 하나씩 선언하지 않아도 됩니다. `files`(File Explorer: `list`, `glob`, `grep`, `read`와 뷰어), `markdown`(`read`와 Markdown 뷰어), `artifactize`(`declarations`와 선언을 보여 주는 Artifactize Viewer)가 있습니다. [뷰어 플러그인](viewer-plugins.md)은 자기 toolset을 더합니다. 직접 만들 때는 `tool NAME = { … }`으로 선언하며, 이름이 곧 namespace입니다.
 
@@ -60,8 +60,11 @@ artifactize tools open notes.md
 `agent NAME = command(…)`로 `json` 또는 `plain` 프로토콜을 쓰는 읽기 전용 명령 도구를 선언합니다.
 
 ```rust
-profile sol = agent(backend = "codex", model = "gpt-6.2-sol")
+// .artifactize/profiles.artfprofiles
+profile sol : agent = { backend = "codex", model = "gpt-6.2-sol" }
+```
 
+```rust
 tool review = {
   // JSON 프로토콜: stdin으로 {version, context, args}를 받고 stdout으로 JSON content 블록 출력.
   // 이 도구는 requirements를 읽으므로, 이 도구를 쓰는 eval도 requirements를 가리켜야 함.
@@ -90,7 +93,7 @@ artf spec : files & review = {
 
   eval review : sol = {
     title = "The spec covers every requirement"
-    instruction = "Review @{artf self} against @{artf requirements} using @{tool self agent review.coverage}."
+    instruction = "Review @{artf self} against @{artf requirements}, starting with its coverage report."
   }
 }
 ```

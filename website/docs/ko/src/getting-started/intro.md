@@ -6,7 +6,7 @@ Artifactize로 프로젝트의 각 부분을 어떻게 검증할지 선언합니
 
 - **Artifact**: 프로젝트에서 리뷰할 작업 단위입니다. 폴더, 단일 파일, 폴더 안에서 고른 경로(**Aspect**), 외부 서비스 URI(**Live**)를 대상으로 삼을 수 있으며 `.artifactize/` 아래 `.artf` 파일에 `artf` 문으로 선언하고 `path`를 적습니다.
 - **eval**: Artifact 하나를 검증해 `GREEN` 또는 `RED` 판정을 내리는 평가입니다. `runtime` eval은 테스트나 린터를 실행하고, `agent` eval은 읽기 전용 도구로 대상을 살펴 판정합니다. `human` eval에서는 리뷰어가 직접 판정합니다.
-- **Artifact Graph**: eval이 `@{artf name}` 같은 slot이나 `inputs`로 가리키는 입력과 eval의 의존 관계, 그리고 `parts`로 묶은 Artifact의 구성 관계를 보여 줍니다.
+- **Artifact Graph**: eval이 `@{artf name}` 같은 slot이나 runtime eval의 `deps`로 가리키는 입력과 eval의 의존 관계, 그리고 `parts`로 묶은 Artifact의 구성 관계를 보여 줍니다.
 - **fingerprint와 재사용**: 재사용 키가 일치하면 이전 판정을 다시 쓸 수 있습니다. 자세한 동작은 [fingerprint와 재사용](/docs/ko/concepts/reuse.html)을 보세요.
 
 ## 기본 작업 흐름 {#how-a-project-flows}

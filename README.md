@@ -15,21 +15,24 @@ Test runners check code and review bots check pull requests in isolation. Artifa
 
 ## At a glance
 
-Declare each Artifact and its checks in the small `.artf` language under `.artifactize/`, then run `artifactize verify`:
+Declare each Artifact and its checks in the small `.artf` language under `.artifactize/`, and how its Agent evals run in an `.artfprofiles` file, then run `artifactize verify`:
+
+```rust
+// .artifactize/profiles.artfprofiles
+profile reviewer : agent = { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
+```
 
 ```rust
 // .artifactize/api.artf
-profile sol = agent(backend = "codex", model = "gpt-6.2-sol", reasoning = "high")
-
 artf api : files = {
   path = "crates/api/"
 
+  // Run the API's test suite.
   eval tests : runtime(command = "cargo", args = ["test", "--locked"]) = {
     title = "API tests pass"
-    instruction = "Run the API's test suite."
   }
 
-  eval matches-spec : sol = {
+  eval matches-spec : reviewer = {
     title = "API implementation matches the specification"
     instruction = "Review @{artf self} against @{artf spec}. Each route that does not match is an issue."
   }

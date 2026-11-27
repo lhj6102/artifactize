@@ -22,17 +22,17 @@ Artifact를 선언할 때 상태를 식별하는 데 쓸 fingerprint를 지정�
 
 각 eval의 **재사용 키**는 다음 네 가지를 조합한 64자리 16진수 해시입니다.
 
-1. **eval 정의 해시**: eval의 `kind`(`runtime`, `agent`, `human`). Agent와 Human eval은 `instruction`, Agent eval은 `red_at`, runtime eval은 `command`, `args`, `inputs`를 넣습니다. runtime eval의 instruction은 사람이 읽는 설명이라 넣지 않습니다.
+1. **eval 정의 해시**: eval의 `kind`(`runtime`, `agent`, `human`). Agent와 Human eval은 `instruction`, Agent eval은 `red_at`, runtime eval은 `command`, `args`, `deps`를 넣습니다.
 2. **대상 Artifact**: 이름, 종류(`folder`, `file`, `aspect`, `live`), 현재 fingerprint.
 3. **대상 Artifact의 모든 하위 `parts`**(재귀 포함): 각 하위 Artifact의 이름, 종류, fingerprint. 하위 Artifact가 없던 대상에 하나를 추가하거나 하나만 남은 하위 Artifact를 제거하면 재사용 키가 바뀝니다. 그 하위 Artifact를 이미 입력으로 직접 가리키고 있었어도 마찬가지입니다. 따라서 하위 Artifact가 바뀌면 해당 하위 Artifact와 상위 Artifact의 eval을 다시 실행합니다. 상위 Artifact에 속한 파일만 바뀌었다면, 구성 관계만으로 하위 Artifact의 eval까지 다시 실행하지는 않습니다. 다만 하위 Artifact의 eval이 `{whole}`을 직접 참조하면 다시 실행합니다.
-4. **직접 입력**: 재사용 키에는 eval이 instruction, runtime `args`, `inputs`에서 직접 가리키는 입력 Artifact의 이름, 종류, fingerprint만 넣습니다. 직접 참조한 입력 Artifact를 거쳐 간접적으로 연결된 Artifact는 재사용 키에 넣지 않고 Run 통과 요건을 확인할 때만 살핍니다.
+4. **직접 입력**: 재사용 키에는 eval이 instruction, runtime `args`, `deps`에서 직접 가리키는 입력 Artifact의 이름, 종류, fingerprint만 넣습니다. 직접 참조한 입력 Artifact를 거쳐 간접적으로 연결된 Artifact는 재사용 키에 넣지 않고 Run 통과 요건을 확인할 때만 살핍니다.
 
 ### eval 정의 해시를 바꾸지 않는 항목 {#what-does-not-change-the-eval-definition-hash}
 
 실행 옵션과 표시용 메타데이터는 eval 정의 해시에서 제외되므로, 평가 기준을 바꾸지 않고 실행 설정을 조정할 수 있습니다.
 
-- Agent profile: `backend`, `model`, `reasoning`, `timeout_ms`, `max_tokens`, `max_tool_calls`, profile 이름, Run에 지정한 `--profile`.
-- eval의 `title`, runtime eval의 `instruction`, `mutex` 태그, Artifact의 `tags`, 실제 디스크 경로, toolset. (선언을 대상으로 하는 Artifact는 선언 fingerprint로 그 의미를 따라가므로, 그곳에서 eval의 평가 기준을 고치면 fingerprint가 바뀝니다.)
+- Agent profile: `backend`, `model`, `reasoning`, `timeout_ms`, `max_tokens`, `max_tool_calls`, profile 이름, 환경 변수가 Run에서 고른 분기.
+- eval의 `title`, 주석, `mutex` 태그, Artifact의 `tags`, 실제 디스크 경로, toolset. (선언을 대상으로 하는 Artifact는 선언 fingerprint로 그 의미를 따라가므로, 그곳에서 eval의 평가 기준을 고치면 fingerprint가 바뀝니다.)
 
 재사용 키에는 실제 디스크 경로를 넣지 않습니다. 따라서 Artifact 이름과 종류, fingerprint, 평가 기준만 같으면 다른 워크트리나 복제본, 팀원의 개발 환경([팀 리뷰 저장소](../guides/team-and-ci.md) 연동 시), CI에서도 결과를 그대로 재사용합니다.
 

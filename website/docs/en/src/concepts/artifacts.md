@@ -9,9 +9,9 @@ artf guide = {
   parts = [intro, usage]
   tags = ["type:docs"]
 
+  // Check that every bold term in intro and usage is defined in the glossary.
   eval terms : runtime(command = "python3", args = ["check_terms.py", "@{path glossary/terms.txt}", "@{path intro/page.md}", "@{path usage/page.md}"]) = {
     title = "Every bold term is defined in the glossary"
-    instruction = "Check that every bold term in intro and usage is defined in the glossary."
   }
 }
 ```
@@ -35,7 +35,7 @@ The target kind is separate from the [toolsets](../guides/tools.md) the Artifact
 
 The **Artifact Graph** connects inputs to the evals that consume them. Sharing a repository or directory never creates an implicit dependency. Instead:
 
-- **Inputs**: naming `spec` in an eval makes `spec` an input of that specific eval: `@{artf spec}` or `@{path spec/…}` in an Agent or Human `instruction`, `@{path spec}` in a runtime eval's `args`, or `inputs = [spec]` on a runtime eval. An input is admitted to the review's [tool scope](../guides/tools.md) and is part of that eval's [reuse key](reuse.md#the-reuse-key).
+- **Inputs**: naming `spec` in an eval makes `spec` an input of that specific eval: `@{artf spec}` in an Agent or Human `instruction`, `@{path spec}` in a runtime eval's `args`, or `deps = [spec]` on a runtime eval. An input is admitted to the review's [tool scope](../guides/tools.md) and is part of that eval's [reuse key](reuse.md#the-reuse-key).
 - **Per-eval gating**: plain `verify` schedules dependency-first. If `app/e2e` names `e2e-tests` (outside `app`'s own reference cycle), then `app/e2e` waits until every eval of `e2e-tests` (and any reference cycle `e2e-tests` belongs to) has current passing evidence (`WAIT_DEPENDENCY`; missing upstream checks run only if they are included in the selection, for example with `--recursive` or `--all`, and a selected waiting Human sign-off can be deferred so downstream checks proceed as `PROVISIONAL`; see [Sign-offs and the end of a Run](runs.md#sign-offs-and-the-end-of-a-run)) and is `BLOCKED` if any of them is `RED` or `BLOCKED` (naming the root blocking eval in `blockedBy`). Gates control fresh execution and final satisfaction: if `app/e2e` already has a matching cached result while its gate is `RED`, `verify` can attach that cached result without running `app/e2e` (`status` shows state `BLOCKED` with action `reuse`). Other evals on `app` that do not name `e2e-tests` can still run immediately.
 - **Cycles**: Artifacts whose evals name each other directly or through a chain of inputs form a **reference cycle**. References between peers in a reference cycle do not gate on the peer itself, though an eval that references a cycle peer inherits the cycle's external gates from outside the cycle (and Human evals still wait for their own Artifact's machine evals). Note that `config graph` components also group `parts` composition edges: a cycle closed through `parts` rather than mutually named inputs does not remove reference gates.
 - **Human sign-off prerequisite**: a Human eval on an Artifact starts only after every non-Human (`runtime` and `agent`) eval on that same Artifact passes (`GREEN` or `PROVISIONAL`) and the Human eval's own upstream dependency gates are satisfied; see [Sign-offs and the end of a Run](runs.md#sign-offs-and-the-end-of-a-run).

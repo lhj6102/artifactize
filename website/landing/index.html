@@ -147,18 +147,19 @@
         <p data-locale="ko" class="download-note"><code>.artifactize/</code> 아래에 <code>artf</code> 문으로 각 Artifact를 선언합니다. eval이 읽는 Artifact는 <code>@{artf spec}</code>처럼 이름으로 가리키세요. 가리킨 입력 중 하나라도 바뀌면 해당 eval을 다시 실행합니다.</p>
       </div>
       <div class="panel start-panel">
-<pre class="code"><code><span class="t-dim">// .artifactize/api.artf</span>
-profile sol = agent(backend = "codex", model = "gpt-6.2-sol", reasoning = "high")
+<pre class="code"><code><span class="t-dim">// .artifactize/profiles.artfprofiles</span>
+profile reviewer : agent = { backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
 
+<span class="t-dim">// .artifactize/api.artf</span>
 artf api : files = {
   path = "crates/api/"
 
+  // Run the API's test suite.
   eval tests : runtime(command = "cargo", args = ["test", "--locked"]) = {
     title = "API tests pass"
-    instruction = "Run the API's test suite."
   }
 
-  eval matches-spec : sol = {
+  eval matches-spec : reviewer = {
     title = "API implementation matches the specification"
     instruction = "Review @{artf self} against @{artf spec}. Each route that does not match is an issue."
   }

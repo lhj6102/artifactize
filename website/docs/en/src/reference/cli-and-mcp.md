@@ -11,17 +11,17 @@ Most `artifactize` subcommands accept `--repo PATH`, `--state-dir PATH`, and `--
 
 | Command | Flags & arguments | Output & behavior | Exit codes |
 |---|---|---|---|
-| `verify SELECTOR` | `[--profile NAME]` (runs every included Agent eval with [profile](declarations.md#project-settings) `NAME`), `--recursive`, `--force`, `--jobs N`, `--fingerprint-jobs N` (default: available CPUs), `--max-executions N`, `--wait` \| `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Submits or follows a Run; see [Runs and Workflows](../concepts/runs.md). | `0` accepted, or [Run outcome](../concepts/runs.md#sign-offs-and-the-end-of-a-run) with `--wait`/`--watch` |
-| `status [SELECTOR]` (default `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (default: available CPUs) | Reports eval and Artifact states, predicted actions (`execute`, `reuse`, `wait`, `blocked`; see [Runs and Workflows](../concepts/runs.md)), and changed inputs when no reusable result matches (see [Fingerprints and Reuse](../concepts/reuse.md#completed-result-reuse)). | `0` satisfied, `1` obligations remain, `2` command/state error |
+| `verify SELECTOR` | `--recursive`, `--force`, `--jobs N`, `--fingerprint-jobs N` (default: available CPUs), `--max-executions N`, `--wait` \| `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Submits or follows a Run; see [Runs and Workflows](../concepts/runs.md). | `0` accepted, or [Run outcome](../concepts/runs.md#sign-offs-and-the-end-of-a-run) with `--wait`/`--watch` |
+| `status [SELECTOR]` (default `--all`) | `--recursive`, `--force`, `--fingerprint-jobs N` (default: available CPUs) | Reports eval and Artifact states, predicted actions (`execute`, `reuse`, `wait`, `blocked`; see [Runs and Workflows](../concepts/runs.md)), and changed inputs when no reusable result matches (see [Fingerprints and Reuse](../concepts/reuse.md#completed-result-reuse)). | `0` satisfied, `1` obligations remain, `2` command/state error |
 | `config check` | — | Validates `.artifactize/` definitions statically without running project code. | `0` valid, `2` invalid |
 | `config graph [ARTIFACT]` | `--impact` | Prints Artifacts, evals, cycle components, and input-to-consumer relations (`--impact` adds downstream consumers). | `0` |
 | `config expand [ARTIFACT]` | — | Prints what each Artifact's binding (or one Artifact's) expands to, macros and toolsets filled in, after the file and line it is bound at. | `0`, `2` invalid |
-| `config symbols` | — | Lists the global bindings: Artifacts, toolsets, profiles, evals and their macros' signatures, each with where it is declared. | `0`, `2` invalid |
+| `config symbols` | — | Lists the global bindings: Artifacts, toolsets and profiles, and the macros' signatures, each with where it is declared. | `0`, `2` invalid |
 | `config migrate` | `--repo PATH` | [Converts older definitions](declarations.md#upgrading-an-in-tree-project) into the `.artf` language. | `0` |
 | `plugin add PATH` | `--repo PATH` | Installs a [viewer plugin](../guides/viewer-plugins.md) from a folder. | `0` |
 | `plugin remove NAMESPACE` | `--repo PATH` | Removes a project-installed plugin by its namespace. | `0` |
 | `plugin list` | `--repo PATH` | Lists the built-in and project-installed plugins. | `0` |
-| `config rename OLD NEW` | — | Renames Artifact `OLD` to `NEW` wherever the code names it: its binding, `parts`, slots and `inputs`. | `0` |
+| `config rename OLD NEW` | — | Renames Artifact `OLD` to `NEW` wherever the code names it: its binding, `parts`, slots and `deps`. | `0` |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | Lists saved Runs newest first for the current/`--repo` repository (`--repo-only`, the default) or across all repositories in the state (`--all`), with status, counts, and comment. | `0` |
 | `run show RUN_ID` | `--wait [--timeout-ms MS]` | Prints full saved Run JSON (`origin`, `evidence`, `requests`, `usage`, `validation`). `--wait` waits for an open Run (default 10-minute observation timeout; `--timeout-ms` requires `--wait`). | `0` (or Run outcome with `--wait`; `3` when `--wait` times out, leaving the Run running) |
 | `run watch RUN_ID` | — | Streams JSON-line progress (`update`, `eval_result`, `outcome`) until settlement. | Run outcome |

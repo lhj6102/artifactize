@@ -11,17 +11,17 @@
 
 | 명령 | 플래그 및 인자 | 출력 및 동작 | 종료 코드 |
 |---|---|---|---|
-| `verify SELECTOR` | `[--profile NAME]` (포함된 모든 Agent eval을 [profile](declarations.md#project-settings) `NAME`으로 실행), `--recursive`, `--force`, `--jobs N`, `--fingerprint-jobs N` (기본값: 사용 가능한 CPU 수), `--max-executions N`, `--wait` \| `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Run을 시작하거나 진행 상황을 확인합니다([Run과 실행 흐름](../concepts/runs.md) 참고). | `0` 접수 완료, 또는 `--wait`/`--watch` 시 [Run 결과 코드](../concepts/runs.md#sign-offs-and-the-end-of-a-run) |
-| `status [SELECTOR]` (기본 `--all`) | `[--profile NAME]`, `--recursive`, `--force`, `--fingerprint-jobs N` (기본값: 사용 가능한 CPU 수) | eval과 Artifact 상태, 예상 동작(`execute`, `reuse`, `wait`, `blocked`; [Run과 실행 흐름](../concepts/runs.md) 참고), 재사용할 결과가 없을 때 바뀐 입력([fingerprint와 재사용](../concepts/reuse.md#completed-result-reuse) 참고)을 보여 줍니다. | `0` 충족됨, `1` 아직 충족하지 못한 검증 요건이 있음, `2` 명령/상태 오류 |
+| `verify SELECTOR` | `--recursive`, `--force`, `--jobs N`, `--fingerprint-jobs N` (기본값: 사용 가능한 CPU 수), `--max-executions N`, `--wait` \| `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Run을 시작하거나 진행 상황을 확인합니다([Run과 실행 흐름](../concepts/runs.md) 참고). | `0` 접수 완료, 또는 `--wait`/`--watch` 시 [Run 결과 코드](../concepts/runs.md#sign-offs-and-the-end-of-a-run) |
+| `status [SELECTOR]` (기본 `--all`) | `--recursive`, `--force`, `--fingerprint-jobs N` (기본값: 사용 가능한 CPU 수) | eval과 Artifact 상태, 예상 동작(`execute`, `reuse`, `wait`, `blocked`; [Run과 실행 흐름](../concepts/runs.md) 참고), 재사용할 결과가 없을 때 바뀐 입력([fingerprint와 재사용](../concepts/reuse.md#completed-result-reuse) 참고)을 보여 줍니다. | `0` 충족됨, `1` 아직 충족하지 못한 검증 요건이 있음, `2` 명령/상태 오류 |
 | `config check` | — | 프로젝트 코드를 실행하지 않고 `.artifactize/` 선언을 정적으로 검증합니다. | `0` 유효함, `2` 오류 |
 | `config graph [ARTIFACT]` | `--impact` | Artifact, eval, 순환 참조로 묶인 항목, 각 입력을 사용하는 eval을 출력합니다(`--impact`를 지정하면 해당 Artifact에 의존하는 하위 항목도 표시). | `0` |
 | `config expand [ARTIFACT]` | — | 각 Artifact(또는 지정한 Artifact 하나)의 바인딩이 펼쳐지는 내용을, 매크로와 toolset을 채워 바인딩된 파일과 줄 다음에 출력합니다. | `0`, `2` 잘못된 선언 |
-| `config symbols` | — | 전역 바인딩(Artifact, toolset, profile, eval)과 매크로 시그니처를 선언된 위치와 함께 나열합니다. | `0`, `2` 잘못된 선언 |
+| `config symbols` | — | 전역 바인딩(Artifact, toolset, profile)과 매크로 시그니처를 선언된 위치와 함께 나열합니다. | `0`, `2` 잘못된 선언 |
 | `config migrate` | `--repo PATH` | [예전 정의를](declarations.md#upgrading-an-in-tree-project) `.artf` 언어로 바꿉니다. | `0` |
 | `plugin add PATH` | `--repo PATH` | 폴더에서 [뷰어 플러그인](../guides/viewer-plugins.md)을 설치합니다. | `0` |
 | `plugin remove NAMESPACE` | `--repo PATH` | 프로젝트에 설치한 플러그인을 namespace로 제거합니다. | `0` |
 | `plugin list` | `--repo PATH` | 내장 플러그인과 프로젝트에 설치한 플러그인을 나열합니다. | `0` |
-| `config rename OLD NEW` | — | 코드에서 Artifact `OLD`를 가리키는 모든 곳(바인딩, `parts`, slot, `inputs`)의 이름을 `NEW`로 바꿉니다. | `0` |
+| `config rename OLD NEW` | — | 코드에서 Artifact `OLD`를 가리키는 모든 곳(바인딩, `parts`, slot, `deps`)의 이름을 `NEW`로 바꿉니다. | `0` |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | 기본 설정(`--repo-only`)에서는 현재 저장소의 Run을 보여 주며, `--repo`를 지정하면 해당 저장소의 Run을 보여 줍니다. `--all`을 쓰면 상태 디렉터리에 기록된 Run을 저장소 구분 없이 모두 보여 줍니다. 목록은 최신순으로 정렬하며 상태, 개수, 메모를 함께 표시합니다. | `0` |
 | `run show RUN_ID` | `--wait [--timeout-ms MS]` | 저장된 Run 전체 JSON(`origin`, `evidence`, `requests`, `usage`, `validation`)을 출력합니다. `--wait`를 지정하면 Run이 끝날 때까지 명령이 종료되지 않습니다(기본 대기 제한 시간 10분, `--timeout-ms`는 `--wait`와 함께 사용). | `0` (`--wait` 시 Run 결과 코드; 대기 제한 시간이 지나면 Run은 계속 실행되고 CLI 명령만 `3`으로 종료) |
 | `run watch RUN_ID` | — | Run이 끝날 때까지 진행 상태(`update`, `eval_result`, `outcome`)를 이벤트마다 JSON 한 줄로 출력합니다. | Run 결과 코드 |
