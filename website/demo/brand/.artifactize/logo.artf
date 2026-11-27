@@ -1,4 +1,4 @@
-tool logo = {
+tool design-notes = {
   human notes = builtin(
       op = "read",
       args = ["@{path self/notes.md}"],
@@ -6,7 +6,7 @@ tool logo = {
     )
 }
 
-artf logo : logo = {
+artf logo : design-notes = {
   path = "logo/"
 
   eval signoff : human = {
@@ -14,6 +14,7 @@ artf logo : logo = {
     instruction = "Read the design notes of @{artf logo} with the notes tool. Submit GREEN when the logo matches them; otherwise submit RED with the changes it needs."
   }
 
+  // Check that logo/logo.svg parses as XML.
   eval svg : runtime(
       command = "python3",
       args = [
@@ -24,6 +25,5 @@ artf logo : logo = {
       timeout_ms = 10000,
     ) = {
     title = "The logo is well-formed SVG"
-    instruction = "Check that logo/logo.svg parses as XML."
   }
 }

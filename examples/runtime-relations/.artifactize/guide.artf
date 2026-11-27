@@ -2,6 +2,7 @@ artf guide = {
   parts = [intro, usage]
   path = "guide/"
 
+  // Check that every bold term in intro and usage is defined in glossary.
   eval terms : runtime(
       command = "python3",
       args = [
@@ -13,6 +14,5 @@ artf guide = {
       timeout_ms = 10000,
     ) = {
     title = "Every bold term is defined in the glossary"
-    instruction = "Check that every bold term in intro and usage is defined in glossary."
   }
 }

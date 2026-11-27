@@ -2,7 +2,7 @@ artf release-automation : files = {
   parts = [release-observer]
   path = ".github/"
 
-  eval coherent : luna = {
+  eval coherent : reviewer = {
     title = "The release packaging, its smoke checks and its notes agree"
     red_at = "P1"
     instruction = """

@@ -7,9 +7,9 @@ on the open questions.
 ```
 agent-tools/
 ├── .artifactize/
-│   ├── profiles.artf    the Agent profiles the review can run with
+│   ├── profiles.artfprofiles  how the review runs, by provider
 │   ├── requirements.artf
-│   └── spec.artf        the text and review toolsets, and spec's two evals
+│   └── spec.artf        the review toolset, and spec's two evals
 ├── requirements/        basis Artifact: requirements.md lists R1–R4
 └── spec/                reviewed Artifact; its review reads requirements
     ├── spec.md          the specification under review
@@ -24,11 +24,11 @@ What it demonstrates:
   issues, each with a priority from P0 (the most important) to P3 and a reason.
   `red_at = "P1"` makes the eval RED when an issue is P1 or above; P2 and P3
   issues are reported but do not fail it. An invalid answer gets one repair
-  turn with tools disabled. The profile also sets `timeout_ms` and
-  `max_tool_calls` budgets.
-- **Toolsets.** `tool text = { … }` declares `read` and `grep`, and
-  `tool review = { … }` the review's own tools. `artf spec : text & review`
-  composes both; `artf requirements : text` composes only `text`. Built-in tools
+  turn with tools disabled. The profile also sets a `max_tool_calls` budget.
+- **Toolsets.** The built-in `files` toolset gives `list`, `glob`, `grep` and
+  `read`, and `tool review = { … }` declares the review's own tools.
+  `artf spec : files & review` composes both; `artf requirements : files` composes
+  only `files`. Built-in tools
   such as `builtin(op = "read")` run inside artifactize, read only, and each sees
   only the Artifact that composes it.
 - **A fixed-file built-in tool.** `section` is `builtin(op = "section", args = ["spec.md"])`.
@@ -41,10 +41,9 @@ What it demonstrates:
   ID, and the IDs that nothing cites. An unknown `id` returns an authored error
   (`isError: true` with one text block).
 - **Tool names.** The reviewer sees each tool as `<toolset>_<tool>_<artifact>`:
-  `text_read_spec`, `text_grep_spec`, `review_section_spec`,
-  `review_view_image_spec`, `review_coverage_spec` and `text_read_requirements`.
-  An instruction names one with a slot, `@{tool self agent review.coverage}`,
-  which always reads as the name the reviewer sees.
+  `files_read_spec`, `files_grep_spec`, `review_section_spec`,
+  `review_view_image_spec`, `review_coverage_spec` and `files_read_requirements`.
+  An instruction names the Artifacts whose tools the review uses, not the tools.
 - **A basis and a dependency.** `requirements` is a basis Artifact. The
   instruction of `spec/review` names it as `@{artf requirements}`, which makes it
   that eval's dependency and admits it, with its tools, to the review.
@@ -69,7 +68,7 @@ artifactize tools check      # static: schemas, executables and scoped paths; ru
 artifactize tools check --execute --eval spec/review --tool review_coverage_spec --args '{}'
 artifactize tools check --execute --eval spec/review --tool review_coverage_spec --args '{"id":"R9"}'
 artifactize tools check --execute --artifact spec --audience agent --tool review_section --args '{"heading":"Dry run"}'
-artifactize tools check --execute --artifact requirements --audience agent --tool text_read --args '{"path":"requirements.md"}'
+artifactize tools check --execute --artifact requirements --audience agent --tool files_read --args '{"path":"requirements.md"}'
 artifactize tools check --execute --artifact spec --audience agent --tool review_view_image --args '{"path":"diagram.png"}'
 artifactize tools check --execute --artifact spec --audience human --tool review_notes
 ```
@@ -85,27 +84,28 @@ default-application mechanism; `review_notes_spec` works in any terminal.
 
 ## Choose a backend and model
 
-`spec/review` runs with the `openai` profile, which names exactly one backend
-and one exact model. There is no fallback or model catalog. `profiles.artf`
-declares three profiles, `openai`, `anthropic` and `codex`, each with a model
-placeholder (`YOUR_OPENAI_MODEL_ID` and so on). Replace the placeholder of the
-profile you use:
+`spec/review` runs with the `reviewer` profile, whose setting names exactly one
+backend and one exact model. There is no fallback or model catalog.
+`profiles.artfprofiles` gives `reviewer` one setting per provider, chosen by the
+`REVIEW_PROVIDER` environment variable, each with a model placeholder
+(`YOUR_OPENAI_MODEL_ID` and so on). Replace the placeholder of the provider you
+use:
 
 | Backend | Credentials | Models | Review command |
 |---|---|---|---|
 | `openai` (default) | `OPENAI_API_KEY` | `artifactize models openai` | `artifactize verify --eval spec/review` |
-| `anthropic` | `ANTHROPIC_API_KEY` | `artifactize models anthropic` | `artifactize verify --eval spec/review --profile anthropic` |
-| `codex` | `artifactize login codex` (a ChatGPT plan with Codex) | `artifactize models codex` | `artifactize verify --eval spec/review --profile codex` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `artifactize models anthropic` | `REVIEW_PROVIDER=anthropic artifactize verify --eval spec/review` |
+| `codex` | `artifactize login codex` (a ChatGPT plan with Codex) | `artifactize models codex` | `REVIEW_PROVIDER=codex artifactize verify --eval spec/review` |
 
 `artifactize doctor` reports which keys and sign-ins are present, without calling
 any provider.
 
 `reasoning` must be a value that the backend accepts (`openai` and `codex`:
 `none` to `max`; `anthropic`: `low`, `medium`, `high`, `max`).
-artifactize never remaps it. `--profile NAME` runs every included Agent eval
-with that profile instead of its own and leaves runtime and Human evals as they
-are; a profile is how an eval runs, so a result another profile produced is
-reused. To change the default instead, change the profile `spec/review` names.
+artifactize never remaps it. A value of `REVIEW_PROVIDER` that names no setting
+is an error rather than the default. A profile is how an eval runs, so a result
+another setting produced is reused. Each setting is complete: change one without
+changing the others.
 
 ```sh
 artifactize verify --eval spec/review   # exit 0 GREEN, 1 RED, 2 ERROR (for example, a missing API key)

@@ -1,0 +1,7 @@
+// How the review runs. Put a model your provider offers in place of each placeholder;
+// REVIEW_PROVIDER=anthropic or REVIEW_PROVIDER=codex runs the review with another provider.
+profile reviewer : agent = match REVIEW_PROVIDER {
+  default => { backend = "openai", model = "YOUR_OPENAI_MODEL_ID", reasoning = "medium", max_tool_calls = 20 },
+  anthropic => { backend = "anthropic", model = "YOUR_ANTHROPIC_MODEL_ID", reasoning = "medium", max_tool_calls = 20 },
+  codex => { backend = "codex", model = "YOUR_CODEX_MODEL_SLUG", reasoning = "medium", max_tool_calls = 20 },
+}

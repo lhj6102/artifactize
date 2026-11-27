@@ -2,7 +2,7 @@ artf docs-en : files = {
   fingerprint = { files = ["src"] }
   path = "website/docs/en/"
 
-  eval follows-rules : luna = {
+  eval follows-rules : reviewer = {
     title = "The documentation is structured for developers, concise, non-repetitive, and within budget"
     red_at = "P1"
     instruction = """
@@ -18,7 +18,7 @@ artf docs-en : files = {
     """
   }
 
-  eval matches-agent-workflow : luna = {
+  eval matches-agent-workflow : reviewer = {
     title = "The documentation accurately covers the agent plugin, skills, and MCP server"
     red_at = "P1"
     instruction = """
@@ -31,12 +31,12 @@ artf docs-en : files = {
       - Do NOT require internal byte/character caps, cursor implementation details, or every edge-case error condition. Omitting those bounds and edge cases is NEVER a mismatch.
       - How artifactize implements MCP or skills internally is not user-facing; documenting it is a mismatch whose fix is to remove it.
 
-      Use @{tool self agent files.list}, @{tool self agent files.glob}, @{tool self agent files.grep} and @{tool self agent files.read} for documentation, and the tools exposed by the referenced Artifacts to inspect them. Tool paths are Artifact-relative.
+      Use the file tools for documentation, and the tools exposed by the referenced Artifacts to inspect them. Tool paths are Artifact-relative.
       Each statement in @{artf docs-en} that contradicts the implementation, and each core user task above that is not covered, is an issue. Fix the docs, not the code.
     """
   }
 
-  eval matches-engine : luna = {
+  eval matches-engine : reviewer = {
     title = "The documentation accurately covers the core workflow, tools, and CLI without dumping internal bounds"
     red_at = "P1"
     instruction = """
@@ -50,12 +50,12 @@ artf docs-en : files = {
       - Do NOT require legacy upgrade notes for historical versions (such as 0.5, 0.9, 0.11, or 0.16); only `config migrate` for moving declarations into `.artifactize/` belongs in the docs.
       - How artifactize implements behavior internally (process groups, signals, SQLite journals, transactions, recovery, locking) and the Rust library API are not user-facing. Documentation of them is a mismatch whose fix is to remove it.
 
-      Use @{tool self agent files.list}, @{tool self agent files.glob}, @{tool self agent files.grep} and @{tool self agent files.read} for documentation, and the tools exposed by @{artf engine-core}, @{artf engine-tools} and @{artf engine-cli} to inspect them. Tool paths are Artifact-relative.
+      Use the file tools for documentation, and the tools exposed by @{artf engine-core}, @{artf engine-tools} and @{artf engine-cli} to inspect them. Tool paths are Artifact-relative.
       Each statement in @{artf docs-en} that contradicts the implementation, each core user task above that is not covered, and each internal implementation detail is an issue. Fix the docs, not the code.
     """
   }
 
-  eval matches-interfaces : luna = {
+  eval matches-interfaces : reviewer = {
     title = "The documentation accurately covers the desktop app"
     red_at = "P1"
     instruction = """
@@ -68,7 +68,7 @@ artf docs-en : files = {
       - Do NOT require internal rendering or layout constants, pixel sizes, exact error strings, or every edge-case refusal condition. Omitting minor edge cases or internal bounds is NEVER a mismatch.
       - How artifactize implements behavior internally and the Rust/Svelte internals are not user-facing; documenting them is a mismatch whose fix is to remove it.
 
-      Use @{tool self agent files.list}, @{tool self agent files.glob}, @{tool self agent files.grep} and @{tool self agent files.read} for documentation, and the tools exposed by @{artf desktop}, @{artf desktop-backend} and @{artf desktop-ui} to inspect them. Tool paths are Artifact-relative.
+      Use the file tools for documentation, and the tools exposed by @{artf desktop}, @{artf desktop-backend} and @{artf desktop-ui} to inspect them. Tool paths are Artifact-relative.
       Each statement in @{artf docs-en} that contradicts the implementation, and each core user task above that is not covered, is an issue. Fix the docs, not the code.
     """
   }

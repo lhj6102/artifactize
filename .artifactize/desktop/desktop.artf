@@ -1,4 +1,4 @@
-tool desktop = {
+tool app = {
   agent act = command(
       command = "node",
       args = ["harness/harness.mts", "act"],
@@ -88,16 +88,20 @@ tool desktop = {
 
 // The app runs headless for the whole review. start builds a candidate into its own
 // session (or snapshots an explicitly prepared one); it never consumes shared Cargo output names.
-artf desktop : desktop = {
+artf desktop : app = {
   parts = [desktop-backend, desktop-design, desktop-e2e-rules, desktop-ui, desktop-ux-features]
   path = "crates/artifactize-desktop/"
 
+  // Build the frontend input from desktop-ui and check every Rust target of the whole crate
+  // desktop with engine-core with engine-tools with the workspace engine-cargo-manifest and
+  // engine-cargo-lock, treating every clippy warning as an error.
   eval clippy : runtime(command = "node", args = ["harness/harness.mts", "clippy"], timeout_ms = 1800000) = {
     title = "Clippy passes for every Rust target"
-    instruction = "Build the frontend input from desktop-ui and check every Rust target of the whole crate desktop with engine-core with engine-tools with the workspace engine-cargo-manifest and engine-cargo-lock, treating every clippy warning as an error."
-    inputs = [desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-core, engine-tools]
+    deps = [desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-core, engine-tools]
   }
 
+  // Check the formatting of the Rust files desktop owns directly: its build script and its
+  // integration tests. The backend's sources are checked by desktop-backend.
   eval fmt : runtime(
       command = "rustfmt",
       args = [
@@ -112,36 +116,42 @@ artf desktop : desktop = {
       timeout_ms = 60000,
     ) = {
     title = "The Rust formatting check passes"
-    instruction = "Check the formatting of the Rust files desktop owns directly: its build script and its integration tests. The backend's sources are checked by desktop-backend."
   }
 
-  eval follows-test-rules : luna = {
+  eval follows-test-rules : reviewer = {
     title = "The desktop automation harness and integration tests follow the test rules"
     red_at = "P1"
     instruction = "Read the TEST- rules and M-TAUTOLOGICAL-TESTS of @{artf rules-code-style}. Review the automation harness owned by @{artf desktop} (harness/) and its Rust integration tests (tests/). The tests of @{artf desktop-ui} and @{artf desktop-e2e} have their own reviews: do not duplicate them. Check M-TAUTOLOGICAL-TESTS and every TEST- rule as @{artf rules-code-style} states them. Report only what a rule item states: each issue names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not an issue."
   }
 
+  // Run eslint over the TypeScript automation harness directly owned by desktop, then type-
+  // check it.
   eval lint : runtime(command = "pnpm", args = ["lint"], timeout_ms = 600000) = {
     title = "The desktop-owned TypeScript automation harness lint passes"
-    instruction = "Run eslint over the TypeScript automation harness directly owned by desktop, then type-check it."
   }
 
-  eval release-excludes-test-build : luna = {
+  eval release-excludes-test-build : reviewer = {
     title = "The release app compiles in none of the E2E test build's WebdriverIO plugins"
     red_at = "P1"
     instruction = "Read E2E-TEST-BUILD-ONLY of the end-to-end rules @{artf desktop-e2e-rules}, which names the WebdriverIO plugins (their Rust crates, capability permissions and the frontend import) that only the E2E test build may get. The release app, its default capabilities and its frontend bundle contain none of them. Read how @{artf desktop} assembles its app: Cargo.toml (features and optional dependencies), build.rs, the capability files and tauri*.json; src/ where it registers plugins, in its part @{artf desktop-backend}; and the frontend entry and build configuration in its part @{artf desktop-ui}. Check the release app, built with the default Cargo features and the default frontend build, against that; how the suite selects the test build is judged by desktop-e2e-infra/follows-rules."
   }
 
+  // Run the HTML example's Point test in desktop-ui, then build the E2E test app of desktop
+  // from desktop-backend and desktop-ui (the test-only Cargo feature and its frontend build)
+  // and the CLI from engine-cli, engine-core and engine-tools with the workspace engine-cargo-
+  // manifest and engine-cargo-lock into build output this run owns, and run the WebdriverIO
+  // suite desktop-e2e against it on a headless display.
   eval suite-passes : runtime(command = "pnpm", args = ["-C", "ui", "e2e"], timeout_ms = 1800000) = {
     title = "The end-to-end suite passes on a headless display"
     mutex = ["use-computer"]
-    instruction = "Run the HTML example's Point test in desktop-ui, then build the E2E test app of desktop from desktop-backend and desktop-ui (the test-only Cargo feature and its frontend build) and the CLI from engine-cli, engine-core and engine-tools with the workspace engine-cargo-manifest and engine-cargo-lock into build output this run owns, and run the WebdriverIO suite desktop-e2e against it on a headless display."
-    inputs = [desktop-backend, desktop-e2e, desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-cli, engine-core, engine-tools]
+    deps = [desktop-backend, desktop-e2e, desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-cli, engine-core, engine-tools]
   }
 
+  // Build the frontend input from desktop-ui and run the Rust tests of the whole crate desktop
+  // with engine-core with engine-tools with engine-cli with the workspace engine-cargo-manifest
+  // and engine-cargo-lock.
   eval tests : runtime(command = "node", args = ["harness/harness.mts", "test"], timeout_ms = 1800000) = {
     title = "The Rust crate tests pass"
-    instruction = "Build the frontend input from desktop-ui and run the Rust tests of the whole crate desktop with engine-core with engine-tools with engine-cli with the workspace engine-cargo-manifest and engine-cargo-lock."
-    inputs = [desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-cli, engine-core, engine-tools]
+    deps = [desktop-ui, engine-cargo-lock, engine-cargo-manifest, engine-cli, engine-core, engine-tools]
   }
 }

@@ -25,15 +25,17 @@ artf desktop-e2e-infra : files = {
     "runner.test.ts",
   ]
 
-  eval follows-rules : luna = {
+  eval follows-rules : reviewer = {
     title = "The suite's infrastructure runs every scenario isolated and portably and fails explicitly"
     red_at = "P1"
     instruction = "Read E2E-INPUT, E2E-PLATFORM, E2E-ISOLATED, E2E-EXPLICIT-FAILURE, E2E-FAILURE-EVIDENCE and E2E-TEST-BUILD-ONLY of the end-to-end rules @{artf desktop-e2e-rules} and the platform checklist @{artf rules-platform}. Review the infrastructure of the suite @{artf desktop-e2e-infra} (the platform layer, the runner and build, the fixtures and the input helpers) against them. Follow their imports into @{artf desktop-e2e-cases} and @{artf desktop-e2e-integrity} as needed. For E2E-TEST-BUILD-ONLY, check that the runner selects the test-only build with its matching frontend and capabilities, including when given an existing test candidate. Judge the runner's selection, not what the release build contains. Report only a defect you can show: name the OS, the order of scenarios or the timing under which it happens and the concrete failure or false pass it causes, such as a scenario that breaks on one OS, a result that depends on order, state that reaches the user's or another scenario's, or a failure that passes. Hardening, theoretical edge cases, further checks and style are not issues."
   }
 
+  // Run the unit tests of the suite's infrastructure desktop-e2e-infra: its input helpers, its
+  // key retries and its runner’s pure functions. The runner imports desktop-e2e-cases and
+  // desktop-e2e-integrity.
   eval unit : runtime(command = "node", args = ["run.ts", "unit"], timeout_ms = 600000) = {
     title = "The infrastructure's unit tests pass"
-    instruction = "Run the unit tests of the suite's infrastructure desktop-e2e-infra: its input helpers, its key retries and its runner’s pure functions. The runner imports desktop-e2e-cases and desktop-e2e-integrity."
-    inputs = [desktop-e2e-cases, desktop-e2e-integrity]
+    deps = [desktop-e2e-cases, desktop-e2e-integrity]
   }
 }

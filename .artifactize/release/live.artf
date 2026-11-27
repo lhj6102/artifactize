@@ -1,47 +1,63 @@
 // What a release publishes, observed where it is served: each compared read-only with the
-// latest stable origin tag by the release observer, never with this worktree.
+// latest stable origin tag by the release observer (its `KIND-config` and `KIND-behavior`
+// modes), never with this worktree.
 
-// A published place at `address`, observed in the observer's `KIND-config` and
-// `KIND-behavior` modes.
-artf! live(address, kind, configuration, behavior) = {
-  path = "@{param address}"
+artf live-crates = {
+  path = "https://crates.io/crates/artifactize"
 
   eval configuration : runtime(
     command = "node",
-    args = ["@{path release-observer}", "@{param kind}-config", "@{path self}"],
+    args = ["@{path release-observer}", "crates-config", "@{path self}"],
     timeout_ms = 30000,
   ) = {
-    title = "@{param configuration}"
-    instruction = "Observe the published place read-only using the release observer; compare published state with origin, never with this worktree."
+    title = "Each newest non-yanked crate matches the latest stable origin tag"
   }
 
   eval behavior : runtime(
     command = "node",
-    args = ["@{path release-observer}", "@{param kind}-behavior", "@{path self}"],
+    args = ["@{path release-observer}", "crates-behavior", "@{path self}"],
     timeout_ms = 30000,
   ) = {
-    title = "@{param behavior}"
-    instruction = "Observe the published place read-only using the release observer; compare published state with origin, never with this worktree."
+    title = "Each newest non-yanked crate archive answers HTTP 200"
   }
 }
 
-artf live-crates = live!(
-  address = "https://crates.io/crates/artifactize",
-  kind = "crates",
-  configuration = "Each newest non-yanked crate matches the latest stable origin tag",
-  behavior = "Each newest non-yanked crate archive answers HTTP 200",
-)
+artf live-release = {
+  path = "https://github.com/lhj6102/artifactize/releases/latest"
 
-artf live-release = live!(
-  address = "https://github.com/lhj6102/artifactize/releases/latest",
-  kind = "release",
-  configuration = "The latest GitHub release matches the latest stable origin tag",
-  behavior = "The archive and checksum selected by install.sh answer HTTP 200",
-)
+  eval configuration : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "release-config", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The latest GitHub release matches the latest stable origin tag"
+  }
 
-artf live-website = live!(
-  address = "https://artifactize.dev",
-  kind = "website",
-  configuration = "The served installers equal the latest stable origin tag byte for byte",
-  behavior = "The landing pages, docs books and installers answer HTTP 200",
-)
+  eval behavior : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "release-behavior", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The archive and checksum selected by install.sh answer HTTP 200"
+  }
+}
+
+artf live-website = {
+  path = "https://artifactize.dev"
+
+  eval configuration : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "website-config", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The served installers equal the latest stable origin tag byte for byte"
+  }
+
+  eval behavior : runtime(
+    command = "node",
+    args = ["@{path release-observer}", "website-behavior", "@{path self}"],
+    timeout_ms = 30000,
+  ) = {
+    title = "The landing pages, docs books and installers answer HTTP 200"
+  }
+}

@@ -2,7 +2,7 @@ artf media-demos-script : files = {
   path = "assets/capture/demos.mts"
   tags = ["type:capture"]
 
-  eval records-demos : luna = {
+  eval records-demos : reviewer = {
     title = "The script records demos A and B from the real app"
     red_at = "P1"
     instruction = """

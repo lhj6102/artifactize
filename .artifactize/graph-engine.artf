@@ -2,11 +2,11 @@
 artf graph-engine : files & definitions = {
   path = ".artifactize/engine/"
 
-  eval connects : luna = {
+  eval connects : reviewer = {
     title = "The engine definitions name inputs in one direction and judge each crate's own code"
     red_at = "P1"
     instruction = """
-      Read every definition in @{artf self}; use @{tool self agent definitions.graph} for
+      Read every definition in @{artf self}; use its graph tool for the
       relations that leave the folder. The graph's relations run from an input to the Artifact
       whose eval names it: in `a -> b [input eval=b/x name=a]`, eval b/x names a, and a does not
       name b. The folder defines the workspace crates (engine-core, engine-tools, engine-cli,

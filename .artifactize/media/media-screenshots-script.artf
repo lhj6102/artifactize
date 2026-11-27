@@ -2,7 +2,7 @@ artf media-screenshots-script : files = {
   path = "assets/capture/screenshots.mts"
   tags = ["type:capture"]
 
-  eval records-scenes : luna = {
+  eval records-scenes : reviewer = {
     title = "The script captures scenes A, B and C from the real app"
     red_at = "P1"
     instruction = """

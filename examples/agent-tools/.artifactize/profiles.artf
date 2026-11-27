@@ -1,5 +1,0 @@
-// The Agent profiles the review can run with. Put a model your provider offers in place of
-// the placeholder; `artifactize verify --profile anthropic` runs the review with another one.
-profile openai = agent(backend = "openai", model = "YOUR_OPENAI_MODEL_ID", reasoning = "medium", max_tool_calls = 20, timeout_ms = 240000)
-profile anthropic = agent(backend = "anthropic", model = "YOUR_ANTHROPIC_MODEL_ID", reasoning = "medium", max_tool_calls = 20, timeout_ms = 240000)
-profile codex = agent(backend = "codex", model = "YOUR_CODEX_MODEL_SLUG", reasoning = "medium", max_tool_calls = 20, timeout_ms = 240000)

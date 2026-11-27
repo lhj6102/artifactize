@@ -1,4 +1,4 @@
-tool desktop-design = {
+tool design-preview = {
   human preview = builtin(
       op = "open",
       args = ["@{path self/index.html}"],
@@ -8,11 +8,11 @@ tool desktop-design = {
 
 // The desktop app's UI/UX plan: one HTML page per screen (its parts), the tokens and the anatomy
 // they share, and the rules of the system on index.html. The desktop UI is evaluated against it (desktop-ui/follows-design).
-artf desktop-design : files & desktop-design = {
+artf desktop-design : files & design-preview = {
   parts = [desktop-design-chat, desktop-design-check, desktop-design-current, desktop-design-detail, desktop-design-monitor, desktop-design-overlays, desktop-design-review, desktop-design-settings, desktop-design-viewers]
   path = "crates/artifactize-desktop/design/"
 
-  eval agrees-with-journeys : luna = {
+  eval agrees-with-journeys : reviewer = {
     title = "The screens and their rules agree with the journeys"
     red_at = "P1"
     instruction = "Read the journeys @{artf desktop-ux-features}. Then read the design @{artf desktop-design}: index.html (the system's rules D-SYS-*) and each screen page (chat.html, monitor.html (Verify), current.html, detail.html, review.html, viewers.html, settings.html, overlays.html: a figure, numbered notes and D- rules). Check that: every screen, state and overlay a journey names (the bottom bar and its modes, each mode's Pane and its parts, Chat's conversation, composer and model menu, the Main area's views, references and their ways back, the Detail, the Human review, Review's list and filter, the Artifact Viewer windows and their viewers, Point, the pet overlay, Settings and its tabs, the Find field, the overlays, and on a Current the Definition and Source with Authored and Expanded) has a place on one of the screen pages; no D- rule or figure contradicts a journey (what a control does, where it sits, what a state shows, what hovering does); the D- rules describe appearance and arrangement without inventing behaviour the journeys do not have. Apply the visible-way and optional shortcut rule in @{artf desktop-ux-features}. A journey's behaviour (what a click, a key or a dismissal does) need not be restated in the design: every screen, state and overlay a journey names needs a place and its look on a page, and no D- rule or figure may contradict a journey; a behaviour the pages leave to the journeys is not an issue. The pages are design, not the app: judge agreement, not whether the app already looks like them. Report only what a rule item states: each issue names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not an issue."
@@ -23,8 +23,13 @@ artf desktop-design : files & desktop-design = {
     instruction = "Open @{artf desktop-design} with the preview tool and read index.html and each screen page. Submit GREEN when the layout, the surfaces and lines, the density, the node and inspector anatomy and the D- rules are what the desktop app should look like; otherwise submit RED with an issue for each change."
   }
 
+  // Check desktop-design as a whole with desktop-design-check: tokens.css declares the one dark
+  // scheme (color-scheme: dark, no second scheme); D- rule ids are unique across the pages;
+  // every screen page is linked from index.html; index.html names every token and every icon of
+  // mock.css; mock.css and design.css hold no colour literal; and index.html, which no page
+  // eval covers, is well formed as a page is. Each screen page's own form is judged by that
+  // page's well-formed eval.
   eval well-formed : runtime(command = "node", args = ["@{path desktop-design-check}", "whole", "."], timeout_ms = 30000) = {
     title = "The design's pages, tokens and rules hold together"
-    instruction = "Check desktop-design as a whole with desktop-design-check: tokens.css declares the one dark scheme (color-scheme: dark, no second scheme); D- rule ids are unique across the pages; every screen page is linked from index.html; index.html names every token and every icon of mock.css; mock.css and design.css hold no colour literal; and index.html, which no page eval covers, is well formed as a page is. Each screen page's own form is judged by that page's well-formed eval."
   }
 }

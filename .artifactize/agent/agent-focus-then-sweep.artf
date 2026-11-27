@@ -2,7 +2,7 @@ artf agent-focus-then-sweep : files = {
   path = "agent-plugin/skills/focus-then-sweep/SKILL.md"
   tags = ["type:skill"]
 
-  eval correct : luna = {
+  eval correct : reviewer = {
     title = "What the skill recommends exists in today's artifactize"
     red_at = "P1"
     instruction = """
@@ -13,7 +13,7 @@ artf agent-focus-then-sweep : files = {
     """
   }
 
-  eval guides : luna = {
+  eval guides : reviewer = {
     title = "The skill guides a builder through focus, sweep and the three plans"
     red_at = "P1"
     instruction = """

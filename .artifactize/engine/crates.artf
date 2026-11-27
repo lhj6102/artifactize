@@ -2,10 +2,8 @@
 
 artf engine-core = rust-crate!(
   package = "artifactize-core",
-  subject = "The core library code",
-  example = "src/cache.rs",
   extra_evals = {
-    eval follows-chat-acp : luna = {
+    eval follows-chat-acp : reviewer = {
       title = "The core library upholds the Chat ACP principles and invariants"
       red_at = "P1"
       instruction = """
@@ -19,28 +17,22 @@ artf engine-core = rust-crate!(
   },
 )
 
-artf engine-tools = rust-crate!(
-  package = "artifactize-tools",
-  subject = "The tools code",
-  example = "src/scope.rs",
-)
+artf engine-tools = rust-crate!(package = "artifactize-tools")
 
-artf engine-mcp = rust-crate!(
-  package = "artifactize-mcp",
-  subject = "The MCP server code",
-  example = "src/lib.rs",
-)
+artf engine-mcp = rust-crate!(package = "artifactize-mcp")
 
 artf engine-cli = rust-crate!(
   package = "artifactize",
-  subject = "The CLI code",
-  example = "src/main.rs",
   builds_with = [engine-core, engine-tools, engine-mcp],
   extra_evals = {
+    // Package and verify the CLI with the workspace manifest and lockfile exactly as its
+    // release would publish it, without uploading. Its release publishes the library crates it
+    // depends on (core, tools and MCP) in the same publication, so they are packaged with it.
+    // Allow the builder's uncommitted candidate; the package verification still builds every
+    // crate.
     eval publish : runtime(command = "node", args = ["publish.mjs"], timeout_ms = 1800000) = {
       title = "The CLI packages and builds as its release publishes it"
-      instruction = "Package and verify the CLI with the workspace manifest and lockfile exactly as its release would publish it, without uploading. Its release publishes the library crates it depends on (core, tools and MCP) in the same publication, so they are packaged with it. Allow the builder's uncommitted candidate; the package verification still builds every crate."
-      inputs = [engine-core, engine-tools, engine-mcp, engine-cargo-manifest, engine-cargo-lock]
+      deps = [engine-core, engine-tools, engine-mcp, engine-cargo-manifest, engine-cargo-lock]
     }
   },
 )

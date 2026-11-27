@@ -2,15 +2,16 @@ artf agent-onramp : files = {
   parts = [agent-harness]
   path = "harness/"
 
-  eval follows-test-rules : luna = {
+  eval follows-test-rules : reviewer = {
     title = "The onramp's Python tests and harness entry points follow the test rules"
     red_at = "P1"
     instruction = "Read the TEST- rules of @{artf rules-code-style}. Review the Python tests and harness entry points directly owned by @{artf agent-onramp}. The nested @{artf agent-harness} has its own test-rule review: do not duplicate it. Check every TEST- rule against observable boundaries, exact async states, controlled ordering or expiry times, read-only observations, owned cleanup, and declared executables and inputs. Report only what a rule item states: each issue names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not an issue."
   }
 
+  // Run the disposable host process seams of agent-onramp using the shared command ownership
+  // from agent-harness.
   eval owned-hosts : runtime(command = "python3", args = ["-I", "test_agent_plugin.py"], timeout_ms = 60000) = {
     title = "Disposable host output and process ownership work together"
-    instruction = "Run the disposable host process seams of agent-onramp using the shared command ownership from agent-harness."
-    inputs = [agent-harness]
+    deps = [agent-harness]
   }
 }

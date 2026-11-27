@@ -1,8 +1,8 @@
 artf intro = {
   path = "guide/intro/"
 
+  // Check that intro starts with a top-level heading.
   eval heading : runtime(command = "grep", args = ["-m", "1", "^# ", "page.md"], timeout_ms = 5000) = {
     title = "The page has a top-level heading"
-    instruction = "Check that intro starts with a top-level heading."
   }
 }

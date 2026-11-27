@@ -2,24 +2,29 @@ artf desktop-ui : files = {
   parts = [desktop-e2e]
   path = "crates/artifactize-desktop/ui/"
 
-  eval follows-design : luna = {
+  eval follows-design : reviewer = {
     title = "The desktop UI follows the design's screens and rules"
     red_at = "P1"
     instruction = "Read the design @{artf desktop-design}: index.html (the tokens by role and the rules of the system, D-SYS-*), then each screen page (chat.html, monitor.html (Verify), current.html, detail.html, review.html, viewers.html, settings.html, overlays.html), whose figures are drawn with mock.css and whose D- rules say what must hold on that screen. Then review the Svelte and CSS of @{artf desktop-ui}: src/app.css and src/tokens.css, src/App.svelte and the other windows' entries, and the components under src/chat, src/monitor, src/review, src/viewers, src/pet, src/settings and src/shell (the generated bindings in src/ipc are not UI; the tests and e2e are reviewed elsewhere). For each D- rule, find the component or stylesheet that renders what the rule describes and judge whether it holds: the surfaces, lines and token use it names, the sizes within the tolerances the rule states, the order and anatomy of the elements, the treatment of selection, hover and focus, and what the rule says to avoid. Inspect src/tokens.css as needed to trace how components use tokens; matching the declared token properties, values and color scheme is the tokens-match-design eval's job. Mock markup need not be copied: the app renders the same anatomy with its own components. Behaviour is reviewed by other evals; judge appearance and arrangement only, and do not invent requirements the pages do not state. Apply the visible-way and optional shortcut rule in @{artf desktop-ux-features} when comparing the rendered controls with the design. Report only what a rule item states: each issue names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not an issue."
   }
 
-  eval follows-frontend-style : luna = {
+  eval follows-frontend-style : reviewer = {
     title = "The desktop UI follows the frontend checklist"
     red_at = "P1"
     instruction = "Read the checklist @{artf rules-frontend-style} and the TEST- rules of @{artf rules-code-style}. Then review the Svelte and TypeScript of @{artf desktop-ui}: its src folder (the generated bindings in src/ipc/bindings.ts are excluded; src/ipc/client.ts is not) and its build configuration, but not the end-to-end tests in e2e, against every frontend item, and its tests and test helpers against every TEST- rule. What the UI's eslint configuration (eslint.config.js) checks mechanically is the lint eval's and is not reviewed again here. For U-LIBRARY-OWNS, read the library @{artf engine-core} the UI's state comes from. Tool paths are relative to the Artifact, for example src/lib.rs. Report only what a rule item states: each issue names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not an issue."
   }
 
+  // Run eslint with the UI's configuration, which checks the mechanical items of rules-
+  // frontend-style, over the source and build configuration of desktop-ui, then svelte-check
+  // over the same files. The generated bindings and the end-to-end tests are excluded.
   eval lint : runtime(command = "pnpm", args = ["lint"], timeout_ms = 600000) = {
     title = "The mechanical frontend rules and the type check pass"
-    instruction = "Run eslint with the UI's configuration, which checks the mechanical items of rules-frontend-style, over the source and build configuration of desktop-ui, then svelte-check over the same files. The generated bindings and the end-to-end tests are excluded."
-    inputs = [rules-frontend-style]
+    deps = [rules-frontend-style]
   }
 
+  // Check with desktop-design-check that src/tokens.css of desktop-ui declares the same custom
+  // properties with the same values and the same one dark scheme, as tokens.css of desktop-
+  // design.
   eval tokens-match-design : runtime(
       command = "node",
       args = [
@@ -31,6 +36,5 @@ artf desktop-ui : files = {
       timeout_ms = 30000,
     ) = {
     title = "The UI's tokens are the design's tokens"
-    instruction = "Check with desktop-design-check that src/tokens.css of desktop-ui declares the same custom properties with the same values and the same one dark scheme, as tokens.css of desktop-design."
   }
 }

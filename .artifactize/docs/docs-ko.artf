@@ -2,7 +2,7 @@ artf docs-ko : files = {
   fingerprint = { files = ["src"] }
   path = "website/docs/ko/"
 
-  eval follows-write-in-korean : luna = {
+  eval follows-write-in-korean : reviewer = {
     title = "The Korean documentation follows the Korean writing rules"
     red_at = "P1"
     instruction = """
@@ -14,7 +14,7 @@ artf docs-ko : files = {
     """
   }
 
-  eval matches-english : luna = {
+  eval matches-english : reviewer = {
     title = "The Korean documentation conveys the same facts and structure as the English documentation"
     red_at = "P1"
     instruction = """

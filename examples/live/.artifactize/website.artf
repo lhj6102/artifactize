@@ -1,8 +1,9 @@
 artf website = {
   path = "https://example.com"
 
+  // Observe website without changing it. Report the address and status when it does not answer
+  // HTTP 200.
   eval available : runtime(command = "node", args = ["observe.mjs", "@{path website}"], timeout_ms = 30000) = {
     title = "The public example website answers HTTP 200"
-    instruction = "Observe website without changing it. Report the address and status when it does not answer HTTP 200."
   }
 }

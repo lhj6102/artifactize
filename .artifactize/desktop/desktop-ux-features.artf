@@ -1,19 +1,8 @@
-tool desktop-ux-features = {
-  agent glob = builtin(op = "glob")
-  agent grep = builtin(op = "grep")
-  agent list = builtin(op = "list")
-  human open = builtin(
-      op = "open",
-      args = ["@{path self}"],
-      description = "Open the journeys folder of @{artf self} in the desktop's default application.",
-    )
-}
-
-artf desktop-ux-features : markdown & desktop-ux-features = {
+artf desktop-ux-features : markdown & files = {
   path = "crates/artifactize-desktop/rules/ux/"
 
   eval approved : human = {
     title = "The owner approves the journeys as what the desktop app does"
-    instruction = "Open @{artf desktop-ux-features} with the view or open tool and read index.md, chat.md, verify.md and review.md. Submit GREEN when every journey is one the desktop app should offer and none is missing; otherwise submit RED with an issue for each change."
+    instruction = "Open @{artf desktop-ux-features} with the view tool and read index.md, chat.md, verify.md and review.md. Submit GREEN when every journey is one the desktop app should offer and none is missing; otherwise submit RED with an issue for each change."
   }
 }

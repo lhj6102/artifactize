@@ -1,36 +1,28 @@
-tool agent-hey-arti = {
-  human open = builtin(
-      op = "open",
-      args = ["@{path self}"],
-      description = "Open SKILL.md of @{artf self} in the desktop's default application.",
-    )
-}
-
-artf agent-hey-arti : files & agent-hey-arti = {
+artf agent-hey-arti : files = {
   path = "agent-plugin/skills/hey-arti/SKILL.md"
   tags = ["type:skill"]
 
   eval consultant : human = {
     title = "The skill reads like a Forward Deployed Engineer consulting on the project"
-    instruction = "Open SKILL.md of @{artf agent-hey-arti} with the open tool and read it as a developer meeting it for the first time. Submit GREEN when it reads like a Forward Deployed Engineer consulting on your project rather than a technical manual of artifactize; otherwise submit RED with an issue for each thing to change."
+    instruction = "Open SKILL.md of @{artf agent-hey-arti} with the view tool and read it as a developer meeting it for the first time. Submit GREEN when it reads like a Forward Deployed Engineer consulting on your project rather than a technical manual of artifactize; otherwise submit RED with an issue for each thing to change."
   }
 
-  eval correct : luna = {
+  eval correct : reviewer = {
     title = "What the skill recommends exists in today's artifactize"
     red_at = "P1"
     instruction = """
-      Read the skill @{artf agent-hey-arti} using @{tool self agent files.read}. Check that every declaration form,
+      Read the skill @{artf agent-hey-arti}. Check that every declaration form,
       command, tool, status and behaviour it mentions or recommends matches @{artf engine-core}, @{artf engine-cli},
       @{artf engine-mcp} and @{artf docs-en}. Judge accuracy only: the skill need not cover every feature, and
       an omission is not an issue. Each statement that is wrong or outdated is an issue.
     """
   }
 
-  eval waiter : luna = {
+  eval waiter : reviewer = {
     title = "The skill helps the user like a restaurant's waiter"
     red_at = "P1"
     instruction = """
-      Read the skill @{artf agent-hey-arti} using @{tool self agent files.read}. Judge whether it helps a developer
+      Read the skill @{artf agent-hey-arti}. Judge whether it helps a developer
       the way a good waiter helps a guest, using @{artf docs-en} only to understand the concepts.
       It must not read as a list of artifactize's features. Check that it:
       - explains each concept briefly from the user's side (what an Artifact, an eval, a

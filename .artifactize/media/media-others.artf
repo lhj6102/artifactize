@@ -1,4 +1,4 @@
-tool media-others = {
+tool figures = {
   agent gif = command(
       command = "node",
       args = ["capture.mts", "gif"],
@@ -19,10 +19,10 @@ tool media-others = {
     )
 }
 
-artf media-others : media-others = {
+artf media-others : figures = {
   path = "assets/others/"
 
-  eval explains-graph : luna = {
+  eval explains-graph : reviewer = {
     title = "The example graph shows how Artifactize works, the same in every language"
     red_at = "P1"
     instruction = """
@@ -35,12 +35,13 @@ artf media-others : media-others = {
     """
   }
 
+  // Render every HTML figure of media-others again with its capture script and compare each
+  // image with the saved one.
   eval renders-html : runtime(command = "node", args = ["capture.mts", "check"], timeout_ms = 300000) = {
     title = "The saved images are what their HTML renders now"
-    instruction = "Render every HTML figure of media-others again with its capture script and compare each image with the saved one."
   }
 
-  eval shows-roles : luna = {
+  eval shows-roles : reviewer = {
     title = "The role figure shows people and agents collaborating in three roles, cleanly"
     red_at = "P1"
     instruction = """

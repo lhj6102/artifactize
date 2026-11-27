@@ -20,16 +20,17 @@ posts/
 
 What it demonstrates:
 
-- **One macro, three posts.** `posts.artf` declares `artf! post(file, words = "120", …)`
-  once, and `artf tip = post!(file = "tip.md", words = "40", …)` binds `tip`, whose
+- **One macro, three posts.** `posts.artf` declares `artf! post(file, words = "120")`
+  once, and `artf tip = post!(file = "tip.md", words = "40")` binds `tip`, whose
   `style` eval is `tip/style`. The other posts call the macro with its defaults.
   `artifactize config expand tip` prints the declaration the call makes, every
-  parameter filled in.
+  parameter filled in. A macro takes only what changes what is checked, here the file
+  and its word limit; the title is written out once in the macro.
 - **Default artifactsum.** Each declaration omits `fingerprint`, so a post hashes
   only its own file. A change to `tip.md` reviews only `tip/style`; sibling posts,
   the README and the definitions are not part of that file's artifactsum.
-  Changing an eval's instruction or runtime argv still changes its definition
-  hash. `fingerprint = false` would disable reuse.
+  Changing a runtime eval's argv still changes its definition hash; its `//`
+  comment does not. `fingerprint = false` would disable reuse.
 - **A shared basis.** Every post's eval names the `house-style` basis Artifact in its
   arguments, `@{path house-style/check.py}` and `@{path house-style/banned.txt}`,
   because it runs the checker with the banned words. That makes `house-style` its
@@ -43,40 +44,33 @@ What it demonstrates:
   File Artifact's slot never takes a `/path` suffix. The process runs in `examples/posts`, the file's
   containing folder, with the author's environment. The checker reads its
   arguments without writing into the workspace.
-- **Tags.** `type:post` and `length:brief` appear in status and graph output.
+- **Tags.** `type:post` appears in status and graph output.
   They do not change fingerprints, relations or reuse keys.
 
 `.artifactize/posts.artf` holds the macro and the three posts:
 
 ```rust
 // .artifactize/posts.artf
-artf! post(
-  file,
-  words = "120",
-  tags = ["type:post"],
-  title = "The post fits in 120 words and follows the house style",
-) = {
+// A post: one Markdown file that starts with a title, stays within `words` words and avoids
+// every word the house style bans, as house-style/check.py checks.
+artf! post(file, words = "120") = {
   path = "@{param file}"
-  tags = tags
+  tags = ["type:post"]
 
+  // Check that the post starts with a title, stays within its word limit, and avoids every
+  // word the house style bans.
   eval style : runtime(
     command = "python3",
     args = ["@{path house-style/check.py}", "@{path self}", "@{path house-style/banned.txt}", "@{param words}"],
     timeout_ms = 10000,
   ) = {
-    title = title
-    instruction = "Check that the post starts with a title, stays within @{param words} words, and avoids every word the house style bans."
+    title = "The post fits its word limit and follows the house style"
   }
 }
 
 artf welcome = post!(file = "welcome.md")
 artf release-notes = post!(file = "release-notes.md")
-artf tip = post!(
-  file = "tip.md",
-  words = "40",
-  tags = ["type:post", "length:brief"],
-  title = "The brief post fits in 40 words and follows the house style",
-)
+artf tip = post!(file = "tip.md", words = "40")
 ```
 
 ## Run it

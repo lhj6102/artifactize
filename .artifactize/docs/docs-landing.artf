@@ -1,4 +1,4 @@
-tool docs-landing = {
+tool landing-preview = {
   human preview = command(
       command = "python3",
       args = ["../preview.py"],
@@ -7,11 +7,11 @@ tool docs-landing = {
     )
 }
 
-artf docs-landing : files & docs-landing = {
+artf docs-landing : files & landing-preview = {
   parts = [docs-landing-board]
   path = "website/landing/"
 
-  eval follows-rules : luna = {
+  eval follows-rules : reviewer = {
     title = "The landing page follows the introduction rules"
     red_at = "P1"
     instruction = """
@@ -23,7 +23,7 @@ artf docs-landing : files & docs-landing = {
     """
   }
 
-  eval follows-write-in-korean : luna = {
+  eval follows-write-in-korean : reviewer = {
     title = "The Korean landing page follows the Korean writing rules"
     red_at = "P1"
     instruction = """
@@ -35,7 +35,7 @@ artf docs-landing : files & docs-landing = {
     """
   }
 
-  eval translates-ko : luna = {
+  eval translates-ko : reviewer = {
     title = "The Korean landing page conveys the same content and links as the English one"
     red_at = "P1"
     instruction = """

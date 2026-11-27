@@ -29,7 +29,7 @@ What it demonstrates:
   `@{path glossary/terms.txt}`, `@{path intro/page.md}` and `@{path usage/page.md}`.
   Each one is a graph relation and is resolved to an absolute path before the command
   runs. A reference is what makes an Artifact an eval's dependency; a runtime eval
-  that reads an Artifact its arguments do not name lists it in `inputs`.
+  that reads an Artifact its arguments do not name lists it in `deps`.
 - **Runtime evals.** The exit code is the verdict: 0 is GREEN, anything else is RED.
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
   `python3 check_terms.py`. Each command runs from its owner's folder with the

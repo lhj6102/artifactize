@@ -1,11 +1,7 @@
-tool docs-readme = {
-  agent read = builtin(op = "read", args = ["README.md"])
-}
-
-artf docs-readme : docs-readme = {
+artf docs-readme : markdown = {
   path = "README.md"
 
-  eval follows-rules : luna = {
+  eval follows-rules : reviewer = {
     title = "The README introduces the project in the owner's flow"
     red_at = "P1"
     instruction = """
@@ -14,7 +10,7 @@ artf docs-readme : docs-readme = {
     """
   }
 
-  eval matches-landing-install : luna = {
+  eval matches-landing-install : reviewer = {
     title = "The README's installation matches the landing page's install section"
     red_at = "P1"
     instruction = """

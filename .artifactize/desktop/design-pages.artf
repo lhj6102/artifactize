@@ -8,22 +8,17 @@
 // literal appears in it.
 artf desktop-design-check = { path = "crates/artifactize-desktop/design/check.mjs", basis = true }
 
-tool! page-source(page) = {
-  namespace = "page"
-  agent read = builtin(op = "read", args = ["@{param page}"])
-}
-
 // A screen page, `screen.html`, checked against the page form of the checker.
-artf! design-page(screen) : page-source!(page = "@{param screen}.html") = {
+artf! design-page(screen) : files = {
   path = "crates/artifactize-desktop/design/@{param screen}.html"
 
+  // Check the page against the page form of the checker, which every screen page shares.
   eval well-formed : runtime(
     command = "node",
     args = ["@{path desktop-design-check}", "page", "@{param screen}.html"],
     timeout_ms = 30000,
   ) = {
-    title = "The @{param screen} page has the form every screen page shares"
-    instruction = "Check the page against the page form of the checker, which every screen page shares."
+    title = "The page has the form every screen page shares"
   }
 }
 

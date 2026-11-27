@@ -1,11 +1,11 @@
 artf graph-desktop : files & definitions = {
   path = ".artifactize/desktop/"
 
-  eval derives : luna = {
+  eval derives : reviewer = {
     title = "The desktop definitions judge each Artifact against what specifies it"
     red_at = "P1"
     instruction = """
-      Read every definition in @{artf graph-desktop}; use @{tool self agent definitions.graph} for relations that leave the
+      Read every definition in @{artf graph-desktop}; use its graph tool for the relations that leave the
       folder. The desktop app is specified by the journeys (desktop-ux-features) and the design
       (desktop-design with its pages), and realized by desktop-ui, desktop-backend, desktop-e2e and desktop. Check that:
       - Direction: an eval judges a realization against what specifies it, never a

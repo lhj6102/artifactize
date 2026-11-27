@@ -1,4 +1,4 @@
-tool media-brand-icon = {
+tool artwork = {
   human open = builtin(
       op = "open",
       args = ["@{path self}"],
@@ -6,7 +6,7 @@ tool media-brand-icon = {
     )
 }
 
-artf media-brand-icon : media-brand-icon = {
+artf media-brand-icon : artwork = {
   path = "assets/brand/artifactize-icon.svg"
 
   eval approved : human = {

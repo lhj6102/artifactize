@@ -2,7 +2,7 @@
 artf docs-landing-board : files = {
   path = "website/landing/board/"
 
-  eval follows-rules : luna = {
+  eval follows-rules : reviewer = {
     title = "The board's text is plain for a first-time visitor"
     red_at = "P1"
     instruction = """
@@ -17,7 +17,7 @@ artf docs-landing-board : files = {
     """
   }
 
-  eval reads-the-record : luna = {
+  eval reads-the-record : reviewer = {
     title = "The board reads the record the development skills write"
     red_at = "P1"
     instruction = """

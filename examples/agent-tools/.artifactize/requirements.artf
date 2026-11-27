@@ -1,5 +1,5 @@
 // The requirements the specification answers: the IDs the coverage report looks for.
-artf requirements : text = {
+artf requirements : files = {
   path = "requirements/"
   basis = true
 }

@@ -1,4 +1,4 @@
-tool media-demos = {
+tool demo-gifs = {
   agent fresh = command(
       command = "node",
       args = ["@{path media-demos-script}", "gif", "fresh"],
@@ -35,10 +35,10 @@ tool media-demos = {
 }
 
 // The review records the demos again into its own folder, outside the repository.
-artf media-demos : media-demos = {
+artf media-demos : demo-gifs = {
   path = "assets/demos/"
 
-  eval matches-recording : luna = {
+  eval matches-recording : reviewer = {
     title = "The saved demos show what the script records from the current app"
     red_at = "P1"
     instruction = "@{artf media-demos} holds the demo GIFs @{artf media-demos-script} recorded from the desktop app, built from @{artf desktop-backend} and @{artf desktop-ui} and driven through @{artf desktop-e2e}. For each of review-loop.gif and graph-growth.gif, ask stored and fresh for its length, then view frames of both at matching moments, enough to cover each step of the demo: each try of the review loop, and each release of the graph's growth. Ignore what differs on every recording: Run IDs, times, durations, temporary paths and a frame's exact timing. Both recordings of each demo show the same steps with the same screens, captions and outcomes; each demo that differs is an issue, saying what changed, and the script then runs again to replace the saved demos."

@@ -2,7 +2,7 @@
 artf dev-skills : files = {
   path = ".agents/skills/"
 
-  eval correct : luna = {
+  eval correct : reviewer = {
     title = "The development skills state today's commands, outcomes and CI correctly"
     red_at = "P1"
     instruction = """

@@ -1,4 +1,4 @@
-tool media-screenshots = {
+tool screenshots = {
   agent fresh = command(
       command = "node",
       args = ["@{path media-screenshots-script}", "fresh"],
@@ -21,10 +21,10 @@ tool media-screenshots = {
 }
 
 // The review captures the scenes again into its own folder, outside the repository.
-artf media-screenshots : media-screenshots = {
+artf media-screenshots : screenshots = {
   path = "assets/screenshots/"
 
-  eval matches-capture : luna = {
+  eval matches-capture : reviewer = {
     title = "The saved screenshots show what the script captures from the current app"
     red_at = "P1"
     instruction = "@{artf media-screenshots} holds the screenshots @{artf media-screenshots-script} captured from the desktop app, built from @{artf desktop-backend} and @{artf desktop-ui} and driven through @{artf desktop-e2e}. For each of monitor.png, detail.png and review.png, view the saved one with view_image and the one just captured from the current app with fresh, and compare them. Ignore what differs on every capture: Run and request IDs, times, durations, temporary paths and fingerprints. Every pair shows the same screen with the same layout, controls, text and colours; each screenshot that differs is an issue, saying what changed, and the script then runs again to replace the saved screenshots."

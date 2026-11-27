@@ -1,11 +1,7 @@
-tool docs-readme-kr = {
-  agent read = builtin(op = "read", args = ["README.kr.md"])
-}
-
-artf docs-readme-kr : docs-readme-kr = {
+artf docs-readme-kr : markdown = {
   path = "assets/readme/README.kr.md"
 
-  eval follows-write-in-korean : luna = {
+  eval follows-write-in-korean : reviewer = {
     title = "The Korean README follows the Korean writing rules"
     red_at = "P1"
     instruction = """
@@ -20,7 +16,7 @@ artf docs-readme-kr : docs-readme-kr = {
     """
   }
 
-  eval translates-readme : luna = {
+  eval translates-readme : reviewer = {
     title = "The Korean README conveys the same content and links as the root README"
     red_at = "P1"
     instruction = """

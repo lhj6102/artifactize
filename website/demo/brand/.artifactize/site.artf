@@ -1,9 +1,9 @@
 artf site = {
   path = "site/"
 
+  // Check that site/header.html embeds the logo from logo.
   eval embed : runtime(command = "grep", args = ["-q", "logo.svg", "header.html"], timeout_ms = 5000) = {
     title = "The header embeds the signed-off logo"
-    instruction = "Check that site/header.html embeds the logo from logo."
-    inputs = [logo]
+    deps = [logo]
   }
 }
