@@ -10,7 +10,7 @@
   import { onMount } from "svelte";
   import GraphTools from "../monitor/GraphTools.svelte";
   import { layered } from "../monitor/layout";
-  import { criteria, edges as connections, evalsOf } from "./declared";
+  import { composed, criteria, edges as connections, evalsOf } from "./declared";
   import DeclaredNode from "./DeclaredNode.svelte";
   import { getViewerState } from "./viewer-state.svelte";
 
@@ -44,14 +44,14 @@
           id: name,
           type: "declared",
           position: places.get(name) ?? { x: 0, y: 0 },
-          data: { name, kind: artifact.type ?? "", selected: selected === name, pointing: v.pointing },
+          data: { name, kind: composed(artifact), selected: selected === name, pointing: v.pointing },
           width: SIZE.width,
           height: SIZE.height,
         }))
       : [],
   );
   let edges = $derived<Edge[]>(graph ? connections(graph).map(({ source, target }) => ({ id: `${source}->${target}`, source, target, style: "stroke: var(--edge)" })) : []);
-  const shown = $derived(graph && selected ? { name: selected, kind: graph.artifacts[selected]?.type ?? "", evals: evalsOf(graph, selected) } : null);
+  const shown = $derived(graph && selected ? { name: selected, kind: composed(graph.artifacts[selected]), evals: evalsOf(graph, selected) } : null);
 
   function clicked(name: string) {
     if (v.pointing) void v.point(name);
@@ -102,7 +102,7 @@
     </div>
     {#if shown}
       <section class="panel" aria-label="Artifact {shown.name}">
-        <header><span class="name">{shown.name}</span><span class="tag">{shown.kind || "custom"}</span></header>
+        <header><span class="name">{shown.name}</span>{#if shown.kind}<span class="tag">{shown.kind}</span>{/if}</header>
         <div class="evals">
           {#each shown.evals as [id, each] (id)}
             <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->

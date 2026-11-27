@@ -1,6 +1,6 @@
 <script lang="ts">
-  // A declared Artifact in the Artifactize Viewer (D-VIEW-5): its name and its type as a small
-  // tag (`custom` for a Custom Artifact), no status. Selected, it carries the selected outline; while pointing, the handle edge.
+  // A declared Artifact in the Artifactize Viewer (D-VIEW-5): its name and the toolsets it
+  // composes as a small tag, none for an Artifact that composes none, no status. Selected, it carries the selected outline; while pointing, the handle edge.
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
 
   type Data = { name: string; kind: string; selected: boolean; pointing: boolean };
@@ -10,7 +10,7 @@
 <div class="node graph-face" class:selected={data.selected} class:pointing={data.pointing}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="name">{data.name}</span>
-  <span class="tag">{data.kind || "custom"}</span>
+  {#if data.kind}<span class="tag">{data.kind}</span>{/if}
   <Handle type="source" position={Position.Right} isConnectable={false} />
 </div>
 

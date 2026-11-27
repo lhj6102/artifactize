@@ -10,7 +10,7 @@
   import { getAppState } from "../shell/app.svelte";
   import Section from "../shell/Section.svelte";
 
-  let { branch, name, onopen }: { branch: BranchKey; name: string; onopen: (part: string) => void } = $props();
+  let { branch, name, onopen }: { branch: BranchKey; name: string; onopen: (node: string) => void } = $props();
   const app = getAppState();
   const defs = $derived(app.definitionsFor(branch));
   const node = $derived(defs.node(name));
@@ -53,7 +53,7 @@
         <dd>
           <ul class="parts" aria-label="Parts of {name}">
             {#each node.parts as part (part)}
-              <li><button class="part" onclick={() => onopen(part)}>{part}</button></li>
+              <li><button class="part" onclick={() => onopen(`a:${part}`)}>{part}</button></li>
             {/each}
           </ul>
         </dd>

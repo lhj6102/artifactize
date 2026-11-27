@@ -166,3 +166,22 @@ fn migrate_converts_old_definitions_once_and_rename_follows_references() {
     );
     assert!(fixture.run(&["config", "check"]).status.success());
 }
+
+#[test]
+fn migrate_gives_an_untyped_folder_an_agent_reads_the_file_tools() {
+    // From before Artifact types: a folder came with the file tools its Agent eval reads it by.
+    let fixture = Fixture::new();
+    fixture.write(
+        "crates/core/index.artf",
+        "name = \"core\"\n[evals.readable]\ntitle = \"Readable\"\nprofile = { kind = \"agent\", backend = \"openai\", model = \"fixture\" }\npayload.instruction = \"Is {core} readable?\"\n",
+    );
+    fixture.json(&["--json", "config", "migrate"]);
+    let text = fs::read_to_string(fixture.0.join(".artifactize/core.artf")).unwrap();
+    assert!(text.contains("artf core : files = {"), "{text}");
+    let check = fixture.run(&["config", "check"]);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+}

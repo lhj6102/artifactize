@@ -1,13 +1,13 @@
 // What a project declares under an `artifactize` Artifact, as the library's declared graph reads
 // (its scoped wire shape): the Artifacts, their evals and the references between them.
 
-/** A declared Artifact: its file or folder kind, and its type (`null` for a Custom one). */
-export type DeclaredArtifact = { kind: string; type?: string | null };
+/** A declared Artifact: its file or folder kind, and the toolsets it composes. */
+export type DeclaredArtifact = { kind: string; toolsets?: string[] };
 export type DeclaredEval = {
   target: string;
   title: string;
   criteria: { kind: "agent" | "human" | "runtime"; command?: string };
-  payload: { instruction: string } | null;
+  instruction: string | null;
   reads?: string[];
 };
 export type Declared = {
@@ -42,7 +42,12 @@ export function edges(graph: Declared): { source: string; target: string }[] {
   return out;
 }
 
+/** The toolsets an Artifact composes, as its code writes them (`files & html`); "" for none. */
+export function composed(artifact: DeclaredArtifact | undefined): string {
+  return (artifact?.toolsets ?? []).join(" & ");
+}
+
 /** What an eval's criteria say, whole: its instruction, else the command it runs. */
 export function criteria(each: DeclaredEval): string {
-  return each.payload?.instruction ?? each.criteria.command ?? "";
+  return each.instruction ?? each.criteria.command ?? "";
 }

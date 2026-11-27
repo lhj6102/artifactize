@@ -302,7 +302,7 @@ export const scenarios: Scenario[] = [
       await app.graph.until(async () => /^Scanned at /.test(await app.graph.scan()), "the scan ended");
       // The stage header: the view tabs, then the graph's tools and the Current's, naming nothing.
       const header = await app.graph.header();
-      for (const tool of ["Conversation", "Graph", "Find", "Zoom in", "Fit", "New Artifact", "Refresh"]) assert.ok(header.includes(tool), `${tool} in the stage header: ${header}`);
+      for (const tool of ["Conversation", "Graph", "Find", "Zoom in", "Fit", "Refresh"]) assert.ok(header.includes(tool), `${tool} in the stage header: ${header}`);
       assert.doesNotMatch(header, /New chat|master|Scanned/, `the stage header names and rates nothing: ${header}`);
       // The chat floats over the graph's bottom, centred, with no reply card before a message.
       const float = await app.chat.floating();

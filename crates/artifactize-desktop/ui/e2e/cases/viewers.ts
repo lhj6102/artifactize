@@ -112,12 +112,12 @@ export const scenarios: Scenario[] = [
       await w.claimReview("system/signoff");
       await w.viewer(await w.runTool("artifactize.view"));
       const nodes = await w.nodesUntil((drawn) => drawn.length === 2, "the declared Artifacts drawn");
-      assert.deepEqual(nodes.toSorted(), ["back custom", "front custom"], "no verdicts, only names and tags");
+      assert.deepEqual(nodes.toSorted(), ["back", "front"], "no verdicts, only names, and no tag where no toolset is composed");
       await w.edge("front", "back");
       const back = await w.openNode("back");
-      assert.equal(back.head, "back custom");
+      assert.equal(back.head, "back");
       assert.equal(back.evals.length, 1);
-      assert.match(back.evals[0], /^back\/serves runtime Title Check back Criteria Check that \{front\} is served\./);
+      assert.match(back.evals[0], /^back\/serves runtime Title Check back Criteria Check that front is served\. Reads front$/);
 
       await w.mode("Review");
       await w.claimReview("page/signoff");

@@ -311,7 +311,7 @@ export class Windows {
       });
       const why = card.querySelector<HTMLElement>(":scope > .why");
       if (why && why.scrollWidth > why.clientWidth + 1) overflow.push("Point explanation");
-      const submit = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Submit GREEN");
+      const submit = [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => /^Submit (GREEN|RED)$/.test(button.textContent?.trim() ?? ""));
       const box = submit?.getBoundingClientRect();
       const row = card.querySelector<HTMLElement>('[role="group"][aria-label="Decision"]') ?? card;
       const end = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight) - row.clientLeft;

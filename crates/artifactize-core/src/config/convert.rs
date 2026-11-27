@@ -52,6 +52,7 @@ pub fn convert(
         toolsets: Vec::new(),
         plugins,
         warnings: Vec::new(),
+        files: untyped_readers(declarations),
     };
     for (name, profile) in profiles {
         converter.profile_name(Some(name), profile)?;
@@ -136,6 +137,62 @@ struct Converter<'a> {
     toolsets: Vec<Toolset>,
     plugins: &'a BTreeSet<String>,
     warnings: Vec<String>,
+    /// The Artifacts that compose `files` although they had no type (`untyped_readers`).
+    files: BTreeSet<String>,
+}
+
+/// The old local Artifacts without a type that an Agent or Human eval reads, its own or one
+/// naming it with `{name}`, while they declare no tools for that eval's kind. Before Artifact
+/// types, a local file or folder came with the file tools; `files` gives them now.
+fn untyped_readers(declarations: &[Old]) -> BTreeSet<String> {
+    let mut read: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
+    for old in declarations {
+        let Ok(tables) = evals(old.table.get("evals")) else {
+            continue; // The conversion itself names the broken table.
+        };
+        for (_, eval) in tables {
+            let audience = match eval
+                .get("profile")
+                .and_then(|profile| profile.get("kind"))
+                .and_then(Value::as_str)
+            {
+                Some("agent") => "agent_tools",
+                Some("human") => "human_tools",
+                _ => continue,
+            };
+            let instruction = eval
+                .get("payload")
+                .and_then(|payload| payload.get("instruction"))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            for name in std::iter::once(old.name.clone()).chain(references(instruction)) {
+                read.entry(name).or_default().insert(audience);
+            }
+        }
+    }
+    declarations
+        .iter()
+        .filter(|old| {
+            let local = old
+                .table
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(|path| !path.contains("://"));
+            let lacks = |audience: &str| {
+                old.table
+                    .get("views")
+                    .and_then(|views| views.get(audience))
+                    .and_then(Value::as_object)
+                    .is_none_or(Map::is_empty)
+            };
+            local
+                && old.table.get("type").is_none()
+                && read
+                    .get(&old.name)
+                    .is_some_and(|audiences| audiences.iter().any(|audience| lacks(audience)))
+        })
+        .map(|old| old.name.clone())
+        .collect()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -160,6 +217,9 @@ impl Converter<'_> {
             return Err("a declaration is a table".into());
         };
         let mut toolsets = Vec::new();
+        if self.files.contains(&old.name) {
+            toolsets.push("files".to_owned());
+        }
         let mut out = String::from("{\n");
         for (key, value) in table {
             match key.as_str() {
