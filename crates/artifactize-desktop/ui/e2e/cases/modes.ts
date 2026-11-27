@@ -11,7 +11,7 @@ import { windows } from "../views/viewers.ts";
 export const scenarios: Scenario[] = [
   scenario<{ id: string; runId: string; otherId: string; otherRun: string }>({
     id: "review-reference",
-    title: "Claim from Verify; open the claimed review outside the default filter, keep its draft on release and restart, submit it and go back to its Run and Artifact",
+    title: "Claim from Verify; the claimed review stays waiting; open it outside an unclaimed filter, keep its draft on release and restart, submit it and go back to its Run and Artifact",
     journeys: ["J-DETAIL-REVIEW", "J-REVIEW-REF", "J-REVIEW-BACK", "J-HUMAN-DRAFT", "J-PANE-ROWS"],
     prepare: async (owned) => {
       const fixture = await createRelease(owned);
@@ -33,10 +33,14 @@ export const scenarios: Scenario[] = [
       await stage("claimable");
       await app.detail.reviewAction("Claim to review");
       await stage("yours");
-      await app.waitingBadge(1);
+      // A claimed review still waits for a person, its claimant: the bar keeps counting it and
+      // the waiting filter keeps listing it.
+      await app.waitingBadge(2);
       await app.mode("Review");
       const listed = async () => (await app.review.list()).map((row) => row.id);
-      await app.until(async () => (await listed()).join() === otherId, "the waiting filter lists only the other review");
+      await app.until(async () => [...await listed()].sort().join() === [id, otherId].sort().join(), "the waiting filter lists the claimed review beside the other");
+      await app.review.filterFor("type:human is:unclaimed");
+      await app.until(async () => (await listed()).join() === otherId, "the unclaimed filter lists only the other review");
       await app.mode("Verify");
       await app.detail.reviewAction("Open in Review");
       await app.review.titleContains("release/signoff");
@@ -52,7 +56,7 @@ export const scenarios: Scenario[] = [
       await app.review.titleContains("release/signoff");
       await app.review.until((shown) => shown.stage === "Yours", "the direct reference shows the claimed review");
       assert.equal(await app.review.hasOutsideHint(), false);
-      assert.equal(await app.review.filter(), "type:human waiting");
+      assert.equal(await app.review.filter(), "type:human is:unclaimed");
       assert.deepEqual(await listed(), [otherId], "opening the exact review did not pin it into the filtered list");
       assert.match(await app.review.debugState(), new RegExp(`^Request ${id} `));
       await app.review.choose("GREEN");
