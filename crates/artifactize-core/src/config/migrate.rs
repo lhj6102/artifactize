@@ -99,10 +99,23 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     let mut written = Vec::new();
     for (file, text) in converted.files {
         let path = definitions.join(&file);
-        if current.contains_key(&path) {
+        // An existing file may be taken over only by its own exact name, as an old definition
+        // being converted in place; one differing only in case is the same file on some volumes.
+        let taken = match (path.parent(), path.file_name()) {
+            (Some(directory), Some(name))
+                if crate::platform::paths::target_exists(directory).unwrap_or(false) =>
+            {
+                crate::platform::paths::conflicting_entry(directory, std::iter::once(name))
+                    .map_err(|error| ConfigError::new(directory, error))?
+                    .map(|found| directory.join(found))
+                    .filter(|found| found != &path || !removed.contains(found))
+            }
+            _ => None,
+        };
+        if current.contains_key(&path) || taken.is_some() {
             return Err(ConfigError::new(
                 &path,
-                "This file is already in the .artf language; rename it so the converted definitions can take its name.",
+                "A file of this name is already in .artifactize/; rename it so the converted definitions can take its name.",
             ));
         }
         sources.insert(path, text);
@@ -126,7 +139,8 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         if kept.contains(&path) {
             continue;
         }
-        std::fs::remove_file(&path).map_err(|error| ConfigError::new(&path, error))?;
+        crate::platform::paths::remove_regular(&path)
+            .map_err(|error| ConfigError::new(&path, error))?;
         gone.push(path);
     }
     let relative = |paths: Vec<PathBuf>| -> Vec<PathBuf> {

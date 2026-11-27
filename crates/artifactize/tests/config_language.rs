@@ -168,6 +168,45 @@ fn migrate_converts_old_definitions_once_and_rename_follows_references() {
 }
 
 #[test]
+fn rename_and_migrate_refuse_a_file_whose_name_differs_only_in_case() {
+    // On a case-insensitive volume `Guide.artf` and `guide.artf` are one file: neither command
+    // may write over it, on any volume.
+    const NOTES: &str = "// Notes kept beside the definitions.\n";
+    let fixture = Fixture::new();
+    fixture.write(
+        ".artifactize/docs.artf",
+        "artf docs : markdown = { path = \"docs/guide.md\" }\n",
+    );
+    fixture.write(".artifactize/Guide.artf", NOTES);
+    let renamed = fixture.run(&["config", "rename", "docs", "guide"]);
+    assert!(!renamed.status.success());
+    assert_eq!(
+        fs::read_to_string(fixture.0.join(".artifactize/Guide.artf")).unwrap(),
+        NOTES
+    );
+    assert!(fixture.0.join(".artifactize/docs.artf").exists());
+
+    // Migration writes the profiles it collects to `profiles.artf`.
+    let fixture = Fixture::new();
+    fixture.write(
+        ".artifactize/docs.artf",
+        "path = \"docs/guide.md\"\ntype = \"markdown\"\n[evals.clear]\ntitle = \"Clear\"\nprofile = { kind = \"agent\", backend = \"openai\", model = \"fixture\" }\npayload = { instruction = \"Is {docs} clear?\" }\n",
+    );
+    fixture.write(".artifactize/Profiles.artf", NOTES);
+    let migrated = fixture.run(&["config", "migrate"]);
+    assert!(!migrated.status.success());
+    assert!(
+        String::from_utf8_lossy(&migrated.stderr).contains("already in .artifactize"),
+        "{}",
+        String::from_utf8_lossy(&migrated.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.0.join(".artifactize/Profiles.artf")).unwrap(),
+        NOTES
+    );
+}
+
+#[test]
 fn migrate_gives_an_untyped_folder_an_agent_reads_the_file_tools() {
     // From before Artifact types: a folder came with the file tools its Agent eval reads it by.
     let fixture = Fixture::new();

@@ -96,9 +96,20 @@ pub fn rename(
     let mut next: BTreeMap<PathBuf, String> = sources.clone();
     next.extend(changed.clone());
     if let Some((from, to)) = &moved {
-        if next.contains_key(&root.join(to)) {
+        // A file whose name differs only in case is the same file on some volumes: refuse it
+        // on every volume, as the names it binds are unique ignoring case too.
+        let destination = root.join(to);
+        let taken = match (destination.parent(), destination.file_name()) {
+            (Some(directory), Some(name)) => {
+                crate::platform::paths::conflicting_entry(directory, std::iter::once(name))
+                    .map_err(|error| ConfigError::new(directory, error))?
+                    .filter(|found| Some(found.as_os_str()) != from.file_name())
+            }
+            _ => None,
+        };
+        if next.contains_key(&destination) || taken.is_some() {
             return Err(ConfigError::new(
-                root.join(to),
+                destination,
                 "A definition file of that name exists.",
             ));
         }
@@ -113,7 +124,7 @@ pub fn rename(
             .map_err(|error| ConfigError::new(path, error))?;
     }
     if let Some((from, to)) = &moved {
-        std::fs::rename(root.join(from), root.join(to))
+        crate::platform::paths::rename_open_file(&root.join(from), &root.join(to))
             .map_err(|error| ConfigError::new(root.join(from), error))?;
     }
     Ok(Rename {
