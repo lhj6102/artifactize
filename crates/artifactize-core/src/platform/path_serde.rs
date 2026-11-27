@@ -72,42 +72,27 @@ pub(crate) mod native {
     }
 }
 
-/// Portable keys for maps whose paths identify files, such as workbench optimistic bases.
-pub(crate) mod map {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::{collections::BTreeMap, path::PathBuf};
-    pub(crate) fn serialize<S: Serializer, T: Serialize>(
-        paths: &BTreeMap<PathBuf, T>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        paths
-            .iter()
-            .map(|(path, value)| (super::super::path_text(path), value))
-            .collect::<BTreeMap<_, _>>()
-            .serialize(serializer)
-    }
-    pub(crate) fn deserialize<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
-        deserializer: D,
-    ) -> Result<BTreeMap<PathBuf, T>, D::Error> {
-        BTreeMap::<String, T>::deserialize(deserializer)?
-            .into_iter()
-            .map(|(text, value)| {
-                artifactize_tools::files::path_from_text(&text)
-                    .map(|path| (path, value))
-                    .map_err(serde::de::Error::custom)
-            })
-            .collect()
-    }
-}
-/// Migration source/destination pairs, rendered identically on every OS.
-pub(crate) fn pairs<S: Serializer>(
-    paths: &[(PathBuf, PathBuf)],
+/// Files with a count each, such as the names a rename changed in them.
+pub(crate) fn counts<S: Serializer>(
+    files: &[(PathBuf, usize)],
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     use serde::Serialize;
-    paths
+    files
         .iter()
-        .map(|(from, to)| (super::path_text(from), super::path_text(to)))
+        .map(|(path, count)| (super::path_text(path), count))
         .collect::<Vec<_>>()
         .serialize(serializer)
 }
+
+/// A file moved from one path to another, when one was.
+pub(crate) fn optional_pair<S: Serializer>(
+    pair: &Option<(PathBuf, PathBuf)>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::Serialize;
+    pair.as_ref()
+        .map(|(from, to)| (super::path_text(from), super::path_text(to)))
+        .serialize(serializer)
+}
+

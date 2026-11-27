@@ -177,7 +177,8 @@ impl Converter<'_> {
                         toolsets.push(namespace);
                     }
                 }
-                "evals" => {}
+                // Layout the removed definition editor kept; nothing reads it now.
+                "evals" | "annotations" => {}
                 other => {
                     self.warnings.push(format!(
                         "{}: `{other}` is not part of a declaration any more and was dropped.",
@@ -237,53 +238,7 @@ impl Converter<'_> {
             namespace = format!("{artifact}-tools{}", if index == 2 { String::new() } else { index.to_string() });
             index += 1;
         }
-        let mut text = format!("tool {namespace} = {{\n");
-        for (audience, keyword) in [("agent_tools", "agent"), ("human_tools", "human"), ("agent_sessions", "session")] {
-            let Some(Value::Object(tools)) = own.get(audience) else {
-                continue;
-            };
-            for (name, tool) in tools {
-                let Value::Object(tool) = tool else {
-                    return Err(format!("views.{audience}.{name} is a table"));
-                };
-                let rendered = match keyword {
-                    "session" => {
-                        let mut parts = Vec::new();
-                        for (side, command) in tool {
-                            let command = command
-                                .as_object()
-                                .ok_or_else(|| format!("views.{audience}.{name}.{side} is a table"))?;
-                            parts.push(format!("{side} = {}", call("command", command, 2, Strings::Argument)));
-                        }
-                        format!("session({})", parts.join(", "))
-                    }
-                    _ => {
-                        let mut tool = tool.clone();
-                        // A plain tool's `{property}` args are its input's templates, not names.
-                        let arguments = if keyword == "human" {
-                            Strings::HumanArgument
-                        } else if tool.get("protocol").and_then(Value::as_str) == Some("plain") {
-                            Strings::Plain
-                        } else {
-                            Strings::Argument
-                        };
-                        if let Some(op) = tool.remove("builtin") {
-                            tool.insert("op".into(), op);
-                            call("builtin", &tool, 2, arguments)
-                        } else {
-                            call("command", &tool, 2, arguments)
-                        }
-                    }
-                };
-                writeln!(text, "  {keyword} {name} = {rendered}").expect("write to String");
-            }
-        }
-        for audience in own.as_object().expect("own views").keys() {
-            if !matches!(audience.as_str(), "agent_tools" | "human_tools" | "agent_sessions") {
-                return Err(format!("views.{audience} is not a kind of tool"));
-            }
-        }
-        text.push_str("}\n");
+        let text = toolset_text(&namespace, &own, false)?;
         self.toolsets.push(Toolset {
             namespace: namespace.clone(),
             views: own,
@@ -426,6 +381,74 @@ impl Converter<'_> {
         self.profiles.push((name.clone(), profile));
         Ok(name)
     }
+}
+
+/// `tool NAMESPACE = { … }` for an old `views` table. Viewer tools are a plugin's own, so only a
+/// plugin's toolset (`viewers`) writes them.
+pub(crate) fn toolset_text(namespace: &str, views: &Value, viewers: bool) -> Result<String, String> {
+    let Value::Object(views) = views else {
+        return Err("views is a table".into());
+    };
+    for audience in views.keys() {
+        if !matches!(audience.as_str(), "agent_tools" | "human_tools" | "agent_sessions") {
+            return Err(format!("views.{audience} is not a kind of tool"));
+        }
+    }
+    let mut text = format!("tool {namespace} = {{\n");
+    for (audience, keyword) in [("agent_tools", "agent"), ("human_tools", "human"), ("agent_sessions", "session")] {
+        let Some(tools) = views.get(audience) else {
+            continue;
+        };
+        let Value::Object(tools) = tools else {
+            return Err(format!("views.{audience} is a table"));
+        };
+        for (name, tool) in tools {
+            let Value::Object(tool) = tool else {
+                return Err(format!("views.{audience}.{name} is a table"));
+            };
+            let viewer = tool.get("kind").and_then(Value::as_str) == Some("viewer");
+            if viewer && !viewers {
+                continue;
+            }
+            let rendered = match keyword {
+                "session" => {
+                    let mut parts = Vec::new();
+                    for (side, command) in tool {
+                        let command = command
+                            .as_object()
+                            .ok_or_else(|| format!("views.{audience}.{name}.{side} is a table"))?;
+                        parts.push(format!("{side} = {}", call("command", command, 2, Strings::Argument)));
+                    }
+                    format!("session({})", parts.join(", "))
+                }
+                _ if viewer => {
+                    let mut tool = tool.clone();
+                    tool.remove("kind");
+                    call("viewer", &tool, 2, Strings::Plain)
+                }
+                _ => {
+                    let mut tool = tool.clone();
+                    // A plain tool's `{property}` args are its input's templates, not names.
+                    let arguments = if keyword == "human" {
+                        Strings::HumanArgument
+                    } else if tool.get("protocol").and_then(Value::as_str) == Some("plain") {
+                        Strings::Plain
+                    } else {
+                        Strings::Argument
+                    };
+                    if let Some(op) = tool.remove("builtin") {
+                        tool.insert("op".into(), op);
+                        call("builtin", &tool, 2, arguments)
+                    } else {
+                        call("command", &tool, 2, arguments)
+                    }
+                }
+            };
+            writeln!(text, "  {keyword} {name} = {rendered}").expect("write to String");
+        }
+    }
+    text.push_str("}\n");
+    Ok(text)
 }
 
 /// `text` made an identifier: letters, digits, `_` and `-`, starting with a letter.

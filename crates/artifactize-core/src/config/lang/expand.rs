@@ -3,7 +3,7 @@
 
 use std::{
     cell::{Cell, RefCell},
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     rc::Rc,
 };
 
@@ -107,8 +107,6 @@ pub(crate) struct LoweredArtifact {
     /// The whole `artf` statement.
     pub binding: Span,
     pub macro_name: Option<String>,
-    /// The `artf!` declaration whose body made it.
-    pub macro_body: Option<Span>,
     pub path: (String, Span),
     pub basis: Option<bool>,
     pub parts: Vec<(String, Span)>,
@@ -128,6 +126,7 @@ pub(super) struct Expanded {
     pub artifacts: Vec<LoweredArtifact>,
     pub profiles: BTreeMap<String, (Profile, Span)>,
     pub symbols: Vec<Symbol>,
+    pub names: Vec<(Span, String)>,
 }
 
 /// A name `self` never takes, used to check declarations no Artifact composes.
@@ -140,6 +139,8 @@ pub(super) struct Expander<'a> {
     frames: RefCell<Vec<(Span, String)>>,
     visiting: RefCell<Vec<(ItemKind, String)>>,
     current: RefCell<Option<String>>,
+    /// Every span that named an Artifact, for `config rename`.
+    pub names: RefCell<std::collections::BTreeSet<(Span, String)>>,
 }
 
 /// Leaves a macro frame or a resolving name when dropped.
@@ -167,6 +168,7 @@ pub(super) fn expand(sources: &Sources, parsed: &[(FileId, Vec<Item>)]) -> Resul
         frames: RefCell::new(Vec::new()),
         visiting: RefCell::new(Vec::new()),
         current: RefCell::new(None),
+        names: RefCell::default(),
     };
     let mut artifacts = Vec::new();
     let mut lowercase = BTreeMap::new();
@@ -197,7 +199,12 @@ pub(super) fn expand(sources: &Sources, parsed: &[(FileId, Vec<Item>)]) -> Resul
         expander.global_eval(&decl.item.name, *decl)?;
     }
     let symbols = expander.symbols();
+    for artifact in &artifacts {
+        expander.names.borrow_mut().insert((artifact.name_span, artifact.name.clone()));
+    }
+    let names = expander.names.take().into_iter().collect();
     Ok(Expanded {
+        names,
         artifacts,
         profiles,
         symbols,
@@ -255,7 +262,7 @@ impl<'a> Expander<'a> {
             return Err(self.error(item.name.span, "An Artifact's name is one identifier."));
         }
         let root = Env::root();
-        let (tools, block, env, macro_name, macro_body, _frame) = match &item.body {
+        let (tools, block, env, macro_name, _frame) = match &item.body {
             Expr::Macro { name, args, span } => {
                 if let Some(header) = &item.header {
                     return Err(self.error(
@@ -274,11 +281,10 @@ impl<'a> Expander<'a> {
                     block,
                     env,
                     Some(name.text.clone()),
-                    Some(definition.item.span),
                     Some(frame),
                 )
             }
-            Expr::Block(block) => (item.header.as_ref(), block, root, None, None, None),
+            Expr::Block(block) => (item.header.as_ref(), block, root, None, None),
             other => {
                 return Err(self.error(
                     other.span(),
@@ -291,7 +297,6 @@ impl<'a> Expander<'a> {
             name_span: item.name.span,
             binding: item.span,
             macro_name,
-            macro_body,
             path: (String::new(), item.name.span),
             basis: None,
             parts: Vec::new(),
@@ -1000,9 +1005,4 @@ struct Composed {
     namespaces: Vec<String>,
     views: Views,
     spans: BTreeMap<String, Span>,
-}
-
-/// The macros an Artifact's expansion went through, for its Definition.
-pub(crate) fn used_names(artifact: &LoweredArtifact) -> BTreeSet<String> {
-    artifact.evals.iter().filter_map(|eval| eval.source.clone()).collect()
 }

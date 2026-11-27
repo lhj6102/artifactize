@@ -131,22 +131,7 @@ impl Default for Fingerprint {
     }
 }
 
-const INVALID_FINGERPRINT: &str =
-    "fingerprint must be false or an object declaring artifactsum (files, ignore) or a script.";
 const REMOVED_DEPENDENCIES: &str = "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its children and referenced Artifacts. Remove the field.";
-
-fn declared_fingerprint<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Fingerprint>, D::Error> {
-    use serde::de::Error;
-    match Value::deserialize(deserializer)? {
-        Value::Bool(false) => Ok(None),
-        Value::Object(object) => Fingerprint::try_from(object)
-            .map(Some)
-            .map_err(D::Error::custom),
-        _ => Err(D::Error::custom(INVALID_FINGERPRINT)),
-    }
-}
 
 impl From<ScriptForm> for Fingerprint {
     fn from(form: ScriptForm) -> Self {

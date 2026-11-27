@@ -34,6 +34,20 @@ pub(super) fn read_sources(
     Ok(config)
 }
 
+/// [`read_sources`] with the plugins `catalog` holds, for a migration that has not written its
+/// converted plugins yet.
+pub(super) fn read_sources_with(
+    root: PathBuf,
+    sources: &BTreeMap<PathBuf, String>,
+    catalog: super::plugins::Catalog,
+) -> Result<RepoConfig, ConfigError> {
+    let program = program(&root, sources, &catalog)?;
+    let mut config = build(root, program, catalog)?;
+    crate::scope::resolve_config(&mut config)?;
+    crate::scope::validate_eval_tools(&config)?;
+    Ok(config)
+}
+
 /// Every Artifact and eval of the project, before relations are resolved.
 pub(super) fn read_sources_unresolved(
     root: PathBuf,

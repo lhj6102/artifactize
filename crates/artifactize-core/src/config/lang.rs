@@ -12,7 +12,7 @@ mod values;
 
 use std::{
     collections::BTreeMap,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -138,6 +138,9 @@ pub(crate) struct Program {
     pub artifacts: Vec<LoweredArtifact>,
     pub profiles: BTreeMap<String, (super::Profile, Span)>,
     pub symbols: Vec<Symbol>,
+    /// Every span that names an Artifact: its bindings, the names it is listed by and the
+    /// slots that name it, each once.
+    pub names: Vec<(Span, String)>,
 }
 
 /// A global binding, for `config symbols`.
@@ -181,6 +184,7 @@ pub(crate) fn read(files: Vec<SourceFile>) -> Result<Program, (Arc<Sources>, Lan
         artifacts: expanded.artifacts,
         profiles: expanded.profiles,
         symbols: expanded.symbols,
+        names: expanded.names,
     })
 }
 
@@ -234,7 +238,3 @@ pub(crate) fn span_of(artifact: &LoweredArtifact, keys: &[&str]) -> Span {
     }
 }
 
-/// The relative path of a definition file, for messages.
-pub(crate) fn shown(path: &Path) -> String {
-    crate::platform::path_text(path)
-}

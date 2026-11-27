@@ -263,3 +263,48 @@ fn meta_artifacts_under_definitions_default_to_a_semantic_fingerprint() {
     project.write("design/app.artf", "artf app = { path = \"rules/\" }\n");
     assert_ne!(fingerprint(), before);
 }
+
+#[test]
+fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
+    let project = Project::new(&[
+        ("shared.artf", SHARED),
+        ("crates.artf", "// The core crate.\nartf core = crate!(dir = \"core\")\n"),
+    ]);
+    let [core] = expand::expand(project.0.path(), Some(&name("core")))
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!((core.line, core.macro_name.as_deref()), (2, Some("crate!")));
+    assert_eq!(core.authored, "artf core = crate!(dir = \"core\")");
+    assert!(
+        core.expanded
+            .starts_with("artf core : files & cargo = {\n  path = \"crates/core/\"\n"),
+        "{}",
+        core.expanded
+    );
+    assert!(core.expanded.contains("eval style : reviewer = {"), "{}", core.expanded);
+    assert_eq!(core.evals[0].from.as_deref(), Some("follows!"));
+    // The expansion is code: it reads back as the same Artifact beside the shared definitions.
+    project.write("crates.artf", &core.expanded);
+    let config = project.read();
+    assert_eq!(
+        config.artifacts[&name("core")].path.local(),
+        Some(std::path::Path::new("crates/core"))
+    );
+    let symbols = expand::symbols(project.0.path()).unwrap();
+    let crate_macro = symbols
+        .iter()
+        .find(|symbol| symbol.name == "crate" && symbol.is_macro)
+        .unwrap();
+    let params: Vec<_> = crate_macro
+        .params
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|param| (param.name.as_str(), param.default.as_deref()))
+        .collect();
+    assert_eq!(params, [("dir", None), ("extra_evals", Some("{}"))]);
+    assert!(symbols.iter().any(|symbol| symbol.kind == "tool"
+        && symbol.name == "files"
+        && symbol.plugin.as_deref() == Some("files")));
+}

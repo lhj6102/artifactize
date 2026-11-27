@@ -114,8 +114,11 @@ impl<'a> Expander<'a> {
                                     artifactize_tools::scope::logical_path(path).map_err(|error| {
                                         self.error(target_span, format!("`@{{path {text}}}`: {error}"))
                                     })?;
+                                    let start = target_span.range().start;
+                                    let name_span =
+                                        Span::new(target_span.file, start..start + target.len());
                                     pieces.push(Piece::Slot(SlotRef::Path {
-                                        target: self.slot_target(target, target_span)?,
+                                        target: self.slot_target(target, name_span)?,
                                         path: path.to_owned(),
                                         span,
                                     }));
@@ -175,6 +178,7 @@ impl<'a> Expander<'a> {
         }
         crate::config::validation::artifact_name(word, "An Artifact name")
             .map_err(|message| self.error(span, message))?;
+        self.names.borrow_mut().insert((span, word.to_owned()));
         Ok(SlotTarget::Named(word.to_owned(), span))
     }
 
@@ -270,6 +274,7 @@ impl<'a> Expander<'a> {
                             }
                             return Err(error);
                         }
+                        self.names.borrow_mut().insert((name.span, name.text.clone()));
                         Ok((name.text.clone(), name.span))
                     }
                     other => Err(self.error(other.span(), format!("{what} lists Artifacts by name."))),

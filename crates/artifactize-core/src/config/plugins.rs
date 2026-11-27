@@ -433,3 +433,101 @@ pub fn remove(root: &Path, name: &PluginName) -> Result<(), ConfigError> {
         .close()
         .map_err(|error| ConfigError::new(&path, error))
 }
+
+/// The plugins a migration reads with: the built-ins, the current ones as installed, and each
+/// one installed before 0.27 converted in memory. Returns the files a converted plugin is
+/// written as: its new manifest and its toolset.
+pub(super) fn migrate(root: &Path) -> Result<(Catalog, Vec<(PathBuf, String)>), ConfigError> {
+    let mut plugins: Catalog = builtins()
+        .map(|plugin| (plugin.info.name.clone(), Arc::new(plugin)))
+        .collect();
+    let mut writes = Vec::new();
+    let directory = root.join(DEFINITION_DIR).join(DIRECTORY);
+    if !platform::paths::reusable_directory(root, DEFINITION_DIR)
+        .map_err(|error| ConfigError::new(root.join(DEFINITION_DIR), error))?
+        || !platform::paths::reusable_directory(&root.join(DEFINITION_DIR), DIRECTORY)
+            .map_err(|error| ConfigError::new(&directory, error))?
+    {
+        return Ok((plugins, writes));
+    }
+    let opened = platform::open_directory(&directory)
+        .map_err(|error| ConfigError::new(&directory, error))?;
+    for entry in platform::read_dir(&opened).map_err(|error| ConfigError::new(&directory, error))? {
+        let entry = entry.map_err(|error| ConfigError::new(&directory, error))?;
+        let name = entry.file_name();
+        let path = directory.join(&name);
+        if name.as_encoded_bytes().starts_with(b".")
+            || entry.file_type().map_err(|error| ConfigError::new(&path, error))?
+                != platform::FileKind::Directory
+        {
+            continue;
+        }
+        let manifest_path = path.join(MANIFEST);
+        let source = super::discovery::read_regular_text(&manifest_path)
+            .map_err(|error| ConfigError::new(&manifest_path, error))?;
+        let table: toml::Table =
+            toml::from_str(&source).map_err(|error| ConfigError::new(&manifest_path, error))?;
+        if !table.contains_key("type") && !table.contains_key("views") {
+            let plugin = read(&path)?;
+            plugins.insert(plugin.info.name.clone(), Arc::new(plugin));
+            continue;
+        }
+        let invalid = |message: &str| ConfigError::new(&manifest_path, message);
+        let namespace: PluginName = table
+            .get("type")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| invalid("An old plugin.toml names its `type`."))?
+            .parse()
+            .map_err(|error: String| invalid(&error))?;
+        let title = table
+            .get("title")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| invalid("A plugin.toml has a `title`."))?
+            .to_owned();
+        let entry = table
+            .get("viewer")
+            .and_then(|viewer| viewer.get("entry"))
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned);
+        let views = serde_json::to_value(table.get("views").cloned().unwrap_or_else(|| toml::Table::new().into()))
+            .expect("TOML is JSON");
+        let tools = super::convert::toolset_text(namespace.as_str(), &views, entry.is_some())
+            .map_err(|error| invalid(&error))?;
+        let mut manifest = toml::Table::new();
+        manifest.insert("namespace".into(), namespace.to_string().into());
+        manifest.insert("title".into(), title.clone().into());
+        if let Some(entry) = &entry {
+            let mut viewer = toml::Table::new();
+            viewer.insert("entry".into(), entry.clone().into());
+            manifest.insert("viewer".into(), viewer.into());
+        }
+        let viewer = entry
+            .map(|entry| {
+                let file = scope::open_scoped(&path, &entry)
+                    .map_err(|error| invalid(&format!("viewer.entry {entry}: {error}")))?;
+                Ok::<_, ConfigError>(ViewerEntry::Web {
+                    html: read_document(file).map_err(|error| invalid(&error))?.into(),
+                })
+            })
+            .transpose()?;
+        let file = PathBuf::from(format!("{namespace}.artf"));
+        let plugin = Plugin {
+            info: PluginInfo {
+                name: namespace.clone(),
+                title,
+                builtin: false,
+                viewer: viewer.is_some(),
+            },
+            viewer,
+            sources: vec![(file.clone(), tools.clone())],
+        };
+        validate(&plugin)?;
+        writes.push((
+            manifest_path.clone(),
+            toml::to_string(&manifest).expect("a manifest is TOML"),
+        ));
+        writes.push((path.join(file), tools));
+        plugins.insert(namespace, Arc::new(plugin));
+    }
+    Ok((plugins, writes))
+}

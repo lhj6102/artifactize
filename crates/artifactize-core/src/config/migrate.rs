@@ -1,474 +1,357 @@
-//! One-way conversion. Normal discovery never invokes the old reader.
-use super::*;
+//! `artifactize config migrate`: a project from before 0.27, once, into the `.artf` language.
+//!
+//! It reads the TOML definitions under `.artifactize/` (0.25 and 0.26) or the in-tree
+//! `index.artf` and `<file>.artf` markers of earlier versions, the profile aliases of
+//! `.artifactize/settings.toml` and old plugin manifests, converts them together, and writes
+//! nothing unless the converted project reads.
 
-#[derive(Debug, serde::Serialize)]
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+};
+
+use serde_json::Value;
+
+use super::{ConfigError, IGNORE_FILE, convert, discovery, lang};
+
+#[derive(Debug, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Migration {
-    #[serde(serialize_with = "crate::platform::path_serde::pairs")]
-    pub files: Vec<(PathBuf, PathBuf)>,
-    pub explicit_parts: BTreeMap<ArtifactName, Vec<ArtifactName>>,
-    pub ignored: Vec<ArtifactName>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub typed: Vec<ArtifactName>,
+    /// Files written, relative to the project.
     #[serde(serialize_with = "crate::platform::serialize_paths")]
-    pub separate_projects: Vec<PathBuf>,
+    pub written: Vec<PathBuf>,
+    /// Old definition files removed, relative to the project.
+    #[serde(serialize_with = "crate::platform::serialize_paths")]
+    pub removed: Vec<PathBuf>,
+    /// What did not carry over, such as Human result schemas.
+    pub warnings: Vec<String>,
 }
 
-/// Validate the complete converted project before changing any of its files.
+const SETTINGS: &str = "settings.toml";
+/// Folders an in-tree project never declared Artifacts in.
+const SKIPPED: [&str; 4] = [".git", "node_modules", "target", discovery::DEFINITION_DIR];
+
+/// Convert the project at `repo`. A project already in the language is left as it is.
 pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     let root =
         crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
-    let destination = root.join(discovery::DEFINITION_DIR);
-    let existed = crate::platform::paths::reusable_directory(&root, discovery::DEFINITION_DIR)
-        .map_err(|error| ConfigError::new(&destination, error))?;
-    if existed {
-        let sources = discovery::sources(&root)?;
-        if !sources.is_empty() {
-            return migrate_tools(&root, &destination, sources);
-        }
-    }
-    let old = legacy::read_workspace_config(&root)?;
-    let mut sources = BTreeMap::new();
-    let mut report = Migration {
-        files: Vec::new(),
-        explicit_parts: BTreeMap::new(),
-        ignored: Vec::new(),
-        typed: Vec::new(),
-        separate_projects: Vec::new(),
-    };
-    let mut originals = BTreeMap::new();
-    let mut problems = Vec::new();
-    let mut names = BTreeMap::new();
-    for (name, artifact) in &old.artifacts {
-        if let Err(error) = discovery::definition_name(name) {
-            problems.push(error);
-        }
-        if let Some(previous) = names.insert(name.to_ascii_lowercase(), name) {
-            problems.push(format!("Names collide ignoring case: {previous}, {name}."));
-        }
-        let file = root.join(artifact.declaration_path());
-        let source = read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
-        let mut doc = source
-            .parse::<toml_edit::DocumentMut>()
-            .map_err(|error| ConfigError::new(&file, error))?;
-        // Keep the removed name's prefix comments on PATH.
-        let prefix = doc
-            .get("name")
-            .and_then(toml_edit::Item::as_value)
-            .map(|value| value.decor().clone());
-        let key_decor = doc.key("name").map(|key| key.leaf_decor().clone());
-        doc.remove("name");
-        let target = match artifact.kind() {
-            ArtifactKind::Graph => ".artifactize/".to_owned(),
-            ArtifactKind::Folder | ArtifactKind::Aspect => {
-                if artifact.folder().as_os_str().is_empty() {
-                    "./".to_owned()
-                } else {
-                    format!("{}/", crate::platform::path_text(artifact.folder()))
-                }
+    let definitions = root.join(discovery::DEFINITION_DIR);
+    let (catalog, plugin_writes) = super::plugins::migrate(&root)?;
+    let mut removed = Vec::new();
+    let profiles = settings(&definitions, &mut removed)?;
+    let mut current = BTreeMap::new();
+    let mut olds = Vec::new();
+    let mut warnings = Vec::new();
+    let has_definitions = crate::platform::paths::reusable_directory(&root, discovery::DEFINITION_DIR)
+        .map_err(|error| ConfigError::new(&definitions, error))?;
+    if has_definitions {
+        for (path, text) in discovery::sources(&root)? {
+            if !lang::looks_like_toml(&text) {
+                current.insert(path, text);
+                continue;
             }
-            ArtifactKind::File => artifact.path.to_string(),
-            ArtifactKind::Live => unreachable!("legacy reader has no Live targets"),
-        };
-        doc.insert("path", toml_edit::value(target));
-        if let Some(decor) = key_decor {
-            *doc.key_mut("path").expect("path key").leaf_decor_mut() = decor;
-        }
-        if let Some(decor) = prefix {
-            *doc["path"]
-                .as_value_mut()
-                .expect("path is a value")
-                .decor_mut() = decor;
-        }
-        if !artifact.parts.is_empty() {
-            let mut parts = doc
-                .get("parts")
-                .and_then(toml_edit::Item::as_array)
-                .cloned()
-                .unwrap_or_default();
-            for part in &artifact.parts {
-                if !parts
-                    .iter()
-                    .any(|value| value.as_str() == Some(part.as_str()))
-                {
-                    parts.push(part.as_str());
-                }
+            let relative = path.strip_prefix(&definitions).unwrap_or(&path).to_owned();
+            let name = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .ok_or_else(|| ConfigError::new(&path, "A definition file is named after its Artifact."))?
+                .to_owned();
+            let mut table = table(&path, &text, &profiles)?;
+            if let Some(object) = table.as_object_mut() {
+                object.remove("name");
             }
-            doc.insert("parts", toml_edit::value(parts));
-            report
-                .explicit_parts
-                .insert(name.clone(), artifact.parts.iter().cloned().collect());
-        }
-        if artifact.kind() == ArtifactKind::Folder
-            && artifact.folder().as_os_str().is_empty()
-            && matches!(artifact.fingerprint, Some(Fingerprint::Artifactsum { .. }))
-        {
-            if doc.get("fingerprint").is_none() {
-                doc["fingerprint"] = toml_edit::Item::Table(toml_edit::Table::new());
-            }
-            let fingerprint = doc["fingerprint"]
-                .as_table_like_mut()
-                .ok_or_else(|| ConfigError::new(&file, "fingerprint must be a table."))?;
-            let ignores = fingerprint
-                .entry("ignore")
-                .or_insert(toml_edit::value(toml_edit::Array::new()))
-                .as_array_mut()
-                .ok_or_else(|| ConfigError::new(&file, "fingerprint.ignore must be an array."))?;
-            ignores.push(".artifactize/");
-            report.ignored.push(name.clone());
-        }
-        let new = destination.join(format!("{name}.artf"));
-        report.files.push((
-            file.strip_prefix(&root).unwrap().to_owned(),
-            new.strip_prefix(&root).unwrap().to_owned(),
-        ));
-        originals.insert(file, source);
-        normalize_commands(doc.as_table_mut());
-        drop_agent_schemas(doc.as_table_mut());
-        sources.insert(new, doc.to_string());
-    }
-    if !problems.is_empty() {
-        return Err(ConfigError::new(&root, problems.join("\n")));
-    }
-    report.typed = type_missing(&root, &mut sources)?;
-    discovery::read_sources(root.clone(), &sources)?;
-    // Report nested old projects without interpreting them as part of this project.
-    let ignored = legacy::discovery_ignore(&root)?;
-    let opened =
-        crate::platform::open_directory(&root).map_err(|error| ConfigError::new(&root, error))?;
-    let mut pending = vec![(root.clone(), opened)];
-    while let Some((directory, opened)) = pending.pop() {
-        for entry in crate::platform::read_dir(&opened)
-            .map_err(|error| ConfigError::new(&directory, error))?
-        {
-            let entry = entry.map_err(|error| ConfigError::new(&directory, error))?;
-            let name = entry.file_name();
-            let file = directory.join(&name);
-            let kind = entry
-                .file_type()
-                .map_err(|error| ConfigError::new(&file, error))?;
-            if kind == crate::platform::FileKind::Directory
-                && name != ".git"
-                && name != "node_modules"
-                && name != "target"
-            {
-                let child = crate::platform::paths::open_named(&opened, &name)
-                    .map_err(|error| ConfigError::new(&file, error))?;
-                pending.push((file, child));
-            } else if kind == crate::platform::FileKind::File
-                && file
-                    .extension()
-                    .is_some_and(|extension| extension == "artf")
-                && !originals.contains_key(&file)
-                && ignored
-                    .matched_path_or_any_parents(&file, false)
-                    .is_ignore()
-            {
-                report
-                    .separate_projects
-                    .push(file.strip_prefix(&root).unwrap().to_owned());
-            }
+            olds.push(convert::Old {
+                file: relative,
+                name,
+                table,
+            });
+            removed.push(path);
         }
     }
-    let ignore = root.join(IGNORE_FILE);
-    if crate::platform::path_kind(&ignore).is_ok_and(|kind| kind == crate::platform::FileKind::File)
-    {
-        originals.insert(
-            ignore.clone(),
-            read_regular_text(&ignore).map_err(|error| ConfigError::new(&ignore, error))?,
-        );
+    // Markers outside `.artifactize/` were the definitions only before it existed.
+    if !has_definitions {
+        olds.extend(in_tree(&root, &profiles, &mut removed, &mut warnings)?);
     }
-    if existed {
-        refuse_case_aliases(&destination, &sources)?;
+    if olds.is_empty() && plugin_writes.is_empty() && removed.is_empty() {
+        return Ok(Migration::default());
     }
-    let staged = tempfile::Builder::new()
-        .prefix(".artifactize-migrate-")
-        .tempdir_in(&root)
-        .map_err(|error| ConfigError::new(&root, error))?;
-    for (file, source) in &sources {
-        let file = staged
-            .path()
-            .join(file.file_name().expect("definition filename"));
-        std::fs::write(&file, source).map_err(|error| ConfigError::new(&file, error))?;
-    }
-    if !existed {
-        std::fs::create_dir(&destination).map_err(|error| ConfigError::new(&destination, error))?;
-    }
-    let mut created: Vec<PathBuf> = Vec::new();
-    for file in sources.keys() {
-        let final_file = destination.join(file.file_name().expect("definition filename"));
-        if let Err(error) = crate::platform::paths::rename_open_file(
-            &staged
-                .path()
-                .join(file.file_name().expect("definition filename")),
-            &final_file,
-        ) {
-            for created in created {
-                let _ = crate::platform::paths::remove_regular(&created);
-            }
-            if !existed {
-                let _ = std::fs::remove_dir(&destination);
-            }
-            return Err(ConfigError::new(&final_file, error));
-        }
-        created.push(final_file);
-    }
-    for file in originals.keys() {
-        if let Err(error) = crate::platform::paths::remove_regular(file) {
-            for (file, source) in &originals {
-                let _ = crate::platform::paths::restore_file(file, source.as_bytes());
-            }
-            for file in &created {
-                let _ = crate::platform::paths::remove_regular(file);
-            }
-            if !existed {
-                let _ = std::fs::remove_dir(&destination);
-            }
-            return Err(ConfigError::new(file, error));
-        }
-    }
-    Ok(report)
-}
-
-/// Add the file plugin only where an eval needs one of its tool kinds. Preserve any
-/// custom tools; an inherited operation with the same name cannot safely replace one.
-fn type_missing(
-    root: &Path,
-    sources: &mut BTreeMap<PathBuf, String>,
-) -> Result<Vec<ArtifactName>, ConfigError> {
-    let config = discovery::read_sources_for_migration(root.to_owned(), sources)?;
-    let missing: BTreeSet<_> = crate::scope::missing_eval_tools(&config)
-        .map(|(_, artifact, _)| &artifact.name)
-        .collect();
-    for name in &missing {
-        let artifact = &config.artifacts[*name];
-        let path = root.join(artifact.declaration_path());
-        if artifact.type_name.is_some() || artifact.kind() == ArtifactKind::Live {
-            continue; // The final check names exactly the tool that still needs a declaration.
-        }
-        let source = sources.get_mut(&path).expect("declaration is in sources");
-        let original = source.clone();
-        let masked = artifactize_tools::artf::mask(&original).map_err(|error| {
-            ConfigError::new(
-                &path,
-                location::positioned_message(&original, error.offset, error.message),
-            )
-        })?;
-        let mut doc = masked
-            .toml
-            .parse::<toml_edit::DocumentMut>()
-            .map_err(|error| ConfigError::new(&path, error))?;
-        let redundant = artifact.views.agent_tools.iter().filter_map(|(name, view)| {
-            let builtin = match name.as_str() {
-                "read" => Builtin::Read,
-                "list" => Builtin::List,
-                "glob" => Builtin::Glob,
-                "grep" => Builtin::Grep,
-                _ => return None,
-            };
-            Some((name, matches!(view, AgentTool::Builtin(tool) if tool.builtin == builtin && tool.args.is_none() && tool.description.is_none())))
-        }).collect::<Vec<_>>();
-        if artifact.views.human_tools.contains_key("view")
-            || redundant.iter().any(|(_, same)| !same)
-        {
-            // Don't change a custom operation. The final check tells its author what to add.
-            continue;
-        }
-        for (name, _) in redundant {
-            let tools = doc["views"]["agent_tools"]
-                .as_table_like_mut()
-                .expect("declared tools");
-            tools.remove(name);
-        }
-        doc.insert("type", toml_edit::value("files"));
-        *source = masked.unmask(&doc.to_string(), &original);
-    }
-    discovery::read_sources(root.to_owned(), sources)?;
-    Ok(missing.into_iter().cloned().collect())
-}
-
-fn migrate_tools(
-    root: &Path,
-    destination: &Path,
-    original: BTreeMap<PathBuf, String>,
-) -> Result<Migration, ConfigError> {
-    let mut sources = original.clone();
-    let typed = type_missing(root, &mut sources)?;
-    if typed.is_empty() {
-        return Err(ConfigError::new(
-            destination,
-            ".artifactize/ already holds definitions; no migration is needed.",
-        ));
-    }
-    let mut staged = Vec::new();
-    for (file, source) in sources
-        .iter()
-        .filter(|(file, source)| original[*file] != **source)
-    {
-        use std::io::Write;
-        let mut temp = tempfile::NamedTempFile::new_in(file.parent().expect("definition folder"))
-            .map_err(|error| ConfigError::new(file, error))?;
-        temp.write_all(source.as_bytes())
-            .map_err(|error| ConfigError::new(file, error))?;
-        staged.push((file, temp));
-    }
-    for (file, _) in &staged {
-        if read_regular_text(file).map_err(|error| ConfigError::new(*file, error))?
-            != original[*file]
-        {
+    let namespaces: BTreeSet<String> = catalog.keys().map(ToString::to_string).collect();
+    let converted = convert::convert(&olds, &profiles, &namespaces)
+        .map_err(|error| ConfigError::new(&definitions, error))?;
+    warnings.extend(converted.warnings);
+    let mut sources = current.clone();
+    let mut written = Vec::new();
+    for (file, text) in converted.files {
+        let path = definitions.join(&file);
+        if current.contains_key(&path) {
             return Err(ConfigError::new(
-                *file,
-                "Definition changed during migration; nothing was written.",
+                &path,
+                "This file is already in the .artf language; rename it so the converted definitions can take its name.",
             ));
         }
+        sources.insert(path, text);
     }
-    let mut written = Vec::new();
-    for (file, temp) in staged {
-        if let Err(error) = crate::platform::paths::replace_open_file(temp, file) {
-            for file in written {
-                let _ = crate::platform::paths::restore_file(file, original[file].as_bytes());
-            }
-            return Err(ConfigError::new(file, error));
+    discovery::read_sources_with(root.clone(), &sources, catalog)?;
+    for (path, text) in plugin_writes
+        .iter()
+        .cloned()
+        .chain(sources.into_iter().filter(|(path, _)| !current.contains_key(path)))
+    {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| ConfigError::new(parent, error))?;
         }
-        written.push(file);
+        crate::platform::paths::restore_file(&path, text.as_bytes())
+            .map_err(|error| ConfigError::new(&path, error))?;
+        written.push(path);
     }
+    let kept: BTreeSet<&PathBuf> = written.iter().collect();
+    let mut gone = Vec::new();
+    for path in removed {
+        if kept.contains(&path) {
+            continue;
+        }
+        std::fs::remove_file(&path).map_err(|error| ConfigError::new(&path, error))?;
+        gone.push(path);
+    }
+    let relative = |paths: Vec<PathBuf>| -> Vec<PathBuf> {
+        paths
+            .into_iter()
+            .map(|path| path.strip_prefix(&root).map(Path::to_owned).unwrap_or(path))
+            .collect()
+    };
     Ok(Migration {
-        files: Vec::new(),
-        explicit_parts: BTreeMap::new(),
-        ignored: Vec::new(),
-        typed,
-        separate_projects: Vec::new(),
+        written: relative(written),
+        removed: relative(gone),
+        warnings,
     })
 }
 
-/// A name `.artifactize/` already holds in another case is the same file on a case-insensitive
-/// volume, which the rename would replace: refuse it on every volume, so migration writes the
-/// same on all of them.
-fn refuse_case_aliases(
-    destination: &Path,
-    sources: &BTreeMap<PathBuf, String>,
-) -> Result<(), ConfigError> {
-    let wanted = sources.keys().filter_map(|file| file.file_name());
-    match crate::platform::paths::conflicting_entry(destination, wanted)
-        .map_err(|error| ConfigError::new(destination, error))?
-    {
-        None => Ok(()),
-        Some(name) => Err(ConfigError::new(
-            destination.join(name),
-            "This name is taken in .artifactize/ in another case; migration writes nothing.",
-        )),
+/// The named Agent profiles of `.artifactize/settings.toml`, which old evals called aliases.
+fn settings(
+    definitions: &Path,
+    removed: &mut Vec<PathBuf>,
+) -> Result<BTreeMap<String, Value>, ConfigError> {
+    let path = definitions.join(SETTINGS);
+    if !crate::platform::path_kind(&path).is_ok_and(|kind| kind == crate::platform::FileKind::File) {
+        return Ok(BTreeMap::new());
     }
-}
-
-/// Agent evals report prioritized findings: drop their old result schemas, and with them every
-/// subtable and comment inside. Human evals keep theirs.
-fn drop_agent_schemas(doc: &mut toml_edit::Table) {
-    let Some(evals) = doc
-        .get_mut("evals")
-        .and_then(toml_edit::Item::as_table_like_mut)
-    else {
-        return;
+    let text = discovery::read_regular_text(&path).map_err(|error| ConfigError::new(&path, error))?;
+    let table: toml::Table = toml::from_str(&text).map_err(|error| ConfigError::new(&path, error))?;
+    removed.push(path.clone());
+    let Some(profiles) = table.get("profiles") else {
+        return Ok(BTreeMap::new());
     };
-    for (_, eval) in evals.iter_mut() {
-        let Some(eval) = eval.as_table_like_mut() else {
-            continue;
-        };
-        let agent = eval
-            .get("profile")
-            .and_then(|profile| profile.get("kind"))
-            .and_then(toml_edit::Item::as_str)
-            == Some("agent");
-        if agent {
-            eval.remove("pass_schema");
-            eval.remove("fail_schema");
-        }
-    }
+    let profiles = serde_json::to_value(profiles).expect("TOML is JSON");
+    let Value::Object(profiles) = profiles else {
+        return Err(ConfigError::new(&path, "profiles is a table."));
+    };
+    Ok(profiles
+        .into_iter()
+        .map(|(name, mut profile)| {
+            if let Some(object) = profile.as_object_mut() {
+                object.entry("kind").or_insert_with(|| Value::String("agent".into()));
+            }
+            (name, profile)
+        })
+        .collect())
 }
 
-/// Normalize only executable fields, retaining all other text and the lines' comments.
-fn normalize_commands(table: &mut dyn toml_edit::TableLike) {
-    use toml_edit::{Formatted, Item, Value};
-    fn visit(item: &mut Item) {
-        if let Some(table) = item.as_table_like_mut() {
-            normalize_commands(table);
-        } else if let Some(tables) = item.as_array_of_tables_mut() {
-            for table in tables.iter_mut() {
-                normalize_commands(table);
-            }
-        } else if let Some(array) = item.as_array_mut() {
-            for value in array.iter_mut() {
-                if let Some(table) = value.as_inline_table_mut() {
-                    normalize_commands(table);
+/// An old TOML definition as JSON, its `!alias(…)` profiles resolved from the settings.
+fn table(path: &Path, text: &str, profiles: &BTreeMap<String, Value>) -> Result<Value, ConfigError> {
+    let masked = artifactize_tools::artf::mask(text)
+        .map_err(|error| ConfigError::new(path, error.message))?;
+    let parsed: toml::Table =
+        toml::from_str(&masked.toml).map_err(|error| ConfigError::new(path, error))?;
+    let mut value = serde_json::to_value(parsed).expect("TOML is JSON");
+    let mut failure = None;
+    resolve(&mut value, &mut |placeholder| {
+        let index = masked.invocation_index(placeholder)?;
+        let invocation = &masked.invocations()[index];
+        let Some(base) = profiles.get(&invocation.name) else {
+            failure = Some(format!(
+                "Unknown profile alias !{}; it is not in .artifactize/settings.toml.",
+                invocation.name
+            ));
+            return None;
+        };
+        let mut profile = base.clone();
+        if let Some(span) = &invocation.overrides_span {
+            let wrapped = format!("_ = {{{}}}", &text[span.clone()]);
+            match toml::from_str::<toml::Table>(&wrapped) {
+                Ok(mut table) => {
+                    let overrides = serde_json::to_value(table.remove("_")).expect("TOML is JSON");
+                    if let (Some(profile), Some(overrides)) = (profile.as_object_mut(), overrides.as_object()) {
+                        profile.extend(overrides.clone());
+                    }
+                }
+                Err(error) => {
+                    failure = Some(format!("!{}(…): {error}", invocation.name));
+                    return None;
                 }
             }
         }
+        Some(profile)
+    });
+    match failure {
+        Some(message) => Err(ConfigError::new(path, message)),
+        None => Ok(value),
     }
-    for (key, item) in table.iter_mut() {
-        if key.get() == "command"
-            && let Some(Value::String(command)) = item.as_value_mut()
-        {
-            let portable = crate::platform::program_text(command.value());
-            if &portable != command.value() {
-                let mut normalized = Formatted::new(portable);
-                *normalized.decor_mut() = command.decor().clone();
-                *command = normalized;
+}
+
+/// Replace each string `resolved` recognizes.
+fn resolve(value: &mut Value, resolved: &mut impl FnMut(&str) -> Option<Value>) {
+    match value {
+        Value::String(text) => {
+            if let Some(replacement) = resolved(text) {
+                *value = replacement;
             }
-        } else {
-            visit(item);
+        }
+        Value::Array(items) => items.iter_mut().for_each(|item| resolve(item, resolved)),
+        Value::Object(fields) => fields.values_mut().for_each(|field| resolve(field, resolved)),
+        _ => {}
+    }
+}
+
+/// The markers of a project from before `.artifactize/`: `index.artf` declares its folder (an
+/// aspect with `select`), `<file>.artf` its file and a root `.artf` the definitions. A folder
+/// Artifact was made of the Artifacts declared below it; that becomes explicit `parts`.
+fn in_tree(
+    root: &Path,
+    profiles: &BTreeMap<String, Value>,
+    removed: &mut Vec<PathBuf>,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<convert::Old>, ConfigError> {
+    let ignored = ignore(root)?;
+    let mut found: Vec<(String, String, bool, Value)> = Vec::new();
+    let mut pending = vec![(root.to_owned(), PathBuf::new())];
+    while let Some((directory, relative)) = pending.pop() {
+        let opened = crate::platform::open_directory(&directory)
+            .map_err(|error| ConfigError::new(&directory, error))?;
+        let mut entries = Vec::new();
+        for entry in crate::platform::read_dir(&opened).map_err(|error| ConfigError::new(&directory, error))? {
+            let entry = entry.map_err(|error| ConfigError::new(&directory, error))?;
+            let kind = entry.file_type().map_err(|error| ConfigError::new(&directory, error))?;
+            entries.push((entry.file_name(), kind));
+        }
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        for (name, kind) in entries {
+            let path = directory.join(&name);
+            let Some(text_name) = name.to_str() else {
+                continue;
+            };
+            let logical = if relative.as_os_str().is_empty() {
+                PathBuf::from(text_name)
+            } else {
+                relative.join(text_name)
+            };
+            if ignored.matched(&path, kind == crate::platform::FileKind::Directory).is_ignore() {
+                continue;
+            }
+            if kind == crate::platform::FileKind::Directory {
+                // Another project's folder is its own to migrate.
+                let separate = crate::platform::paths::reusable_directory(&path, discovery::DEFINITION_DIR)
+                    .unwrap_or(false);
+                if !SKIPPED.contains(&text_name) && !separate {
+                    pending.push((path, logical));
+                }
+                continue;
+            }
+            if kind != crate::platform::FileKind::File || !text_name.ends_with(".artf") {
+                continue;
+            }
+            let text = discovery::read_regular_text(&path).map_err(|error| ConfigError::new(&path, error))?;
+            let mut table = table(&path, &text, profiles)?;
+            let name = table
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| ConfigError::new(&path, "An index.artf names its Artifact with `name`."))?
+                .to_owned();
+            let folder = crate::platform::path_text(&relative);
+            let (target, whole) = if text_name == ".artf" && relative.as_os_str().is_empty() {
+                (".artifactize/".to_owned(), false)
+            } else if text_name == "index.artf" {
+                let target = if folder.is_empty() { "./".to_owned() } else { format!("{folder}/") };
+                (target, table.get("select").is_none())
+            } else {
+                let file = text_name.strip_suffix(".artf").expect("an .artf file");
+                let target = if folder.is_empty() { file.to_owned() } else { format!("{folder}/{file}") };
+                (target, false)
+            };
+            if let Some(object) = table.as_object_mut() {
+                object.remove("name");
+                object.insert("path".into(), Value::String(target.clone()));
+                // The project folder's content excludes the definitions now kept beside it.
+                if target == "./" && !object.contains_key("fingerprint") {
+                    object.insert("fingerprint".into(), serde_json::json!({"ignore": [".artifactize/"]}));
+                    warnings.push(format!("{name}: its content ignores .artifactize/, where its definitions are now."));
+                }
+            }
+            removed.push(path);
+            found.push((name, target, whole, table));
         }
     }
+    // The nearest enclosing folder Artifact holds each other one as a part.
+    let folders: Vec<(String, String)> = found
+        .iter()
+        .filter(|(_, _, whole, _)| *whole)
+        .map(|(name, target, _, _)| (name.clone(), target.clone()))
+        .collect();
+    let mut parts: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (name, target, _, _) in &found {
+        if target == ".artifactize/" {
+            continue;
+        }
+        let owner = folders
+            .iter()
+            .filter(|(whole, prefix)| {
+                whole != name && (prefix == "./" || (target.starts_with(prefix.as_str()) && target != prefix))
+            })
+            .max_by_key(|(_, prefix)| if prefix == "./" { 0 } else { prefix.len() });
+        if let Some((owner, _)) = owner {
+            parts.entry(owner.clone()).or_default().push(name.clone());
+        }
+    }
+    Ok(found
+        .into_iter()
+        .map(|(name, _, _, mut table)| {
+            if let Some(added) = parts.get(&name)
+                && let Some(object) = table.as_object_mut()
+            {
+                let list = object
+                    .entry("parts")
+                    .or_insert_with(|| Value::Array(Vec::new()));
+                if let Some(list) = list.as_array_mut() {
+                    for part in added {
+                        if !list.iter().any(|value| value.as_str() == Some(part)) {
+                            list.push(Value::String(part.clone()));
+                        }
+                    }
+                }
+            }
+            convert::Old {
+                file: PathBuf::from(format!("{name}.artf")),
+                name,
+                table,
+            }
+        })
+        .collect())
+}
+
+/// The folders the project's `.artfignore` (gitignore syntax) kept out of discovery.
+fn ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
+    let file = root.join(IGNORE_FILE);
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
+    builder.case_insensitive(false).expect("case-sensitive discovery");
+    if crate::platform::path_kind(&file).is_ok_and(|kind| kind == crate::platform::FileKind::File) {
+        let source = discovery::read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+        for line in source.lines() {
+            builder
+                .add_line(Some(file.clone()), line)
+                .map_err(|error| ConfigError::new(&file, error))?;
+        }
+    }
+    builder.build().map_err(|error| ConfigError::new(&file, error))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn migration_refuses_a_definition_name_taken_in_another_case() {
-        let temp = crate::test_os::tempdir();
-        let root = temp.path();
-        let original = root.join("index.artf");
-        let source = "name = 'root'\nbasis = true\n";
-        std::fs::write(&original, source).unwrap();
-        let destination = root.join(discovery::DEFINITION_DIR);
-        std::fs::create_dir(&destination).unwrap();
-        let alias = destination.join("ROOT.ARTF");
-        std::fs::write(&alias, "kept").unwrap();
-
-        let error = migrate(root).unwrap_err();
-        assert!(error.message.contains("another case"), "{}", error.message);
-        assert_eq!(std::fs::read_to_string(&alias).unwrap(), "kept");
-        assert_eq!(std::fs::read_to_string(&original).unwrap(), source);
-        assert_eq!(std::fs::read_dir(&destination).unwrap().count(), 1);
-    }
-
-    #[test]
-    fn migration_refuses_a_destination_link_or_case_alias_without_writing() {
-        let temp = crate::test_os::tempdir();
-        let root = temp.path();
-        let original = root.join("index.artf");
-        let source = "name = 'root'\nbasis = true\n";
-        std::fs::write(&original, source).unwrap();
-
-        let target = root.join("linked");
-        std::fs::create_dir(&target).unwrap();
-        let destination = root.join(discovery::DEFINITION_DIR);
-        crate::test_os::link_dir(&target, &destination);
-        assert!(migrate(root).unwrap_err().message.contains("exact name"));
-        assert_eq!(std::fs::read_dir(&target).unwrap().count(), 0);
-        assert_eq!(std::fs::read_to_string(&original).unwrap(), source);
-        crate::test_os::remove_link_dir(&destination);
-
-        let alias = root.join(discovery::DEFINITION_DIR.to_ascii_uppercase());
-        std::fs::create_dir(&alias).unwrap();
-        assert!(migrate(root).unwrap_err().message.contains("exact name"));
-        assert_eq!(std::fs::read_dir(&alias).unwrap().count(), 0);
-        assert_eq!(std::fs::read_to_string(&original).unwrap(), source);
-        std::fs::remove_dir(&alias).unwrap();
-        std::fs::create_dir(&destination).unwrap();
-
-        migrate(root).unwrap();
-        assert!(destination.join("root.artf").is_file());
-        assert!(!original.exists());
-    }
-}
+mod tests;

@@ -418,21 +418,6 @@ pub(crate) fn argument_value(
     })
 }
 
-/// Every path an aspect selects exists below its folder, without symlink traversal.
-pub(crate) fn validate_selections(config: &RepoConfig) -> Result<(), ConfigError> {
-    for (id, artifact) in &config.artifacts {
-        let scope = artifact_scope(config, &[id]).expect("a configured Artifact");
-        for selected in artifact.select() {
-            scope
-                .resolve_input(&config.root, id, selected)
-                .map_err(|failure| {
-                    config.error_at(id, &["select"], format!("select: {selected}: {failure}"))
-                })?;
-        }
-    }
-    Ok(())
-}
-
 /// Static relationships only; scheduling and dependency closure belong to graph.
 pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError> {
     let mut relations = Vec::new();
