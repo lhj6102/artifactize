@@ -242,7 +242,17 @@ pub struct BuiltinTool {
 pub enum HumanTool {
     Command(HumanCommandTool),
     Builtin(HumanBuiltinTool),
-    Viewer(config::HumanViewerTool),
+    Viewer(HumanViewerTool),
+}
+/// A viewer tool as a Run saved it. Runs saved before viewer tools named their plugin have
+/// none: only what the tool is and says is read back, and a viewer opens from the current
+/// declarations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HumanViewerTool {
+    pub kind: config::ViewerKind,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<config::PluginName>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -52,7 +52,7 @@ pub(crate) use site::{read_artifact_scope, read_eval_scope};
 pub use stored::{Field, StoredPayload, StoredProfile};
 pub use tools::{
     AgentTool, Builtin, BuiltinTool, CommandTool, HumanBuiltinTool, HumanCommandTool, HumanTool,
-    HumanToolKind, HumanViewerTool, SessionCommand, ToolProtocol, ToolSession,
+    HumanToolKind, HumanViewerTool, SessionCommand, ToolProtocol, ToolSession, ViewerKind,
 };
 pub use validation::MAX_TIMEOUT_MS;
 pub(crate) use validation::{artifact_name, identifier};

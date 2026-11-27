@@ -4,6 +4,18 @@ use crate::project::selection::Selection;
 use serde_json::json;
 
 #[test]
+fn a_viewer_tool_saved_without_its_plugin_reads_back_as_it_was_saved() {
+    // Runs saved before viewer tools named their plugin, by released builds among others.
+    let saved = json!({"kind":"viewer","description":"Open {artifactName} in Markdown."});
+    let tool: HumanTool = serde_json::from_value(saved.clone()).unwrap();
+    assert!(matches!(&tool, HumanTool::Viewer(viewer) if viewer.plugin.is_none()));
+    assert_eq!(serde_json::to_value(&tool).unwrap(), saved);
+    let named = json!({"kind":"viewer","description":"Open it.","plugin":"markdown"});
+    let tool: HumanTool = serde_json::from_value(named.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&tool).unwrap(), named);
+}
+
+#[test]
 fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
     let mut wire = json!({
         "version":1,

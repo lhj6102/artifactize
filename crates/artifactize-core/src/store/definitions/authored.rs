@@ -121,7 +121,11 @@ impl From<&config::AgentTool> for AgentTool {
 impl From<&config::HumanTool> for HumanTool {
     fn from(source: &config::HumanTool) -> Self {
         match source {
-            config::HumanTool::Viewer(tool) => Self::Viewer(tool.clone()),
+            config::HumanTool::Viewer(tool) => Self::Viewer(super::HumanViewerTool {
+                kind: tool.kind,
+                description: tool.description.clone(),
+                plugin: Some(tool.plugin.clone()),
+            }),
             config::HumanTool::Builtin(tool) => Self::Builtin(HumanBuiltinTool {
                 builtin: tool.builtin,
                 description: tool.description.clone(),
