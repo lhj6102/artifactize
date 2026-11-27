@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The reviewer's issues (D-REV-10, J-HUMAN-REASONS): oldest first, each drawn as a person's
+  // The reviewer's issues (D-REV-10, J-HUMAN-ISSUES): oldest first, each drawn as a person's
   // message is in Chat, its text exactly as typed, Edit and Remove beside it at its left. Edit
   // turns the bubble into a field in its place: Enter keeps the change, Esc leaves it as it was,
   // Shift+Enter starts a new line. In the pet overlay each is one line with Remove alone (D-PET-1).

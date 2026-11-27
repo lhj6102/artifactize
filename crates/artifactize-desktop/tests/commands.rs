@@ -2880,7 +2880,7 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
     )
     .unwrap();
     assert_eq!(tools[0]["name"], "release_notes_release");
-    assert_eq!(tools[0]["operation"], "release_notes");
+    assert_eq!(tools[0]["operation"], "release.notes");
     assert_eq!(tools[0]["action"], "prints release/notes.md");
     // ship declares none of its own.
     assert_eq!(

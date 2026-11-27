@@ -379,13 +379,6 @@ fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
         "{}",
         core.expanded
     );
-    // An argument's path slot reads as the slot it is, not as escaped text.
-    assert!(
-        core.expanded
-            .contains("\"--manifest-path=@{path core/Cargo.toml}\""),
-        "{}",
-        core.expanded
-    );
     assert_eq!(core.evals[0].from.as_deref(), Some("follows!"));
     // The expansion is code: it reads back as the same Artifact beside the shared definitions.
     project.write("crates.artf", &core.expanded);
@@ -410,4 +403,19 @@ fn expand_shows_the_binding_as_written_and_the_declaration_it_makes() {
     assert!(symbols.iter().any(|symbol| symbol.kind == "tool"
         && symbol.name == "files"
         && symbol.plugin.as_deref() == Some("files")));
+    // A runtime argument's path slot reads as the slot it is, not as escaped text.
+    project.write(
+        "crates.artf",
+        "artf core = {\n  path = \"crates/core/\"\n  eval build : runtime(command = \"cargo\", args = [\"--manifest-path=@{path self/Cargo.toml}\"]) = { title = \"Builds\" }\n}\n",
+    );
+    let [core] = expand::expand(project.0.path(), Some(&name("core")))
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert!(
+        core.expanded
+            .contains("args = [\"--manifest-path=@{path core/Cargo.toml}\"]"),
+        "{}",
+        core.expanded
+    );
 }

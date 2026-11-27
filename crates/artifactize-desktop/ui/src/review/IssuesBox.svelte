@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The issues box (D-REV-5, J-HUMAN-REASONS): where Chat's composer stands and drawn as its
+  // The issues box (D-REV-5, J-HUMAN-ISSUES): where Chat's composer stands and drawn as its
   // field, holding only the issues field and Add issue. Add issue (also Enter) adds what is
   // typed as the newest issue and empties the field; Shift+Enter starts a new line. What is
   // typed and not added is this field's own. Esc leaves the field for the review. In the pet
