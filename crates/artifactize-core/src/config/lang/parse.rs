@@ -6,6 +6,10 @@ use artifactize_tools::artf::lexer::{self, Kind, Token};
 
 /// Names a binding may not take: they read as literals or as the enclosing Artifact.
 const RESERVED: [&str; 4] = ["self", "none", "true", "false"];
+/// How deep values may nest in arrays, blocks and calls: far deeper than a declaration needs, and
+/// shallow enough that the recursive parser stays within the smallest thread stack it runs on, so
+/// a hostile file is refused as input instead of overflowing the stack.
+const MAX_NESTING: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
@@ -37,6 +41,8 @@ struct Parser {
     tokens: Vec<Token>,
     position: usize,
     end: usize,
+    /// How many values enclose the one being parsed.
+    depth: usize,
 }
 
 impl Parser {
@@ -50,6 +56,7 @@ impl Parser {
             tokens: lexed.tokens,
             position: 0,
             end: source.len(),
+            depth: 0,
         })
     }
 
@@ -247,7 +254,21 @@ impl Parser {
         Ok(Expr::And(terms, span))
     }
 
+    /// One value, counted against [`MAX_NESTING`]: arrays, blocks and calls nest through here.
     fn term(&mut self) -> Result<Expr, ParseError> {
+        if self.depth == MAX_NESTING {
+            return Err(ParseError {
+                span: self.span_here(),
+                message: format!("Values nest more than {MAX_NESTING} deep."),
+            });
+        }
+        self.depth += 1;
+        let term = self.value();
+        self.depth -= 1;
+        term
+    }
+
+    fn value(&mut self) -> Result<Expr, ParseError> {
         let span = self.span_here();
         let Some(kind) = self.peek().cloned() else {
             return self.error("a value");

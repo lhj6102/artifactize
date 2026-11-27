@@ -35,6 +35,32 @@ artf core = crate!(dir = "core")
 }
 
 #[test]
+fn values_nested_past_the_limit_are_refused_as_input() {
+    let nested = |depth: usize| {
+        format!(
+            "artf a = {{ path = \"a\", x = {}1{} }}",
+            "[".repeat(depth),
+            "]".repeat(depth)
+        )
+    };
+    // The body and the innermost value count too: the limit itself parses, one more does not.
+    items(&nested(MAX_NESTING - 2));
+    assert!(parse(FileId(0), &nested(MAX_NESTING - 1)).is_err());
+    // Deep enough to overflow the stack without the limit; refused with a message instead.
+    let error = parse(FileId(0), &nested(100_000)).unwrap_err();
+    assert_eq!(
+        error.message,
+        format!("Values nest more than {MAX_NESTING} deep.")
+    );
+    let blocks = format!(
+        "artf a = {{ path = \"a\", x = {}1{} }}",
+        "{ y = ".repeat(100_000),
+        " }".repeat(100_000)
+    );
+    assert!(parse(FileId(0), &blocks).is_err());
+}
+
+#[test]
 fn syntax_errors_point_at_the_token() {
     for (source, at) in [
         ("artf x = { path = }", 18),
