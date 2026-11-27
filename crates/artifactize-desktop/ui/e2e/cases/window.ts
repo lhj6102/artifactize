@@ -60,6 +60,10 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(timeline.entries.map((entry) => entry.id), [newer, worktree], "newest first");
       await app.pane.choose("repo  scope-one", worktree);
       await app.graph.titled(worktree);
+      // The graph drawn is that Run's: its Detail, read from the Run drawn, names it.
+      await app.graph.openRunDetail();
+      await app.detail.until((shown) => shown.title === `Run ${worktree}`, "the main area draws the older Run");
+      await app.graph.closeRunDetail();
       // A worktree added by another process is listed within seconds, and goes when removed.
       addWorktree(fixture, "scope-live");
       await app.pane.branch("repo  scope-live");

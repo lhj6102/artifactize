@@ -336,10 +336,14 @@ export class Review {
     await until(this.browser, () => this.value(), (value) => value === before + text, `${text} typed into the issue field`);
   }
 
-  /** Click Submit once it can submit: the review completes, or says what the library refused. */
+  /** Click Submit once it can submit: the review completes, or says what the library refused.
+   * The button names the verdict it submits (`Submit GREEN`, `Submit RED`); only that button is
+   * clicked, so a Submit that does not say what it submits fails here. */
   async submit(): Promise<Shown> {
-    await this.until((shown) => shown.submittable, "Submit can submit");
-    await this.browser.$(this.root).$('[role="group"][aria-label="Decision"]').$("button*=Submit").click();
+    const ready = await this.until((shown) => shown.submittable, "Submit can submit");
+    const button = this.browser.$(this.root).$('[role="group"][aria-label="Decision"]').$(`button=Submit ${ready.verdict}`);
+    await button.waitForEnabled({ timeoutMsg: `Submit reads Submit ${ready.verdict}` });
+    await button.click();
     return this.until((shown) => !shown.running && (shown.completed !== "" || shown.refusal !== ""), "the submission completed or refused");
   }
 

@@ -2,7 +2,7 @@
 // models, the Codex and Claude Code sign-ins), the shared review store and the sign-off grace.
 import assert from "node:assert/strict";
 import { renameSync } from "node:fs";
-import { antigravity, AGY_ANSWER, AGY_MODELS, AGY_PARTIAL, AGY_PROMPT, SIGN_IN_CODE, SIGN_IN_URL } from "../fixtures/antigravity.ts";
+import { antigravity, AGY_ANSWER, AGY_MODELS, AGY_PARTIAL, AGY_PERMISSION_OPTIONS, AGY_PERMISSION_PROMPT, AGY_PERMISSION_TITLE, AGY_PROMPT, agyChose, SIGN_IN_CODE, SIGN_IN_URL } from "../fixtures/antigravity.ts";
 import { browserHandoffs, standInBrowser } from "../fixtures/browser.ts";
 import { claudeCode } from "../fixtures/claude.ts";
 import { check } from "../fixtures/declarations.ts";
@@ -223,7 +223,7 @@ export const scenarios: Scenario[] = [
       const fixture = await createRelease(own);
       return { fixture, args: ["--repo", fixture.repo], ...antigravity(fixture, standInBrowser(fixture, environment(fixture))) };
     },
-    run: async (app, { fixture, data: { staged, installed, version, answer } }) => {
+    run: async (app, { fixture, data: { staged, installed, version, answer, prompts } }) => {
       const status = (ok: (text: string) => boolean, what: string) => app.settings.factUntil("antigravity-status", ok, what);
       await app.settings.open();
       await app.settings.tab("Chat Agents");
@@ -264,7 +264,10 @@ export const scenarios: Scenario[] = [
       await app.chat.create();
       await app.chat.model(AGY_MODELS[1].name);
       await app.chat.send(AGY_PROMPT, false);
-      const trust = await app.chat.trustWorkspace();
+      // Until the reviewer trusts the workspace, the agent receives no prompt.
+      const trust = await app.chat.trustWorkspace(async () => {
+        assert.equal(readTextIfExists(prompts), null, "the agent got no prompt while Trust waited");
+      });
       assert.match(trust.agent, /Antigravity.*antigravity/, `trust dialog names the agent: ${trust.agent}`);
       assert.ok(trust.scope.includes(portablePath(realNativePath(fixture.repo))), `trust dialog names the repository scope: ${trust.scope}`);
       assert.equal(trust.executable, portablePath(realNativePath(installed)), "trust dialog names the resolved executable");
@@ -272,8 +275,17 @@ export const scenarios: Scenario[] = [
       await app.chat.says(AGY_PROMPT);
       await app.chat.says(AGY_PARTIAL);
       await app.chat.working();
+      assert.ok((readTextIfExists(prompts) ?? "").includes(AGY_PROMPT), "trusted, the agent got the prompt");
       writeText(answer, "finish the ACP turn");
       await app.chat.says(AGY_ANSWER);
+      await app.chat.finished();
+      // The agent asks before it edits: the card offers its options, and the one chosen reaches it.
+      await app.chat.send(AGY_PERMISSION_PROMPT, false);
+      const asked = await app.chat.permissionUntil(AGY_PERMISSION_TITLE, (card) => card.status === "Waiting", "the permission card waits for an answer");
+      assert.deepEqual(asked.options, AGY_PERMISSION_OPTIONS.map(({ name }) => name));
+      await app.chat.choosePermission(AGY_PERMISSION_TITLE, "Allow once");
+      await app.chat.says(agyChose("allow-once"));
+      await app.chat.permissionUntil(AGY_PERMISSION_TITLE, (card) => card.status === "Chosen: Allow once" && card.options.length === 0, "the card records the choice");
       await app.chat.finished();
       await app.settings.open();
       await app.settings.tab("Chat Agents");
