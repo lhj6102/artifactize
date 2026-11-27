@@ -69,7 +69,7 @@ export function runtimeProfile(operation: Operation = "pass", timeoutMs?: number
   return `runtime(${commandFields(operation, ...args)}${timeoutMs === undefined ? "" : `, timeout_ms = ${timeoutMs}`})`;
 }
 
-/** An eval `id` run by `evaluator` (`human`, `runtime(…)`, `agent(…)`) with the statements `lines`. */
+/** An eval `id` run by `evaluator` (`human`, `runtime(…)` or a profile's name) with the statements `lines`. */
 export function evalBlock(id: string, evaluator: string, lines: string[]): string {
   return `\neval ${id} : ${evaluator} = {\n${indent(lines.join("\n"))}\n}\n`;
 }

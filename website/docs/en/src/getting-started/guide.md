@@ -21,26 +21,30 @@ Run `hello` to greet the team.
 EOF
 ```
 
-Now declare `spec` as an unreviewed input (`basis = true`) and `guide` with two runtime checks—one checking its own heading and one checking that it mentions `hello` from `{spec}`:
+Now declare `spec` as an unreviewed input (`basis = true`) and `guide` with two runtime checks—one checking its own heading and one checking that it mentions `hello`, as `spec` requires, so `spec` is one of its `inputs`:
 
 ```sh
-cat > .artifactize/spec.artf <<'EOF'
-path = "spec.md"
-basis = true
-EOF
+cat > .artifactize/project.artf <<'EOF'
+// The spec: an input accepted as it is.
+artf spec = {
+  path = "spec.md"
+  basis = true
+}
 
-cat > .artifactize/guide.artf <<'EOF'
-path = "guide.md"
+artf guide = {
+  path = "guide.md"
 
-[evals.heading]
-title = "The guide includes a top-level heading"
-profile = { kind = "runtime", command = "grep", args = ["-q", "^# ", "{guide}"] }
-payload.instruction = "Check that {guide} includes a top-level Markdown heading."
+  eval heading : runtime(command = "grep", args = ["-q", "^# ", "@{path self}"]) = {
+    title = "The guide includes a top-level heading"
+    instruction = "Check that the guide includes a top-level Markdown heading."
+  }
 
-[evals.mentions-hello]
-title = "The guide mentions the command required by the spec"
-profile = { kind = "runtime", command = "grep", args = ["-q", "hello", "{guide}"] }
-payload.instruction = "Check that {guide} mentions the greeting required by {spec}."
+  eval mentions-hello : runtime(command = "grep", args = ["-q", "hello", "@{path self}"]) = {
+    title = "The guide mentions the command required by the spec"
+    instruction = "Check that the guide mentions the greeting the spec requires."
+    inputs = [spec]
+  }
+}
 EOF
 ```
 
@@ -79,7 +83,7 @@ printf '\nKeep greetings short.\n' >> spec.md
 artifactize status
 ```
 
-`status` shows that `guide/heading` will still **reuse** its earlier result (it only reads `{guide}`), whereas `guide/mentions-hello` will **execute** again because it references `{spec}`, whose fingerprint changed:
+`status` shows that `guide/heading` will still **reuse** its earlier result (it only reads the guide), whereas `guide/mentions-hello` will **execute** again because `spec`, one of its inputs, has a changed fingerprint:
 
 ```sh
 artifactize verify --all --wait
@@ -93,9 +97,9 @@ If you clone `https://github.com/lhj6102/artifactize`, the `examples/` directory
 
 | Example | What it shows |
 |---|---|
-| [`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) | Parent and `parts` composition (`guide` made of `intro` and `usage`), `{artifact}` references in instructions and argv, `basis = true`, and how a `RED` dependency blocks downstream checks. |
-| [`examples/posts`](https://github.com/lhj6102/artifactize/tree/main/examples/posts) | Multiple file Artifacts sharing one style-checker Artifact (`{house-style}`), independent per-file reuse, and `tags`. |
-| [`examples/agent-tools`](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) | An Agent eval with built-in (`read`, `grep`, `view_image`, `section`) and custom `json` tools returning prioritized findings, and a Human sign-off with `open` and `read` tools and schema-validated owner fields. |
+| [`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) | Parent and `parts` composition (`guide` made of `intro` and `usage`), `@{path …}` references in argv, `basis = true`, and how a `RED` dependency blocks downstream checks. |
+| [`examples/posts`](https://github.com/lhj6102/artifactize/tree/main/examples/posts) | A `post!` macro making three file Artifacts that share one style-checker Artifact (`house-style`), independent per-file reuse, and `tags`. |
+| [`examples/agent-tools`](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) | An Agent eval with composed toolsets of built-in (`read`, `grep`, `view_image`, `section`) and custom `json` tools returning prioritized issues, and a Human sign-off with `open` and `read` tools. |
 | [`examples/live`](https://github.com/lhj6102/artifactize/tree/main/examples/live) | A Live URI target (`path = "https://..."`) observed by a read-only HTTP runtime check on every `verify`. |
 
 ## Next steps

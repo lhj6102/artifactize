@@ -403,7 +403,8 @@ export async function createReviewed(own: Owned, fixture = newFixture(own)): Pro
   try {
     declareArtifact(fixture.repo, ["report"], "report", {
       tools: "files",
-      body: evalBlock("agent", `agent(backend = "openai", model = "${REVIEW_MODEL}", timeout_ms = 60000)`, ['title = "Review the receipt"', 'red_at = "P1"', 'instruction = "Review the receipt."']),
+      beside: `profile review = agent(backend = "openai", model = "${REVIEW_MODEL}", timeout_ms = 60000)`,
+      body: evalBlock("agent", "review", ['title = "Review the receipt"', 'red_at = "P1"', 'instruction = "Review the receipt."']),
     });
     initRepo(fixture);
     const env = { OPENAI_API_KEY: "fixture-not-a-secret", ARTIFACTIZE_OPENAI_BASE_URL: provider.url };
